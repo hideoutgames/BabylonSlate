@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
+import { getHostPlatform } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { brandIconSrc } from "../lib/branding";
 import { useHomepageScheme } from "./homepage-scheme";
@@ -81,7 +81,6 @@ export function HomepageMobileAccountGate({
   const [attempt, setAttempt] = useState(0);
   const host = getHostPlatform();
   if (host !== "ios" && host !== "android") return children;
-  if (isTestModeEnabled()) return children;
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   if (!publishableKey) {
     return (

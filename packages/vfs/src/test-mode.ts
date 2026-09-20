@@ -1,30 +1,12 @@
 export const TEST_PROJECT_NAME = "TestProject";
 
-type SlateImportMetaEnv = {
-  DEV?: boolean;
-  VITE_TEST_MODE?: string;
-  VITE_TEST_QUERY?: string;
-};
-
-function slateImportMetaEnv(): SlateImportMetaEnv | undefined {
+function isViteTestModeEnabled(): boolean {
   if (typeof import.meta === "undefined") {
-    return undefined;
+    return false;
   }
 
-  return (import.meta as ImportMeta & { env?: SlateImportMetaEnv }).env;
-}
-
-function isViteTestModeEnabled(): boolean {
-  return slateImportMetaEnv()?.VITE_TEST_MODE === "true";
-}
-
-// Query-string activation requires a bundle compiled for QA: the Vite dev
-// server or a build opted in with VITE_TEST_QUERY. Production bundles cannot
-// supply it, and distribution builds hard-fail on both flags in the editor's
-// vite.config.ts.
-function isTestQueryAllowed(): boolean {
-  const env = slateImportMetaEnv();
-  return env?.DEV === true || env?.VITE_TEST_QUERY === "true";
+  const env = (import.meta as ImportMeta & { env?: { VITE_TEST_MODE?: string } }).env;
+  return env?.VITE_TEST_MODE === "true";
 }
 
 export function isTestModeEnabled(): boolean {
@@ -32,10 +14,9 @@ export function isTestModeEnabled(): boolean {
     return true;
   }
 
-  if (typeof window === "undefined" || !isTestQueryAllowed()) {
-    return false;
+  if (typeof window !== "undefined") {
+    return new URLSearchParams(window.location.search).has("test");
   }
 
-  const value = new URLSearchParams(window.location.search).get("test");
-  return value !== null && value !== "false";
+  return false;
 }

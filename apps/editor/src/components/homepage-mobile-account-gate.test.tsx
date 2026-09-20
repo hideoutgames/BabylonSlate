@@ -109,52 +109,6 @@ describe("native mobile account requirement", () => {
     },
   );
 
-  it.each(["ios", "android"])(
-    "lets %s through without an account in test mode",
-    (host) => {
-      auth.host = host;
-      vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
-      window.history.replaceState({}, "", "/?test");
-      try {
-        render(
-          <HomepageMobileAccountGate>
-            <button>Create Project</button>
-          </HomepageMobileAccountGate>,
-        );
-        expect(
-          screen.getByRole("button", { name: "Create Project" }),
-        ).toBeTruthy();
-        expect(auth.create).not.toHaveBeenCalled();
-      } finally {
-        window.history.replaceState({}, "", "/");
-      }
-    },
-  );
-
-  it.each(["ios", "android"])(
-    "does not let %s through on an explicit ?test=false",
-    (host) => {
-      auth.host = host;
-      vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
-      window.history.replaceState({}, "", "/?test=false");
-      try {
-        render(
-          <HomepageMobileAccountGate>
-            <button>Create Project</button>
-          </HomepageMobileAccountGate>,
-        );
-        expect(
-          screen.queryByRole("button", { name: "Create Project" }),
-        ).toBeNull();
-        expect(
-          screen.getByRole("heading", { name: "Sign-In Is Not Set Up" }),
-        ).toBeTruthy();
-      } finally {
-        window.history.replaceState({}, "", "/");
-      }
-    },
-  );
-
   it("only opens native projects after verification, then signs out through Profile", async () => {
     renderMobile();
     fireEvent.change(await screen.findByLabelText("Email Address"), {

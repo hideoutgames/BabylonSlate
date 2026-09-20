@@ -7,6 +7,7 @@ import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
 import {
   copyEngineDefaultSkyboxFaces,
   ENGINE_DEFAULT_SKYBOX_FACE_FILES,
+  engineDefaultSkyboxVitePlugin,
 } from "./vite-engine-skybox";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -27,6 +28,22 @@ describe("copyEngineDefaultSkyboxFaces", () => {
           join(REPO_ROOT, "engine-content/skybox", `${key}.png`),
         );
         expect(copied.equals(source)).toBe(true);
+      }
+    } finally {
+      rmSync(dest, { recursive: true, force: true });
+    }
+  });
+
+  it("copies faces during config resolution so the dev public-file snapshot sees them", () => {
+    const dest = mkdtempSync(join(tmpdir(), "engine-skybox-"));
+    try {
+      const plugin = engineDefaultSkyboxVitePlugin(REPO_ROOT, dest);
+      (plugin.configResolved as () => void)();
+      for (const key of SKYBOX_FACE_KEYS) {
+        expect(
+          readFileSync(join(dest, "engine-content/skybox", `${key}.png`))
+            .byteLength,
+        ).toBeGreaterThan(0);
       }
     } finally {
       rmSync(dest, { recursive: true, force: true });
