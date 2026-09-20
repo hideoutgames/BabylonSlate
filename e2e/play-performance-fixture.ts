@@ -115,15 +115,16 @@ export async function projectFilesWithQuality(level: QualityLevel) {
   const project = JSON.parse(new TextDecoder().decode(projectBytes)) as {
     settings: Record<string, unknown>;
   };
-  project.settings.quality = RENDER_QUALITY_PROFILES[level];
   const backend = process.env.BL_PERF_BACKEND;
-  if (backend === "webgl2" || backend === "webgpu" || process.env.BL_PERF_RENDER_MODE === "cel") {
-    project.settings.render = {
-      ...(project.settings.render as Record<string, unknown> | undefined),
-      ...(process.env.BL_PERF_RENDER_MODE === "cel" ? { mode: "cel" } : {}),
-      ...(backend === "webgl2" || backend === "webgpu" ? { gpuBackend: backend } : {}),
-    };
-  }
+  // Quality lives on settings.render; a top-level settings.quality is ignored
+  // by normalization, so the profile must merge into the render block or the
+  // route silently runs the default profile.
+  project.settings.render = {
+    ...(project.settings.render as Record<string, unknown> | undefined),
+    quality: RENDER_QUALITY_PROFILES[level],
+    ...(process.env.BL_PERF_RENDER_MODE === "cel" ? { mode: "cel" } : {}),
+    ...(backend === "webgl2" || backend === "webgpu" ? { gpuBackend: backend } : {}),
+  };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   return files;
 }

@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /play-performance-route\.spec\.ts$/,
+  testMatch: /play-(performance|sustained)-route\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,
