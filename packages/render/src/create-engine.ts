@@ -288,6 +288,15 @@ export interface EngineHandle {
   playMeshMaterialNames: () => string[];
   /** Baked-lighting session state for player/editor diagnostics. */
   bakedSessionDiagnostics: () => BakedSessionDiagnostics;
+  /**
+   * Bind the baked-lighting session for an already-realized scene. Scene
+   * switches go through `loadScene`; hosts whose boot scene never reloads
+   * (the active-scene early return) call this so the bake still applies.
+   */
+  applyBakedSession: (
+    sceneData: SerializedScene,
+    sceneAssetGuid?: string,
+  ) => void;
   /** Compiled effect defines per Play mesh (e2e shader-state readout). */
   playMeshMaterialDefines: () => Array<{
     mesh: string;
@@ -2641,6 +2650,10 @@ function initializeEngine(
       return [...names].sort();
     },
     bakedSessionDiagnostics: () => bakedSession.diagnostics(),
+    applyBakedSession: (sceneData, sceneAssetGuid) => {
+      if (sceneAssetGuid !== undefined) lastBakedSceneGuid = sceneAssetGuid;
+      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
+    },
     playMeshMaterialDefines: () => {
       const rows: Array<{
         mesh: string;

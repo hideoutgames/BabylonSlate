@@ -281,6 +281,9 @@ describe("applyPlayerActiveScene", () => {
       applySceneEnvironment: (scene: { name: string }) => {
         loaded.push(`env:${scene.name}`);
       },
+      applyBakedSession: (scene: { name: string }, guid?: string) => {
+        loaded.push(`bake:${guid}:${scene.name}`);
+      },
       resetAudioSession: () => {
         loaded.push("reset-audio");
       },
@@ -313,6 +316,9 @@ describe("applyPlayerActiveScene", () => {
       applySceneEnvironment: (scene: { name: string }) => {
         loaded.push(`env:${scene.name}`);
       },
+      applyBakedSession: (scene: { name: string }, guid?: string) => {
+        loaded.push(`bake:${guid}:${scene.name}`);
+      },
       resetAudioSession: () => {
         loaded.push("reset-audio");
       },
@@ -330,8 +336,9 @@ describe("applyPlayerActiveScene", () => {
         "scene-1",
       ),
     ).toBe(true);
-    expect(loaded).toEqual([]);
+    // The skipped reload must still bind the boot scene's bake session.
+    expect(loaded).toEqual(["bake:scene-1:Level 1"]);
     expect(applyPlayerActiveScene(handle, scenes, { type: "activeScene", sceneAssetGuid: "scene-1" }, "scene-1", true)).toBe(true);
-    expect(loaded).toEqual(["load:Level 1", "env:Level 1", "reset-audio", "reset-particles"]);
+    expect(loaded).toEqual(["bake:scene-1:Level 1", "load:Level 1", "env:Level 1", "reset-audio", "reset-particles"]);
   });
 });

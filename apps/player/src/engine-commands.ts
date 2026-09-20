@@ -19,6 +19,7 @@ export function applyPlayerActiveScene(
       options?: { sceneAssetGuid?: string },
     ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
+    applyBakedSession: (scene: SerializedScene, sceneAssetGuid?: string) => void;
     resetAudioSession?: () => void;
     resetParticleSession?: () => void;
   },
@@ -30,8 +31,13 @@ export function applyPlayerActiveScene(
   if (command.type !== "activeScene" || typeof command.sceneAssetGuid !== "string") {
     return false;
   }
-  if (!forceReload && command.sceneAssetGuid === currentSceneGuid) return true;
   const scene = scenes.get(command.sceneAssetGuid);
+  if (!forceReload && command.sceneAssetGuid === currentSceneGuid) {
+    // The already-active scene skips the reload; its baked-lighting session
+    // still has to bind because nothing else applies it on this path.
+    if (scene) handle.applyBakedSession(scene, command.sceneAssetGuid);
+    return true;
+  }
   if (!scene) return false;
   handle.loadScene(scene, { sceneAssetGuid: command.sceneAssetGuid });
   handle.applySceneEnvironment(scene);
