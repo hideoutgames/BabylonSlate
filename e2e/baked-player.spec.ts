@@ -70,9 +70,11 @@ test("Preview Build hydrates packed bake assets and shades the receiver with the
   // reasons, bound receivers, atlas upload and the receiver effect's
   // SLATE_BAKED define — hydration, material and framing failures each leave a
   // distinct signature.
-  const playerFrame = await page
-    .getByTestId("preview-build-iframe")
-    .contentFrame();
+  // Locator.contentFrame() yields a FrameLocator (no evaluate); the element
+  // handle resolves the actual Frame.
+  const playerFrame = await (
+    await page.getByTestId("preview-build-iframe").elementHandle()
+  )?.contentFrame();
   const baked = playerFrame
     ? await playerFrame.evaluate(
         () =>
