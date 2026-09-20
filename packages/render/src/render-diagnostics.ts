@@ -29,6 +29,8 @@ export type RenderDiagnostics = {
   gpuAttribution: GpuAttribution;
   width: number;
   height: number;
+  /** Dynamic-resolution valve level; raster size is `width / scalingLevel`. */
+  scalingLevel: number;
   samples: number;
   shadowPasses: number;
   shadowMapBytes: number;
@@ -89,6 +91,7 @@ export function createRenderDiagnostics(
       gpuAttribution: pressure().gpuAttribution,
       width: size?.width ?? engine.getRenderWidth(),
       height: size?.height ?? engine.getRenderHeight(),
+      scalingLevel: engine.getHardwareScalingLevel(),
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,

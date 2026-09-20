@@ -133,22 +133,49 @@ async function framePixels(canvas: Locator): Promise<Buffer> {
   return Buffer.from(encoded, "base64");
 }
 
-/** A repeated signature means both the rebuild and the frame have settled. */
-async function settledPixels(
+async function scalingLevel(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const host = window as typeof window & {
+      __babylonslatePlayerTest?: {
+        rendering: () => { scalingLevel?: number } | null;
+      };
+    };
+    return host.__babylonslatePlayerTest?.rendering()?.scalingLevel ?? null;
+  });
+}
+
+/**
+ * The dynamic-resolution valve resizes the raster without touching the
+ * backbuffer size or the task list, so a settled signature must cover both
+ * pixels and the scaling level. Holding the signature for a window longer
+ * than the valve's 30-frame step cooldown means a late step cannot land
+ * between a baseline and its comparison capture.
+ */
+async function settledFrame(
+  page: Page,
   canvas: Locator,
-  timeoutMs = 30_000,
-): Promise<Buffer> {
+  timeoutMs = 45_000,
+): Promise<{ pixels: Buffer; level: number | null }> {
   const deadline = Date.now() + timeoutMs;
-  let signature = -1;
+  let signature = "";
+  let stableSince = 0;
   for (;;) {
     const pixels = await framePixels(canvas);
     let hash = 0;
     for (let i = 0; i < pixels.length; i += 97)
       hash = (hash * 31 + pixels[i]!) | 0;
-    if (hash === signature) return pixels;
-    signature = hash;
+    const level = await scalingLevel(page);
+    const next = `${hash}:${level}`;
+    if (next !== signature) {
+      signature = next;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= 3000) {
+      return { pixels, level };
+    }
     if (Date.now() > deadline)
-      throw new Error("Canvas pixel signature never settled");
+      throw new Error(
+        `Canvas signature never settled (pixel hash ${hash}, scaling level ${level})`,
+      );
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
 }
@@ -293,6 +320,7 @@ function playerTest(page: Page) {
           pipeline?: { effective?: unknown };
           width?: number;
           height?: number;
+          scalingLevel?: number;
         } | null;
       };
     };
@@ -302,6 +330,7 @@ function playerTest(page: Page) {
           passes: api.postProcessPassCount(),
           tasks: api.renderTasks(),
           pipeline: api.rendering()?.pipeline?.effective ?? null,
+          scalingLevel: api.rendering()?.scalingLevel ?? null,
           size: {
             width: api.rendering()?.width ?? 0,
             height: api.rendering()?.height ?? 0,
@@ -346,9 +375,19 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     });
     // The manifest omits `effects` like a legacy project; runtime settings are
     // applied through the same handle command the editor viewport uses.
+    // `resolution.dynamic` is pinned off: this spec compares pixels between
+    // captures, and the pressure valve resizes the raster without touching
+    // canvas.width/height or the task list, which reads as a false diff.
     const baseRender: RenderProjectSettings = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       gpuBackend: backend,
+      quality: {
+        ...DEFAULT_RENDER_PROJECT_SETTINGS.quality,
+        resolution: {
+          ...DEFAULT_RENDER_PROJECT_SETTINGS.quality.resolution,
+          dynamic: false,
+        },
+      },
       customResolution: true,
       width: 320,
       height: 180,
@@ -399,8 +438,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const height = 180;
 
       // Defaults baseline: the omitted effects block renders exactly as the
-      // pre-settings pipeline did.
-      const baseline = await settledPixels(canvas);
+      // pre-settings pipeline did. The settle signature includes the dynamic
+      // scaling level — the valve resizes the raster without touching the
+      // backbuffer size, so a pixel-only plateau can still precede a step.
+      const baseline = (await settledFrame(page, canvas)).pixels;
       const baselineState = await playerTest(page);
       summary.baselineState = baselineState;
       summary.baseline = await testInfo
@@ -422,27 +463,27 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const baseHot = patchMean(baseline, width, height, hotX, hotY, 2);
       expect(baseHot, "legacy clamp keeps the emissive saturated").toBeGreaterThan(245);
 
-      // Explicit defaults are display-identical to the omitted block.
+      // Explicit defaults are display-identical to the omitted block. Re-settle
+      // first: the apply itself is inert, so a raster diff here means the
+      // scaling valve stepped between captures, not a pipeline difference.
       await applyRenderSettings(page, {
         ...baseRender,
         effects: DEFAULT_RENDER_EFFECTS,
       });
-      await expect
-        .poll(
-          async () =>
-            maxChannelDiff(await framePixels(canvas), baseline).max,
-          { timeout: 15_000 },
-        )
-        .toBeLessThanOrEqual(1);
-      const identical = await framePixels(canvas);
+      const identical = (await settledFrame(page, canvas)).pixels;
       const defaultsState = await playerTest(page);
       summary.defaultsState = defaultsState;
-      // A pixel diff is only meaningful at the same backbuffer size: dynamic
-      // scaling stepping down mid-check must fail as a size change, not a diff.
+      // A pixel diff is only meaningful at the same raster size: dynamic
+      // scaling stepping mid-check must fail as a level/size change, not a
+      // diff. canvas.width/height cannot see it — hardwareScalingLevel can.
       expect(
         defaultsState?.size,
-        "backbuffer size changed between captures (dynamic scaling); the defaults-identical comparison is invalid",
+        "backbuffer size changed between captures; the defaults-identical comparison is invalid",
       ).toEqual(baselineState?.size);
+      expect(
+        defaultsState?.scalingLevel,
+        "dynamic scaling level changed between captures; the defaults-identical comparison is invalid",
+      ).toBe(baselineState?.scalingLevel);
       const diff = maxChannelDiff(identical, baseline);
       summary.defaultsDiff = diff;
       expect(diff.count, "explicit defaults must match the baseline within ±1/255").toBeLessThanOrEqual(
@@ -537,8 +578,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         mode: "cel",
         effects: DEFAULT_RENDER_EFFECTS,
       });
-      const celBaseline = await settledPixels(canvas);
-      const celPasses = (await playerTest(page))?.passes;
+      const celBaseline = (await settledFrame(page, canvas)).pixels;
+      const celBaselineState = await playerTest(page);
+      const celPasses = celBaselineState?.passes;
       await applyRenderSettings(page, {
         ...baseRender,
         mode: "cel",
@@ -554,15 +596,20 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       // give any chain time to draw, then require identical captures and the
       // same pass count.
       await page.waitForTimeout(600);
-      const celLinearA = await settledPixels(canvas);
+      const celLinearA = (await settledFrame(page, canvas)).pixels;
       const celLinearB = await framePixels(canvas);
       const celState = await playerTest(page);
       summary.cel = {
         passesBefore: celPasses,
         passesAfter: celState?.passes,
+        scalingLevel: celState?.scalingLevel,
         diffA: maxChannelDiff(celLinearA, celBaseline),
         diffB: maxChannelDiff(celLinearB, celBaseline),
       };
+      expect(
+        celState?.scalingLevel,
+        "dynamic scaling level changed between captures; the CEL display-identity comparison is invalid",
+      ).toBe(celBaselineState?.scalingLevel);
       expect(celState?.passes).toBe(celPasses);
       expect(maxChannelDiff(celLinearA, celBaseline).max).toBeLessThanOrEqual(1);
       expect(maxChannelDiff(celLinearB, celBaseline).max).toBeLessThanOrEqual(1);
@@ -618,7 +665,7 @@ test("editor viewport applies project bloom through Post Processing settings", a
   await openMainScene(page);
   await setPreviewScene(page, colorPipelineScene());
   const canvas = page.getByTestId("viewport-canvas");
-  const baseline = await settledPixels(canvas);
+  const baseline = (await settledFrame(page, canvas)).pixels;
   const probe = await canvas.evaluate((node: HTMLCanvasElement) => ({
     width: node.width,
     height: node.height,
