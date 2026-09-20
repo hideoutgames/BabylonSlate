@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Material,
+  type Effect,
   MeshBuilder,
   MultiMaterial,
+  NodeMaterial,
   NullEngine,
   PBRMaterial,
   PointLight,
@@ -14,8 +17,14 @@ import type {
   BakedLightingSource,
   BakedReceiverBinding,
 } from "@babylonslate/core";
+import {
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+} from "@babylonslate/shader-graph";
 import { CelMaterial } from "./cel-material";
 import { BakedReceiverMaterials } from "./baked-receiver-materials";
+import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
+import { compileMaterialPlan } from "./material-compiler";
 import type { RuntimeIrradianceBinding } from "./scene-baked-lighting";
 
 const engines: NullEngine[] = [];
@@ -280,5 +289,113 @@ describe("baked receiver materials", () => {
       ),
     ).toBeNull();
     expect(mesh.material).toBe(pbr);
+  });
+
+  it("clones the compiled PBR graph and sets bakedIrradiance on its ScenePbrLightingBlock", () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    // The packed player resolves authored materials to compiled NodeMaterial
+    // graphs whose lighting lives in ScenePbrLightingBlock; the clone must
+    // keep the subclass (registered class name) and receive the sampling.
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument("Flat"));
+    if (!lowered.ok) throw new Error("lowering failed");
+    const compiled = compileMaterialPlan(lowered.plan, {
+      scene,
+      name: "flat",
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    const source = compiled.material;
+    const mesh = MeshBuilder.CreateBox("graph-receiver", {}, scene);
+    mesh.material = source;
+    const light = new PointLight("lamp", Vector3.Zero(), scene);
+    const variant = receivers.apply(
+      mesh,
+      bindingFor(
+        scene,
+        contributions([{ sourceId: "sun", term: "directAndIndirect" }]),
+      ),
+      sources,
+      () => light,
+    );
+    expect(variant).toBeInstanceOf(NodeMaterial);
+    expect(variant).not.toBe(source);
+    expect(mesh.material).toBe(variant);
+    const bakedBlocks = (
+      variant as NodeMaterial
+    ).attachedBlocks.filter(
+      (block): block is ScenePbrLightingBlock =>
+        block instanceof ScenePbrLightingBlock,
+    );
+    expect(bakedBlocks.length).toBeGreaterThan(0);
+    for (const block of bakedBlocks) {
+      expect(block.bakedIrradiance).not.toBeNull();
+    }
+    const sourceBlocks = source.attachedBlocks.filter(
+      (block): block is ScenePbrLightingBlock =>
+        block instanceof ScenePbrLightingBlock,
+    );
+    expect(
+      sourceBlocks.every((block) => block.bakedIrradiance === null),
+    ).toBe(true);
+    expect(light.excludedMeshes).toContain(mesh);
+    receivers.release();
+    expect(mesh.material).toBe(source);
+    compiled.dispose();
+  });
+
+  it("keeps watching a receiver whose material cannot consume the bake and wraps a later supported assignment", () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    const mesh = MeshBuilder.CreateBox("late", {}, scene);
+    const unsupported = new Material("plain", scene);
+    mesh.material = unsupported;
+    const light = new PointLight("lamp", Vector3.Zero(), scene);
+    const binding = bindingFor(
+      scene,
+      contributions([{ sourceId: "sun", term: "directAndIndirect" }]),
+    );
+    expect(receivers.apply(mesh, binding, sources, () => light)).toBeNull();
+    // The unsupported material stays and realtime lighting is untouched.
+    expect(mesh.material).toBe(unsupported);
+    expect(light.excludedMeshes).not.toContain(mesh);
+    const pbr = new PBRMaterial("late-pbr", scene);
+    mesh.material = pbr;
+    expect(mesh.material).not.toBe(pbr);
+    expect(mesh.material!.name).toBe("baked:late-pbr");
+    expect(light.excludedMeshes).toContain(mesh);
+    receivers.release();
+    expect(mesh.material).toBe(pbr);
+    expect(light.excludedMeshes).not.toContain(mesh);
+  });
+
+  it("reports receiver variants and SLATE_BAKED effect defines for diagnostics", async () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    const mesh = MeshBuilder.CreateBox("diag", {}, scene);
+    const pbr = new PBRMaterial("pbr", scene);
+    mesh.material = pbr;
+    const binding = bindingFor(
+      scene,
+      contributions([{ sourceId: "sun", term: "directAndIndirect" }]),
+    );
+    vi.spyOn(binding.texture, "isReady").mockReturnValue(true);
+    receivers.apply(mesh, binding, sources, () => null);
+    const variant = mesh.material as PBRMaterial;
+    await variant.forceCompilationAsync(mesh);
+    expect(receivers.diagnostics()).toEqual([
+      { mesh: "diag", material: variant.name, slateBaked: true },
+    ]);
+    // Once the receiver has rendered, the compiled effect's define string is
+    // ground truth; NullEngine never attaches one, so stub both cases.
+    const effect = vi.spyOn(mesh.subMeshes[0]!, "effect", "get");
+    effect.mockReturnValue({
+      defines: "#define LIGHTING\n#define SLATE_BAKED\n",
+    } as unknown as Effect);
+    expect(receivers.diagnostics()[0]!.slateBaked).toBe(true);
+    effect.mockReturnValue({
+      defines: "#define LIGHTING\n",
+    } as unknown as Effect);
+    expect(receivers.diagnostics()[0]!.slateBaked).toBe(false);
   });
 });

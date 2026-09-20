@@ -19,6 +19,7 @@ import { CelLightBlock } from "./cel-light-block";
 import { CelMaterial } from "./cel-material";
 import type { BakedIrradianceSampling } from "./baked-irradiance";
 import { BakedIrradiancePlugin } from "./baked-irradiance-plugin";
+import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import type { RuntimeIrradianceBinding } from "./scene-baked-lighting";
 
 /** Resolves one bake light source to the live realtime light on this Scene. */
@@ -53,7 +54,11 @@ function bakedMaterialVariant(
       return null;
     }
     const blocks = variant.attachedBlocks.filter(
-      (block): block is CelLightBlock => block instanceof CelLightBlock,
+      (
+        block,
+      ): block is CelLightBlock | ScenePbrLightingBlock =>
+        block instanceof CelLightBlock ||
+        block instanceof ScenePbrLightingBlock,
     );
     if (!blocks.length) {
       variant.dispose(false, false);
@@ -92,12 +97,37 @@ function bakedMaterialVariant(
   return null;
 }
 
+/**
+ * Whether a bound variant is configured to emit the baked sample path: the
+ * plugin for cloned surface materials, `bakedIrradiance` on a graph's
+ * CEL/PBR lighting block, or any MultiMaterial child carrying either.
+ */
+function variantCarriesBake(material: Material | null): boolean {
+  if (!material) return false;
+  if (material.pluginManager?.getPlugin("SlateBakedIrradiance")) return true;
+  if (material instanceof NodeMaterial) {
+    return material.attachedBlocks.some(
+      (block) =>
+        (block instanceof CelLightBlock ||
+          block instanceof ScenePbrLightingBlock) &&
+        block.bakedIrradiance !== null,
+    );
+  }
+  if (material instanceof MultiMaterial) {
+    return material.subMaterials.some(
+      (child) => child !== null && variantCarriesBake(child),
+    );
+  }
+  return false;
+}
+
 interface AppliedReceiver {
   binding: RuntimeIrradianceBinding;
   sources: ReadonlyMap<string, BakedLightingSource>;
   lightForSource: BakedSourceLightResolver;
   original: Material | null;
-  variant: Material;
+  /** Null when the mesh's material cannot consume the atlas; the entry stays watched so a later supported assignment still wraps. */
+  variant: Material | null;
   excludedLights: Light[];
   observer: Observer<AbstractMesh>;
   retargeting: boolean;
@@ -162,10 +192,6 @@ export class BakedReceiverMaterials {
     const variant = source
       ? bakedMaterialVariant(this.scene, source, sampling)
       : null;
-    if (!variant) {
-      this.applied.delete(mesh);
-      return null;
-    }
     const entry: AppliedReceiver = {
       binding,
       sources,
@@ -187,19 +213,22 @@ export class BakedReceiverMaterials {
       }),
       retargeting: false,
     };
-    for (const contribution of receiver.contributions) {
-      // Only sources whose direct term is baked in are excluded; indirectOnly
-      // keeps realtime direct and unlisted sources stay untouched.
-      if (contribution.term !== "directAndIndirect") continue;
-      const source = sources.get(contribution.sourceId);
-      if (!source || source.kind !== "light") continue;
-      const light = lightForSource(source);
-      if (light && !light.excludedMeshes.includes(mesh)) {
-        light.excludedMeshes.push(mesh);
-        entry.excludedLights.push(light);
+    if (variant) {
+      for (const contribution of receiver.contributions) {
+        // Only sources whose direct term is baked in are excluded; indirectOnly
+        // keeps realtime direct and unlisted sources stay untouched.
+        if (contribution.term !== "directAndIndirect") continue;
+        const lightSource = sources.get(contribution.sourceId);
+        if (!lightSource || lightSource.kind !== "light") continue;
+        const light = lightForSource(lightSource);
+        if (light && !light.excludedMeshes.includes(mesh)) {
+          light.excludedMeshes.push(mesh);
+          entry.excludedLights.push(light);
+        }
       }
     }
     this.applied.set(mesh, entry);
+    if (!variant) return null;
     entry.retargeting = true;
     try {
       mesh.material = variant;
@@ -218,6 +247,16 @@ export class BakedReceiverMaterials {
     if (this.released) return;
     for (const [mesh, entry] of this.applied) {
       if (entry.variant instanceof CelMaterial) entry.variant.syncSource();
+      if (entry.variant === null) {
+        // The material that failed to consume the bake stays in place; retry
+        // only once a different material replaces it.
+        if (mesh.material !== entry.original) {
+          this.retire(mesh, entry);
+          this.applied.delete(mesh);
+          this.wrap(mesh, entry.binding, entry.sources, entry.lightForSource);
+        }
+        continue;
+      }
       if (mesh.material !== entry.variant) {
         this.retire(mesh, entry);
         this.applied.delete(mesh);
@@ -239,7 +278,7 @@ export class BakedReceiverMaterials {
 
   private retire(mesh: Mesh, entry: AppliedReceiver): void {
     entry.observer.remove();
-    if (mesh.material === entry.variant) {
+    if (entry.variant && mesh.material === entry.variant) {
       entry.retargeting = true;
       try {
         mesh.material = entry.original;
@@ -251,7 +290,30 @@ export class BakedReceiverMaterials {
       const index = light.excludedMeshes.indexOf(mesh);
       if (index >= 0) light.excludedMeshes.splice(index, 1);
     }
-    entry.variant.dispose(false, false);
+    entry.variant?.dispose(false, false);
+  }
+
+  /** Per-receiver material and compiled-define readout for session diagnostics. */
+  diagnostics(): Array<{
+    mesh: string;
+    material: string | null;
+    slateBaked: boolean;
+  }> {
+    return [...this.applied].map(([mesh, entry]) => {
+      const defines = mesh.subMeshes
+        .map((subMesh) => String(subMesh.effect?.defines ?? ""))
+        .join("\n");
+      return {
+        mesh: mesh.name,
+        material: entry.variant?.name ?? null,
+        // A compiled effect's defines are ground truth once the receiver has
+        // rendered; before the first compile, report whether the bound
+        // variant is configured to emit the baked path.
+        slateBaked: defines.length
+          ? /\bSLATE_BAKED\b/.test(defines)
+          : variantCarriesBake(entry.variant),
+      };
+    });
   }
 
   /** Restore every receiver's original material and exclusion lists. */

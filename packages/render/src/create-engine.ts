@@ -165,6 +165,7 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import {
   BakedSceneSession,
   type BakedSceneHost,
+  type BakedSessionDiagnostics,
 } from "./baked-scene-session";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
@@ -285,6 +286,8 @@ export interface EngineHandle {
   }>;
   /** Material names on Play meshes and GLB descendants (Preview e2e). */
   playMeshMaterialNames: () => string[];
+  /** Baked-lighting session state for player/editor diagnostics. */
+  bakedSessionDiagnostics: () => BakedSessionDiagnostics;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
@@ -2631,6 +2634,7 @@ function initializeEngine(
       }
       return [...names].sort();
     },
+    bakedSessionDiagnostics: () => bakedSession.diagnostics(),
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
       if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");

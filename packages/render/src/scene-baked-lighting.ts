@@ -1,4 +1,5 @@
 import {
+  Constants,
   Geometry,
   Mesh,
   VertexBuffer,
@@ -519,6 +520,25 @@ export class SceneBakedLighting {
       this.state.status === "valid" &&
       this.active.every((candidate) => !!this.bindingFor(candidate.mesh))
     );
+  }
+
+  /** Bound-receiver and shared-atlas readout for bake session diagnostics. */
+  diagnostics(): {
+    receiverCount: number;
+    atlas: { ready: boolean; halfFloat: boolean } | null;
+  } {
+    const texture = this.active[0]?.atlas.texture ?? null;
+    return {
+      receiverCount: this.active.length,
+      atlas: texture
+        ? {
+            ready: texture.isReady(),
+            halfFloat:
+              texture.getInternalTexture()?.type ===
+              Constants.TEXTURETYPE_HALF_FLOAT,
+          }
+        : null,
+    };
   }
 
   invalidate(reason = "The baked source changed.") {

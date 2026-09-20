@@ -59,6 +59,7 @@ describe("packed player backend lifetime", () => {
       rendering: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],
+      bakedSession: () => null,
       executeConsoleCommand: async () => ({ success: true, output: "" }),
       inspectWorld: async () => { throw new Error("No inspection in this fixture"); },
       stop: vi.fn(() => { events.push("player"); return { diagnostics: [] }; }),

@@ -3,6 +3,7 @@ import {
   meshBakeParticipation,
   normalizeBakeAuthoringSettings,
   type BakedLightingSource,
+  type BakedLightingValidity,
   type EnvironmentLightingSettings,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -43,6 +44,26 @@ export interface BakedSceneHost {
 }
 
 export type BakedSceneSessionState = "idle" | "pending" | "applied" | "stale";
+
+/** Serializable session readout for host test hooks and CI diagnostics. */
+export interface BakedSessionDiagnostics {
+  state: BakedSceneSessionState;
+  staleReasons: string[];
+  /** Milliseconds the current pending admission has withheld readiness. */
+  pendingMs: number;
+  /** Per-receiver material variant and compiled `SLATE_BAKED` define state. */
+  receivers: Array<{
+    mesh: string;
+    material: string | null;
+    slateBaked: boolean;
+  }>;
+  /** Bound receiver count and shared atlas upload state. */
+  owner: {
+    receiverCount: number;
+    atlas: { ready: boolean; halfFloat: boolean } | null;
+  };
+  validity: BakedLightingValidity;
+}
 
 const NOT_READY = /is not ready\./;
 
@@ -109,6 +130,21 @@ export class BakedSceneSession {
 
   get bakedLighting(): SceneBakedLighting {
     return this.owner;
+  }
+
+  /** Structured readout: why the bake is pending/stale and whether the receiver shaders actually carry `SLATE_BAKED`. */
+  diagnostics(): BakedSessionDiagnostics {
+    return {
+      state: this.state,
+      staleReasons: [...this.staleReasons],
+      pendingMs:
+        this.state === "pending"
+          ? Math.round(performance.now() - this.pendingSince)
+          : 0,
+      receivers: this.receivers.diagnostics(),
+      owner: this.owner.diagnostics(),
+      validity: this.owner.validity,
+    };
   }
 
   /**

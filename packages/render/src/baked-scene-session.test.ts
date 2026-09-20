@@ -222,6 +222,34 @@ describe("per-Scene baked lighting session", () => {
     expect(scene.isReady()).toBe(baselineReady);
   });
 
+  it("reports state, receivers and the atlas through diagnostics", async () => {
+    const { scene, document, sync, host } = await fixture();
+    const session = new BakedSceneSession(scene);
+    disposers.push(() => session.dispose());
+    session.apply(document, host);
+    const pending = session.diagnostics();
+    expect(pending.state).toBe("pending");
+    expect(pending.staleReasons).toEqual([]);
+    expect(pending.pendingMs).toBeGreaterThanOrEqual(0);
+    expect(pending.receivers).toEqual([]);
+    await waitForState(session, "applied");
+    const applied = session.diagnostics();
+    expect(applied.state).toBe("applied");
+    expect(applied.pendingMs).toBe(0);
+    expect(applied.owner.receiverCount).toBe(1);
+    expect(applied.owner.atlas).toMatchObject({
+      ready: true,
+      halfFloat: true,
+    });
+    expect(applied.validity).toEqual({ status: "valid" });
+    expect(applied.receivers).toHaveLength(1);
+    expect(applied.receivers[0]!.mesh).toBe(
+      sync.meshForComponent("receiver", "mesh")!.name,
+    );
+    expect(applied.receivers[0]!.material).toContain("baked:");
+    expect(typeof applied.receivers[0]!.slateBaked).toBe("boolean");
+  });
+
   it("waits for unrealized receivers instead of admitting realtime lighting", async () => {
     const { document, host } = await fixture();
     const { scene } = engineScene();
