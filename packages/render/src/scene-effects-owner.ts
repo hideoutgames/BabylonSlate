@@ -41,6 +41,7 @@ function keyFor(scene: Scene): string {
  * two consumers are mutually exclusive, like the authored stack owner.
  */
 export class SceneEffectsOwner {
+  private readonly scene: Scene;
   private native: PostProcess[] | undefined;
   private nativeCamera: Camera | undefined;
   private nativeKey: string | undefined;
@@ -52,7 +53,9 @@ export class SceneEffectsOwner {
     this.resolveDisposed = resolve;
   });
 
-  constructor(private readonly scene: Scene) {}
+  constructor(scene: Scene) {
+    this.scene = scene;
+  }
 
   /** Every currently attached native pass, for the coordinator's whitelist. */
   get passes(): PostProcess[] {
