@@ -32,6 +32,9 @@ type Options = {
   width: number;
   height: number;
   resolutionScale?: number;
+  /** Scene color storage: Scene Linear passes carry half-float HDR through
+   * the authored stack; the default keeps display-encoded RGBA8. */
+  sceneColorType?: number;
   onDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
 };
 type Recipe = {
@@ -138,8 +141,10 @@ export function createScenePostProcessGraph(
       type,
       samples: 1,
     });
+  const sceneColorType =
+    options.sceneColorType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE;
   let estimatedBytes =
-    cost(Constants.TEXTUREFORMAT_RGBA, Constants.TEXTURETYPE_UNSIGNED_BYTE) +
+    cost(Constants.TEXTUREFORMAT_RGBA, sceneColorType) +
     cost(Constants.TEXTUREFORMAT_DEPTH32_FLOAT, Constants.TEXTURETYPE_FLOAT);
   if (geometryCount)
     estimatedBytes += cost(
@@ -157,7 +162,7 @@ export function createScenePostProcessGraph(
     const passScale = entry.scalable ? scale : 1;
     estimatedBytes += cost(
       Constants.TEXTUREFORMAT_RGBA,
-      Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      sceneColorType,
       Math.max(1, Math.round(width * passScale)),
       Math.max(1, Math.round(height * passScale)),
     );
@@ -256,11 +261,12 @@ export class ScenePostProcessGraph {
       this.handles.push({ handle, category });
       return handle;
     };
-    // Legacy camera passes receive display-encoded RGBA8; preserve that storage.
+    // Authored pass targets inherit this creation's type/format; Scene
+    // Linear keeps them half-float so HDR survives to the display stage.
     this.sceneColorTexture = createTexture(
       "Post-process Scene Color",
       Constants.TEXTUREFORMAT_RGBA,
-      Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      this.options.sceneColorType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE,
       "sceneColor",
     );
     this.depthTexture = createTexture(

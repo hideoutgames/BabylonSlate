@@ -15,7 +15,12 @@ import {
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
+import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import {
+  setSceneEffectsEnabled,
+  updateSceneRenderingSettings,
+} from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { configureCutoutSorting } from "./sorting";
 
@@ -39,6 +44,23 @@ function host(engine = new NullEngine()) {
   vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(
     () => {},
+  );
+  // Babylon 9.20 NullEngine has no FrameGraph allocation overrides. Adapt only
+  // those hardware boundaries, retaining real textures, wrappers and refcounts.
+  vi.spyOn(engine, "_createInternalTexture").mockImplementation(
+    (size, options) => {
+      const wrapper = engine.createRenderTargetTexture(size, {
+        ...(typeof options === "object" ? options : {}),
+        generateDepthBuffer: false,
+      });
+      const texture = wrapper.texture!;
+      texture.format = typeof options === "object" ? (options.format ?? 5) : 5;
+      wrapper.dispose(true);
+      return texture;
+    },
+  );
+  vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
+    engine._createHardwareRenderTargetWrapper(true, false, size),
   );
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
@@ -457,5 +479,121 @@ it("keeps probing every frame while unready, then caches once admitted", async (
   const admitted = graph.strictReadinessChecks;
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   expect(graph.strictReadinessChecks).toBe(admitted);
+  graph.dispose();
+});
+
+it("composes the settings effect chain before the single output copy in Scene Linear", async () => {
+  const { scene, camera } = host();
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      colorPipeline: { version: 1, mode: "sceneLinear" },
+      toneMapping: "aces",
+      bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
+      fxaa: true,
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const names = graph.taskNames();
+  const bloom = names.indexOf("Scene Effects Bloom");
+  const display = names.indexOf("Scene Effects Display Color");
+  const fxaa = names.indexOf("Scene Effects FXAA");
+  const output = names.indexOf("Scene post-process output");
+  expect(bloom).toBeGreaterThanOrEqual(0);
+  expect(display).toBeGreaterThan(bloom);
+  expect(fxaa).toBeGreaterThan(display);
+  expect(output).toBeGreaterThan(fxaa);
+  // Per-material image processing moved into the display stage.
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.postProcessPassCount()).toBe(3);
+  graph.dispose();
+});
+
+it("keeps Legacy Display effects display-space without a display stage", async () => {
+  const { scene, camera } = host();
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
+      fxaa: true,
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const names = graph.taskNames();
+  expect(names).not.toContain("Scene Effects Display Color");
+  const bloom = names.indexOf("Scene Effects Bloom");
+  const fxaa = names.indexOf("Scene Effects FXAA");
+  const output = names.indexOf("Scene post-process output");
+  expect(bloom).toBeGreaterThanOrEqual(0);
+  expect(fxaa).toBeGreaterThan(bloom);
+  expect(output).toBeGreaterThan(fxaa);
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+});
+
+it("treats the Scene Linear setting as display-space identity under CEL", async () => {
+  const { scene, camera } = host();
+  updateSceneRenderingSettings(scene, {
+    mode: "cel",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      colorPipeline: { version: 1, mode: "sceneLinear" },
+      toneMapping: "aces",
+      exposure: 2,
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  // CEL is display-space by construction: the linear stage adds no tasks.
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(
+    graph.taskNames().filter((name) => name.startsWith("Scene Effects")),
+  ).toHaveLength(0);
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // Display-space effects still apply; the display stage stays identity.
+  updateSceneRenderingSettings(scene, {
+    mode: "cel",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      colorPipeline: { version: 1, mode: "sceneLinear" },
+      vignette: { enabled: true, weight: 2, color: [0, 0, 0] },
+    },
+  });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toContain("Scene Effects Display Color");
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
+  graph.dispose();
+});
+
+it("rebuilds the effect chain on a settings change without drawing stale output", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).not.toContain("Scene post-process output");
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true },
+  });
+  // The prepared key is stale: hold the frame until the graph reprepares.
+  expect(graph.render(camera)).toMatchObject({
+    path: "classic",
+    rendered: false,
+  });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toContain("Scene Effects FXAA");
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // The session toggle releases the chain the same way.
+  setSceneEffectsEnabled(scene, false);
+  expect(graph.render(camera)).toMatchObject({ path: "classic" });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
   graph.dispose();
 });
