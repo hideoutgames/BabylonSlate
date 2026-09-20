@@ -4,6 +4,7 @@ import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
 import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
+import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
 import type { ProjectAppearance } from "./project-appearance";
 import {
   createActor,
@@ -129,6 +130,11 @@ export interface RenderProjectSettings {
   cel?: CelShadingSettings;
   environmentLighting?: EnvironmentLightingSettings;
   /**
+   * Color pipeline stage and display-space effects. Missing on legacy
+   * projects — normalizes to the display-identical Legacy Display block.
+   */
+  effects?: RenderEffectsSettings;
+  /**
    * When false or missing, Play fills the overlay / Follow System path.
    * New projects default this on.
    */
@@ -155,6 +161,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   mode: "pbr",
   environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
+  effects: normalizeRenderEffectsSettings(undefined),
   customResolution: false,
   width: DEFAULT_RENDER_WIDTH,
   height: DEFAULT_RENDER_HEIGHT,
@@ -169,6 +176,7 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   mode: "pbr",
   environmentLighting: normalizeEnvironmentLightingSettings(undefined),
   cel: normalizeCelShadingSettings(undefined),
+  effects: normalizeRenderEffectsSettings(undefined),
   customResolution: true,
   width: DEFAULT_RENDER_WIDTH,
   height: DEFAULT_RENDER_HEIGHT,
@@ -534,6 +542,7 @@ function normalizeRender(
     mode: value?.mode === "cel" ? "cel" : "pbr",
     cel: normalizeCelShadingSettings(value?.cel),
     environmentLighting: normalizeEnvironmentLightingSettings(value?.environmentLighting),
+    effects: normalizeRenderEffectsSettings(value?.effects),
     shadows: normalizeShadowSettings(value?.shadows),
     quality: normalizeRenderingQuality(value?.quality),
     customResolution: value?.customResolution === true,

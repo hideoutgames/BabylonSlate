@@ -36,6 +36,7 @@ export * from "./render-quality";
 export * from "./render-setting-ownership";
 export * from "./render-path";
 export * from "./environment-lighting";
+export * from "./render-effects";
 
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
 export * from "./baked-lighting";
