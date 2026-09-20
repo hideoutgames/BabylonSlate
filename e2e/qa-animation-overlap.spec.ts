@@ -251,10 +251,26 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   const canvas = page.getByTestId("play-canvas");
   const prints = page.getByTestId("print-overlay");
   await expect(prints).toContainText("Idle");
+  // The Play canvas keeps resizing for a few frames after the first visible
+  // pixels (CI showed 1024x576 at the baseline vs the settled 960x540), so
+  // the first >50-px frame is not a settled baseline: the tan-pixel signature
+  // only repeats once resolution and pose have both settled. Capture Idle
+  // when two consecutive samples agree.
+  let idle: { pixels: number; signature: number } | null = null;
   await expect
-    .poll(async () => (await mannequinPixels(canvas)).pixels)
-    .toBeGreaterThan(50);
-  const idle = await mannequinPixels(canvas);
+    .poll(
+      async () => {
+        const sample = await mannequinPixels(canvas);
+        const settled =
+          sample.pixels > 50 &&
+          idle !== null &&
+          sample.signature === idle.signature;
+        idle = sample;
+        return settled;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
   const idleDebug = await playDebugReadout(page);
   await canvas.screenshot({ path: testInfo.outputPath("h16-idle.png") });
   await canvas.click();
@@ -263,7 +279,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await expect
     .poll(async () => {
       const walk = await mannequinPixels(canvas);
-      return walk.pixels > 50 && walk.signature !== idle.signature;
+      return walk.pixels > 50 && walk.signature !== idle!.signature;
     })
     .toBe(true);
   await canvas.screenshot({ path: testInfo.outputPath("h16-walk.png") });
