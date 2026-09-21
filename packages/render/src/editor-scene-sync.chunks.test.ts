@@ -3,11 +3,14 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  normalizeShadowSettings,
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
-import { StandardMaterial } from "@babylonjs/core";
+import { DirectionalLight, StandardMaterial } from "@babylonjs/core";
+import { sceneShadowController } from "./shadow-controller";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { createEditorCamera } from "./editor-camera";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
@@ -457,5 +460,38 @@ describe("cooperative editor realization", () => {
     expect(root.isDisposed()).toBe(true);
     expect(sync.actorCount()).toBe(0);
     expect(onAfterApply).toHaveBeenCalledOnce();
+  });
+});
+
+describe("mesh shadow participation through the editor apply path", () => {
+  it("excludes a castShadows:false primitive from the generator renderList", async () => {
+    const { sync, scene } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1 }),
+    });
+    const controller = sceneShadowController(scene);
+    const doc = createDefaultScene();
+    const caster = createActor("caster", "Caster", {
+      components: [createMeshComponent("caster-mesh", "box")],
+    });
+    const nonCasterComponent = createMeshComponent("nc-mesh", "sphere");
+    nonCasterComponent.properties.castShadows = false;
+    const nonCaster = createActor("non-caster", "Non Caster", {
+      transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [nonCasterComponent],
+    });
+    doc.actors = [...doc.actors, caster, nonCaster];
+    sync.apply(doc);
+    const light = scene.lights.find((entry) => entry instanceof DirectionalLight)!;
+    // Babylon defers onNewMeshAdded via a macrotask; flush it so the
+    // controller's pending set is populated the way the render loop does.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    const renderList = controller.generator(light)?.getShadowMap()?.renderList ?? [];
+    const casterMesh = sync.meshForActor("caster")!;
+    const nonCasterMesh = sync.meshForActor("non-caster")!;
+    expect(renderList).toContain(casterMesh);
+    expect(renderList).not.toContain(nonCasterMesh);
+    expect(nonCasterMesh.receiveShadows).toBe(true);
   });
 });

@@ -1,3 +1,126 @@
+diff --git a/Engines/WebGPU/webgpuCacheRenderPipeline.js b/Engines/WebGPU/webgpuCacheRenderPipeline.js
+index fbd0488aa52e990f2d15e846eb48c28062308f9e..d36af217d52ef58c1a5c811a86f3c6ce67aca8e9 100644
+--- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
++++ b/Engines/WebGPU/webgpuCacheRenderPipeline.js
+@@ -938,7 +938,9 @@ export class WebGPUCacheRenderPipeline {
+                     stencilBack: this._stencilEnabled && depthStencilFormatHasStencil ? stencilBack : undefined,
+                     stencilReadMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilReadMask : 0xffffffff,
+                     stencilWriteMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilWriteMask : 0xffffffff,
+-                    depthBias: this._depthBias,
++                    // WebGPU requires a zero depth bias for non-triangle
++                    // topologies (line/point draws fail pipeline creation).
++                    depthBias: topologyIsTriangle ? this._depthBias : 0,
+                     depthBiasClamp: topologyIsTriangle ? this._depthBiasClamp : 0,
+                     depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
+                 },
+diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
+index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8da4c2b793 100644
+--- a/Materials/Node/Blocks/Input/inputBlock.pure.js
++++ b/Materials/Node/Blocks/Input/inputBlock.pure.js
+@@ -41,6 +41,21 @@ const attributeDefine = {
+     uv6: "UV6",
+     uv7: "UV7",
+     uv8: "UV8",
++    // BabylonSlate: gate optional vertex streams so meshes without them read a
++    // zeroed private copy instead of a real attribute; WebGPU rejects draws
++    // declaring attributes no buffer supplies, and each attribute consumes one
++    // of the 8 guaranteed vertex buffer slots.
++    color: "VERTEXCOLOR_NME",
++    world0: "INSTANCES",
++    world1: "INSTANCES",
++    world2: "INSTANCES",
++    world3: "INSTANCES",
++};
++const attributeNumericDefine = {
++    matricesIndices: "NUM_BONE_INFLUENCERS > 0",
++    matricesWeights: "NUM_BONE_INFLUENCERS > 0",
++    matricesIndicesExtra: "NUM_BONE_INFLUENCERS > 4",
++    matricesWeightsExtra: "NUM_BONE_INFLUENCERS > 4",
+ };
+ /**
+  * Block used to expose an input value
+@@ -542,16 +557,25 @@ export class InputBlock extends NodeMaterialBlock {
+                 if (state.shaderLanguage === 1 /* ShaderLanguage.WGSL */) {
+-                    if (!alreadyDeclared) {
+-                        const defineName = attributeDefine[this.name];
+-                        if (defineName) {
+-                            state._attributeDeclaration += this._emitDefine(defineName);
+-                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
+-                            state._attributeDeclaration += `#else\n`;
+-                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${state._getShaderType(this.type)} = ${state._getShaderType(this.type)}(0.);\n`;
+-                            state._attributeDeclaration += `#endif\n`;
+-                        }
+-                        else {
+-                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
+-                        }
+-                    }
+-                    this._prefix = `vertexInputs.`;
++                    const defineName = attributeDefine[this.name];
++                    const numericDefine = attributeNumericDefine[this.name];
++                    const gated = !!(defineName || numericDefine);
++                    if (!alreadyDeclared) {
++                        if (gated) {
++                            const shaderType = state._getShaderType(this.type);
++                            const defineStart = defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
++                            state._attributeDeclaration += defineStart;
++                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${shaderType};\n`;
++                            state._attributeDeclaration += `#endif\n`;
++                            // BabylonSlate: the private copy is assigned from
++                            // vertexInputs under the same guard, so consumers
++                            // read a valid zero when the attribute is gated out.
++                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${shaderType} = ${shaderType}(0.);\n`;
++                            state.compilationString += defineStart;
++                            state.compilationString += `${this.declarationVariableName} = vertexInputs.${this.declarationVariableName};\n`;
++                            state.compilationString += `#endif\n`;
++                        }
++                        else {
++                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
++                        }
++                    }
++                    this._prefix = gated ? "" : `vertexInputs.`;
+                 }
+@@ -558,8 +589,9 @@ export class InputBlock extends NodeMaterialBlock {
+                 else {
+                     if (!alreadyDeclared) {
+                         const defineName = attributeDefine[this.name];
+-                        if (defineName) {
+-                            state._attributeDeclaration += this._emitDefine(defineName);
++                        const numericDefine = attributeNumericDefine[this.name];
++                        if (defineName || numericDefine) {
++                            state._attributeDeclaration += defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
+                             state._attributeDeclaration += `attribute ${state._getShaderType(this.type)} ${this.declarationVariableName};\n`;
+                             state._attributeDeclaration += `#else\n`;
+                             state._attributeDeclaration += `${state._getShaderType(this.type)} ${this.declarationVariableName} = ${state._getShaderType(this.type)}(0.);\n`;
+diff --git a/Materials/effect.pure.js b/Materials/effect.pure.js
+index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef56700624bc1081b 100644
+--- a/Materials/effect.pure.js
++++ b/Materials/effect.pure.js
+@@ -186,6 +186,7 @@ export class Effect {
+         if (!cachedPipeline) {
+             // eslint-disable-next-line github/no-then
+             void this._processShaderCodeAsync(null, false, null, extraInitializationsAsync).catch((error) => {
++                if (this._isDisposed || this._engine.isDisposed) return;
+                 const message = error?.message ?? String(error);
+                 const asyncError = new Error(`Effect async shader preparation failed for "${String(this.name)}": ${message}`);
+                 if (error && typeof error.stack === "string") {
+@@ -216,6 +217,7 @@ export class Effect {
+         if (extraInitializationsAsync) {
+             await extraInitializationsAsync();
+         }
++        if (this._isDisposed || this._engine.isDisposed) return;
+         this._processingContext = shaderProcessingContext || this._engine._getShaderProcessingContext(this._shaderLanguage, false);
+         const processorOptions = {
+             defines: this.defines.split("\n"),
+@@ -234,6 +236,7 @@ export class Effect {
+             processCodeAfterIncludes: this._processCodeAfterIncludes,
+         };
+         _ProcessShaderCode(processorOptions, this.name, this._processFinalCode, (migratedVertexCode, migratedFragmentCode) => {
++            if (this._isDisposed || this._engine.isDisposed) return;
+             this._vertexSourceCode = migratedVertexCode;
+             this._fragmentSourceCode = migratedFragmentCode;
+             this._prepareEffect(keepExistingPipelineContext);
+diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
+index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea4341b20a2f 100644
 --- a/Misc/rgbdTextureTools.js
 +++ b/Misc/rgbdTextureTools.js
 @@ -1,3 +1,4 @@
@@ -5,7 +128,7 @@
  
  import { PostProcess } from "../PostProcesses/postProcess.pure.js";
  import { ApplyPostProcess } from "./textureTools.js";
-@@ -11,84 +12,161 @@
+@@ -11,84 +12,161 @@ export class RGBDTextureTools {
       */
      static ExpandRGBDTexture(texture) {
          const internalTexture = texture._texture;
@@ -23,16 +146,16 @@
 -        if (caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering) {
 -            expandTexture = true;
 -            internalTexture.type = 2;
+-        }
+-        // If full float available we can uncompress the texture
+-        else if (caps.textureFloatRender && caps.textureFloatLinearFiltering) {
+-            expandTexture = true;
+-            internalTexture.type = 1;
 +        const type = caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering ? 2 :
 +            caps.textureFloatRender && caps.textureFloatLinearFiltering ? 1 : null;
 +        if (type === null) {
 +            return;
          }
--        // If full float available we can uncompress the texture
--        else if (caps.textureFloatRender && caps.textureFloatLinearFiltering) {
--            expandTexture = true;
--            internalTexture.type = 1;
--        }
 -        if (expandTexture) {
 -            // Do not use during decode.
 +        internalTexture.type = type;
@@ -231,41 +354,3 @@
      }
      /**
       * Encode the texture to RGBD if possible.
---- a/Materials/effect.pure.js
-+++ b/Materials/effect.pure.js
-@@ -186,6 +186,7 @@
-         if (!cachedPipeline) {
-             // eslint-disable-next-line github/no-then
-             void this._processShaderCodeAsync(null, false, null, extraInitializationsAsync).catch((error) => {
-+                if (this._isDisposed || this._engine.isDisposed) return;
-                 const message = error?.message ?? String(error);
-                 const asyncError = new Error(`Effect async shader preparation failed for "${String(this.name)}": ${message}`);
-                 if (error && typeof error.stack === "string") {
-@@ -216,6 +217,7 @@
-         if (extraInitializationsAsync) {
-             await extraInitializationsAsync();
-         }
-+        if (this._isDisposed || this._engine.isDisposed) return;
-         this._processingContext = shaderProcessingContext || this._engine._getShaderProcessingContext(this._shaderLanguage, false);
-         const processorOptions = {
-             defines: this.defines.split("\n"),
-@@ -234,6 +236,7 @@
-             processCodeAfterIncludes: this._processCodeAfterIncludes,
-         };
-         _ProcessShaderCode(processorOptions, this.name, this._processFinalCode, (migratedVertexCode, migratedFragmentCode) => {
-+            if (this._isDisposed || this._engine.isDisposed) return;
-             this._vertexSourceCode = migratedVertexCode;
-             this._fragmentSourceCode = migratedFragmentCode;
-             this._prepareEffect(keepExistingPipelineContext);
---- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
-+++ b/Engines/WebGPU/webgpuCacheRenderPipeline.js
-@@ -939,6 +939,8 @@
-                     stencilReadMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilReadMask : 0xffffffff,
-                     stencilWriteMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilWriteMask : 0xffffffff,
--                    depthBias: this._depthBias,
-+                    // WebGPU requires a zero depth bias for non-triangle
-+                    // topologies (line/point draws fail pipeline creation).
-+                    depthBias: topologyIsTriangle ? this._depthBias : 0,
-                     depthBiasClamp: topologyIsTriangle ? this._depthBiasClamp : 0,
-                     depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
-                 },

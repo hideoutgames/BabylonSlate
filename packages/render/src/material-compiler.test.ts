@@ -1714,3 +1714,34 @@ describe("material compiler", () => {
     expect(source?.name).toBe(displaced?.name);
   });
 });
+
+it("gates optional vertex streams behind defines so WebGPU meshes without them still draw", async () => {
+  const scene = host();
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
+    scene,
+    name: "webgpu-attrs",
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  disposers.push(() => result.material.dispose());
+  expect(await result.ready).toEqual([]);
+  const vertex = result.material.compiledShaders;
+  // WebGPU draw validation rejects attributes no buffer supplies, and the
+  // vertex-buffer limit is 8; these streams must fall back to constants when a
+  // mesh does not provide them, like the existing tangent/uv2 fallbacks.
+  for (const attribute of ["matricesIndices", "matricesWeights"]) {
+    expect(vertex).toMatch(
+      new RegExp(`#if NUM_BONE_INFLUENCERS > 0\\nattribute vec4 ${attribute};`),
+    );
+  }
+  for (const attribute of ["matricesIndicesExtra", "matricesWeightsExtra"]) {
+    expect(vertex).toMatch(
+      new RegExp(`#if NUM_BONE_INFLUENCERS > 4\\nattribute vec4 ${attribute};`),
+    );
+  }
+  for (const attribute of ["world0", "world3"]) {
+    expect(vertex).toMatch(
+      new RegExp(`#ifdef INSTANCES\\nattribute vec4 ${attribute};`),
+    );
+  }
+});
