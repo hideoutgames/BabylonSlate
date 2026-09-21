@@ -2,6 +2,37 @@
 
 The session quality owner preserves override identity for repeated preset, value and reset requests. Runtime command delivery emits `setRenderingQuality` only when that state changes, so identical requests do not invalidate renderer readiness or reconfigure resources. This removes duplicate command work; it is not a measured GPU or A16 performance claim.
 
+## Rendering handoff application contract
+
+Authored defaults belong to `RenderProjectSettings`; editor preferences and session overrides remain separate. Export owns a normalized copy. Backend capability resolution runs before Engine creation and retains requested/effective values separately. The existing `RenderingQualitySession` survives scene changes and resets on a new Play/player session. No persistent player-preference policy is introduced by this handoff.
+
+The following inventory defines the application boundary for the runtime settings service. **The complete transaction/acknowledgement service and Class Graph Scalability category are still pending**; existing quality-console responses describe normalized requested settings, not renderer-confirmed completion. Resource-changing requests must eventually report pending/failure and retain valid resources until replacements are ready.
+
+| Fields | Application class | Existing owner / constraint |
+| --- | --- | --- |
+| `gpuBackend` | Restart required | Project Engine owner; never a Scene shader toggle |
+| `renderPath` | Graph/resource rebuild | Per-Engine request, capability resolver and scene coordinator; global session scope |
+| `mode` | Material/graph rebuild | Scene render-mode owner; never mutate authored materials |
+| `cel.shadowBands`, `shadowThreshold`, `shadowStrength`, `specularEnabled`, `specularStrength`, `specularSize`, `lightColorInfluence`, `lightMixing` | Live shader state | Native/graph CEL uniforms; independent of quality presets |
+| `environmentLighting.enabled`, `intensity`, `rotationYDegrees`, `celStrength` | Live state | Scene environment owner; texture replacement separately requires readiness |
+| `quality.resolution.scale`, `dynamic`, `minScale`, `targetFps` | Resource resize/state | Existing hardware scaling controller; report actual dimensions and scale |
+| `quality.textures.lodBias`, `anisotropy` | Live sampling state | Quality texture blocks/plugins; anisotropy is capability-clamped |
+| `quality.textures.byteBudget` | Resource admission | Shared Engine resource cache; no forced disposal of referenced assets |
+| `quality.postprocessing.resolutionScale` | Graph/resource rebuild | Authored post-process owners, including SceneLayers |
+| `quality.lighting.localLightMode`, `maxLocalLights` | Lighting admission/resource update | Managed scene lighting and clustered owners; report effective limits |
+| `shadows.enabled`, `mapSize`, `localMapSize`, `cascades`, `filter`, `filterQuality`, `localLightMode`, `maxLocalLights` | Shadow resource/variant rebuild | Managed shadow controller and lighting budgets |
+| `shadows.distance`, `fadeFraction`, `softness`, `autoBias`, `depthBias`, `normalBias` | Live shadow state / refresh | Shadow owner; affected cached shadows must be invalidated |
+| Quality/shadow `profile` | Admission/resource update | Determines tier capacities; not merely a display label |
+| Quality/shadow `preset` | Authoring provenance | Tier selection applies the full preset patch; the label alone is not a quality transaction |
+| `effects.colorPipeline.mode`, `toneMapping`, `exposure`, `contrast`, `vignette.enabled/weight/color`, `bloom.enabled/threshold/weight/kernel/scale`, `fxaa` | Graph/resource rebuild in current implementation | Effects key invalidates the owned chain; CEL keeps display-space semantics |
+| `effects.colorPipeline.version` | Authoring/data evolution | Serialized contract version; no runtime setter |
+| `customResolution`, `width`, `height`, `blackBars` | Output resource/layout update | Host framebuffer and containment owner, coordinated with render scale |
+| Project `playFrameCap` | Live presentation state | Existing scheduler; fixed simulation step is unchanged |
+| Scene environment texture and authored post-process asset references | Asset/resource rebuild | Existing scene/asset owners; not cheap quality switches |
+| Outline and rectangular-area-light fields | Pending native qualification and implementation | No placeholder schema, controls or advertised receiver support |
+
+Physical A16 budgets and native outline ownership approval are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This inventory does not certify unimplemented settings transactions, outline coverage, area lights or device performance.
+
 Shared Scene/Play views and asset previews accept Babylon's AbstractEngine contract, which both WebGL2 and WebGPU implement. Engine construction remains a separate project-lifetime responsibility; a Scene never changes its owning backend in place.
 `createAppWebGpuEngine` asynchronously creates a project Engine with local KTX2/mesh decoders, exact sRGB conversion and large-world support. It requests only supported compression, float filtering/blending and timer features. Failed initialization releases partial GPU resources, native listeners and EngineStore ownership through a pinned Babylon 9.20 cleanup adapter; ordinary initialized Engines retain native disposal. Cancellation waits for uncancellable browser adapter/device requests to settle and then disposes the superseded Engine. Callers must serialize backend transitions and supply a fresh canvas for a different graphics context.
 RGBA render-target readback for preview canvases and thumbnails preserves the returned buffer view's byte range and flips rows on both backends. Babylon 9.20 renders WebGPU targets with inverted clip-space Y to preserve its WebGL texture convention; the Engine's default-framebuffer origin does not describe these targets. Swap-chain BGRA readback is a separate format from these RGBA targets.
