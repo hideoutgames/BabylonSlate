@@ -73,7 +73,9 @@ for (const variant of [
         await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
         await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
         await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBeCloseTo(1 / scale, 5);
+        await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
         const live = await read(page);
+        await testInfo.attach(`effective-output-${scale}-${scene}`, { body: JSON.stringify(live), contentType: "application/json" });
         expect(live.rendering?.width).toBe(Math.floor(480 / scale));
         expect(live.rendering?.height).toBe(Math.floor(270 / scale));
         expect(live.rendering?.shadowPasses).toBe(0);
