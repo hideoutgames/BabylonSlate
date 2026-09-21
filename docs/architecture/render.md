@@ -1002,3 +1002,7 @@ distance hysteresis choose overflow; diagnostics report sampler use and excluded
 lights without changing authored Enabled or emission textures. The generic local
 lighting scalability budget also bounds area lights; there is no unlimited-area
 claim or hidden conversion to point lights.
+
+The export collector loads the Class/Animation compiler only when reachable
+graphs require it. A scene-only asset export can run without importing editor UI
+modules, and still uses the same reachability, prepared-emission and pack pipeline.

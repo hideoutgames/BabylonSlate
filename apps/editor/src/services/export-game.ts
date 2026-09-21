@@ -45,10 +45,6 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import {
-  compileAnimGraphScripts,
-  compileGraphDocuments,
-} from "./script-compiler";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -421,11 +417,11 @@ export async function collectAndExportGame(
     return [{ ...normalizeInputAssetPayload(asset.type, params.payloadByGuid?.(asset.guid)), guid: asset.guid, name: asset.name, type: asset.type }];
   });
   params.onPhase?.("Compiling");
-  const classScripts = compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets });
-  const animScripts = compileAnimGraphScripts(animDocs, {
-    stripDevelopmentOnly: !bundleDebugger,
-  });
-  const scripts: ScriptBundleEntry[] = [...classScripts, ...animScripts];
+  const scripts: ScriptBundleEntry[] = [];
+  if (graphDocs.length || animDocs.length) {
+    const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
+    scripts.push(...compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets }), ...compileAnimGraphScripts(animDocs, { stripDevelopmentOnly: !bundleDebugger }));
+  }
 
   params.onPhase?.("Writing Pack");
   const packed = await exportGame({
