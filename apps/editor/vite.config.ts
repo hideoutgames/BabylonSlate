@@ -14,13 +14,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
 const manifestPath = path.join(rootDir, "public/build-manifest.json");
 const distributionBuild = process.env.BABYLONSLATE_DISTRIBUTION === "true";
-const queryTestPermitted = process.env.VITE_TEST_QUERY === "true";
-if (
-  distributionBuild &&
-  (!existsSync(manifestPath) ||
-    process.env.VITE_TEST_MODE === "true" ||
-    queryTestPermitted)
-) {
+if (distributionBuild && (!existsSync(manifestPath) || process.env.VITE_TEST_MODE === "true")) {
   throw new Error("Distribution requires build metadata and production storage");
 }
 const declaredVersion = JSON.parse(

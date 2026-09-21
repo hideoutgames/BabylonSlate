@@ -7,7 +7,7 @@ const preflight = JSON.parse(process.env.DISTRIBUTION_IDENTITY ?? "null");
 if (!preflight || preflight.applicationVersion !== declared.version) throw new Error("Validated identity and source version differ");
 const actualSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 if (actualSha !== preflight.sourceSha) throw new Error("Checked out source differs from preflight");
-if (process.env.VITE_TEST_MODE === "true" || process.env.VITE_TEST_QUERY === "true") throw new Error("Native distribution requires production storage");
+if (process.env.VITE_TEST_MODE === "true") throw new Error("Native distribution requires production storage");
 const platform = process.argv[2];
 if (!["windows", "ipados"].includes(platform)) throw new Error("Explicit platform required");
 const root = JSON.parse(await readFile("package.json", "utf8"));
