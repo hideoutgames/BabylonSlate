@@ -7,7 +7,7 @@ import { stageRenderer } from "./layout.mjs";
 import { validateArtifacts } from "../../../scripts/distribution/contract.mjs";
 
 if (process.platform !== "win32") throw new Error("Windows packaging requires Windows");
-if (process.env.VITE_TEST_MODE === "true") throw new Error("Native distribution must use production storage");
+if (process.env.VITE_TEST_MODE === "true" || process.env.VITE_TEST_QUERY === "true") throw new Error("Native distribution must use production storage");
 const desktop = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(await readFile(join(desktop, "../editor/dist/build-manifest.json"), "utf8"));
 if (!['test', 'release'].includes(manifest.channel) || !manifest.windowsVersion) throw new Error("Distribution manifest required");
