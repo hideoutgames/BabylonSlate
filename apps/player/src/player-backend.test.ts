@@ -25,7 +25,7 @@ async function game(custom = false) {
   const files = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "scene",
-    customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
+    renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
     scripts: [],
     assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encode(createDefaultScene()) },

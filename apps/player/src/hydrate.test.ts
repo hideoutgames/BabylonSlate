@@ -84,7 +84,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       pixelsPerUnit: 50,
       sortingLayers: ["Default", "Props", "Characters"],
       scripts: [],
@@ -216,7 +216,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -267,7 +267,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -338,7 +338,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -414,7 +414,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -459,7 +459,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -510,7 +510,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -552,7 +552,7 @@ describe("packedContentFromGame", () => {
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       audioMixerGuid: "mixer-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -637,7 +637,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -684,7 +684,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -720,7 +720,7 @@ describe("packedContentFromGame", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [
         {
           assetGuid: "host",

@@ -1782,7 +1782,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
-        customResolution:
+        renderSettings:
           exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
           exportDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,

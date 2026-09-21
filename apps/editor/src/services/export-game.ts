@@ -89,7 +89,7 @@ export type CollectExportGameParams = {
   fontMsdfJsonByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
-  customResolution: RenderProjectSettings;
+  renderSettings: RenderProjectSettings;
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
@@ -419,7 +419,7 @@ export async function collectAndExportGame(
     reverbWetScale: params.reverbWetScale,
     reverbDecayScale: params.reverbDecayScale,
     reverbDampingScale: params.reverbDampingScale,
-    customResolution: params.customResolution,
+    renderSettings: params.renderSettings,
     playFrameCap: params.playFrameCap,
     touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,

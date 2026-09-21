@@ -534,9 +534,11 @@ function normalizePositiveInt(value: unknown, fallback: number): number {
     : fallback;
 }
 
-function normalizeRender(
-  value: Partial<RenderProjectSettings> | undefined,
-): RenderProjectSettings {
+/** Shared authored/export/boot boundary. Drops unknown and editor-local fields. */
+export function normalizeRenderProjectSettings(input: unknown): RenderProjectSettings {
+  const value = input && typeof input === "object" && !Array.isArray(input)
+    ? input as Partial<RenderProjectSettings>
+    : undefined;
   return {
     ...normalizeRenderingPipeline(value),
     mode: value?.mode === "cel" ? "cel" : "pbr",
@@ -743,7 +745,7 @@ export function normalizeProjectSettings(
     audio: normalizeAudioSettings(settings?.audio),
     startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
     gameInstanceClass: normalizeGameInstanceClass(settings?.gameInstanceClass),
-    render: normalizeRender(settings?.render),
+    render: normalizeRenderProjectSettings(settings?.render),
     editorUtilityObjects: normalizeEditorUtilityObjects(
       settings?.editorUtilityObjects,
     ),

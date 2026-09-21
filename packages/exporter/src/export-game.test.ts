@@ -23,13 +23,48 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it.each(["packed", "loose"] as const)("normalizes the complete %s render contract at export and player read", async (mode) => {
+    const authored = {
+      ...DEFAULT_RENDER_PROJECT_SETTINGS,
+      gpuBackend: "webgpu" as const,
+      mode: "cel" as const,
+      width: 1366,
+      height: 768,
+      quality: normalizeRenderingQuality({ textures: { anisotropy: 8 } }),
+      editorProfile: "low",
+      localQualityOverrides: { resolution: { scale: 0.25 } },
+    };
+    const result = await exportGame({
+      mode, bundleDebugger: false, startupSceneGuid: "scene-1",
+      renderSettings: authored, scripts: [], assets: [], playerFiles: stubPlayer(),
+    });
+    if (!result.ok) throw new Error(result.error);
+    const json = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
+    const restored = parseGameManifest(json);
+    expect(restored.render).toMatchObject({
+      gpuBackend: "webgpu", mode: "cel", width: 1366, height: 768,
+      quality: { textures: { anisotropy: 8 }, resolution: { scale: 1 } },
+    });
+    expect(restored.render).not.toHaveProperty("editorProfile");
+    expect(restored.render).not.toHaveProperty("localQualityOverrides");
+    authored.quality.textures.anisotropy = 1;
+    expect(result.value.manifest.render.quality?.textures.anisotropy).toBe(8);
+    const legacy = JSON.parse(json);
+    legacy.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
+    expect(parseGameManifest(JSON.stringify(legacy)).render).toMatchObject({
+      gpuBackend: "webgpu", width: 1920, height: 1080, mode: "cel",
+      renderPath: "forward", customResolution: false,
+    });
+    delete legacy.render;
+    expect(parseGameManifest(JSON.stringify(legacy)).render).toEqual(DEFAULT_RENDER_PROJECT_SETTINGS);
+  });
   it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
     const result = await exportGame({
       mode,
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!result.ok) throw new Error("Export failed");
@@ -41,7 +76,7 @@ describe("exportGame", () => {
   });
   it.each([true, false])("H13: retains authored input in exported manifests with debugger=%s", async (bundleDebugger) => {
     const inputMappings = { actions: [{ name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] };
-    const options = { bundleDebugger, startupSceneGuid: "scene-1", customResolution: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputMappings };
+    const options = { bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputMappings };
     const result = await exportGame(options);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Export failed");
@@ -60,7 +95,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: {
+      renderSettings: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
         renderPath: "clusteredForward",
         gpuBackend: "webgpu",
@@ -144,7 +179,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -167,7 +202,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -196,7 +231,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -220,7 +255,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -263,7 +298,7 @@ describe("exportGame", () => {
       mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -294,7 +329,7 @@ describe("exportGame", () => {
       mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -330,7 +365,7 @@ describe("exportGame", () => {
       mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -353,7 +388,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -378,7 +413,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [
         {
           assetGuid: "hero",
@@ -429,7 +464,7 @@ describe("exportGame", () => {
     const three = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       physicsWorld: "3d",
       scripts: [],
       assets: [
@@ -451,7 +486,7 @@ describe("exportGame", () => {
     const two = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       physicsWorld: "2d",
       scripts: [],
       assets: [
@@ -477,7 +512,7 @@ describe("exportGame", () => {
       const result = await exportGame({
         bundleDebugger: false,
         startupSceneGuid: "scene-1",
-        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
         physicsWorld: "3d",
         mode,
         scripts: [],
@@ -517,7 +552,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -554,7 +589,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       pixelsPerUnit: 64,
       sortingLayers: ["Default", "Custom", "Props"],
       pixelPerfect: true,
@@ -647,7 +682,7 @@ describe("exportGame", () => {
     const on = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -666,7 +701,7 @@ describe("exportGame", () => {
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       occlusionEnabled: false,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -695,7 +730,7 @@ describe("exportGame", () => {
       reverbWetScale: 1.5,
       reverbDecayScale: 0.25,
       reverbDampingScale: 2,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -761,7 +796,7 @@ describe("exportGame", () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -799,7 +834,7 @@ describe("exportGame", () => {
       mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -823,7 +858,7 @@ describe("exportGame", () => {
 
 it("retains stable input asset controls in an exported player manifest", async () => {
   const inputAssets = [{ guid: "jump", name: "Jump", type: "InputAction" as const, valueType: "button" as const, bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }] }];
-  const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", customResolution: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputAssets });
+  const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputAssets });
   if (!result.ok) throw new Error("Export failed");
   expect(parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))).inputAssets).toEqual(inputAssets);
 });

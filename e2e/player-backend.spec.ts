@@ -12,7 +12,7 @@ async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
   const packed = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "backend-scene",
-    customResolution: {
+    renderSettings: {
       ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: backend,
       customResolution: true, width: 320, height: 180, blackBars: true,
     },

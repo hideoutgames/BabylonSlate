@@ -28,7 +28,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [],
     });
@@ -51,7 +51,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-guid-1",
-      customResolution: {
+      renderSettings: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
         customResolution: true,
         width: 640,
@@ -86,7 +86,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -127,7 +127,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -185,7 +185,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -219,7 +219,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -253,7 +253,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -290,7 +290,7 @@ describe("loadGameFromHttp", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [],
     });

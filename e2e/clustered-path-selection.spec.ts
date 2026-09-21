@@ -249,7 +249,7 @@ test("packed player resolves saved Auto to real WebGL2 clustering before present
     bundleDebugger: false,
     startupSceneGuid: GUID,
     scripts: [],
-    customResolution: {
+    renderSettings: {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       renderPath: "auto",
       gpuBackend: "webgl2",

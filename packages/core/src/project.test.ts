@@ -13,12 +13,37 @@ import {
   normalizeGraphMembers,
   normalizeGraphComponents,
   normalizeProjectSettings,
+  normalizeRenderProjectSettings,
   migrateGameInstanceClassFromScenes,
   resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
 
 describe("project schema", () => {
+  it("normalizes untrusted render defaults without retaining editor or session state", () => {
+    const input = {
+      gpuBackend: "webgpu", renderPath: "clusteredForward", mode: "cel",
+      cel: { shadowBands: 5 },
+      quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
+      width: Infinity, height: -2, customResolution: true,
+      localQualityOverrides: { shadows: { enabled: false } },
+      qualityOverrides: { resolution: { scale: 0.25 } },
+      effects: { bloom: { enabled: true, weight: 0.4 } },
+    };
+    const normalized = normalizeRenderProjectSettings(input);
+    expect(normalized).toMatchObject({
+      gpuBackend: "webgpu", renderPath: "clusteredForward", mode: "cel",
+      cel: { shadowBands: 5 },
+      quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
+      width: 1920, height: 1080, customResolution: true,
+      effects: { bloom: { enabled: true, weight: 0.4 } },
+    });
+    expect(normalized).not.toHaveProperty("localQualityOverrides");
+    expect(normalized).not.toHaveProperty("qualityOverrides");
+    input.cel.shadowBands = 2;
+    expect(normalized.cel?.shadowBands).toBe(5);
+    expect(normalizeRenderProjectSettings(null)).toEqual(normalizeProjectSettings(undefined).render);
+  });
   it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
     expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
     expect(normalizeProjectSettings(undefined).input.actions.some((action) => action.name === "Jump")).toBe(true);

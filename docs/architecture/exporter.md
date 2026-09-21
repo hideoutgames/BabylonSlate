@@ -1,5 +1,7 @@
 # Exporter and packaged player (P14)
 
+The internal export option is `renderSettings: RenderProjectSettings`; the serialized contract remains `game.json.render`. Project loading, export, and manifest parsing share `normalizeRenderProjectSettings`, preserving backend/path, PBR/CEL, quality, shadows, environment, effects and output dimensions. Unknown/editor-local fields are discarded, missing legacy fields receive project defaults, and the artifact owns its normalized values. Capability fallback is resolved separately at engine creation without rewriting the saved request. Boundary tests do not certify rendered parity or device performance.
+
 Spec: [engineplan.md](../engineplan.md) §15, §15.1, §15.2. Implementation: `@babylonslate/exporter` (headless packer), `apps/player` (Vite canvas host), editor **Export Game** and **Preview Build**.
 
 Overlay Play (shared Engine, `registerView`) stays the default. Packaged **itch zip / Export Game** always starts from `project.json` `startupSceneGuid` (asset guid). Overlay Play and Preview Build seed that guid when Debug **Play from Scene** is off, or when it is on and no scene tab is open; otherwise they seed the open scene for that session only. Do not boot or tree-shake from `BabprojectManifest.startupScene` or `assets/main.scene.babasset`.

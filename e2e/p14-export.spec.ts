@@ -26,7 +26,7 @@ async function packTinyGame(playerBaseURL: string) {
   const packed = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "scene-guid-export",
-    customResolution: {
+    renderSettings: {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       customResolution: true,
       width: 640,
