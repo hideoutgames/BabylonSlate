@@ -9,6 +9,9 @@ import { openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { scalabilityGraphDefinitions } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+
+test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 type PlayTest = {
   rendering(): ReturnType<EngineHandle["renderDiagnostics"]> | null;
@@ -20,13 +23,14 @@ const read = (page: Page) => page.evaluate(() => {
   return { rendering: host.rendering(), scalability: host.scalability(), tasks: host.renderTasks() };
 });
 
-test("saved Class scalability graphs compile and run with confirmed events in editor Play", async ({ page }, testInfo) => {
+for (const backend of ["webgl2", "webgpu"] as const) {
+test(`saved Class scalability graphs compile and run with confirmed events in editor Play on ${backend}`, async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!)) as ProjectDocument;
-  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: "webgl2", renderPath: "forward", mode: "cel", effects: { fxaa: true }, shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 } }, customResolution: true, width: 480, height: 270, blackBars: true });
+  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: backend, renderPath: "forward", mode: "cel", effects: { fxaa: true }, shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 } }, customResolution: true, width: 480, height: 270, blackBars: true });
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");
@@ -68,6 +72,7 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   await openMainScene(page);
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
+  expect((await read(page)).rendering?.pipeline.effective.gpuBackend).toBe(backend);
   await page.getByTestId("play-console-open").click();
   const command = async (name: string) => {
     await page.getByTestId("debug-console-input").fill(name);
@@ -100,5 +105,7 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await expect(page.getByTestId("save-all-project")).toBeDisabled();
   expect(errors).toEqual([]);
 });
+}

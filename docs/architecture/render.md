@@ -1042,3 +1042,10 @@ work, independent of player texture-sampling preferences. Browser qualification
 compares the native encoding/blur using this canonical prefiltered source;
 source-filter average preservation is checked separately. It does not claim
 identical preprocessing to every backend's original-image mip generator.
+
+Scalability browser qualification uses the same Class graph definitions as
+saved editor assets and as compiled standalone scripts. Editor Play exposes
+read-only acknowledgement/task diagnostics only in test mode. An authored
+observer reads the typed settings-changed payload and Get Effective Scalability
+through ordinary Structure and To String nodes; it does not bypass graph type
+checking or change renderer internals from a test command.
