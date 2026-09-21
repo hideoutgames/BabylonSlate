@@ -68,3 +68,4 @@ export * from "./baked-geometry";
 export * from "./baked-geometry-store";
 export * from "./baked-lighting-runtime";
 export * from "./area-emission";
+export { processAreaEmissionInWorker } from "./area-emission-client";

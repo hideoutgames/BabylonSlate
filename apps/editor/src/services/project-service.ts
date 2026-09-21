@@ -41,6 +41,9 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
+  processAreaEmissionInWorker,
+  type AreaEmissionProgress,
+  type AreaEmissionProcessor,
   canUseWorkerEncode,
   createProjectFromTemplate,
   createVfsBlobStore,
@@ -239,6 +242,8 @@ export class ProjectService {
   private assetRegistry: AssetRegistry | null = null;
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
+  private readonly emissionJobs = new Set<AbortController>();
+  private readonly processAreaEmission: AreaEmissionProcessor;
   private workerEncode:
     | (EncodeFn & { dispose: () => void; recycleCount: () => number })
     | null = null;
@@ -263,6 +268,7 @@ export class ProjectService {
     storage: ProjectStorage,
     options: {
       encode?: EncodeFn;
+      processAreaEmission?: AreaEmissionProcessor;
       createWorkerEncode?: () =>
         | (EncodeFn & { dispose: () => void; recycleCount: () => number })
         | null;
@@ -271,6 +277,7 @@ export class ProjectService {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
     this.configuredEncode = options.encode;
+    this.processAreaEmission = options.processAreaEmission ?? processAreaEmissionInWorker;
     this.createWorkerEncode = options.createWorkerEncode ?? (() =>
       canUseWorkerEncode()
         ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
@@ -317,6 +324,7 @@ export class ProjectService {
 
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
+    this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
     this.encodeQueuePauseUnsubscribe = null;
     this.workerEncode?.dispose();
@@ -422,6 +430,28 @@ export class ProjectService {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
     );
+  }
+
+  async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) throw new Error("Open a project before processing emission textures.");
+    options.signal?.throwIfAborted();
+    const controller = new AbortController();
+    const cancel = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    this.emissionJobs.add(controller);
+    try {
+      await registry.prepareAreaEmission(guid, this.processAreaEmission, { ...options, signal: controller.signal });
+      if (this.assetRegistry === registry) this.emitRegistryChange();
+    } finally {
+      this.emissionJobs.delete(controller);
+      options.signal?.removeEventListener("abort", cancel);
+    }
+  }
+
+  private cancelEmissionJobs(): void {
+    for (const job of this.emissionJobs) job.abort(new Error("Area emission processing cancelled because the project closed."));
+    this.emissionJobs.clear();
   }
 
   async retryAllFailedTextureEncoding(): Promise<number> {
@@ -700,6 +730,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    this.cancelEmissionJobs();
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];
@@ -1482,6 +1513,18 @@ export class ProjectService {
       | SerializedSceneLayer
       | SerializedGraph
       | Record<string, unknown>,
+    options?: { parentClass?: string | null },
+  ): Promise<void> {
+    const asset = this.assetRegistry?.getByPath(path);
+    const save = () => this.saveDocumentUnlocked(kind, path, content, options);
+    if (asset) return this.assetRegistry!.withAssetWrite(asset.header.guid, save);
+    return save();
+  }
+
+  private async saveDocumentUnlocked(
+    kind: Exclude<DocumentKind, "content-browser">,
+    path: string,
+    content: SerializedScene | SerializedSceneLayer | SerializedGraph | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
     if (kind === "trace" || isTracePath(path)) {

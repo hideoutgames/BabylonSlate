@@ -167,3 +167,18 @@ Show References opens a large, viewport-bounded read-only graph dialog. It selec
 - Encode queue states; loader KTX2 vs source; transcoder unavailable / export-omitted smoke; A16 Basis encode CI smoke. Source-first transferable `SourceEncodeRequest` vs RGBA fallback, `encodeError` persistence, and thumbnail MIME passthrough (`packages/assets/src/encode-worker-protocol.test.ts`). `encodeFailed: true` keeps `selectTextureChunk` on `kind: "source"` (`packages/assets/src/asset-registry.test.ts`).
 - Content Browser helpers (filter / sort by name, type, or date / new-asset labels and groups / unique names / Move destination validity / selection menu intersection / folder+asset flatten / drop-target resolution / tree multi-select drop collapse / exclusive tap + paint-select + additive menu selection / empty-grid double-click target / thumb type outlines) unit-tested in the editor. Tile long-press menus and empty-grid pointer isolation covered in jsdom (`content-browser-asset-tile.test.tsx`, `content-browser-folder-tile.test.tsx`, `content-browser-move-dialog.test.tsx`, `content-browser-new-asset-dialog.test.tsx`, `use-content-browser-paint-select.test.tsx`). Multi-select toolbar Delete is outline until confirm (`content-browser-selection-actions.test.tsx`). Registry `duplicateFolder` / `copyFolder` / in-place folder rename via `moveFolder`. Encode queue timeout, worker error, remount requeue of `pending`/`encoding`, and Texture preview / maxDimension helpers. Delete closes matching tabs (`DocumentService.closeDocumentsForPaths`) and rewrites remaining payloads/settings to None (`clearDeletedAssetRefs`, `ProjectService.clearDeletedAssetReferences`).
 - E2E: Scene/Class **double-click** open, PNG+GLB import with **Importing** overlay then reload, PNG encode badge does not stay Encoding, Texture preview, killed-tab journal recovery (`e2e/p2-accept.spec.ts`); density IA, exclusive tap, paint-select Duplicate, mixed asset+folder menu without Show References or Copy Asset Reference, Copy Asset Reference copies the guid, Deselect All, outline counted Delete until 44px confirm, empty-grid deselect, empty-grid **double-click** New Asset, vertical scrollports, unique-name/duplicate, empty New Asset name, tree asset rows, folder tiles first, Sort menu name vs type order, empty-grid menu, no Retry Encoding on asset tiles (`e2e/editor-density.spec.ts`). 3D Empty Kenney Mannequin + Skeleton bone overlay + looping idle (`e2e/mannequin-empty.spec.ts`).
+# Rectangular area emission
+
+Rectangular emitters reference an ordinary Texture GUID. Explicit processing
+uses `AssetRegistry.prepareAreaEmission` and the existing single-job EncodeQueue,
+including its Preview/background pause policy. A dedicated worker owns decoding
+and the pinned native-compatible filter; cancellation terminates that job's
+worker. Processing progress distinguishes queued, decoding, filtering and saving.
+
+The original `pixels` chunk remains intact. A versioned `area-emission` chunk
+stores lighting data beside it, keyed by original source SHA-256 and processor
+version. Cached representations are validated and survive project reopen. Commit
+rechecks the current source under the Texture write queue and rejects stale
+results. Explicit reprocessing can recover a missing/corrupt derived chunk;
+gameplay never performs preprocessing. Editor actions and exported sidecar wiring
+are still being integrated and are not yet qualified for textured release.
