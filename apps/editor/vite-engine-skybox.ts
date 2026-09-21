@@ -37,7 +37,5 @@ export function engineDefaultSkyboxVitePlugin(
     // Copy during config resolution so the dev server's publicDir whitelist
     // snapshot (built before configureServer) includes the skybox faces.
     configResolved: copy,
-    buildStart: copy,
-    configureServer: copy,
   };
 }

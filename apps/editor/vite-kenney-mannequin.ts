@@ -26,11 +26,5 @@ export function kenneyMannequinVitePlugin(options: {
     configResolved() {
       copy();
     },
-    buildStart() {
-      copy();
-    },
-    configureServer() {
-      copy();
-    },
   };
 }

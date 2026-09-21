@@ -122,11 +122,7 @@ export function enginePluginsVitePlugin(options: {
     async configResolved() {
       await packAll();
     },
-    async buildStart() {
-      await packAll();
-    },
     configureServer(server) {
-      void packAll();
       server.watcher.add(options.sourceDir);
     },
   };
