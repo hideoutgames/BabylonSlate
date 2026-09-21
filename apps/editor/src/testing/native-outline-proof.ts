@@ -113,6 +113,11 @@ export async function runNativeOutlineProof(backend: "webgl2" | "webgpu") {
     const after = captures[2]!;
     return {
       backend, babylonVersion: Engine.Version, width: canvas.width, height: canvas.height,
+      effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2",
+      adapter: engine.getInfo(),
+      renderScale: 1 / engine.getHardwareScalingLevel(),
+      preset: "native ownership fixture; no project preset",
+      warmup: "Three draws per membership state after native graph readiness",
       userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio,
       maskType: cel.layer._options.mainTextureType,
       captures,

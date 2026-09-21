@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { runNativeOutlineProof } from "../apps/editor/src/testing/native-outline-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { renderingEvidence } from "./rendering-evidence";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -17,7 +18,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const capture of report.captures)
       await testInfo.attach(capture.name, { body: Buffer.from(capture.image.split(",")[1]!, "base64"), contentType: "image/png" });
     await testInfo.attach("native-outline-qualification", {
-      body: JSON.stringify({ ...report, captures: report.captures.map(({ name, redPixels, selectionBuffer }) => ({ name, redPixels, selectionBuffer })), errors }),
+      body: JSON.stringify({ ...report, evidence: renderingEvidence("apps/editor/src/testing/native-outline-proof.ts"), captures: report.captures.map(({ name, redPixels, selectionBuffer }) => ({ name, redPixels, selectionBuffer })), errors }),
       contentType: "application/json",
     });
     expect(errors).toEqual([]);

@@ -6,6 +6,7 @@ import type { PlayerTestHandle } from "../apps/player/src/boot";
 import { previewPlacementScene } from "./preview-scene-fixture";
 import { serveExportFiles } from "./export-static-server";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { renderingEvidence } from "./rendering-evidence";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -96,7 +97,11 @@ for (const variant of [
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 20" });
       const stored = await (await page.request.get(new URL(GAME_MANIFEST_FILE, server.url).href)).json();
       expect(stored.render).toMatchObject({ gpuBackend: variant.backend, mode: "cel", quality: { resolution: { scale: 0.8 } }, effects: { fxaa: true } });
-      await testInfo.attach("standalone-settings", { body: JSON.stringify({ variant, boot, transitioned, stored }), contentType: "application/json" });
+      const environment = await page.evaluate(() => ({ userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio }));
+      await testInfo.attach("standalone-settings", { body: JSON.stringify({
+        evidence: renderingEvidence("e2e/render-settings-export.spec.ts"), environment,
+        variant, boot, transitioned, stored,
+      }), contentType: "application/json" });
       await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
       await page.reload();
       await ready(1.25);
