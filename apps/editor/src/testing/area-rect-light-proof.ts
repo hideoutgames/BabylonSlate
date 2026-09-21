@@ -26,7 +26,8 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
       native.albedoColor = new Color3(0.55, 0.08, 0.03); native.metallic = 0; native.roughness = 0.7;
       const left = MeshBuilder.CreateSphere("native", { diameter: 1.5, segments: 24 }, scene);
       left.position.x = -0.9; left.material = native;
-      setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({ shadowBands: 3, shadowStrength: 1, specularEnabled: false }), environmentLighting: normalizeEnvironmentLightingSettings({ enabled: false }) });
+      const settings = { mode, cel: normalizeCelShadingSettings({ shadowBands: 3, shadowStrength: 1, specularEnabled: false }), environmentLighting: normalizeEnvironmentLightingSettings({ enabled: false }) };
+      setSceneRenderSettings(scene, settings);
       const materialDocument = createDefaultMaterialDocument("graph receiver");
       materialDocument.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.05, 0.55, 0.12];
       const lower = lowerMaterialDocument(materialDocument);
@@ -40,11 +41,11 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
       unlit.unlit = true; unlit.albedoColor = new Color3(0.1, 0.1, 0.8);
       const control = MeshBuilder.CreateBox("unlit", { size: 0.4 }, scene);
       control.position.set(0, -1.1, 0); control.material = unlit;
+      syncAuthoredIllumination(scene, document);
       // Conventional/clustered coexistence must preserve the rectangular emitter.
       const point = new PointLight("clustered candidate", new Vector3(0, 2, -1), scene);
       point.intensity = 0.1; point.range = 8;
-      syncAuthoredIllumination(scene, document);
-      setSceneRenderSettings(scene, { mode });
+      setSceneRenderSettings(scene, settings);
       const coordinator = new SceneRenderCoordinator(scene);
       try {
         for (const renderPath of ["forward", "clusteredForward"] as RenderPath[]) {
@@ -53,21 +54,20 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
             syncAuthoredIllumination(scene, document);
             coordinator.invalidate();
             await coordinator.prepare();
-            let pixels: Uint8Array;
-            engine.beginFrame();
-            try {
+            for (let frame = 0; frame < 3; frame++) {
+              engine.beginFrame();
+              try {
               beginEngineDrawCallFrame(engine);
               const rendered = coordinator.render();
               if (!rendered.rendered || rendered.path !== "frameGraph") throw new Error(`Area light did not use the production FrameGraph: ${JSON.stringify(rendered)}`);
-              const read = await engine.readPixels(0, 0, width, height);
-              if (!read) throw new Error("Missing area-light pixels");
-              pixels = new Uint8Array(read.buffer, read.byteOffset, read.byteLength);
-            } finally { engine.endFrame(); }
+              } finally { engine.endFrame(); }
+              if (frame < 2) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            }
             const copy = window.document.createElement("canvas"); copy.width = width; copy.height = height;
             const ctx = copy.getContext("2d")!;
-            const image = ctx.createImageData(width, height);
-            for (let y = 0; y < height; y++) image.data.set(pixels.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4);
-            ctx.putImageData(image, 0, 0);
+            // The presented bitmap handles WebGPU swapchain BGRA and row order.
+            ctx.drawImage(canvas, 0, 0);
+            const image = ctx.getImageData(0, 0, width, height);
             const luminance = (x1: number, x2: number) => {
               let value = 0;
               for (let y = 45; y < 110; y++) for (let x = x1; x < x2; x++) { const offset = (y * width + x) * 4; value += image.data[offset]! + image.data[offset + 1]! + image.data[offset + 2]!; }
@@ -75,7 +75,9 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
             };
             const sample = Vector3.Project(control.position, Matrix.IdentityReadOnly, scene.getTransformMatrix(), new Viewport(0, 0, width, height));
             const offset = (Math.round(sample.y) * width + Math.round(sample.x)) * 4;
-            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames() };
+            const nativeLevels = new Set<number>();
+            for (let y = 45; y < 110; y++) for (let x = 45; x < 113; x++) nativeLevels.add(image.data[(y * width + x) * 4]!);
+            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames() };
           };
           emitter.components[0]!.properties.enabled = true;
           emitter.transform.rotation = [0, 0, 0, 1];

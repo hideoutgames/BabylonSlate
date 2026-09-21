@@ -23,6 +23,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(externalRequests).toEqual([]);
     for (const result of report.results) {
       const [on, off, back, restored] = result.captures;
+      if (backend === "webgl2") expect(result.pipeline.effective.renderPath).toBe(result.renderPath);
+      if (result.mode === "cel") expect(on!.nativeLevels.length).toBeLessThanOrEqual(3);
+      expect(on!.unlit[2]).toBeGreaterThan(on!.unlit[0]! + 20);
       expect(on!.nativeBrightness, `${result.mode} ${result.renderPath} native contribution`).toBeGreaterThan(off!.nativeBrightness + 1000);
       expect(on!.graphBrightness, `${result.mode} ${result.renderPath} graph contribution`).toBeGreaterThan(off!.graphBrightness + 1000);
       expect(back!.nativeBrightness).toBe(off!.nativeBrightness);
