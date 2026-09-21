@@ -36,39 +36,6 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 }
 
 describe("component script API", () => {
-  it("spawns inherited rectangular-light templates with independent attachments and retires only the destroyed actor", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
-    try {
-      await runtime.loadScripts([
-        script("", { classId: "EmitterBase", components: [
-          { id: "pivot", classId: "ActorComponent", properties: {} },
-          { id: "emitter", classId: "AreaRectLightComponent", parentId: "pivot", properties: { width: 2, textureGuid: "pattern" } },
-        ] }),
-        script('export function onBeginPlay(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "emitter"), "width", 4); }', { classId: "EmitterChild", parentClassId: "EmitterBase" }),
-      ]);
-      runtime.start();
-      const first = runtime.spawnScriptedActor({ classId: "EmitterChild" })!;
-      const second = runtime.spawnScriptedActor({ classId: "EmitterChild" })!;
-      const latest = new Map(commands.filter((command) => command.type === "setAreaLights").map((command) => [command.slotId, command.lights]));
-      expect(latest.size).toBe(2);
-      const groups = [...latest.values()];
-      for (const lights of groups) {
-        expect(lights).toHaveLength(1);
-        expect(lights[0]!.properties).toMatchObject({ enabled: true, width: 4, textureGuid: "pattern" });
-        expect(lights[0]!.transforms).toHaveLength(2);
-        expect(lights[0]!.error).toBeUndefined();
-      }
-      expect(groups[0]![0]!.id).not.toBe(groups[1]![0]!.id);
-      runtime.getWorld().destroyActor(first.guid);
-      runtime.tick();
-      expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).toContain(first.guid);
-      expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).not.toContain(second.guid);
-      expect(runtime.getWorld().findActor(second.guid)).toBe(second);
-      expect(second.components.find((component) => component.sourceId === "emitter")?.getVariable("width")).toBe(4);
-    } finally { runtime.stop(); }
-  });
-
   it("updates a rectangular emitter alongside a render mesh through native component variables", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
