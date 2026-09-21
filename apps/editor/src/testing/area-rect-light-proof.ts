@@ -80,8 +80,9 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
             const nativeLevels = new Set<number>();
             for (let y = 45; y < 110; y++) for (let x = 45; x < 113; x++) nativeLevels.add(image.data[(y * width + x) * 4]!);
             const area = scene.lights.find((entry) => entry instanceof RectAreaLight) as RectAreaLight;
+            const emissionMip = area.emissionTexture ? Array.from((await area.emissionTexture.readPixels(0, 10)) as Uint8Array) : null;
             const receiverEffects = left.subMeshes?.flatMap((part) => part._drawWrappers.filter(Boolean).map((wrapper) => ({ defines: wrapper.defines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")), compiled: wrapper.effect?.defines.split("\n").filter((line) => line.includes("AREALIGHT")) })));
-            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames(), emission: { receiverEffects, ready: area.emissionTexture?.isReady() ?? null, diagnostic: area.metadata?.areaLight?.error, nativeDefines: left.subMeshes?.[0]?.materialDefines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")) } };
+            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames(), emission: { mip: emissionMip, receiverEffects, ready: area.emissionTexture?.isReady() ?? null, diagnostic: area.metadata?.areaLight?.error, nativeDefines: left.subMeshes?.[0]?.materialDefines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")) } };
           };
           emitter.components[0]!.properties.enabled = true;
           emitter.transform.rotation = [0, 0, 0, 1];
