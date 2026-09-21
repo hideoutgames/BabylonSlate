@@ -3413,6 +3413,29 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onClick");
   });
 
+  it("scopes render-path overrides to the live Play session and restores the editor preference", () => {
+    const engine = sharedEngine();
+    const { handle: editor } = editorHandle(engine);
+    editor.setRenderPath("clusteredForward");
+    const { handle: first } = playHandle(engine);
+    expect(first.renderPathStatus().requested.renderPath).toBe("forward");
+    first.setRenderPath("clusteredForward");
+    const { handle: second } = playHandle(engine);
+    expect(second.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    first.dispose();
+    const disposedInvalidation = vi.spyOn(first.scheduler, "invalidate");
+    second.setRenderPath("forward");
+    expect(disposedInvalidation).not.toHaveBeenCalled();
+    second.dispose();
+    expect(editor.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    editor.setRenderPath(null);
+    const { handle: next } = playHandle(engine);
+    expect(next.renderPathStatus().requested.renderPath).toBe("forward");
+    next.setRenderPath("clusteredForward");
+    next.dispose();
+    expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
+  });
+
   it("applies a setRenderPath command game-wide and reports the session status", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);

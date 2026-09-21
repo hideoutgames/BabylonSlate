@@ -97,7 +97,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await command("qual_invalid");
   await command("qual_aa");
   await expect.poll(async () => (await read(page)).tasks.some((name) => /FXAA/.test(name))).toBe(true);
-  expect((await read(page)).scalability?.revision).toBe(custom.scalability!.revision + 1);
+  await expect.poll(async () => (await read(page)).scalability?.revision).toBe(custom.scalability!.revision + 1);
   await command("qual_reset");
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
   await expect.poll(async () => (await read(page)).rendering?.width).toBe(384);
