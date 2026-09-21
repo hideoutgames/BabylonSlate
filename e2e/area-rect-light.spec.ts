@@ -18,7 +18,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const result of report.results) {
       for (const capture of result.captures) await testInfo.attach(`${result.mode}-${result.renderPath}-${capture.name}`, { body: Buffer.from(capture.image.split(",")[1]!, "base64"), contentType: "image/png" });
     }
-    await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(({ image: _image, ...capture }) => capture) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
+    await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(({ image, ...capture }) => { void image; return capture; }) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
     expect(report.emission.meanError, "worker/native emission pixels").toBeLessThan(1);

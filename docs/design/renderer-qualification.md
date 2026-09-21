@@ -212,3 +212,12 @@ packed WebGL2 and loose WebGPU players, a uniform numeric prepared texture and
 four scenes. It checks texture/uniform/disabled pixels, repeated scene disposal,
 GPU reservation recovery, reload and absence of external resource requests.
 Its results must be recorded separately from the in-editor GPU fixture.
+
+Both standalone cases passed at `06bc0b0a`. Prepared lighting accounted for
+5,657,940 managed GPU bytes (two LTC tables and one RGBA8 emission mip chain),
+uniform lighting for 65,536 bytes, and a scene without rectangular lights for
+zero area-light bytes. Three unload/reload cycles and page reload restored
+identical pixels. No external request occurred and the player contained no
+emission-processing worker. Captures await the actual scene-load transaction's
+first presented frame; an absent loading dialog is not a readiness signal.
+These are accounted resource sizes, not measurements of total device memory.
