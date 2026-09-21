@@ -41,6 +41,7 @@ describe("area emission asset representation", () => {
     const { storage, registry, asset, process } = await fixture();
     const prepare = registry.prepareAreaEmission("pattern", async (request) => {
       const { chunks: _chunks, ...header } = readBabassetHeader(await storage.readBinary(asset.path));
+      void _chunks;
       await storage.writeBinary(asset.path, await encodeBabasset({ header, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([4, 5, 6]) }] }));
       await registry.reindexPath(asset.path);
       return process(request);

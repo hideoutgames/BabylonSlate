@@ -485,6 +485,7 @@ export function startPlaySession(options: {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  areaEmissions?: ReadonlyMap<string, import("@babylonslate/assets").AreaEmissionPixels>;
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
@@ -594,6 +595,7 @@ export function startPlaySession(options: {
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
+    areaEmissions: options.areaEmissions,
     texturePixelSizes: options.texturePixelSizes,
     fontFacetypeBytes: options.fontFacetypeBytes,
     fontMsdfJson: options.fontMsdfJson,

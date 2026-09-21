@@ -7,13 +7,15 @@ import {
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
   resourceCache?: ResourceCache;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Validated native emission data, separate from original Texture bytes. */
+  areaEmissions?: ReadonlyMap<string, AreaEmissionPixels>;
   /** Authored Texture payload width/height (source pixels), not LOD GPU bytes. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
@@ -110,6 +112,7 @@ export function meshAssetFingerprint(
     `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
     `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
+    `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
     `texPx:${
       assets.texturePixelSizes
         ? [...assets.texturePixelSizes.entries()]

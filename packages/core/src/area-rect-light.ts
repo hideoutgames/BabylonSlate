@@ -2,6 +2,27 @@ import { identitySerializedTransform, type SerializedComponent, type SerializedT
 
 export const AREA_RECT_LIGHT_CLASS_ID = "AreaRectLightComponent";
 
+/** Typed emission references in scenes, component templates and native variable pins. */
+export function areaEmissionTextureGuids(value: unknown): string[] {
+  const result = new Set<string>();
+  const add = (entry: unknown) => { if (typeof entry === "string" && entry.trim()) result.add(entry.trim()); };
+  const walk = (entry: unknown): void => {
+    if (!entry || typeof entry !== "object") return;
+    if (Array.isArray(entry)) { entry.forEach(walk); return; }
+    const record = entry as Record<string, unknown>;
+    if (record.classId === AREA_RECT_LIGHT_CLASS_ID) {
+      const properties = record.properties as Record<string, unknown> | undefined;
+      add(properties?.textureGuid);
+      if (record.propertyKey === "textureGuid" || record.variableName === "EmissionTexture") {
+        add(["default:EmissionTexture", "default:emissionTexture", "default:value", "value"].map((key) => record[key]).find((item) => item !== undefined));
+      }
+    }
+    Object.values(record).forEach(walk);
+  };
+  walk(value);
+  return [...result];
+}
+
 /** Authored data only. Native textures, materials and transforms belong to the view. */
 export type AreaRectLightProperties = {
   enabled: boolean;

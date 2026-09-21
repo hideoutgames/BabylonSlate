@@ -224,6 +224,7 @@ function initializePlayer(
     pixelPerfect: content.pixelPerfect,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,
+    areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,

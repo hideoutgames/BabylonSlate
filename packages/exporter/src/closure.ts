@@ -1,5 +1,6 @@
 import {
   classIdsFromVariableMembers,
+  areaEmissionTextureGuids,
   err,
   isEditorOnlyAsset,
   materialParameterTextureGuidsFromGraph,
@@ -162,6 +163,7 @@ export function collectExportReachability(
           collectTypedRefs(graph, refs);
           for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
+          for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);
         }
       }
       const payload = input.payloadByGuid?.(asset.guid);

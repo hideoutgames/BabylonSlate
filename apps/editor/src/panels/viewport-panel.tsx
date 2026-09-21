@@ -95,6 +95,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -697,6 +698,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const areaEmissions = await collectPlayAreaEmissions([scene]);
         controller.signal.throwIfAborted();
         const msdf = fontMsdfMapsFromPairs(
           await collectPlayFontMsdfPair(scene),
@@ -715,6 +717,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           textureBytes,
           texturePixelSizes,
           fontFacetypeBytes,
+          areaEmissions,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
           fontCssStack: fontCss.fontCssStack,
@@ -813,6 +816,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,

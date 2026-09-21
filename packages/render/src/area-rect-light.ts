@@ -2,6 +2,8 @@ import { Color3, Matrix, Quaternion, RectAreaLight, TransformNode, Vector3, type
 import { type AreaRectLightBinding } from "@babylonslate/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";
+import type { MeshAssetContext } from "./mesh-assets";
+import { areaEmissionResourceKey, retainAreaEmissionTexture } from "./area-emission-resource";
 
 /** View-owned native adapter. Babylon emits -Z; authored components emit +Z. */
 export class AreaRectLightOwner {
@@ -21,9 +23,12 @@ export class AreaRectLightOwner {
   private disposed = false;
   private dirty = true;
   private enabled: boolean | undefined;
+  private emissionKey: string | undefined;
+  private releaseEmission?: () => void;
+  private emissionError?: string;
   private readonly onDiagnostic?: (message: string) => void;
 
-  constructor(scene: Scene, name: string, binding: AreaRectLightBinding, onDiagnostic?: (message: string) => void) {
+  constructor(scene: Scene, name: string, binding: AreaRectLightBinding, onDiagnostic?: (message: string) => void, emissions?: MeshAssetContext["areaEmissions"]) {
     const releaseLookup = retainAreaLightLookup(scene);
     this.onDiagnostic = onDiagnostic;
     this.binding = binding;
@@ -33,13 +38,15 @@ export class AreaRectLightOwner {
     this.light.parent = this.adapter;
     this.light.onDisposeObservable.addOnce(() => {
       this.disposed = true;
+      this.light.emissionTexture = null;
+      this.releaseEmission?.();
       this.adapter.dispose();
       releaseLookup();
     });
-    this.update(binding);
+    this.update(binding, emissions);
   }
 
-  update(binding: AreaRectLightBinding): void {
+  update(binding: AreaRectLightBinding, emissions?: MeshAssetContext["areaEmissions"]): void {
     this.binding = binding;
     Matrix.IdentityToRef(this.local);
     for (const transform of binding.transforms) {
@@ -51,6 +58,20 @@ export class AreaRectLightOwner {
     this.light.height = properties.height;
     this.light.diffuse = Color3.FromArray(properties.color);
     this.light.intensity = properties.intensity;
+    const pixels = properties.textureGuid ? emissions?.get(properties.textureGuid) : undefined;
+    const key = pixels ? areaEmissionResourceKey(pixels) : undefined;
+    this.emissionError = properties.textureGuid && !pixels ? `Processed area-light emission texture is unavailable: ${properties.textureGuid}. Open the Texture and choose Prepare Emission.` : undefined;
+    if (!this.emissionError && key !== this.emissionKey) {
+      try {
+        const next = pixels ? retainAreaEmissionTexture(this.light.getScene().getEngine(), pixels) : undefined;
+        this.light.emissionTexture = next?.texture ?? null;
+        // Native 9.20 waits for onLoad, which has already fired for RawTexture.
+        this.light._markMeshesAsLightDirty();
+        this.releaseEmission?.();
+        this.releaseEmission = next?.release;
+        this.emissionKey = key;
+      } catch (error) { this.emissionError = error instanceof Error ? error.message : String(error); }
+    }
     this.dirty = true;
     this.enabled = undefined;
     // The owner is deliberately unshadowed. No shadow generator is registered.
@@ -67,7 +88,7 @@ export class AreaRectLightOwner {
     Vector3.TransformNormalFromFloatsToRef(0, 1, 0, this.world, this.y);
     Vector3.TransformNormalFromFloatsToRef(0, 0, 1, this.world, this.z);
     const lx = this.x.length(), ly = this.y.length(), lz = this.z.length();
-    let error = this.binding.error ?? (this.binding.properties.textureGuid && !this.light.emissionTexture ? `Processed area-light emission texture is unavailable: ${this.binding.properties.textureGuid}` : undefined);
+    let error = this.binding.error ?? this.emissionError;
     if (!error && (!this.world.m.every(Number.isFinite) || Math.min(lx, ly, lz) < 0.000001)) error = "Rectangular Area Light requires a finite, non-degenerate transform.";
     if (!error && (Math.abs(Vector3.Dot(this.x, this.y)) > lx * ly * 0.00001 || Math.abs(Vector3.Dot(this.x, this.z)) > lx * lz * 0.00001 || Math.abs(Vector3.Dot(this.y, this.z)) > ly * lz * 0.00001)) error = "Rectangular Area Light does not support sheared transforms. Remove non-uniform scaling above a rotated child.";
     const changedDiagnostic = error !== this.diagnostic;
@@ -101,6 +122,7 @@ export class AreaRectLightGroup {
   readonly emitters = new Map<string, AreaRectLightOwner>();
   private readonly world = Matrix.Identity();
   private signature = "";
+  private emissions?: MeshAssetContext["areaEmissions"];
   private readonly scene: Scene;
   private readonly name: string;
   private readonly onDiagnostic?: (message: string) => void;
@@ -108,18 +130,19 @@ export class AreaRectLightGroup {
   constructor(scene: Scene, name: string, onDiagnostic?: (message: string) => void) {
     this.scene = scene; this.name = name; this.onDiagnostic = onDiagnostic;
   }
-  update(bindings: readonly AreaRectLightBinding[]): boolean {
+  update(bindings: readonly AreaRectLightBinding[], emissions?: MeshAssetContext["areaEmissions"]): boolean {
     const signature = JSON.stringify(bindings);
-    if (signature === this.signature) return false;
+    if (signature === this.signature && emissions === this.emissions) return false;
     const live = new Set(bindings.map((binding) => binding.id));
     for (const [id, emitter] of this.emitters) if (!live.has(id)) { emitter.dispose(); this.emitters.delete(id); }
     for (const binding of bindings) {
       let emitter = this.emitters.get(binding.id);
-      if (emitter) emitter.update(binding);
-      else { emitter = new AreaRectLightOwner(this.scene, `${this.name}:${binding.id}`, binding, this.onDiagnostic); this.emitters.set(binding.id, emitter); }
+      if (!emitter) { emitter = new AreaRectLightOwner(this.scene, `${this.name}:${binding.id}`, binding, this.onDiagnostic, emissions); this.emitters.set(binding.id, emitter); }
+      else emitter.update(binding, emissions);
       emitter.setWorld(this.world);
     }
     this.signature = signature;
+    this.emissions = emissions;
     return true;
   }
   setWorld(world: Matrix): void {

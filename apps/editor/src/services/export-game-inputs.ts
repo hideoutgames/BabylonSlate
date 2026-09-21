@@ -5,6 +5,8 @@ import {
 } from "@babylonslate/core";
 import {
   AUDIO_REVERB_CHUNK_ID,
+  currentAreaEmissionChunk,
+  decodeAreaEmission,
   BAKED_LIGHTING_ASSET_TYPE,
   bakedLightingImportResult,
   encodeBakedLightingAsset,
@@ -68,6 +70,7 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
+  areaEmissionBytesByGuid: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
@@ -170,6 +173,8 @@ export async function loadExportDocuments(
   const bytes = new Map<string, Uint8Array>();
   const bakeErrors = new Map<string, unknown>();
   const fontFacetypes = new Map<string, Uint8Array>();
+  const areaEmissions = new Map<string, Uint8Array>();
+  const areaEmissionErrors = new Map<string, unknown>();
   const fontMsdfJson = new Map<string, Uint8Array>();
   const fontMsdfPng = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
@@ -225,6 +230,15 @@ export async function loadExportDocuments(
       bakeErrors.set(asset.header.guid, error);
     }
     if (payload) bytes.set(asset.header.guid, payload);
+    const emissionChunk = currentAreaEmissionChunk(asset.header);
+    if (emissionChunk) {
+      try {
+        const data = await loaders.readAssetChunk(asset.path, emissionChunk.id);
+        if (!data) throw new Error(`Prepared emission is missing for Texture ${asset.header.name}.`);
+        await decodeAreaEmission(data, asset.header.chunks.find((chunk) => chunk.kind === "pixels")?.sha256);
+        areaEmissions.set(asset.header.guid, data);
+      } catch (error) { areaEmissionErrors.set(asset.header.guid, error); }
+    }
     const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
     if (facetype) fontFacetypes.set(asset.header.guid, facetype);
     const msdfJson = await fontChunkBytesForAsset(
@@ -270,6 +284,10 @@ export async function loadExportDocuments(
       return bytes.get(guid) ?? null;
     },
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
+    areaEmissionBytesByGuid: (guid) => {
+      if (areaEmissionErrors.has(guid)) throw areaEmissionErrors.get(guid);
+      return areaEmissions.get(guid) ?? null;
+    },
     fontMsdfJsonByGuid: (guid) => fontMsdfJson.get(guid) ?? null,
     fontMsdfPngByGuid: (guid) => fontMsdfPng.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,

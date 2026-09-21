@@ -1,4 +1,4 @@
-/**
+/*! @license
  * Native 9.20 AreaLightTextureTools filtering, moved off the render thread.
  * Algorithm adapted from Babylon.js (Apache-2.0), with cooperative progress.
  * https://github.com/BabylonJS/Babylon.js/blob/9.20.0/packages/dev/core/src/Misc/areaLightsTextureTools.ts

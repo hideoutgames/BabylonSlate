@@ -117,6 +117,7 @@ export interface PlayOverlayProps {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  areaEmissions?: ReadonlyMap<string, import("@babylonslate/assets").AreaEmissionPixels>;
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
@@ -202,6 +203,7 @@ export function PlayOverlay({
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
+  areaEmissions,
   texturePixelSizes,
   fontFacetypeBytes,
   fontMsdfJson,
@@ -312,6 +314,8 @@ export function PlayOverlay({
   const tilesetPayloadsRef = useRef(tilesetPayloads);
   tilesetPayloadsRef.current = tilesetPayloads;
   const textureBytesRef = useRef(textureBytes);
+  const areaEmissionsRef = useRef(areaEmissions);
+  areaEmissionsRef.current = areaEmissions;
   textureBytesRef.current = textureBytes;
   const texturePixelSizesRef = useRef(texturePixelSizes);
   texturePixelSizesRef.current = texturePixelSizes;
@@ -483,6 +487,7 @@ export function PlayOverlay({
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
+      areaEmissions: areaEmissionsRef.current,
       texturePixelSizes: texturePixelSizesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
       fontMsdfJson: fontMsdfJsonRef.current,

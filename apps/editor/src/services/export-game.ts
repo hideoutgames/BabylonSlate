@@ -1,4 +1,4 @@
-import { isInputAssetType, normalizeInputAssetPayload } from "@babylonslate/core";
+import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -9,6 +9,8 @@ import {
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
   FONT_FACETYPE_EXPORT_TYPE,
+  AREA_EMISSION_EXPORT_TYPE,
+  areaEmissionExportGuid,
   FONT_MSDF_ATLAS_EXPORT_TYPE,
   FONT_MSDF_EXPORT_TYPE,
   fontFacetypeExportGuid,
@@ -86,6 +88,7 @@ export type CollectExportGameParams = {
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid?: (guid: string) => Uint8Array | null;
+  areaEmissionBytesByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
@@ -275,6 +278,17 @@ export async function collectAndExportGame(
   }> = [];
   const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
+  const requiredEmissions = new Set<string>();
+  for (const guid of closure.value.guids) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    const document = asset?.type === "Scene" ? params.sceneByGuid(guid) : asset?.type === "Class" || asset?.type === "Graph" ? params.graphByGuid(guid) : params.payloadByGuid?.(guid);
+    for (const texture of areaEmissionTextureGuids(document)) requiredEmissions.add(texture);
+  }
+  for (const guid of requiredEmissions) {
+    try {
+      if (!params.areaEmissionBytesByGuid?.(guid)) return { ok: false, error: `Texture ${guid} needs Prepare Emission before export. Open the Texture asset and prepare its Area Light Emission.` };
+    } catch (error) { return { ok: false, error: `Area emission ${guid}: ${String(error)}` }; }
+  }
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset) continue;
@@ -299,6 +313,12 @@ export async function collectAndExportGame(
       }
     }
     const bytes = params.bytesByGuid(guid);
+    if (asset.type === "Texture") {
+      try {
+        const emission = params.areaEmissionBytesByGuid?.(guid);
+        if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
+      } catch (error) { return { ok: false, error: `Area emission ${asset.name}: ${String(error)}` }; }
+    }
     if (bytes) {
       const payload = params.payloadByGuid?.(guid);
       const textureSize = texturePixelSizeFromPayload(payload);

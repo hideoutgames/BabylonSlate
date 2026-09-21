@@ -286,6 +286,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
+  const [playAreaEmissions, setPlayAreaEmissions] = useState<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>(() => new Map());
   const [playFontMsdfJson, setPlayFontMsdfJson] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
@@ -353,6 +354,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -1135,6 +1137,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             ...playLibrary.map((entry) => entry.scene),
             ...resourceScenes,
           ];
+          setPlayAreaEmissions(await collectPlayAreaEmissions(fontScenes, true));
           setPlayFontFacetypeBytes(
             await collectPlayFontFacetypeBytes(
               resolvedScene?.scene,
@@ -1234,6 +1237,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
+      collectPlayAreaEmissions,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
       collectPlayFontCssStacks,
@@ -1489,6 +1493,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             textureBytes={playTextureBytes}
             texturePixelSizes={playTexturePixelSizes}
             fontFacetypeBytes={playFontFacetypeBytes}
+            areaEmissions={playAreaEmissions}
             fontMsdfJson={playFontMsdfJson}
             fontMsdfPng={playFontMsdfPng}
             fontFaceEntries={playFontFaceEntries}

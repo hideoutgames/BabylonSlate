@@ -505,7 +505,7 @@ export function* syncAuthoredIlluminationSteps(
       if (!group) { group = new AreaRectLightGroup(scene, `authoredAreaLight:${actor.id}`, options.onDiagnostic); state.areaLights.set(actor.id, group); }
       try {
         group.setWorld(actorWorld(actor));
-        group.update(areaBindings);
+        group.update(areaBindings, options.assets?.areaEmissions);
       } catch (error) {
         group.update([]);
         options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);

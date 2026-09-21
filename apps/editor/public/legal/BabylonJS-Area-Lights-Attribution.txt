@@ -1,0 +1,4 @@
+BabylonJS Assets: areaLightsLTC.bin
+Copyright BabylonJS contributors. Unmodified lookup data.
+Source: https://github.com/BabylonJS/Assets/tree/master/core/areaLights
+License: Creative Commons Attribution 4.0 International (see accompanying license).

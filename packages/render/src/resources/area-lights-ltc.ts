@@ -1,4 +1,4 @@
-/** Babylon.js areaLightsLTC.bin; unmodified bytes encoded as base64.
+/*! @license Babylon.js areaLightsLTC.bin; unmodified bytes encoded as base64.
  * Source: https://assets.babylonjs.com/core/areaLights/areaLightsLTC.bin
  * SHA-256: 44d531d71dc6aa7b0192a1d9f8270c3b0f1e74ea0c95df1bdd587ec37db70891
  * BabylonJS Assets, CC BY 4.0. See area-lights-LICENSE.txt.

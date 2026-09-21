@@ -4,12 +4,40 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { AreaRectLightOwner } from "./area-rect-light";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@babylonslate/assets";
+import { AREA_EMISSION_TEXTURE_BYTES } from "./area-emission-resource";
 
 function binding() {
   return areaRectLightBindings([{ id: "emitter", classId: "AreaRectLightComponent", properties: { width: 2, height: 3 }, transform: identitySerializedTransform() }])[0]!;
 }
 
 describe("native rectangular area light ownership", () => {
+  it("shares prepared emission, replaces it before retiring old data, and recovers from a missing asset", async () => {
+    const { engine, scene } = createTestEngine();
+    const data = await decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
+    const emissions = new Map([["texture", data]]);
+    const authored = binding(); authored.properties.textureGuid = "texture";
+    const first = new AreaRectLightOwner(scene, "first", authored, undefined, emissions);
+    const second = new AreaRectLightOwner(scene, "second", authored, undefined, emissions);
+    const texture = first.light.emissionTexture!;
+    const dispose = vi.spyOn(texture, "dispose");
+    expect(second.light.emissionTexture).toBe(texture);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(65536 + AREA_EMISSION_TEXTURE_BYTES);
+    first.update(authored, new Map());
+    expect(first.light.isEnabled()).toBe(false);
+    expect(first.error).toContain("Prepare Emission");
+    expect(dispose).not.toHaveBeenCalled();
+    first.update(authored, emissions);
+    expect(first.light.isEnabled()).toBe(true);
+    first.dispose();
+    expect(dispose).not.toHaveBeenCalled();
+    second.update(binding());
+    expect(second.light.emissionTexture).toBeNull();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    second.dispose();
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
+    scene.dispose(); engine.dispose();
+  });
   it("shares offline lookup textures across views until the last emitter releases them", () => {
     const { engine, scene } = createTestEngine();
     const other = new Scene(engine);

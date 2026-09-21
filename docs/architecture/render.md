@@ -959,3 +959,16 @@ reuse stale data. The processing module ports the pinned native mirrored border
 and separable progressive RGBA8 filter, with progress/cancellation checkpoints.
 Its worker, editor processing workflow, runtime upload and export wiring are
 still in progress; native GPU parity is required before textured release.
+
+### Prepared rectangular emission resources
+
+`MeshAssetContext.areaEmissions` carries validated native RGBA8 data keyed by the
+ordinary Texture GUID, through Viewport, Class Preview, Play and player boot.
+Each engine shares uploads by processor/pixel hash. The full 1024-square mip
+chain accounts for 5,592,404 bytes in the existing `areaLight` resource ledger;
+LTC lookup tables add 65,536 bytes once per engine. These are allocation estimates,
+not measured driver memory. Replacing a texture acquires its replacement before
+releasing the old reference. Missing data disables that emitter with a diagnostic;
+clearing the optional Texture returns it to uniform emission. Every owner releases
+its references on native light disposal. Player files include the LTC attribution
+and CC BY 4.0 license under `legal/`.

@@ -25,6 +25,7 @@ import {
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
+  areaEmissionTextureGuids,
   createDefaultScene,
   createInputAssetPayload,
   isInputAssetType,
@@ -1742,6 +1743,7 @@ export function assetHeaderDependencies(
   visitInputRefs(payload);
   const unique = new Set<string>([
     ...inputRefs,
+    ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
         ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])),

@@ -444,6 +444,7 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  areaEmissions?: MeshAssetContext["areaEmissions"];
   /** Authored Texture source pixels for overlay 2DTexture world size. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
@@ -1013,6 +1014,7 @@ function initializeEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   resourceCache.setClientTextures(
     scene.uid,
@@ -1437,6 +1439,7 @@ function initializeEngine(
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      binding.areaEmissions = assets.areaEmissions;
       binding.texturePixelSizes = assets.texturePixelSizes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
@@ -2533,7 +2536,7 @@ function initializeEngine(
         let changed = false;
         if (command.lights.length) {
           if (!group) { group = new AreaRectLightGroup(scene, `playAreaLight:${command.slotId}`); binding.areaLights.set(command.slotId, group); }
-          changed = group.update(command.lights);
+          changed = group.update(command.lights, binding.areaEmissions);
           const mesh = binding.meshes.get(command.slotId);
           if (mesh) group.setWorld(mesh.getWorldMatrix());
         } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }

@@ -85,6 +85,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -351,6 +352,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const areaEmissions = await collectPlayAreaEmissions([scene]);
         const msdf = fontMsdfMapsFromPairs(
           await collectPlayFontMsdfPair(scene),
         );
@@ -368,6 +370,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           textureBytes,
           texturePixelSizes,
           fontFacetypeBytes,
+          areaEmissions,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
           fontCssStack: fontCss.fontCssStack,
@@ -402,6 +405,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,

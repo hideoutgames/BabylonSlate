@@ -10,6 +10,8 @@ import {
   AUDIO_REVERB_EXPORT_TYPE,
   sceneGuidFromAudioReverbExport,
   FONT_FACETYPE_EXPORT_TYPE,
+  AREA_EMISSION_EXPORT_TYPE,
+  textureGuidFromAreaEmissionExport,
   FONT_MSDF_ATLAS_EXPORT_TYPE,
   FONT_MSDF_EXPORT_TYPE,
   fontGuidFromFontFacetypeExport,
@@ -28,6 +30,8 @@ import {
   normalizeAudioPayload,
   type AudioPayload,
   type ModelPayload,
+  decodeAreaEmission,
+  type AreaEmissionPixels,
 } from "@babylonslate/assets";
 
 const decoder = new TextDecoder();
@@ -38,6 +42,7 @@ export type LoadedGame = {
   scenes: Map<string, SerializedScene>;
   sceneLayers: Map<string, SerializedSceneLayer>;
   textureBytes: Map<string, Uint8Array>;
+  areaEmissions: Map<string, AreaEmissionPixels>;
   modelBytes: Map<string, Uint8Array>;
   modelPayloads: Map<string, ModelPayload>;
   fontBytes: Map<string, Uint8Array>;
@@ -99,6 +104,7 @@ export async function loadGameFromFiles(
   const scenes = new Map<string, SerializedScene>();
   const sceneLayers = new Map<string, SerializedSceneLayer>();
   const textureBytes = new Map<string, Uint8Array>();
+  const areaEmissions = new Map<string, AreaEmissionPixels>();
   const modelBytes = new Map<string, Uint8Array>();
   const modelPayloads = new Map<string, ModelPayload>();
   const fontBytes = new Map<string, Uint8Array>();
@@ -134,6 +140,12 @@ export async function loadGameFromFiles(
     }
     if (entry.type === "Texture") {
       textureBytes.set(entry.guid, bytes);
+      continue;
+    }
+    if (entry.type === AREA_EMISSION_EXPORT_TYPE) {
+      const guid = textureGuidFromAreaEmissionExport(entry.guid);
+      if (!guid) throw new Error(`Invalid area emission asset identity: ${entry.guid}`);
+      areaEmissions.set(guid, await decodeAreaEmission(bytes));
       continue;
     }
     if (entry.type === "Model") {
@@ -189,6 +201,7 @@ export async function loadGameFromFiles(
     scenes,
     sceneLayers,
     textureBytes,
+    areaEmissions,
     modelBytes,
     modelPayloads,
     fontBytes,

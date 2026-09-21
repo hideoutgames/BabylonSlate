@@ -88,6 +88,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       collectPlayTextureBytes: vi.fn<(sprites?: unknown, tilesets?: unknown, guids?: readonly string[]) => Promise<Map<string, Uint8Array>>>(async () => new Map()),
       collectPlayTexturePixelSizes: vi.fn(() => new Map()),
       collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
+    collectPlayAreaEmissions: vi.fn(async () => new Map()),
       collectPlayFontMsdfPair: vi.fn(async () => new Map()),
       collectPlayFontFaceEntries: vi.fn(async () => []),
       collectPlayFontCssStacks: vi.fn(() => ({
@@ -145,6 +146,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
     collectPlayTexturePixelSizes: documents.collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes: documents.collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions: documents.collectPlayAreaEmissions,
     collectPlayFontMsdfPair: documents.collectPlayFontMsdfPair,
     collectPlayFontFaceEntries: documents.collectPlayFontFaceEntries,
     collectPlayFontCssStacks: documents.collectPlayFontCssStacks,
