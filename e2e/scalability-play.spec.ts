@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { MAIN_CLASS_FILE, PROJECT_FILE, normalizeRenderProjectSettings, type ProjectDocument, type SerializedGraph } from "../packages/core/src/index";
+import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, PROJECT_FILE, createActor, createDefaultScene, createMeshComponent, normalizeRenderProjectSettings, type ProjectDocument, type SerializedGraph } from "../packages/core/src/index";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
@@ -30,6 +30,9 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");
+  const scene = createDefaultScene();
+  scene.actors = [createActor("observer", "Settings Observer", { classId: "main", components: [createMeshComponent("mesh", "box")] }), ...scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId)];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main", version: createDefaultMigrationRegistry().currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }, { dependencies: ["00000000-0000-4000-8000-000000000002"] }));
   for (const [index, { name, graph }] of scalabilityGraphDefinitions().entries()) {
     const document: SerializedGraph = {
       nodes: graph.nodes.map((node) => ({ id: node.id, type: node.typeId, data: node.properties, position: node.position })),
@@ -66,11 +69,12 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
   await page.getByTestId("play-console-open").click();
-  let commandIndex = 0;
   const command = async (name: string) => {
     await page.getByTestId("debug-console-input").fill(name);
     await page.getByTestId("debug-console-submit").click();
-    await expect(page.getByTestId(`debug-console-output-${commandIndex++}`)).toHaveText("");
+    // Successful graph commands have no output row. Each caller waits for its
+    // actual renderer acknowledgement; the next submit waits for Run admission.
+    await expect(page.getByTestId("debug-console-input")).toHaveValue("");
   };
   for (const preset of ["low", "medium", "high", "ultra"]) {
     await command(`qual_${preset}`);
@@ -93,6 +97,7 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
   await expect.poll(async () => (await read(page)).rendering?.width).toBe(384);
   await testInfo.attach("play-compiled-scalability", { body: JSON.stringify({ custom, reset: await read(page), evidence: renderingEvidence("e2e/scalability-play.spec.ts") }), contentType: "application/json" });
+  await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   expect(errors).toEqual([]);
