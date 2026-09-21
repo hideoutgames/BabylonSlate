@@ -54,7 +54,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const diagnostics = () => page.evaluate(() => (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.rendering());
       const capture = async (name: string, areaBytes: number) => {
         await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
-        await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
+        await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
         await expect.poll(async () => (await diagnostics())?.gpuReservations.categoryBytes.areaLight).toBe(areaBytes);
         const report = await diagnostics();
         expect(report?.qualityLimits).toEqual([]);
@@ -64,8 +64,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         return { pixels: pixels.toString("base64"), report };
       };
       const change = async (name: string) => {
+        const previousLoad = await root.getAttribute("data-scene-load-id");
         const result = await page.evaluate((name) => (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.executeConsoleCommand(`changescene ${name}`), name);
         expect(result.success).toBe(true);
+        await expect.poll(() => root.getAttribute("data-scene-load-id")).not.toBe(previousLoad);
+        await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
       };
       const textured = await capture("textured boot", 65_536 + 5_592_404);
       await change("uniform"); const uniform = await capture("uniform", 65_536);
