@@ -21,10 +21,10 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8d
      uv6: "UV6",
      uv7: "UV7",
      uv8: "UV8",
-+    // BabylonSlate: gate optional vertex streams so meshes without them emit a
-+    // fallback instead of a real attribute; WebGPU rejects draws that declare
-+    // attributes no buffer supplies, and every attribute consumes one of the 8
-+    // guaranteed vertex buffer slots.
++    // BabylonSlate: gate optional vertex streams so meshes without them read a
++    // zeroed private copy instead of a real attribute; WebGPU rejects draws
++    // declaring attributes no buffer supplies, and each attribute consumes one
++    // of the 8 guaranteed vertex buffer slots.
 +    color: "VERTEXCOLOR_NME",
 +    world0: "INSTANCES",
 +    world1: "INSTANCES",
@@ -39,19 +39,47 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8d
  };
  /**
   * Block used to expose an input value
-@@ -542,8 +557,9 @@ export class InputBlock extends NodeMaterialBlock {
+@@ -542,16 +557,25 @@ export class InputBlock extends NodeMaterialBlock {
                  if (state.shaderLanguage === 1 /* ShaderLanguage.WGSL */) {
-                     if (!alreadyDeclared) {
-                         const defineName = attributeDefine[this.name];
+-                    if (!alreadyDeclared) {
+-                        const defineName = attributeDefine[this.name];
 -                        if (defineName) {
 -                            state._attributeDeclaration += this._emitDefine(defineName);
-+                        const numericDefine = attributeNumericDefine[this.name];
-+                        if (defineName || numericDefine) {
-+                            state._attributeDeclaration += defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
-                             state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
-                             state._attributeDeclaration += `#else\n`;
-                             state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${state._getShaderType(this.type)} = ${state._getShaderType(this.type)}(0.);\n`;
-@@ -558,8 +574,9 @@ export class InputBlock extends NodeMaterialBlock {
+-                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
+-                            state._attributeDeclaration += `#else\n`;
+-                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${state._getShaderType(this.type)} = ${state._getShaderType(this.type)}(0.);\n`;
+-                            state._attributeDeclaration += `#endif\n`;
+-                        }
+-                        else {
+-                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
+-                        }
+-                    }
+-                    this._prefix = `vertexInputs.`;
++                    const defineName = attributeDefine[this.name];
++                    const numericDefine = attributeNumericDefine[this.name];
++                    const gated = !!(defineName || numericDefine);
++                    if (!alreadyDeclared) {
++                        if (gated) {
++                            const shaderType = state._getShaderType(this.type);
++                            const defineStart = defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
++                            state._attributeDeclaration += defineStart;
++                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${shaderType};\n`;
++                            state._attributeDeclaration += `#endif\n`;
++                            // BabylonSlate: the private copy is assigned from
++                            // vertexInputs under the same guard, so consumers
++                            // read a valid zero when the attribute is gated out.
++                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${shaderType} = ${shaderType}(0.);\n`;
++                            state.compilationString += defineStart;
++                            state.compilationString += `${this.declarationVariableName} = vertexInputs.${this.declarationVariableName};\n`;
++                            state.compilationString += `#endif\n`;
++                        }
++                        else {
++                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
++                        }
++                    }
++                    this._prefix = gated ? "" : `vertexInputs.`;
+                 }
+@@ -558,8 +589,9 @@ export class InputBlock extends NodeMaterialBlock {
                  else {
                      if (!alreadyDeclared) {
                          const defineName = attributeDefine[this.name];
