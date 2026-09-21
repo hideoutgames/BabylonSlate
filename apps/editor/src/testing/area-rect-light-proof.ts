@@ -39,6 +39,27 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
       if ((await compiled.ready).some((entry) => entry.severity === "error")) throw new Error("Area receiver shader failed");
       const right = MeshBuilder.CreateSphere("graph", { diameter: 1.5, segments: 24 }, scene);
       right.position.x = 0.9; right.material = compiled.material;
+      const bindingEvidence: Record<string, unknown> = {};
+      if (engine instanceof Engine) {
+        const gl = engine._gl;
+        for (const mesh of [left, right]) mesh.onAfterRenderObservable.add(() => {
+          const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
+          const active = gl.getParameter(gl.ACTIVE_TEXTURE) as number;
+          const light = scene.lights.find((entry) => entry instanceof RectAreaLight) as RectAreaLight | undefined;
+          const textures = { emission: light?.emissionTexture, ltc1: scene._ltcTextures?.LTC1, ltc2: scene._ltcTextures?.LTC2 };
+          const samplers = [];
+          for (let index = 0; index < gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); index++) {
+            const uniform = gl.getActiveUniform(program, index)!;
+            if (uniform.type !== gl.SAMPLER_2D) continue;
+            const unit = gl.getUniform(program, gl.getUniformLocation(program, uniform.name)) as number;
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            const bound = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture;
+            samplers.push({ name: uniform.name, unit, texture: Object.entries(textures).find(([, texture]) => texture?.getInternalTexture()?._hardwareTexture?.underlyingResource === bound)?.[0] ?? "other" });
+          }
+          gl.activeTexture(active);
+          bindingEvidence[mesh.name] = samplers;
+        });
+      }
       const unlit = new PBRMaterial("unlit control", scene);
       unlit.unlit = true; unlit.albedoColor = new Color3(0.1, 0.1, 0.8);
       const control = MeshBuilder.CreateBox("unlit", { size: 0.4 }, scene);
@@ -82,7 +103,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
             const area = scene.lights.find((entry) => entry instanceof RectAreaLight) as RectAreaLight;
             const emissionMip = area.emissionTexture ? Array.from((await area.emissionTexture.readPixels(0, 10)) as Uint8Array) : null;
             const receiverEffects = left.subMeshes?.flatMap((part) => part._drawWrappers.filter(Boolean).map((wrapper) => ({ defines: wrapper.defines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")), compiled: wrapper.effect?.defines.split("\n").filter((line) => line.includes("AREALIGHT")) })));
-            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames(), emission: { mip: emissionMip, receiverEffects, ready: area.emissionTexture?.isReady() ?? null, diagnostic: area.metadata?.areaLight?.error, nativeDefines: left.subMeshes?.[0]?.materialDefines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")) } };
+            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames(), emission: { bindings: { ...bindingEvidence }, mip: emissionMip, receiverEffects, ready: area.emissionTexture?.isReady() ?? null, diagnostic: area.metadata?.areaLight?.error, nativeDefines: left.subMeshes?.[0]?.materialDefines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")) } };
           };
           emitter.components[0]!.properties.enabled = true;
           emitter.transform.rotation = [0, 0, 0, 1];
