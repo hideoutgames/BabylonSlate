@@ -3102,10 +3102,10 @@ describe("Play createEngine view", () => {
     handle.setSize(800, 450);
     const view = engine.views!.find((entry) => entry.target === canvas)!;
     handle.scaling.setSettingsLevel(2);
-    view.customResize!();
+    view.customResize!(canvas);
     expect([canvas.width, canvas.height]).toEqual([400, 225]);
     handle.scaling.setSettingsLevel(1);
-    view.customResize!();
+    view.customResize!(canvas);
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
   });
 

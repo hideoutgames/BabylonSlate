@@ -812,6 +812,7 @@ export class ForwardSceneFrameGraph {
       // a fallback so a superseded build cannot poison its replacement.
       assertCurrent();
       this.failure = error instanceof Error ? error.message : String(error);
+      console.warn(`FrameGraph preparation failed: ${this.failure}`);
       this.failedOutput = { ...this.output(camera), camera };
       if (!this.disposed && !scene.isDisposed) {
         this.postProcessOwner?.useNative(camera);

@@ -32,6 +32,8 @@ for (const variant of [
   test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player${variant.fail ? " after initialization failure" : ""}`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
+    const rendererMessages: string[] = [];
+    page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
     page.on("pageerror", (error) => errors.push(error.message));
     if (variant.fail) await page.addInitScript(() => {
       navigator.gpu.requestAdapter = async () => { throw new Error("qualification adapter failure"); };
@@ -73,7 +75,11 @@ for (const variant of [
         await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
         await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
         await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBeCloseTo(1 / scale, 5);
-        await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
+        try {
+          await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
+        } finally {
+          await testInfo.attach(`readiness-${scale}-${scene}`, { body: JSON.stringify({ state: await read(page), rendererMessages, errors }), contentType: "application/json" });
+        }
         const live = await read(page);
         await testInfo.attach(`effective-output-${scale}-${scene}`, { body: JSON.stringify(live), contentType: "application/json" });
         expect(live.rendering?.width).toBe(Math.floor(480 / scale));
