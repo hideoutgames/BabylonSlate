@@ -26,6 +26,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(report.emission.progress).toEqual(["decoding", "filtering"]);
     expect(report.minifiedEmission.meanError, "minified worker/native emission pixels").toBeLessThan(1);
     expect(report.minifiedEmission.maxError).toBeLessThanOrEqual(3);
+    expect(report.oddEmission.meanError, "odd-sized minified worker/native emission pixels").toBeLessThan(1);
+    expect(report.oddEmission.maxError).toBeLessThanOrEqual(3);
     for (const result of report.results) {
       const [on, off, back, restored] = result.captures;
       if (backend === "webgl2") expect(result.pipeline.effective.renderPath).toBe(result.renderPath);

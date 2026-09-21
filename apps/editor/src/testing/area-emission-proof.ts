@@ -5,8 +5,9 @@ import { decodeAreaEmission, sha256Hex } from "@babylonslate/assets";
 import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
 import { encodeRgbaPng } from "@babylonslate/render";
 
-export async function qualifyAreaEmission(engine: AbstractEngine, minified = false) {
-  const width = minified ? 2048 : 32, height = minified ? 512 : 16;
+export async function qualifyAreaEmission(engine: AbstractEngine, sourceSize: readonly [number, number] = [32, 16]) {
+  const [width, height] = sourceSize;
+  const minified = Math.max(width, height) > 768;
   const rgba = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) rgba.set(minified
     ? [x % 2 ? 255 : 0, 32 + Math.floor(y / height * 192), x < width / 2 ? 32 : 216, 255]
@@ -39,6 +40,6 @@ export async function qualifyAreaEmission(engine: AbstractEngine, minified = fal
     // The render oracle follows the native final upload into its render target,
     // using identical validated bytes so the presented images must match exactly.
     engine.updateRawTexture(native.getInternalTexture()!, decoded.rgba, Constants.TEXTUREFORMAT_RGBA, false);
-    return { native, emissions: new Map([["pattern", decoded]]), report: { processor: decoded.metadata.processor, progress, maxError, meanError: totalError / (1024 ** 2 * 3), verticallyFlippedMeanError: flippedError / (1024 ** 2 * 3), sourceHash: decoded.metadata.sourceHash, renderOracle: "native render target with identical prepared pixels" } };
+    return { native, emissions: new Map([["pattern", decoded]]), report: { processor: decoded.metadata.processor, sourceSize, progress, maxError, meanError: totalError / (1024 ** 2 * 3), verticallyFlippedMeanError: flippedError / (1024 ** 2 * 3), sourceHash: decoded.metadata.sourceHash, renderOracle: "native render target with identical prepared pixels" } };
   } finally { processor.dispose(); original.dispose(); scene.dispose(); URL.revokeObjectURL(url); }
 }

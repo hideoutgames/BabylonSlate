@@ -15,8 +15,10 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
   try {
     const emission = await qualifyAreaEmission(engine);
     try {
-    const minified = await qualifyAreaEmission(engine, true);
+    const minified = await qualifyAreaEmission(engine, [2048, 512]);
     minified.native.dispose();
+    const odd = await qualifyAreaEmission(engine, [1537, 769]);
+    odd.native.dispose();
     for (const mode of ["pbr", "cel"] as const) {
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0, 0, 0, 1);
@@ -128,7 +130,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
         }
       } finally { coordinator.dispose(); scene.dispose(); }
     }
-    return { backend, width, height, results, emission: emission.report, minifiedEmission: minified.report, userAgent: navigator.userAgent, dpr: devicePixelRatio };
+    return { backend, width, height, results, emission: emission.report, minifiedEmission: minified.report, oddEmission: odd.report, userAgent: navigator.userAgent, dpr: devicePixelRatio };
     } finally { emission.native.dispose(); }
   } finally { engine.dispose(); canvas.remove(); }
 }
