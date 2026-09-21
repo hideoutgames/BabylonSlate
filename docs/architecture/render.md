@@ -942,10 +942,11 @@ and emitting side without a spotlight cone or implied hard cutoff.
 
 The CEL adapter keeps native LTC diffuse in the shared final ramp and replaces
 the smooth native specular lobe with the existing CEL highlight threshold/tint.
-This integration is under qualification. Derived emission assets, actual GPU
-receiver/backend combinations, and exported textured emission remain pending;
-a referenced texture without prepared lighting data disables the emitter with
-a diagnostic rather than silently displaying uniform emission.
+The tested native/graph PBR and CEL receiver combinations, backend paths and
+standalone textured export results are recorded in
+[renderer qualification](../design/renderer-qualification.md). A referenced
+texture without prepared lighting data disables the emitter with a diagnostic
+rather than silently displaying uniform emission.
 
 Area resources reserve bytes in the existing managed rendering ledger under
 `areaLight`. Allocation failure leaves no partial emitter. Lookup sharing counts
@@ -957,8 +958,10 @@ chunk keyed by processor version plus source SHA-256. The envelope validates its
 dimensions, encoding and pixel SHA-256 before upload; source replacement cannot
 reuse stale data. The processing module ports the pinned native mirrored border
 and separable progressive RGBA8 filter, with progress/cancellation checkpoints.
-Its worker, editor processing workflow, runtime upload and export wiring are
-still in progress; native GPU parity is required before textured release.
+The Texture editor's Prepare Emission action schedules that worker through the
+shared asset queue. The saved representation is reused by view uploads and
+export; production gameplay never invokes the processor. The qualification
+report distinguishes source resampling policy from native encoding/blur parity.
 
 ### Prepared rectangular emission resources
 

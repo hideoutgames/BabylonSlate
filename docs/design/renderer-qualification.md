@@ -63,9 +63,9 @@ not that per-view sizing contract.
 | P0 physical A16 baseline and budgets | **Deferred by user; not a current delivery gate.** No A16 CPU/GPU/p50/p95/p99, input latency, sustained memory or remaining-headroom claims. Agree the representative scene and explicit 60 fps (16.7 ms) or 30 fps (33.3 ms) target, then measure equal content/quality before and after. CPU and GPU headroom must be reported separately. |
 | P0 settings contract | Shared authored/export/boot normalization and the cases above are implemented. Complete per-field rendered application, all hosts and backend capability tests remain. See the [application inventory](../architecture/render.md#rendering-handoff-application-contract). |
 | P1 editor/component/global CEL outlines | **Native ownership gate failed; alternative approval pending.** Production selection remains the existing mesh-outline implementation. No OutlineComponent/global outline schema or default-on switch is advertised. Lifecycle, strict occlusion, compositing, style grouping, coverage and zero-work-disabled acceptance remain. |
-| P1 Class Graph scalability | Shared typed session transactions, safe-boundary renderer application, acknowledgements, coalescing, events and the Scalability node category are implemented. Real compiled graph commands exercise runtime mode/scale/frame-cap/reset in standalone exports. Complete setter/preset coverage across Play/player and outline controls remain. |
+| P1 Class Graph scalability | Shared typed session transactions, safe-boundary renderer application, acknowledgements, coalescing, events and the Scalability node category are implemented. Compiled Class graphs exercise all presets and retained setters in both Play backends and standalone exports. Outline controls await the outline implementation. |
 | P1 measured headroom | Only command-count behavior is established. GPU/CPU milliseconds, pass savings, memory savings and A16 visual/performance comparisons are **not measured**. |
-| P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Native/graph PBR and CEL browser qualification passes for the tested fixture. Standalone textured lifecycle, large-source filtering, all transform/material cases and full authoring coverage remain under verification. |
+| P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Native/graph PBR and CEL, standalone textured lifecycle, and large-source filtering browser fixtures pass. Additional transform/material cases and full authoring coverage remain under verification. |
 | P0 release | **Not accepted.** The requested production feature set is incomplete. A16 hardware testing is deferred by user; browser acceptance remains required. |
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
@@ -252,3 +252,35 @@ identical pixels. No external request occurred and the player contained no
 emission-processing worker. Captures await the actual scene-load transaction's
 first presented frame; an absent loading dialog is not a readiness signal.
 These are accounted resource sizes, not measurements of total device memory.
+
+## Saved Class scalability qualification
+
+At `562fe445`, the three explicit cases in `e2e/render-settings-export.spec.ts`
+passed: packed WebGL2, loose WebGPU, and deliberately failed WebGPU startup
+falling back to WebGL2. The normal backend cases execute all four presets and
+retained setters for shadows, lighting, texture sampling/budget, resolution,
+frame cap, post-processing, effects, CEL appearance and environment. Assertions
+cover physical buffer size, active FXAA tasks, requested/effective render path,
+invalid atomic requests, clamping and reset. Artistic CEL settings survive Low.
+The fixture disables light shadow casting so this settings test does not claim
+image qualification of every shadow mode.
+
+At `686dc574`, both cases in `e2e/scalability-play.spec.ts` passed on Windows
+10.0.19045 / Chromium, using D3D11 WARP WebGL2 and SwiftShader WebGPU. These
+load saved Class assets through the editor compiler and execute their commands
+in Play. An actor Class receives Settings Changed and reads Get Effective
+Scalability; both outputs report the same presented revision. The fixture checks
+all presets and retained individual setters, 300-by-180 output for the custom
+transaction, reset, and a new Play session after stopping with a clustered
+request active. Save All stays disabled: scripted settings did not dirty the
+project. Play now owns a reference-counted render-path session, restores the
+editor preference on final release, and unsubscribes disposed view listeners.
+
+Focused local validation: six `packages/runtime/src/scalability.test.ts` cases
+passed at `74766aa0`; three selected render-path/construction-rollback cases in
+`packages/render/src/create-engine.play.test.ts` passed at `686dc574` (118 other
+cases were not selected). Render, editor and runtime package typechecks passed,
+and eight changed TypeScript files passed ESLint with one existing Play-overlay
+hook-dependency warning. These results do not cover outline settings, which are
+not implemented, or establish physical-device performance. Computer Use still
+has no connected browser; these are automated browser tests.
