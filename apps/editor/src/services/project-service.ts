@@ -41,7 +41,6 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
-  processAreaEmissionInWorker,
   type AreaEmissionProgress,
   type AreaEmissionProcessor,
   canUseWorkerEncode,
@@ -101,6 +100,7 @@ import {
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
+import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";

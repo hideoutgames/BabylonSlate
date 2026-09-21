@@ -1,7 +1,8 @@
 /** Native preprocessing oracle is test-only; production uses committed derived data. */
 import { Scene, Texture, type AbstractEngine } from "@babylonjs/core";
 import { AreaLightTextureTools } from "@babylonjs/core/Misc/areaLightsTextureTools";
-import { decodeAreaEmission, processAreaEmissionInWorker, sha256Hex } from "@babylonslate/assets";
+import { decodeAreaEmission, sha256Hex } from "@babylonslate/assets";
+import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
 import { encodeRgbaPng } from "@babylonslate/render";
 
 export async function qualifyAreaEmission(engine: AbstractEngine) {

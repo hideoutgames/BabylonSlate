@@ -37,7 +37,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(off!.unlit).toEqual(on!.unlit);
       expect(back!.unlit).toEqual(on!.unlit);
       const textured = result.captures[4]!, nativeTexture = result.captures[5]!;
-      expect(textured.image).not.toBe(on!.image);
+      expect(textured.image !== on!.image, `${result.mode} textured output changes`).toBe(true);
       expect(textured.nativeBrightness).toBeGreaterThan(off!.nativeBrightness + 1000);
       expect(textured.graphBrightness).toBeGreaterThan(off!.graphBrightness + 1000);
       expect(textured.nativeBrightness / nativeTexture.nativeBrightness).toBeCloseTo(1, 2);
