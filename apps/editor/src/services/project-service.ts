@@ -227,6 +227,8 @@ function parentDir(path: string): string {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
+type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
+
 export class ProjectService {
   private readonly storage: ProjectStorage;
   private projectGuid: string | null = null;
@@ -588,11 +590,13 @@ export class ProjectService {
       }
       return this.scaffoldNewProject(projectName, options.kind, options);
     }
-    await this.storage.openDocumentsProject(projectName);
+    const owned = await this.openOwnedDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE)) {
       throw new Error("Name already exists.");
     }
-    return this.scaffoldNewProject(projectName, options?.kind, options);
+    return this.scaffoldOwnedProject(owned, () =>
+      this.scaffoldNewProject(projectName, options?.kind, options),
+    );
   }
 
   async createFromTemplate(options: {
@@ -602,36 +606,92 @@ export class ProjectService {
     appearance?: ProjectAppearance;
   }): Promise<ProjectLoadResult> {
     const projectName = normalizeProjectFolderName(options.name);
+    let owned: OwnedFolder | null = null;
     if (options.pickFolder) {
       await this.storage.pickProjectFolder();
     } else {
-      await this.storage.openDocumentsProject(projectName);
+      owned = await this.openOwnedDocumentsProject(projectName);
     }
     if (await this.storage.exists(PROJECT_FILE)) {
       throw new Error("A project already exists in this folder.");
     }
     const guid = newGuid();
-    await createProjectFromTemplate({
-      templateFiles: options.templateFiles,
-      destination: this.storage,
-      guid,
-      name: projectName,
-    });
-    const appearance = normalizeProjectAppearance(options.appearance);
-    if (appearance) {
-      const manifest = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
-        metadata?: Partial<ProjectMetadata>;
-      };
-      manifest.metadata = {
-        ...createEmptyProject(projectName).metadata,
-        ...manifest.metadata,
-        appearance,
-      };
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify(manifest, null, 2));
+    return this.scaffoldOwnedProject(
+      owned,
+      async () => {
+        await createProjectFromTemplate({
+          templateFiles: options.templateFiles,
+          destination: this.storage,
+          guid,
+          name: projectName,
+        });
+        const appearance = normalizeProjectAppearance(options.appearance);
+        if (appearance) {
+          const manifest = JSON.parse(
+            await this.storage.readText(PROJECT_FILE),
+          ) as {
+            metadata?: Partial<ProjectMetadata>;
+          };
+          manifest.metadata = {
+            ...createEmptyProject(projectName).metadata,
+            ...manifest.metadata,
+            appearance,
+          };
+          await this.storage.writeText(
+            PROJECT_FILE,
+            JSON.stringify(manifest, null, 2),
+          );
+        }
+        this.projectGuid = guid;
+        await this.installEnginePluginDefaultsIfNeeded();
+        return this.loadCurrentProject();
+      },
+    );
+  }
+
+  /** Opens the Documents-tier folder for `name`, recording whether this call created it. */
+  private async openOwnedDocumentsProject(name: string): Promise<OwnedFolder> {
+    const known = await this.storage.listProjects();
+    const handle = await this.storage.openDocumentsProject(name);
+    const registered = known.some((p) => p.id === handle.id);
+    let empty = false;
+    if (!registered) {
+      try {
+        empty = (await this.storage.readdir(".")).length === 0;
+      } catch {
+        empty = false;
+      }
     }
-    this.projectGuid = guid;
-    await this.installEnginePluginDefaultsIfNeeded();
-    return this.loadCurrentProject();
+    return { handle, createdHere: !registered && empty };
+  }
+
+  private async scaffoldOwnedProject<T>(
+    owned: OwnedFolder | null,
+    scaffold: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await scaffold();
+    } catch (cause) {
+      // A failed scaffold leaves a registered folder that never reaches the
+      // recents list but still blocks the name via the project-file check.
+      // Drop only folders this call created itself and still owns;
+      // user-picked folders and pre-existing folders stay.
+      if (
+        owned?.createdHere &&
+        this.storage.deleteProject &&
+        this.storage.getCurrentFolder()?.id === owned.handle.id
+      ) {
+        try {
+          await this.storage.deleteProject(owned.handle);
+        } catch (cleanupError) {
+          console.warn(
+            `Could not remove partially created project "${owned.handle.name}"`,
+            cleanupError,
+          );
+        }
+      }
+      throw cause;
+    }
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
