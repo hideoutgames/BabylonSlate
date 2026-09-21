@@ -68,6 +68,27 @@ function host(engine = new NullEngine()) {
   return { engine, scene, camera };
 }
 
+it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
+  const releasePrevious = graph.retainResources();
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  await graph.prepare(camera);
+  expect(release).not.toHaveBeenCalled();
+  expect(graph.taskNames()).toContain("Scene Effects FXAA");
+  // A cancelled intermediate build must not accumulate another retained graph.
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: false } });
+  await graph.prepare(camera);
+  expect(release).toHaveBeenCalledTimes(1);
+  releasePrevious(); releasePrevious();
+  expect(release).toHaveBeenCalledTimes(2);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+  expect(release).toHaveBeenCalledTimes(3);
+});
+
 it("probes without rendering and preserves the chosen camera through one scene frame", async () => {
   const { scene, camera } = host();
   const other = new FreeCamera("other", Vector3.Zero(), scene);

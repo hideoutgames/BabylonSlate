@@ -350,7 +350,7 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   const chain = ancestryChain(options);
-  if (nodeId === "flow.event.scalabilityChanged") return !options?.activeFunctionId && !options?.animationGraphHost && ["Actor", "ActorComponent", "GameInstance"].some((base) => chain.includes(base));
+  if (nodeId === "flow.event.scalabilityChanged") return !options?.animationGraphHost && ["Actor", "ActorComponent", "GameInstance"].some((base) => chain.includes(base));
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   const isGiOnlyEvent = (
     NATIVE_GAME_INSTANCE_EVENT_TYPES as readonly string[]

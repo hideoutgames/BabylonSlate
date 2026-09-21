@@ -1835,6 +1835,7 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
+      if (def.id === "flow.event.scalabilityChanged" && options?.activeFunctionId) return false;
       if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed") &&
         (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {

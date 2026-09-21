@@ -108,6 +108,7 @@ function selectedFields(patch: Record<string, unknown>, normalized: Record<strin
 /** One session owner for graphs, game settings UI and console commands. No engine objects. */
 export class ScalabilitySession {
   private readonly project: RuntimeRenderingSettings;
+  private readonly submit: (transaction: ScalabilityTransaction) => void;
   private readonly quality: RenderingQualitySession;
   private visualOverrides: RenderSettingsPatch = {};
   private frameCapOverride: number | undefined;
@@ -120,8 +121,9 @@ export class ScalabilitySession {
     project: Partial<RenderProjectSettings> | undefined,
     frameCap: number | undefined,
     scene: ShadowOverrides = {},
-    private readonly submit: (transaction: ScalabilityTransaction) => void = () => {},
+    submit: (transaction: ScalabilityTransaction) => void = () => {},
   ) {
+    this.submit = submit;
     this.project = { render: normalizeRenderProjectSettings(project), frameCap: normalizePlayFrameCap(frameCap) };
     this.quality = new RenderingQualitySession(this.project.render, scene);
   }

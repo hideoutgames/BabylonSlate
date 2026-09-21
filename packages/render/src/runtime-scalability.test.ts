@@ -62,4 +62,16 @@ describe("view runtime scalability queue", () => {
     expect(f.acknowledgements).toHaveLength(0);
     expect(f.applied).toHaveLength(1);
   });
+  it("stops retrying a failed restoration until a new explicit request arrives", async () => {
+    const f = fixture();
+    f.session.request({ kind: "patch", frameCap: 30 }); f.controller.advance();
+    f.work[0]!.reject(new Error("Allocation failed")); await flush(); f.controller.advance();
+    f.work[1]!.reject(new Error("Device lost")); await flush();
+    for (let frame = 0; frame < 20; frame++) f.controller.advance();
+    expect(f.applied).toHaveLength(2);
+    expect(f.controller.canPresent).toBe(false);
+    f.session.request({ kind: "patch", frameCap: 20 }); f.controller.advance();
+    f.work[2]!.resolve(); await flush(); f.controller.presented();
+    expect(f.acknowledgements.at(-1)).toMatchObject({ revision: 2, status: "applied" });
+  });
 });

@@ -40,6 +40,8 @@ export class SceneRenderCoordinator {
   /** Prepared graph task names in record order; [] on the classic path. */
   taskNames(): string[] { return this.graph.taskNames(); }
 
+  retainResources(): () => void { return this.graph.retainResources(); }
+
   async retire(): Promise<void> {
     this.dispose();
     await this.graph.retire();

@@ -2075,6 +2075,11 @@ function initializeEngine(
         options.onScalabilityApplied?.(acknowledgement);
       },
       invalidate: () => scheduler.invalidate("asset"),
+      retainResources: () => {
+        const world = worldRenderer?.retainResources();
+        const layers = sceneLayerCompositor?.retainResources();
+        return () => { try { world?.(); } finally { layers?.(); } };
+      },
     });
     onRollback(() => runtimeScalability?.dispose());
   }

@@ -254,6 +254,11 @@ export class SceneLayerCompositor {
     }
   }
 
+  retainResources(): () => void {
+    const releases = [...this.byId.values()].map((layer) => layer.renderer.retainResources());
+    return () => { for (const release of releases) release(); };
+  }
+
   async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
     const layer = this.byId.get(layerId);
     if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");

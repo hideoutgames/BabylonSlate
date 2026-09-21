@@ -60,6 +60,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
  */
 export class ForwardSceneFrameGraph {
   private graph: FrameGraph | undefined;
+  private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
   private postProcessOwner: ScenePostProcessOwner | undefined;
   private postProcessGraph: ScenePostProcessGraph | undefined;
   private effectsGraph: SceneEffectsGraph | undefined;
@@ -181,6 +182,25 @@ export class ForwardSceneFrameGraph {
   /** Prepared graph task names in record order, for diagnostics and tests. */
   taskNames(): string[] {
     return this.graph?.tasks.map((task) => task.name) ?? [];
+  }
+
+  /** Hold the current valid graph while the view prepares a replacement. Superseded candidates are not retained. */
+  retainResources(): () => void {
+    const graph = this.graph;
+    if (!graph || this.disposed) return () => {};
+    const retained: { count: number; release?: () => void } = this.retainedGraphs.get(graph) ?? { count: 0 };
+    this.retainedGraphs.set(graph, retained);
+    retained.count += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (this.retainedGraphs.get(graph) !== retained) return;
+      if (--retained.count === 0) {
+        this.retainedGraphs.delete(graph);
+        retained.release?.();
+      }
+    };
   }
 
   /** Settle CPU ownership before a host releases a borrowed output target. */
@@ -508,6 +528,9 @@ export class ForwardSceneFrameGraph {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    const retained = [...this.retainedGraphs.values()];
+    this.retainedGraphs.clear();
+    for (const entry of retained) entry.release?.();
     this.releasePostProcessOwner();
     try {
       this.effectsOwner.dispose();
@@ -887,20 +910,19 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
-    this.postProcessGraph?.disposeTasks();
-    this.effectsGraph?.disposeTasks();
-    this.outputCopy?.dispose();
-    this.objects?.dispose();
-    this.shadows?.dispose();
-    this.clustered?.dispose();
-    this.clear?.dispose();
-    this.cull?.dispose();
-    this.graph?.dispose();
-    if (this.postProcessGraph) this.postProcessRetirement.add(this.postProcessGraph);
-    if (this.effectsGraph) this.postProcessRetirement.add(this.effectsGraph);
-    void this.postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => {
-      this.cleanupFailure = error;
-    });
+    const { graph, postProcessGraph, effectsGraph, outputCopy, objects, shadows, clustered, clear, cull } = this;
+    const release = () => {
+      postProcessGraph?.disposeTasks();
+      effectsGraph?.disposeTasks();
+      outputCopy?.dispose(); objects?.dispose(); shadows?.dispose(); clustered?.dispose(); clear?.dispose(); cull?.dispose();
+      graph?.dispose();
+      if (postProcessGraph) this.postProcessRetirement.add(postProcessGraph);
+      if (effectsGraph) this.postProcessRetirement.add(effectsGraph);
+      void postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
+    };
+    const retained = graph && this.retainedGraphs.get(graph);
+    if (retained && !this.disposed) retained.release = release;
+    else release();
     this.postProcessGraph = undefined;
     this.effectsGraph = undefined;
     this.preparedEffectsKey = undefined;

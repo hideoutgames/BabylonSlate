@@ -46,7 +46,7 @@ describe("compiled Class Graph scalability", () => {
       runtime.applyScalabilityStatus({ revision: snapshot.result.revision, status: "applied", message: "Ready", effective: snapshot.requested });
       const logs = commands.filter((command) => command.type === "log");
       expect(logs).toHaveLength(1);
-      expect(logs[0]?.message).toContain('"appliedRevision":3');
+      expect(logs[0]?.message).toContain('appliedRevision: 3');
       runtime.applyScalabilityStatus({ revision: 1, status: "failed", message: "Stale failure" });
       expect(commands.filter((command) => command.type === "log")).toHaveLength(1);
       runtime.executeConsoleCommand("quality lighting budget 3");
@@ -62,7 +62,7 @@ describe("compiled Class Graph scalability", () => {
       edges: [edge("begin", "execOut", "cap", "execIn"), edge("cap", "execOut", "log", "execIn"), edge("cap", "result", "log", "message")] });
     try {
       expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(0);
-      expect(commands.find((command) => command.type === "log")?.message).toContain('"status":"failed"');
+      expect(commands.find((command) => command.type === "log")?.message).toContain('status: failed');
       expect(runtime.getScalability().requested.frameCap).toBe(30);
     } finally { runtime.stop(); }
   });
