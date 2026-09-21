@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createFontPayload } from "@babylonslate/assets";
+import { createFontPayload, type AreaEmissionProgress } from "@babylonslate/assets";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -14,12 +14,17 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 
 const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
+const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
+  options.onProgress({ phase: "filtering", progress: 0.5 });
+  await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+}));
 const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
 );
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
+    prepareAreaEmission,
     openDocuments: [
       {
         id: "asset-settings:assets/environment.babasset",
@@ -153,9 +158,20 @@ afterEach(() => {
   cleanup();
   applyAssetDocumentChange.mockClear();
   retryTextureEncoding.mockClear();
+  prepareAreaEmission.mockClear();
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
+  it("shows cancellable emission preparation progress without editing the authored Texture", async () => {
+    render(<AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Emission" }));
+    expect(await screen.findByText("Filtering 50%")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Prepare Emission" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Not Prepared")).toBeTruthy();
+    expect(prepareAreaEmission.mock.calls[0]?.[1].signal.aborted).toBe(true);
+    expect(applyAssetDocumentChange).not.toHaveBeenCalled();
+  });
   it("presents cube metadata without exposing 2D downsampling or compression", () => {
     render(<AssetDocumentWorkspace documentId="asset-settings:assets/environment.babasset" />);
     expect(screen.getByText("Environment Cube")).toBeTruthy();
