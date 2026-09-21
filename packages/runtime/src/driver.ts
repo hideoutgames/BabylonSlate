@@ -1,5 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
-import { RenderingQualitySession, type RenderProjectSettings } from "@babylonslate/core";
+import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
@@ -309,6 +309,9 @@ export interface RuntimeDriver {
   applyRenderPathStatus(
     message: Extract<ControlMessage, { type: "renderPathStatus" }>,
   ): void;
+  applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void;
+  requestScalability(request: ScalabilityRequest): ScalabilityResult;
+  getScalability(): ScalabilitySnapshot;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -423,9 +426,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
-  private readonly renderingQuality: RenderingQualitySession;
+  private readonly scalability: ScalabilitySession;
   private lastRenderPathStatus: RenderPathStatus | null = null;
-  private frameCap: number;
+  private readonly scalabilityProjectRenderPath: RenderPath;
   private volume = 1;
   private timeDilation = 1;
   private showCollision = false;
@@ -548,11 +551,9 @@ class InProcessRuntime implements RuntimeDriver {
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
-    this.renderingQuality = new RenderingQualitySession(options.renderSettings, options.playScene?.settings.shadowOverrides);
-    this.frameCap =
-      options.frameCap !== undefined && options.frameCap > 0
-        ? options.frameCap
-        : DEFAULT_PLAY_FRAME_CAP;
+    this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
+    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings.shadowOverrides,
+      (transaction) => this.emit({ type: "setScalability", transaction }));
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
@@ -999,14 +1000,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.unregisterSceneLayerPostProcess(layerGuid, materialGuid);
       },
       setRenderResolution: (width, height) => {
-        const nextWidth = Math.max(1, Math.round(Number(width) || 0));
-        const nextHeight = Math.max(1, Math.round(Number(height) || 0));
-        this.emit({
-          type: "setRenderResolution",
-          width: nextWidth,
-          height: nextHeight,
-        });
+        this.requestScalability({ kind: "patch", render: { width, height, customResolution: true, blackBars: true } });
       },
+      getScalability: () => this.getScalability(),
+      requestScalability: (request) => this.requestScalability(request),
       getPostProcessEntry: (owner, entryId) => {
         if (!this.canRunOwner(owner)) return null;
         const material = getPostProcessMaterialObject(owner, entryId);
@@ -1556,6 +1553,21 @@ class InProcessRuntime implements RuntimeDriver {
       gpuBackend: message.gpuBackend,
       limits: [...message.limits],
     };
+  }
+
+  requestScalability(request: ScalabilityRequest): ScalabilityResult {
+    return this.scalability.request(request);
+  }
+
+  getScalability(): ScalabilitySnapshot { return this.scalability.snapshot(); }
+
+  applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void {
+    if (!this.scalability.acknowledge(acknowledgement)) return;
+    const snapshot = this.scalability.snapshot();
+    const owners = [this.world.gameInstance, this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors()];
+    for (const owner of owners) if (owner && this.canRunOwner(owner)) {
+      this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
+    }
   }
 
   private ensureOverlayDesignPose(actor: Actor): void {
@@ -2162,7 +2174,7 @@ class InProcessRuntime implements RuntimeDriver {
       layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
     };
     this.playScene = next;
-    this.renderingQuality.scene = next.settings.shadowOverrides ?? {};
+    this.scalability.setScene(next.settings.shadowOverrides ?? {});
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.
@@ -3388,23 +3400,16 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      quality: (group, choice, value) => {
-        const previous = this.renderingQuality.overrides;
-        const result = this.renderingQuality.execute(group, choice, value);
-        if (result.success && this.renderingQuality.overrides !== previous)
-          this.emit({ type: "setRenderingQuality", overrides: this.renderingQuality.overrides });
-        return result;
-      },
+      quality: (group, choice, value) => this.scalability.executeQuality(group, choice, value),
       setRenderPath: (path) => {
-        this.emit({ type: "setRenderPath", renderPath: path });
+        this.requestScalability({ kind: "patch", render: { renderPath: path ?? this.scalabilityProjectRenderPath } });
       },
       getRenderPath: () => this.lastRenderPathStatus,
       setLightsDebug: (enabled) => this.emit({ type: "setLightsDebug", enabled }),
       setFrameCap: (fps) => {
-        this.frameCap = fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
-        this.emit({ type: "setFrameCap", fps: this.frameCap });
+        this.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
       },
-      getFrameCap: () => this.frameCap,
+      getFrameCap: () => this.scalability.requested.frameCap,
       setVolume: (volume) => {
         this.volume = Number(volume);
         this.emit({ type: "setGlobalVolume", volume: this.volume });

@@ -87,6 +87,7 @@ async function launchLoaded(
   await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
   startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
+  let runtimeRender = game.manifest.render;
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
     document.getElementById("player-hud") ?? document.createElement("div"),
@@ -158,6 +159,10 @@ async function launchLoaded(
         );
       }
     },
+    onRenderOutputChanged: (render) => {
+      runtimeRender = render;
+      applyPlayerLayout({ root: rootEl(), canvas: canvasEl(), render });
+    },
     onStats: (stats) => {
       if (stopped) return;
       currentLightsDebugText = stats.lightsDebugText ?? null;
@@ -202,7 +207,7 @@ async function launchLoaded(
   layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(() => layoutFromManifest(game.manifest));
+      : new ResizeObserver(() => applyPlayerLayout({ root: rootEl(), canvas: canvasEl(), render: runtimeRender }));
   layoutObserver?.observe(rootEl());
   if (import.meta.env.VITE_TEST_MODE === "true") {
     (
@@ -212,6 +217,7 @@ async function launchLoaded(
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
+      scalability: () => session.scalability(),
       meshMaterialNames: () => session.meshMaterialNames(),
       bakedSession: () => session.bakedSession(),
       postProcessPassCount: () => session.postProcessPassCount(),

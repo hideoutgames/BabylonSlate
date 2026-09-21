@@ -2273,7 +2273,7 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("emits setRenderResolution when Begin Play runs render.setResolution", async () => {
+  it("requests session output settings when Begin Play runs render.setResolution", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
@@ -2300,12 +2300,11 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     runtime.tick();
     expect(
-      commands.filter((command) => command.type === "setRenderResolution"),
+      commands.filter((command) => command.type === "setScalability"),
     ).toEqual([
       expect.objectContaining({
-        type: "setRenderResolution",
-        width: 800,
-        height: 600,
+        type: "setScalability",
+        transaction: expect.objectContaining({ overrides: { width: 800, height: 600, customResolution: true, blackBars: true } }),
       }),
     ]);
     runtime.stop();

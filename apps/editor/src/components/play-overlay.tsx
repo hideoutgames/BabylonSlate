@@ -392,6 +392,7 @@ export function PlayOverlay({
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
   const initialRenderRef = useRef(render);
+  const runtimeRenderRef = useRef(render);
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
@@ -426,7 +427,7 @@ export function PlayOverlay({
         overlay,
         canvas,
         ...initialPlayPreviewRef.current,
-        render: initialRenderRef.current,
+        render: runtimeRenderRef.current,
         liveSize: liveSizeRef.current,
       });
     };
@@ -445,7 +446,7 @@ export function PlayOverlay({
       resize: () => void;
     }) => {
       const framebuffer = playFramebufferSize(
-        initialRenderRef.current,
+        runtimeRenderRef.current,
         liveSizeRef.current,
       );
       if (framebuffer) {
@@ -568,6 +569,11 @@ export function PlayOverlay({
       },
       onBehaviourTreeSnapshot: setTrees,
       onBtState: (state) => reportBtState(state),
+      onRenderOutputChanged: (settings) => {
+        runtimeRenderRef.current = settings;
+        liveSizeRef.current = null;
+        layoutPlay();
+      },
       onSetRenderResolution: (width, height) => {
         liveSizeRef.current = {
           width: clampRenderResolution(width),
@@ -606,7 +612,7 @@ export function PlayOverlay({
     const resizeObserver = new ResizeObserver(() => {
       layoutPlay();
       const framebuffer = playFramebufferSize(
-        initialRenderRef.current,
+        runtimeRenderRef.current,
         liveSizeRef.current,
       );
       if (!framebuffer) {

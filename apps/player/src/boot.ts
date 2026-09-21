@@ -1,3 +1,4 @@
+import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { lightsDebugText } from "@babylonslate/render";
@@ -88,6 +89,7 @@ export type PlayerDiagnostic = {
 export type PlayerBootHandle = {
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
+  scalability: () => ScalabilityAcknowledgement | undefined;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
   bakedSession: () => ReturnType<
@@ -109,7 +111,7 @@ export type PlayerBootHandle = {
 /** Browser qualification surface installed only in test-mode player builds. */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
   "visuals" | "meshMaterialNames" | "rendering" | "bakedSession" |
-  "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand"
+  "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability"
 >;
 
 export type PlayerBootOptions = {
@@ -119,6 +121,7 @@ export type PlayerBootOptions = {
   content?: PackedGameContent;
   /** Runs after every player resource has attempted cleanup, including startup rollback. */
   onStopped?: () => void;
+  onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onStats?: (stats: {
     ticks: number;
     fps: number;
@@ -191,6 +194,10 @@ function initializePlayer(
   });
 
   own(() => consoleHost.dispose());
+  const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
+    if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
+    else runtime?.applyScalabilityStatus(acknowledgement);
+  };
   const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
     const control: ControlMessage = {
       type: "renderPathStatus",
@@ -202,6 +209,7 @@ function initializePlayer(
     if (worker) worker.postControl(control);
     else runtime?.applyRenderPathStatus(control);
   };
+  let runtimeOutput = manifest.render;
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
@@ -331,6 +339,8 @@ function initializePlayer(
       else runtime?.applyAudioVoiceEnded(control);
     },
     onRenderPathChanged: publishRenderPathStatus,
+    onScalabilityApplied: publishScalabilityStatus,
+    onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
   });
   own(() => handle.dispose());
   handle.applySceneEnvironment(scene);
@@ -385,10 +395,10 @@ function initializePlayer(
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
   const resizeObserver =
-    framebuffer || typeof ResizeObserver === "undefined"
+    typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
-          if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+          if (!playFramebufferSize(runtimeOutput) && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
             handle.resize();
           }
         });
@@ -654,6 +664,8 @@ function initializePlayer(
   // The subscription above fired before the runtime existed; report the
   // current status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  const initialScalability = handle.scalabilityStatus?.();
+  if (initialScalability) publishScalabilityStatus(initialScalability);
 
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
@@ -739,7 +751,8 @@ function initializePlayer(
     return {
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
-      visuals: () => handle.playVisualStates(),
+      scalability: () => handle.scalabilityStatus?.(),
+    visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
       bakedSession: () =>
         halted ? null : handle.bakedSessionDiagnostics(),

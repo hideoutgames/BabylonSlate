@@ -13,8 +13,8 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       for (const line of ["quality low", "quality resolution scale 0.5", "quality shadows reset", "quality reset"])
         for (let repeat = 0; repeat < 20; repeat++)
           expect(runtime.executeConsoleCommand(line).success).toBe(true);
-      expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(4);
-      expect(commands.at(-1)).toEqual({ type: "setRenderingQuality", overrides: {} });
+      expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(4);
+      expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: {} } });
       expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":1');
     } finally { runtime.stop(); }
   });
@@ -29,7 +29,8 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     try {
       expect(runtime.executeConsoleCommand(`framecap ${cap}`).output).toBe("framecap 60");
       expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 60");
-      expect(commands).toContainEqual({ type: "setFrameCap", fps: 60 });
+      expect(runtime.getScalability().requested.frameCap).toBe(60);
+      expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(0);
     } finally {
       runtime.stop();
     }
@@ -331,11 +332,11 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     });
     expect(runtime.executeConsoleCommand("quality low").success).toBe(true);
     expect(runtime.executeConsoleCommand("quality resolution scale 0.5").success).toBe(true);
-    expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(2);
-    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, dynamic: false } } });
+    expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);
+    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { resolution: { scale: 0.5, dynamic: false } } } } });
     expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":0.5');
     expect(runtime.executeConsoleCommand("quality resolution scale 8").success).toBe(false);
-    expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(2);
+    expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);
     expect(runtime.executeConsoleCommand("volume").output).toBe("volume 0.25");
     expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
     runtime.stop();
@@ -364,8 +365,8 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     });
     expect(runtime.executeConsoleCommand("renderpath nonsense").success).toBe(false);
     expect(commands).toEqual([
-      { type: "setRenderPath", renderPath: "clusteredForward" },
-      { type: "setRenderPath", renderPath: null },
+      expect.objectContaining({ type: "setScalability", transaction: expect.objectContaining({ overrides: { renderPath: "clusteredForward" } }) }),
+      expect.objectContaining({ type: "setScalability", transaction: expect.objectContaining({ overrides: { renderPath: "forward" } }) }),
     ]);
     runtime.applyRenderPathStatus({
       type: "renderPathStatus",
@@ -397,9 +398,9 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.executeConsoleCommand("quality shadows budget 16");
     expect(runtime.executeConsoleCommand("quality shadows").output).toContain("shadows custom");
     expect(runtime.executeConsoleCommand("quality lighting budget 3").success).toBe(true);
-    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { lighting: { preset: "custom", maxLocalLights: 3 }, shadows: { maxLocalLights: 16 } } });
+    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { lighting: { preset: "custom", maxLocalLights: 3 } }, shadows: { maxLocalLights: 16 } } } });
     runtime.executeConsoleCommand("quality shadows low");
-    expect(commands.at(-1)).toMatchObject({ type: "setRenderingQuality", overrides: { shadows: { preset: "low", profile: "low", maxLocalLights: 1, localLightMode: "auto" }, lighting: { maxLocalLights: 3 } } });
+    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { shadows: { preset: "low", profile: "low", maxLocalLights: 1, localLightMode: "auto" }, quality: { lighting: { maxLocalLights: 3 } } } } });
     expect(runtime.executeConsoleCommand("quality shadows").output).toContain("shadows low");
     runtime.stop();
   });

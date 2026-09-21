@@ -1,3 +1,4 @@
+import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import {
   parseAnimGraphDocument,
@@ -542,6 +543,7 @@ export function startPlaySession(options: {
   onStatHighlight?: (name: string, enabled: boolean) => void;
   onFreeCam?: (enabled: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
+  onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onBehaviourTreeDebug?: (enabled: boolean) => void;
   onBehaviourTreeSnapshot?: (
     trees: readonly import("@babylonslate/bridge").DebugBehaviourTree[],
@@ -565,6 +567,10 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
 
+  const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
+    if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
+    else runtime?.applyScalabilityStatus(acknowledgement);
+  };
   const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
     const control: ControlMessage = {
       type: "renderPathStatus",
@@ -578,7 +584,7 @@ export function startPlaySession(options: {
   };
 
   const handle = createEngine(canvas, {
-    renderSettings: options.renderSettings,
+    renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
@@ -661,6 +667,11 @@ export function startPlaySession(options: {
       else runtime?.applyAudioVoiceEnded(control);
     },
     onRenderPathChanged: publishRenderPathStatus,
+    onScalabilityApplied: publishScalabilityStatus,
+    onRuntimeOutputChanged: (settings) => {
+      if (options.onRenderOutputChanged) options.onRenderOutputChanged(settings);
+      else options.onSetRenderResolution?.(settings.width, settings.height);
+    },
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
@@ -1007,6 +1018,8 @@ export function startPlaySession(options: {
   // The subscription fired before the runtime existed; report the current
   // status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  const initialScalability = handle.scalabilityStatus?.();
+  if (initialScalability) publishScalabilityStatus(initialScalability);
 
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),

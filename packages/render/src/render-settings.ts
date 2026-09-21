@@ -1,5 +1,7 @@
 import type { Scene } from "@babylonjs/core";
 import {
+  mergeRenderSettings,
+  type RenderSettingsPatch,
   normalizeCelShadingSettings,
   resolveRenderingQuality,
   resolveLocalLightBudget,
@@ -31,6 +33,7 @@ export type RenderShadingSettings = Partial<
 type SceneRendering = {
   mode: RenderMode;
   qualityOverrides: QualityOverrides;
+  runtimeOverrides: RenderSettingsPatch;
   localQualityOverrides: QualityOverrides;
   lightsDebug: boolean;
   textureLodBias: number;
@@ -62,6 +65,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
     state = {
       mode: "pbr",
       qualityOverrides: {},
+      runtimeOverrides: {},
       localQualityOverrides: {},
       lightsDebug: false,
       textureLodBias: 0,
@@ -102,16 +106,17 @@ export function updateSceneRenderingSettings(
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
   if (environmentOverrides !== undefined) state.environmentOverrides = environmentOverrides;
-  state.environmentLighting = resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides);
+  const resolved = mergeRenderSettings(state.project, state.runtimeOverrides);
+  state.environmentLighting = resolveEnvironmentLightingSettings(resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides), state.runtimeOverrides.environmentLighting);
   const quality = resolveSceneRenderingQuality(scene);
   state.shadows = quality.shadows;
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
-  const mode = state.project.mode === "cel" ? "cel" : "pbr";
-  state.cel = resolveCelShadingSettings(state.project.cel, state.overrides);
-  state.effects = normalizeRenderEffectsSettings(state.project.effects);
+  const mode = resolved.mode === "cel" ? "cel" : "pbr";
+  state.cel = resolveCelShadingSettings(resolveCelShadingSettings(state.project.cel, state.overrides), state.runtimeOverrides.cel);
+  state.effects = normalizeRenderEffectsSettings(resolved.effects);
   if (mode !== state.mode) {
     state.mode = mode;
     for (const listener of state.listeners) listener(mode);
