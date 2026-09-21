@@ -1,6 +1,8 @@
 import { normalizePlayFrameCap, normalizeRenderProjectSettings, type RenderProjectSettings } from "./project";
 import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, type QualityGroup, type QualityOverrides } from "./render-quality";
 import type { ShadowOverrides } from "./shadows";
+import { normalizeCelShadingOverrides, type CelShadingOverrides } from "./cel-shading";
+import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import type { ResolvedRenderingPipeline } from "./render-path";
 
 export type RenderSettingsPatch<T = RenderProjectSettings> = {
@@ -9,11 +11,13 @@ export type RenderSettingsPatch<T = RenderProjectSettings> = {
 };
 export type ScalabilityStatus = "applied" | "clamped" | "unsupported" | "rebuildPending" | "restartRequired" | "failed";
 export type RenderingApplicationPolicy = "live" | "rebuild" | "restart" | "authoring";
+export interface ScalabilitySceneDefaults { shadowOverrides?: ShadowOverrides; celShading?: CelShadingOverrides; environmentLighting?: EnvironmentLightingOverrides }
 export interface RuntimeRenderingSettings { render: RenderProjectSettings; frameCap: number }
 export interface ScalabilityResult { revision: number; status: ScalabilityStatus; message: string }
 export interface ScalabilityTransaction {
   revision: number;
   settings: RuntimeRenderingSettings;
+  clamped?: boolean;
   /** Only explicit session fields override scene defaults. Never persisted. */
   overrides: RenderSettingsPatch;
 }
@@ -112,6 +116,8 @@ export class ScalabilitySession {
   private readonly quality: RenderingQualitySession;
   private visualOverrides: RenderSettingsPatch = {};
   private frameCapOverride: number | undefined;
+  private scene: ScalabilitySceneDefaults;
+  private clamped = false;
   private revision = 0;
   private appliedRevision = -1;
   private effective: RuntimeRenderingSettings | null = null;
@@ -120,12 +126,13 @@ export class ScalabilitySession {
   constructor(
     project: Partial<RenderProjectSettings> | undefined,
     frameCap: number | undefined,
-    scene: ShadowOverrides = {},
+    scene: ScalabilitySceneDefaults = {},
     submit: (transaction: ScalabilityTransaction) => void = () => {},
   ) {
     this.submit = submit;
     this.project = { render: normalizeRenderProjectSettings(project), frameCap: normalizePlayFrameCap(frameCap) };
-    this.quality = new RenderingQualitySession(this.project.render, scene);
+    this.scene = structuredClone(scene);
+    this.quality = new RenderingQualitySession(this.project.render, scene.shadowOverrides);
   }
   get overrides(): RenderSettingsPatch {
     const { shadows, ...quality } = this.quality.overrides;
@@ -134,7 +141,8 @@ export class ScalabilitySession {
   }
   get requested(): RuntimeRenderingSettings {
     const { shadows, ...quality } = this.quality.effective();
-    return { render: { ...mergeRenderSettings(this.project.render, this.visualOverrides), shadows, quality },
+    const inherited = mergeRenderSettings(this.project.render, { cel: normalizeCelShadingOverrides(this.scene.celShading), environmentLighting: normalizeEnvironmentLightingOverrides(this.scene.environmentLighting) });
+    return { render: { ...mergeRenderSettings(inherited, this.visualOverrides), shadows, quality },
       frameCap: this.frameCapOverride ?? this.project.frameCap };
   }
   snapshot(): ScalabilitySnapshot {
@@ -142,13 +150,14 @@ export class ScalabilitySession {
       appliedRevision: this.appliedRevision, result: this.result });
   }
   transaction(): ScalabilityTransaction {
-    return { revision: this.revision, settings: this.requested, overrides: this.overrides };
+    return { revision: this.revision, settings: this.requested, overrides: this.overrides, clamped: this.clamped };
   }
   /** Scene inheritance changes; session overrides keep their declared scope. */
-  setScene(shadows: ShadowOverrides): void {
+  setScene(scene: ScalabilitySceneDefaults): void {
     const before = this.requested;
-    this.quality.scene = shadows;
-    this.publish(before, "Scene rendering defaults changed.");
+    this.scene = structuredClone(scene);
+    this.quality.scene = scene.shadowOverrides ?? {};
+    this.publish(before, "Scene rendering defaults changed.", this.overrides, false, true);
   }
   request(request: ScalabilityRequest): ScalabilityResult {
     if (!record(request)) return this.rejected("failed", "A scalability request must be an object.");
@@ -199,10 +208,11 @@ export class ScalabilitySession {
   }
   /** Ignore stale asynchronous completions and duplicates; only ready frames advance effective values. */
   acknowledge(ack: ScalabilityAcknowledgement): boolean {
-    if (ack.revision !== this.revision || same(this.result, { revision: ack.revision, status: ack.status, message: ack.message }) && same(this.effective, ack.effective ?? this.effective)) return false;
+    if (ack.revision !== this.revision || same(this.result, { revision: ack.revision, status: ack.status, message: ack.message }) && same(this.effective, ack.effective ?? this.effective) && same(this.pipeline, ack.pipeline ?? this.pipeline)) return false;
     if (ack.effective && (ack.status === "applied" || ack.status === "clamped")) {
       this.effective = structuredClone(ack.effective);
       this.appliedRevision = ack.revision;
+      this.clamped = false;
     }
     if (ack.pipeline) this.pipeline = structuredClone(ack.pipeline);
     this.result = { revision: ack.revision, status: ack.status, message: ack.message };
@@ -211,9 +221,10 @@ export class ScalabilitySession {
   private rejected(status: ScalabilityStatus, message: string): ScalabilityResult {
     return { revision: this.revision, status, message };
   }
-  private publish(before: RuntimeRenderingSettings, message: string, previousOverrides = this.overrides, clamped = false): ScalabilityResult {
-    if (same(before, this.requested) && same(previousOverrides, this.overrides))
+  private publish(before: RuntimeRenderingSettings, message: string, previousOverrides = this.overrides, clamped = false, force = false): ScalabilityResult {
+    if (!force && same(before, this.requested) && same(previousOverrides, this.overrides))
       return clamped ? { ...this.result, status: "clamped", message: "Values were clamped to the existing request." } : { ...this.result };
+    this.clamped ||= clamped;
     this.result = { revision: ++this.revision, status: "rebuildPending", message };
     this.submit(this.transaction());
     return { ...this.result };

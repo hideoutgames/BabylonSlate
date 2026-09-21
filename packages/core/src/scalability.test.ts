@@ -3,7 +3,7 @@ import { ScalabilitySession, type ScalabilityTransaction } from "./scalability";
 
 function session() {
   const transactions: ScalabilityTransaction[] = [];
-  const settings = new ScalabilitySession({ mode: "cel", width: 800, height: 450 }, 30, { distance: 75 }, (value) => transactions.push(value));
+  const settings = new ScalabilitySession({ mode: "cel", width: 800, height: 450 }, 30, { shadowOverrides: { distance: 75 } }, (value) => transactions.push(value));
   return { settings, transactions };
 }
 describe("runtime scalability session", () => {
@@ -69,9 +69,11 @@ describe("runtime scalability session", () => {
   it("keeps overrides across scenes, while unoverridden scene fields follow their owner", () => {
     const { settings } = session();
     settings.request({ kind: "patch", render: { shadows: { enabled: false } }, frameCap: 20 });
-    settings.setScene({ distance: 120 });
+    settings.setScene({ shadowOverrides: { distance: 120 }, celShading: { shadowBands: 7 }, environmentLighting: { enabled: false } });
     expect(settings.requested.render.shadows).toMatchObject({ enabled: false, distance: 120 });
     expect(settings.requested.frameCap).toBe(20);
+    expect(settings.requested.render.cel?.shadowBands).toBe(7);
+    expect(settings.requested.render.environmentLighting?.enabled).toBe(false);
   });
   it("returns detached data and retains the previous confirmed settings after a failed rebuild", () => {
     const { settings } = session();

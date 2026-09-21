@@ -6,6 +6,7 @@ import type { PlayerTestHandle } from "../apps/player/src/boot";
 import { previewPlacementScene } from "./preview-scene-fixture";
 import { serveExportFiles } from "./export-static-server";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { scalabilityGraphScripts } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -14,7 +15,7 @@ const command = (page: Page, line: string) => page.evaluate((line) =>
   (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.executeConsoleCommand(line), line);
 const read = (page: Page) => page.evaluate(() => {
   const host = (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest;
-  return { rendering: host.rendering(), visuals: host.visuals(), tasks: host.renderTasks() };
+  return { rendering: host.rendering(), visuals: host.visuals(), tasks: host.renderTasks(), scalability: host.scalability() };
 });
 // Capture the presented surface. Reading a non-preserved GPU canvas with
 // drawImage between frames can return the cleared drawing buffer.
@@ -46,10 +47,14 @@ for (const variant of [
     });
     const exported = await exportGame({
       mode: variant.mode, bundleDebugger: true, startupSceneGuid: "first",
-      renderSettings, playFrameCap: 30, scripts: [],
+      renderSettings, playFrameCap: 30, scripts: scalabilityGraphScripts(),
       assets: ["first", "second"].map((guid) => {
         const scene = { ...previewPlacementScene(), name: guid };
-        if (guid === "second") scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
+        if (guid === "second") {
+          scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
+          scene.settings.celShading = { shadowBands: 7 };
+          scene.settings.environmentLighting = { intensity: 3 };
+        }
         return { guid, type: "Scene", sceneGuid: guid, bytes: new TextEncoder().encode(JSON.stringify(scene)) };
       }),
       playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
@@ -67,6 +72,7 @@ for (const variant of [
         await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
         await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
         await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
+        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBeCloseTo(1 / scale, 5);
         const live = await read(page);
         expect(live.rendering?.shadowPasses).toBe(0);
         expect(live.rendering?.pipeline.requested.gpuBackend).toBe(variant.backend);
@@ -79,21 +85,25 @@ for (const variant of [
       // presented shading, then restore the complete authored settings.
       const celPixels = await pixels(page);
       await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
-      await page.evaluate((settings) => (window as unknown as {
-        __babylonslatePlayerTest: PlayerTestHandle;
-      }).__babylonslatePlayerTest.setRenderSettings({ ...settings, mode: "pbr" }), renderSettings);
+      expect(await command(page, "qual_pbr")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("pbr");
       await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
       await testInfo.attach("runtime-pbr", { body: Buffer.from(await pixels(page), "base64"), contentType: "image/png" });
-      await page.evaluate((settings) => (window as unknown as {
-        __babylonslatePlayerTest: PlayerTestHandle;
-      }).__babylonslatePlayerTest.setRenderSettings(settings), renderSettings);
+      expect(await command(page, "qual_cel")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("cel");
       await expect.poll(async () => await pixels(page) === celPixels).toBe(true);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
-      expect(await command(page, "framecap 20")).toMatchObject({ success: true });
-      expect(await command(page, "quality resolution scale 0.5")).toMatchObject({ success: true });
-      await ready(2);
+      expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
+      const changed = await ready(2);
+      expect(changed.scalability?.effective?.frameCap).toBe(20);
+      for (let repeat = 0; repeat < 20; repeat++) expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
+      expect((await read(page)).scalability?.revision).toBe(changed.scalability?.revision);
       expect(await command(page, "changescene second")).toMatchObject({ success: true });
       const transitioned = await ready(2, "second");
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
+      expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
+      expect(boot.scalability?.pipeline?.requested.gpuBackend).toBe(variant.backend);
+      if (variant.fail) expect(boot.scalability?.pipeline?.limits.join(" ")).toContain("qualification adapter failure");
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 20" });
       const stored = await (await page.request.get(new URL(GAME_MANIFEST_FILE, server.url).href)).json();
       expect(stored.render).toMatchObject({ gpuBackend: variant.backend, mode: "cel", quality: { resolution: { scale: 0.8 } }, effects: { fxaa: true } });
@@ -103,6 +113,9 @@ for (const variant of [
         variant, boot, transitioned, stored,
       }), contentType: "application/json" });
       await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
+      expect(await command(page, "qual_reset")).toMatchObject({ success: true });
+      const reset = await ready(1.25, "second");
+      expect(reset.scalability?.effective?.frameCap).toBe(30);
       await page.reload();
       await ready(1.25);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });

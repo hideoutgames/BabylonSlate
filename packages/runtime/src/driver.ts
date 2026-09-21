@@ -552,7 +552,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
-    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings.shadowOverrides,
+    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
       (transaction) => this.emit({ type: "setScalability", transaction }));
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
@@ -2174,7 +2174,7 @@ class InProcessRuntime implements RuntimeDriver {
       layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
     };
     this.playScene = next;
-    this.scalability.setScene(next.settings.shadowOverrides ?? {});
+    this.scalability.setScene(next.settings);
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.

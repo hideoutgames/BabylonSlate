@@ -2064,8 +2064,8 @@ function initializeEngine(
         const { shadows, ...quality } = resolveSceneRenderingQuality(scene);
         quality.textures = { ...quality.textures, anisotropy: state.textureAnisotropy };
         const pipeline = sceneRenderPathStatus(scene);
-        return { revision: transaction.revision, status: pipeline.limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
-          message: pipeline.limits.join(" ") || "Rendering settings presented.", pipeline,
+        return { revision: transaction.revision, status: transaction.clamped || pipeline.limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
+          message: pipeline.limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
             ...pipeline.effective, quality, shadows, cel: state.cel, mode: state.mode,
             environmentLighting: state.environmentLighting, effects: state.effects } } };
