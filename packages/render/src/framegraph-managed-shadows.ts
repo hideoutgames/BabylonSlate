@@ -83,7 +83,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   protected override _setLightsForShadow(): void {
     // Retain native generator binding, including its camera-key contract.
     super._setLightsForShadow();
-    const admitted = new Set(this.shadowGenerators?.map((task) => task.shadowGenerator.getLight())
+    const admitted = new Set<Light>(this.shadowGenerators?.map((task) => task.shadowGenerator.getLight())
       .filter((light) => light.isEnabled() && light.shadowEnabled));
     const changed = new Map<Light, boolean>();
     this._renderer.onBeforeRenderObservable.remove(this._onBeforeRenderObservable);
