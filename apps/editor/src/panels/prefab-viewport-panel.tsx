@@ -1,7 +1,7 @@
 import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { requestEditorDrop } from "@babylonslate/core";
+import { areaEmissionTextureGuids, requestEditorDrop } from "@babylonslate/core";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
@@ -50,6 +50,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
@@ -277,11 +278,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
   );
+  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
+  const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const dropLoadKey = JSON.stringify([
     previewLoadKey,
     prefabPhysicsWorld,
     materialLibraryKey,
+    areaEmissionKey,
     textureLodKey,
   ]);
   const dropActorIds = selectedIds.filter(
@@ -396,6 +400,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [
     previewLoadKey,
     materialLibraryKey,
+    areaEmissionKey,
     textureLodKey,
     dropLoadKey,
     prefabPhysicsWorld,

@@ -987,3 +987,8 @@ a shader slot changes type, even if that slot's uniforms already exist. Their
 sampler lists are deduplicated across define updates and view passes. This avoids
 missing emission bindings and repeated LTC entries exhausting WebGL texture units.
 The browser fixture checks the actual bound emission resource at draw time.
+
+Scene and Class viewports observe the current derived chunk identity only for
+their referenced emission textures. Preparing or replacing one refreshes the
+existing view's assets; unrelated registry updates and unchanged saves do not
+reload emission data. Replacing source pixels invalidates the old representation.

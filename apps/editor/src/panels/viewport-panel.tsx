@@ -2,7 +2,7 @@ import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipe
 import type { AbstractEngine } from "@babylonjs/core";
 import { EngineStore } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
@@ -21,7 +21,7 @@ import {
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { bakeRuntimeAssetReader } from "@babylonslate/assets";
-import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
 import {
@@ -63,6 +63,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -616,6 +617,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
   );
+  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
+  const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
 
   useEffect(() => {
@@ -810,6 +813,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     requestedRenderSettingsKey,
     renderSettingsKey,
     materialLibraryKey,
+    areaEmissionKey,
     textureLodKey,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,

@@ -1,6 +1,15 @@
 import { areaEmissionTextureGuids, materialParameterTextureGuidsFromGraph, type SerializedGraph, type SerializedScene } from "@babylonslate/core";
 import { currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionPixels, type IndexedAsset } from "@babylonslate/assets";
 
+/** Observe only referenced prepared content, not unrelated registry activity. */
+export function savedAreaEmissionKey(guids: readonly string[], lookup: (guid: string) => IndexedAsset | undefined): string {
+  return JSON.stringify(guids.map((guid) => {
+    const asset = lookup(guid);
+    const chunk = asset && currentAreaEmissionChunk(asset.header);
+    return [guid, chunk?.id ?? null, chunk?.sha256 ?? null];
+  }));
+}
+
 export async function collectAreaEmissions(options: {
   assets: readonly IndexedAsset[];
   scenes: readonly (SerializedScene | null | undefined)[];

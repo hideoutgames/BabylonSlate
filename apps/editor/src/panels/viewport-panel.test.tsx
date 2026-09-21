@@ -6,7 +6,7 @@ import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
 import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@babylonslate/core";
-import { encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry } from "@babylonslate/assets";
+import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry, type AreaEmissionPixels } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 
@@ -73,7 +73,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     selection: { actorIds: [] as string[] },
     documents: {
       projectDocument: null as ReturnType<typeof createEmptyProject> | null,
-      assetRegistry: null as Pick<AssetRegistry, "list"> | null,
+      assetRegistry: null as Pick<AssetRegistry, "list" | "getByGuid"> | null,
       applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
       openDocuments: [] as Array<{
         id: string;
@@ -88,7 +88,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       collectPlayTextureBytes: vi.fn<(sprites?: unknown, tilesets?: unknown, guids?: readonly string[]) => Promise<Map<string, Uint8Array>>>(async () => new Map()),
       collectPlayTexturePixelSizes: vi.fn(() => new Map()),
       collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
-    collectPlayAreaEmissions: vi.fn(async () => new Map()),
+      collectPlayAreaEmissions: vi.fn(async (): Promise<Map<string, AreaEmissionPixels>> => new Map()),
       collectPlayFontMsdfPair: vi.fn(async () => new Map()),
       collectPlayFontFaceEntries: vi.fn(async () => []),
       collectPlayFontCssStacks: vi.fn(() => ({
@@ -738,7 +738,7 @@ describe("ViewportPanel engine", () => {
       })),
     });
     let asset = await savedAsset(1);
-    documents.assetRegistry = { list: () => [asset] };
+    documents.assetRegistry = { list: () => [asset], getByGuid: () => asset };
     documents.openDocuments = [{
       id: "scene:S",
       ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
@@ -782,5 +782,35 @@ describe("ViewportPanel engine", () => {
     );
     await Promise.resolve();
     expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
+  });
+
+  it("refreshes a prepared emission asset without rebuilding the scene or reacting to unchanged registry content", async () => {
+    const sourceHash = "a".repeat(64);
+    const asset = {
+      rootId: "project", path: "assets/Emitter.texture.babasset",
+      header: readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} })),
+    };
+    asset.header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, locator: { inline: { offset: 0, length: 4 } } });
+    documents.assetRegistry = { list: () => [asset], getByGuid: (guid) => guid === "emission" ? asset : undefined };
+    const scene = createDefaultScene();
+    scene.actors = [createActor("emitter", "Emitter", { components: [{ id: "area", classId: "AreaRectLightComponent", properties: { textureGuid: "emission" } }] })];
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: scene }];
+    const view = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const loads = handle.loadScene.mock.calls.length;
+    const collects = documents.collectPlayAreaEmissions.mock.calls.length;
+    const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    asset.header.chunks.push({ id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } });
+    refresh();
+    await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1));
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    expect(handle.loadScene).toHaveBeenCalledTimes(loads);
+    refresh();
+    await act(async () => {});
+    expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1);
+    // Replacing the source invalidates the old prepared representation.
+    asset.header.chunks.find((chunk) => chunk.id === "pixels")!.sha256 = "c".repeat(64);
+    refresh();
+    await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 2));
   });
 });
