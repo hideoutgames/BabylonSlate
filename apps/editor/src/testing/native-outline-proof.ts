@@ -86,7 +86,8 @@ export async function runNativeOutlineProof(backend: "webgl2" | "webgpu") {
         scene.updateTransformMatrix();
         engine.beginFrame();
         try { graph.execute(); } finally { engine.endFrame(); }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (frame < 2)
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
       // Capture the presented bitmap on both APIs, including WebGPU BGRA output.
       const copy = document.createElement("canvas");

@@ -5,6 +5,19 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {
+  it("does not send renderer work for repeated quality presets, values or resets", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    try {
+      for (const line of ["quality low", "quality resolution scale 0.5", "quality shadows reset", "quality reset"])
+        for (let repeat = 0; repeat < 20; repeat++)
+          expect(runtime.executeConsoleCommand(line).success).toBe(true);
+      expect(commands.filter((command) => command.type === "setRenderingQuality")).toHaveLength(4);
+      expect(commands.at(-1)).toEqual({ type: "setRenderingQuality", overrides: {} });
+      expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":1');
+    } finally { runtime.stop(); }
+  });
   it.each([0, -1])("reports the effective fallback cap for framecap %s", (cap) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

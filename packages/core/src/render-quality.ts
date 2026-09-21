@@ -337,6 +337,22 @@ export class RenderingQualitySession {
     choice?: string,
     value?: string,
   ): { success: boolean; output: string } {
+    const previous = this.overrides;
+    const result = this.executeRequest(group, choice, value);
+    // Render owners use override identity to avoid readiness/resource work.
+    if (QUALITY_GROUPS.every((key) => {
+      const before = previous[key] as Record<string, unknown> | undefined;
+      const after = this.overrides[key] as Record<string, unknown> | undefined;
+      const fields = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+      return [...fields].every((field) => before?.[field] === after?.[field]);
+    })) this.overrides = previous;
+    return result;
+  }
+  private executeRequest(
+    group?: QualityGroup,
+    choice?: string,
+    value?: string,
+  ): { success: boolean; output: string } {
     if (
       value !== undefined &&
       (choice === undefined || choice === "reset" || isQualityLevel(choice))

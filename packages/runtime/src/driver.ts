@@ -3389,8 +3389,9 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyChangeScene(scene);
       },
       quality: (group, choice, value) => {
+        const previous = this.renderingQuality.overrides;
         const result = this.renderingQuality.execute(group, choice, value);
-        if (result.success && choice !== undefined)
+        if (result.success && this.renderingQuality.overrides !== previous)
           this.emit({ type: "setRenderingQuality", overrides: this.renderingQuality.overrides });
         return result;
       },

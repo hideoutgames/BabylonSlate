@@ -15,6 +15,13 @@ const read = (page: Page) => page.evaluate(() => {
   const host = (window as unknown as { __babylonslatePlayerTest: PlayerBootHandle }).__babylonslatePlayerTest;
   return { rendering: host.rendering(), materials: host.meshMaterialNames(), tasks: host.renderTasks() };
 });
+const pixels = (page: Page) => page.getByTestId("player-canvas").evaluate((node: HTMLCanvasElement) => {
+  const copy = document.createElement("canvas");
+  copy.width = node.width; copy.height = node.height;
+  const context = copy.getContext("2d")!;
+  context.drawImage(node, 0, 0);
+  return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
+});
 
 for (const variant of [
   { mode: "packed", backend: "webgl2", fail: false },
@@ -61,11 +68,22 @@ for (const variant of [
         const live = await read(page);
         expect(live.rendering?.shadowPasses).toBe(0);
         expect(live.rendering?.pipeline.requested.gpuBackend).toBe(variant.backend);
-        expect(live.materials.some((name) => name.endsWith(":CEL"))).toBe(true);
+        expect(live.materials.length).toBeGreaterThan(0);
         expect(live.tasks?.some((name) => /FXAA/i.test(name))).toBe(true);
         return live;
       };
       const boot = await ready(1.25);
+      // Graph surfaces keep their names when switching mode: compare actual
+      // presented shading, then restore the complete authored settings.
+      const celPixels = await pixels(page);
+      await page.evaluate((settings) => (window as unknown as {
+        __babylonslatePlayerTest: PlayerBootHandle;
+      }).__babylonslatePlayerTest.setRenderSettings({ ...settings, mode: "pbr" }), renderSettings);
+      await expect.poll(async () => JSON.stringify(await pixels(page)) !== JSON.stringify(celPixels)).toBe(true);
+      await page.evaluate((settings) => (window as unknown as {
+        __babylonslatePlayerTest: PlayerBootHandle;
+      }).__babylonslatePlayerTest.setRenderSettings(settings), renderSettings);
+      await expect.poll(() => pixels(page)).toEqual(celPixels);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(await command(page, "quality resolution scale 0.5")).toMatchObject({ success: true });
       await ready(2);
