@@ -19,6 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-21 | zeron/babylonslate-rendering-handoff | September 2026 rendering handoff | Spec | Native outline consumers share an instance-selection buffer; clearing one removes the buffer and loses the other consumer's WebGPU pixels. Bounded-pass extension needs the requested product approval. See [qualification](../design/renderer-qualification.md#production-outline-qualification-gate). | Blocked on approval |
+| 2026-09-21 | zeron/babylonslate-rendering-handoff | September 2026 rendering handoff | Spec | Physical A16 budgets/coverage are unmeasured; production outlines, complete scalability transactions/nodes and rectangular area-light integration remain unimplemented. Desktop captures do not satisfy release acceptance. | Open |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `PhysicsWorldSync.applyMeshColliders` fingerprinted kind + TRS + layer/mask but not `baked.shape`, so actor scale (and radius/hull size) kept the old Havok collider | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Add → Generated Collision with no Model `source` chunk wrote `kind: "generated"` and `points: []` instead of recooking the hull | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Play `showcollision` maps cylinder to a box AABB and skips convex/mesh (cone, generated, complex). Editor dashes already use cylinder/hull wires. Same skip as prior convex authorship | Accepted |
