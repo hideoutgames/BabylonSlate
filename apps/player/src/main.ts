@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/vfs";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
+import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
@@ -206,15 +207,7 @@ async function launchLoaded(
   if (import.meta.env.VITE_TEST_MODE === "true") {
     (
       window as typeof window & {
-        __babylonslatePlayerTest?: {
-          visuals: () => ReturnType<typeof session.visuals>;
-          meshMaterialNames: () => string[];
-          rendering: typeof session.rendering;
-          bakedSession: typeof session.bakedSession;
-          postProcessPassCount: typeof session.postProcessPassCount;
-          renderTasks: typeof session.renderTasks;
-          setRenderSettings: typeof session.setRenderSettings;
-        };
+        __babylonslatePlayerTest?: PlayerTestHandle;
       }
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
@@ -224,6 +217,7 @@ async function launchLoaded(
       postProcessPassCount: () => session.postProcessPassCount(),
       renderTasks: () => session.renderTasks(),
       setRenderSettings: (settings) => session.setRenderSettings(settings),
+      executeConsoleCommand: (line) => session.executeConsoleCommand(line),
     };
   }
   if (window.parent !== window) {
