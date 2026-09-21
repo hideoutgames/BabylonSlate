@@ -11,6 +11,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { checkedShader } from "./checked-shader";
 import { bindNodeShadowView } from "./node-shadow-view";
+import { syncSceneLightSamplers } from "./scene-light-samplers";
 import {
   BAKED_IRRADIANCE_INV_PI_GLSL,
   bakedIrradianceTexelSample,
@@ -57,6 +58,11 @@ export class ScenePbrLightingBlock extends PBRMetallicRoughnessBlock {
         this.bakedIrradiance.offset[1],
       );
     }
+  }
+
+  override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
+    super.updateUniformsAndSamples(state, material, defines, uniformBuffers);
+    syncSceneLightSamplers(state, material, defines);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {

@@ -20,6 +20,7 @@ import {
   CEL_UNIFORMS,
 } from "./cel-shader";
 import type { BakedIrradianceSampling } from "./baked-irradiance";
+import { syncSceneLightSamplers } from "./scene-light-samplers";
 
 /** Native CEL light evaluation inside authored surface graphs. */
 export class CelLightBlock extends LightBlock {
@@ -71,6 +72,11 @@ export class CelLightBlock extends LightBlock {
         this.bakedIrradiance.offset[1],
       );
     }
+  }
+
+  override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
+    super.updateUniformsAndSamples(state, material, defines, uniformBuffers);
+    syncSceneLightSamplers(state, material, defines);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {

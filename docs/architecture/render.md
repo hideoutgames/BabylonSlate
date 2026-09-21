@@ -981,3 +981,9 @@ The pinned RectAreaLight adapter registers its textured-emission define when a
 conventional slot previously held another light type. Babylon 9.20 otherwise adds
 the property without rebuilding the define key list, leaving the uniform shader
 active despite a ready emission texture. The adapter retains the native shader.
+
+The app-owned PBR and CEL graph light blocks refresh dynamic light samplers when
+a shader slot changes type, even if that slot's uniforms already exist. Their
+sampler lists are deduplicated across define updates and view passes. This avoids
+missing emission bindings and repeated LTC entries exhausting WebGL texture units.
+The browser fixture checks the actual bound emission resource at draw time.

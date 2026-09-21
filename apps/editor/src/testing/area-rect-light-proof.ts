@@ -39,7 +39,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
       if ((await compiled.ready).some((entry) => entry.severity === "error")) throw new Error("Area receiver shader failed");
       const right = MeshBuilder.CreateSphere("graph", { diameter: 1.5, segments: 24 }, scene);
       right.position.x = 0.9; right.material = compiled.material;
-      const bindingEvidence: Record<string, unknown> = {};
+      const bindingEvidence: Record<string, { name: string; unit: number; texture: string }[]> = {};
       if (engine instanceof Engine) {
         const gl = engine._gl;
         for (const mesh of [left, right]) mesh.onAfterRenderObservable.add(() => {

@@ -37,6 +37,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(off!.unlit).toEqual(on!.unlit);
       expect(back!.unlit).toEqual(on!.unlit);
       const textured = result.captures[4]!, nativeTexture = result.captures[5]!;
+      if (backend === "webgl2") for (const capture of [textured, nativeTexture]) {
+        for (const bindings of Object.values(capture.emission.bindings)) {
+          expect(bindings.find((binding) => binding.name.startsWith("rectAreaLightEmissionTexture"))?.texture).toBe("emission");
+        }
+      }
       expect(textured.image !== on!.image, `${result.mode} textured output changes`).toBe(true);
       expect(textured.nativeBrightness).toBeGreaterThan(off!.nativeBrightness + 1000);
       expect(textured.graphBrightness).toBeGreaterThan(off!.graphBrightness + 1000);
