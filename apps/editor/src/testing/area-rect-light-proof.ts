@@ -1,6 +1,6 @@
 /** Actual production FrameGraph receiver qualification; only the fixture is test-only. */
 import { Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, PBRMaterial, PointLight, Scene, Vector3, Viewport } from "@babylonjs/core";
-import { createActor, createDefaultScene, normalizeCelShadingSettings, type RenderPath } from "@babylonslate/core";
+import { createActor, createDefaultScene, normalizeCelShadingSettings, normalizeEnvironmentLightingSettings, type RenderPath } from "@babylonslate/core";
 import { beginEngineDrawCallFrame, compileMaterialPlan, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath, sceneRenderPathStatus, setSceneRenderSettings, syncAuthoredIllumination } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -26,7 +26,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
       native.albedoColor = new Color3(0.55, 0.08, 0.03); native.metallic = 0; native.roughness = 0.7;
       const left = MeshBuilder.CreateSphere("native", { diameter: 1.5, segments: 24 }, scene);
       left.position.x = -0.9; left.material = native;
-      setSceneRenderSettings(scene, { mode, celShading: normalizeCelShadingSettings({ shadowBands: 3, shadowStrength: 1, specularEnabled: false }), environmentLighting: { enabled: false } });
+      setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({ shadowBands: 3, shadowStrength: 1, specularEnabled: false }), environmentLighting: normalizeEnvironmentLightingSettings({ enabled: false }) });
       const materialDocument = createDefaultMaterialDocument("graph receiver");
       materialDocument.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.05, 0.55, 0.12];
       const lower = lowerMaterialDocument(materialDocument);
