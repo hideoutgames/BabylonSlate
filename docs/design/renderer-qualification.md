@@ -189,3 +189,10 @@ policy. CEL diffuse retained discrete levels; the unlit control stayed unchanged
 Disabled and 180-degree turned-away lighting matched, and restoring orientation
 restored identical pixels. No external asset request occurred. These checks do
 not establish physical-device budgets, textured emission or every lifecycle case.
+
+Textured qualification separately compares worker-prepared pixels to the native
+processor and compares rendered uploads using identical input pixels. The latter
+requires identical presented images, avoiding a loose brightness tolerance that
+could mask wrong sampler bindings. The separation matters for CEL: a one-byte
+preprocessing quantization difference can move a pixel across a hard band edge.
+WebGL draw-time evidence identifies each receiver's bound emission texture.

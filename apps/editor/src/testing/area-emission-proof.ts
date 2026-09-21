@@ -1,5 +1,5 @@
 /** Native preprocessing oracle is test-only; production uses committed derived data. */
-import { Scene, Texture, type AbstractEngine } from "@babylonjs/core";
+import { Constants, Scene, Texture, type AbstractEngine } from "@babylonjs/core";
 import { AreaLightTextureTools } from "@babylonjs/core/Misc/areaLightsTextureTools";
 import { decodeAreaEmission, sha256Hex } from "@babylonslate/assets";
 import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
@@ -31,6 +31,11 @@ export async function qualifyAreaEmission(engine: AbstractEngine) {
       totalError += error; maxError = Math.max(maxError, error);
       flippedError += Math.abs(bytes[offset]! - decoded.rgba[((1023 - y) * 1024 + x) * 4 + c]!);
     }
-    return { native, emissions: new Map([["pattern", decoded]]), report: { processor: decoded.metadata.processor, progress, maxError, meanError: totalError / (1024 ** 2 * 3), verticallyFlippedMeanError: flippedError / (1024 ** 2 * 3), sourceHash: decoded.metadata.sourceHash } };
+    // Separate preprocessing parity from upload/binding parity. A one-byte
+    // native raster quantization difference can cross a hard CEL threshold.
+    // The render oracle follows the native final upload into its render target,
+    // using identical validated bytes so the presented images must match exactly.
+    engine.updateRawTexture(native.getInternalTexture()!, decoded.rgba, Constants.TEXTUREFORMAT_RGBA, false);
+    return { native, emissions: new Map([["pattern", decoded]]), report: { processor: decoded.metadata.processor, progress, maxError, meanError: totalError / (1024 ** 2 * 3), verticallyFlippedMeanError: flippedError / (1024 ** 2 * 3), sourceHash: decoded.metadata.sourceHash, renderOracle: "native render target with identical prepared pixels" } };
   } finally { processor.dispose(); original.dispose(); scene.dispose(); URL.revokeObjectURL(url); }
 }
