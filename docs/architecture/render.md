@@ -893,3 +893,9 @@ Project render settings carry a versioned color pipeline (`render.effects.colorP
 Defaults reproduce prior output exactly, so legacy projects without the block load unchanged. Missing or invalid fields normalize to the display-identical defaults above.
 
 **D2 (not implemented).** SSAO, TAA, SSR, LUT and capture stages remain out of scope; the versioned stage contract reserves `colorPipeline.version` for their addition.
+
+### Typed session scalability contract
+
+`ScalabilitySession` in Core owns temporary render and presentation overrides for one Play/player session. Its typed requests share the existing quality resolver and console parser, preserve scene inheritance and artistic settings across presets, and reset to project defaults without editing the project. Backend changes reject the whole transaction with `restartRequired`. Invalid/non-finite requests also leave the current request intact. Requests carry monotonically increasing revisions; duplicate values do not enqueue renderer work.
+
+Readback separates `requested` from `effective`: effective values stay null until the renderer acknowledges its first ready frame, and retain their last confirmed value during a pending or failed rebuild. Stale acknowledgements cannot replace newer requests. This service contract is implemented; renderer acknowledgement wiring and Class Graph nodes are still being integrated. Physical A16 testing is deferred by user for this delivery; these contracts do not certify device performance.

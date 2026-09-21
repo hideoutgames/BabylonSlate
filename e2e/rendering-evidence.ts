@@ -15,6 +15,6 @@ export function renderingEvidence(sceneSource: string) {
     sceneSourceSha256: createHash("sha256").update(readFileSync(sceneSource)).digest("hex"),
     host: { os: platform(), osVersion: release(), arch: arch(), cpu: cpus()[0]?.model },
     graphicsArguments: SOFTWARE_WEBGPU_ARGS,
-    a16Acceptance: "blocked-no-physical-device",
+    a16Acceptance: "deferred-by-user-unmeasured",
   };
 }
