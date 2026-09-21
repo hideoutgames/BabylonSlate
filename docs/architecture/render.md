@@ -976,3 +976,8 @@ and CC BY 4.0 license under `legal/`.
 Emission texture identity/readiness participates in the lighting layout cache.
 A live assignment invalidates frozen material readiness and recompiles the native
 textured-light define once; unchanged assignments keep the cached result.
+
+The pinned RectAreaLight adapter registers its textured-emission define when a
+conventional slot previously held another light type. Babylon 9.20 otherwise adds
+the property without rebuilding the define key list, leaving the uniform shader
+active despite a ready emission texture. The adapter retains the native shader.

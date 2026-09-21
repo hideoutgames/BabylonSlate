@@ -1,9 +1,18 @@
-import { Color3, Matrix, Quaternion, RectAreaLight, TransformNode, Vector3, type Scene } from "@babylonjs/core";
+import { Color3, Matrix, Quaternion, RectAreaLight, TransformNode, Vector3, type MaterialDefines, type Scene } from "@babylonjs/core";
 import { type AreaRectLightBinding } from "@babylonslate/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";
 import type { MeshAssetContext } from "./mesh-assets";
 import { areaEmissionResourceKey, retainAreaEmissionTexture } from "./area-emission-resource";
+
+/** 9.20 adds this key without rebuilding when an existing light slot changes type. */
+class OwnedRectAreaLight extends RectAreaLight {
+  override prepareLightSpecificDefines(defines: MaterialDefines, index: number): void {
+    const added = !Object.hasOwn(defines, `RECTAREALIGHTEMISSIONTEXTURE${index}`);
+    super.prepareLightSpecificDefines(defines, index);
+    if (added) defines.rebuild();
+  }
+}
 
 /** View-owned native adapter. Babylon emits -Z; authored components emit +Z. */
 export class AreaRectLightOwner {
@@ -33,7 +42,7 @@ export class AreaRectLightOwner {
     this.onDiagnostic = onDiagnostic;
     this.binding = binding;
     this.adapter = new TransformNode(`${name}:transform`, scene);
-    try { this.light = new RectAreaLight(name, Vector3.Zero(), 1, 1, scene); }
+    try { this.light = new OwnedRectAreaLight(name, Vector3.Zero(), 1, 1, scene); }
     catch (error) { this.adapter.dispose(); releaseLookup(); throw error; }
     this.light.parent = this.adapter;
     this.light.onDisposeObservable.addOnce(() => {
