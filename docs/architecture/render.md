@@ -1013,3 +1013,6 @@ renders 240×135. The per-view lock survives scale changes and scene transitions
 presentation retains the same authored aspect and CSS layout. Diagnostics report
 actual drawing-buffer dimensions separately from the scaling level. A layout
 with Black Bars disabled retains the existing CSS-sized output policy.
+Settings-only effect graphs rebuild their fixed-size targets when the output
+changes, just like authored post-process stacks. This keeps color and depth
+attachments compatible through scaling and avoids an unintended native fallback.

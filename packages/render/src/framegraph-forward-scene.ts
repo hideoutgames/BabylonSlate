@@ -637,7 +637,8 @@ export class ForwardSceneFrameGraph {
         this.preparedEffectsKey !== this.effectsKey() ||
         this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
-        this.postProcessGraph && (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
+        (this.postProcessGraph || this.effectsGraph) &&
+          (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
