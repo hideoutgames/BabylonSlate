@@ -1023,3 +1023,9 @@ no-ops. Missing prepared content disables its emitter with the same diagnostic
 as initial loading. Editor Play preparation stops on missing/corrupt required
 emission data and clears the previous session's map before loading; these errors
 are reported as emission failures independently of font loading.
+
+SceneLayer preparation and frame admission observe the active view's actual
+backbuffer size, including dynamic resolution changes without a DOM resize.
+Unchanged dimensions are cached. A resize replaces layer targets through the
+existing retirement owner, retaining the presented image until its successor is
+ready; it does not add another scheduling loop.

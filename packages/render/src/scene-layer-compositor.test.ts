@@ -223,7 +223,7 @@ describe("SceneLayerCompositor", () => {
     expect(layer.scene.autoClear).toBe(false);
   });
 
-  it("replaces layer targets with owned sampleable depth and waits for every retired graph before Scene disposal", async () => {
+  it("resizes layer targets at the frame boundary and waits for every retired graph before Scene disposal", async () => {
     const { engine } = world();
     engine.getCaps().depthTextureExtension = true;
     // NullEngine has no native depth attachment driver. Keep the real RTT owner
@@ -260,9 +260,14 @@ describe("SceneLayerCompositor", () => {
     const disposeFirst = vi.spyOn(first, "dispose");
     const draw = vi.spyOn(layer.scene, "render");
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(first.getSize().width + 16);
-    compositor.resize();
+    // A scaling controller may resize the engine without a host resize event.
+    // Admission can hold drawing while replacement resources are prepared.
+    compositor.render(new Set(), () => {});
     const next = layer.camera.outputRenderTarget!;
     expect(next).not.toBe(first);
+    expect(next.getSize().width).toBe(first.getSize().width + 16);
+    compositor.render(new Set(), () => {});
+    expect(layer.camera.outputRenderTarget).toBe(next);
     expect(next.depthStencilTexture).not.toBe(first.depthStencilTexture);
     expect(renderers[1]).not.toBe(renderers[0]);
     expect(draw).not.toHaveBeenCalled();
