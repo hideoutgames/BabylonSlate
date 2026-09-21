@@ -51,9 +51,9 @@ Earlier fixture failures (material-name assumptions, reading the cleared canvas,
 | P0 physical A16 baseline and budgets | **Deferred by user; not a current delivery gate.** No A16 CPU/GPU/p50/p95/p99, input latency, sustained memory or remaining-headroom claims. Agree the representative scene and explicit 60 fps (16.7 ms) or 30 fps (33.3 ms) target, then measure equal content/quality before and after. CPU and GPU headroom must be reported separately. |
 | P0 settings contract | Shared authored/export/boot normalization and the cases above are implemented. Complete per-field rendered application, all hosts and backend capability tests remain. See the [application inventory](../architecture/render.md#rendering-handoff-application-contract). |
 | P1 editor/component/global CEL outlines | **Native ownership gate failed; alternative approval pending.** Production selection remains the existing mesh-outline implementation. No OutlineComponent/global outline schema or default-on switch is advertised. Lifecycle, strict occlusion, compositing, style grouping, coverage and zero-work-disabled acceptance remain. |
-| P1 Class Graph scalability | Repeated existing quality requests now avoid duplicate renderer commands. Typed transactions, renderer acknowledgement/failure results, coalescing, events, full node category and real graph execution tests remain unimplemented. |
+| P1 Class Graph scalability | Shared typed session transactions, safe-boundary renderer application, acknowledgements, coalescing, events and the Scalability node category are implemented. Real compiled graph commands exercise runtime mode/scale/frame-cap/reset in standalone exports. Complete setter/preset coverage across Play/player and outline controls remain. |
 | P1 measured headroom | Only command-count behavior is established. GPU/CPU milliseconds, pass savings, memory savings and A16 visual/performance comparisons are **not measured**. |
-| P2 rectangular area light | **Not implemented.** Receiver/backend qualification, transform adapter, derived texture pipeline/export, owned resources, debug UI, admission and explicit unshadowed authoring remain after the foundation gates. |
+| P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Native/graph PBR and CEL browser qualification passes for the tested fixture. Standalone textured lifecycle, large-source filtering, all transform/material cases and full authoring coverage remain under verification. |
 | P0 release | **Not accepted.** The requested production feature set is incomplete. A16 hardware testing is deferred by user; browser acceptance remains required. |
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
@@ -196,3 +196,19 @@ requires identical presented images, avoiding a loose brightness tolerance that
 could mask wrong sampler bindings. The separation matters for CEL: a one-byte
 preprocessing quantization difference can move a pixel across a hard band edge.
 WebGL draw-time evidence identifies each receiver's bound emission texture.
+
+At `5c57f21a`, both textured browser cases passed on the same software-backed
+Windows/Chromium environment. The 32×16 numeric source differed from Babylon's
+prepared base pixels by at most one channel value (WebGL2 mean 0.3113/255,
+WebGPU mean 0.0016/255). Matched-input uploads produced identical presented
+images on each backend. The sampler qualification exposed and fixed repeated
+LTC sampler registration and missing dynamic emission bindings in graph materials.
+This is correctness evidence, not a measured performance improvement. Five
+targeted unit files passed 72 tests at that revision; the two lighting/shadow
+files passed 39 tests at `29b57983` after shared sampler admission was added.
+
+`e2e/area-light-export.spec.ts` uses the editor's real export collector, served
+packed WebGL2 and loose WebGPU players, a uniform numeric prepared texture and
+four scenes. It checks texture/uniform/disabled pixels, repeated scene disposal,
+GPU reservation recovery, reload and absence of external resource requests.
+Its results must be recorded separately from the in-editor GPU fixture.
