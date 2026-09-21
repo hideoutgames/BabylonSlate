@@ -29,9 +29,10 @@ export type RenderDiagnostics = {
   pressure: FramePressureSample | null;
   /** Why `gpuMs` is this view's own cost, shared with siblings, or missing. */
   gpuAttribution: GpuAttribution;
+  /** Actual drawing-buffer dimensions after render scale. */
   width: number;
   height: number;
-  /** Dynamic-resolution valve level; raster size is `width / scalingLevel`. */
+  /** Inverse render scale. Do not apply this again to the buffer dimensions. */
   scalingLevel: number;
   samples: number;
   shadowPasses: number;

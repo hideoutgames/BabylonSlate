@@ -3092,6 +3092,10 @@ describe("Play createEngine view", () => {
 
   it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
     const engine = sharedEngine();
+    // NullEngine hardcodes a scaling level of one; supply the browser boundary.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
     handles.push(handle);
