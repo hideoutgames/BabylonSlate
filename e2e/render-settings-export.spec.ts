@@ -15,13 +15,12 @@ const read = (page: Page) => page.evaluate(() => {
   const host = (window as unknown as { __babylonslatePlayerTest: PlayerBootHandle }).__babylonslatePlayerTest;
   return { rendering: host.rendering(), visuals: host.visuals(), tasks: host.renderTasks() };
 });
-const pixels = (page: Page) => page.getByTestId("player-canvas").evaluate((node: HTMLCanvasElement) => {
-  const copy = document.createElement("canvas");
-  copy.width = node.width; copy.height = node.height;
-  const context = copy.getContext("2d")!;
-  context.drawImage(node, 0, 0);
-  return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
-});
+// Capture the presented surface. Reading a non-preserved GPU canvas with
+// drawImage between frames can return the cleared drawing buffer.
+const pixels = async (page: Page) =>
+  (await page.getByTestId("player-canvas").screenshot({
+    style: "#player-hud { visibility: hidden !important; }",
+  })).toString("base64");
 
 for (const variant of [
   { mode: "packed", backend: "webgl2", fail: false },
@@ -76,14 +75,16 @@ for (const variant of [
       // Graph surfaces keep their names when switching mode: compare actual
       // presented shading, then restore the complete authored settings.
       const celPixels = await pixels(page);
+      await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
       await page.evaluate((settings) => (window as unknown as {
         __babylonslatePlayerTest: PlayerBootHandle;
       }).__babylonslatePlayerTest.setRenderSettings({ ...settings, mode: "pbr" }), renderSettings);
-      await expect.poll(async () => JSON.stringify(await pixels(page)) !== JSON.stringify(celPixels)).toBe(true);
+      await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
+      await testInfo.attach("runtime-pbr", { body: Buffer.from(await pixels(page), "base64"), contentType: "image/png" });
       await page.evaluate((settings) => (window as unknown as {
         __babylonslatePlayerTest: PlayerBootHandle;
       }).__babylonslatePlayerTest.setRenderSettings(settings), renderSettings);
-      await expect.poll(() => pixels(page)).toEqual(celPixels);
+      await expect.poll(async () => await pixels(page) === celPixels).toBe(true);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(await command(page, "quality resolution scale 0.5")).toMatchObject({ success: true });
       await ready(2);
