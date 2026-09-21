@@ -219,6 +219,25 @@ This is correctness evidence, not a measured performance improvement. Five
 targeted unit files passed 72 tests at that revision; the two lighting/shadow
 files passed 39 tests at `29b57983` after shared sampler admission was added.
 
+Processor v3 supersedes that initial source-sampling policy. An odd-sized
+1537×769 stripe fixture at `b471eff2` exposed backend-dependent native mip
+generation: the v2/native comparison failed on WebGL2 (mean 17.4680/255,
+maximum 127), while WebGPU passed. This is recorded as a failure, not folded into
+the successful small-image qualification. The repair defines deterministic
+768-square import filtering (area averaging down, mirrored linear sampling up),
+then applies the pinned mirrored padding and progressive blur.
+
+At `2c788764`, the native encoding/blur matched **exactly** on both backends for
+32×16, 2048×512 and 1537×769 inputs after that canonical source filtering.
+The source filter itself has separate average-preservation and cancellation
+regressions. The two receiver browser cases and two actual standalone export
+cases passed; matched-input lighting still produced identical presented images.
+The four emission unit cases, 18 compositor lifecycle cases (`6961e532`), and
+live spawned-light asset arrival/removal regression (`a975d574`) passed. Assets
+and render typechecks passed at `2c788764`; changed-file lint had zero errors and
+four existing Fast Refresh warnings in Play context. This does not qualify
+Computer Use interaction, every receiver type or the full handoff.
+
 `e2e/area-light-export.spec.ts` uses the editor's real export collector, served
 packed WebGL2 and loose WebGPU players, a uniform numeric prepared texture and
 four scenes. It checks texture/uniform/disabled pixels, repeated scene disposal,
