@@ -171,3 +171,12 @@ From [perf-budget.md](perf-budget.md); read each sustained window against them �
 | Resolution | valve may step down under pressure and must not wedge | `scalingLevel`, `width`×`height`, `pressure` per window |
 
 A window that misses the pacing budget is a measurement to explain, not a spec failure — the assertion set stays at "the route ran clean" so the run always produces evidence instead of a red build.
+# Rectangular light browser fixture
+
+`e2e/area-rect-light.spec.ts` exercises the production `SceneRenderCoordinator`
+with native PBR and authored Material Graph receivers in PBR/CEL modes. It
+requests Forward and Clustered Forward, retains actual effective-path readback,
+compares enabled/disabled and 180-degree rotation pixels, checks an unlit control,
+and blocks external network requests. The fixture and its PNG/JSON attachments
+are functional evidence only. Results remain pending until the recorded run
+passes; they do not establish physical-device budgets or textured emission.

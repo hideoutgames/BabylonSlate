@@ -70,6 +70,13 @@ if (
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("areaRectLightProof")
+) {
+  void import("./testing/area-rect-light-proof").then(({ runAreaRectLightProof }) => {
+    Object.assign(window, { __babylonslateAreaRectLightProof: runAreaRectLightProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphForwardProof")
 ) {
   void import("./testing/framegraph-forward-proof").then(
