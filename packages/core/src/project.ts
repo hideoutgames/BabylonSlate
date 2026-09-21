@@ -530,8 +530,15 @@ function normalizePlayPreview(
 
 function normalizePositiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.round(value)
+    ? Math.max(1, Math.round(value))
     : fallback;
+}
+
+/** Presentation default shared by project loading, export and player boot. */
+export function normalizePlayFrameCap(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_PLAY_FRAME_CAP;
 }
 
 /** Shared authored/export/boot boundary. Drops unknown and editor-local fields. */
@@ -691,10 +698,7 @@ export function normalizeProjectSettings(
   const twoD = settings?.twoD;
   return {
     touchMinTargetPx: settings?.touchMinTargetPx ?? 44,
-    playFrameCap:
-      typeof settings?.playFrameCap === "number" && settings.playFrameCap > 0
-        ? settings.playFrameCap
-        : DEFAULT_PLAY_FRAME_CAP,
+    playFrameCap: normalizePlayFrameCap(settings?.playFrameCap),
     compileOnSave: settings?.compileOnSave !== false,
     infiniteLoopDetection: settings?.infiniteLoopDetection !== false,
     loopCount:

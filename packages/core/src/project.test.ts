@@ -43,6 +43,7 @@ describe("project schema", () => {
     input.cel.shadowBands = 2;
     expect(normalized.cel?.shadowBands).toBe(5);
     expect(normalizeRenderProjectSettings(null)).toEqual(normalizeProjectSettings(undefined).render);
+    expect(normalizeRenderProjectSettings({ width: 0.25, height: 1.9 })).toMatchObject({ width: 1, height: 2 });
   });
   it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
     expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
@@ -520,7 +521,8 @@ describe("project schema", () => {
   it("defaults playFrameCap to 60 and keeps a positive override", () => {
     expect(normalizeProjectSettings(undefined).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({}).playFrameCap).toBe(60);
-    expect(normalizeProjectSettings({ playFrameCap: 0 }).playFrameCap).toBe(60);
+    for (const playFrameCap of [0, -1, NaN, Infinity, -Infinity])
+      expect(normalizeProjectSettings({ playFrameCap }).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 30 }).playFrameCap).toBe(30);
   });
 

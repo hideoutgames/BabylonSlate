@@ -36,11 +36,13 @@ describe("exportGame", () => {
     };
     const result = await exportGame({
       mode, bundleDebugger: false, startupSceneGuid: "scene-1",
-      renderSettings: authored, scripts: [], assets: [], playerFiles: stubPlayer(),
+      renderSettings: authored, playFrameCap: Infinity, scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!result.ok) throw new Error(result.error);
     const json = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
     const restored = parseGameManifest(json);
+    expect(result.value.manifest.playFrameCap).toBe(60);
+    expect(restored.playFrameCap).toBe(60);
     expect(restored.render).toMatchObject({
       gpuBackend: "webgpu", mode: "cel", width: 1366, height: 768,
       quality: { textures: { anisotropy: 8 }, resolution: { scale: 1 } },
@@ -57,6 +59,10 @@ describe("exportGame", () => {
     });
     delete legacy.render;
     expect(parseGameManifest(JSON.stringify(legacy)).render).toEqual(DEFAULT_RENDER_PROJECT_SETTINGS);
+    for (const value of [undefined, null, "30", 0, -1, 24]) {
+      legacy.playFrameCap = value;
+      expect(parseGameManifest(JSON.stringify(legacy)).playFrameCap).toBe(value === 24 ? 24 : 60);
+    }
   });
   it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
     const result = await exportGame({

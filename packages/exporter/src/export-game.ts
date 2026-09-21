@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizeRenderProjectSettings, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -252,7 +252,7 @@ export async function exportGame(
     bundleDebugger: options.bundleDebugger,
     mode,
     render: normalizeRenderProjectSettings(options.renderSettings),
-    playFrameCap: options.playFrameCap ?? 60,
+    playFrameCap: normalizePlayFrameCap(options.playFrameCap),
     touchMinTargetPx:
       typeof options.touchMinTargetPx === "number" &&
       options.touchMinTargetPx > 0
@@ -347,6 +347,7 @@ export function parseGameManifest(source: string): GameManifest {
   return {
     ...rest,
     render: normalizeRenderProjectSettings(parsed.render),
+    playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     project: {
       name: typeof parsed.project?.name === "string" ? parsed.project.name : "",
       version: typeof parsed.project?.version === "string" ? parsed.project.version : "",
