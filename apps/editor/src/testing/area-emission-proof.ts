@@ -5,10 +5,12 @@ import { decodeAreaEmission, sha256Hex } from "@babylonslate/assets";
 import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
 import { encodeRgbaPng } from "@babylonslate/render";
 
-export async function qualifyAreaEmission(engine: AbstractEngine) {
-  const width = 32, height = 16;
+export async function qualifyAreaEmission(engine: AbstractEngine, minified = false) {
+  const width = minified ? 2048 : 32, height = minified ? 512 : 16;
   const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) rgba.set([24 + x * 7, 36 + y * 12, x < width / 2 ? 32 : 216, 255], (y * width + x) * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) rgba.set(minified
+    ? [x % 2 ? 255 : 0, 32 + Math.floor(y / height * 192), x < width / 2 ? 32 : 216, 255]
+    : [24 + x * 7, 36 + y * 12, x < width / 2 ? 32 : 216, 255], (y * width + x) * 4);
   const source = await encodeRgbaPng(width, height, rgba);
   const progress: string[] = [];
   const prepared = await processAreaEmissionInWorker({ source, sourceHash: await sha256Hex(source), mime: "image/png" }, new AbortController().signal, (value) => {
@@ -18,6 +20,7 @@ export async function qualifyAreaEmission(engine: AbstractEngine) {
   const scene = new Scene(engine);
   const url = URL.createObjectURL(new Blob([source.slice()], { type: "image/png" }));
   const original = new Texture(url, scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
+  original.anisotropicFilteringLevel = 1;
   const processor = new AreaLightTextureTools(engine);
   try {
     const native = await processor.processAsync(original);

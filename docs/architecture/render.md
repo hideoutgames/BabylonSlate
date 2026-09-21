@@ -1029,3 +1029,11 @@ backbuffer size, including dynamic resolution changes without a DOM resize.
 Unchanged dimensions are cached. A resize replaces layer targets through the
 existing retirement owner, retaining the presented image until its successor is
 ready; it does not add another scheduling loop.
+
+Emission processor v2 uses mirrored trilinear source sampling with anisotropy one
+before the pinned native progressive blur. It generates only the mip levels
+needed for the 768-pixel emitter interior instead of aliasing large sources.
+Sampling operates on display-encoded RGBA8, like the native preprocessing copy;
+alpha remains unfiltered during the blur. The version invalidates earlier
+derived chunks. Processing and mip generation remain cancellable worker work,
+independent of player texture-sampling preferences.
