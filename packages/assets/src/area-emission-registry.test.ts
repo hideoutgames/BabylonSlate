@@ -65,7 +65,7 @@ describe("area emission asset representation", () => {
     queue.resume();
     expect(await next).toBe(2);
     expect(work).not.toHaveBeenCalled();
-    expect(queue.depth).toBe(0);
+    await expect.poll(() => queue.depth).toBe(0);
   });
 
   it("retains prepared emission through rename and duplicate, and does not recreate a deleted asset", async () => {
