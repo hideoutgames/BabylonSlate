@@ -105,6 +105,50 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   });
 }
 
+test("standalone player packed for WebGPU presents a WebGL2 scene with an explicit reason when no adapter exists", async ({ page, baseURL }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  const babylonFailureLogs: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    const text = message.text();
+    if (/A fatal error occurred during WebGPU creation\/initialization/.test(text)) { babylonFailureLogs.push(text); return; }
+    if (/loading deadline|did not become ready|did not present/i.test(text)) errors.push(text);
+    if (["warning", "error"].includes(message.type()) && /shader|validation|destroyed.*texture|context lost|WebGPU uncaptured/i.test(text)) errors.push(text);
+  });
+  await page.addInitScript(() => {
+    const gpu = navigator.gpu;
+    if (gpu) Object.defineProperty(gpu, "requestAdapter", { configurable: true, value: async () => null });
+  });
+  const server = await serveExportFiles(await playerFiles(baseURL!, "webgpu"), { honorRange: true });
+  try {
+    await page.goto(server.url);
+    const root = page.getByTestId("player-root");
+    await expect(root).toHaveAttribute("data-effective-backend", "webgl2", { timeout: 30_000 });
+    await expect(root).toHaveAttribute("data-requested-backend", "webgpu");
+    await expect(root).toHaveAttribute("data-backend-fallback", /WebGPU initialization failed: .*adapter.*Using WebGL2\./i);
+    await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
+    await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
+    const sample = await page.getByTestId("player-canvas").evaluate((node) => {
+      const canvas = node as HTMLCanvasElement;
+      const copy = document.createElement("canvas");
+      copy.width = canvas.width; copy.height = canvas.height;
+      const context = copy.getContext("2d")!;
+      context.drawImage(canvas, 0, 0);
+      const data = context.getImageData(0, 0, copy.width, copy.height).data;
+      const colors = new Set<number>();
+      for (let i = 0; i < data.length; i += 4) colors.add((data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!);
+      return { colors: colors.size };
+    });
+    expect(sample.colors).toBeGreaterThan(8);
+    await testInfo.attach("player-fallback-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
+    expect(babylonFailureLogs).toHaveLength(1);
+    expect(errors).toEqual([]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("Stop during a real WebGPU adapter request releases the late device without booting runtime", async ({ page, baseURL }) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
