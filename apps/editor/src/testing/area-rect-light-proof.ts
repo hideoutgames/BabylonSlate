@@ -79,7 +79,8 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
             const offset = (Math.round(sample.y) * width + Math.round(sample.x)) * 4;
             const nativeLevels = new Set<number>();
             for (let y = 45; y < 110; y++) for (let x = 45; x < 113; x++) nativeLevels.add(image.data[(y * width + x) * 4]!);
-            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames() };
+            const area = scene.lights.find((entry) => entry instanceof RectAreaLight) as RectAreaLight;
+            return { name, image: copy.toDataURL(), nativeBrightness: luminance(45, 113), graphBrightness: luminance(127, 195), nativeLevels: [...nativeLevels], unlit: Array.from(image.data.slice(offset, offset + 4)), draws: readEngineDrawCalls(engine), tasks: coordinator.taskNames(), emission: { ready: area.emissionTexture?.isReady() ?? null, diagnostic: area.metadata?.areaLight?.error, nativeDefines: left.subMeshes?.[0]?.materialDefines?.toString().split("\n").filter((line) => line.includes("AREALIGHT")) } };
           };
           emitter.components[0]!.properties.enabled = true;
           emitter.transform.rotation = [0, 0, 0, 1];

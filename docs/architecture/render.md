@@ -972,3 +972,7 @@ releasing the old reference. Missing data disables that emitter with a diagnosti
 clearing the optional Texture returns it to uniform emission. Every owner releases
 its references on native light disposal. Player files include the LTC attribution
 and CC BY 4.0 license under `legal/`.
+
+Emission texture identity/readiness participates in the lighting layout cache.
+A live assignment invalidates frozen material readiness and recompiles the native
+textured-light define once; unchanged assignments keep the cached result.

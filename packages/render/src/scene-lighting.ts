@@ -15,6 +15,7 @@ import {
   NodeMaterial,
   NodeMaterialModes,
   PBRMetallicRoughnessBlock,
+  RectAreaLight,
   type Light,
   type Observer,
   type Scene,
@@ -111,6 +112,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
         light.shadowEnabled,
         light.getShadowGenerator(scene.activeCamera) ??
           light.getShadowGenerator(),
+        light instanceof RectAreaLight ? light.emissionTexture : null,
+        light instanceof RectAreaLight ? light.emissionTexture?.isReady() : false,
       );
     }
     const changed =
