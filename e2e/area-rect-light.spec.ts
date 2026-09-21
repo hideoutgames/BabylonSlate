@@ -21,6 +21,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(({ image: _image, ...capture }) => capture) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
+    expect(report.emission.meanError, "worker/native emission pixels").toBeLessThan(1);
+    expect(report.emission.maxError).toBeLessThanOrEqual(3);
+    expect(report.emission.progress).toEqual(["decoding", "filtering"]);
     for (const result of report.results) {
       const [on, off, back, restored] = result.captures;
       if (backend === "webgl2") expect(result.pipeline.effective.renderPath).toBe(result.renderPath);
@@ -33,6 +36,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(restored!.image).toBe(on!.image);
       expect(off!.unlit).toEqual(on!.unlit);
       expect(back!.unlit).toEqual(on!.unlit);
+      const textured = result.captures[4]!, nativeTexture = result.captures[5]!;
+      expect(textured.image).not.toBe(on!.image);
+      expect(textured.nativeBrightness).toBeGreaterThan(off!.nativeBrightness + 1000);
+      expect(textured.graphBrightness).toBeGreaterThan(off!.graphBrightness + 1000);
+      expect(textured.nativeBrightness / nativeTexture.nativeBrightness).toBeCloseTo(1, 2);
+      expect(textured.graphBrightness / nativeTexture.graphBrightness).toBeCloseTo(1, 2);
     }
   });
 }

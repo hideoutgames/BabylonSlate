@@ -1,9 +1,10 @@
 /** Actual production FrameGraph receiver qualification; only the fixture is test-only. */
-import { Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, PBRMaterial, PointLight, Scene, Vector3, Viewport } from "@babylonjs/core";
+import { Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, PBRMaterial, PointLight, RectAreaLight, Scene, Vector3, Viewport } from "@babylonjs/core";
 import { createActor, createDefaultScene, normalizeCelShadingSettings, normalizeEnvironmentLightingSettings, type RenderPath } from "@babylonslate/core";
 import { beginEngineDrawCallFrame, compileMaterialPlan, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath, sceneRenderPathStatus, setSceneRenderSettings, syncAuthoredIllumination } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { qualifyAreaEmission } from "./area-emission-proof";
 
 export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -11,6 +12,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
   document.getElementById("root")!.append(canvas);
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const results = [];
+  const emission = await qualifyAreaEmission(engine);
   try {
     for (const mode of ["pbr", "cel"] as const) {
       const scene = new Scene(engine);
@@ -51,7 +53,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
         for (const renderPath of ["forward", "clusteredForward"] as RenderPath[]) {
           requestRenderPath(engine, { renderPath });
           const capture = async (name: string) => {
-            syncAuthoredIllumination(scene, document);
+            syncAuthoredIllumination(scene, document, { assets: { areaEmissions: emission.emissions } });
             coordinator.invalidate();
             await coordinator.prepare();
             for (let frame = 0; frame < 3; frame++) {
@@ -89,10 +91,18 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
           const back = await capture("turned away");
           emitter.transform.rotation = [0, 0, 0, 1];
           const restored = await capture("restored");
-          results.push({ mode, renderPath, pipeline: sceneRenderPathStatus(scene), captures: [on, off, back, restored] });
+          emitter.components[0]!.properties.textureGuid = "pattern";
+          const textured = await capture("prepared texture");
+          const light = scene.lights.find((entry) => entry instanceof RectAreaLight) as RectAreaLight;
+          const preparedTexture = light.emissionTexture;
+          light.emissionTexture = emission.native; light._markMeshesAsLightDirty();
+          const nativeTexture = await capture("native texture oracle");
+          light.emissionTexture = preparedTexture; light._markMeshesAsLightDirty();
+          emitter.components[0]!.properties.textureGuid = null;
+          results.push({ mode, renderPath, pipeline: sceneRenderPathStatus(scene), captures: [on, off, back, restored, textured, nativeTexture] });
         }
       } finally { coordinator.dispose(); scene.dispose(); }
     }
-    return { backend, width, height, results, userAgent: navigator.userAgent, dpr: devicePixelRatio };
-  } finally { engine.dispose(); canvas.remove(); }
+    return { backend, width, height, results, emission: emission.report, userAgent: navigator.userAgent, dpr: devicePixelRatio };
+  } finally { emission.native.dispose(); engine.dispose(); canvas.remove(); }
 }
