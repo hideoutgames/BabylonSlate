@@ -52,6 +52,10 @@ for (const variant of [
       renderSettings, playFrameCap: 30, scripts: scalabilityGraphScripts(),
       assets: ["first", "second"].map((guid) => {
         const scene = { ...previewPlacementScene(), name: guid };
+        // This setter fixture qualifies transactions, not large shadow-map
+        // allocations. Dedicated shadow fixtures own actual caster coverage.
+        for (const actor of scene.actors) for (const component of actor.components)
+          if (component.classId === "LightComponent") component.properties.castShadows = false;
         if (guid === "second") {
           scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
           scene.settings.celShading = { shadowBands: 7 };
@@ -126,6 +130,43 @@ for (const variant of [
       expect(await command(page, "qual_reset")).toMatchObject({ success: true });
       const reset = await ready(1.25, "second");
       expect(reset.scalability?.effective?.frameCap).toBe(30);
+      if (!variant.fail) {
+        for (const preset of ["low", "medium", "high", "ultra"]) {
+          expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
+          await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
+          const applied = (await read(page)).scalability!;
+          expect(applied.effective?.render.mode).toBe("cel");
+          expect(applied.effective?.render.effects?.fxaa).toBe(true);
+          expect(applied.effective?.render.cel?.shadowBands).toBe(7);
+          expect(applied.effective?.frameCap).toBe(30);
+        }
+        expect(await command(page, "qual_settings")).toMatchObject({ success: true });
+        await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
+        const custom = await read(page);
+        expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
+        expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
+          width: 400, height: 240, customResolution: true, blackBars: true,
+          quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, postprocessing: { resolutionScale: 0.5 } },
+          shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
+          effects: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
+          cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
+          environmentLighting: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 },
+        } });
+        expect(custom.tasks?.some((name) => /FXAA/.test(name))).toBe(false);
+        await testInfo.attach("compiled-setters", { body: JSON.stringify(custom), contentType: "application/json" });
+        expect(await command(page, "qual_invalid")).toMatchObject({ success: true });
+        expect((await read(page)).scalability?.revision).toBe(custom.scalability?.revision);
+        expect(await command(page, "qual_aa")).toMatchObject({ success: true });
+        await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/.test(name))).toBe(true);
+        expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
+        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
+        expect((await read(page)).scalability?.status).toBe("clamped");
+        expect(await command(page, "qual_cluster")).toMatchObject({ success: true });
+        await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
+        expect((await read(page)).scalability?.pipeline?.effective.renderPath).toBe(variant.backend === "webgpu" ? "forward" : "clusteredForward");
+        expect(await command(page, "qual_reset")).toMatchObject({ success: true });
+        await ready(1.25, "second");
+      }
       await page.reload();
       await ready(1.25);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
