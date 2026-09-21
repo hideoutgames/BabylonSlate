@@ -695,6 +695,8 @@ export function PlayOverlay({
         modelLoadCount: () => number;
         tickIndex: () => number;
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
+        scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
+        renderTasks: () => string[];
         bakedSession: () => ReturnType<PlaySession["handle"]["bakedSessionDiagnostics"]> | null;
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
       };
@@ -702,6 +704,8 @@ export function PlayOverlay({
     host.__babylonslatePlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
+      scalability: () => sessionRef.current?.handle.scalabilityStatus(),
+      renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
       bakedSession: () => sessionRef.current?.handle.bakedSessionDiagnostics() ?? null,
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],

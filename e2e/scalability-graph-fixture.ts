@@ -2,19 +2,17 @@ import { compileGraph, type GraphNode, type LogicGraph } from "../packages/scrip
 import { createDefaultNodeRegistry } from "../packages/scripting-nodes/src/index";
 import type { ScriptBundleEntry } from "../packages/bridge/src/channels";
 
-/** Real compiled Class Graphs; commands only trigger the graph's native entry. */
-export function scalabilityGraphScripts(): ScriptBundleEntry[] {
+/** The same saved Class graphs qualify editor compilation and standalone execution. */
+export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph }[] {
   const registry = createDefaultNodeRegistry();
-  const graphCommand = (name: string, actions: [string, Record<string, unknown>][]): ScriptBundleEntry => {
-    const nodes: GraphNode[] = [["flow.event.commandRun", {}] as [string, Record<string, unknown>], ...actions].map(([typeId, properties], index) => ({
+  const graphCommand = (name: string, actions: [string, Record<string, unknown>][]) => {
+    const nodes: GraphNode[] = [["flow.event.commandRun", { commandName: name }] as [string, Record<string, unknown>], ...actions].map(([typeId, properties], index) => ({
       id: `node-${index}`, typeId, properties, position: { x: index * 300, y: 0 }, pins: registry.get(typeId)!.pins(properties),
     }));
     const graph: LogicGraph = { id: name, kind: "event", nodes, edges: actions.map((_, index) => ({
       id: `exec-${index}`, sourceNodeId: `node-${index}`, sourcePinId: "execOut", targetNodeId: `node-${index + 1}`, targetPinId: "execIn",
     })) };
-    const compiled = compileGraph(graph, { registry, assetGuid: name });
-    return { assetGuid: name, classId: name, parentClassId: "BDebugCommand", source: compiled.source, anchors: compiled.anchors,
-      entryPoints: compiled.entryPoints, command: { name, category: "Qualification", description: "Exercise a compiled scalability graph", parameters: [] } };
+    return { name, graph };
   };
   return [
     graphCommand("qual_pbr", [["scalability.setRenderMode", { mode: "pbr" }]]),
@@ -41,4 +39,14 @@ export function scalabilityGraphScripts(): ScriptBundleEntry[] {
     ]),
     ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { preset }]])),
   ];
+}
+
+/** Commands only trigger the compiled graph's native entry. */
+export function scalabilityGraphScripts(): ScriptBundleEntry[] {
+  const registry = createDefaultNodeRegistry();
+  return scalabilityGraphDefinitions().map(({ name, graph }) => {
+    const compiled = compileGraph(graph, { registry, assetGuid: name });
+    return { assetGuid: name, classId: name, parentClassId: "BDebugCommand", source: compiled.source, anchors: compiled.anchors,
+      entryPoints: compiled.entryPoints, command: { name, category: "Qualification", description: "Exercise a compiled scalability graph", parameters: [] } };
+  });
 }
