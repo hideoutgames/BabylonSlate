@@ -46,6 +46,18 @@ Earlier fixture failures (material-name assumptions, reading the cleared canvas,
 
 ### Remaining handoff work and release gates
 
+The stricter output-size regression at `96b2331a` passed all three standalone
+settings cases above. Earlier readback established the requested scaling level
+but missed that a locked output stayed at 480×270. The repaired view now renders
+384×216 at scale 0.8 and 240×135 at 0.5. A related effects-only graph resize bug
+was reproduced (old color target versus resized depth) and repaired; each case
+now requires the prepared FXAA task after scaling and scene transitions. These
+are correctness results, not equal-quality performance savings. Targeted graph
+resize/effect/transaction cases, the render package typecheck and six changed
+TypeScript files' lint passed at that revision. Eight framebuffer/admission
+cases passed at `502cb4ea`; the later repair changes effect graph invalidation,
+not that per-view sizing contract.
+
 | Priority / work | Status and next requirement |
 | --- | --- |
 | P0 physical A16 baseline and budgets | **Deferred by user; not a current delivery gate.** No A16 CPU/GPU/p50/p95/p99, input latency, sustained memory or remaining-headroom claims. Agree the representative scene and explicit 60 fps (16.7 ms) or 30 fps (33.3 ms) target, then measure equal content/quality before and after. CPU and GPU headroom must be reported separately. |
