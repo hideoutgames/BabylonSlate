@@ -43,13 +43,21 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
     nodes: [
       { id: "changed", type: "flow.event.scalabilityChanged", data: {}, position: { x: 0, y: 0 } },
       { id: "read", type: "scalability.getEffective", data: {}, position: { x: 0, y: 150 } },
+      ...["payload", "readback"].flatMap((id, index) => [
+        { id: `${id}-break`, type: "struct.break", data: { structGuid: "engine:ScalabilitySnapshot", fields: [{ name: "appliedRevision", typeId: "float" }] }, position: { x: 200, y: 150 + index * 150 } },
+        { id: `${id}-text`, type: "literal.toStringFloat", data: {}, position: { x: 400, y: 150 + index * 150 } },
+      ]),
       { id: "log", type: "debug.log", data: {}, position: { x: 300, y: 0 } },
       { id: "logRead", type: "debug.log", data: {}, position: { x: 600, y: 0 } },
     ], edges: [
       { id: "event", source: "changed", sourceHandle: "execOut", target: "log", targetHandle: "execIn" },
-      { id: "payload", source: "changed", sourceHandle: "settings", target: "log", targetHandle: "message" },
+      { id: "payload", source: "changed", sourceHandle: "settings", target: "payload-break", targetHandle: "in" },
       { id: "then", source: "log", sourceHandle: "execOut", target: "logRead", targetHandle: "execIn" },
-      { id: "readback", source: "read", sourceHandle: "settings", target: "logRead", targetHandle: "message" },
+      { id: "readback", source: "read", sourceHandle: "settings", target: "readback-break", targetHandle: "in" },
+      ...["payload", "readback"].flatMap((id) => [
+        { id: `${id}-value`, source: `${id}-break`, sourceHandle: "appliedRevision", target: `${id}-text`, targetHandle: "in" },
+        { id: `${id}-log`, source: `${id}-text`, sourceHandle: "out", target: id === "payload" ? "log" : "logRead", targetHandle: "message" },
+      ]),
     ],
   };
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000002", type: "Class", name: "Main", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "Actor" }));
@@ -76,7 +84,7 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, postprocessing: { resolutionScale: 0.5 } }, effects: { fxaa: false, vignette: { color: [0.2, 0.1, 0.3] } } } });
   expect(custom.tasks.some((name) => /FXAA/.test(name))).toBe(false);
   const transcript = page.getByTestId("debug-console-transcript");
-  await expect(transcript).toContainText(`appliedRevision: ${custom.scalability!.revision}`);
+  await expect(transcript.getByText(`[log] ${custom.scalability!.revision}`, { exact: true })).toHaveCount(2);
   await command("qual_invalid");
   await command("qual_aa");
   await expect.poll(async () => (await read(page)).tasks.some((name) => /FXAA/.test(name))).toBe(true);
