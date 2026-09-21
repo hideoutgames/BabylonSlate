@@ -992,3 +992,13 @@ Scene and Class viewports observe the current derived chunk identity only for
 their referenced emission textures. Preparing or replacing one refreshes the
 existing view's assets; unrelated registry updates and unchanged saves do not
 reload emission data. Replacing source pixels invalidates the old representation.
+
+Lighting and shadows share the existing eight-sampler material/environment reserve.
+Conventional admission charges two shared LTC samplers plus one emission binding
+per textured rectangle, including lights that share an uploaded texture. Clustered
+and projected/IES light bindings consume the same headroom. Shadow admission uses
+the remaining capacity after direct-light selection. Existing light priority and
+distance hysteresis choose overflow; diagnostics report sampler use and excluded
+lights without changing authored Enabled or emission textures. The generic local
+lighting scalability budget also bounds area lights; there is no unlimited-area
+claim or hidden conversion to point lights.

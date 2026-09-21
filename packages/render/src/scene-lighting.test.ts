@@ -19,6 +19,7 @@ import {
   PBRMaterial,
   PointLight,
   RawTexture,
+  RectAreaLight,
   Scene,
   SpotLight,
   StandardMaterial,
@@ -41,6 +42,7 @@ import { encodeUvHierarchyGlb } from "./model-mesh";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import { retainAreaLightLookup } from "./area-light-resources";
 
 const engines: NullEngine[] = [];
 
@@ -122,6 +124,30 @@ function shaderLights(
 }
 
 describe("scene material lighting", () => {
+  it("admits textured rectangles within shared sampler headroom and restores them without changing authored state", () => {
+    const scene = host(false);
+    scene.getEngine().getCaps().maxTexturesImageUnits = 12;
+    scene.onDisposeObservable.addOnce(retainAreaLightLookup(scene));
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+    const areas = Array.from({ length: 4 }, (_, index) => {
+      const light = new RectAreaLight(`area-${index}`, Vector3.Zero(), 2, 2, scene);
+      light.emissionTexture = texture;
+      return light;
+    });
+    const uniform = new RectAreaLight("uniform", Vector3.Zero(), 2, 2, scene);
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    syncSceneLighting(scene);
+    expect(areas.filter((light) => light.isEnabled())).toHaveLength(2);
+    expect(uniform.isEnabled()).toBe(true);
+    expect(sun.isEnabled()).toBe(true);
+    expect(sceneLightingLimits(scene).join()).toContain("4/4 lighting samplers, 2 limited by sampler headroom");
+    scene.getEngine().getCaps().maxTexturesImageUnits = 16;
+    syncSceneLighting(scene);
+    expect(areas.every((light) => light.isEnabled())).toBe(true);
+    expect(areas.every((light) => light.emissionTexture === texture)).toBe(true);
+    expect(sceneLightingLimits(scene)).toEqual([]);
+  });
+
   it("retains a bounded four-light fallback when uniform buffers are unavailable", () => {
     const scene = host(false, false);
     const lamps = lights(scene, 6);

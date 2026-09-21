@@ -7,6 +7,8 @@ import {
   MeshBuilder,
   NullEngine,
   PointLight,
+  RectAreaLight,
+  RawTexture,
   SpotLight,
   RenderTargetTexture,
   Scene,
@@ -21,6 +23,7 @@ import {
 } from "./render-settings";
 import { normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
 import { otherShadowReservations } from "./shadow-admission";
+import { retainAreaLightLookup } from "./area-light-resources";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -452,6 +455,23 @@ describe("shared shadow lifecycle", () => {
         .diagnostics()
         .filter((light) => light.reason === "material sampler headroom"),
     ).toHaveLength(13);
+  });
+  it("shares material sampler headroom with rectangular LTC and emission bindings", () => {
+    const { scene, controller } = fixture();
+    scene.getEngine().getCaps().maxTexturesImageUnits = 12;
+    scene.onDisposeObservable.addOnce(retainAreaLightLookup(scene));
+    const area = new RectAreaLight("emitter", Vector3.Zero(), 2, 2, scene);
+    area.emissionTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "ultra", maxLocalLights: 4, localMapSize: 256 }) });
+    for (let index = 0; index < 4; index++) controller.register(new SpotLight(`spot-${index}`, Vector3.Zero(), Vector3.Forward(), Math.PI / 2, 1, scene), true);
+    controller.sync();
+    expect(controller.metrics().passes).toBe(1);
+    area.emissionTexture = null;
+    controller.sync();
+    expect(controller.metrics().passes).toBe(2);
+    area.setEnabled(false);
+    controller.sync();
+    expect(controller.metrics().passes).toBe(4);
   });
   it("shares the Engine allowance with previews and releases reservations on scene disposal", () => {
     const { scene, controller } = fixture();

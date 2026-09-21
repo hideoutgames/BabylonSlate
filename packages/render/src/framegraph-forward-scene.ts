@@ -618,6 +618,8 @@ export class ForwardSceneFrameGraph {
     const controller = findSceneShadowController(this.scene);
     withSceneReadinessState(this.scene, () => {
       this.setActiveCamera(camera);
+      // Admit the conventional prefix before shadows spend shared texture units.
+      syncSceneLighting(this.scene);
       controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot

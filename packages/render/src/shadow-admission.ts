@@ -1,4 +1,5 @@
 import type { AbstractEngine, Scene } from "@babylonjs/core";
+import { MATERIAL_SAMPLER_RESERVE } from "./light-sampler-budget";
 
 import {
   availableManagedLightingBytes,
@@ -11,7 +12,7 @@ const reservations = new WeakMap<AbstractEngine, Map<Scene, ShadowCost>>();
 // Per-Engine shadow category ceiling. Cluster textures additionally consume the
 // shared managed lighting byte allowance; neither is total GPU memory.
 export const ENGINE_SHADOW_BUDGET = { bytes: 512 * 1024 ** 2, passes: 64 };
-export const SHADOW_MATERIAL_SAMPLER_RESERVE = 8;
+export const SHADOW_MATERIAL_SAMPLER_RESERVE = MATERIAL_SAMPLER_RESERVE;
 
 /** Matches Babylon's default RGBA half/float/byte choice, plus conservative depth. */
 export function shadowBytesPerTexel(engine: AbstractEngine): number {
