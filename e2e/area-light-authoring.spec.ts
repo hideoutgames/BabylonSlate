@@ -53,7 +53,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await page.getByTestId(`property-actor-1-${component.id}-textureGuid`).click();
   await page.getByTestId("search-item-emission").click();
   await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
-  await page.getByTestId("tree-row-actor:actor-1").click({ button: "right" });
+  await page.getByTestId("outliner-menu-actor-1").click();
   await page.getByTestId("outliner-duplicate-actor-1").click();
   const emitters = (await scene(page)).actors.filter((actor) => actor.components.some((entry) => entry.classId === "AreaRectLightComponent"));
   expect(emitters).toHaveLength(2);
