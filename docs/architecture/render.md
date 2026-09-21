@@ -6,17 +6,23 @@ The session quality owner preserves override identity for repeated preset, value
 
 Authored defaults belong to `RenderProjectSettings`; editor preferences and session overrides remain separate. Export owns a normalized copy. Backend capability resolution runs before Engine creation and retains requested/effective values separately. The existing `RenderingQualitySession` survives scene changes and resets on a new Play/player session. No persistent player-preference policy is introduced by this handoff.
 
-The following inventory defines the application boundary for the runtime settings service. **The complete transaction/acknowledgement service and Class Graph Scalability category are still pending**; existing quality-console responses describe normalized requested settings, not renderer-confirmed completion. Resource-changing requests must eventually report pending/failure and retain valid resources until replacements are ready.
+The following inventory defines the application boundary for the shared runtime
+settings service and Class Graph Scalability category. Transactions report
+requested values separately from renderer-confirmed completion. Resource-changing
+requests report pending/failure and retain valid resources until replacements
+are ready; see the typed session contract below.
 
 | Fields | Application class | Existing owner / constraint |
 | --- | --- | --- |
 | `gpuBackend` | Restart required | Project Engine owner; never a Scene shader toggle |
 | `renderPath` | Graph/resource rebuild | Per-Engine request, capability resolver and scene coordinator; global session scope |
 | `mode` | Material/graph rebuild | Scene render-mode owner; never mutate authored materials |
-| `cel.shadowBands`, `shadowThreshold`, `shadowStrength`, `specularEnabled`, `specularStrength`, `specularSize`, `lightColorInfluence`, `lightMixing` | Live shader state | Native/graph CEL uniforms; independent of quality presets |
+| `cel.shadowBands`, `shadowThreshold`, `shadowStrength`, `specularStrength`, `specularSize`, `lightColorInfluence` | Live shader state | Native/graph CEL uniforms; independent of quality presets |
+| `cel.specularEnabled`, `lightMixing` | Material/graph rebuild | Shader variants; independent of quality presets |
 | `environmentLighting.enabled`, `intensity`, `rotationYDegrees`, `celStrength` | Live state | Scene environment owner; texture replacement separately requires readiness |
 | `quality.resolution.scale`, `dynamic`, `minScale`, `targetFps` | Resource resize/state | Existing hardware scaling controller; report actual dimensions and scale |
-| `quality.textures.lodBias`, `anisotropy` | Live sampling state | Quality texture blocks/plugins; anisotropy is capability-clamped |
+| `quality.textures.anisotropy` | Live sampling state | Capability-clamped texture sampling |
+| `quality.textures.lodBias` | Material/graph rebuild | Quality texture blocks/plugins |
 | `quality.textures.byteBudget` | Resource admission | Shared Engine resource cache; no forced disposal of referenced assets |
 | `quality.postprocessing.resolutionScale` | Graph/resource rebuild | Authored post-process owners, including SceneLayers |
 | `quality.lighting.localLightMode`, `maxLocalLights` | Lighting admission/resource update | Managed scene lighting and clustered owners; report effective limits |
@@ -29,7 +35,9 @@ The following inventory defines the application boundary for the runtime setting
 | `customResolution`, `width`, `height`, `blackBars` | Output resource/layout update | Host framebuffer and containment owner, coordinated with render scale |
 | Project `playFrameCap` | Live presentation state | Existing scheduler; fixed simulation step is unchanged |
 | Scene environment texture and authored post-process asset references | Asset/resource rebuild | Existing scene/asset owners; not cheap quality switches |
-| Outline and rectangular-area-light fields | Pending native qualification and implementation | No placeholder schema, controls or advertised receiver support |
+| Rectangular-light dimensions, color, intensity and enabled state | Live component state | Per-actor light owner; admission shares the global lighting budget |
+| Rectangular-light Texture reference | Prepared resource replacement | Requires versioned emission data; shares uploads and retains other owners |
+| Outline fields | Pending native qualification and implementation | No placeholder schema or controls |
 
 Physical A16 budgets and native outline ownership approval are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This inventory does not certify unimplemented settings transactions, outline coverage, area lights or device performance.
 
