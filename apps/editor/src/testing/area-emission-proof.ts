@@ -3,6 +3,7 @@ import { Constants, Scene, Texture, type AbstractEngine } from "@babylonjs/core"
 import { AreaLightTextureTools } from "@babylonjs/core/Misc/areaLightsTextureTools";
 import { decodeAreaEmission, sha256Hex } from "@babylonslate/assets";
 import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-client";
+import { AREA_EMISSION_INTERIOR, resampleAreaEmissionSource } from "@babylonslate/assets/area-emission-processing";
 import { encodeRgbaPng } from "@babylonslate/render";
 
 export async function qualifyAreaEmission(engine: AbstractEngine, sourceSize: readonly [number, number] = [32, 16]) {
@@ -18,9 +19,13 @@ export async function qualifyAreaEmission(engine: AbstractEngine, sourceSize: re
     if (progress.at(-1) !== value.phase) progress.push(value.phase);
   });
   const decoded = await decodeAreaEmission(prepared);
+  // Source filtering is deterministic import policy. Independently qualify the
+  // native mirrored copy/encoding/blur against that same prefiltered raster.
+  const canonical = await resampleAreaEmissionSource(rgba, width, height);
+  const nativeSource = await encodeRgbaPng(AREA_EMISSION_INTERIOR, AREA_EMISSION_INTERIOR, canonical);
   const scene = new Scene(engine);
-  const url = URL.createObjectURL(new Blob([source.slice()], { type: "image/png" }));
-  const original = new Texture(url, scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
+  const url = URL.createObjectURL(new Blob([nativeSource.slice()], { type: "image/png" }));
+  const original = new Texture(url, scene, true, true, Texture.BILINEAR_SAMPLINGMODE);
   original.anisotropicFilteringLevel = 1;
   const processor = new AreaLightTextureTools(engine);
   try {

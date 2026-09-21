@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./area-emission-client": "./src/area-emission-client.ts"
+    "./area-emission-client": "./src/area-emission-client.ts",
+    "./area-emission-processing": "./src/area-emission-processing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

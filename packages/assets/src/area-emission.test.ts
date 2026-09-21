@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "./area-emission";
-import { filterAreaEmission, processAreaEmissionRgba } from "./area-emission-processing";
+import { filterAreaEmission, processAreaEmissionRgba, resampleAreaEmissionSource } from "./area-emission-processing";
 
 describe("derived rectangular emission", () => {
+  it("preserves the average of odd-sized fine stripes without backend-specific mip aliasing", async () => {
+    const width = 1537, height = 1;
+    const source = new Uint8Array(width * 4);
+    for (let x = 0; x < width; x++) source.set([x % 2 ? 255 : 0, 80, 170, 255], x * 4);
+    const result = await resampleAreaEmissionSource(source, width, height);
+    for (let i = 0; i < result.length; i += 4) {
+      if (result[i]! < 127 || result[i]! > 128) throw new Error(`Aliased stripe at ${i / 4}: ${result[i]}`);
+    }
+    await expect(resampleAreaEmissionSource(source, width, height, (value) => { if (value > 0) throw new Error("cancelled"); })).rejects.toThrow("cancelled");
+  });
+
   it("prefilters minified source detail instead of aliasing the original raster", async () => {
     const width = 1536, height = 16;
     const pixels = new Uint8Array(width * height * 4);

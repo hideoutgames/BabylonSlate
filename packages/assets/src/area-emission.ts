@@ -2,7 +2,7 @@ import type { BabassetHeader } from "./babasset";
 import { concatBytes, readU32LE, sha256Hex, writeU32LE } from "./bytes";
 
 /** Version includes native encoding, filtering, color space and row orientation. */
-export const AREA_EMISSION_PROCESSOR = "babylon-9.20-rgba8-1024-v2";
+export const AREA_EMISSION_PROCESSOR = "babylon-9.20-rgba8-1024-v3";
 export const AREA_EMISSION_EDGE = 1024;
 export const AREA_EMISSION_CHUNK_KIND = "area-emission";
 const MAGIC = new TextEncoder().encode("BARE");

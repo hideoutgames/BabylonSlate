@@ -1030,10 +1030,15 @@ Unchanged dimensions are cached. A resize replaces layer targets through the
 existing retirement owner, retaining the presented image until its successor is
 ready; it does not add another scheduling loop.
 
-Emission processor v2 uses mirrored trilinear source sampling with anisotropy one
-before the pinned native progressive blur. It generates only the mip levels
-needed for the 768-pixel emitter interior instead of aliasing large sources.
-Sampling operates on display-encoded RGBA8, like the native preprocessing copy;
-alpha remains unfiltered during the blur. The version invalidates earlier
-derived chunks. Processing and mip generation remain cancellable worker work,
-independent of player texture-sampling preferences.
+Emission processor v3 first resamples the source to the 768-pixel emitter
+interior: area averaging for minification and mirrored linear magnification,
+with RGBA8 rounding after each axis. This avoids backend-dependent mip filters
+and aliasing of odd-sized fine detail. The longer axis is reduced first to bound
+the intermediate raster. Native mirrored padding, Y orientation and progressive
+blur then produce the 1024-square lighting data. Sampling operates on
+display-encoded RGBA8; alpha remains unfiltered during the blur. The version
+invalidates earlier derived chunks. Resampling and blur are cancellable worker
+work, independent of player texture-sampling preferences. Browser qualification
+compares the native encoding/blur using this canonical prefiltered source;
+source-filter average preservation is checked separately. It does not claim
+identical preprocessing to every backend's original-image mip generator.
