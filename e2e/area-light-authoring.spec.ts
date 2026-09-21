@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { SerializedScene } from "../packages/core/src/index";
+import { normalizeScene, type SerializedScene } from "../packages/core/src/index";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { encodeRgbaPng } from "../packages/render/src/png-encode";
@@ -71,7 +71,8 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await openTestProject(page);
   await openMainScene(page);
   const reopened = (await scene(page)).actors.filter((actor) => actor.components.some((entry) => entry.classId === "AreaRectLightComponent"));
-  expect(reopened).toEqual(emitters);
+  // Reopen materializes optional identity transforms and null attachments.
+  expect(reopened).toEqual(normalizeScene({ actors: emitters }).actors);
   await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
   await openAssetFromBrowser(page, "assets/emission.babasset");
   await expect(page.getByRole("button", { name: "Check Emission Data", exact: true })).toBeEnabled();
