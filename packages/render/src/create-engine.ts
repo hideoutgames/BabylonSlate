@@ -911,6 +911,14 @@ function initializeEngine(
 
   const scheduler = new RenderScheduler();
   let lockedViewSize: { width: number; height: number } | null = null;
+  const scaledLockedViewSize = () => lockedViewSize ? {
+    width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
+    height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
+  } : null;
+  const syncLockedViewSize = () => {
+    const size = scaledLockedViewSize();
+    if (size && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)) engine.setSize(size.width, size.height);
+  };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
   const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
@@ -927,7 +935,7 @@ function initializeEngine(
       if (worldRenderer) {
         const css = cssCanvasPixelSize(canvas);
         const scale = engine.getHardwareScalingLevel();
-        const size = lockedViewSize ?? {
+        const size = scaledLockedViewSize() ?? {
           width: Math.max(1, Math.floor(css.width / scale)),
           height: Math.max(1, Math.floor(css.height / scale)),
         };
@@ -1222,8 +1230,10 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution))
+    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution)) {
       scaling.configureQuality(quality.resolution);
+      syncLockedViewSize();
+    }
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
@@ -1863,11 +1873,11 @@ function initializeEngine(
     if (registeredView && !registeredViewIsEnabled(registeredView)) {
       return;
     }
+    lockedViewSize = null;
     if (presentRtt) {
       // Resize owned GPU targets while keeping the last completed canvas copy.
       rttPresent?.bind();
     } else if (registeredView) {
-      lockedViewSize = null;
       registeredView.customResize = undefined;
       const size = cssCanvasPixelSize(canvas);
       const scale = engine.getHardwareScalingLevel();
@@ -1897,17 +1907,18 @@ function initializeEngine(
   };
 
   const setSize = (width: number, height: number) => {
-      const nextWidth = Math.max(1, Math.floor(width));
-      const nextHeight = Math.max(1, Math.floor(height));
+      lockedViewSize = { width: Math.max(1, Math.floor(width)), height: Math.max(1, Math.floor(height)) };
+      const { width: nextWidth, height: nextHeight } = scaledLockedViewSize()!;
       if (registeredView) {
-        lockedViewSize = { width: nextWidth, height: nextHeight };
         // Native view admission runs before this callback. Defer visible bitmap
         // writes until that frame can replace them, and retain the authored
         // locked resolution instead of letting native CSS sizing override it.
         registeredView.customResize = () => {
-          if (canvas.width !== nextWidth) canvas.width = nextWidth;
-          if (canvas.height !== nextHeight) canvas.height = nextHeight;
-          engine.setSize(nextWidth, nextHeight);
+          const size = scaledLockedViewSize();
+          if (!size) return;
+          if (canvas.width !== size.width) canvas.width = size.width;
+          if (canvas.height !== size.height) canvas.height = size.height;
+          engine.setSize(size.width, size.height);
         };
       } else if (options.sharedEngine && !presentRtt) {
         canvas.width = nextWidth;
@@ -2094,6 +2105,7 @@ function initializeEngine(
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     if (!worldLoading) runtimeScalability?.advance();
+    if (!registeredView) syncLockedViewSize();
     const sampled = prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
@@ -2195,6 +2207,7 @@ function initializeEngine(
       };
       lastPresentedAt = presentedAt;
       scaling.noteFramePressure(lastPressureSample);
+      if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
     framePresented = false;

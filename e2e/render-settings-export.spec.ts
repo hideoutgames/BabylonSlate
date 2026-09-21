@@ -69,11 +69,13 @@ for (const variant of [
       await expect(root).toHaveAttribute("data-backend-fallback", variant.fail ? /qualification adapter failure/ : "");
       const ready = async (scale: number, scene = "first") => {
         await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
-        await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 30_000 });
+        await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
         await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
         await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
         await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBeCloseTo(1 / scale, 5);
         const live = await read(page);
+        expect(live.rendering?.width).toBe(Math.floor(480 / scale));
+        expect(live.rendering?.height).toBe(Math.floor(270 / scale));
         expect(live.rendering?.shadowPasses).toBe(0);
         expect(live.rendering?.pipeline.requested.gpuBackend).toBe(variant.backend);
         expect(live.visuals.filter((visual) => visual.visible)).toHaveLength(3);

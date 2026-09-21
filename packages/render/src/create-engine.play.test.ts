@@ -3090,6 +3090,21 @@ describe("Play createEngine view", () => {
     expect(down).toHaveBeenCalled();
   });
 
+  it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    handle.setSize(800, 450);
+    const view = engine.views!.find((entry) => entry.target === canvas)!;
+    handle.scaling.setSettingsLevel(2);
+    view.customResize!();
+    expect([canvas.width, canvas.height]).toEqual([400, 225]);
+    handle.scaling.setSettingsLevel(1);
+    view.customResize!();
+    expect([canvas.width, canvas.height]).toEqual([800, 450]);
+  });
+
   it("sizes the shared Play framebuffer from the overlay canvas instead of engine.resize", () => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
