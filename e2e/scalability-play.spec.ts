@@ -103,9 +103,15 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await expect.poll(async () => (await read(page)).rendering?.width).toBe(384);
   await testInfo.attach("play-compiled-scalability", { body: JSON.stringify({ custom, reset: await read(page), evidence: renderingEvidence("e2e/scalability-play.spec.ts") }), contentType: "application/json" });
   await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
+  await command("qual_cluster");
+  await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   await expect(page.getByTestId("save-all-project")).toBeDisabled();
+  await clickPlayAndWaitForOverlay(page);
+  await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
+  expect((await read(page)).scalability?.pipeline?.requested.renderPath).toBe("forward");
+  await page.getByTestId("play-overlay-close").click();
   expect(errors).toEqual([]);
 });
 }

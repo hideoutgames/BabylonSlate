@@ -1049,3 +1049,10 @@ read-only acknowledgement/task diagnostics only in test mode. An authored
 observer reads the typed settings-changed payload and Get Effective Scalability
 through ordinary Structure and To String nodes; it does not bypass graph type
 checking or change renderer internals from a test command.
+
+Render-path overrides belong to a Play session. The first Play view on a shared
+engine captures the editor request and starts from project defaults; additional
+views share the active game request. The final Play view restores the captured
+editor request after cancelling its graph preparation. Disposed handles remove
+their session listeners. Construction rollback releases the same lease, and a
+new Play session does not inherit the previous game's render-path override.

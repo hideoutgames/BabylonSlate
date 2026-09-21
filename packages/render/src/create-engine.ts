@@ -3,7 +3,7 @@ import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferS
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
-import { requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSession } from "./render-path-session";
 import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -785,6 +785,8 @@ function initializeEngine(
   });
   const previousScaling = engine.getHardwareScalingLevel();
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
+  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
+  onRollback(() => releasePlayRenderPath?.());
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
     caps: engine.getCaps(),
@@ -2349,6 +2351,7 @@ function initializeEngine(
       disposed = true;
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
+      unsubscribeRenderPathSession();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -2379,6 +2382,8 @@ function initializeEngine(
       track(actual, () => nativeRetirement.whenReleased());
       track(actual, () => worldRenderer?.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
+      // Cancel graph preparation before restoring the editor's global request.
+      track(bounded, () => releasePlayRenderPath?.());
       const retired = Promise.all(bounded);
       const released = Promise.all(actual).then(() => {});
       releasedHandle = released;
