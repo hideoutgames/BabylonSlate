@@ -6,6 +6,7 @@ import {
   HemisphericLight,
   MeshBuilder,
   PointLight,
+  RectAreaLight,
   Quaternion,
   Scene,
   ShadowGenerator,
@@ -126,6 +127,35 @@ afterEach(() => {
     handle?.scene.dispose();
     handle?.engine.dispose();
   }
+});
+
+it("keeps multiple rectangular emitters on a mesh actor through edits, attachments and deletion", () => {
+  const { scene } = createHandle();
+  const parent = createActor("parent", "Parent", { transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 3, 1] } });
+  const actor = createActor("panel", "Panel", {
+    parentId: "parent",
+    transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    components: [
+      { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } },
+      { id: "area1", classId: "AreaRectLightComponent", properties: { width: 2 } },
+      { id: "area2", classId: "AreaRectLightComponent", properties: { intensity: 3 } },
+    ],
+  });
+  syncAuthoredIllumination(scene, sceneWith([parent, actor]));
+  const light = scene.getLightByName("authoredAreaLight:panel:area1") as RectAreaLight;
+  expect(light).toBeInstanceOf(RectAreaLight);
+  expect(light.parent!.getWorldMatrix().getTranslation().x).toBe(5);
+  expect(scene.lights.filter((entry) => entry instanceof RectAreaLight)).toHaveLength(2);
+  actor.components[1]!.properties.width = 4;
+  syncAuthoredIllumination(scene, sceneWith([parent, actor]));
+  expect(scene.getLightByName(light.name)).toBe(light);
+  expect(light.width).toBe(4);
+  actor.components.splice(1, 1);
+  syncAuthoredIllumination(scene, sceneWith([parent, actor]));
+  expect(scene.getLightByName(light.name)).toBeNull();
+  syncAuthoredIllumination(scene, sceneWith([]));
+  expect(scene.lights.filter((entry) => entry instanceof RectAreaLight)).toHaveLength(0);
+  expect(scene._ltcTextures).toBeUndefined();
 });
 
 

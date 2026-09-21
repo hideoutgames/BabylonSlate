@@ -305,6 +305,17 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "AreaRectLightComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+      { name: "Emission Texture", typeId: "asset", typeClassId: "Texture", propertyKey: "textureGuid" },
+    ],
+  },
+  {
     classId: "AudioComponent",
     variables: [
       { name: "Volume", typeId: "float", propertyKey: "volume" },

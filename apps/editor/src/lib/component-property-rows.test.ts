@@ -68,6 +68,19 @@ function rowsFor(
 }
 
 describe("componentPropertyRows", () => {
+  it("authors rectangular emission from one component and explains its unshadowed behavior", () => {
+    const { rows, update, onPickAsset } = rowsFor({ id: "area", classId: "AreaRectLightComponent", properties: defaultPropertiesFor("AreaRectLightComponent") });
+    expect(rows.find((row) => row.label === "Enabled")?.description).toContain("through walls");
+    expect(rows.some((row) => row.label === "Cast Shadows")).toBe(false);
+    const width = rows.find((row) => row.label === "Width");
+    if (width?.kind !== "number") throw new Error("Missing Width");
+    width.onChange(2.5);
+    expect(update).toHaveBeenCalledWith("width", 2.5);
+    const texture = rows.find((row) => row.label === "Emission Texture");
+    if (texture?.kind !== "asset") throw new Error("Missing Emission Texture");
+    texture.onPick?.();
+    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "textureGuid", allowedTypes: ["Texture"] }));
+  });
   it.each(["LightComponent", "HemisphericFillLightComponent"])("exposes authored mobility for %s without changing Enabled", (classId) => {
     const component = { id: "light", classId, properties: { enabled: true } };
     const { rows, update } = rowsFor(component);

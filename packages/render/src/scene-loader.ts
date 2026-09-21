@@ -330,6 +330,7 @@ export function helperBillboardIconOf(
     (component) => component.classId === "HemisphericFillLightComponent",
   );
   if (fill) return "directional_light";
+  if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return "directional_light";
   const light = actor.components.find(
     (component) => component.classId === "LightComponent",
   );
@@ -389,7 +390,7 @@ function componentVisualKind(
   }
   if (component.classId === "SpriteComponent") return `sprite:${asset}`;
   if (component.classId === "TilemapComponent") return `tilemap:${asset}`;
-  if (component.classId === "HemisphericFillLightComponent") {
+  if (component.classId === "HemisphericFillLightComponent" || component.classId === "AreaRectLightComponent") {
     return editorBillboardKind("directional_light");
   }
   if (component.classId === "LightComponent") {
@@ -562,6 +563,7 @@ export function editorMeshKindOf(
     );
     return editorBillboardKind(lightBillboardIcon(light?.properties.lightKind));
   }
+  if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
   if (actor.components.some((component) => component.classId === "CameraComponent")) {
     return editorBillboardKind("camera");
   }
@@ -626,7 +628,7 @@ export function createMeshForComponent(
   if (component.classId === "TilemapComponent") {
     return createTilemapComponentMesh(scene, name, component, assets);
   }
-  if (component.classId === "HemisphericFillLightComponent") {
+  if (component.classId === "HemisphericFillLightComponent" || component.classId === "AreaRectLightComponent") {
     const mesh = createEditorBillboard(scene, name, "directional_light");
     applyEditorBillboardFromActor(mesh, actor);
     return mesh;

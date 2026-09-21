@@ -1,4 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { areaRectLightBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -437,6 +438,7 @@ class InProcessRuntime implements RuntimeDriver {
   private flushingConsoleActors = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
+  private areaLightSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -3559,6 +3561,21 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitMeshAssignment(actor: Actor, slotId: number): void {
+    const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
+    if (hasAreaLight || this.areaLightSlots.has(slotId)) {
+    const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
+      const { position, rotation, scale } = component.transform;
+      return {
+        id: component.guid, classId: component.classId, parentId: component.parentId,
+        properties: component.classId === "AreaRectLightComponent" ? Object.fromEntries(["enabled", "width", "height", "color", "intensity", "textureGuid"].map((key) => [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])) : {},
+        transform: { position: [position.x, position.y, position.z] as [number, number, number], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number], scale: [scale.x, scale.y, scale.z] as [number, number, number] },
+      };
+    })) : [];
+    // A separate component command also handles actors with meshes, multiple
+    // emitters and asynchronous model loading. It uses the same view owner.
+    this.emit({ type: "setAreaLights", slotId, lights });
+    if (lights.length) this.areaLightSlots.add(slotId); else this.areaLightSlots.delete(slotId);
+    }
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.world);
@@ -4231,6 +4248,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private releaseSlot(actorGuid: string, slotId: number): void {
+    this.areaLightSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);

@@ -67,7 +67,7 @@ export class AreaRectLightOwner {
     Vector3.TransformNormalFromFloatsToRef(0, 1, 0, this.world, this.y);
     Vector3.TransformNormalFromFloatsToRef(0, 0, 1, this.world, this.z);
     const lx = this.x.length(), ly = this.y.length(), lz = this.z.length();
-    let error = this.binding.error;
+    let error = this.binding.error ?? (this.binding.properties.textureGuid && !this.light.emissionTexture ? `Processed area-light emission texture is unavailable: ${this.binding.properties.textureGuid}` : undefined);
     if (!error && (!this.world.m.every(Number.isFinite) || Math.min(lx, ly, lz) < 0.000001)) error = "Rectangular Area Light requires a finite, non-degenerate transform.";
     if (!error && (Math.abs(Vector3.Dot(this.x, this.y)) > lx * ly * 0.00001 || Math.abs(Vector3.Dot(this.x, this.z)) > lx * lz * 0.00001 || Math.abs(Vector3.Dot(this.y, this.z)) > ly * lz * 0.00001)) error = "Rectangular Area Light does not support sheared transforms. Remove non-uniform scaling above a rotated child.";
     if (error !== this.diagnostic) {
@@ -93,4 +93,37 @@ export class AreaRectLightOwner {
 
   get error(): string | undefined { return this.diagnostic; }
   dispose(): void { if (!this.disposed) this.light.dispose(); }
+}
+
+/** One actor's emitters, independent of whether its render meshes have arrived. */
+export class AreaRectLightGroup {
+  readonly emitters = new Map<string, AreaRectLightOwner>();
+  private readonly world = Matrix.Identity();
+  private signature = "";
+  private readonly scene: Scene;
+  private readonly name: string;
+  private readonly onDiagnostic?: (message: string) => void;
+
+  constructor(scene: Scene, name: string, onDiagnostic?: (message: string) => void) {
+    this.scene = scene; this.name = name; this.onDiagnostic = onDiagnostic;
+  }
+  update(bindings: readonly AreaRectLightBinding[]): boolean {
+    const signature = JSON.stringify(bindings);
+    if (signature === this.signature) return false;
+    const live = new Set(bindings.map((binding) => binding.id));
+    for (const [id, emitter] of this.emitters) if (!live.has(id)) { emitter.dispose(); this.emitters.delete(id); }
+    for (const binding of bindings) {
+      let emitter = this.emitters.get(binding.id);
+      if (emitter) emitter.update(binding);
+      else { emitter = new AreaRectLightOwner(this.scene, `${this.name}:${binding.id}`, binding, this.onDiagnostic); this.emitters.set(binding.id, emitter); }
+      emitter.setWorld(this.world);
+    }
+    this.signature = signature;
+    return true;
+  }
+  setWorld(world: Matrix): void {
+    this.world.copyFrom(world);
+    for (const emitter of this.emitters.values()) emitter.setWorld(world);
+  }
+  dispose(): void { for (const emitter of this.emitters.values()) emitter.dispose(); this.emitters.clear(); this.signature = ""; }
 }

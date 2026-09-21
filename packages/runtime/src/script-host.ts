@@ -1883,6 +1883,7 @@ function lightComponentOf(target: unknown): ActorComponent | null {
   if (
     target instanceof ActorComponent &&
     (target.classId === "LightComponent" ||
+      target.classId === "AreaRectLightComponent" ||
       target.classId === "HemisphericFillLightComponent")
   ) {
     return target;
@@ -1891,6 +1892,7 @@ function lightComponentOf(target: unknown): ActorComponent | null {
     actorOf(target)?.components.find(
       (component) =>
         (component.classId === "LightComponent" ||
+          component.classId === "AreaRectLightComponent" ||
           component.classId === "HemisphericFillLightComponent") &&
         !component.destroyed,
     ) ?? null

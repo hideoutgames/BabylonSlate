@@ -175,7 +175,15 @@ export function celLightingFunctions(source: string, wgsl: boolean): string {
         "specComp*specularColor;",
         "specComp*slateCelSpecularTint(specularColor,diffuseColor);",
         1,
-      ).value
+      )
+      // Native LTC diffuse joins the same final CEL ramp. Replace the smooth
+      // area BRDF highlight with the shared authored CEL threshold and tint.
+      .replaceAll(
+        "result.specular+=specularColor*fresnel*data.Specular;",
+        "result.specular=slateCelHighlight(slateCelStrength(data.Specular),slateCelStrength(data.Diffuse))*slateCelSpecularTint(specularColor,diffuseColor);",
+        2,
+      )
+      .replaceAll("result.diffuse+=diffuseColor*data.Diffuse;", "result.diffuse=diffuseColor*data.Diffuse;", 2).value
   );
 }
 

@@ -110,6 +110,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   refreshAuthoredCameraLenses,
   syncAuthoredCamerasFromMeshes,
+  syncAuthoredAreaLightsFromMeshes,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -1635,6 +1636,7 @@ function initializeEngine(
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
         const sceneData = editorSync.serializedScene();
+        syncAuthoredAreaLightsFromMeshes(scene, (id) => editorSync.meshForActor(id));
         if (sceneData) {
           syncAuthoredCamerasFromMeshes(scene, sceneData, (id) =>
             editorSync.meshForActor(id),
@@ -2526,6 +2528,21 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
+      if (command.type === "setAreaLights") {
+        let group = binding.areaLights.get(command.slotId);
+        let changed = false;
+        if (command.lights.length) {
+          if (!group) { group = new AreaRectLightGroup(scene, `playAreaLight:${command.slotId}`); binding.areaLights.set(command.slotId, group); }
+          changed = group.update(command.lights);
+          const mesh = binding.meshes.get(command.slotId);
+          if (mesh) group.setWorld(mesh.getWorldMatrix());
+        } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }
+        if (changed) {
+          appliedSnapshotIdentity = null;
+          worldRenderer?.invalidate();
+          scheduler.invalidate("asset");
+        }
+      }
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         appliedSnapshotIdentity = null;
@@ -3028,3 +3045,4 @@ export function createAppEngine(
   });
   return engine;
 }
+import { AreaRectLightGroup } from "./area-rect-light";

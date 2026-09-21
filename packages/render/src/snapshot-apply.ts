@@ -105,6 +105,7 @@ export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
+  areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
@@ -199,6 +200,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     lights: new Map(),
     cameras: new Map(),
     lightProps: new Map(),
+    areaLights: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
@@ -840,6 +842,8 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  binding.areaLights.get(slotId)?.dispose();
+  binding.areaLights.delete(slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
@@ -885,6 +889,7 @@ export function retirePlaySlot(
 /** Drop world Play visuals/cameras; overlay compositor slots stay. */
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
+    ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
     ...binding.lights.keys(),
@@ -1232,6 +1237,7 @@ export function applySnapshotToScene(
         disposeWorldOverlayLeftovers(scene, actor.slotId);
       }
       writeActorTransform(mesh, actor);
+      binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
       setPlayVisualVisibility(
         mesh,
         (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
@@ -1271,6 +1277,9 @@ export function applySnapshotToScene(
       }
     }
     updateBoneAttachments(binding);
+    for (const [slotId, attachment] of binding.boneAttachments) {
+      if (attachment.applied) binding.areaLights.get(slotId)?.setWorld(attachment.world);
+    }
     for (const [slotId, attachment] of binding.boneAttachments) {
       if (!attachment.applied) continue;
       const light = binding.lights.get(slotId);
@@ -1323,6 +1332,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
     invalidateSlotAnimLoad(binding, slotId);
   }
   for (const light of binding.lights.values()) light.dispose();
+  for (const group of binding.areaLights.values()) group.dispose();
+  binding.areaLights.clear();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();
@@ -1415,3 +1426,4 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     mesh.computeWorldMatrix();
   }
 }
+import { AreaRectLightGroup } from "./area-rect-light";

@@ -15,6 +15,7 @@ import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
+  parseAreaRectLightProperties,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -33,7 +34,7 @@ export const CAMERA_PREVIEW_WIDTH = 320;
 export const CAMERA_PREVIEW_HEIGHT = 180;
 const CAMERA_PREVIEW_ASPECT = CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT;
 
-export type LightDebugKind = "point" | "spot" | "directional";
+export type LightDebugKind = "point" | "spot" | "directional" | "area";
 
 type OverlaySync = {
   sceneData: SerializedScene | null;
@@ -189,7 +190,7 @@ export class EditorDebugOverlay {
     }
     const selected = collectSelected(sceneData, options);
     const camera = selected.find((entry) => entry.component.classId === "CameraComponent");
-    const light = selected.find((entry) => entry.component.classId === "LightComponent");
+    const light = selected.find((entry) => entry.component.classId === "LightComponent" || entry.component.classId === "AreaRectLightComponent");
     if (camera) this.buildCameraDebug(camera.actor, camera.component);
     if (light) this.buildLightDebug(light.actor, light.component);
     for (const { actor, component } of selected) {
@@ -364,6 +365,25 @@ export class EditorDebugOverlay {
   }
 
   private buildLightDebug(actor: SerializedActor, component: SerializedComponent): void {
+    if (component.classId === "AreaRectLightComponent") {
+      const native = this.scene.getLightByName(`authoredAreaLight:${actor.id}:${component.id}`);
+      if (!native?.parent || native.metadata?.areaLight?.error) return;
+      const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
+      root.parent = native.parent;
+      const { width, height } = parseAreaRectLightProperties(component.properties);
+      const w = width / 2, h = height / 2;
+      const corners = [new Vector3(-w, -h, 0), new Vector3(w, -h, 0), new Vector3(w, h, 0), new Vector3(-w, h, 0)];
+      dashedLines(`debugLight:${actor.id}:rectangle`, [...corners, corners[0]!], this.scene, root);
+      const distance = Math.min(2, Math.max(0.4, Math.min(width, height)));
+      const tip = new Vector3(0, 0, -distance);
+      dashedLines(`debugLight:${actor.id}:emission`, [Vector3.Zero(), tip], this.scene, root);
+      dashedLines(`debugLight:${actor.id}:arrow`, [new Vector3(-distance * 0.15, 0, -distance * 0.75), tip, new Vector3(distance * 0.15, 0, -distance * 0.75)], this.scene, root);
+      // Short parallel guides indicate the emitting side, never a cutoff/cone.
+      corners.forEach((corner, index) => dashedLines(`debugLight:${actor.id}:side${index}`, [corner, corner.add(new Vector3(0, 0, -distance * 0.25))], this.scene, root));
+      this.lightDebugKind = "area";
+      this.lightDebugMesh = root;
+      return;
+    }
     const kind = String(component.properties.lightKind ?? "point") as LightDebugKind;
     const range = Math.max(0.1, asNumber(component.properties.range, 10));
     const origin = actorPosition(actor);

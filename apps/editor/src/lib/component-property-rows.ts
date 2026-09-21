@@ -12,6 +12,7 @@ import {
   parseSkyboxSize,
   parseText2DProperties,
   parseText3DProperties,
+  parseAreaRectLightProperties,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -1333,6 +1334,17 @@ export function componentPropertyRows(
           update,
           new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
         ),
+      ];
+    }
+    case "AreaRectLightComponent": {
+      const properties = parseAreaRectLightProperties(component.properties);
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
+          description: "Unshadowed: this light can illuminate through walls. It emits along the component's forward direction (+Z).", onChange: (next) => update("enabled", next) },
+        ...(["width", "height"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: key === "width" ? "Width" : "Height", value: properties[key], min: 0.0001, description: "Local units. Actor and parent scale apply once. Sheared transforms are unsupported.", onChange: (next) => update(key, next) })),
+        { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
+        { kind: "number", id: rowId(actorId, component.id, "intensity"), label: "Intensity", value: properties.intensity, min: 0, onChange: (next) => update("intensity", next) },
+        assetRow(actorId, component, "textureGuid", "Emission Texture", ["Texture"], update, context, "Choose Emission Texture", "Uniform Emission"),
       ];
     }
     case "CameraComponent": {

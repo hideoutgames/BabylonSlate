@@ -171,9 +171,9 @@ export function applyEditorBillboardFromActor(
     return;
   }
   const update = () => {
-    const light = mesh.getScene().getLightByName(`${AUTHORED_LIGHT_PREFIX}${actor.id}`);
     const component = actor.components.find((entry) =>
-      entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent");
+      entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent");
+    const light = mesh.getScene().getLightByName(component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`);
     const illuminationLimited = light && isForwardLightExcluded(light);
     const disabled = light ? (!light.isEnabled() && !illuminationLimited) || light.intensity <= 0
       : component?.properties.enabled === false ||

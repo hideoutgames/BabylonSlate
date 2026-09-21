@@ -930,5 +930,19 @@ are bundled from BabylonJS Assets (CC BY 4.0), shared per engine across views,
 and released after the last owned emitter. They require 65,536 GPU bytes before
 driver overhead. Their original bytes and SHA-256 are recorded in
 `packages/render/src/resources/area-lights-ltc.ts`; no CDN access is required.
-This ownership foundation is under implementation; editor/runtime component
-integration and textured receiver qualification remain pending.
+Editor illumination synchronization and the existing Play snapshot owner both
+use the same per-actor emitter group. `setAreaLights` carries normalized component
+data and attachment chains through the reliable bridge; it is independent of
+mesh assignment, so multiple emitters and emitters on model actors survive model
+loading. Unchanged bindings retain native resources. Snapshot transforms and
+gizmo preview update existing adapters. Actor/component removal releases owned
+lights, adapters and lookup references. The compact inspector and Class Graph
+native variables expose the authored properties. Editor guides draw the rectangle
+and emitting side without a spotlight cone or implied hard cutoff.
+
+The CEL adapter keeps native LTC diffuse in the shared final ramp and replaces
+the smooth native specular lobe with the existing CEL highlight threshold/tint.
+This integration is under qualification. Derived emission assets, actual GPU
+receiver/backend combinations, and exported textured emission remain pending;
+a referenced texture without prepared lighting data disables the emitter with
+a diagnostic rather than silently displaying uniform emission.

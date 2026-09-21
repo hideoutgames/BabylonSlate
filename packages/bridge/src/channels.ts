@@ -291,6 +291,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
