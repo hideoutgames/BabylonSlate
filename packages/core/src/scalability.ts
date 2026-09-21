@@ -69,12 +69,15 @@ function same(a: unknown, b: unknown): boolean {
 }
 /** Used only with validated known fields; arrays are values, never property bags. */
 export function mergeRenderSettings<T>(base: T, patch: RenderSettingsPatch<T>): T {
-  const result = structuredClone(base) as Record<string, unknown>;
+  return mergeFields(base as Record<string, unknown>, patch as Record<string, unknown>) as T;
+}
+function mergeFields(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const result = structuredClone(base);
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined || key === "__proto__" || key === "constructor" || key === "prototype") continue;
-    result[key] = record(value) && record(result[key]) ? mergeRenderSettings(result[key], value) : structuredClone(value);
+    result[key] = record(value) && record(result[key]) ? mergeFields(result[key], value) : structuredClone(value);
   }
-  return result as T;
+  return result;
 }
 function validatePatch(patch: unknown, template: unknown, prefix = ""): string | undefined {
   if (!record(patch) || !record(template)) return `${prefix || "render"} must be a settings object.`;
