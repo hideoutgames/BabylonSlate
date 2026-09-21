@@ -110,6 +110,8 @@ function PaletteWindowedList({
               role="option"
               id={`${listId}-${encodeURIComponent(node.id)}`}
               aria-selected={node.id === activeId}
+              title={node.description}
+              aria-description={node.description}
               tabIndex={-1}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "touch" }),

@@ -20,12 +20,14 @@ export const DEFAULT_FUNCTION_PINS: GraphClassMemberPin[] = [
 ];
 
 export const NATIVE_CLASS_EVENT_TYPES = [
+  "flow.event.scalabilityChanged",
   "flow.event.beginPlay",
   "flow.event.tick",
   "flow.event.destroyed",
 ] as const;
 
 export const NATIVE_GAME_INSTANCE_EVENT_TYPES = [
+  "flow.event.scalabilityChanged",
   "flow.event.init",
   "flow.event.tick",
   "flow.event.end",
@@ -49,6 +51,7 @@ export const COLLISION_EVENT_TYPE_IDS = [
 ] as const;
 
 const NATIVE_EVENT_TITLES: Record<string, string> = {
+  "flow.event.scalabilityChanged": "Event Scalability Changed",
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.destroyed": "Event On Actor Destroyed",
@@ -347,6 +350,7 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   const chain = ancestryChain(options);
+  if (nodeId === "flow.event.scalabilityChanged") return !options?.activeFunctionId && !options?.animationGraphHost && ["Actor", "ActorComponent", "GameInstance"].some((base) => chain.includes(base));
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   const isGiOnlyEvent = (
     NATIVE_GAME_INSTANCE_EVENT_TYPES as readonly string[]

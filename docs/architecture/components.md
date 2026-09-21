@@ -199,3 +199,5 @@ Post-process entry controls keep Enabled and Scalable Resolution in one compact 
 Scene Details places a labeled **Add Component** button after actor properties and immediately before the component list. The Class/Prefab Components toolbar uses the same visible label. Both actions keep the islands' compact 28px height on desktop and tablets. Outliner actor-menu **Delete** with multiple actors selected asks for **Delete Selected**, **Delete This Object**, or **Cancel**, preserving the menu-opening selection.
 
 The project composer centers `New <TemplateName>` independently of its left-aligned Back button, using the selected built-in or imported template name.
+
+NodePalette rows expose optional registry descriptions through hover hints and accessible descriptions without changing their compact row height. The Class Graph Scalability category uses native enums and structures for quality inputs, application results and effective readback.

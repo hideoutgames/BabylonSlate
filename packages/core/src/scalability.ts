@@ -84,7 +84,7 @@ function validatePatch(patch: unknown, template: unknown, prefix = ""): string |
   for (const [key, value] of Object.entries(patch)) {
     const path = prefix ? `${prefix}.${key}` : key;
     if (!Object.hasOwn(template, key)) return `Unknown rendering setting: ${path}.`;
-    if (renderingApplicationPolicy(path) === "authoring") return `${path} is authoring-only; use Set Scalability Preset for quality tiers.`;
+    if (renderingApplicationPolicy(path) === "authoring" && !same(value, template[key])) return `${path} is authoring-only; use Set Scalability Preset for quality tiers.`;
     const expected = template[key];
     if (record(expected)) {
       const error = validatePatch(value, expected, path);
@@ -149,6 +149,7 @@ export class ScalabilitySession {
     this.publish(before, "Scene rendering defaults changed.");
   }
   request(request: ScalabilityRequest): ScalabilityResult {
+    if (!record(request)) return this.rejected("failed", "A scalability request must be an object.");
     const before = this.requested;
     const previousOverrides = this.overrides;
     if (request.kind === "preset") {

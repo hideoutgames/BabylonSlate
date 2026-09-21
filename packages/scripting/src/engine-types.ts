@@ -1,3 +1,4 @@
+import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
 import { INPUT_KEYS } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
@@ -35,6 +36,7 @@ export type EngineStruct = {
 
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
+  ...SCALABILITY_ENUMS,
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",
@@ -55,6 +57,7 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
 export const ENGINE_STRUCTS: readonly EngineStruct[] = [
+  ...SCALABILITY_STRUCTS,
   {
     id: ENGINE_HIT_RESULT_STRUCT_ID,
     name: "Hit Result",

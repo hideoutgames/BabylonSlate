@@ -43,6 +43,8 @@ export type NodeDefinition = {
   id: string;
   title: string;
   category: string;
+  /** Author-facing contract shown in the node catalog. */
+  description?: string;
   pins: (properties: Record<string, unknown>) => GraphPin[];
   /** Pure expression nodes return a map of output pin name → expression. */
   codegen: (ctx: CodegenContext) => void | Record<string, string>;

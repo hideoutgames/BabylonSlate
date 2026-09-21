@@ -1564,7 +1564,7 @@ class InProcessRuntime implements RuntimeDriver {
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void {
     if (!this.scalability.acknowledge(acknowledgement)) return;
     const snapshot = this.scalability.snapshot();
-    const owners = [this.world.gameInstance, this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors()];
+    const owners = [this.world.gameInstance, this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
     for (const owner of owners) if (owner && this.canRunOwner(owner)) {
       this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
     }

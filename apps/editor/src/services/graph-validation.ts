@@ -1870,6 +1870,7 @@ function scriptPaletteCatalogNodes(
       return {
         id: def.id,
         title: def.title,
+        description: def.description,
         category: def.category,
         pins,
         pure: def.pure,
