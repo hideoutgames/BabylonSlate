@@ -131,6 +131,59 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(result.previews).toHaveLength(4);
   expect(result.helpers).toHaveLength(6);
   expect(result.shadows).toHaveLength(4);
+  expect(result.vertexStreams).toHaveLength(16);
+  expect(result.limits?.maxVertexBuffers ?? 0).toBeGreaterThanOrEqual(8);
+  {
+    const px = (
+      entry: { pixelFormat: string },
+      pixels: number[],
+      x: number,
+      y: number,
+    ) => {
+      const i = (y * 64 + x) * 4;
+      // WebGPU readback follows the swap-chain channel order (bgra8unorm).
+      const channels =
+        entry.pixelFormat === "bgra8unorm" ? [2, 1, 0] : [0, 1, 2];
+      return {
+        r: pixels[i + channels[0]!]!,
+        g: pixels[i + channels[1]!]!,
+        b: pixels[i + channels[2]!]!,
+      };
+    };
+    const isGreen = (p: { r: number; g: number; b: number }) =>
+      p.g > 150 && p.r < 60 && p.b < 60;
+    const isRed = (p: { r: number; g: number; b: number }) =>
+      p.r > 150 && p.g < 60 && p.b < 60;
+    const isBackground = (p: { r: number; g: number; b: number }) =>
+      p.b > 40 && p.r < 30 && p.g < 30;
+    const isBlack = (p: { r: number; g: number; b: number }) =>
+      p.r < 20 && p.g < 20 && p.b < 20;
+    for (const entry of result.vertexStreams) {
+      const label = `${entry.backend}/${entry.case}`;
+      if (entry.case === "rigid") {
+        expect(isGreen(px(entry, entry.pixels!, 32, 32)), label).toBe(true);
+      } else if (entry.case === "vertexColor") {
+        expect(isRed(px(entry, entry.pixels!, 32, 32)), label).toBe(true);
+      } else if (entry.case === "vertexColorMissing") {
+        // Fallback draw: black, not the dark blue background.
+        expect(isBlack(px(entry, entry.pixels!, 32, 32)), label).toBe(true);
+      } else if (entry.case === "sharedMaterial") {
+        expect(isRed(px(entry, entry.before!, 13, 32)), `${label} before left`).toBe(true);
+        expect(isBlack(px(entry, entry.before!, 51, 32)), `${label} before right`).toBe(true);
+        expect(isBlack(px(entry, entry.after!, 13, 32)), `${label} after left`).toBe(true);
+        expect(isRed(px(entry, entry.after!, 51, 32)), `${label} after right`).toBe(true);
+      } else if (entry.case === "skinned4" || entry.case === "skinned8") {
+        expect(isBackground(px(entry, entry.pixels!, 32, 32)), `${label} origin`).toBe(true);
+        expect(isGreen(px(entry, entry.pixels!, 51, 32)), `${label} displaced`).toBe(true);
+      } else if (entry.case === "instances" || entry.case === "thinInstances") {
+        expect(isGreen(px(entry, entry.pixels!, 13, 32)), `${label} left`).toBe(true);
+        expect(isGreen(px(entry, entry.pixels!, 51, 32)), `${label} right`).toBe(true);
+        expect(isBackground(px(entry, entry.pixels!, 32, 32)), `${label} centre`).toBe(true);
+      } else {
+        throw new Error(`Unknown vertex stream case ${entry.case}`);
+      }
+    }
+  }
   for (const capture of result.shadows) {
     expect(capture.shadowed).toHaveLength(96 * 72 * 4);
     expect(capture.unshadowed).toHaveLength(96 * 72 * 4);
@@ -254,5 +307,5 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
 
 function isGpuFailure(type: string, message: string): boolean {
   return ["error", "warning"].includes(type) &&
-    /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message);
+    /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error|No vertex buffer is provided/i.test(message);
 }
