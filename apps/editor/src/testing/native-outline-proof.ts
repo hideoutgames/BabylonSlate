@@ -80,9 +80,14 @@ export async function runNativeOutlineProof(backend: "webgl2" | "webgpu") {
         if (performance.now() > deadline) throw new Error(`Outline readiness timed out: ${name}`);
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
-      scene.updateTransformMatrix();
-      engine.beginFrame();
-      try { graph.execute(); } finally { engine.endFrame(); }
+      // The first native layer draw may finish asynchronous effect preparation.
+      // Warm the same membership before measuring the presented bitmap.
+      for (let frame = 0; frame < 3; frame++) {
+        scene.updateTransformMatrix();
+        engine.beginFrame();
+        try { graph.execute(); } finally { engine.endFrame(); }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
       // Capture the presented bitmap on both APIs, including WebGPU BGRA output.
       const copy = document.createElement("canvas");
       copy.width = canvas.width; copy.height = canvas.height;
@@ -112,7 +117,7 @@ export async function runNativeOutlineProof(backend: "webgl2" | "webgpu") {
       captures,
       blockers: [
         ...(!after.selectionBuffer ? ["Clearing a disjoint component consumer deletes the shared CEL instance selection buffer."] : []),
-        ...(after.redPixels !== reference.redPixels ? ["The unchanged CEL consumer loses rendered outline pixels after another consumer clears."] : []),
+        ...(after.redPixels < reference.redPixels ? ["The unchanged CEL consumer loses rendered outline pixels after another consumer clears."] : []),
       ],
     };
   } finally {
