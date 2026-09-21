@@ -1,7 +1,8 @@
 import { Constants, RawTexture, type AbstractEngine, type Scene } from "@babylonjs/core";
 import { AREA_LIGHT_LTC_BASE64 } from "./resources/area-lights-ltc";
+import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
-type Lookup = { LTC1: RawTexture; LTC2: RawTexture; references: number };
+type Lookup = { LTC1: RawTexture; LTC2: RawTexture; references: number; lease: ManagedRenderLease };
 const engines = new WeakMap<AbstractEngine, Lookup>();
 const scenes = new WeakMap<Scene, { lookup: Lookup; references: number }>();
 
@@ -29,6 +30,11 @@ export function retainAreaLightLookup(scene: Scene): () => void {
     const engine = scene.getEngine();
     let lookup = engines.get(engine);
     if (!lookup) {
+      const lease = beginManagedRenderAllocation(engine, AREA_LIGHT_LOOKUP_BYTES);
+      if (!lease) throw new Error("Rectangular Area Light lookup textures exceed the managed rendering memory budget.");
+      let LTC1: RawTexture | undefined;
+      let LTC2: RawTexture | undefined;
+      try {
       const data = decodeLookup();
       const texture = (index: 0 | 1) => {
         const result = RawTexture.CreateRGBATexture(data[index], 64, 64, engine, false, false, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_HALF_FLOAT);
@@ -37,9 +43,10 @@ export function retainAreaLightLookup(scene: Scene): () => void {
         result.gammaSpace = false;
         return result;
       };
-      const LTC1 = texture(0);
-      try { lookup = { LTC1, LTC2: texture(1), references: 0 }; }
-      catch (error) { LTC1.dispose(); throw error; }
+      LTC1 = texture(0); LTC2 = texture(1);
+      lease.commit([{ handle: LTC1.getInternalTexture()!, bytes: AREA_LIGHT_LOOKUP_BYTES / 2, category: "areaLight" }, { handle: LTC2.getInternalTexture()!, bytes: AREA_LIGHT_LOOKUP_BYTES / 2, category: "areaLight" }]);
+      lookup = { LTC1, LTC2, references: 0, lease };
+      } catch (error) { LTC1?.dispose(); LTC2?.dispose(); void releaseManagedRenderLeaseAfterDisposal(engine, lease); throw error; }
       engines.set(engine, lookup);
     }
     lookup.references++;
@@ -59,6 +66,7 @@ export function retainAreaLightLookup(scene: Scene): () => void {
     engines.delete(scene.getEngine());
     entry!.lookup.LTC1.dispose();
     entry!.lookup.LTC2.dispose();
+    void releaseManagedRenderLeaseAfterDisposal(scene.getEngine(), entry!.lookup.lease);
   };
 }
 

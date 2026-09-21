@@ -70,14 +70,15 @@ export class AreaRectLightOwner {
     let error = this.binding.error ?? (this.binding.properties.textureGuid && !this.light.emissionTexture ? `Processed area-light emission texture is unavailable: ${this.binding.properties.textureGuid}` : undefined);
     if (!error && (!this.world.m.every(Number.isFinite) || Math.min(lx, ly, lz) < 0.000001)) error = "Rectangular Area Light requires a finite, non-degenerate transform.";
     if (!error && (Math.abs(Vector3.Dot(this.x, this.y)) > lx * ly * 0.00001 || Math.abs(Vector3.Dot(this.x, this.z)) > lx * lz * 0.00001 || Math.abs(Vector3.Dot(this.y, this.z)) > ly * lz * 0.00001)) error = "Rectangular Area Light does not support sheared transforms. Remove non-uniform scaling above a rotated child.";
-    if (error !== this.diagnostic) {
+    const changedDiagnostic = error !== this.diagnostic;
+    if (changedDiagnostic) {
       this.diagnostic = error;
       if (error) this.onDiagnostic?.(error);
     }
     const enabled = this.binding.properties.enabled && !error;
+    if (changedDiagnostic || !this.light.metadata) this.light.metadata = { areaLight: { componentId: this.binding.id, error: error ?? null, shadowed: false } };
     if (this.enabled !== enabled) {
       this.enabled = enabled;
-      this.light.metadata = { areaLight: { componentId: this.binding.id, error: error ?? null, shadowed: false } };
       setAuthoredLightEnabled(this.light, enabled);
     }
     if (error) return;

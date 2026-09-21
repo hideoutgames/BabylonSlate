@@ -3,6 +3,7 @@ import { areaRectLightBindings, identitySerializedTransform } from "@babylonslat
 import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { AreaRectLightOwner } from "./area-rect-light";
+import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 
 function binding() {
   return areaRectLightBindings([{ id: "emitter", classId: "AreaRectLightComponent", properties: { width: 2, height: 3 }, transform: identitySerializedTransform() }])[0]!;
@@ -18,6 +19,7 @@ describe("native rectangular area light ownership", () => {
     const lookup = scene._ltcTextures!;
     const dispose = vi.spyOn(lookup.LTC1, "dispose");
     expect(other._ltcTextures?.LTC1).toBe(lookup.LTC1);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(65536);
     first.dispose();
     expect(dispose).not.toHaveBeenCalled();
     second.dispose();
@@ -25,8 +27,19 @@ describe("native rectangular area light ownership", () => {
     expect(dispose).not.toHaveBeenCalled();
     other.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
     third.dispose();
     expect(scene.transformNodes).toHaveLength(0);
+    scene.dispose(); engine.dispose();
+  });
+
+  it("rejects allocation over the shared budget without leaving partial lights or reservations", () => {
+    const { engine, scene } = createTestEngine();
+    limitManagedRenderBytes(engine, 32768);
+    expect(() => new AreaRectLightOwner(scene, "limited", binding())).toThrow("memory budget");
+    expect(scene.lights).toHaveLength(0);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+    expect(scene._ltcTextures).toBeUndefined();
     scene.dispose(); engine.dispose();
   });
 

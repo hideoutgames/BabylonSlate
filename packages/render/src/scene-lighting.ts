@@ -62,6 +62,7 @@ export function syncSceneLighting(scene: Scene): void {
 
 export function sceneLightingLimits(scene: Scene): string[] {
   return [
+    ...scene.lights.flatMap((light) => typeof light.metadata?.areaLight?.error === "string" ? [`${light.name}: ${light.metadata.areaLight.error}`] : []),
     ...clusteredLightingLimits(scene),
     ...(lightingByScene.get(scene)?.limits() ?? []),
   ];

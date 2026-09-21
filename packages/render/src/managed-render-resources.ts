@@ -3,7 +3,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 512 * 1024 ** 2;
 export type ManagedRenderCategory =
-  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess";
+  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight";
 export type ManagedRenderResource = {
   handle: object;
   bytes: number;
@@ -15,6 +15,7 @@ const categories: readonly ManagedRenderCategory[] = [
   "geometry",
   "depth",
   "postprocess",
+  "areaLight",
 ];
 type ResourceEntry = {
   bytes: number;
@@ -70,6 +71,7 @@ export function managedRenderReservations(engine: AbstractEngine) {
     geometry: 0,
     depth: 0,
     postprocess: 0,
+    areaLight: 0,
   };
   let sharedBytes = 0;
   for (const resource of value.resources.values()) {

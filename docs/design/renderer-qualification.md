@@ -178,5 +178,14 @@ with native PBR and authored Material Graph receivers in PBR/CEL modes. It
 requests Forward and Clustered Forward, retains actual effective-path readback,
 compares enabled/disabled and 180-degree rotation pixels, checks an unlit control,
 and blocks external network requests. The fixture and its PNG/JSON attachments
-are functional evidence only. Results remain pending until the recorded run
-passes; they do not establish physical-device budgets or textured emission.
+are functional evidence only. On `61c33a05`, both explicit browser cases passed
+on Windows 10.0.19045 / Chromium with D3D11 WARP (WebGL2) and SwiftShader
+(WebGPU), at 240 by 160 and scale 1 after three draws per capture. Captures use
+the presented bitmap, preserving WebGPU channel/row order. WebGL2 PBR and CEL
+both retained Clustered Forward with the rectangular light as a conventional
+contribution (4 draws versus 3 for Forward). WebGPU explicitly fell back to
+Forward for a Clustered Forward request, as required by the existing backend
+policy. CEL diffuse retained discrete levels; the unlit control stayed unchanged.
+Disabled and 180-degree turned-away lighting matched, and restoring orientation
+restored identical pixels. No external asset request occurred. These checks do
+not establish physical-device budgets, textured emission or every lifecycle case.
