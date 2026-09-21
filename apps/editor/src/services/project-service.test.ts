@@ -287,8 +287,97 @@ describe("project round-trip", () => {
       "Invalid bundled Mannequin GLB",
     );
     expect(await service.listProjects()).toEqual([]);
+    expect(storage.getCurrentFolder()).toBeNull();
     await service.createEmptyProject("Broken");
     expect(storage.getCurrentFolder()?.name).toBe("Broken");
+  });
+
+  it("keeps a pre-existing folder that lacks project.json when scaffolding fails", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    await storage.openDocumentsProject("Kept");
+    await storage.writeText("notes.txt", "x");
+    await storage.releaseFolder();
+    vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
+      new Error("Invalid bundled Mannequin GLB"),
+    );
+    await expect(service.createEmptyProject("Kept")).rejects.toThrow();
+    expect((await storage.listProjects()).map((p) => p.name)).toContain("Kept");
+    await storage.openDocumentsProject("Kept");
+    expect(await storage.exists("notes.txt")).toBe(true);
+  });
+
+  it("does not delete another operation's folder when the current folder changed mid-scaffold", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    let reject!: (e: Error) => void;
+    vi.mocked(loadKenneyMannequinGlb).mockImplementationOnce(
+      () => new Promise((_, r) => { reject = r; }),
+    );
+    const pending = service.createEmptyProject("First");
+    await vi.waitFor(() => expect(reject).toBeDefined());
+    await storage.openDocumentsProject("Second");
+    await storage.writeText("keep.txt", "y");
+    reject(new Error("boom"));
+    await expect(pending).rejects.toThrow("boom");
+    const names = (await storage.listProjects()).map((p) => p.name);
+    expect(names).toContain("Second");
+    // Cleanup is skipped rather than silently deleting the orphan it created.
+    expect(names).toContain("First");
+    expect(storage.getCurrentFolder()?.name).toBe("Second");
+    expect(await storage.exists("keep.txt")).toBe(true);
+  });
+
+  it("surfaces the original error when cleanup itself fails", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
+      new Error("Invalid bundled Mannequin GLB"),
+    );
+    vi.spyOn(storage, "deleteProject").mockRejectedValueOnce(
+      new Error("cleanup failed"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(service.createEmptyProject("Warned")).rejects.toThrow(
+        "Invalid bundled Mannequin GLB",
+      );
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain("Warned");
+    } finally {
+      warn.mockRestore();
+      vi.mocked(storage.deleteProject).mockRestore();
+    }
+  });
+
+  it("leaves a user-picked folder in place when scaffolding fails", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
+      new Error("Invalid bundled Mannequin GLB"),
+    );
+    await expect(
+      service.createEmptyProject("Picked", { pickFolder: true }),
+    ).rejects.toThrow("Invalid bundled Mannequin GLB");
+    expect((await storage.listProjects()).length).toBe(1);
+  });
+
+  it("removes the registered folder when template scaffolding fails", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    await expect(
+      service.createFromTemplate({
+        name: "Tmpl",
+        templateFiles: [
+          { path: PROJECT_FILE, data: new TextEncoder().encode("not json") },
+        ],
+      }),
+    ).rejects.toThrow();
+    expect(await storage.listProjects()).toEqual([]);
   });
 
   it("deleteListedProject removes OPFS files so the same name is empty", async () => {
