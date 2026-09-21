@@ -391,6 +391,37 @@ describe("Slate project browser", () => {
     expect(screen.getByTestId("open-listed-project-Tide")).toBeTruthy();
   });
 
+  it("hides the unclean-exit notice when no previous exit was recorded", () => {
+    renderHomepage({ uncleanExit: null });
+    expect(screen.queryByTestId("unclean-exit-notice")).toBeNull();
+  });
+
+  it("shows the unclean-exit notice with the project and repeat sentences", () => {
+    const onDismissUncleanExit = vi.fn();
+    renderHomepage({
+      uncleanExit: {
+        project: { guid: "g1", name: "Orbit" },
+        lastSeenAt: 1,
+        recentCount: 3,
+      },
+      onDismissUncleanExit,
+    });
+    const notice = screen.getByTestId("unclean-exit-notice");
+    expect(notice.textContent).toContain(
+      "BabylonSlate restarted unexpectedly while Orbit was open.",
+    );
+    expect(notice.textContent).toContain(
+      "Reopen it to recover journaled edits; edits that were never journaled are lost.",
+    );
+    expect(notice.textContent).toContain(
+      "This has happened 3 times in the last 10 minutes.",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss" }),
+    );
+    expect(onDismissUncleanExit).toHaveBeenCalledOnce();
+  });
+
   it("persists the menu theme in Engine Settings and updates editor chrome", async () => {
     renderHomepage();
     fireEvent.click(screen.getByRole("button", { name: "Dark Mode" }));
