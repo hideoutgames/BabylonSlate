@@ -63,6 +63,13 @@ if (
   );
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("nativeOutlineProof")
+) {
+  void import("./testing/native-outline-proof").then(({ runNativeOutlineProof }) => {
+    Object.assign(window, { __babylonslateNativeOutlineProof: runNativeOutlineProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphForwardProof")
 ) {
   void import("./testing/framegraph-forward-proof").then(
