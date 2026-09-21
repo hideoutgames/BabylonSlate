@@ -253,6 +253,31 @@ emission-processing worker. Captures await the actual scene-load transaction's
 first presented frame; an absent loading dialog is not a readiness signal.
 These are accounted resource sizes, not measurements of total device memory.
 
+At `156735af`, both receiver browser cases also passed equivalent-pixel checks
+for scaled dimensions, mirrored X, and a 90-degree rotated non-uniform parent
+with a counter-rotated emitter. Mirroring the forward axis matched the
+turned-away result. Shear and degenerate scale disabled the emitter with the
+expected diagnostic; restoring the transform restored identical pixels without
+replacing its native owner. This does not yet qualify animated textured mirror
+orientation or arbitrary custom receiver shaders.
+
+At `a523e5ee`, `e2e/area-light-authoring.spec.ts` passed in desktop Chromium:
+component discovery, width undo/redo, actual Prepare Emission worker processing,
+Texture assignment, duplicate/resource sharing, component removal/undo and
+project reopen. Two duplicated emitters retained one emission upload (5,657,940
+accounted area-light bytes); removing one did not destroy the survivor's texture.
+Captured inspector and Texture editor images were inspected. Earlier harness
+failures used an unsupported right-click menu entry and compared optional
+identity transforms before/after normalization; neither is recorded as a pass.
+
+At `66f6291f`, the selected component-only Class compiler/runtime case passed:
+an empty child inherits the parent's rectangular emitter and attachment,
+two spawned instances receive distinct component identities, and despawning
+one preserves the other. A manually assembled runtime-only fixture initially
+omitted the compiler's effective component templates; the final regression
+uses the actual Class compiler. The existing native-variable width setter case
+also passed during that targeted investigation.
+
 ## Saved Class scalability qualification
 
 At `562fe445`, the three explicit cases in `e2e/render-settings-export.spec.ts`

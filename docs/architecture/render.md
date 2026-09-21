@@ -915,6 +915,16 @@ Settings transactions retain the previous FrameGraph resource owners until the r
 Engine startup retains requested/effective backend and the exact initialization fallback reason on the Engine owner; scene and scalability readback share that evidence. Scene transitions re-acknowledge settings against the new scene, with CEL/environment/shadow defaults beneath the persistent session overrides. The standalone qualification fixture compiles real Class Graph commands for mode, cap, scale and reset, verifies their presented pixels/readback, and exercises repeated no-op calls and scene inheritance.
 # Rectangular area light ownership
 
+To author a light, choose **Add Component → Rendering → Rectangular Area
+Light**, set Width/Height in local units, and adjust Color and Intensity. It
+illuminates receivers without a visible plane or material. For textured emission,
+open an ordinary Texture asset, choose **Prepare Emission**, wait for Ready,
+then assign it in **Emission Texture**. Clearing the picker restores uniform
+emission. Preparation is cancellable and saved with the Texture; reopening or
+duplicating the asset reuses current prepared data. Replacing source pixels
+requires preparation again. The Enabled description states the unshadowed,
+through-walls limitation; there is no Cast Shadows control.
+
 `AreaRectLightComponent` uses the additive authored fields `enabled`, `width`,
 `height`, `color`, `intensity`, and optional `textureGuid`. Its core normalizer
 stores no engine handles. Component attachment chains retain every local
