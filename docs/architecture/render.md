@@ -913,3 +913,22 @@ Browser qualification, outline controls and area-light quality integration are s
 Settings transactions retain the previous FrameGraph resource owners until the replacement has presented. Intermediate candidates from superseded requests are released rather than added to that retained set. Disposal releases retained owners, and a failed restoration remains unpresentable until a new explicit request instead of retrying allocation every frame. This retention covers the graph-owned targets/tasks; managed lighting allocations retain their separate owner policy.
 
 Engine startup retains requested/effective backend and the exact initialization fallback reason on the Engine owner; scene and scalability readback share that evidence. Scene transitions re-acknowledge settings against the new scene, with CEL/environment/shadow defaults beneath the persistent session overrides. The standalone qualification fixture compiles real Class Graph commands for mode, cap, scale and reset, verifies their presented pixels/readback, and exercises repeated no-op calls and scene inheritance.
+# Rectangular area light ownership
+
+`AreaRectLightComponent` uses the additive authored fields `enabled`, `width`,
+`height`, `color`, `intensity`, and optional `textureGuid`. Its core normalizer
+stores no engine handles. Component attachment chains retain every local
+transform, including non-rendering parents. The renderer owns the native
+`RectAreaLight` and its transform adapter. Authored forward is +Z; native
+emission is -Z. Width and height are local units, with parent scale applied once.
+Mirrored scale preserves the authored emission side. Sheared or degenerate
+transforms disable the emitter with a diagnostic until corrected.
+
+Native lights remain unshadowed and can illuminate through walls. The adapter
+does not register a shadow generator. The native 64 by 64 half-float LTC tables
+are bundled from BabylonJS Assets (CC BY 4.0), shared per engine across views,
+and released after the last owned emitter. They require 65,536 GPU bytes before
+driver overhead. Their original bytes and SHA-256 are recorded in
+`packages/render/src/resources/area-lights-ltc.ts`; no CDN access is required.
+This ownership foundation is under implementation; editor/runtime component
+integration and textured receiver qualification remain pending.

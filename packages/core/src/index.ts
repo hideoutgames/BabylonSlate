@@ -43,3 +43,4 @@ export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from
 export * from "./baked-lighting";
 export * from "./baked-geometry";
 export * from "./baking";
+export * from "./area-rect-light";
