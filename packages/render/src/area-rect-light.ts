@@ -131,6 +131,7 @@ export class AreaRectLightGroup {
   readonly emitters = new Map<string, AreaRectLightOwner>();
   private readonly world = Matrix.Identity();
   private signature = "";
+  private bindings: readonly AreaRectLightBinding[] = [];
   private emissions?: MeshAssetContext["areaEmissions"];
   private readonly scene: Scene;
   private readonly name: string;
@@ -151,12 +152,16 @@ export class AreaRectLightGroup {
       emitter.setWorld(this.world);
     }
     this.signature = signature;
+    this.bindings = bindings;
     this.emissions = emissions;
     return true;
+  }
+  refreshEmissions(emissions?: MeshAssetContext["areaEmissions"]): boolean {
+    return this.emissions !== emissions && this.update(this.bindings, emissions);
   }
   setWorld(world: Matrix): void {
     this.world.copyFrom(world);
     for (const emitter of this.emitters.values()) emitter.setWorld(world);
   }
-  dispose(): void { for (const emitter of this.emitters.values()) emitter.dispose(); this.emitters.clear(); this.signature = ""; }
+  dispose(): void { for (const emitter of this.emitters.values()) emitter.dispose(); this.emitters.clear(); this.signature = ""; this.bindings = []; this.emissions = undefined; }
 }

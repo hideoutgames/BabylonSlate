@@ -1016,3 +1016,10 @@ with Black Bars disabled retains the existing CSS-sized output policy.
 Settings-only effect graphs rebuild their fixed-size targets when the output
 changes, just like authored post-process stacks. This keeps color and depth
 attachments compatible through scaling and avoids an unintended native fallback.
+
+Installing replacement emission assets refreshes existing runtime light owners;
+it does not require another actor update or respawn. Identical asset maps are
+no-ops. Missing prepared content disables its emitter with the same diagnostic
+as initial loading. Editor Play preparation stops on missing/corrupt required
+emission data and clears the previous session's map before loading; these errors
+are reported as emission failures independently of font loading.

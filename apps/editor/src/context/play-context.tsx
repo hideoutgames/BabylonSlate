@@ -1131,13 +1131,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         );
         setPlaySpriteAnimationPayloads(spriteAnimations);
 
-        try {
-          const fontScenes = [
+        const fontScenes = [
             resolvedScene?.scene,
             ...playLibrary.map((entry) => entry.scene),
             ...resourceScenes,
           ];
+        try {
+          // Do not let a failed new session reuse the previous session's data.
+          setPlayAreaEmissions(new Map());
           setPlayAreaEmissions(await collectPlayAreaEmissions(fontScenes, true));
+        } catch (error) {
+          appendLog(`Area-light emission load failed: ${error instanceof Error ? error.message : String(error)}`);
+          setPrepareState(null);
+          return;
+        }
+        try {
           setPlayFontFacetypeBytes(
             await collectPlayFontFacetypeBytes(
               resolvedScene?.scene,

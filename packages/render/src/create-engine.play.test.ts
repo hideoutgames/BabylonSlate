@@ -9,6 +9,7 @@ import {
 } from "@babylonslate/bridge";
 import {
   createActor,
+  areaRectLightBindings,
   createDefaultScene,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
@@ -18,7 +19,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { encodeGlbJsonBin } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -3088,6 +3089,31 @@ describe("Play createEngine view", () => {
     expect(handle.scene.pointerX).toBeCloseTo(400);
     expect(handle.scene.pointerY).toBeCloseTo(200);
     expect(down).toHaveBeenCalled();
+  });
+
+  it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const lights = areaRectLightBindings([{ id: "emitter", classId: "AreaRectLightComponent", properties: { textureGuid: "texture" } }]);
+    handle.applyCommand({ type: "setAreaLights", slotId: 4, lights });
+    const light = handle.scene.getLightByName("playAreaLight:4:emitter")!;
+    expect(light.isEnabled()).toBe(false);
+    const pixels = await decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
+    const areaEmissions = new Map([["texture", pixels]]);
+    handle.setMeshAssets({ areaEmissions });
+    expect(light.isEnabled()).toBe(true);
+    expect(light.metadata.areaLight.error).toBeNull();
+    const uploaded = [...engine.getLoadedTexturesCache()];
+    handle.setMeshAssets({ areaEmissions });
+    expect(engine.getLoadedTexturesCache()).toEqual(uploaded);
+    handle.setMeshAssets({ areaEmissions: new Map() });
+    expect(light.isEnabled()).toBe(false);
+    expect(light.metadata.areaLight.error).toContain("Prepare Emission");
+    handle.setMeshAssets({ areaEmissions });
+    expect(handle.scene.getLightByName(light.name)).toBe(light);
+    expect(light.isEnabled()).toBe(true);
+    handle.applyCommand({ type: "setAreaLights", slotId: 4, lights: [] });
+    expect(handle.scene.getLightByName(light.name)).toBeNull();
   });
 
   it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {

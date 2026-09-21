@@ -1450,6 +1450,13 @@ function initializeEngine(
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       binding.areaEmissions = assets.areaEmissions;
+      let emissionChanged = false;
+      for (const group of binding.areaLights.values())
+        emissionChanged = group.refreshEmissions(assets.areaEmissions) || emissionChanged;
+      if (emissionChanged) {
+        worldRenderer?.invalidate();
+        scheduler.invalidate("asset");
+      }
       binding.texturePixelSizes = assets.texturePixelSizes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
