@@ -16,9 +16,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await page.waitForFunction(() => "__babylonslateAreaRectLightProof" in window);
     const report = await page.evaluate((backend) => (window as unknown as { __babylonslateAreaRectLightProof: typeof runAreaRectLightProof }).__babylonslateAreaRectLightProof(backend), backend);
     for (const result of report.results) {
-      for (const capture of result.captures) await testInfo.attach(`${result.mode}-${result.renderPath}-${capture.name}`, { body: Buffer.from(capture.image.split(",")[1]!, "base64"), contentType: "image/png" });
+      for (const capture of [...result.captures, ...result.transforms]) await testInfo.attach(`${result.mode}-${result.renderPath}-${capture.name}`, { body: Buffer.from(capture.image.split(",")[1]!, "base64"), contentType: "image/png" });
     }
-    await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(({ image, ...capture }) => { void image; return capture; }) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
+    const withoutImage = ({ image, ...capture }: typeof report.results[number]["captures"][number]) => { void image; return capture; };
+    await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(withoutImage), transforms: result.transforms.map(withoutImage) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
     expect(report.emission.meanError, "worker/native emission pixels").toBeLessThan(1);
@@ -50,6 +51,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(textured.nativeBrightness).toBeGreaterThan(off!.nativeBrightness + 1000);
       expect(textured.graphBrightness).toBeGreaterThan(off!.graphBrightness + 1000);
       expect(textured.image === nativeTexture.image, `${result.mode} ${result.renderPath} native upload parity`).toBe(true);
+      for (const transformed of result.transforms) {
+        const disabled = ["unsupported shear", "degenerate scale", "mirrored forward axis"].includes(transformed.name);
+        expect(transformed.image === (disabled ? off!.image : on!.image), `${result.mode}: ${transformed.name}`).toBe(true);
+        if (transformed.name === "unsupported shear") expect(transformed.emission.diagnostic).toContain("sheared");
+        else if (transformed.name === "degenerate scale") expect(transformed.emission.diagnostic).toContain("non-degenerate");
+        else expect(transformed.emission.diagnostic).toBeNull();
+      }
     }
   });
 }

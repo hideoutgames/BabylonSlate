@@ -1,6 +1,6 @@
 /** Actual production FrameGraph receiver qualification; only the fixture is test-only. */
 import { Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, PBRMaterial, PointLight, RectAreaLight, Scene, Vector3, Viewport } from "@babylonjs/core";
-import { createActor, createDefaultScene, normalizeCelShadingSettings, normalizeEnvironmentLightingSettings, type RenderPath } from "@babylonslate/core";
+import { createActor, createDefaultScene, identitySerializedTransform, normalizeCelShadingSettings, normalizeEnvironmentLightingSettings, type RenderPath } from "@babylonslate/core";
 import { beginEngineDrawCallFrame, compileMaterialPlan, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath, sceneRenderPathStatus, setSceneRenderSettings, syncAuthoredIllumination } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -126,7 +126,36 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
           const nativeTexture = await capture("native texture oracle");
           light.emissionTexture = preparedTexture; light._markMeshesAsLightDirty();
           emitter.components[0]!.properties.textureGuid = null;
-          results.push({ mode, renderPath, pipeline: sceneRenderPathStatus(scene), captures: [on, off, back, restored, textured, nativeTexture] });
+          const transforms = [];
+          if (renderPath === "forward") {
+            const component = emitter.components[0]!;
+            const originalTransform = structuredClone(emitter.transform);
+            component.properties.width = 1; component.properties.height = 2 / 3;
+            emitter.transform.scale = [2, 3, 1];
+            transforms.push(await capture("scaled dimensions"));
+            emitter.transform.scale = [-2, 3, 1];
+            transforms.push(await capture("mirrored dimensions"));
+            const parent = createActor("emitter-parent", "Emitter Parent", {
+              transform: { position: [0, 0.5, -3], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [1, 3, 2] },
+            });
+            document.actors.push(parent);
+            emitter.parentId = parent.id;
+            emitter.transform = { ...identitySerializedTransform(), rotation: [0, -Math.SQRT1_2, 0, Math.SQRT1_2] };
+            transforms.push(await capture("rotated nonuniform parent"));
+            emitter.transform.rotation = [0, -Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)];
+            transforms.push(await capture("unsupported shear"));
+            emitter.parentId = null; document.actors.pop();
+            emitter.transform = structuredClone(originalTransform);
+            component.properties.width = 2; component.properties.height = 2;
+            emitter.transform.scale = [0, 1, 1];
+            transforms.push(await capture("degenerate scale"));
+            emitter.transform.scale = [1, 1, -1];
+            transforms.push(await capture("mirrored forward axis"));
+            emitter.transform = originalTransform;
+            transforms.push(await capture("transform recovery"));
+            if (scene.lights.find((entry) => entry instanceof RectAreaLight) !== light) throw new Error("Transform edits replaced the native light owner");
+          }
+          results.push({ mode, renderPath, pipeline: sceneRenderPathStatus(scene), captures: [on, off, back, restored, textured, nativeTexture], transforms });
         }
       } finally { coordinator.dispose(); scene.dispose(); }
     }
