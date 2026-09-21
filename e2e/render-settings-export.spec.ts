@@ -13,7 +13,7 @@ const command = (page: Page, line: string) => page.evaluate((line) =>
   (window as unknown as { __babylonslatePlayerTest: PlayerBootHandle }).__babylonslatePlayerTest.executeConsoleCommand(line), line);
 const read = (page: Page) => page.evaluate(() => {
   const host = (window as unknown as { __babylonslatePlayerTest: PlayerBootHandle }).__babylonslatePlayerTest;
-  return { rendering: host.rendering(), materials: host.meshMaterialNames(), tasks: host.renderTasks() };
+  return { rendering: host.rendering(), visuals: host.visuals(), tasks: host.renderTasks() };
 });
 const pixels = (page: Page) => page.getByTestId("player-canvas").evaluate((node: HTMLCanvasElement) => {
   const copy = document.createElement("canvas");
@@ -68,7 +68,7 @@ for (const variant of [
         const live = await read(page);
         expect(live.rendering?.shadowPasses).toBe(0);
         expect(live.rendering?.pipeline.requested.gpuBackend).toBe(variant.backend);
-        expect(live.materials.length).toBeGreaterThan(0);
+        expect(live.visuals.filter((visual) => visual.visible)).toHaveLength(3);
         expect(live.tasks?.some((name) => /FXAA/i.test(name))).toBe(true);
         return live;
       };
