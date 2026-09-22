@@ -1017,6 +1017,7 @@ function initializeEngine(
   binding.retargetAnimationLoads = options.retargetAnimationLoads;
   binding.resourceCache = resourceCache;
   binding.slotAnimReady = () => {
+    appliedSnapshotIdentity = null;
     scheduler.invalidate("snapshot");
   };
 
@@ -1089,8 +1090,8 @@ function initializeEngine(
     else compiledMaterialGuids.delete(guid);
     return material;
   };
-  binding.releaseMaterialInstance = (key) =>
-    materialLibrary.releaseInstance(key);
+  binding.releaseMaterialInstance = (key, assetGuid) =>
+    materialLibrary.releaseInstance(key, assetGuid);
   binding.validateMaterialParameter = (guid, name, value) => {
     const document = materialDocuments.get(guid);
     return (

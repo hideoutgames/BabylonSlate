@@ -56,6 +56,7 @@ import {
   createModelActorRoot,
   isEditorModelPlaceholder,
   invalidateSlotAnimLoad,
+  publishModelHierarchyAnimations,
 } from "./glb-anim";
 import {
   applySerializedTransform,
@@ -184,7 +185,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
       values: Map<string, MaterialParameterValue>;
     }
   >;
-  releaseMaterialInstance?: (instanceKey: string) => void;
+  releaseMaterialInstance?: (instanceKey: string, assetGuid?: string) => void;
   validateMaterialParameter?: (
     assetGuid: string,
     name: string,
@@ -252,9 +253,16 @@ export function applyAssignMaterial(
   const previous = componentId
     ? binding.componentMaterialGuids.get(instanceKey)
     : binding.materialAssetGuids.get(command.slotId);
+  const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
+  let provisionalGuid: string | undefined;
   if (previous !== command.materialAssetGuid) {
+    const privateGuid = binding.materialParameters.get(instanceKey)?.materialAssetGuid;
+    if (restart) {
+      // Keep the actual predecessor owner; a superseded candidate's different
+      // GUID can retire after its native users have been cancelled below.
+      if (privateGuid && retainedMaterialOwners.get(binding)?.get(command.slotId)?.get(instanceKey) !== privateGuid) provisionalGuid = privateGuid;
+    } else binding.releaseMaterialInstance?.(instanceKey);
     binding.materialParameters.delete(instanceKey);
-    binding.releaseMaterialInstance?.(instanceKey);
   }
   if (componentId) {
     binding.componentMaterialGuids.set(
@@ -263,6 +271,12 @@ export function applyAssignMaterial(
     );
   } else {
     binding.materialAssetGuids.set(command.slotId, command.materialAssetGuid);
+  }
+  if (restart) {
+    try { restart(); } finally {
+      if (provisionalGuid) binding.releaseMaterialInstance?.(instanceKey, provisionalGuid);
+    }
+    return;
   }
   const root = binding.meshes.get(command.slotId);
   if (!root) return;
@@ -325,6 +339,8 @@ export function applySetMaterialParameter(
     binding.materialParameters.set(key, parameters);
   }
   parameters.values.set(command.parameterName, command.parameter);
+  const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
+  if (restart) { restart(); return; }
   const root = binding.meshes.get(command.slotId);
   if (root) applyMaterialToActorMeshes(binding, command.slotId, root);
 }
@@ -532,13 +548,42 @@ function applyPlayShadows(scene: Scene): void {
 }
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
-const rejectedTextureAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+// A material command supersedes preparation for the exact pending visual, not
+// the already published model generation or another incarnation of this slot.
+const pendingMaterialPreparations = new WeakMap<SnapshotSceneBinding, Map<number, () => void>>();
+
+const retainedMaterialOwners = new WeakMap<SnapshotSceneBinding, Map<number, Map<string, string>>>();
+
+function retainWorkingMaterialOwners(binding: SnapshotSceneBinding, slotId: number, hasPredecessor = true): void {
+  const slots = retainedMaterialOwners.get(binding) ?? new Map<number, Map<string, string>>();
+  retainedMaterialOwners.set(binding, slots);
+  if (slots.has(slotId)) return;
+  const prefix = `${slotId}|`;
+  slots.set(slotId, new Map(hasPredecessor ? [...binding.materialParameters]
+    .filter(([key]) => key.startsWith(prefix)).map(([key, state]) => [key, state.materialAssetGuid]) : []));
+}
+
+function releaseRetainedMaterialOwners(binding: SnapshotSceneBinding, slotId: number, retiringSlot = false): void {
+  const slots = retainedMaterialOwners.get(binding);
+  const owners = slots?.get(slotId);
+  for (const [key, guid] of owners ?? []) {
+    const current = binding.materialParameters.get(key);
+    if (retiringSlot) {
+      // Ordinary parameter-owner teardown below releases all GUIDs for this key.
+      if (!current) binding.releaseMaterialInstance?.(key);
+    } else if (current?.materialAssetGuid !== guid) binding.releaseMaterialInstance?.(key, guid);
+  }
+  slots?.delete(slotId);
+  if (!slots?.size) retainedMaterialOwners.delete(binding);
+}
 
 function cancelPendingVisualReplacement(binding: SnapshotSceneBinding, slotId: number): void {
   const pending = pendingVisualReplacements.get(binding);
   pending?.get(slotId)?.dispose();
   pending?.delete(slotId);
+  pendingMaterialPreparations.get(binding)?.delete(slotId);
 }
 
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
@@ -558,7 +603,8 @@ export function applyAssignMesh(
     : primaryId
       ? new Set([primaryId])
       : null;
-  if (componentIds) {
+  const retireRemovedMaterials = () => {
+    if (!componentIds) return;
     const prefix = `${command.slotId}|`;
     const keys = new Set([
       ...binding.componentMaterialGuids.keys(),
@@ -571,8 +617,9 @@ export function applyAssignMesh(
       binding.componentMaterialGuids.delete(key);
       binding.materialParameters.delete(key);
       binding.releaseMaterialInstance?.(key);
+      retainedMaterialOwners.get(binding)?.get(command.slotId)?.delete(key);
     }
-  }
+  };
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshSorting.set(command.slotId, { actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer });
@@ -650,55 +697,41 @@ export function applyAssignMesh(
   if (existing && existing.getScene() === scene && isEditorModelPlaceholder(existing) &&
     modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
     const guid = command.meshAssetGuid;
-    void beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, existing,
+    const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
+    pendingMaterialPreparations.set(binding, refreshes);
+    const restart = () => applyAssignMesh(scene, binding, command);
+    retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
+    refreshes.set(command.slotId, restart);
+    const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, existing,
       () => {
         stampOverlayPick(existing, command);
         applyPlayVisualSorting(existing, command.slotId, binding);
         setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
+        retireRemovedMaterials();
+        releaseRetainedMaterialOwners(binding, command.slotId);
       },
-      () => binding.meshes.get(command.slotId) === existing,
-      (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
-    );
-    return;
-  }
-  if (existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
-    const guid = command.meshAssetGuid;
-    const staged = createModelActorRoot(scene, existing.name);
-    const pending = pendingVisualReplacements.get(binding) ?? new Map<number, Mesh>();
-    pendingVisualReplacements.set(binding, pending);
-    pending.set(command.slotId, staged);
-    const ownsLoad = () => pending.get(command.slotId) === staged && binding.meshes.get(command.slotId) === existing;
-    const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, staged,
-      () => {
-        staged.position.copyFrom(existing.position);
-        staged.rotation.copyFrom(existing.rotation);
-        staged.rotationQuaternion = existing.rotationQuaternion?.clone() ?? null;
-        staged.scaling.copyFrom(existing.scaling);
-        staged.parent = existing.parent;
-        stampOverlayPick(staged, command);
-        applyPlayVisualSorting(staged, command.slotId, binding);
-        setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
-        binding.meshes.set(command.slotId, staged);
-        pending.delete(command.slotId);
-        existing.dispose();
-      }, ownsLoad,
+      () => binding.meshes.get(command.slotId) === existing && refreshes.get(command.slotId) === restart,
       (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
     );
     void load.finally(() => {
-      if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
-      if (binding.meshes.get(command.slotId) !== staged) staged.dispose();
+      if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
     }).catch(() => {});
     return;
   }
   const ownsTexture = (kind: string | null | undefined) =>
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
-  if (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind)))) {
+  const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
+    (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
+      part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+  if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
+    const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
+    if (!existing) binding.meshes.set(command.slotId, working);
     const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
-    const rejected = rejectedTextureAssignments.get(binding) ?? new Map<number, string>();
-    rejectedTextureAssignments.set(binding, rejected);
-    if (rejected.get(command.slotId) === descriptor) return;
+    const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
+    rejectedPreparedAssignments.set(binding, rejected);
+    if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
     const targets: PlayVisualTargets = { spriteOverlays: new Map(), lights: new Map(), cameras: new Map() };
-    const deferred: Array<() => void> = [];
+    const deferred: DeferredModelLoad[] = [];
     let candidate: Mesh | undefined;
     let adopted = false;
     const releaseProvisional = () => {
@@ -715,28 +748,40 @@ export function applyAssignMesh(
       applyMaterialToActorMeshes(binding, command.slotId, candidate);
     } catch (error) {
       candidate?.dispose(); releaseProvisional();
-      rejected.set(command.slotId, descriptor);
-      console.warn(`[render] Visual texture replacement failed: ${String(error)}`);
+      if (!stagesModels) rejected.set(command.slotId, descriptor);
+      console.warn(`[render] Visual preparation failed: ${String(error)}`);
       return;
     }
     const staged = candidate;
     const pending = pendingVisualReplacements.get(binding) ?? new Map<number, Mesh>();
     pendingVisualReplacements.set(binding, pending);
     pending.set(command.slotId, staged);
+    const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
+    pendingMaterialPreparations.set(binding, refreshes);
+    const restart = () => applyAssignMesh(scene, binding, command);
+    retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
+    refreshes.set(command.slotId, restart);
     const ownsLoad = () => pending.get(command.slotId) === staged &&
-      binding.meshes.get(command.slotId) === existing && !staged.isDisposed() && !scene.isDisposed;
-    void (ownedVisualTexturePreparation(staged) ?? Promise.resolve()).then(() => {
+      binding.meshes.get(command.slotId) === working && !staged.isDisposed() && !scene.isDisposed;
+    const preparation = Promise.all([
+      ownedVisualTexturePreparation(staged),
+      ...deferred.map((start) => start({ ownsLoad })),
+    ]);
+    const load = preparation.then(() => {
       if (!ownsLoad()) return;
-      staged.position.copyFrom(existing.position);
-      staged.rotation.copyFrom(existing.rotation);
-      staged.rotationQuaternion = existing.rotationQuaternion?.clone() ?? null;
-      staged.scaling.copyFrom(existing.scaling);
-      staged.parent = existing.parent;
-      applyMaterialToActorMeshes(binding, command.slotId, staged);
+      staged.position.copyFrom(working.position);
+      staged.rotation.copyFrom(working.rotation);
+      staged.rotationQuaternion = working.rotationQuaternion?.clone() ?? null;
+      staged.scaling.copyFrom(working.scaling);
+      staged.parent = working.parent;
+      // Material commands restart preparation; do not attach an unprepared
+      // successor generation after the joined preparation has completed.
       // Retirement must not cancel this winning candidate or its new helpers.
       binding.slotVisualReady?.(command.slotId, staged);
       pending.delete(command.slotId);
       disposeSlotVisuals(binding, command.slotId);
+      retireRemovedMaterials();
+      releaseRetainedMaterialOwners(binding, command.slotId);
       binding.meshes.set(command.slotId, staged);
       for (const [slot, overlay] of targets.spriteOverlays) (binding.spriteOverlays ??= new Map()).set(slot, overlay);
       for (const [slot, light] of targets.lights) {
@@ -749,16 +794,21 @@ export function applyAssignMesh(
       rejected.delete(command.slotId);
       staged.setEnabled(true);
       setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
-      for (const start of deferred) start();
+      if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
-    }, () => {
-      if (ownsLoad()) rejected.set(command.slotId, descriptor);
+    }, (error: unknown) => {
+      if (!ownsLoad()) return;
+      if (stagesModels) throw error;
+      rejected.set(command.slotId, descriptor);
       // The exact texture owner reports preparation failure once.
     }).finally(() => {
+      if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
       if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
       if (!adopted) staged.dispose();
-    }).catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
+    });
+    if (stagesModels) (binding.slotAnimLoads ??= new Map()).set(command.slotId, load);
+    void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
     return;
   }
   const stagesText = meshKind === "2dtext" || meshKind === "2drichtext" ||
@@ -766,7 +816,7 @@ export function applyAssignMesh(
   // Text performs all allocation checks and construction while its predecessor
   // remains usable. Native retirement must not erase the newly authored props.
   let stagedText: Mesh | null = null;
-  const deferredModels: Array<() => void> = [];
+  const deferredModels: DeferredModelLoad[] = [];
   if (stagesText) {
     const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
     const rejected = rejectedTextAssignments.get(binding);
@@ -791,9 +841,11 @@ export function applyAssignMesh(
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
+  retireRemovedMaterials();
+  releaseRetainedMaterialOwners(binding, command.slotId);
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
-  for (const start of deferredModels) start();
+  for (const start of deferredModels) void start().catch(() => {});
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
@@ -1008,7 +1060,7 @@ export function retirePlaySlot(
   slotId: number,
 ): void {
   rejectedTextAssignments.get(binding)?.delete(slotId);
-  rejectedTextureAssignments.get(binding)?.delete(slotId);
+  rejectedPreparedAssignments.get(binding)?.delete(slotId);
   cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
@@ -1020,6 +1072,7 @@ export function retirePlaySlot(
   binding.meshSorting.delete(slotId);
   binding.primaryComponentIds.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
+  releaseRetainedMaterialOwners(binding, slotId, true);
   for (const key of binding.materialParameters.keys()) {
     if (!key.startsWith(`${slotId}|`)) continue;
     binding.materialParameters.delete(key);
@@ -1089,6 +1142,8 @@ function disposeSlotVisuals(
   binding.cameras.delete(slotId);
 }
 
+type DeferredModelLoad = (preparation?: { ownsLoad: () => boolean }) => Promise<void>;
+
 type PlayVisualTargets = {
   spriteOverlays: Map<number, Mesh>;
   lights: Map<number, Light>;
@@ -1099,7 +1154,7 @@ function createPlayVisual(
   scene: Scene,
   slotId: number,
   binding: SnapshotSceneBinding,
-  deferredModels?: Array<() => void>,
+  deferredModels?: DeferredModelLoad[],
   targets?: PlayVisualTargets,
 ): Mesh {
   const parts = binding.meshParts.get(slotId);
@@ -1162,7 +1217,7 @@ export function createPlayMesh(
   meshName?: string,
   partText3d?: Text3DProperties,
   partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
-  deferredModels?: Array<() => void>,
+  deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
 ): Mesh {
@@ -1269,21 +1324,25 @@ export function createPlayMesh(
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
     const bytes = binding?.modelSources?.get(assetGuid);
-    if (bytes && binding) {
-      const start = () => { void beginSlotModelAnimLoad(
-        scene,
-        binding,
-        slotId,
-        assetGuid,
-        bytes,
-        root,
-        undefined,
-        undefined,
+    const start: DeferredModelLoad = async (preparation) => {
+      if (!bytes || !binding) {
+        if (preparation) throw new Error(`Model ${assetGuid} source is not installed.`);
+        return;
+      }
+      // Parts own independent native instances and preparation epochs. Only the
+      // winning whole hierarchy publishes their animation lookup into the slot.
+      const owner = preparation ? {
+        ...binding, slotAnimEpoch: new Map(), slotAnimLoads: new Map(), slotAnimationGroups: new Map(),
+        pendingAnimState: undefined, slotAnimReady: undefined,
+      } : binding;
+      await beginSlotModelAnimLoad(
+        scene, owner, slotId, assetGuid, bytes, root, undefined,
+        preparation?.ownsLoad,
         (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
-      ); };
-      if (deferredModels) deferredModels.push(start);
-      else start();
-    }
+      );
+    };
+    if (deferredModels) deferredModels.push(start);
+    else void start().catch(() => {});
     return finishPlayWorldMesh(root);
   }
   if (meshKind === "skybox") {
@@ -1513,7 +1572,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const candidate of pending?.values() ?? []) candidate.dispose();
   pending?.clear();
   pendingVisualReplacements.delete(binding);
-  rejectedTextureAssignments.delete(binding);
+  pendingMaterialPreparations.delete(binding);
+  rejectedPreparedAssignments.delete(binding);
   rejectedTextAssignments.delete(binding);
   binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
@@ -1535,6 +1595,11 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
   binding.pendingAnimState?.clear();
+  for (const slotId of retainedMaterialOwners.get(binding)?.keys() ?? []) releaseRetainedMaterialOwners(binding, slotId, true);
+  for (const key of binding.materialParameters.keys()) binding.releaseMaterialInstance?.(key);
+  binding.materialParameters.clear();
+  binding.componentMaterialGuids.clear();
+  binding.materialAssetGuids.clear();
   binding.slotAnimLoads?.clear();
   binding.slotAnimEpoch?.clear();
   binding.lights.clear();
