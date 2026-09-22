@@ -185,7 +185,7 @@ describe("cookComplexCollisionMeshes", () => {
 });
 
 
-it("keeps the complex sphere closed without degenerate pole triangles", () => {
+it("omits degenerate pole triangles while preserving complex sphere bounds", () => {
   const { vertices, indices } = complexCollisionMeshForMeshKind("sphere");
   let area = 0;
   for (let i = 0; i < indices.length; i += 3) {

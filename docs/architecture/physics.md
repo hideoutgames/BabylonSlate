@@ -154,3 +154,32 @@ Harness scenarios run on each backend where shapes overlap. Within-backend repro
 | Full 5 Hz debugger stats HUD | P8 (`p8-console-hud`); P7 exposes `physicsMs` + Play overlay readout |
 | `planck.js` fallback | Not used; software AABB is the wasm-failure path |
 | Separate physics worker | Not planned for v1 |
+
+
+## Native lifecycle verification pickup
+
+Local checks were deferred at the user's request on 2026-09-22. Branch `agent/engine-physics-lifecycle-b`, implementation checkpoint `82ae49a0`, is **unverified and unmerged**; no PR exists. Keep `BL_TEST_PROFILE=shared` and the machine-wide resource configuration unchanged when resuming. The physical A16 check was waived; local native/browser evidence is still required.
+
+- Baseline `2bbb3ef8`: three real packaged-Havok lifecycle regressions failed (native removal, shape ownership, query helpers). Later null-detachment/resource tests ran, but the native transaction delivery has not passed as a whole.
+- At `df12f40b`, immediate teleport changed native QTransform but the next ray missed. A controlled same-body world reinsert made the ray hit; the production adapter/result-check correction at `6c775fc7` has **not been tested**. Do not count mirrored node positions as query proof.
+- The 60-second transaction selector timed out inside the trigger generation fixture. Its helper terminated its own child tree. Temporary per-case/stage diagnostics remain to locate the exact native operation; remove them after fixing the failure. A timeout is not a passed resource/trigger test.
+- Packaged Havok is `1.3.14`, Babylon is patched `9.20.0`; packaged/vendor WASM SHA-256 is `026917766F534C156286F07975850978DABF17C42E742BBFAAEBBCB2215E4E11` (case-insensitive). The patch includes the required nullable shape tuple and checked native attachment/teleport results. Recompute the lockfile patch identity after combining other patch changes.
+
+Resume the release-critical cases first, with bounded timeouts (PowerShell):
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'ends retired trigger' --disableConsoleIntercept
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'teleports falling|keeps constraints|retains controller|defers contact' --disableConsoleIntercept
+pnpm --silent agent:wait local --script test --timeout-seconds 120 '--' packages/physics/src/havok-transactions.test.ts packages/physics/src/havok-lifecycle.test.ts
+```
+
+After those diagnoses pass, run these explicit affected files in separate admitted batches:
+
+```powershell
+pnpm --silent agent:wait local --script test '--' packages/physics/src/collider-validation.test.ts packages/runtime/src/physics-sync-transactions.test.ts packages/runtime/src/physics-teleport-runtime.test.ts
+pnpm --silent agent:wait local --script test '--' packages/physics/src/physics.test.ts packages/physics/src/havok-v2.test.ts packages/physics/src/line-trace.test.ts packages/assets/src/mesh-collision.test.ts
+pnpm --silent agent:wait local --script test '--' packages/runtime/src/physics-sync.test.ts packages/runtime/src/physics-duplicate-identities.test.ts packages/runtime/src/collision-events.test.ts packages/runtime/src/tilemap-physics.test.ts packages/runtime/src/script-host-physics-queries.test.ts
+```
+
+The first native batch covers 300 compound edit cycles, first/middle/final child removal, asymmetric local poses, provisional cleanup/rollback failure, immediate queries, falling/sleeping velocity policy, native constraints/controllers, and contact-callback ordering. The affected consumer batches cover generated sphere validation, Rapier query/trigger behavior, source replacement, runtime gameplay teleport, SceneLayer routing, and existing mesh/sprite/tilemap collision behavior. All remain pending against the current correction. Also pending: scoped physics/runtime typechecks, lint on changed TypeScript, relevant browser/player integration, independent review, and required PR CI/merge. No full local suite is requested.
