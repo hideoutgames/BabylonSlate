@@ -468,6 +468,25 @@ describe("Havok explicit native motion", () => {
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapBegin"),
       ).toHaveLength(1);
+      const failedAttachment = vi.spyOn(backend.plugin, "setShape").mockImplementationOnce(() => {
+        throw new Error("trigger attachment failed");
+      });
+      expect(() => backend.createCollider({
+        ...trigger("replacement", 0),
+        shape: { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } },
+      })).toThrow("trigger attachment failed");
+      failedAttachment.mockRestore();
+      expect(backend.pollContacts().filter((event) => event.kind === "overlapEnd")).toHaveLength(1);
+      backend.step(1 / 60);
+      expect(backend.pollContacts().filter((event) => event.kind === "overlapBegin")).toHaveLength(1);
+      const failedTeleport = vi.spyOn(backend.plugin, "setPhysicsBodyTransformation").mockImplementationOnce(() => {
+        throw new Error("trigger teleport failed");
+      });
+      expect(() => backend.teleportBody("visitor", pose(10))).toThrow("trigger teleport failed");
+      failedTeleport.mockRestore();
+      expect(backend.pollContacts().filter((event) => event.kind === "overlapEnd")).toHaveLength(1);
+      backend.step(1 / 60);
+      expect(backend.pollContacts().filter((event) => event.kind === "overlapBegin")).toHaveLength(1);
       backend.teleportBody("visitor", pose(10));
       for (let i = 0; i < 3; i++) backend.step(1 / 60);
       expect(
