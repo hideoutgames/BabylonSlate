@@ -39,6 +39,21 @@ with one worker. Both harness cases passed at the clean inspected head in
 buffer on both APIs. These are two successful **stock-limitation reproductions**,
 not production outline acceptance or hardware timing results.
 
+The fresh stock attachments are retained in the repository:
+[WebGL2 diagnostics](../assets/renderer-qualification/2026-09-22-stock/webgl2.json),
+[WebGPU diagnostics](../assets/renderer-qualification/2026-09-22-stock/webgpu.json),
+and the presented states for each API:
+[WebGL2 initial](../assets/renderer-qualification/2026-09-22-stock/webgl2-1.png),
+[all consumers](../assets/renderer-qualification/2026-09-22-stock/webgl2-2.png),
+[component cleared](../assets/renderer-qualification/2026-09-22-stock/webgl2-3.png);
+[WebGPU initial](../assets/renderer-qualification/2026-09-22-stock/webgpu-1.png),
+[all consumers](../assets/renderer-qualification/2026-09-22-stock/webgpu-2.png),
+[component cleared](../assets/renderer-qualification/2026-09-22-stock/webgpu-3.png).
+The latter two WebGPU captures were visually compared: the component removal
+also loses the unchanged global CEL red outline, while the independent green
+selection remains. The images are actual fixture attachments, not regenerated
+illustrations or production acceptance.
+
 Retained artifacts are available under the OS temporary
 `BabylonSlate-rendering-handoff-evidence` directory: native/settings PNG and JSON
 captures, `area-2c788764`, and `perf-before-1f2768d2` / `perf-after-a909bff9`.
@@ -54,6 +69,25 @@ a repeated `cua.getState()` found the Chrome extension and
 `cua.createBrowserTab` succeeded. A working Chrome Computer Use session is now
 established. Build/API qualification and all hands-on routes remain **PENDING**
 at this checkpoint. Automated fixtures do not establish a Computer Use pass.
+
+Initial Computer Use authoring used the retained application inputs validated at
+`31fdadcf` (artifact key `9543eab34dc8365e1c59ee0b5d7eee9abed340f468d75c575e8c153caeb4c5b9`,
+original build metadata `a909bff9`; the intervening changes were documentation).
+Chrome's native page log confirms Babylon 9.20.0 / WebGL2. The presented viewport
+was 720×272 CSS and drawing-buffer pixels at browser DPR 1.5; adapter identity
+has not yet been collected for this manual session. The test project was created
+through Homepage. Ground, a box and an emitter were added through Place Actors;
+Add Component exposed the explicit unshadowed/through-walls limitation. Inspector
+edits retained width 3, height 2, orange `#ff8040`, and intensity 12. Pointer drags
+changed emitter X from 0 to 1.85 and its stored rotation from (35,0,0) to
+(63.34,180,180), with visible illumination and guides. Duplication retained those
+light properties; Remove Component followed by Undo restored them; Save All
+finished disabled with a clean scene tab. These individual steps passed.
+[Actual gizmo capture](../assets/renderer-qualification/2026-09-22-computer-use/area-light-gizmo.png)
+and [saved duplicate capture](../assets/renderer-qualification/2026-09-22-computer-use/area-light-duplicate-saved.png)
+are retained. Route B as a whole remains **PENDING**: texture preparation,
+asymmetric orientation, parenting, Play and reopen are not established by these
+initial steps. Routes A/C and native WebGPU manual qualification also remain pending.
 
 `e2e/native-outline-qualification.spec.ts` runs the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance. Run just this file with the shared browser runner; the JSON attachment lists blockers and actual API, mask type, dimensions and browser. Screenshots come from the actual presented canvas.
 

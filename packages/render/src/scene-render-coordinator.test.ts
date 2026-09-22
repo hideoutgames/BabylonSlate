@@ -1,12 +1,13 @@
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
-import { limitManagedRenderBytes } from "./managed-render-resources";
+import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { SharedOutlineOwner } from "./shared-outline";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -301,4 +302,50 @@ it("caches strict readiness on unchanged frames and re-probes once after a scene
   expect(renderer.isReady()).toBe(true);
   expect(renderer.strictReadinessChecks).toBe(checks + 1);
   renderer.dispose();
+});
+
+it("attaches an inactive outline view without allocating or replacing the admitted graph and prevents cross-view reuse", async () => {
+  const { scene, engine, renderer } = host();
+  await renderer.prepare();
+  const objectRenderer = scene.objectRenderers[0];
+  const reservations = managedRenderReservations(engine);
+  const view = SharedOutlineOwner.forScene(scene).createView("editor");
+  const detach = renderer.attachSharedOutline(view);
+  const sibling = new SceneRenderCoordinator(scene);
+  expect(() => sibling.attachSharedOutline(view)).toThrow("already attached");
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+  expect(scene.objectRenderers[0]).toBe(objectRenderer);
+  expect(renderer.taskNames().some((name) => name.includes("Shared outlines"))).toBe(false);
+  expect(managedRenderReservations(engine)).toEqual(reservations);
+  detach();
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+  expect(scene.objectRenderers[0]).toBe(objectRenderer);
+  const detachSibling = sibling.attachSharedOutline(view);
+  detachSibling();
+  const foreign = new Scene(engine);
+  expect(() => renderer.attachSharedOutline(SharedOutlineOwner.forScene(foreign).createView("foreign"))).toThrow("another Scene");
+  sibling.dispose();
+  renderer.dispose();
+  view.dispose();
+  foreign.dispose();
+});
+
+it("rejects an unsupported outlined view instead of presenting an outline-free classic fallback", async () => {
+  const { scene, renderer } = host();
+  const box = MeshBuilder.CreateBox("outlined", {}, scene);
+  const view = SharedOutlineOwner.forScene(scene).createView("editor");
+  view.setContribution("selection", {
+    kind: "selection", targets: [{ key: "actor", meshes: [box] }],
+    color: [1, 0, 0], width: 1, throughMeshes: true,
+  });
+  const detach = renderer.attachSharedOutline(view);
+  const nativeDraw = vi.fn();
+  scene.customRenderFunction = nativeDraw;
+  await expect(renderer.prepare()).rejects.toThrow("Shared outlines require the prepared FrameGraph");
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(nativeDraw).not.toHaveBeenCalled();
+  detach();
+  expect(await renderer.prepare()).toMatchObject({ path: "classic" });
+  renderer.dispose();
+  view.dispose();
 });

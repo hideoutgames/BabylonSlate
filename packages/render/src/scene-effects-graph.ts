@@ -23,6 +23,12 @@ export interface SceneEffectsGraphOptions {
   /** Authored-stack output feeding the chain. Absent when the object
    * renderer draws this chain's own scene color instead. */
   authoredOutputTexture?: FrameGraphTextureHandle;
+  /** Caller-owned display-space composition, after tone mapping and before
+   * FXAA. The caller retires the injected task with the enclosing graph. */
+  beforeAntialiasing?: (source: FrameGraphTextureHandle) => {
+    task: FrameGraphTask;
+    outputTexture: FrameGraphTextureHandle;
+  };
   width: number;
   height: number;
 }
@@ -42,6 +48,7 @@ export class SceneEffectsGraph {
   readonly outputTexture: FrameGraphTextureHandle;
   readonly tasks: FrameGraphTask[] = [];
   private readonly retirements: OwnedEffectRetirement[] = [];
+  private readonly externalTasks = new Set<FrameGraphTask>();
   private tasksDisposed = false;
   private disposed: Promise<void> | null = null;
   private released: Promise<void> | null = null;
@@ -127,6 +134,12 @@ export class SceneEffectsGraph {
         this.tasks.push(image);
         source = image.outputTexture;
       }
+      if (options.beforeAntialiasing) {
+        const composition = options.beforeAntialiasing(source);
+        this.tasks.push(composition.task);
+        this.externalTasks.add(composition.task);
+        source = composition.outputTexture;
+      }
       if (plan.fxaa) {
         const fxaa = new FrameGraphFXAATask("Scene Effects FXAA", graph);
         fxaa.sourceTexture = source;
@@ -145,12 +158,14 @@ export class SceneEffectsGraph {
     if (this.tasksDisposed) return;
     const errors: unknown[] = [];
     for (const task of this.tasks.splice(0)) {
+      if (this.externalTasks.has(task)) continue;
       try {
         task.dispose();
       } catch (error) {
         errors.push(error);
       }
     }
+    this.externalTasks.clear();
     this.tasksDisposed = true;
     if (errors.length)
       throw new AggregateError(

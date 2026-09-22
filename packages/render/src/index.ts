@@ -102,3 +102,5 @@ export * from "./baked-irradiance";
 export * from "./baked-irradiance-plugin";
 export * from "./baked-receiver-materials";
 export * from "./baked-scene-session";
+export * from "./shared-outline";
+export * from "./shared-outline-task";

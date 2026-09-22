@@ -2,6 +2,7 @@ import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./
 import type { Camera, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { onSceneReadinessDirty } from "./scene-perf";
+import type { SharedOutlineView } from "./shared-outline";
 
 class PreparationChanged extends Error {}
 
@@ -22,6 +23,8 @@ export class SceneRenderCoordinator {
   private pending: { generation: number; promise: Promise<ForwardSceneGraphResult> } | undefined;
   private readonly scene: Scene;
   private readonly detachReadinessDirty: () => void;
+  private outlineView: SharedOutlineView | undefined;
+  private outlineRevision = -1;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -35,10 +38,29 @@ export class SceneRenderCoordinator {
     return this.graph.attachPostProcess(options, () => this.invalidate());
   }
 
+  /** Explicit candidate opt-in for this view. Contributions remain owned by
+   * the caller; editor selection is never inferred from the Scene. */
+  attachSharedOutline(view: SharedOutlineView): () => void {
+    const detach = this.graph.attachSharedOutline(view, () => this.invalidate());
+    this.outlineView = view;
+    this.outlineRevision = view.revision;
+    return () => {
+      detach();
+      if (this.outlineView === view) {
+        this.outlineView = undefined;
+        this.outlineRevision = -1;
+      }
+    };
+  }
+
   postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
 
   /** Prepared graph task names in record order; [] on the classic path. */
   taskNames(): string[] { return this.graph.taskNames(); }
+
+  sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
+    return this.graph.sharedOutlineDiagnostics();
+  }
 
   retainResources(): () => void { return this.graph.retainResources(); }
 
@@ -62,6 +84,7 @@ export class SceneRenderCoordinator {
   /** No drawing: a resize or camera change restarts preparation within one deadline. */
   prepare(assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
     assertCurrent();
+    this.refreshOutline();
     const generation = this.generation;
     if (this.pending?.generation === generation)
       return this.pending.promise.then((result) => { assertCurrent(); return result; });
@@ -118,6 +141,7 @@ export class SceneRenderCoordinator {
 
   /** True while strict readiness must be re-probed after an invalidation. */
   get readinessDirty(): boolean {
+    this.refreshOutline();
     return this.graph.readinessDirty;
   }
 
@@ -128,6 +152,7 @@ export class SceneRenderCoordinator {
 
   /** Loading owners require the prepared selected path, including after resize. */
   isReady(): boolean {
+    this.refreshOutline();
     if (this.failure) throw this.failure;
     if (this.pending) return false;
     const camera = this.scene.activeCamera;
@@ -142,6 +167,7 @@ export class SceneRenderCoordinator {
 
   /** Ready owners may draw a validated native frame while their graph rebuilds. */
   render(): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
+    this.refreshOutline();
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera ||
       !this.graph.sceneStrictlyReady(camera))
@@ -157,6 +183,7 @@ export class SceneRenderCoordinator {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.outlineView = undefined;
     this.invalidate();
     this.detachReadinessDirty();
     this.graph.dispose();
@@ -168,5 +195,15 @@ export class SceneRenderCoordinator {
     void this.prepare().catch((error: unknown) => {
       if (!this.disposed && generation === this.generation) this.failure = error;
     });
+  }
+
+  /** A corrected contribution may retry a failed preparation. Style changes
+   * clear failure/readiness only; they neither cancel nor rebuild a graph. */
+  private refreshOutline(): void {
+    const revision = this.outlineView?.revision ?? -1;
+    if (revision === this.outlineRevision) return;
+    this.outlineRevision = revision;
+    this.failure = undefined;
+    this.graph.invalidate();
   }
 }

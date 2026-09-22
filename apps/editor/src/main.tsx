@@ -63,6 +63,13 @@ if (
   );
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sharedOutlineProof")
+) {
+  void import("./testing/shared-outline-proof").then(({ runSharedOutlineProof }) => {
+    Object.assign(window, { __babylonslateSharedOutlineProof: runSharedOutlineProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("nativeOutlineProof")
 ) {
   void import("./testing/native-outline-proof").then(({ runNativeOutlineProof }) => {
