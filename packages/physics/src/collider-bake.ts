@@ -56,9 +56,19 @@ export function bakeColliderLocal(
   local: ColliderLocalTransform,
   actorScale: Vec3,
 ): { shape: ColliderShape; translation: Vec3; rotation: Quat } {
+  const prepared = colliderLocalPose(shape.kind, local, actorScale);
+  return { shape: scaleColliderShape(shape, prepared.scale), translation: prepared.translation, rotation: prepared.rotation };
+}
+
+/** Fixed-size TRS decomposition, independent of collision vertex data. */
+export function colliderLocalPose(
+  kind: ColliderShape["kind"],
+  local: ColliderLocalTransform,
+  actorScale: Vec3,
+): { scale: Vec3; translation: Vec3; rotation: Quat } {
   const pose = normalizedPhysicsPose(local);
   const is2d = ["box2d", "circle", "capsule2d", "polygon", "chain"].includes(
-    shape.kind,
+    kind,
   );
   for (const axis of is2d
     ? (["x", "y"] as const)
@@ -114,7 +124,7 @@ export function bakeColliderLocal(
     z: lengths[2]! * local.scale.z,
   };
   return {
-    shape: scaleColliderShape(shape, scale),
+    scale,
     translation: {
       x: local.position.x * actorScale.x,
       y: local.position.y * actorScale.y,

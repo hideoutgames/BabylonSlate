@@ -46,6 +46,22 @@ export type LifecycleHooks<T extends BObject = BObject> = {
   onDestroyed?: (self: T) => void;
 };
 
+/** Collider geometry enters through replacement, never in-place vertex mutation.
+ * Copy at this existing authoring boundary; direct variables.set uses it too. */
+class ColliderVariables extends Map<string, unknown> {
+  override set(name: string, value: unknown): this {
+    return super.set(name, name === "shape" ? freezeCollisionValue(structuredClone(value)) : value);
+  }
+}
+
+function freezeCollisionValue(value: unknown): unknown {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freezeCollisionValue(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 export class BObject {
   readonly guid: Guid;
   readonly classId: string;
@@ -68,7 +84,9 @@ export class BObject {
   }) {
     this.guid = options.guid ?? newGuid(options.guidFactory);
     this.classId = options.classId;
-    this.variables = new Map(Object.entries(options.variables ?? {}));
+    this.variables = this.classId === "ColliderComponent"
+      ? new ColliderVariables(Object.entries(options.variables ?? {}))
+      : new Map(Object.entries(options.variables ?? {}));
     this.hooks = options.hooks ?? {};
     this.implementedInterfaces = [...(options.implementedInterfaces ?? [])];
   }
