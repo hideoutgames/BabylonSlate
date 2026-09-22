@@ -91,6 +91,41 @@ describe("visual generation ownership", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  it("bounds native resources and scene observers across 200 source-generation replacements", async () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(scene, "model");
+    const buffer = await installAssetBytes(encodeTriangleGlb()).arrayBuffer();
+    const replace = () => beginSlotModelAnimLoad(scene, binding, 0, "model", new Blob([buffer]), root);
+    const counts = () => ({
+      materials: scene.materials.length, meshes: scene.meshes.length,
+      geometries: scene.geometries.length, textures: scene.textures.length,
+      transforms: scene.transformNodes.length, observers: scene.onDisposeObservable.observers.length,
+    });
+    await replace();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const warmed = counts();
+    for (let index = 0; index < 200; index += 1) await replace();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(counts()).toEqual(warmed);
+    expect(visualMeshes(root)).toHaveLength(1);
+  }, 60_000);
+
+  it("preserves a usable Play primitive when model replacement loading fails", async () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null });
+    const previous = binding.meshes.get(0)!;
+    binding.modelSources = new Map([["broken", installAssetBytes(encodeTriangleGlb())]]);
+    vi.spyOn(modelContainer, "loadModelContainer").mockRejectedValueOnce(new Error("injected loader failure"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: "broken" });
+    await expect(binding.slotAnimLoads!.get(0)).rejects.toThrow("injected");
+    expect(binding.meshes.get(0)).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    expect(scene.meshes).toEqual([previous]);
+  });
+
   it("does not let an old rejection evict or block a newer successful generation", async () => {
     const { scene } = host();
     const binding = createSnapshotSceneBinding();

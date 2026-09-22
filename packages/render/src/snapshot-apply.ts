@@ -51,6 +51,7 @@ import { applyModelMaterialSlots } from "./model-preview";
 import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
+  isEditorModelPlaceholder,
   invalidateSlotAnimLoad,
 } from "./glb-anim";
 import {
@@ -523,6 +524,13 @@ function applyPlayShadows(scene: Scene): void {
 }
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+const pendingModelVisuals = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+
+function cancelPendingModelVisual(binding: SnapshotSceneBinding, slotId: number): void {
+  const pending = pendingModelVisuals.get(binding);
+  pending?.get(slotId)?.dispose();
+  pending?.delete(slotId);
+}
 
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
 export function applyAssignMesh(
@@ -530,6 +538,7 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  cancelPendingModelVisual(binding, command.slotId);
   const primaryId = !partsNeedOrigin(command.parts)
     ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
     : undefined;
@@ -620,6 +629,50 @@ export function applyAssignMesh(
     return;
   }
   const existing = binding.meshes.get(command.slotId);
+  const modelSource = command.meshAssetGuid ? binding.modelSources?.get(command.meshAssetGuid) : undefined;
+  if (existing && existing.getScene() === scene && isEditorModelPlaceholder(existing) &&
+    modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
+    const guid = command.meshAssetGuid;
+    void beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, existing,
+      () => {
+        stampOverlayPick(existing, command);
+        applyPlayVisualSorting(existing, command.slotId, binding);
+        setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
+      },
+      () => binding.meshes.get(command.slotId) === existing,
+      (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
+    );
+    return;
+  }
+  if (existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
+    const guid = command.meshAssetGuid;
+    const staged = createModelActorRoot(scene, existing.name);
+    const pending = pendingModelVisuals.get(binding) ?? new Map<number, Mesh>();
+    pendingModelVisuals.set(binding, pending);
+    pending.set(command.slotId, staged);
+    const ownsLoad = () => pending.get(command.slotId) === staged && binding.meshes.get(command.slotId) === existing;
+    const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, staged,
+      () => {
+        staged.position.copyFrom(existing.position);
+        staged.rotation.copyFrom(existing.rotation);
+        staged.rotationQuaternion = existing.rotationQuaternion?.clone() ?? null;
+        staged.scaling.copyFrom(existing.scaling);
+        staged.parent = existing.parent;
+        stampOverlayPick(staged, command);
+        applyPlayVisualSorting(staged, command.slotId, binding);
+        setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
+        binding.meshes.set(command.slotId, staged);
+        pending.delete(command.slotId);
+        existing.dispose();
+      }, ownsLoad,
+      (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
+    );
+    void load.finally(() => {
+      if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
+      if (binding.meshes.get(command.slotId) !== staged) staged.dispose();
+    }).catch(() => {});
+    return;
+  }
   const stagesText = meshKind === "2dtext" || meshKind === "2drichtext";
   // Text performs all allocation checks and construction while its predecessor
   // remains usable. Native retirement must not erase the newly authored props.
@@ -869,6 +922,7 @@ export function retirePlaySlot(
   slotId: number,
 ): void {
   rejectedTextAssignments.get(binding)?.delete(slotId);
+  cancelPendingModelVisual(binding, slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
@@ -936,6 +990,7 @@ function disposeSlotVisuals(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  cancelPendingModelVisual(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.spriteOverlays?.get(slotId)?.dispose();
