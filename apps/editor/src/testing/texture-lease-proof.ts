@@ -41,9 +41,11 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const reset = () => Object.assign(operations, { acquisitions: 0, materials: 0, buffers: 0, updates: 0 });
   const pixels = async () => {
     engine.beginFrame(); scene.render(); engine.endFrame();
-    const copy = document.createElement("canvas"); copy.width = copy.height = 64;
-    const context = copy.getContext("2d")!; context.drawImage(canvas, 0, 0);
-    return Array.from(context.getImageData(32, 32, 1, 1).data);
+    const bytes = await engine.readPixels(32, 32, 1, 1);
+    const pixel = Array.from(new Uint8Array(bytes.buffer, bytes.byteOffset, 4));
+    if (backend === "webgpu" && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm")
+      [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
+    return pixel;
   };
   try {
     const camera = new FreeCamera("camera", new Vector3(0, 0, -2), scene);
@@ -109,12 +111,12 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     apply();
     const preservesAuthored = mesh.material === authored;
     const layerMaterialScene = sibling.material?.getScene() === layer;
-    scene.dispose(); owner.releaseHandleRetains(); cache.flushUnreferenced();
+    scene.dispose(); owner.dispose(); cache.flushUnreferenced();
     const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
     const siblingSurvives = siblingTexture?.isReady() === true;
-    layer.dispose(); siblingOwner.releaseHandleRetains(); cache.flushUnreferenced();
+    layer.dispose(); siblingOwner.dispose(); cache.flushUnreferenced();
     return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, crossfade, crossfadeWeights, independentAtlases, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
   } finally {
-    scene.dispose(); layer.dispose(); owner.releaseHandleRetains(); siblingOwner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
+    scene.dispose(); layer.dispose(); owner.dispose(); siblingOwner.dispose(); cache.dispose(); engine.dispose(); canvas.remove();
   }
 }

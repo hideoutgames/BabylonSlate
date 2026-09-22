@@ -199,7 +199,7 @@ it("retains a usable environment during a failed successor upload and releases i
 });
 
 it("blocks pending uploads and exposes the current source failure without letting a stale upload poison its replacement", () => {
-  const { engine, upload, a, assets } = fixture();
+  const { engine, cache, upload, a, assets } = fixture();
   let fail: ((message?: string, exception?: unknown) => void) | undefined;
   upload.mockImplementationOnce(
     (url, _scene, _scale, _offset, _load, onError) => {
@@ -218,6 +218,10 @@ it("blocks pending uploads and exposes the current source failure without lettin
     "Invalid environment pixels",
   );
   expect(() => isSceneFrameReady(a)).toThrow("Invalid environment pixels");
+  cache.flushUnreferenced();
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+  for (let i = 0; i < 100; i++) syncEnvironmentLighting(a);
+  expect(upload).toHaveBeenCalledOnce();
   applyEnvironmentLighting(a, "replacement", {
     ...assets,
     textureBytes: new Map([

@@ -138,7 +138,8 @@ describe("applyAlbedoTexture", () => {
   it("does not dispose a live material Texture when overlay sampling flags differ", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    // NullEngine reserves unknown-format 512x512 uploads as RGBA float.
+    const cache = new ResourceCache({ byteCeiling: 16 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const albedoLease = acquireMaterialTexture(cache, "tex-1", engine, bytes);
     const albedo = albedoLease?.resource ?? null;
