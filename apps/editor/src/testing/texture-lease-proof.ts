@@ -111,12 +111,12 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     apply();
     const preservesAuthored = mesh.material === authored;
     const layerMaterialScene = sibling.material?.getScene() === layer;
-    scene.dispose(); owner.releaseHandleRetains(); cache.flushUnreferenced();
+    scene.dispose(); owner.dispose(); cache.flushUnreferenced();
     const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
     const siblingSurvives = siblingTexture?.isReady() === true;
-    layer.dispose(); siblingOwner.releaseHandleRetains(); cache.flushUnreferenced();
+    layer.dispose(); siblingOwner.dispose(); cache.flushUnreferenced();
     return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, crossfade, crossfadeWeights, independentAtlases, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
   } finally {
-    scene.dispose(); layer.dispose(); owner.releaseHandleRetains(); siblingOwner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
+    scene.dispose(); layer.dispose(); owner.dispose(); siblingOwner.dispose(); cache.dispose(); engine.dispose(); canvas.remove();
   }
 }

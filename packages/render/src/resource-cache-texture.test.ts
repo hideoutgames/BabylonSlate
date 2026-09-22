@@ -39,7 +39,7 @@ describe("resource cache getTexture", () => {
     next.release(); next.release();
     cache.flushUnreferenced();
     expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
-    owner.releaseHandleRetains();
+    owner.dispose();
     expect(cache.resourceStats()).toEqual({ generations: 0, leases: 0, wrappers: 0, pending: 0 });
   });
   it("honors the largest live view budget regardless of update order", () => {
@@ -72,13 +72,13 @@ describe("resource cache getTexture", () => {
     const readLease = cache.acquireTexture("shared", engine, reduced);
     expect(readLease.resource).toBe(first);
     readLease.release();
-    materialView.releaseHandleRetains();
+    materialView.dispose();
     expect(disposeSecond).toHaveBeenCalledOnce();
     expect(disposeFirst).not.toHaveBeenCalled();
     const rereadLease = cache.acquireTexture("shared", engine, reduced);
     expect(rereadLease.resource).toBe(first);
     rereadLease.release();
-    sceneView.releaseHandleRetains();
+    sceneView.dispose();
     expect(disposeFirst).toHaveBeenCalledOnce();
     cache.dispose();
     engine.dispose();
@@ -550,12 +550,12 @@ describe("bindResourceCacheToHandle", () => {
     inner.releaseAccounting("resident");
     capped.cache.setBudgetEnabled(true);
     expect(inner.accountedBytes()).toBe(500);
-    uncapped.releaseHandleRetains();
+    uncapped.dispose();
     inner.account("after-detach", 500);
     inner.releaseAccounting("after-detach");
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(0);
-    capped.releaseHandleRetains();
+    capped.dispose();
     inner.dispose();
   });
 
@@ -568,7 +568,7 @@ describe("bindResourceCacheToHandle", () => {
     inner.releaseAccounting("while-attached");
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(enabled ? 500 : 0);
-    bound.releaseHandleRetains();
+    bound.dispose();
     inner.account("after-detach", 500);
     inner.releaseAccounting("after-detach");
     inner.evictToCeiling();
@@ -583,7 +583,7 @@ describe("bindResourceCacheToHandle", () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const textureLease = bound.cache.acquireTexture("tex-scene", engine, bytes);
     const texture = textureLease.resource;
-    bound.releaseHandleRetains();
+    bound.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(true);
     inner.dispose();
     engine.dispose();
@@ -598,9 +598,9 @@ describe("bindResourceCacheToHandle", () => {
     const textureLease = editor.cache.acquireTexture("tex-shared", engine, bytes);
     const texture = textureLease.resource;
     play.cache.acquireTexture("tex-shared", engine, bytes).resource;
-    play.releaseHandleRetains();
+    play.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(false);
-    editor.releaseHandleRetains();
+    editor.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(true);
     inner.dispose();
     engine.dispose();

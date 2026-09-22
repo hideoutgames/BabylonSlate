@@ -814,10 +814,10 @@ export class ResourceCacheOwner implements TextureResources {
 
 export function bindResourceCacheToHandle(inner: ResourceCache): {
   cache: ResourceCacheOwner;
-  releaseHandleRetains: () => void;
+  dispose: () => void;
 } {
   const cache = new ResourceCacheOwner(inner);
-  return { cache, releaseHandleRetains: () => cache.dispose() };
+  return { cache, dispose: () => cache.dispose() };
 }
 
 /** Sprite / tilemap albedo: nearest, no mips, invertY (Babylon 2D). */

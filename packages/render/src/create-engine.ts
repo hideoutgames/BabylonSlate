@@ -940,7 +940,7 @@ function initializeEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
-  onRollback(() => cacheBinding.releaseHandleRetains());
+  onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
     resourceCache.setByteCeiling(options.textureByteCeiling);
@@ -2270,7 +2270,7 @@ function initializeEngine(
         particleService?.dispose();
         scene.dispose();
         rttPresent?.dispose();
-        cacheBinding.releaseHandleRetains();
+        cacheBinding.dispose();
       };
       const reportRetirementFailure = (error: unknown) => {
         console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
