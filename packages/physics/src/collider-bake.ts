@@ -57,7 +57,11 @@ export function bakeColliderLocal(
   actorScale: Vec3,
 ): { shape: ColliderShape; translation: Vec3; rotation: Quat } {
   const prepared = colliderLocalPose(shape.kind, local, actorScale);
-  return { shape: scaleColliderShape(shape, prepared.scale), translation: prepared.translation, rotation: prepared.rotation };
+  return {
+    shape: scaleColliderShape(shape, prepared.scale),
+    translation: prepared.translation,
+    rotation: prepared.rotation,
+  };
 }
 
 /** Fixed-size TRS decomposition, independent of collision vertex data. */
@@ -111,9 +115,13 @@ export function colliderLocalPose(
   // canonical geometry scale. A quarter-turn permutes nonuniform scale axes.
   // Put any reflection on X so the attachment remains a proper rotation.
   const uniformXY = Math.abs(parentScale.x) === Math.abs(parentScale.y);
-  const uniform = uniformXY && (is2d || Math.abs(parentScale.x) === Math.abs(parentScale.z));
-  const lengths = axes.map((axis, index) => uniform && (!is2d || index < 2)
-    ? Math.abs(parentScale.x) : Math.hypot(axis.x, axis.y, axis.z));
+  const uniform =
+    uniformXY && (is2d || Math.abs(parentScale.x) === Math.abs(parentScale.z));
+  const lengths = axes.map((axis, index) =>
+    uniform && (!is2d || index < 2)
+      ? Math.abs(parentScale.x)
+      : Math.hypot(axis.x, axis.y, axis.z),
+  );
   lengths[0] =
     lengths[0]! * Math.sign(parentScale.x * parentScale.y * parentScale.z);
   const basis = axes.map((axis, index) => ({

@@ -54,9 +54,10 @@ class ColliderVariables extends Map<string, unknown> {
   }
 }
 
-function freezeCollisionValue(value: unknown): unknown {
-  if (value && typeof value === "object") {
-    for (const child of Object.values(value)) freezeCollisionValue(child);
+function freezeCollisionValue(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value && typeof value === "object" && !seen.has(value)) {
+    seen.add(value);
+    for (const child of Object.values(value)) freezeCollisionValue(child, seen);
     Object.freeze(value);
   }
   return value;
