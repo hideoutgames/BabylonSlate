@@ -175,8 +175,11 @@ export function ParticlePreviewCanvas({
         service = new ParticleService({
           scene: host.scene,
           acquireTexture,
-          resolveMaterial: materials.resolve,
-          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+          acquireMaterial: materials.acquire,
+          onDiagnostic: (diagnostic) => {
+            diagnostics.push(diagnostic);
+            if (!cancelled) setSkipped(diagnostic);
+          },
         });
         service.setLibrary(nextLibrary);
         service.handleCommand({

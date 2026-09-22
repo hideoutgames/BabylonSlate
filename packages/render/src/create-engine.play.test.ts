@@ -18,7 +18,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { encodeGlbJsonBin } from "@babylonslate/assets";
+import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -250,6 +250,56 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it("retires particle owners on world replacement and SceneLayer lifecycle commands", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true,
+      textureBytes: new Map([["particle-texture", new Uint8Array([1])]]),
+      particleLibrary: {
+        emitters: new Map([["emitter", { ...createDefaultParticleEmitterPayload(), textureGuid: "particle-texture" }]]),
+        systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]),
+      },
+    });
+    handles.push(handle);
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene);
+    const acquire = ResourceCache.prototype.acquireTexture;
+    let liveLeases = 0;
+    vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, ...args) {
+      if (args[0] !== "particle-texture") return acquire.apply(this, args);
+      liveLeases += 1;
+      return { resource: texture, key: "controlled-particle-texture", release: () => { liveLeases -= 1; } };
+    });
+    const assign = (slotId: number, layer?: string) => {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `particle-${slotId}`, classId: "Actor", sceneLayerId: layer });
+      handle.applyCommand({ type: "assignParticle", slotId, actorGuid: `particle-${slotId}`, componentId: "particle", particleSystemGuid: "system" });
+    };
+    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    assign(1);
+    assign(2, "particles");
+    expect(handle.scene.particleSystems).toHaveLength(1);
+    expect(liveLeases).toBe(1);
+    createLayer();
+    expect(handle.sceneLayerScenes()[0]!.scene.particleSystems).toHaveLength(1);
+    expect(liveLeases).toBe(2);
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 1 });
+    expect(handle.scene.particleSystems).toHaveLength(0);
+    expect(liveLeases).toBe(1);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "particles" });
+    expect(liveLeases).toBe(0);
+    createLayer(); assign(3, "particles");
+    handle.applyCommand({ type: "sceneLayerClear" });
+    expect(liveLeases).toBe(0);
+    assign(4);
+    handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "particle-4" });
+    expect(liveLeases).toBe(0);
+    assign(5);
+    handle.resetParticleSession();
+    expect(liveLeases).toBe(0);
+    assign(6);
+    handle.dispose();
+    expect(liveLeases).toBe(0);
+  });
 
   function postProcessGraphEngine(): NullEngine {
     const engine = sharedEngine();
