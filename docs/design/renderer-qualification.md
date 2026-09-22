@@ -1,6 +1,5 @@
 # Renderer qualification
 
-<<<<<<< HEAD
 ## Production outline qualification gate
 
 ### Runtime ownership repair — 22 September 2026
@@ -9,8 +8,11 @@ The targeted run at `eea6009e` passed the four shared-owner cases and the
 compiled Class inheritance case, but failed the runtime parent/child lifecycle
 case. Foreign actor subtrees are now excluded before identifying hidden model
 placeholders, so attaching a child actor cannot remove the parent's own outline.
-The repair awaits its targeted rerun; generalized browser and manual acceptance
-remain pending. The machine-wide host reserve stays at the user-confirmed 2 GiB.
+The runtime lifecycle case and scoped render typecheck passed at `531e7039`.
+Five selected UI files passed 93 cases at the same revision. The editor/player
+build passed at `b205b472`; its four selected browser cases produced one pass
+(WebGPU ownership) and three failures (WebGL2 instance pixels; both LOD fixture
+references). Generalized browser and manual acceptance remain pending. The machine-wide host reserve stays at the user-confirmed 2 GiB.
 
 The September 2026 rendering handoff starts from `ce1162f25cbac930be4789789de6269856e1eb58` (reviewed baseline `bc110765198020d6d9a14a0a67ee357a18148080` plus the WebGPU optional vertex-stream fix). Babylon remains pinned to 9.20.0 with the existing repository patch. The production mesh-outline selection implementation remains in place while the native replacement is qualified.
 
@@ -270,7 +272,7 @@ not that per-view sizing contract.
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
 
 **Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
-=======
+
 ## Engine follow-up: deferred local verification
 
 On 2026-09-22 the user requested skipping checks that cannot fit the machine's available memory and recording them for later. The team's queued particle check was cancelled before execution; no running check or unrelated process was stopped. `BL_TEST_PROFILE=shared` remains required. The shared `local-resources.json` had a 3 GiB reserve at deferral and changed externally to 2 GiB during source integration; this team left it unchanged. Read the current shared configuration when resuming. Do not bypass admission or repeatedly queue these checks while they cannot fit.
@@ -297,7 +299,6 @@ pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/
 Before resuming, compare the working head with the recorded checkpoint and select checks affected by intervening source, dependency or configuration changes. Keep failed, cancelled and unexecuted results separate from passes. Record exact source, command, backend and resource/operation counts for each resumed batch. B–F have no delivery PR yet; the work remains unmerged and is not verified complete.
 
 Status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
->>>>>>> origin/main
 
 ## Coverage matrix
 
@@ -412,7 +413,6 @@ From [perf-budget.md](perf-budget.md); read each sustained window against them �
 | Resolution | valve may step down under pressure and must not wedge | `scalingLevel`, `width`×`height`, `pressure` per window |
 
 A window that misses the pacing budget is a measurement to explain, not a spec failure — the assertion set stays at "the route ran clean" so the run always produces evidence instead of a red build.
-<<<<<<< HEAD
 # Rectangular light browser fixture
 
 `e2e/area-rect-light.spec.ts` exercises the production `SceneRenderCoordinator`
@@ -603,7 +603,7 @@ Raw JSON, CPU profiles and canvas captures are retained locally under the OS
 temporary `BabylonSlate-rendering-handoff-evidence/perf-before-1f2768d2` and
 `perf-after-a909bff9` directories. This report records desktop evidence only;
 physical A16 qualification remains deferred by user.
-=======
+
 
 ## Engine ownership follow-up baseline
 
@@ -630,4 +630,3 @@ These single-run timing distributions were collected while other development pro
 - Render-package `tsc --noEmit` and ESLint for the two changed TypeScript files passed through shared resource admission. Documentation-only evidence updates reuse those unchanged-source results.
 - The warmed measurement case was rerun with `--disableConsoleIntercept` to retain successful timing output; six unrelated cases in that measurement-only invocation were filtered out, not counted as new passes.
 - Browser: `pnpm --silent agent:wait local --script test:e2e -- e2e/scene-layer-rendering.spec.ts --project=desktop-chrome` passed both Play and exported Preview Build pixel cases at `2c1f29ae28c795acffe40cf4a78dbee94d3f5879`, with one browser worker. The earlier queued attempt was cancelled and is not counted. This fixture uses project-default rendering settings and does not independently qualify WebGPU or capture an adapter identity; dedicated WebGPU and sustained-device performance are not claimed.
->>>>>>> origin/main
