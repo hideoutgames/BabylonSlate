@@ -906,9 +906,9 @@ Defaults reproduce prior output exactly, so legacy projects without the block lo
 
 `ScalabilitySession` in Core owns temporary render and presentation overrides for one Play/player session. Its typed requests share the existing quality resolver and console parser, preserve scene inheritance and artistic settings across presets, and reset to project defaults without editing the project. Backend changes reject the whole transaction with `restartRequired`. Invalid/non-finite requests also leave the current request intact. Requests carry monotonically increasing revisions; duplicate values do not enqueue renderer work.
 
-Readback separates `requested` from `effective`: effective values stay null until the renderer acknowledges its first ready frame, and retain their last confirmed value during a pending or failed rebuild. Stale acknowledgements cannot replace newer requests. This service contract is implemented; renderer acknowledgement wiring and Class Graph nodes are still being integrated. Physical A16 testing is deferred by user for this delivery; these contracts do not certify device performance.
+Readback separates `requested` from `effective`: effective values stay null until the renderer acknowledges its first ready frame, and retain their last confirmed value during a pending or failed rebuild. Stale acknowledgements cannot replace newer requests. Renderer acknowledgements and Class Graph nodes share this service. Physical A16 testing is deferred by user for this delivery; these contracts do not certify device performance.
 
-Runtime and worker commands now carry `setScalability` revisions. The Play view applies the latest queued transaction through its existing registered-view admission, prepares the owning coordinator, and publishes `scalabilityStatus` only after a ready frame. While preparing, the visible canvas retains its last completed image. Failed preparation requests restoration of the last confirmed settings. Renderer resource retention and complete browser qualification remain pending; the Class Graph category is being integrated.
+Runtime and worker commands carry `setScalability` revisions. The Play view applies the latest queued transaction through its existing registered-view admission, prepares the owning coordinator, and publishes `scalabilityStatus` only after a ready frame. While preparing, the visible canvas retains its last completed image. Failed preparation requests restoration of the last confirmed settings. The qualification report records the tested Play and standalone-player transactions and remaining release gates.
 
 ### Class Graph Scalability nodes
 
@@ -916,7 +916,9 @@ The **Scalability** category supplies Get Effective Scalability, Set Scalability
 
 Use the changed event to react to renderer confirmation or failure. An immediate `rebuildPending` result only accepts the request; it is not evidence of presentation. Console quality, framecap and renderpath commands use the same session service. Existing Render/Set Render Resolution graphs remain compatible and enter that service too. Changes survive scene transitions and reset with the Play/player session; they never write project defaults. Class Graphs for Actor, ActorComponent and GameInstance expose the event. Backend creation remains a host startup operation; no ordinary live backend-switch node is advertised.
 
-Browser qualification, outline controls and area-light quality integration are still in progress. These nodes do not certify A16 performance.
+The generic lighting budget also admits rectangular lights and reports effective
+limits. Outline controls await the outline implementation. These nodes do not
+certify A16 performance.
 
 Settings transactions retain the previous FrameGraph resource owners until the replacement has presented. Intermediate candidates from superseded requests are released rather than added to that retained set. Disposal releases retained owners, and a failed restoration remains unpresentable until a new explicit request instead of retrying allocation every frame. This retention covers the graph-owned targets/tasks; managed lighting allocations retain their separate owner policy.
 
@@ -1077,3 +1079,16 @@ views share the active game request. The final Play view restores the captured
 editor request after cancelling its graph preparation. Disposed handles remove
 their session listeners. Construction rollback releases the same lease, and a
 new Play session does not inherit the previous game's render-path override.
+
+### Managed shadow material readiness
+
+`ManagedShadowObjectRendererTask` retains Babylon's generator/camera-key binding,
+then scopes temporary shadow flags only to lights that actually have a map.
+Without a generator, native PBR/CEL material defines already resolve to
+unshadowed lighting. Babylon 9.20 otherwise disables/restores those lights on
+every pass and dirties all receivers despite identical output. The adapter keeps
+map-owning light isolation and restoration, existing failure guards, controller
+admission and strict readiness caching. No allocation, shadow quality or authored
+light setting changes. The targeted regression detects this redundant per-frame
+invalidation; browser shadow parity and desktop profiling are recorded in
+[renderer qualification](../design/renderer-qualification.md).

@@ -64,7 +64,7 @@ not that per-view sizing contract.
 | P0 settings contract | Shared authored/export/boot normalization and the cases above are implemented. Complete per-field rendered application, all hosts and backend capability tests remain. See the [application inventory](../architecture/render.md#rendering-handoff-application-contract). |
 | P1 editor/component/global CEL outlines | **Native ownership gate failed; alternative approval pending.** Production selection remains the existing mesh-outline implementation. No OutlineComponent/global outline schema or default-on switch is advertised. Lifecycle, strict occlusion, compositing, style grouping, coverage and zero-work-disabled acceptance remain. |
 | P1 Class Graph scalability | Shared typed session transactions, safe-boundary renderer application, acknowledgements, coalescing, events and the Scalability node category are implemented. Compiled Class graphs exercise all presets and retained setters in both Play backends and standalone exports. Outline controls await the outline implementation. |
-| P1 measured headroom | Only command-count behavior is established. GPU/CPU milliseconds, pass savings, memory savings and A16 visual/performance comparisons are **not measured**. |
+| P1 measured headroom | A desktop before/after CPU profile identified and removed redundant shadow-flag material invalidation at identical content, output and quality. Capped frame cadence stayed unchanged. Absolute CPU/GPU frame headroom, pass/memory savings and A16 comparisons remain **unmeasured**. |
 | P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Native/graph PBR and CEL, standalone textured lifecycle, and large-source filtering browser fixtures pass. Additional transform/material cases and full authoring coverage remain under verification. |
 | P0 release | **Not accepted.** The requested production feature set is incomplete. A16 hardware testing is deferred by user; browser acceptance remains required. |
 
@@ -309,3 +309,67 @@ and eight changed TypeScript files passed ESLint with one existing Play-overlay
 hook-dependency warning. These results do not cover outline settings, which are
 not implemented, or establish physical-device performance. Computer Use still
 has no connected browser; these are automated browser tests.
+
+## Desktop CPU profiling: redundant shadow invalidation
+
+A same-content comparison used `e2e/play-performance-route.spec.ts` and the
+unchanged `playPerformanceRoom` fixture (96 static casters, 16 settling physics
+spheres, sun, six points and two spots). The before build was `1f2768d2`; after
+was `a909bff9`. Both ran on Windows 10.0.19045, Intel i5-9400F, Chromium
+151.0.7922.34, ANGLE D3D11 / NVIDIA RTX 2060, requested WebGL2, CEL, Medium,
+DPR 1, 1280-by-720 CSS and drawing buffer. Medium's dynamic-resolution policy
+remained enabled; both measured windows retained the same full dimensions.
+The workload warmed for 10 seconds after ticking began, then recorded a
+250-microsecond-interval V8 CPU profile and two 30-second cadence windows.
+
+| Observation | Before | After |
+| --- | --- | --- |
+| Profile wall duration | 10,636.00 ms | 10,637.08 ms |
+| `_markSubMeshesAsDirty` sampled self time | 508.34 ms | 0 sampled ms |
+| Profile idle samples, weighted by elapsed interval | 5,435.98 ms | 6,054.64 ms |
+| Browser cadence p50, both windows | 16.72 ms | 16.72 ms |
+| Browser cadence p95, windows 1 / 2 | 16.905 / 16.895 ms | 16.900 / 16.900 ms |
+| Browser cadence p99, windows 1 / 2 | 16.960 / 16.945 ms | 16.950 / 16.965 ms |
+| Average browser cadence, both windows | 59.81 fps | 59.81 fps |
+| Long tasks / intervals over 33.4 ms | 0 / 0 | 0 / 0 |
+| End-of-window JS heap, windows 1 / 2 | 114.26 / 96.02 MB | 164.58 / 197.21 MB |
+| Direct GPU time, draw/pass counts, GPU bytes in this route | Not collected | Not collected |
+
+The profiles trace the removed work through native `shadowEnabled` setters
+around the graph object pass. Lights without an admitted map now preserve that
+flag, while lights with maps keep the native pass-isolation behavior. The final
+Play canvas PNGs were byte-identical (SHA-256
+`1f712e2aa8c9f131824ba4f6364154dfc36aba955eb2e80b51f9a9f5e5b97524`).
+This is one before/after profiling pair, not a statistical frame-time win.
+Sampled self time is not total render CPU time; browser cadence is a presentation
+proxy. Heap readings depend on garbage-collection timing and show no demonstrated
+memory reduction. No separate CPU/GPU millisecond headroom or A16 budget is
+established by this route. Input latency and the full requested scene matrix
+still need qualification.
+
+The focused regression first failed at `2973fd66` with four receiver-dirty calls
+across two settled renders. All 11 managed-shadow unit cases passed at
+`0118786d`. A subsequent build type error in the new membership Set was fixed
+with an explicit `Light` type; the eight selected cases in
+`e2e/framegraph-shadows.spec.ts` and `e2e/area-rect-light.spec.ts` passed at
+`a909bff9`, including WebGL2/WebGPU, backbuffer/texture output, clustered promotion
+and demotion, and shared memory admission. The same build passed the after
+profiling route. Changed-file ESLint passed; the browser build's player/editor
+TypeScript checks passed. No broader local suite was run.
+
+Reproduce the profiling route with the shared runner (one run at a time):
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+$env:BL_PERF_ROUTE='1'
+$env:BL_PERF_QUALITY='medium'
+$env:BL_PERF_RENDER_MODE='cel'
+$env:BL_PERF_BACKEND='webgl2'
+$env:BL_PERF_PROFILE='1'
+pnpm --silent agent:wait local --script test:e2e '--' e2e/play-performance-route.spec.ts --config playwright.perf.config.ts --project perf-gpu
+```
+
+Raw JSON, CPU profiles and canvas captures are retained locally under the OS
+temporary `BabylonSlate-rendering-handoff-evidence/perf-before-1f2768d2` and
+`perf-after-a909bff9` directories. This report records desktop evidence only;
+physical A16 qualification remains deferred by user.
