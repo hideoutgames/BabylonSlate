@@ -17,6 +17,29 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { constructionMaterialOf } from "./visual-meshes";
 import { onSceneReadinessDirty } from "./scene-perf";
 
+it("installs uploadable legacy UASTC descriptors without mutating stored asset bytes", async () => {
+  const source = new Uint8Array(140);
+  source.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(source.buffer);
+  view.setUint32(44, 2, true);
+  view.setUint32(48, 80, true);
+  view.setUint32(52, 44, true);
+  view.setUint16(88, 2, true);
+  view.setUint16(90, 40, true);
+  source[92] = 166;
+  source[96] = source[97] = 3;
+  source.fill(123, 124);
+  const original = source.slice();
+  const installed = installTextureBytes(new Map([["atlas", source]]))!;
+  const blob = installed.get("atlas")!;
+  expect(blob.type).toBe("image/ktx2");
+  const uploaded = new Uint8Array(await blob.arrayBuffer());
+  expect(uploaded[100]).toBe(16);
+  expect(uploaded.subarray(124)).toEqual(original.subarray(124));
+  expect(source).toEqual(original);
+  expect(installTextureBytes(installed)!.get("atlas")).toBe(blob);
+});
+
 describe("meshAssetFingerprint", () => {
   it("detects same-size texture replacements while retaining equal-content snapshot keys", () => {
     const original = meshAssetFingerprint({ textureBytes: new Map([["texture", new Uint8Array([1, 2, 3, 4, 5])]]) });

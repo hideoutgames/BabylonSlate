@@ -23,7 +23,8 @@ vi.mock("@babylonslate/render", () => ({
   createMaterialPreviewPresenter: vi.fn(),
   createParticleMaterialResolver: vi.fn(),
   resourceCacheForEngine: vi.fn(),
-  getMaterialTexture: vi.fn(),
+  acquireMaterialTexture: vi.fn(),
+  installTextureBytes: (bytes: ReadonlyMap<string, Uint8Array>) => bytes,
   ParticleService: vi.fn(),
 }));
 vi.mock("../context/play-context", () => {

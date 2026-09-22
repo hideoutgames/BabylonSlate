@@ -83,7 +83,7 @@ function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): s
   return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
-import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@babylonslate/assets";
+import { copyTextureBytesForUpload, environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@babylonslate/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
@@ -186,7 +186,11 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
     const kind = source instanceof Uint8Array ? environmentTextureContainer(source) : null;
     const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
       : source instanceof Uint8Array && isKtx2Bytes(source) ? "image/ktx2" : "application/octet-stream";
-    return [guid, installAssetBytes(source, mime)];
+    // Blob uploads bypass the native array-buffer path. Preserve its legacy
+    // UASTC descriptor normalization before installing the immutable source.
+    const upload = source instanceof Uint8Array && isKtx2Bytes(source)
+      ? copyTextureBytesForUpload(source) : source;
+    return [guid, installAssetBytes(upload, mime)];
   }));
 }
 

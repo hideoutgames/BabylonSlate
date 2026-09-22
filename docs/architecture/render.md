@@ -985,3 +985,5 @@ Environment replacement keeps the prior usable cube while the successor lease pr
 Material generations retain their compile-time texture leases until preparation settles, including when initial component overrides replace a sampler. After publication, pruning follows attached texture blocks and pending replacements, so asynchronous native graph rebuilds cannot prematurely release an upload.
 
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
+
+Texture installation preserves the existing legacy UASTC descriptor normalization before creating immutable upload Blobs. Stored asset bytes remain unchanged; repeated bindings reuse the installed content without repeating conversion or hashing.
