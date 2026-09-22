@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DistanceConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint";
 import { PhysicsShapeContainer } from "@babylonjs/core/Physics/v2/physicsShape";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -9,7 +9,6 @@ import { bakeColliderLocal } from "./collider-bake";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
 afterEach(() => vi.restoreAllMocks());
-beforeEach(({ task }) => console.info("native fixture started", task.name));
 const pose = (x = 0, y = 0, z = 0): PhysicsTransform => ({
   position: { x, y, z },
   rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -117,9 +116,6 @@ describe("Havok attachment transactions", () => {
       body(backend, "body", "dynamic");
       backend.createCollider(box());
       const physicsBody = native(backend);
-      const stage = (label: string) =>
-        console.info("native mutation stage", label);
-      stage("body and box created");
       const oldInertia = physicsBody.getMassProperties().inertia!.clone();
       physicsBody.setLinearVelocity(new Vector3(3, -2, 1));
       const initialShape = physicsBody.shape;
@@ -130,7 +126,6 @@ describe("Havok attachment transactions", () => {
         friction: 0.8,
         isTrigger: true,
       });
-      stage("trigger and filter updated");
       expect(init).not.toHaveBeenCalled();
       expect(physicsBody.shape).toBe(initialShape);
       expect(physicsBody.shape!.isTrigger).toBe(true);
@@ -139,10 +134,8 @@ describe("Havok attachment transactions", () => {
         upsert: [{ ...box(), translation: { x: 2, y: 0, z: 0 } }],
         remove: [],
       });
-      stage("local pose committed");
       expect(init).toHaveBeenCalledTimes(1); // A pose container, no new geometry.
       expect(trace(backend, 2).hit).toBe(true);
-      stage("local pose queried");
       init.mockClear();
       backend.applyColliderChanges("body", {
         upsert: [
@@ -153,7 +146,6 @@ describe("Havok attachment transactions", () => {
         ],
         remove: [],
       });
-      stage("resize committed");
       expect(init).toHaveBeenCalledTimes(1);
       expect(physicsBody.getMassProperties().mass).toBeCloseTo(2);
       expect(physicsBody.getMassProperties().inertia!.y).toBeGreaterThan(
@@ -412,18 +404,7 @@ describe("Havok explicit native motion", () => {
   it("ends retired trigger-pair generations without permanent or duplicate stale overlaps", async () => {
     const backend = await create();
     try {
-      const stage = (label: string) =>
-        console.info("trigger mutation stage", label);
-      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
-      const nativeStep = havok.HP_World_Step.bind(havok);
-      vi.spyOn(havok, "HP_World_Step").mockImplementation((...args) => {
-        stage("enter native step");
-        const result = nativeStep(...args);
-        stage("leave native step");
-        return result;
-      });
       body(backend);
-      stage("body created");
       const trigger = (id: string, x: number) => ({
         ...box(id, x),
         isTrigger: true,
@@ -432,39 +413,28 @@ describe("Havok explicit native motion", () => {
         upsert: [trigger("left", -0.3), trigger("right", 0.3)],
         remove: [],
       });
-      stage("compound created");
       body(backend, "visitor", "dynamic");
       backend.createCollider({ ...box("visitor-shape"), bodyId: "visitor" });
-      stage("before step");
       backend.step(1 / 60);
-      stage("after step");
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapBegin"),
       ).toHaveLength(1);
-      stage("before left removal");
       backend.destroyCollider("left");
-      stage("after left removal");
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapEnd"),
       ).toHaveLength(1);
-      stage("before step");
       backend.step(1 / 60);
-      stage("after step");
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapBegin"),
       ).toHaveLength(1);
-      stage("before right removal");
       backend.destroyCollider("right");
-      stage("after right removal");
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapEnd"),
       ).toHaveLength(1);
       for (let i = 0; i < 3; i++) backend.step(1 / 60);
       expect(backend.pollContacts()).toEqual([]);
       backend.createCollider(trigger("replacement", 0));
-      stage("before step");
       backend.step(1 / 60);
-      stage("after step");
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapBegin"),
       ).toHaveLength(1);
@@ -493,9 +463,7 @@ describe("Havok explicit native motion", () => {
         backend.pollContacts().filter((event) => event.kind === "overlapEnd"),
       ).toHaveLength(1);
     } finally {
-      console.info("trigger mutation stage", "before disposal");
       backend.dispose();
-      console.info("trigger mutation stage", "after disposal");
     }
   });
 
