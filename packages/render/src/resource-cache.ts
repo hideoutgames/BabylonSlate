@@ -540,15 +540,18 @@ export class ResourceCache {
     this.entries.set(variantKey, entry);
     entry.refCount++;
     const preparation = this.preparing(entry);
+    let texture: CubeTexture | undefined;
     try {
-      const texture = createEngineCubeTextureFromImages(scene.getEngine(), files, noMipmap, preparation);
+      texture = createEngineCubeTextureFromImages(scene.getEngine(), files, noMipmap, preparation);
       this.textureKeys.set(texture, variantKey);
       entry.textures.set(key, texture);
       preparation.observe(texture);
       this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
+      this.assertAdmitted();
       return texture;
     } catch (error) {
       preparation.onError();
+      texture?.dispose();
       this.release(entry.key);
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
       throw error;

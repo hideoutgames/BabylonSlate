@@ -327,6 +327,19 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("rejects an over-budget cube successor and releases only its provisional upload", () => {
+    const engine = textureEngine(); const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 40_000 });
+    const working = cache.acquireCubeTextureFromImages("working", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
+    const bytes = cache.accountedBytes();
+    expect(bytes).toBeGreaterThan(0);
+    expect(() => cache.acquireCubeTextureFromImages("next", scene, ["other-px", "py", "pz", "nx", "ny", "nz"])).toThrow(/budget/);
+    expect(working.resource.isReady()).toBe(true);
+    expect(cache.accountedBytes()).toBe(bytes);
+    expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+    working.release(); cache.dispose(); scene.dispose(); engine.dispose();
+  });
+
   it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
