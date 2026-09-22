@@ -7,13 +7,18 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
   test(`particle emission and ownership on ${backend} with ${gpu ? "GPU" : "CPU"} simulation`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
+    const gpuMessages: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type())) gpuMessages.push(message.text());
+    });
     await page.goto("/?test=1&particleLifecycleProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __babylonslateParticleLifecycleProof?: unknown }).__babylonslateParticleLifecycleProof === "function");
     const result = await page.evaluate(({ backend, gpu }) => (window as unknown as {
       __babylonslateParticleLifecycleProof: typeof runParticleLifecycleProof;
     }).__babylonslateParticleLifecycleProof(backend, gpu), { backend, gpu });
     await testInfo.attach("particle-lifecycle", { body: JSON.stringify(result), contentType: "application/json" });
+    await testInfo.attach("particle-gpu-messages", { body: JSON.stringify(gpuMessages), contentType: "application/json" });
     expect(result.requestedBackend).toBe(backend);
     expect(result.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
