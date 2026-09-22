@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ScalabilitySession, type ScalabilityTransaction } from "./scalability";
+import { renderingApplicationPolicy, ScalabilitySession, type ScalabilityTransaction } from "./scalability";
 
 function session() {
   const transactions: ScalabilityTransaction[] = [];
@@ -7,6 +7,29 @@ function session() {
   return { settings, transactions };
 }
 describe("runtime scalability session", () => {
+  it("validates outline transactions atomically and preserves their style across presets and scene changes", () => {
+    const { settings, transactions } = session();
+    const before = settings.requested;
+    expect(settings.request({ kind: "patch", render: { cel: { outlinesEnabled: false, outlineColor: [1, NaN, 0] } } }).status).toBe("failed");
+    expect(settings.requested).toEqual(before);
+    expect(transactions).toHaveLength(0);
+    const result = settings.request({ kind: "patch", render: { cel: { outlinesEnabled: false, outlineColor: [-1, 0.123456, 2], outlineWidth: 99 } } });
+    expect(result.message).toContain("clamped");
+    expect(settings.requested.render.cel).toMatchObject({ outlinesEnabled: false, outlineColor: [0, 0.123456, 1], outlineWidth: 8 });
+    settings.request({ kind: "patch", render: { cel: { outlinesEnabled: false, outlineColor: [0, 0.123456, 1], outlineWidth: 8 } } });
+    expect(transactions).toHaveLength(1);
+    settings.request({ kind: "preset", preset: "low" });
+    settings.setScene({ celShading: { outlinesEnabled: true, outlineColor: [1, 0, 0], outlineWidth: 2 } });
+    expect(settings.requested.render.cel).toMatchObject({ outlinesEnabled: false, outlineColor: [0, 0.123456, 1], outlineWidth: 8 });
+    expect(settings.snapshot().effective).toBeNull();
+    const pending = settings.transaction();
+    settings.acknowledge({ revision: pending.revision, status: "applied", message: "Ready", effective: pending.settings });
+    expect(settings.snapshot().effective?.render.cel?.outlineWidth).toBe(8);
+    settings.request({ kind: "reset" });
+    expect(settings.requested.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [1, 0, 0], outlineWidth: 2 });
+    expect(session().settings.requested.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
+    for (const path of ["cel.outlinesEnabled", "cel.outlineColor", "cel.outlineWidth"]) expect(renderingApplicationPolicy(path)).toBe("live");
+  });
   it("keeps requested values separate from renderer-confirmed values and ignores stale completions", () => {
     const { settings } = session();
     expect(settings.snapshot().effective).toBeNull();

@@ -35,6 +35,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("AudioComponent");
     expect(ids).toContain("SkyboxComponent");
     expect(ids).toContain("HemisphericFillLightComponent");
+    expect(ids).toContain("OutlineComponent");
     expect(ids).toContain("Text3DComponent");
     expect(ids).toContain("ParticleComponent");
   });
@@ -51,8 +52,10 @@ describe("Add Component catalog", () => {
     expect(overlay).not.toContain("CameraComponent");
     expect(overlay).not.toContain("LightComponent");
     expect(overlay).not.toContain("HemisphericFillLightComponent");
+    expect(overlay).not.toContain("OutlineComponent");
     const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
     expect(world).toContain("SkyboxComponent");
+    expect(world).toContain("OutlineComponent");
     expect(world).not.toContain("2DButtonComponent");
     expect(world).not.toContain("2DTextComponent");
     expect(world).not.toContain("2DRichTextComponent");
@@ -81,6 +84,8 @@ describe("Add Component catalog", () => {
       "SpriteComponent",
       "TilemapComponent",
       "LightComponent",
+      "AreaRectLightComponent",
+      "OutlineComponent",
       "HemisphericFillLightComponent",
       "SkyboxComponent",
       "Text3DComponent",

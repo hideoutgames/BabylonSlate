@@ -68,6 +68,25 @@ function rowsFor(
 }
 
 describe("componentPropertyRows", () => {
+  it("authors independent outline appearance and explicit through-mesh visibility", () => {
+    const properties = defaultPropertiesFor("OutlineComponent");
+    expect(properties).toEqual({ enabled: true, color: [0.03, 0.03, 0.03], width: 1, throughMeshes: false });
+    const { rows, update } = rowsFor({ id: "outline", classId: "OutlineComponent", properties });
+    const width = rows.find((row) => row.label === "Width");
+    const color = rows.find((row) => row.label === "Color");
+    const through = rows.find((row) => row.label === "Render Through Meshes");
+    const enabled = rows.find((row) => row.label === "Enabled");
+    if (width?.kind !== "number" || color?.kind !== "color" || through?.kind !== "boolean" || enabled?.kind !== "boolean") throw new Error("Missing Outline controls");
+    expect(width).toMatchObject({ min: 0.25, max: 8, value: 1 });
+    expect(width.description).toContain("output pixels");
+    expect(through.value).toBe(false);
+    width.onChange(2.375);
+    color.onChange([0.1, 0.2, 0.3]);
+    through.onChange(true);
+    enabled.onChange(false);
+    expect(update.mock.calls).toEqual([["width", 2.375], ["color", [0.1, 0.2, 0.3]], ["throughMeshes", true], ["enabled", false]]);
+    expect(properties).toEqual(defaultPropertiesFor("OutlineComponent"));
+  });
   it("authors rectangular emission from one component and explains its unshadowed behavior", () => {
     const { rows, update, onPickAsset } = rowsFor({ id: "area", classId: "AreaRectLightComponent", properties: defaultPropertiesFor("AreaRectLightComponent") });
     expect(rows.find((row) => row.label === "Enabled")?.description).toContain("through walls");

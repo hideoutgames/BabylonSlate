@@ -17,6 +17,7 @@ import {
   PersonStandingIcon,
   PuzzleIcon,
   SparklesIcon,
+  SquareDashedIcon,
   TypeIcon,
   Volume2Icon,
   WorkflowIcon,
@@ -289,6 +290,10 @@ describe("resolveTypeVisual", () => {
     expect(fill.iconKey).toBe("HemisphericFillLightComponent");
     expect(fill.icon).toBe(LightbulbIcon);
     expect(engineParentOf("HemisphericFillLightComponent")).toBe("ActorComponent");
+    const outline = resolveTypeVisual({ classId: "OutlineComponent" });
+    expect(outline.icon).toBe(SquareDashedIcon);
+    expect(outline.colorVar).toBe(mesh.colorVar);
+    expect(engineParentOf("OutlineComponent")).toBe("ActorComponent");
     const skybox = resolveTypeVisual({ classId: "SkyboxComponent" });
     expect(skybox.iconKey).toBe("SkyboxComponent");
     expect(skybox.icon).toBe(CloudIcon);

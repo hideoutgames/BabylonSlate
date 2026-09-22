@@ -49,6 +49,7 @@ const ENUMS: Record<string, readonly unknown[]> = {
 const LIVE_FIELDS = new Set([
   "frameCap", "cel.shadowBands", "cel.shadowThreshold", "cel.shadowStrength", "cel.specularStrength",
   "cel.specularSize", "cel.lightColorInfluence", "shadows.distance", "shadows.fadeFraction",
+  "cel.outlinesEnabled", "cel.outlineColor", "cel.outlineWidth",
   "shadows.softness", "shadows.autoBias", "shadows.depthBias", "shadows.normalBias",
   "quality.textures.anisotropy", "quality.textures.byteBudget", "quality.resolution.targetFps",
   "environmentLighting.enabled", "environmentLighting.intensity", "environmentLighting.rotationYDegrees",

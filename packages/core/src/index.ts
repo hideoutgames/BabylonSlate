@@ -44,3 +44,4 @@ export * from "./baked-lighting";
 export * from "./baked-geometry";
 export * from "./baking";
 export * from "./area-rect-light";
+export * from "./outline-component";

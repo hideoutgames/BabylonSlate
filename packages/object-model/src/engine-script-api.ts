@@ -305,6 +305,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "OutlineComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Render Through Meshes", typeId: "bool", propertyKey: "throughMeshes" },
+    ],
+  },
+  {
     classId: "AreaRectLightComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },

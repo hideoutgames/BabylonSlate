@@ -30,9 +30,13 @@ it("disables specular independently without losing highlight settings and resets
 function SceneFields({
   bands = 3,
   mixing = "strongest",
+  outlineWidth = 1,
+  outlineColor = [0.03, 0.03, 0.03],
 }: {
   bands?: number;
   mixing?: CelShadingSettings["lightMixing"];
+  outlineWidth?: number;
+  outlineColor?: CelShadingSettings["outlineColor"];
 }) {
   const [overrides, setOverrides] = useState<CelShadingOverrides>({});
   return (
@@ -40,12 +44,40 @@ function SceneFields({
       project={normalizeCelShadingSettings({
         shadowBands: bands,
         lightMixing: mixing,
+        outlineWidth,
+        outlineColor,
       })}
       overrides={overrides}
       onChange={setOverrides}
     />
   );
 }
+
+it("edits outline color and width independently, preserves appearance while disabled, and resets to live project values", () => {
+  const view = render(<SceneFields />);
+  const outlines = screen.getByRole("switch", { name: "Outlines" });
+  expect(outlines.getAttribute("aria-checked")).toBe("true");
+  expect((screen.getByLabelText("Outline Color Hex") as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Override Outline Color" }));
+  fireEvent.change(screen.getByLabelText("Outline Color Hex"), { target: { value: "#804020" } });
+  fireEvent.blur(screen.getByLabelText("Outline Color Hex"));
+  fireEvent.click(screen.getByRole("button", { name: "Override Outline Width" }));
+  fireEvent.change(screen.getByLabelText("Outline Width"), { target: { value: "2.375" } });
+  fireEvent.click(screen.getByRole("button", { name: "Override Outlines" }));
+  fireEvent.click(outlines);
+  expect(outlines.getAttribute("aria-checked")).toBe("false");
+  expect((screen.getByLabelText("Outline Width") as HTMLInputElement).value).toBe("2.375");
+  expect((screen.getByLabelText("Outline Color Hex") as HTMLInputElement).value).toBe("#804020");
+  view.rerender(<SceneFields outlineWidth={4} outlineColor={[0, 1, 0]} />);
+  expect((screen.getByLabelText("Outline Width") as HTMLInputElement).value).toBe("2.375");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Outline Width To Project Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset Outline Color To Project Settings" }));
+  expect((screen.getByLabelText("Outline Width") as HTMLInputElement).value).toBe("4");
+  expect((screen.getByLabelText("Outline Color Hex") as HTMLInputElement).value).toBe("#00ff00");
+  expect(outlines.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Reset Outlines To Project Settings" }));
+  expect(outlines.getAttribute("aria-checked")).toBe("true");
+});
 
 it("shows live project values until a field is overridden, and reset restores inheritance", () => {
   const view = render(<SceneFields />);

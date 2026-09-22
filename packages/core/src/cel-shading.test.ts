@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProject, normalizeProjectSettings } from "./project";
 import { createDefaultSceneSettings, normalizeSceneSettings } from "./scene";
+import { applyProjectQualityPatch, qualityPresetPatch } from "./render-quality";
 import {
   normalizeCelShadingOverrides,
   normalizeCelShadingSettings,
@@ -8,6 +9,21 @@ import {
 } from "./cel-shading";
 
 describe("CEL settings persistence and inheritance", () => {
+  it("preserves authored outlines through save, PBR switches, quality presets and scene inheritance", () => {
+    expect(normalizeCelShadingSettings({})).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
+    const project = normalizeProjectSettings({ render: { mode: "cel", cel: { outlinesEnabled: false, outlineColor: [0.25, 0.5, 0.75], outlineWidth: 2.25 } } });
+    const low = applyProjectQualityPatch(project.render, qualityPresetPatch("low"));
+    const restored = normalizeProjectSettings(JSON.parse(JSON.stringify({ ...project, render: { ...low, mode: "pbr" } })));
+    expect(restored.render.cel).toEqual(project.render.cel);
+    const scene = normalizeSceneSettings({ celShading: { outlinesEnabled: true, outlineWidth: 3 } });
+    expect(resolveCelShadingSettings(restored.render.cel, scene.celShading)).toMatchObject({
+      outlinesEnabled: true, outlineColor: [0.25, 0.5, 0.75], outlineWidth: 3,
+    });
+    delete scene.celShading!.outlineWidth;
+    expect(resolveCelShadingSettings({ ...restored.render.cel, outlineWidth: 4 }, scene.celShading).outlineWidth).toBe(4);
+    expect(normalizeCelShadingOverrides({ outlineWidth: 99, outlineColor: [-1, 0.123456, 2] })).toEqual({ outlineWidth: 8, outlineColor: [0, 0.123456, 1] });
+    expect(normalizeCelShadingOverrides({ outlinesEnabled: "false", outlineWidth: NaN, outlineColor: [1, Infinity, 0] })).toEqual({});
+  });
   it("keeps legacy and new projects in PBR, and preserves CEL settings while inactive", () => {
     expect(normalizeProjectSettings({}).render.mode).toBe("pbr");
     expect(createEmptyProject("Demo").settings.render.mode).toBe("pbr");

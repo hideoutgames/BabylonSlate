@@ -13,6 +13,8 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   parseAreaRectLightProperties,
+  parseOutlineProperties,
+  OUTLINE_WIDTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -1334,6 +1336,19 @@ export function componentPropertyRows(
           update,
           new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
         ),
+      ];
+    }
+    case "OutlineComponent": {
+      const properties = parseOutlineProperties(component.properties);
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
+          description: "Outline this actor's geometry. Disabling reveals any applicable global CEL outline.", onChange: (next) => update("enabled", next) },
+        { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
+        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", value: properties.width,
+          min: OUTLINE_WIDTH_LIMITS[0], max: OUTLINE_WIDTH_LIMITS[1], step: 0.25,
+          description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
+          description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
       ];
     }
     case "AreaRectLightComponent": {
