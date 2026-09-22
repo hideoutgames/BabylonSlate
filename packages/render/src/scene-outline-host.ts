@@ -13,7 +13,8 @@ type ActorOutline = { meshes: AbstractMesh[]; bindings: readonly OutlineBinding[
 export function isOutlineOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
   if (!previous) return false;
   const otherState = (scene: SerializedScene) => {
-    const { outlinesEnabled: _enabled, outlineColor: _color, outlineWidth: _width, ...cel } = scene.settings.celShading ?? {};
+    const cel = { ...scene.settings.celShading };
+    delete cel.outlinesEnabled; delete cel.outlineColor; delete cel.outlineWidth;
     return { ...scene, settings: { ...scene.settings, celShading: cel }, actors: scene.actors.map((actor) => ({
       ...actor, components: actor.components.flatMap((component) => component.classId !== "OutlineComponent" ? [component]
         // A component can also be an attachment parent. Retain that structure
