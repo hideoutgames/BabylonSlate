@@ -42,12 +42,16 @@ interface CacheEntry {
   bytes: number;
   refCount: number;
   pending?: number;
+  preparations?: Set<(reason: string) => void>;
   lastUsed: number;
   contentKey: string;
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
   samplingDisposers?: Map<string, () => void>;
 }
+
+// Match the existing owner-scoped readiness deadline; no upload may pin forever.
+const TEXTURE_PREPARATION_TIMEOUT_MS = 30_000;
 
 /**
  * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
@@ -316,16 +320,23 @@ export class ResourceCache {
   private preparing(entry: CacheEntry) {
     entry.pending = (entry.pending ?? 0) + 1;
     let active = true;
-    let validate: (() => void | Promise<void>) | undefined;
+    let failure: Error | undefined;
+    let validate: (() => void) | undefined;
+    let preparationWork: Promise<void> | undefined;
     let retire: (() => void) | undefined;
+    let detach = () => {};
     let resolve!: () => void;
     let reject!: (error: Error) => void;
     const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
-    // Ownership may retire before native upload settles; the cache still owns its pin.
+    // A released owner need not await its cancelled preparation.
     void ready.catch(() => {});
     const settle = (error?: Error) => {
       if (!active) return;
       active = false;
+      failure = error;
+      clearTimeout(deadline);
+      detach();
+      entry.preparations?.delete(cancel);
       entry.pending = Math.max(0, (entry.pending ?? 1) - 1);
       if (error) reject(error); else resolve();
     };
@@ -333,30 +344,50 @@ export class ResourceCache {
       if (!active) return;
       settle(error instanceof Error ? error : new Error(String(error)));
       retire?.();
+      if (this.entries.get(entry.key) === entry && this.isUnreferenced(entry))
+        this.evictEntry(entry.key, "preparation");
     };
+    const cancel = (reason: string) => failed(new Error(reason));
+    entry.preparations ??= new Set();
+    entry.preparations.add(cancel);
+    const deadline = setTimeout(() => cancel("Texture preparation exceeded the readiness deadline"), TEXTURE_PREPARATION_TIMEOUT_MS);
     const loaded = () => {
       if (!active) return;
-      try {
-        const checked = validate?.();
-        if (checked) void checked.then(() => settle(), failed);
-        else settle();
-      } catch (error) { failed(error); }
+      const complete = () => {
+        if (!active) return;
+        try { validate?.(); settle(); }
+        catch (error) { failed(error); }
+      };
+      if (preparationWork) void preparationWork.then(complete, failed);
+      else complete();
     };
-    return { ready, validate: (check: () => void | Promise<void>, dispose: () => void) => { validate = check; retire = dispose; },
+    return { ready, validate: (check: () => void, dispose: () => void, pending?: Promise<void>) => {
+      validate = check;
+      preparationWork = pending;
+      let retired = false;
+      retire = () => { if (retired) return; retired = true; dispose(); };
+      if (failure) retire();
+    },
       // A constructor may call onLoad before its wrapper/accounting is installed.
       onLoad: () => { void Promise.resolve().then(loaded); },
-      onError: (message?: string) => settle(new Error(message ?? "Texture upload failed")),
+      onError: (message?: string) => failed(new Error(message ?? "Texture upload failed")),
       observe: (texture: Texture | CubeTexture) => {
         this.readiness.set(texture, ready);
+        if (!active) return;
+        // Header measurement may still be pending even when the native wrapper
+        // reports ready. Disposal must cancel that preparation too.
+        const disposed = texture.onDisposeObservable.addOnce(() => settle(new Error("Texture retired during preparation")));
+        let removeLoad = () => {};
+        detach = () => { disposed?.remove(true); removeLoad(); };
         if (texture.isReady()) loaded();
-        else if (texture.loadingError) settle(new Error(texture.errorObject?.message ?? "Texture upload failed"));
+        else if (texture.loadingError) failed(new Error(texture.errorObject?.message ?? "Texture upload failed"));
         else {
           if (texture instanceof CubeTexture) {
             const load = texture.onLoadObservable.addOnce(loaded);
-            texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
+            removeLoad = () => load?.remove(true);
           } else {
             const load = texture.onLoadObservable.addOnce(loaded);
-            texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
+            removeLoad = () => load?.remove(true);
           }
         }
       } };
@@ -506,7 +537,7 @@ export class ResourceCache {
     this.textureKeys.set(texture, variantKey);
     try {
       const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
-      preparation.validate(() => measured ? measured.then(() => this.assertAdmitted()) : this.assertAdmitted(), () => texture.dispose());
+      preparation.validate(() => this.assertAdmitted(), () => texture.dispose(), measured);
       this.assertAdmitted();
       preparation.observe(texture);
     } catch (error) {
@@ -566,7 +597,7 @@ export class ResourceCache {
       this.textureKeys.set(texture, variantKey);
       entry.textures.set(key, texture);
       const measured = this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
-      preparation.validate(() => measured ? measured.then(() => this.assertAdmitted()) : this.assertAdmitted(), () => texture?.dispose());
+      preparation.validate(() => this.assertAdmitted(), () => texture?.dispose(), measured);
       this.assertAdmitted();
       preparation.observe(texture);
       return texture;
@@ -656,6 +687,10 @@ export class ResourceCache {
     const entry = this.entries.get(this.resourceKey(resource));
     if (!entry) return;
     entry.refCount = Math.max(0, entry.refCount - 1);
+    if (entry.refCount === 0) {
+      for (const cancel of [...entry.preparations ?? []])
+        cancel("Texture preparation cancelled after its final owner released it");
+    }
   }
 
   releaseAccounting(key: string): void { this.release(key); }
@@ -773,6 +808,7 @@ export class ResourceCache {
     this.entries.delete(assetGuid);
     this.blobs.delete(assetGuid);
     this.urlKeys.delete(entry.blobUrl);
+    for (const cancel of [...entry.preparations ?? []]) cancel("Texture preparation cancelled during cache retirement");
     disposeEntryTextures(entry);
     revokeEntryBlobUrls(entry);
     console.info(`[resource-cache] evict ${assetGuid} (${reason})`);

@@ -148,7 +148,7 @@ describe("material library", () => {
     await f.leases.get("winner")!.ready;
     expect(sample.texture).toBe(f.leases.get("winner")!.resource);
     deferred.finish();
-    await f.leases.get("obsolete")!.ready;
+    await expect(f.leases.get("obsolete")!.ready).rejects.toThrow("final owner");
     expect(sample.texture).toBe(f.leases.get("winner")!.resource);
     expect(f.cache.resourceStats().leases).toBe(1);
     expect(f.onTextureError).not.toHaveBeenCalled();

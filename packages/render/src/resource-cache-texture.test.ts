@@ -26,6 +26,119 @@ function textureEngine() {
 }
 afterEach(() => vi.restoreAllMocks());
 
+describe("bounded texture preparation ownership", () => {
+  it("cancels a stalled upload only after its final independent owner releases it", async () => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const first = bindResourceCacheToHandle(cache);
+    const second = bindResourceCacheToHandle(cache);
+    const live = cache.acquireTexture("live", engine, new Uint8Array([1, 2, 3]));
+    await live.ready;
+    const baseline = cache.resourceStats();
+    const nativeBaseline = engine.getLoadedTexturesCache().length;
+    const createTexture = engine.createTexture.bind(engine);
+    const create = vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+      args[5] = null;
+      const internal = createTexture(...args);
+      internal.isReady = false;
+      return internal;
+    });
+    try {
+      const bytes = new Uint8Array([4, 5, 6]);
+      const a = first.cache.acquireTexture("pending", engine, bytes);
+      const b = second.cache.acquireTexture("pending", engine, bytes);
+      expect(a.resource).toBe(b.resource);
+      first.dispose();
+      expect(isDisposedGpuTexture(b.resource)).toBe(false);
+      expect(cache.resourceStats()).toMatchObject({ leases: 2, pending: 1 });
+      second.dispose();
+      await expect(a.ready).rejects.toThrow("final owner");
+      await expect(b.ready).rejects.toThrow("final owner");
+      expect(isDisposedGpuTexture(b.resource)).toBe(true);
+      expect(cache.resourceStats()).toEqual(baseline);
+      expect(engine.getLoadedTexturesCache()).toHaveLength(nativeBaseline);
+      expect(live.resource.isReady()).toBe(true);
+      b.resource.onLoadObservable.notifyObservers(b.resource as never);
+      await Promise.resolve();
+      expect(cache.resourceStats()).toEqual(baseline);
+    } finally { create.mockRestore(); first.dispose(); second.dispose(); live.release(); cache.dispose(); engine.dispose(); }
+  });
+
+  it.each(["upload", "header"])("bounds a stalled %s preparation without retiring another live texture", async (phase) => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const live = cache.acquireTexture("live", engine, new Uint8Array([1, 2, 3]));
+    await live.ready;
+    const baseline = cache.resourceStats();
+    const bytes = cache.accountedBytes();
+    const nativeBaseline = engine.getLoadedTexturesCache().length;
+    const source = new Blob([new Uint8Array([4, 5, 6])]);
+    const header = source.slice(0, 64 * 1024);
+    let finish!: (value: ArrayBuffer) => void;
+    const measurement = new Promise<ArrayBuffer>((resolve) => { finish = resolve; });
+    const slice = vi.spyOn(source, "slice").mockReturnValue(header);
+    const read = vi.spyOn(header, "arrayBuffer").mockReturnValue(measurement);
+    const createTexture = engine.createTexture.bind(engine);
+    const create = vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+      if (phase === "upload") args[5] = null;
+      const internal = createTexture(...args);
+      if (phase === "upload") internal.isReady = false;
+      return internal;
+    });
+    vi.useFakeTimers();
+    try {
+      const pending = cache.acquireTexture("pending", engine, phase === "header" ? source : new Uint8Array([4, 5, 6]));
+      expect(pending.resource.isReady()).toBe(phase === "header");
+      expect(cache.resourceStats().pending).toBe(1);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(pending.ready).rejects.toThrow("readiness deadline");
+      expect(isDisposedGpuTexture(pending.resource)).toBe(true);
+      expect(cache.resourceStats().pending).toBe(0);
+      expect(cache.accountedBytes()).toBe(bytes);
+      expect(live.resource.isReady()).toBe(true);
+      pending.release();
+      cache.flushUnreferenced();
+      expect(cache.resourceStats()).toEqual(baseline);
+      expect(engine.getLoadedTexturesCache()).toHaveLength(nativeBaseline);
+      finish(new ArrayBuffer(0));
+      pending.resource.onLoadObservable.notifyObservers(pending.resource as never);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cache.resourceStats()).toEqual(baseline);
+      expect(cache.accountedBytes()).toBe(bytes);
+    } finally {
+      finish(new ArrayBuffer(0));
+      create.mockRestore(); read.mockRestore(); slice.mockRestore(); live.release(); cache.dispose(); engine.dispose(); vi.useRealTimers();
+    }
+  });
+
+  it("settles native-ready header work when GPU wrappers are retired for restoration", async () => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const source = new Blob([new Uint8Array([4, 5, 6])]);
+    const header = source.slice(0, 64 * 1024);
+    let finish!: (value: ArrayBuffer) => void;
+    const measurement = new Promise<ArrayBuffer>((resolve) => { finish = resolve; });
+    const slice = vi.spyOn(source, "slice").mockReturnValue(header);
+    const read = vi.spyOn(header, "arrayBuffer").mockReturnValue(measurement);
+    try {
+      const pending = cache.acquireTexture("pending", engine, source);
+      expect(pending.resource.isReady()).toBe(true);
+      cache.releaseGpuTextures();
+      await expect(pending.ready).rejects.toThrow("retired during preparation");
+      expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 0, leases: 1, pending: 0 });
+      finish(new ArrayBuffer(0));
+      const restored = cache.acquireTexture("pending", engine, source);
+      await restored.ready;
+      pending.release();
+      expect(restored.resource.isReady()).toBe(true);
+      expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+      restored.release();
+      cache.flushUnreferenced();
+      expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+    } finally { finish(new ArrayBuffer(0)); read.mockRestore(); slice.mockRestore(); cache.dispose(); engine.dispose(); }
+  });
+});
+
 describe("resource cache getTexture", () => {
   it("keeps exact source URL generations leased independently of GPU wrappers", () => {
     const cache = new ResourceCache();
