@@ -584,6 +584,10 @@ describe("@babylonslate/physics", () => {
     expect(() =>
       parseColliderProperties({ shape: { kind: "sphere", radius: NaN } }, "3d"),
     ).toThrow("finite numbers");
+    for (const shape of [{ kind: "sphere", radius: 0 }, { kind: "mesh", vertices: [], indices: [] }]) {
+      expect(() => parseColliderProperties({ shape }, "3d")).toThrow();
+      expect(parseColliderProperties({ shape }, "3d", { validation: "authoring" }).shape).toEqual(shape);
+    }
     expect(
       parseRigidBodyProperties({ motionType: "kinematic", mass: 2 }).motionType,
     ).toBe("kinematic");
