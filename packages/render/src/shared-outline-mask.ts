@@ -50,7 +50,11 @@ export class SharedOutlineMaskRenderer {
   /** Drop removed geometry without recompiling or rebuilding unchanged programs. */
   prune(): void {
     for (const [subMesh, program] of this.programs)
-      if (subMesh.getMesh().isDisposed() || !subMesh.getRenderingMesh().subMeshes?.includes(subMesh)) {
+      // Regular instances own cloned submeshes but borrow source geometry.
+      // Testing source membership retires their live asynchronous programs on
+      // every readiness probe, preventing native WebGL compilation from settling.
+      if (subMesh.getMesh().isDisposed() || subMesh.getRenderingMesh().isDisposed() ||
+        !subMesh.getMesh().subMeshes?.includes(subMesh)) {
         this.retire(subMesh, program); this.programs.delete(subMesh);
       }
     for (let index = this.retirements.length - 1; index >= 0; index--)

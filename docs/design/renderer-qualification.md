@@ -156,6 +156,14 @@ the failed graph. It does not draw or run inside measured steady-state samples.
 At `36532517` this narrowed the failure to the strict geometry mask: composition
 and all preceding FrameGraph tasks were ready. Per-submesh diagnostic records
 are retained by the next probe; no composition repair is claimed from this result.
+The next probe located the first regular instance's repeatedly unready mask
+program. Its submesh belongs to the instance while its rendering mesh is the
+shared source. Pruning incorrectly tested membership in the source's submesh
+array, retiring a live pending program on every readiness probe. Cleanup now
+checks the owning mesh's membership and both mesh lifetimes. A focused regression
+holds native shader readiness pending across pruning, then releases the program
+with its instance. The temporary task probe and ineffective composition LOD
+experiment were removed before verifying the ownership repair.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions

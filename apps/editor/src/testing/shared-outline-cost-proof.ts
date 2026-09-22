@@ -1,9 +1,8 @@
 /** Fixed-output production measurements. Software adapters are functional evidence only. */
-import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3, type Effect, type SubMesh, type DrawWrapper } from "@babylonjs/core";
+import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3, type Effect } from "@babylonjs/core";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
-import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 
 function distribution(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -54,23 +53,8 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
     } finally { engine.endFrame(); }
     cpuMs = performance.now() - start;
   };
-  let lastReadiness: unknown;
   const warm = async () => {
-    // Capture the pending native task before failed preparation retires it.
-    const probe = setInterval(() => {
-      const graph = (renderer as unknown as { graph: { graph: FrameGraph | null } }).graph.graph;
-      lastReadiness = graph?.tasks.map(task => {
-        const outline = task as unknown as { compose?: { isReady(): boolean; effect?: Effect }; masks?: { group: string; objects: { isReady(): boolean }; renderer: { programs: Map<SubMesh, { wrapper?: DrawWrapper }> } }[] };
-        return { name: task.name, ready: task.isReady(), compose: outline.compose && {
-          ready: outline.compose.isReady(), error: outline.compose.effect?.getCompilationError(),
-        }, masks: outline.masks?.map(mask => ({ group: mask.group, ready: mask.objects.isReady(),
-          programs: [...mask.renderer.programs].map(([subMesh, program]) => ({ mesh: subMesh.getMesh().name,
-            renderingMesh: subMesh.getRenderingMesh().name, defines: program.wrapper?.defines,
-            ready: program.wrapper?.effect?.isReady(), error: program.wrapper?.effect?.getCompilationError(),
-          })) })) };
-      });
-    }, 250);
-    try { await renderer.prepare(); } finally { clearInterval(probe); }
+    await renderer.prepare();
     for (let frame = 0; frame < 15; frame++) { await nextFrame(); draw(); }
   };
   const measurements = [];
@@ -148,7 +132,7 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
         interaction: "Synthetic membership/resize only; hands-on gizmo and Play/scene transitions require separate acceptance" },
       measurements, lifecycle };
   } catch (error) {
-    publish("failed", { error: String(error), measurements, lifecycle, lastReadiness,
+    publish("failed", { error: String(error), measurements, lifecycle,
       adapter: engine.getInfo(), tasks: renderer.taskNames(), owner: owner.diagnostics(),
       view: view.diagnostics(), reservations: managedRenderReservations(engine),
       // Read-only native compilation diagnostics for a failed hardware run.
