@@ -15,6 +15,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.stableResources).toBe(true);
     expect(result.dimensions).toEqual({ acquisitions: 0, materials: 0, buffers: 0, updates: 1 });
     expect(result.atlasChange).toEqual({ acquisitions: 1, materials: 0, buffers: 0, updates: 2 });
+    expect(result.crossfade).toEqual({ acquisitions: 0, materials: 0, buffers: 0, updates: 0 });
+    expect(result.crossfadeWeights).toEqual([0.2, 0.8]);
+    expect(result.independentAtlases).toBe(true);
     expect(result.red[0]).toBeGreaterThan(200); expect(result.red[1]).toBeLessThan(20);
     expect(result.green[1]).toBeGreaterThan(200); expect(result.green[0]).toBeLessThan(20);
     expect(result.preservesAuthored).toBe(true);

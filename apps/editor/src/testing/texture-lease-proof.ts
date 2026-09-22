@@ -1,8 +1,8 @@
 /** Test-build-only real buffer/material and solid-color pixel ownership fixture. */
 import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
+import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
 import {
-  applyAlbedoTexture, applySpriteAnimationAssetFrame, applySpriteFrameUvs,
+  applyAlbedoTexture, applyAnimStateToScene, applySpriteAnimationAssetFrame, applySpriteFrameUvs,
   bindResourceCacheToHandle, createAppWebGpuEngine, createSpriteQuad,
   encodePngRgba, installTextureBytes, PIXEL_ART_TEXTURE_SAMPLING, ResourceCache,
 } from "@babylonslate/render";
@@ -86,6 +86,23 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     applySpriteFrameUvs(mesh, { ...frame, u: 0.5, uSize: 0.5 });
     const green = await pixels();
     const atlasChange = { ...operations };
+    const overlay = createSpriteQuad(scene, "crossfade", frame);
+    const otherAnimation = createDefaultSpriteAnimationPayload();
+    otherAnimation.frames[0] = { ...otherAnimation.frames[0]!, textureGuid: "atlas", width: 100, height: 100 };
+    const slot = { mesh, overlayMesh: overlay, payload: createDefaultSpritePayload(),
+      spriteAnimations: new Map([["primary", animation], ["secondary", otherAnimation]]),
+      applyTexture: (target: typeof mesh, guid: string | null | undefined) => applyAlbedoTexture(target, target.getScene(), guid, assets) };
+    const fade = (weight: number) => applyAnimStateToScene({ animationGroups: [], getSpriteSlot: () => slot }, {
+      type: "animState", slotId: 0, stateId: "primary", normalisedTime: 0, blendWeights: {}, layers: [
+        { stateId: "primary", clipAssetGuid: "primary", clipName: "", clipKind: "sprite", normalisedTime: 0, weight },
+        { stateId: "secondary", clipAssetGuid: "secondary", clipName: "", clipKind: "sprite", normalisedTime: 0, weight: 1 - weight },
+      ],
+    });
+    fade(0.4);
+    reset(); fade(0.2);
+    const crossfade = { ...operations };
+    const crossfadeWeights = [mesh.visibility, overlay.visibility];
+    const independentAtlases = (mesh.material as StandardMaterial).diffuseTexture !== (overlay.material as StandardMaterial).diffuseTexture;
     const authored = new StandardMaterial("authored", scene);
     authored.disableLighting = true; authored.emissiveColor = Color3.Blue();
     mesh.material = authored;
@@ -96,7 +113,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
     const siblingSurvives = siblingTexture?.isReady() === true;
     layer.dispose(); siblingOwner.releaseHandleRetains(); cache.flushUnreferenced();
-    return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
+    return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, crossfade, crossfadeWeights, independentAtlases, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
   } finally {
     scene.dispose(); layer.dispose(); owner.releaseHandleRetains(); siblingOwner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
   }
