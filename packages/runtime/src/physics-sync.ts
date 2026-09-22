@@ -148,9 +148,11 @@ export class PhysicsWorldSync {
       | Readonly<Record<string, TilesetPayload>>;
     pixelsPerUnit?: number;
   }): void {
+    const tilemaps = ownedContentMap(options.tilemaps);
+    const tilesets = ownedContentMap(options.tilesets);
     this.tileInstallation++;
-    this.tilemaps = ownedContentMap(options.tilemaps);
-    this.tilesets = ownedContentMap(options.tilesets);
+    this.tilemaps = tilemaps;
+    this.tilesets = tilesets;
     this.tilemapCollidersByActor.clear();
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
@@ -166,9 +168,11 @@ export class PhysicsWorldSync {
       | Readonly<Record<string, SpriteAnimationPayload>>;
     pixelsPerUnit?: number;
   }): void {
+    const sprites = ownedContentMap(options.sprites);
+    const spriteAnimations = ownedContentMap(options.spriteAnimations);
     this.spriteInstallation++;
-    this.sprites = ownedContentMap(options.sprites);
-    this.spriteAnimations = ownedContentMap(options.spriteAnimations);
+    this.sprites = sprites;
+    this.spriteAnimations = spriteAnimations;
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -206,6 +210,7 @@ export class PhysicsWorldSync {
       { vertices: Vec3[]; indices: number[] }
     >();
     const live = new Set([...models.keys(), ...meshes.keys()]);
+    const identities = new Map<string, string>();
     for (const guid of live) {
       const model = models.get(guid),
         mesh = meshes.get(guid);
@@ -232,10 +237,11 @@ export class PhysicsWorldSync {
             ? this.complexMeshes.get(guid)!
             : structuredClone(mesh),
         );
-      this.modelContentIdentities.set(guid, identity);
+      identities.set(guid, identity);
     }
-    for (const guid of this.modelContentIdentities.keys())
-      if (!live.has(guid)) this.modelContentIdentities.delete(guid);
+    this.modelContentIdentities.clear();
+    for (const [guid, identity] of identities)
+      this.modelContentIdentities.set(guid, identity);
     this.models = nextModels;
     this.complexMeshes = nextMeshes;
   }

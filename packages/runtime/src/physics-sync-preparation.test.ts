@@ -7,7 +7,7 @@ import { PhysicsWorldSync } from "./physics-sync";
 
 afterEach(() => vi.restoreAllMocks());
 
-function fixture(count: number) {
+function fixture(count: number, suppliedBackend?: physics.PhysicsBackend) {
   const world = new World({
     seed: 1,
     dt: 1 / 60,
@@ -43,11 +43,13 @@ function fixture(count: number) {
     world.spawnActorNow(actor);
     return actor;
   });
-  const backend = physics.createSoftwarePhysicsBackend("3d", {
-    x: 0,
-    y: 0,
-    z: 0,
-  });
+  const backend =
+    suppliedBackend ??
+    physics.createSoftwarePhysicsBackend("3d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
   const sync = new PhysicsWorldSync(backend);
   return { world, actors, backend, sync };
 }
@@ -169,4 +171,70 @@ describe("physics preparation work", () => {
       }
     },
   );
+});
+
+it("keeps real Havok shapes/helpers stable while moving unchanged high-vertex collision content", async () => {
+  const native = await physics.HavokPhysicsBackend.create({
+    kind: "3d",
+    gravity: { x: 0, y: 0, z: 0 },
+  });
+  const { world, actors, sync } = fixture(1, native);
+  actors[0]!.components
+    .find((component) => component.classId === "RigidBodyComponent")!
+    .setVariable("motionType", "static");
+  const nativeShapeCount = () =>
+    (
+      native.plugin._hknp as {
+        HP_GetStatistics(): [unknown, readonly number[]];
+      }
+    ).HP_GetStatistics()[1][1];
+  try {
+    install(sync, triangles(2048));
+    for (let warm = 0; warm < 3; warm++) sync.step(1 / 60, world);
+    const baseline = nativeShapeCount();
+    const construct = vi.spyOn(native.plugin, "initShape");
+    const resolve = vi.spyOn(assets, "resolveMeshCollisions");
+    const scale = vi.spyOn(physics, "scaleColliderShape");
+    const step = native.step.bind(native);
+    let frameStart = 0,
+      afterSolver = 0;
+    const preparationMs: number[] = [],
+      solverMs: number[] = [],
+      readbackMs: number[] = [];
+    vi.spyOn(native, "step").mockImplementation((dt) => {
+      const before = performance.now();
+      preparationMs.push(before - frameStart);
+      step(dt);
+      afterSolver = performance.now();
+      solverMs.push(afterSolver - before);
+    });
+    for (let tick = 0; tick < 30; tick++) {
+      actors[0]!.transform.position.x = tick / 10;
+      frameStart = performance.now();
+      sync.step(1 / 60, world);
+      readbackMs.push(performance.now() - afterSolver);
+    }
+    const distribution = (values: number[]) => {
+      const sorted = [...values].sort((a, b) => a - b);
+      return {
+        p50: sorted[Math.floor(sorted.length / 2)],
+        p95: sorted[Math.floor(sorted.length * 0.95)],
+        max: sorted.at(-1),
+      };
+    };
+    console.info("physics isolated stages (ms)", {
+      preparation: distribution(preparationMs),
+      solver: distribution(solverMs),
+      readback: distribution(readbackMs),
+      liveNativeShapes: nativeShapeCount(),
+    });
+    expect(construct).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(scale).not.toHaveBeenCalled();
+    expect(nativeShapeCount()).toBe(baseline);
+    expect(native.scene.meshes).toHaveLength(0);
+    expect(native.scene.geometries).toHaveLength(0);
+  } finally {
+    sync.dispose();
+  }
 });
