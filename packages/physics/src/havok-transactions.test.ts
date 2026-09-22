@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PhysicsShapeContainer } from "@babylonjs/core/Physics/v2/physicsShape";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import {
   PhysicsActivationControl,
   PhysicsPrestepType,
@@ -53,7 +54,7 @@ const trace = (backend: HavokPhysicsBackend, x = 0, z = 0) =>
 const native = (backend: HavokPhysicsBackend, id = "body") =>
   backend.scene.getTransformNodeByName(id)!.physicsBody!;
 const liveShapes = (backend: HavokPhysicsBackend) =>
-  (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes.size;
+  (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp.HP_GetStatistics()[1][1];
 const tetrahedron = [
   { x: 0, y: 0, z: 0 },
   { x: 2, y: 0, z: 0 },

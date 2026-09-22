@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
@@ -37,13 +38,16 @@ describe("Havok native collider lifetime", () => {
     // Babylon's native shape registry changes in initShape/disposeShape, independently
     // of the backend's collider records; it detects unreleased native wrappers.
     const shapes = (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes;
+    const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
     try {
       const baseline = shapes.size;
+      const nativeBaseline = havok.HP_GetStatistics()[1][1];
       body(backend);
       backend.createCollider(box("a", -2));
       backend.createCollider(box("b", 2));
       backend.destroyBody("body");
       expect(shapes.size).toBe(baseline);
+      expect(havok.HP_GetStatistics()[1][1]).toBe(nativeBaseline);
     } finally { backend.dispose(); }
   });
 
