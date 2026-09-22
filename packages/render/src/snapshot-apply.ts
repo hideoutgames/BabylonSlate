@@ -122,6 +122,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   tilemapAnimationScenes?: Set<Scene>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
+  /** Reused structural-pass results, indexed by the current snapshot actor. */
+  snapshotMeshes: Array<Mesh | null>;
   /** Slot ids observed in an applied snapshot; gates absence-retire so
    * command-built visuals survive a stale buffer that predates them. */
   seenSlots: Set<number>;
@@ -205,6 +207,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     text2dProps: new Map(),
     overlayPanelProps: new Map(),
     liveSlots: new Set(),
+    snapshotMeshes: [],
     seenSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -1186,112 +1189,115 @@ function snapshotSlotWantsOverlay(
   );
 }
 
-/**
- * Apply an interpolated snapshot to the scene. Bulk path wraps Babylon block
- * helpers to avoid per-mesh dirty storms.
- */
+/** Resolve ownership and membership before the pose-only pass. */
+function reconcileSnapshotVisuals(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  snapshot: SampledSnapshot,
+): void {
+  const live = binding.liveSlots;
+  live.clear();
+  const seen = binding.seenSlots;
+  const animationScenes = binding.tilemapAnimationScenes ??= new Set();
+  animationScenes.clear();
+  animationScenes.add(scene);
+  const count = snapshot.actorCount ?? snapshot.actors.length;
+  binding.snapshotMeshes.length = count;
+  for (let i = 0; i < count; i++) {
+    const actor = snapshot.actors[i]!;
+    binding.snapshotMeshes[i] = null;
+    live.add(actor.slotId);
+    seen.add(actor.slotId);
+    const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
+    const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
+    if (wantsOverlay && !overlayScene) {
+      continue;
+    }
+    const hostScene = wantsOverlay ? overlayScene : scene;
+    if (!hostScene) continue;
+    animationScenes.add(hostScene);
+    let mesh = binding.meshes.get(actor.slotId) ?? null;
+    if (mesh && mesh.getScene() !== hostScene) {
+      mesh = migratePlaySlotVisual(hostScene, binding, actor.slotId);
+    }
+    if (!mesh) {
+      mesh = createPlayVisual(hostScene, actor.slotId, binding);
+      binding.meshes.set(actor.slotId, mesh);
+      applyMaterialToActorMeshes(binding, actor.slotId, mesh);
+    }
+    if (wantsOverlay) {
+      disposeWorldOverlayLeftovers(scene, actor.slotId);
+    }
+    binding.snapshotMeshes[i] = mesh;
+  }
+  for (const slotId of binding.meshes.keys()) {
+    // A command-built visual not yet seen must survive a stale buffer.
+    // Explicit despawn remains the removal path for these unseen slots.
+    if (!live.has(slotId) && seen.has(slotId)) retirePlaySlot(binding, slotId);
+  }
+}
+
+/** Apply a sample without changing caller-owned global Babylon flags. */
 export function applySnapshotToScene(
   scene: Scene,
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
-  const prevMaterialDirty = scene.blockMaterialDirtyMechanism;
-  scene.blockMaterialDirtyMechanism = true;
-  const prevBlock = scene.blockfreeActiveMeshesAndRenderingGroups;
-  scene.blockfreeActiveMeshesAndRenderingGroups = true;
-  try {
-    const live = binding.liveSlots;
-    live.clear();
-    const seen = binding.seenSlots;
-    const animationScenes = binding.tilemapAnimationScenes ??= new Set();
-    animationScenes.clear();
-    animationScenes.add(scene);
-    const count = snapshot.actorCount ?? snapshot.actors.length;
-    for (let i = 0; i < count; i++) {
-      const actor = snapshot.actors[i]!;
-      live.add(actor.slotId);
-      seen.add(actor.slotId);
-      const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
-      const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
-      if (wantsOverlay && !overlayScene) {
-        continue;
-      }
-      const hostScene = wantsOverlay ? overlayScene : scene;
-      if (!hostScene) continue;
-      animationScenes.add(hostScene);
-      let mesh = binding.meshes.get(actor.slotId) ?? null;
-      if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
-        mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
-      }
-      if (!mesh) {
-        mesh = createPlayVisual(hostScene, actor.slotId, binding);
-        binding.meshes.set(actor.slotId, mesh);
-        applyMaterialToActorMeshes(binding, actor.slotId, mesh);
-      }
-      if (wantsOverlay) {
-        disposeWorldOverlayLeftovers(scene, actor.slotId);
-      }
-      writeActorTransform(mesh, actor);
-      setPlayVisualVisibility(
+  reconcileSnapshotVisuals(scene, binding, snapshot);
+  const count = snapshot.actorCount ?? snapshot.actors.length;
+  for (let i = 0; i < count; i++) {
+    const actor = snapshot.actors[i]!;
+    const mesh = binding.snapshotMeshes[i];
+    if (!mesh) continue;
+    writeActorTransform(mesh, actor);
+    setPlayVisualVisibility(
+      mesh,
+      (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
+    );
+    const light = binding.lights.get(actor.slotId);
+    if (light) {
+      const composed = composeSlotPartTransform(actor, binding, actor.slotId);
+      updateAuthoredLightTransform(
+        light,
+        composed.position,
+        composed.rotation,
+      );
+    }
+    const camera = binding.cameras.get(actor.slotId);
+    if (camera) {
+      const composed = composeSlotPartTransform(actor, binding, actor.slotId);
+      updateAuthoredCameraTransform(
+        camera,
+        composed.position,
+        composed.rotation,
+      );
+    }
+    if (mesh.getScene() === scene) {
+      applyTilemapParallaxToMesh(
         mesh,
-        (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
+        scene.activeCamera ?? { position: actor.position },
       );
-      const light = binding.lights.get(actor.slotId);
-      if (light) {
-        const composed = composeSlotPartTransform(actor, binding, actor.slotId);
-        updateAuthoredLightTransform(
-          light,
-          composed.position,
-          composed.rotation,
-        );
-      }
-      const camera = binding.cameras.get(actor.slotId);
-      if (camera) {
-        const composed = composeSlotPartTransform(actor, binding, actor.slotId);
-        updateAuthoredCameraTransform(
-          camera,
-          composed.position,
-          composed.rotation,
-        );
-      }
-      if (!wantsOverlay) {
-        applyTilemapParallaxToMesh(
-          mesh,
-          scene.activeCamera ?? { position: actor.position },
-        );
-      }
     }
-    snapPlayCameraToPixelGrid(scene, binding);
-    for (const slotId of [...binding.meshes.keys()]) {
-      // Absence retires only slots a previous applied snapshot contained; a
-      // command-built visual never yet seen survives a stale buffer that
-      // predates its assignMesh. Explicit despawn removes unseen slots.
-      if (!live.has(slotId) && seen.has(slotId)) {
-        retirePlaySlot(binding, slotId);
-      }
-    }
-    updateBoneAttachments(binding);
-    for (const [slotId, attachment] of binding.boneAttachments) {
-      if (!attachment.applied) continue;
-      const light = binding.lights.get(slotId);
-      const camera = binding.cameras.get(slotId);
-      if (!light && !camera) continue;
-      attachment.world.decompose(
-        scratchBoneSlot.scale as Vector3,
-        scratchBoneSlot.rotation as Quaternion,
-        scratchBoneSlot.position as Vector3,
-      );
-      const composed = composeSlotPartTransform(scratchBoneSlot, binding, slotId);
-      if (light) updateAuthoredLightTransform(light, composed.position, composed.rotation);
-      if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
-    }
-    refreshPlayActiveCamera(scene, binding);
-    for (const animationScene of animationScenes) {
-      updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
-    }
-  } finally {
-    scene.blockMaterialDirtyMechanism = prevMaterialDirty;
-    scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
+  }
+  snapPlayCameraToPixelGrid(scene, binding);
+  updateBoneAttachments(binding);
+  for (const [slotId, attachment] of binding.boneAttachments) {
+    if (!attachment.applied) continue;
+    const light = binding.lights.get(slotId);
+    const camera = binding.cameras.get(slotId);
+    if (!light && !camera) continue;
+    attachment.world.decompose(
+      scratchBoneSlot.scale as Vector3,
+      scratchBoneSlot.rotation as Quaternion,
+      scratchBoneSlot.position as Vector3,
+    );
+    const composed = composeSlotPartTransform(scratchBoneSlot, binding, slotId);
+    if (light) updateAuthoredLightTransform(light, composed.position, composed.rotation);
+    if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+  }
+  refreshPlayActiveCamera(scene, binding);
+  for (const animationScene of binding.tilemapAnimationScenes ?? []) {
+    updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }
 }
 
@@ -1326,6 +1332,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();
+  binding.snapshotMeshes.length = 0;
   binding.seenSlots.clear();
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
