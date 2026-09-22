@@ -2,7 +2,7 @@
 
 ## Model and generated-text lifetime follow-up
 
-The physical A16 run is waived for this follow-up at the user's request; local native and browser fixtures provide its acceptance evidence, without a device-performance claim.
+The physical A16 run is waived for this follow-up at the user's request. Acceptance still requires the local native and browser checks below; unexecuted fixtures are not evidence and no device-performance result is claimed.
 
 At `ea3c9667`, the targeted `visual-lifecycle.test.ts` and `text2d-bitmap.test.ts` baseline ran against Babylon 9.20: 5 failed, 6 passed. Two valid same-length GLBs aliased the old vertex value. Model and generated-text material counts each grew from 2 to 202 over 200 cycles. Oversized text was accepted under an injected 64-pixel cap, and 64 small cells produced an unnecessarily tall 256-pixel atlas.
 
@@ -12,20 +12,22 @@ At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cove
 
 ## Engine follow-up: deferred local verification
 
-On 2026-09-22 the user requested skipping checks that cannot fit the machine's available memory and recording them for later. The team's queued particle check was cancelled before execution; no running check or unrelated process was stopped. `BL_TEST_PROFILE=shared` remains required. The shared `local-resources.json` currently has a 3 GiB reserve and was left unchanged. Do not bypass admission or repeatedly queue these checks while they cannot fit.
+On 2026-09-22 the user requested skipping checks that cannot fit the machine's available memory and recording them for later. The team's queued particle check was cancelled before execution; no running check or unrelated process was stopped. `BL_TEST_PROFILE=shared` remains required. The shared `local-resources.json` had a 3 GiB reserve at deferral and changed externally to 2 GiB during source integration; this team left it unchanged. Read the current shared configuration when resuming. Do not bypass admission or repeatedly queue these checks while they cannot fit.
+
+Resume through the current runner from `main`'s `42596fb9`: its default low-memory policy admits one root workload and one worker, with no light-job bypass and at least 2 GiB headroom while preserving any higher configured reserve. Inspect the read-only `pnpm test:resources` report before resuming; do not change host configuration to fit a pending check.
 
 Physical A16 verification is waived for this follow-up. Local browser/native verification is deferred where listed below, not counted as passed. No desktop or software-WebGPU result establishes device performance. Required CI and merge gates remain unchanged.
 
-| Delivery | Recorded source/evidence | Pickup |
+| Delivery | Historical source/evidence | Pickup |
 | --- | --- | --- |
-| A: snapshot synchronization | `3d0031bd`, `t3code/engine-ownership-performance`. Four explicit unit files passed 192 cases at `ba76a60f`; scoped render typecheck/lint passed. Two desktop Play/Preview pixel cases passed at `2c1f29ae`. Snapshot-attributable global dirty/cleanup counts fell from 120 per 120 samples to zero. | No local check was deferred for A. [PR #657](https://github.com/hideoutgames/BabylonSlate/pull/657) remains unmerged, awaiting the normal Verify slot and current-head CI. |
-| B: native physics lifecycle | `82ae49a0`, `agent/engine-physics-lifecycle-b`. Earlier real-Havok removal/resource cases passed, but the immediate teleport ray failed and a compound trigger case hung before the latest corrections. Those corrections are unverified. | Resume the isolated native trigger and teleport/constraint/controller cases first, then the explicit lifecycle/transaction files, affected Rapier/runtime callers and scoped static checks. Keep native detachment/teleport gates open. |
-| C: dirty physics preparation | Frozen baseline fixture `de96b6d3`, `agent/engine-physics-dirty-c`; implementation is on a separate branch. The new five-case preparation fixture has not run. | Run `packages/runtime/src/physics-sync-preparation.test.ts` at the frozen baseline before comparing the implementation. Validate native B before treating C as deliverable. |
-| D: texture leases and stable sprites | Source `b8a11880`, notes `5fe391b3`, `agent/engine-texture-leases-d`. Earlier batch: 68 passed, 7 failed. Fixture repairs and subsequent upload/admission fixes are unverified; the earlier typecheck at `0e675860` does not certify the current head. | [Exact unit, editor, static and browser commands](https://github.com/hideoutgames/BabylonSlate/blob/5fe391b36d555041c4e79bbcca2def0c4a152c7c/docs/architecture/render.md#texture-ownership-verification-pickup). Includes the 10,000-selection WebGL2/WebGPU fixture. |
-| E: model/text visual lifetimes | Source `64599304`, notes `233b75ba`, `agent/engine-visual-lifecycle-e`. Baseline: 5 failures/6 passes; implementation at `e36439b1`: 18/18 in the same two files. Later editor staging, multipart budgets and additional ownership changes are unverified. | [Exact segmented native/consumer/browser commands](https://github.com/hideoutgames/BabylonSlate/blob/233b75ba/docs/architecture/render.md#visual-ownership-verification-pickup), plus scoped static checks. Combine the AssetContainer and physics patch hunks before final integration verification. |
+| A: snapshot synchronization | `3d0031bd`, `t3code/engine-ownership-performance`. Four explicit unit files passed 192 cases at `ba76a60f`; scoped render typecheck/lint passed. Two desktop Play/Preview pixel cases passed at `2c1f29ae`. Snapshot-attributable global dirty/cleanup counts fell from 120 per 120 samples to zero. | [PR #657](https://github.com/hideoutgames/BabylonSlate/pull/657) merged as `556c4e349d6c32d37bb70fcfbef7fa27954a0fa0` on 2026-09-22. Verify run `35716813370` passed all nine jobs at `ccd0a446`, with public-hygiene passing. This certifies A's delivered scope, not the later B–F integration. |
+| B: native physics lifecycle | Latest B checkpoint `94314580`, `agent/engine-physics-lifecycle-b`. Earlier real-Havok removal/resource cases passed, but the immediate teleport ray failed and a compound trigger case hung before the latest corrections. Those corrections are unverified. | Resume the isolated native trigger and teleport/constraint/controller cases first, then the explicit lifecycle/transaction files, affected Rapier/runtime callers and scoped static checks on the combined source. Native detachment, compound lifetime, local pose and immediate teleport/query release gates remain open. |
+| C: dirty physics preparation | Frozen baseline fixture `de96b6d3`, `agent/engine-physics-dirty-c`; latest implementation `cf81fff2` is integrated into the combined branch. Neither the five-case baseline nor the implementation preparation/invalidation fixtures have run. | Run `packages/runtime/src/physics-sync-preparation.test.ts` at the frozen baseline, then compare the combined implementation. Validate native B before treating C as deliverable. |
+| D: texture leases and stable sprites | Historical D branch `67538a89` follows source `b8a11880` and notes `5fe391b3`. Earlier batch: 68 passed, 7 failed. Fixture repairs, native cube/environment changes and later admission/cancellation fixes are unverified; the earlier typecheck at `0e675860` does not certify them. | [Current unit, editor, static and browser commands](../architecture/render.md#texture-ownership-verification-pickup), plus the recent correction selectors below. Includes the unrun 10,000-selection WebGL2/WebGPU fixture. |
+| E: model/text visual lifetimes | Historical source `64599304`, notes `233b75ba`, browser correction `b32b9a8f`. Baseline: 5 failures/6 passes; implementation at `e36439b1`: 18/18 in the same two files. Later editor staging, multipart budgets and additional ownership changes are unverified. | [Current segmented native/consumer/browser commands](../architecture/render.md#visual-ownership-verification-pickup), plus scoped static checks and the staged material gate below. The combined patch now contains both AssetContainer and physics changes; its installation and verification remain pending. |
 | F: particles | `79a00663`, `agent/engine-particles-f`. 49 cases passed across earlier checkpoints. Two follow-up cases at `150ee60a` were cancelled while queued, with no execution. Later clock-ordering, D integration and browser changes are unverified. | [Particle pickup commands and evidence](https://github.com/hideoutgames/BabylonSlate/blob/79a006630853b990d971a5e805ac70e1382771ed/docs/architecture/particles.md). Resume the two selected lifecycle cases, scoped render/editor checks and four CPU/GPU × WebGL2/WebGPU browser cases. Particle-specific exported-player lifecycle verification remains open. |
 
-The first native-physics probes, from the B worktree, are deliberately bounded and sequential:
+The first native-physics probes, from the current combined worktree after its admitted frozen-lockfile installation, are deliberately bounded and sequential:
 
 ```powershell
 $env:BL_TEST_PROFILE = 'shared'
@@ -35,11 +37,38 @@ pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/
 
 Before resuming, compare the working head with the recorded checkpoint and select checks affected by intervening source, dependency or configuration changes. Keep failed, cancelled and unexecuted results separate from passes. Record exact source, command, backend and resource/operation counts for each resumed batch. B–F have no delivery PR yet; the work remains unmerged and is not verified complete.
 
-Status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+### Combined source checkpoint
 
-### Rendering integration checkpoint
+At `2248293d`, `agent/engine-followup-integration` combines rendering ownership with native lifecycle B `94314580`, physics preparation C `cf81fff2`, material admission `bef1b987`, bounded texture preparation `ae6b86ee` and texture hierarchy staging `f5aa8549`. Later model/material and multipart publication corrections must be included before production verification. This branch has no PR and has not been installed, typechecked, built or tested. Source integration does not close any deferred gate above.
 
-`agent/engine-render-ownership-integration` combines A `129f1f4b`, D `5fe391b3`, E `233b75ba` and F `79a00663` through normal merges, plus the browser backend-reporting corrections D `67538a89` and E `b32b9a8f`. B/C and the physics native patch remain separate. The only textual conflict was this qualification page; both the model/text evidence and the deferred-check index were retained.
+Merge `01d342ac` includes `main` through `556c4e34`: A's confirmed merge, the shared execution policy from `42596fb9`, and `f48a4adc`'s loading-stall diagnostics, WebGPU/clustered-material fixes and graph conversion behavior. Source review is not execution evidence. Include `snapshot-steady-state.test.ts`, the loading/dedup cases in `create-engine.play.test.ts`, and `scene-perf.test.ts` when resuming the combined snapshot/readiness segment. The already listed material-library and particle ownership cases cover the directly affected publication consumers; these checks remain unrun on the combined head.
+
+The combined Babylon patch retains the merged WebGPU fixes, E's AssetContainer observer retirement and B's Havok null-handle/native-result fixes. Its LF-normalized SHA-256 and all lockfile patch references are `78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1`. Dependency versions were unchanged during conflict resolution; validate the combined patch through the normal admitted frozen-lockfile installation before native/browser checks. Do not reuse either track's installed Babylon package as proof of the combined dependency.
+
+Resume [physics preparation and native lifecycle checks](../architecture/physics.md#change-driven-preparation-and-verification-pickup), [texture ownership checks](../architecture/render.md#texture-ownership-verification-pickup), [visual ownership checks](../architecture/render.md#visual-ownership-verification-pickup), and [particle checks](../architecture/particles.md) in their recorded segments. Run production checks on the current combined branch, including later integration repairs, rather than treating an earlier delivery branch as current evidence. The frozen C baseline remains separate at `de96b6d3`; compare it before measuring the implementation. Render integration also adds unrun authored-sprite material restoration/upload-race cases in `mesh-assets.test.ts` and the directly affected `scene-lighting.test.ts` consumer.
+
+Source integration found that native texture readiness can precede completion of the lease's allocation checks. Environment replacement now retains the prior view until the full successor lease preparation succeeds. `environment-lighting.test.ts` adds an unexecuted native-ready/deferred-admission rejection-and-success regression, including no automatic retry churn after rejection. Include it in the recorded environment batch; no runtime or compilation result is claimed for this correction.
+
+Recent correction checks are all **deferred**. Run these explicit groups sequentially on the final combined source, using the current shared resource configuration:
+
+```powershell
+$env:BL_TEST_PROFILE = 'shared'
+pnpm --silent agent:wait local --script test '--' packages/render/src/material-library.test.ts -t 'native-ready|resetting its default|cancelled material preparation'
+pnpm --silent agent:wait local --script test '--' packages/render/src/resource-cache-texture.test.ts -t 'bounded texture preparation ownership'
+pnpm --silent agent:wait local --script test '--' packages/render/src/environment-lighting.test.ts -t 'waits for successor admission'
+pnpm --silent agent:wait local --script test '--' packages/render/src/visual-texture-replacement.test.ts packages/render/src/skybox.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/model-material-preparation.test.ts
+```
+
+The first three selectors cover `bef1b987`'s five material-admission cases, `ae6b86ee`'s four preparation-lifetime cases and `07ecf628`'s environment admission case. At `f5aa8549`, eleven hierarchy cases use real Babylon meshes/materials/cache leases with controlled preparation outcomes; cube IO is mocked. They cover Play/editor rejection, stale completion, owner disposal and first-skybox cleanup, not browser decode or pixels. `e07e7e9d` adds seven valid-GLB model material admission, shader preparation and cancellation cases. `96018dba` adds exact asset-filtered private material release; include `material-library.test.ts` in full in the selected material batch to cover it. None of these authored cases supplies a passing native resource count yet.
+
+After those corrections pass, resume only their affected consumers from the architecture notes, including `material-parameters.test.ts`, `resource-cache-upload.test.ts`, `snapshot-apply.test.ts`, `editor-scene-sync.chunks.test.ts` and `scene-loader.test.ts`, then scoped static and browser segments. Browser runs must report requested/effective backend and driver. Software WebGPU is a local correctness result; fallback does not pass a WebGPU gate. Real packaged Havok is required for collider/teleport acceptance, and browser emission/readback remains required for GPU particle behavior.
+
+Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+
+### Historical rendering integration checkpoint
+
+The earlier `agent/engine-render-ownership-integration` checkpoint combined A `129f1f4b`, D `5fe391b3`, E `233b75ba` and F `79a00663`, plus browser backend-reporting corrections D `67538a89` and E `b32b9a8f`. At that historical checkpoint B/C and the physics native patch were separate; they are included in the current combined source above. The textual conflict on this page retained both the model/text evidence and the deferred-check index.
 
 Manual integration review retained the separate snapshot membership/pose passes, snapshot identity and seen-slot guards, transactional model/text publication, exact texture leases, particle generation cancellation, and all three test-mode browser hooks. Particle systems now retire before the material library during handle disposal, so native users release their per-emitter materials first. The merged Babylon patch and lockfile match E's observer-ownership patch and retain the existing vertex-stream fix.
 
@@ -61,7 +90,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Path | Coverage |
 | --- | --- |
 | `forward` | `framegraph-forward.spec.ts` (opt-in graph preserves surface pixels and ownership, both backends); `clustered-path-selection.spec.ts` (explicit forward request) |
-| `clusteredForward` | `clustered-lights.spec.ts` (native and graph PBR/CEL pixels); `clustered-path-selection.spec.ts` (editor selection, Play, packed player Auto→clustered) |
+| `clusteredForward` | `clustered-lights.spec.ts` (native and graph PBR/CEL pixels, WebGL2); `clustered-lights-webgpu.spec.ts` (same parity under WebGPU storage-buffer masks); `clustered-path-selection.spec.ts` (editor selection, Play, packed player Auto→clustered) |
 | `auto` | `clustered-path-selection.spec.ts` (auto resolves `clusteredForward` in editor, Play and packed player; session `renderpath` request is global and non-persistent); `render-path-settings.spec.ts` (project-wide pipeline settings retained through reopen) |
 
 ### Style
@@ -69,7 +98,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Style | Coverage |
 | --- | --- |
 | PBR | Default everywhere |
-| CEL | `cel-render-mode.spec.ts`, `cel-hard-steps.spec.ts` (both backends), `cel-shadow-lifecycle.spec.ts`, `clustered-lights.spec.ts`, `framegraph-forward.spec.ts` (pbr and cel captures), `baked-parity.spec.ts`, `webgpu-backend.spec.ts` (WebGPU CEL proof) |
+| CEL | `cel-render-mode.spec.ts`, `cel-hard-steps.spec.ts` (both backends), `cel-shadow-lifecycle.spec.ts`, `clustered-lights.spec.ts`, `clustered-lights-webgpu.spec.ts` (clustered CEL tie sequence under WGSL), `framegraph-forward.spec.ts` (pbr and cel captures), `baked-parity.spec.ts`, `webgpu-backend.spec.ts` (WebGPU CEL proof) |
 
 ### Features
 
@@ -99,6 +128,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Backend switch | `webgpu-backend.spec.ts` (WebGPU→WebGL2→WebGPU through Project Settings, one Engine, undo/redo and Play after) |
 | Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` returns null, rejects, or `navigator.gpu` is absent → one WebGL2 Engine, presented viewport, explicit reason in Project Settings, Play afterwards, no loading-deadline failures), `player-backend.spec.ts` (packed WebGPU player without an adapter presents WebGL2 with `data-backend-fallback`) |
 | Scene reload | `runtime-scene-loading.spec.ts` (repeated transitions + Stop, Play + Preview Build), `runtime-owner-continuity.spec.ts` (`changescene` under held paint, both hosts), `rendering-transitions.spec.ts` (viewport blocking reloads) |
+| WebContent termination | Unit only (`session-liveness.test.ts` — liveness record, exit detection, pruning). Capacitor's native handler reloads the WebView; OS delivery on a real device is untested |
 
 ## Sustained route
 

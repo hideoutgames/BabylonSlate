@@ -25,8 +25,13 @@ import {
   setSceneRenderSettings,
   type RenderShadingSettings,
 } from "@babylonslate/render";
+import { createAppWebGpuEngine } from "@babylonslate/render";
 import { ClusteredSceneLights } from "@babylonslate/render/clustered-scene-lights";
 import { clusteredLightCapabilities } from "@babylonslate/render/clustered-light-capabilities";
+import {
+  readbackChannelOrder,
+  toRgbaPixels,
+} from "./readback-channels";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
@@ -38,17 +43,26 @@ export async function runClusteredLightProof() {
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, {
-    preserveDrawingBuffer: true,
-    stencil: true,
-  });
+  const backend = new URLSearchParams(location.search).get("backend");
+  const engine =
+    backend === "webgpu"
+      ? await createAppWebGpuEngine(canvas)
+      : new Engine(canvas, false, {
+          preserveDrawingBuffer: true,
+          stencil: true,
+        });
+  // FAST snapshot bundles replay without Light._bindLight; the proof mutates
+  // light membership every frame, so run WebGPU without snapshot caching.
+  if (engine.isWebGPU) engine.snapshotRendering = false;
   const captures = [];
   const ties = [];
   const lifecycle = [];
+  const channelOrder = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return Array.from(
+    return toRgbaPixels(
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+      channelOrder,
     );
   };
   try {

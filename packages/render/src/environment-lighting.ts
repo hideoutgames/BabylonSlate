@@ -132,7 +132,9 @@ class EnvironmentLighting {
         return;
       }
       if (lease.resource === this.source && this.view && !isDisposedGpuTexture(this.view)) lease.release();
-      else if (this.source && !lease.resource.isReady() && lease.ready) {
+      // Native upload readiness can precede the cache's byte admission. Retain
+      // the working environment until the complete owned preparation succeeds.
+      else if (this.source && lease.ready) {
         this.pendingLease = lease;
         void lease.ready.then(() => {
           if (this.pendingLease !== lease || this.disposed || this.scene.isDisposed) { lease.release(); return; }

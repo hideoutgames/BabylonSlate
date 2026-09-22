@@ -9,6 +9,7 @@ import type {
   Node,
 } from "@babylonjs/core";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer } from "./model-container";
@@ -25,6 +26,9 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
+import { ownedMaterialPreparation } from "./material-library";
+import { prewarmMaterial } from "./material-compiler";
+import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -84,7 +88,9 @@ const pendingModelLoads = new WeakMap<AbstractMesh, {
   key: string;
   promise: Promise<void>;
   isCurrent: () => boolean;
+  cancel: () => void;
 }>();
+const slotLoadCancellations = new WeakMap<ModelAnimLoadBinding, Map<number, () => void>>();
 const bundleOwnedGroups = new WeakSet<NamedSeekableGroup>();
 
 function cacheFor(scene: Scene): SceneGlbCache {
@@ -184,6 +190,7 @@ function bumpSlotAnimEpoch(
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): number {
+  slotLoadCancellations.get(binding)?.get(slotId)?.();
   if (!binding.slotAnimEpoch) binding.slotAnimEpoch = new Map();
   const next = (binding.slotAnimEpoch.get(slotId) ?? 0) + 1;
   binding.slotAnimEpoch.set(slotId, next);
@@ -412,6 +419,64 @@ function keepSourceName(sourceName: string): string {
   return sourceName;
 }
 
+/** Prepare only this unpublished instance's actual material/mesh variants. */
+async function prepareInstanceMaterials(
+  root: Mesh,
+  assertCurrent: () => void,
+  cancellation: Promise<never>,
+): Promise<void> {
+  let finished = false;
+  const check = () => {
+    if (finished) throw new Error("Model material preparation was cancelled");
+    assertCurrent();
+  };
+  const materialsOf = (material: Material): Material[] => material instanceof MultiMaterial
+    ? [...new Set(material.subMaterials.flatMap((child) => child ? materialsOf(child) : []))]
+    : [material];
+  try {
+    for (const mesh of root.getChildMeshes()) {
+      if (!(mesh instanceof Mesh) || !mesh.getTotalVertices()) continue;
+      for (;;) {
+        check();
+        const assigned = mesh.material ?? mesh.getScene().defaultMaterial;
+        const materials = materialsOf(assigned);
+        // Capture before awaiting: a later request cannot substitute its generation.
+        const preparations = materials.map(ownedMaterialPreparation);
+        for (const preparation of preparations) {
+          if (!preparation) continue;
+          // Texture leases own their longer admission deadline. The shader stall
+          // budget starts only after those preparations complete.
+          const diagnostics = await Promise.race([preparation, cancellation]);
+          check();
+          if (diagnostics.length) throw new Error(diagnostics.map((entry) => entry.message).join("; "));
+        }
+        const stillAssigned = () => {
+          const current = mesh.material ?? mesh.getScene().defaultMaterial;
+          if (current !== assigned) return false;
+          const leaves = materialsOf(current);
+          return leaves.length === materials.length && leaves.every((material, index) => material === materials[index]);
+        };
+        if (!stillAssigned()) continue;
+        const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS);
+        await deadline.race(Promise.race([(async () => {
+          for (const material of materials) {
+            check();
+            if (!mesh.getScene().materials.includes(material)) throw new Error(`Model material "${material.name}" was retired during preparation`);
+            deadline.advance(`material "${material.name}" for "${mesh.name}"`);
+            const hotSwap = material.allowShaderHotSwapping;
+            try {
+              if (material instanceof NodeMaterial) await prewarmMaterial(material, mesh);
+              else await material.forceCompilationAsync(mesh);
+              check();
+            } finally { material.allowShaderHotSwapping = hotSwap; }
+          }
+        })(), cancellation]));
+        if (stillAssigned()) break;
+      }
+    }
+  } finally { finished = true; }
+}
+
 type PreparedModelInstance = {
   bundle: VisualBundle;
   staging: Mesh;
@@ -528,11 +593,28 @@ export function beginSlotModelAnimLoad(
     void adopted.catch(() => {});
     return adopted;
   }
+  pending?.cancel();
   const epoch = bumpSlotAnimEpoch(binding, slotId);
+  let cancelled = false;
+  let rejectCancellation!: (error: Error) => void;
+  const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+  void cancellation.catch(() => {});
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    rejectCancellation(new Error("Model preparation was cancelled"));
+  };
+  const wait = <T>(work: Promise<T>): Promise<T> => Promise.race([work, cancellation]);
+  const cancellations = slotLoadCancellations.get(binding) ?? new Map<number, () => void>();
+  slotLoadCancellations.set(binding, cancellations);
+  cancellations.set(slotId, cancel);
+  const sceneDisposed = scene.onDisposeObservable.addOnce(cancel);
+  const placeholderDisposed = placeholder.onDisposeObservable.addOnce(cancel);
   const request = {
     key,
     promise: Promise.resolve(),
-    isCurrent: (): boolean => !scene.isDisposed && !placeholder.isDisposed() &&
+    cancel,
+    isCurrent: (): boolean => !cancelled && !scene.isDisposed && !placeholder.isDisposed() &&
       binding.slotAnimEpoch?.get(slotId) === epoch &&
       pendingModelLoads.get(placeholder) === request && ownsLoad?.() !== false,
   };
@@ -542,7 +624,7 @@ export function beginSlotModelAnimLoad(
     const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed);
     let published = false;
     try {
-      const container = await lease.load;
+      const container = await wait(lease.load);
       if (!request.isCurrent()) return;
       prepared = prepareModelInstance(placeholder, container, importScale);
       prepared.bundle.releaseWith(() => lease.release());
@@ -572,7 +654,7 @@ export function beginSlotModelAnimLoad(
           packedSlimProof(binding),
         );
         prepared.bundle.releaseWith(() => sourceLease.release());
-        const sourceContainer = await sourceLease.load;
+        const sourceContainer = await wait(sourceLease.load);
         if (!request.isCurrent()) return;
         const sourceGroup = sourceContainer.animationGroups.find(
           (group) => group.name === row.clipName,
@@ -588,7 +670,11 @@ export function beginSlotModelAnimLoad(
           }
         }
       }
-      await prepareInstance?.(prepared.staging);
+      await wait(Promise.resolve(prepareInstance?.(prepared.staging)));
+      if (!request.isCurrent()) return;
+      await wait(prepareInstanceMaterials(prepared.staging, () => {
+        if (!request.isCurrent()) throw new Error("Model preparation was cancelled");
+      }, cancellation));
       if (!request.isCurrent()) return;
       const previousInstance = meta[MODEL_INSTANCE_KEY];
       const previousGroups = new Set(previousInstance?.groups ?? []);
@@ -637,6 +723,9 @@ export function beginSlotModelAnimLoad(
   void load.catch(() => {});
   if (!binding.slotAnimLoads) binding.slotAnimLoads = new Map();
   const chained = load.finally(() => {
+    scene.onDisposeObservable.remove(sceneDisposed);
+    placeholder.onDisposeObservable.remove(placeholderDisposed);
+    if (cancellations.get(slotId) === cancel) cancellations.delete(slotId);
     if (pendingModelLoads.get(placeholder) === request) pendingModelLoads.delete(placeholder);
   });
   request.promise = chained;
@@ -645,6 +734,33 @@ export function beginSlotModelAnimLoad(
   // promise to success: a later readiness wait must still reject.
   void chained.catch(() => {});
   return chained;
+}
+
+/** Publish already prepared multipart model animations with the whole visual.
+ * Parts prepare against isolated animation maps; the live slot changes only here. */
+export function publishModelHierarchyAnimations(
+  scene: Scene,
+  binding: ModelAnimLoadBinding,
+  slotId: number,
+  root: AbstractMesh,
+): void {
+  const instances = [root, ...root.getChildMeshes()].flatMap((mesh) => {
+    const instance = (mesh.metadata as ModelPlaceholderMeta | null)?.[MODEL_INSTANCE_KEY];
+    return instance ? [instance] : [];
+  });
+  const groups = instances.flatMap((instance) => instance.groups);
+  binding.slotAnimationGroups ??= new Map();
+  binding.slotAnimationGroups.set(slotId, groups);
+  for (const instance of instances) {
+    instance.bundle.releaseWith(() => {
+      const current = binding.slotAnimationGroups?.get(slotId);
+      if (!current) return;
+      const remaining = current.filter((group) => !instance.groups.includes(group));
+      if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
+      else binding.slotAnimationGroups!.delete(slotId);
+    });
+  }
+  replayPendingAnimState(scene, binding, slotId);
 }
 
 /** True when name-match retarget keeps at least one channel. */

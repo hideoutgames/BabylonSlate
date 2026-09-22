@@ -1,4 +1,5 @@
 import { registerClusteredSurfaceMaterial } from "./clustered-material-policy";
+import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
   BonesBlock,
@@ -45,7 +46,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
-import { materialNodeDefinition } from "@babylonslate/shader-graph";
+import { componentCount, materialNodeDefinition } from "@babylonslate/shader-graph";
 import { materialGlslDiagnostic } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -206,6 +207,7 @@ export function compileMaterialPlan(
       ? ShaderLanguage.WGSL
       : ShaderLanguage.GLSL,
   });
+  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
@@ -276,6 +278,7 @@ export function compileMaterialPlan(
     return block.output;
   };
 
+  const convertedPoints = new Map<string, NodeMaterialConnectionPoint>();
   const pointForOperand = (
     operand: MaterialOperand,
     name: string,
@@ -286,7 +289,31 @@ export function compileMaterialPlan(
     }
     const producer = realized.get(operand.operationId);
     if (!producer) return null;
-    return producer.outputs[operand.pinId] ?? null;
+    let point = producer.outputs[operand.pinId];
+    if (!point) return null;
+    if (!operand.conversions?.length) return point;
+    const key = JSON.stringify([operand.operationId, operand.pinId, operand.conversions]);
+    const cached = convertedPoints.get(key);
+    if (cached) return cached;
+    for (const [index, conversion] of operand.conversions.entries()) {
+      const blockName = operationBlockName(`${name}_resize${index}`);
+      if (componentCount(conversion.from) < componentCount(conversion.to)) {
+        const merge = new VectorMergerBlock(blockName);
+        created.push(merge);
+        point.connectTo(conversion.from === "float" ? merge.x : conversion.from === "vec2" ? merge.xyIn : merge.xyzIn);
+        if (conversion.to === "vec4") {
+          constantPoint("float", [1], `${blockName}_w`, false).connectTo(merge.w);
+        }
+        point = conversion.to === "vec2" ? merge.xyOut : conversion.to === "vec3" ? merge.xyzOut : merge.xyzw;
+      } else {
+        const split = new VectorSplitterBlock(blockName);
+        created.push(split);
+        point.connectTo(conversion.from === "vec2" ? split.xyIn : conversion.from === "vec3" ? split.xyzIn : split.xyzw);
+        point = conversion.to === "float" ? split.x : conversion.to === "vec2" ? split.xyOut : split.xyzOut;
+      }
+    }
+    convertedPoints.set(key, point);
+    return point;
   };
 
   const realizeOperation = (operation: MaterialOperation): boolean => {
@@ -404,13 +431,13 @@ export function compileMaterialPlan(
     for (const [pinId, operand] of Object.entries(operation.inputs)) {
       const target = realization.inputs[pinId];
       if (!target) continue;
-      const point = pointForOperand(
-        operand,
-        operationBlockName(`${operation.id}_${pinId}`),
-        colored.has(pinId),
-      );
-      if (!point) continue;
       try {
+        const point = pointForOperand(
+          operand,
+          operationBlockName(`${operation.id}_${pinId}`),
+          colored.has(pinId),
+        );
+        if (!point) continue;
         point.connectTo(target);
         if (pinId === "texture" && (operation.nodeType === "texture.sample" || operation.nodeType === "texture.sampleLod")) {
           realization.outputs.textureOut = point;

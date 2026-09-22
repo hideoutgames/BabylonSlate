@@ -8,11 +8,13 @@ export type {
   Vec3,
   Quat,
   PhysicsTransform,
+  TeleportOptions,
   ColliderShape,
   ColliderShape3D,
   ColliderShape2D,
   RigidBodyDesc,
   ColliderDesc,
+  ColliderChanges,
   HitResult,
   LineTraceOptions,
   OverlapResult,
@@ -49,6 +51,7 @@ export {
 } from "./component-props";
 export {
   bakeColliderLocal,
+  colliderLocalPose,
   scaleColliderShape,
   rotateQuatVec,
   multiplyQuat,
@@ -63,3 +66,5 @@ export {
   type PhysicsActorLike,
   type PhysicsPairingWarning,
 } from "./pairing";
+
+export { prepareColliderShape } from "./collider-validation";

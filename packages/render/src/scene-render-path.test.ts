@@ -45,6 +45,7 @@ function fixture(engine = new NullEngine()) {
   });
   vi.spyOn(capabilities, "clusteredLightCapabilities").mockReturnValue({
     supported: true,
+    backend: "webgl2",
     batchSize: 23,
     maxTextureSize: 4096,
   });
@@ -182,6 +183,7 @@ describe("scene render path selection", () => {
     expect(scene.lights).toEqual(lights);
     vi.mocked(capabilities.clusteredLightCapabilities).mockReturnValue({
       supported: true,
+      backend: "webgl2",
       batchSize: 23,
       maxTextureSize: 4096,
     });

@@ -96,7 +96,7 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     backend.dispose();
   });
 
-  it("createCollider attaches a PhysicsBody via PhysicsAggregate", async () => {
+  it("createCollider attaches a collider to its explicitly owned PhysicsBody", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",
       gravity: { x: 0, y: -9.81, z: 0 },

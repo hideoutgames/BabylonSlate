@@ -12,7 +12,7 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: Number(process.env.BL_TEST_RETRIES ?? 0),
   // One browser worker per admitted run keeps local memory and CPU use bounded.
   workers: Number(process.env.BL_TEST_BROWSER_WORKERS ?? 1),
   reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],

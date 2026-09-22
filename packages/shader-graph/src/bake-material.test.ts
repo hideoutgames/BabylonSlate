@@ -13,6 +13,35 @@ function material() {
 }
 
 describe("bake diffuse material closure", () => {
+  it.each([
+    ["const.float", [0.2], [0.2, 0, 0]],
+    ["const.vec2", [0.2, 0.4], [0.2, 0.4, 0]],
+    ["const.vec4", [0.2, 0.4, 0.6, 0], [0.2, 0.4, 0.6]],
+  ] as const)("bakes %s into RGB using numeric input conversion", (type, value, expected) => {
+    const doc = material();
+    doc.nodes[0]!.type = type;
+    doc.nodes[0]!.properties.value = [...value];
+    doc.edges.push({ id: "emission", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" });
+    const closure = resolveBakeDiffuseClosure(doc);
+    expect(closure.albedo).toEqual(expected);
+    expect(closure.emission).toEqual(expected);
+  });
+
+  it("does not recover discarded channels when a function widens its input", () => {
+    const doc = material();
+    doc.nodes[0]!.type = "const.vec4";
+    doc.nodes[0]!.properties.value = [0.2, 0.4, 0.6, 0.8];
+    const fn = createDefaultMaterialFunctionDocument();
+    fn.inputs[0] = { ...fn.inputs[0]!, type: "vec2", defaultValue: [0, 0] };
+    fn.outputs[0]!.type = "vec4";
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "resize" } });
+    doc.edges = [
+      { id: "in", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" },
+      { id: "out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    expect(resolveBakeDiffuseClosure(doc, { functions: { resize: fn } }).albedo).toEqual([0.2, 0.4, 0]);
+  });
+
   it("uses constant authored albedo once and includes resolved function content in provenance", () => {
     const doc = material();
     const fn = createDefaultMaterialFunctionDocument();

@@ -130,6 +130,10 @@ export class ClusteredLightOrder {
       native._sliceRanges[slice] = low;
       native._sliceRanges[slice + 1] = high;
     }
+    // Mirror Babylon's WebGPU _updateLightData contract: flush pending
+    // framebuffer work before overwriting texture data earlier passes read.
+    const engine = this.container.getScene().getEngine();
+    if (engine.isWebGPU) engine.flushFramebuffer();
     native._lightDataBuffer.set(this.scratch);
     native._lightDataTexture.update(native._lightDataBuffer);
   }

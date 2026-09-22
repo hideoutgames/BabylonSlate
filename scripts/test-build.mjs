@@ -5,6 +5,8 @@ import { repoRoot } from "./process-runner.mjs";
 import { buildInputState } from "./source-state.mjs";
 import { runPnpm, runStage } from "./test-runner.mjs";
 import { readLocalResourceConfig } from "./local-resource-config.mjs";
+import { hostedExecution } from "./execution-location.mjs";
+import { workerArguments } from "./worker-arguments.mjs";
 import {
   buildEnvironmentFingerprint,
   findLocalArtifact,
@@ -71,7 +73,7 @@ async function assertUnchanged(expected, environment, message) {
 }
 
 async function sharedCache(environment) {
-  if (environment.CI === "true") return null;
+  if (hostedExecution(environment)) return null;
   return (await readLocalResourceConfig(environment)).cacheDirectory;
 }
 
@@ -178,7 +180,7 @@ export async function buildOwnedArtifact() {
     return;
   }
   // CI static already typechecked both apps; local standalone builds include typechecks.
-  if (process.env.CI === "true" && process.env.BL_TEST_TYPECHECKED === "1") {
+  if (hostedExecution() && process.env.BL_TEST_TYPECHECKED === "1") {
     await runPnpm("build", ["--filter", "player", "exec", "vite", "build"]);
     await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"]);
   } else await runPnpm("build", ["--filter", "editor", "build"]);
@@ -219,10 +221,10 @@ export async function runBrowserTests(args, options = {}) {
   return runStage(
     "browser",
     process.execPath,
-    [
+    (plan) => [
       join(repoRoot, "scripts", "browser-session.mjs"),
       artifact.directory,
-      ...args,
+      ...workerArguments(args, plan, "browser"),
     ],
     options,
   );

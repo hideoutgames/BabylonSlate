@@ -105,7 +105,7 @@ export function runCommand(command, args, options = {}) {
       options.signal?.removeEventListener("abort", terminate);
       reject(error);
     });
-    child.once("close", async (code) => {
+    child.once("close", async (code, signal) => {
       await registration;
       if (cleanup) await cleanup;
       if (killTimer) {
@@ -124,6 +124,8 @@ export function runCommand(command, args, options = {}) {
       }
       resolve({
         code: stopped ? 130 : (code ?? 1),
+        nativeExitCode: code,
+        signal: signal ?? null,
         output,
         elapsedMs: Date.now() - started,
       });

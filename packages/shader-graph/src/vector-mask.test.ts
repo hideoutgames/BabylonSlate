@@ -15,7 +15,13 @@ describe("VectorMask", () => {
     const node = hydrateMaterialGraphForEditor(materialGraphToSerialized(doc)).nodes.find((node) => node.id === "mask")!;
     expect(node.data.title).toBe(`VectorMask(${suffix})`);
   });
-  it.each([["const.vec2", { r: false, b: true, a: true }], ["const.vec3", { a: true }], ["const.float", {}], ["const.vec4", { r: false }]] as const)("rejects missing channels or an empty mask: %s %j", (type, properties) => {
-    expect(validateMaterialDocument(graph(type, properties))).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.vectorMask", nodeId: "mask" })]));
+  it.each(["const.float", "const.vec2", "const.vec3"])("accepts padded channels from %s", (type) => {
+    const doc = graph(type, { r: false, b: true, a: true });
+    expect(validateMaterialDocument(doc)).toEqual([]);
+    expect(createTypeResolver(doc).inputType("mask", "value")).toBe("vec4");
+    expect(createTypeResolver(doc).outputType("mask", "out")).toBe("vec2");
+  });
+  it("rejects an empty mask", () => {
+    expect(validateMaterialDocument(graph("const.vec4", { r: false }))).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.vectorMask", nodeId: "mask" })]));
   });
 });
