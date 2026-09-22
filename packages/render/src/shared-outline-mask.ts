@@ -17,7 +17,11 @@ export class SharedOutlineMaskRenderer {
   private readonly programs = new Map<SubMesh, MaskProgram>();
   private readonly retirements: OwnedEffectRetirement[] = [];
   private disposed = false;
-  constructor(private readonly renderer: ObjectRenderer, private readonly view: SharedOutlineView, private readonly group: SharedOutlineGroup) {
+  private readonly renderer: ObjectRenderer;
+  private readonly view: SharedOutlineView;
+  private readonly group: SharedOutlineGroup;
+  constructor(renderer: ObjectRenderer, view: SharedOutlineView, group: SharedOutlineGroup) {
+    this.renderer = renderer; this.view = view; this.group = group;
     renderer.customIsReadyFunction = (mesh) => {
       if (this.disposed || mesh.isDisposed()) return false;
       // The renderer performs LOD selection after this callback. Check both the

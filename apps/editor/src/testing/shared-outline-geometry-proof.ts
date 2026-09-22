@@ -260,7 +260,7 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     const lowered = lowerMaterialDocument(doc);
     if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
     const compiled = compileMaterialPlan(lowered.plan, { scene, name: "Authored Coverage" });
-    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    if (compiled.ok === false) throw new Error(JSON.stringify(compiled.diagnostics));
     disposeAuthored = () => compiled.dispose();
     const diagnostics = await compiled.ready;
     if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));

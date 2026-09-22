@@ -40,8 +40,11 @@ export class SceneOutlineHost {
   private settingsKey = "";
   private disposed = false;
   private readonly detach: () => void;
+  private readonly scene: Scene;
+  private readonly invalidate: () => void;
 
-  constructor(private readonly scene: Scene, renderer: SceneRenderCoordinator, private readonly invalidate: () => void) {
+  constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
+    this.scene = scene; this.invalidate = invalidate;
     this.view = SharedOutlineOwner.forScene(scene).createView("authored-world");
     this.detach = renderer.attachSharedOutline(this.view);
     this.selection = {

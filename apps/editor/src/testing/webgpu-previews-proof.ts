@@ -8,6 +8,7 @@ import {
   Mesh,
   Vector3,
   type AbstractEngine,
+  type AbstractMesh,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -103,7 +104,7 @@ function pixelsDiffer(a: number[] | null, b: number[] | null): boolean {
   return a.some((value, index) => Math.abs(value - b[index]!) > PIXEL_TOLERANCE);
 }
 
-function meshSnapshot(mesh: Mesh, scene: Scene): TrackedMeshSnapshot {
+function meshSnapshot(mesh: AbstractMesh, scene: Scene): TrackedMeshSnapshot {
   const material = mesh.material;
   let inFrustum = false;
   try {
@@ -133,7 +134,7 @@ function meshSnapshot(mesh: Mesh, scene: Scene): TrackedMeshSnapshot {
 }
 
 function projectedCenter(
-  mesh: Mesh,
+  mesh: AbstractMesh,
   scene: Scene,
   canvas: HTMLCanvasElement,
 ): { x: number; y: number } | null {
