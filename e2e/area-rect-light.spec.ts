@@ -21,6 +21,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     const withoutImage = ({ image, ...capture }: typeof report.results[number]["captures"][number]) => { void image; return capture; };
     await testInfo.attach("area-light-qualification", { body: JSON.stringify({ ...report, results: report.results.map((result) => ({ ...result, captures: result.captures.map(withoutImage), transforms: result.transforms.map(withoutImage) })), errors, externalRequests, evidence: renderingEvidence("apps/editor/src/testing/area-rect-light-proof.ts") }), contentType: "application/json" });
+    expect(report.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
     expect(report.emission.meanError, "worker/native emission pixels").toBeLessThan(1);

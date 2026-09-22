@@ -1,0 +1,212 @@
+{
+  "evidence": {
+    "kind": "desktop-functional-only",
+    "recordedAt": "2026-09-22T14:13:53.922Z",
+    "buildRevision": "cb5fba6e30d7e3beea1d508da4dc76e8f1d43399",
+    "artifactSha256": "0dd2f018a2063099462dbda14d00dc7458fd0c135d38f84191c1445b4c453185",
+    "sceneSource": "e2e/area-light-export.spec.ts",
+    "sceneSourceSha256": "a2e716c6a63ed277b0b6642bbc45dbe209bed6fec09c3cb2bfdea700e7c4419a",
+    "host": {
+      "os": "win32",
+      "osVersion": "10.0.19045",
+      "arch": "x64",
+      "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+    },
+    "graphicsArguments": [
+      "--enable-unsafe-webgpu",
+      "--use-angle=d3d11-warp",
+      "--use-webgpu-adapter=swiftshader"
+    ],
+    "a16Acceptance": "deferred-by-user-unmeasured"
+  },
+  "backend": "webgl2",
+  "textured": {
+    "cpuMs": 3.469999998807907,
+    "pipeline": {
+      "requested": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "effective": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "limits": []
+    },
+    "clusteredLights": 0,
+    "readbackMs": null,
+    "shadowDrawCalls": 0,
+    "shadowTriangles": 0,
+    "gpuMs": 1.62528,
+    "gpuStatus": "available",
+    "pressure": {
+      "presentationMs": null,
+      "cpuMs": 3.469999998807907,
+      "gpuMs": 0
+    },
+    "gpuAttribution": "view",
+    "width": 1280,
+    "height": 720,
+    "scalingLevel": 1,
+    "samples": 1,
+    "shadowPasses": 0,
+    "shadowMapBytes": 0,
+    "shadowLights": [],
+    "qualityLimits": [],
+    "adapter": {
+      "api": "webgl2",
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+    },
+    "drawCalls": 3,
+    "resources": {
+      "meshes": 3,
+      "materials": 5,
+      "textures": 5,
+      "cachedTextures": 14
+    },
+    "gpuReservations": {
+      "limit": 536870912,
+      "shadowBytes": 0,
+      "categoryBytes": {
+        "cluster": 0,
+        "sceneColor": 0,
+        "geometry": 0,
+        "depth": 11059200,
+        "postprocess": 11059968,
+        "areaLight": 5657940
+      },
+      "sharedBytes": 0,
+      "resourceBytes": 27777108,
+      "pendingBytes": 0,
+      "reservedBytes": 27777108
+    }
+  },
+  "uniform": {
+    "cpuMs": 1.135000005364418,
+    "pipeline": {
+      "requested": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "effective": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "limits": []
+    },
+    "clusteredLights": 0,
+    "readbackMs": null,
+    "shadowDrawCalls": 0,
+    "shadowTriangles": 0,
+    "gpuMs": 2.482464,
+    "gpuStatus": "available",
+    "pressure": {
+      "presentationMs": null,
+      "cpuMs": 1.135000005364418,
+      "gpuMs": 0
+    },
+    "gpuAttribution": "view",
+    "width": 1280,
+    "height": 720,
+    "scalingLevel": 1,
+    "samples": 1,
+    "shadowPasses": 0,
+    "shadowMapBytes": 0,
+    "shadowLights": [],
+    "qualityLimits": [],
+    "adapter": {
+      "api": "webgl2",
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+    },
+    "drawCalls": 3,
+    "resources": {
+      "meshes": 3,
+      "materials": 5,
+      "textures": 5,
+      "cachedTextures": 13
+    },
+    "gpuReservations": {
+      "limit": 536870912,
+      "shadowBytes": 0,
+      "categoryBytes": {
+        "cluster": 0,
+        "sceneColor": 0,
+        "geometry": 0,
+        "depth": 11059200,
+        "postprocess": 11059968,
+        "areaLight": 65536
+      },
+      "sharedBytes": 0,
+      "resourceBytes": 22184704,
+      "pendingBytes": 0,
+      "reservedBytes": 22184704
+    }
+  },
+  "off": {
+    "cpuMs": 1.5799999982118607,
+    "pipeline": {
+      "requested": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "effective": {
+        "renderPath": "forward",
+        "gpuBackend": "webgl2"
+      },
+      "limits": []
+    },
+    "clusteredLights": 0,
+    "readbackMs": null,
+    "shadowDrawCalls": 0,
+    "shadowTriangles": 0,
+    "gpuMs": 2.286112,
+    "gpuStatus": "available",
+    "pressure": {
+      "presentationMs": null,
+      "cpuMs": 1.5799999982118607,
+      "gpuMs": 0.000032
+    },
+    "gpuAttribution": "view",
+    "width": 1280,
+    "height": 720,
+    "scalingLevel": 1,
+    "samples": 1,
+    "shadowPasses": 0,
+    "shadowMapBytes": 0,
+    "shadowLights": [],
+    "qualityLimits": [],
+    "adapter": {
+      "api": "webgl2",
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+    },
+    "drawCalls": 3,
+    "resources": {
+      "meshes": 3,
+      "materials": 5,
+      "textures": 5,
+      "cachedTextures": 13
+    },
+    "gpuReservations": {
+      "limit": 536870912,
+      "shadowBytes": 0,
+      "categoryBytes": {
+        "cluster": 0,
+        "sceneColor": 0,
+        "geometry": 0,
+        "depth": 11059200,
+        "postprocess": 11059968,
+        "areaLight": 65536
+      },
+      "sharedBytes": 0,
+      "resourceBytes": 22184704,
+      "pendingBytes": 0,
+      "reservedBytes": 22184704
+    }
+  }
+}

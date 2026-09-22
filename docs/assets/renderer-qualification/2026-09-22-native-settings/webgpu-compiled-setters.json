@@ -1,0 +1,264 @@
+{
+  "rendering": {
+    "cpuMs": 1.1950000077486038,
+    "pipeline": {
+      "requested": {
+        "renderPath": "forward",
+        "gpuBackend": "webgpu"
+      },
+      "effective": {
+        "renderPath": "forward",
+        "gpuBackend": "webgpu"
+      },
+      "limits": []
+    },
+    "clusteredLights": 0,
+    "readbackMs": null,
+    "shadowDrawCalls": 0,
+    "shadowTriangles": 0,
+    "gpuMs": null,
+    "gpuStatus": "unsupported",
+    "pressure": {
+      "presentationMs": null,
+      "cpuMs": 1.1950000077486038,
+      "gpuMs": null
+    },
+    "gpuAttribution": "unavailable",
+    "width": 300,
+    "height": 180,
+    "scalingLevel": 1.3333333333333333,
+    "samples": 1,
+    "shadowPasses": 0,
+    "shadowMapBytes": 0,
+    "shadowLights": [],
+    "qualityLimits": [],
+    "adapter": {
+      "api": "webgpu",
+      "vendor": "nvidia",
+      "renderer": "turing",
+      "version": "unknown version"
+    },
+    "drawCalls": 9,
+    "resources": {
+      "meshes": 4,
+      "materials": 5,
+      "textures": 5,
+      "cachedTextures": 12
+    },
+    "gpuReservations": {
+      "limit": 536870912,
+      "shadowBytes": 0,
+      "categoryBytes": {
+        "cluster": 0,
+        "sceneColor": 0,
+        "geometry": 0,
+        "depth": 648000,
+        "postprocess": 648768,
+        "areaLight": 0
+      },
+      "sharedBytes": 0,
+      "resourceBytes": 1296768,
+      "pendingBytes": 0,
+      "reservedBytes": 1296768
+    }
+  },
+  "visuals": [
+    {
+      "slotId": 0,
+      "name": "actor-0",
+      "visible": true,
+      "position": [
+        4,
+        -1,
+        3
+      ],
+      "worldMatrixPosition": [
+        4,
+        -1,
+        3
+      ],
+      "materialName": null
+    },
+    {
+      "slotId": 1,
+      "name": "actor-1",
+      "visible": true,
+      "position": [
+        -1,
+        1,
+        0
+      ],
+      "worldMatrixPosition": [
+        -1,
+        1,
+        0
+      ],
+      "materialName": null
+    },
+    {
+      "slotId": 2,
+      "name": "actor-2",
+      "visible": true,
+      "position": [
+        -3,
+        1,
+        0
+      ],
+      "worldMatrixPosition": [
+        -3,
+        1,
+        0
+      ],
+      "materialName": null
+    },
+    {
+      "slotId": 3,
+      "name": "actor-3",
+      "visible": false,
+      "position": [
+        0.3500000000000001,
+        1,
+        0.19999999999999996
+      ],
+      "worldMatrixPosition": [
+        0.3500000000000001,
+        1,
+        0.19999999999999996
+      ],
+      "materialName": null
+    }
+  ],
+  "tasks": [
+    "Forward admitted shadows",
+    "Clustered light mask",
+    "Forward clear",
+    "Forward cull",
+    "Forward objects",
+    "Scene Effects Display Color",
+    "Shared outlines",
+    "Scene post-process output"
+  ],
+  "scalability": {
+    "revision": 25,
+    "status": "applied",
+    "message": "Rendering settings presented.",
+    "pipeline": {
+      "requested": {
+        "renderPath": "forward",
+        "gpuBackend": "webgpu"
+      },
+      "effective": {
+        "renderPath": "forward",
+        "gpuBackend": "webgpu"
+      },
+      "limits": []
+    },
+    "effective": {
+      "frameCap": 24,
+      "render": {
+        "renderPath": "forward",
+        "gpuBackend": "webgpu",
+        "mode": "cel",
+        "cel": {
+          "shadowBands": 6,
+          "shadowThreshold": 0.4,
+          "shadowStrength": 0.7,
+          "specularEnabled": false,
+          "specularStrength": 0.1,
+          "specularSize": 0.3,
+          "lightColorInfluence": 0.8,
+          "lightMixing": "additive",
+          "outlinesEnabled": true,
+          "outlineColor": [
+            0.1875,
+            0.75,
+            0.375
+          ],
+          "outlineWidth": 4
+        },
+        "environmentLighting": {
+          "enabled": false,
+          "intensity": 0.3,
+          "rotationYDegrees": 23,
+          "celStrength": 0.5
+        },
+        "effects": {
+          "colorPipeline": {
+            "version": 1,
+            "mode": "legacyDisplay"
+          },
+          "toneMapping": "none",
+          "exposure": 1.5,
+          "contrast": 1.2,
+          "vignette": {
+            "enabled": true,
+            "weight": 1.1,
+            "color": [
+              0.2,
+              0.1,
+              0.3
+            ]
+          },
+          "bloom": {
+            "enabled": false,
+            "threshold": 0.9,
+            "weight": 0.15,
+            "kernel": 64,
+            "scale": 0.5
+          },
+          "fxaa": false
+        },
+        "shadows": {
+          "profile": "ultra",
+          "enabled": false,
+          "fadeFraction": 0.2,
+          "filter": "pcf",
+          "softness": 0.08,
+          "autoBias": false,
+          "depthBias": 0.002,
+          "normalBias": 0.01,
+          "localLightMode": "manual",
+          "distance": 80,
+          "mapSize": 512,
+          "cascades": 1,
+          "filterQuality": "low",
+          "localMapSize": 256,
+          "maxLocalLights": 1,
+          "preset": "custom"
+        },
+        "quality": {
+          "resolution": {
+            "profile": "ultra",
+            "preset": "custom",
+            "scale": 0.75,
+            "dynamic": false,
+            "minScale": 0.75,
+            "targetFps": 30
+          },
+          "textures": {
+            "profile": "ultra",
+            "preset": "custom",
+            "lodBias": 1,
+            "anisotropy": 2,
+            "byteBudget": 134217728
+          },
+          "postprocessing": {
+            "profile": "ultra",
+            "preset": "custom",
+            "resolutionScale": 0.5
+          },
+          "lighting": {
+            "profile": "ultra",
+            "preset": "custom",
+            "localLightMode": "manual",
+            "maxLocalLights": 3
+          }
+        },
+        "customResolution": true,
+        "width": 400,
+        "height": 240,
+        "blackBars": true
+      }
+    }
+  }
+}

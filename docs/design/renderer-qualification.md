@@ -213,6 +213,26 @@ The local native-GPU route now also admits explicit settings, Scalability,
 area-light export/receiver and shadow fixture files. Their default and CI paths
 continue using the software-adapter arguments; native results are pending.
 
+At `cb5fba6e`, nine selected native-GPU cases passed: both prepared-emission
+exports, both PBR/CEL native/graph receiver cases, packed WebGL2 settings, loose
+WebGPU settings, injected adapter-failure fallback, and both compiled Scalability
+Play cases. Two separately selected shadow cases also passed: WebGL2 backbuffer
+and WebGPU texture output. The build passed editor/player TypeScript checks.
+[Export WebGL2](../assets/renderer-qualification/2026-09-22-native-settings/webgl2-standalone-final-diagnostics.json),
+[export WebGPU](../assets/renderer-qualification/2026-09-22-native-settings/webgpu-standalone-final-diagnostics.json),
+[fallback](../assets/renderer-qualification/2026-09-22-native-settings/fallback-standalone-final-diagnostics.json),
+[Play WebGL2](../assets/renderer-qualification/2026-09-22-native-settings/webgl2-play-compiled-scalability.json),
+[Play WebGPU](../assets/renderer-qualification/2026-09-22-native-settings/webgpu-play-compiled-scalability.json),
+[emission WebGL2](../assets/renderer-qualification/2026-09-22-native-settings/webgl2-standalone-area-evidence.json),
+[emission WebGPU](../assets/renderer-qualification/2026-09-22-native-settings/webgpu-standalone-area-evidence.json),
+[shadow WebGL2](../assets/renderer-qualification/2026-09-22-native-settings/webgl2-shadows.json),
+[shadow WebGPU](../assets/renderer-qualification/2026-09-22-native-settings/webgpu-shadows.json).
+The receiver fixture now records its own adapter and effective backend; the export
+fixture now checks independently served attribution/license assets. Only those
+four changed cases require a repeat. The settings/graph/shadow results remain
+valid for their unchanged production code and fixtures. Computer Use B/C and
+ordinary editor interaction cost remain outstanding.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

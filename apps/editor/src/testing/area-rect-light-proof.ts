@@ -159,7 +159,7 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
         }
       } finally { coordinator.dispose(); scene.dispose(); }
     }
-    return { backend, width, height, results, emission: emission.report, minifiedEmission: minified.report, oddEmission: odd.report, userAgent: navigator.userAgent, dpr: devicePixelRatio };
+    return { backend, effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2", adapter: engine.getInfo(), viewport: { width: innerWidth, height: innerHeight }, width, height, results, emission: emission.report, minifiedEmission: minified.report, oddEmission: odd.report, userAgent: navigator.userAgent, dpr: devicePixelRatio };
     } finally { emission.native.dispose(); }
   } finally { engine.dispose(); canvas.remove(); }
 }

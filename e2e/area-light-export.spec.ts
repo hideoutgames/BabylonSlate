@@ -12,7 +12,7 @@ import { renderingEvidence } from "./rendering-evidence";
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`prepared rectangular emission survives standalone export and scene lifecycle on ${backend}`, async ({ page, baseURL }, testInfo) => {
+  test(`prepared rectangular emission survives standalone export and scene lifecycle on ${backend}`, async ({ page, baseURL, request }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [], external: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -49,6 +49,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect([...exported.value.files.keys()].some((path) => path.includes("area-emission-worker"))).toBe(false);
     const server = await serveExportFiles(exported.value.files, { honorRange: true });
     try {
+      // Legal assets must ship in both formats and be served without editor caches.
+      for (const [path, text] of [
+        ["legal/BabylonJS-Area-Lights-Attribution.txt", "Copyright BabylonJS contributors"],
+        ["legal/BabylonJS-Area-Lights-CC-BY-4.0.txt", "Attribution 4.0 International"],
+      ]) {
+        const response = await request.get(new URL(path!, server.url).href);
+        expect(response.ok(), path).toBe(true);
+        expect(await response.text()).toContain(text);
+      }
       await page.goto(server.url);
       const root = page.getByTestId("player-root");
       await expect(root).toHaveAttribute("data-effective-backend", backend);
