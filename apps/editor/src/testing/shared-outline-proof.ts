@@ -2,7 +2,7 @@
 import { Camera, Color3, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
-import { managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
+import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 
 export interface SharedOutlineProofProgress {
   stage: string;
@@ -116,7 +116,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
       renderers: scene.objectRenderers.map(objectId),
       textures: engine.getLoadedTexturesCache().map(objectId).sort((a, b) => a - b),
       objectRenderers: scene.objectRenderers.length,
-      reservations: managedLightingReservations(engine),
+      reservations: managedRenderReservations(engine),
       owner: owner.diagnostics(), view: view.diagnostics(),
     };
     snapshots.push(snapshot);
@@ -131,7 +131,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
   };
   const retireWithoutDrawing = async () => {
     await onProgress?.({ stage: "unpresented-retirement", state: "preparing" });
-    const before = managedLightingReservations(engine);
+    const before = managedRenderReservations(engine);
     const unpresentedScene = new Scene(engine);
     const unpresentedCamera = new FreeCamera("Unpresented Camera", new Vector3(0, 0, -4), unpresentedScene);
     unpresentedCamera.setTarget(Vector3.Zero());
@@ -148,7 +148,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
         color: [0, 1, 0], width: 2, throughMeshes: true,
       });
       const prepared = await unpresentedRenderer.prepare();
-      const allocated = managedLightingReservations(engine);
+      const allocated = managedRenderReservations(engine);
       await onProgress?.({ stage: "unpresented-retirement", state: "retiring", data: { before, allocated, preparedPath: prepared.path } });
       unpresentedDetach();
       unpresentedView.dispose();
@@ -164,7 +164,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
         deadline = window.setTimeout(() => reject(new Error("Prepared but unpresented outline resources did not retire.")), 5_000);
       })]);
       return { preparedPath: prepared.path, before, allocated,
-        after: managedLightingReservations(engine), retainedRenderers: unpresentedScene.objectRenderers.length };
+        after: managedRenderReservations(engine), retainedRenderers: unpresentedScene.objectRenderers.length };
     } finally {
       window.clearTimeout(deadline);
       unpresentedDetach(); unpresentedView.dispose(); unpresentedRenderer.dispose(); unpresentedScene.dispose();
