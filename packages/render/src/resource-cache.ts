@@ -830,7 +830,8 @@ export type TextureResources = Pick<ResourceCache, keyof ResourceCache>;
 export class ResourceCacheOwner implements TextureResources {
   private readonly leases = new Set<ResourceLease<unknown>>();
   private disposed = false;
-  constructor(private readonly inner: ResourceCache) {}
+  private readonly inner: ResourceCache;
+  constructor(inner: ResourceCache) { this.inner = inner; }
   private own<T>(lease: ResourceLease<T>): ResourceLease<T> {
     if (this.disposed) { lease.release(); throw new Error("Texture owner is retired"); }
     const owned = { resource: lease.resource, key: lease.key, ready: lease.ready, release: () => {

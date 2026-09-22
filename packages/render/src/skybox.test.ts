@@ -1,5 +1,6 @@
 import {
   Mesh,
+  SphericalPolynomial,
   PBRMaterial,
   Texture,
   UniversalCamera,
@@ -174,6 +175,7 @@ describe("editor skybox mesh", () => {
     vi.spyOn(engine, "createCubeTexture").mockImplementation((url, _scene, _files, noMipmap) => {
       const internal = engine.createTexture(url, noMipmap ?? false, false, null);
       internal.isCube = true;
+      internal._sphericalPolynomial = new SphericalPolynomial();
       return internal;
     });
     const sync = new EditorSceneSync(scene);
