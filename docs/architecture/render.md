@@ -278,11 +278,15 @@ Per-Scene GLB containers (`glb-anim.ts`) account GPU vertex+index bytes (`accoun
 
 An authored sprite Material temporarily overrides the retained automatic sprite material; it does not retire that construction material or its exact texture lease. Clearing the assignment restores the automatic material immediately, including static sprites. Animation requests resume its binding after the clear. A pending texture completion can update the retained automatic material but cannot replace a newer authored assignment. Mesh retirement disposes its owned material and releases its lease without disposing the borrowed authored Material.
 
+Material generation publication and texture parameter replacement/reset wait for the owned texture lease's complete preparation, including delayed byte accounting and budget admission. Babylon's native `Texture.isReady()` alone does not establish that contract. A rejected or superseded preparation keeps the prior material/parameter and its leases; cancellation settles the material's readiness without awaiting an abandoned header read. Compiler shader readiness remains separate from this library-owned publication gate.
+
 ### Texture ownership verification pickup
 
 Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. The current source checkpoint is `b8a11880eaf9ef3a3d992ee16fe32cf97254406a`. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current 3 GiB headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
 
 The rendering integration adds three unexecuted `mesh-assets.test.ts` regressions for static material restoration, animation resumption and a pending upload racing authored assignment. The defect was found by source tracing at `a4fa188c`; no pre-fix execution is claimed. Resume with `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'restores a static sprite|resumes the latest animation texture|does not let a pending sprite upload'`, then the affected snapshot/animation consumer cases and scoped render checks.
+
+The material admission follow-up adds five unexecuted `material-library.test.ts` cases for native-ready/deferred-budget failures during parameter replacement, reset and generation replacement, superseded completion, and cancellation before texture preparation settles. The failure was found through source review, not a pre-fix run. Resume with `pnpm --silent agent:wait local --script test '--' packages/render/src/material-library.test.ts -t 'native-ready|resetting its default|cancelled material preparation'`, then `packages/render/src/material-parameters.test.ts` and the scoped render typecheck/lint. All remain deferred under the same user-approved verification pause.
 
 Recorded evidence:
 

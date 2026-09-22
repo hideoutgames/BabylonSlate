@@ -211,27 +211,66 @@ export class MaterialLibrary {
       textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };
     }
+    const texturePreparations = lowered.plan.textures.flatMap((binding) => {
+      const preparation = textures.ready(binding.textureGuid);
+      return preparation ? [preparation] : [];
+    });
+    const textureFailure = (error: unknown): MaterialDiagnostic => ({
+      code: "material.missingTexture",
+      message: error instanceof Error ? error.message : "Material texture preparation failed",
+      severity: "error",
+    });
+    // Native sample readiness can precede asynchronous byte accounting/admission.
+    // Keep the working generation until both compilation and its owned leases settle.
+    let cancelPreparation = () => {};
+    const prepared: Promise<readonly MaterialDiagnostic[]> = texturePreparations.length
+      ? Promise.all([compiled.ready, Promise.all(texturePreparations)]).then(
+          ([diagnostics]) => diagnostics,
+          (error: unknown) => [textureFailure(error)],
+        )
+      : compiled.ready;
+    const ready = texturePreparations.length
+      ? Promise.race([prepared, new Promise<readonly MaterialDiagnostic[]>((resolve) => {
+          cancelPreparation = () => resolve([{ code: "material.compile.cancelled", message: "Material preparation was cancelled", severity: "error" }]);
+        })])
+      : prepared;
+    const textureDefaults = new Map(lowered.plan.operations
+      .filter((operation) => operation.nodeType === "param.texture" && operation.source.callPath.length === 0)
+      .map((operation) => {
+        const name = String(operation.properties.name ?? "").trim();
+        return [name, compiled.getParameter(name)] as const;
+      }));
     const pendingParameters = new Map<string, { texture: Texture; cancel: () => void }>();
     const pruneTextures = () => textures.prune([...compiled.material.getActiveTextures(), ...[...pendingParameters.values()].map((entry) => entry.texture)]);
     const cancelParameter = (name: string) => { pendingParameters.get(name)?.cancel(); pendingParameters.delete(name); };
     const setParameter = (name: string, value: MaterialParameterValue) => {
+      const previous = compiled.getParameter(name);
+      if (previous?.kind !== value.kind) return false;
       cancelParameter(name);
       if (this.options.acquireTexture && value.kind === "texture" && value.textureAssetGuid) {
-        const texture = textures.resolve(value.textureAssetGuid);
+        const guid = value.textureAssetGuid;
+        const parameter = { ...value };
+        const identity = this.options.textureIdentity?.(guid);
+        const texture = textures.resolve(guid);
         if (!texture || texture.loadingError) { pruneTextures(); return false; }
-        if (!texture.isReady()) {
+        const preparation = textures.ready(guid);
+        const alreadyBound = previous.kind === "texture" && previous.textureAssetGuid === guid &&
+          compiled.material.getActiveTextures().includes(texture);
+        if (!alreadyBound && (preparation || !texture.isReady())) {
           const request = { texture, cancel: () => {} };
           pendingParameters.set(name, request);
           const publish = () => {
             if (pendingParameters.get(name) !== request) return;
             cancelParameter(name);
-            compiled.setParameter(name, value);
+            // The completed lease belongs to the captured source generation.
+            if (identity === this.options.textureIdentity?.(guid))
+              compiled.setParameter(name, parameter);
             pruneTextures();
           };
-          const ready = textures.ready(value.textureAssetGuid);
-          if (ready) void ready.then(publish, () => {
+          if (preparation) void preparation.then(publish, (error: unknown) => {
             if (pendingParameters.get(name) !== request) return;
             cancelParameter(name); pruneTextures();
+            this.options.onTextureError?.(textureFailure(error));
           });
           else {
             const loaded = texture.onLoadObservable.addOnce(publish);
@@ -249,17 +288,19 @@ export class MaterialLibrary {
       material: compiled.material,
       hash: this.generationHash(lowered.plan),
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
-      dispose: () => { for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
+      dispose: () => { cancelPreparation(); for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
       setParameter,
       getParameter: compiled.getParameter,
       resetParameter: (name) => {
+        const value = textureDefaults.get(name);
+        if (value) return setParameter(name, value);
         cancelParameter(name);
         const accepted = compiled.resetParameter(name);
         pruneTextures();
         return accepted;
       },
       instanceKey: options?.instanceKey,
-      ready: compiled.ready,
+      ready,
     };
     const publish = () => {
       if (existing) {
@@ -271,10 +312,10 @@ export class MaterialLibrary {
       }
       entries.set(key, candidate);
     };
-    if (compiled.buildState === "ready") publish();
+    if (compiled.buildState === "ready" && texturePreparations.length === 0) publish();
     else {
       pending.set(key, candidate);
-      void compiled.ready.then((errors) => {
+      void ready.then((errors) => {
         if (pending.get(key) !== candidate) return;
         pending.delete(key);
         if (errors.length) {
@@ -287,7 +328,7 @@ export class MaterialLibrary {
         this.options.onMaterialReady?.(scene, assetGuid);
       });
     }
-    return { ok: true, material: compiled.material, hash: this.generationHash(lowered.plan), plan: lowered.plan, ready: compiled.ready };
+    return { ok: true, material: compiled.material, hash: this.generationHash(lowered.plan), plan: lowered.plan, ready };
   }
 
   release(
