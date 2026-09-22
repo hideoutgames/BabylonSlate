@@ -459,7 +459,7 @@ export function createText2DMesh(
   const fontGuid = parsed.fontAssetGuid;
   const json = fontGuid ? assets?.fontMsdfJson?.get(fontGuid) : undefined;
   const png = fontGuid ? assets?.fontMsdfPng?.get(fontGuid) : undefined;
-  const hasPair = Boolean(json && png && json.byteLength > 0 && png.byteLength > 0);
+  const hasPair = Boolean(json && png && json.byteLength > 0 && (png instanceof Blob ? png.size : png.byteLength) > 0);
   if (parsed.renderer === "msdf" && !hasPair) warnMsdfFallback(fontGuid);
   const renderer = resolveText2DRenderer(parsed.renderer, hasPair);
   const fontStack = resolveText2DFontStack(fontGuid, assets);
