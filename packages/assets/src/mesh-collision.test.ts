@@ -183,3 +183,21 @@ describe("cookComplexCollisionMeshes", () => {
     expect(mesh?.vertices.some((point) => Math.abs(point.x) > 0.9)).toBe(true);
   });
 });
+
+
+it("keeps the complex sphere closed without degenerate pole triangles", () => {
+  const { vertices, indices } = complexCollisionMeshForMeshKind("sphere");
+  let area = 0;
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = vertices[indices[i]!]!, b = vertices[indices[i + 1]!]!, c = vertices[indices[i + 2]!]!;
+    const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const ac = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+    const twiceArea = Math.hypot(ab.y * ac.z - ab.z * ac.y, ab.z * ac.x - ab.x * ac.z, ab.x * ac.y - ab.y * ac.x);
+    expect(twiceArea).toBeGreaterThan(1e-8);
+    area += twiceArea / 2;
+  }
+  expect(area).toBeGreaterThan(6);
+  expect(area).toBeLessThan(4 * Math.PI * 0.75 ** 2);
+  expect(Math.max(...vertices.map(p => p.y))).toBeCloseTo(0.75);
+  expect(Math.min(...vertices.map(p => p.y))).toBeCloseTo(-0.75);
+});
