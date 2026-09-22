@@ -40,6 +40,19 @@ it("reclaims provisional URLs and ownership when native texture construction thr
   expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
 });
 
+it("rejects an over-budget successor without retiring the working upload", () => {
+  const { cache, engine } = host();
+  cache.setByteCeiling(200);
+  const working = cache.acquireTexture("working", engine, ktx2());
+  uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  expect(cache.accountedBytes()).toBe(80);
+  expect(() => cache.acquireTexture("successor", engine, ktx2(16, 8, 5))).toThrow(/budget/);
+  expect(working.resource.isReady()).toBe(true);
+  expect(cache.accountedBytes()).toBe(80);
+  expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+  working.release();
+});
+
 const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()!();
