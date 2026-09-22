@@ -80,7 +80,7 @@ describe("shared outline admission", () => {
     expect(owner.identityFor(mesh)).toBe(identity);
     expect(mesh.thinInstanceCount).toBe(2);
     expect(mesh.thinInstanceGetWorldMatrices().map((matrix) => matrix.getTranslation().x)).toEqual([-1, 1]);
-    expect(mesh.getVertexBuffer(SHARED_OUTLINE_ATTRIBUTE)).toBeNull();
+    expect(mesh.isVerticesDataPresent(SHARED_OUTLINE_ATTRIBUTE)).toBe(false);
     expect(owner.diagnostics().instanceBufferBytes).toBe(0);
     view.dispose();
     expect(mesh.thinInstanceCount).toBe(2);
