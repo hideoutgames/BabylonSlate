@@ -39,7 +39,7 @@ Accept the pilot only if repeated comparable runs preserve complete execution an
 
 ## Rollback
 
-Revert the independent-startup change to restore the prior shared producer in `static` and its browser dependency if the pilot increases latency, flakiness or resource contention without sufficient benefit. Keep all required checks and the separately delivered local policy, 2 GiB minimum reserve, hosted-context validation and runner allowlist. A performance rollback must not restore local `CI=true` admission bypass. If local ownership is uncertain, retain the blocked lease and establish cleanup; do not disable admission.
+If the pilot increases latency, flakiness or contention without sufficient benefit, restore a shared producer in `static` and its browser dependency, and update the workflow contract accordingly. Use the validated hosted build contract for both producer and consumer; retain source/integrity validation and fresh-report checks. Choose shared-artifact retention against the rerun window and available free storage. Keep all required checks and the separately delivered local policy, 2 GiB minimum reserve, hosted-context validation and runner allowlist. Do not blindly revert safety guards with the performance experiment or restore local `CI=true` admission bypass. If local ownership is uncertain, retain the blocked lease and establish cleanup; do not disable admission.
 
 ## Sample runs
 
