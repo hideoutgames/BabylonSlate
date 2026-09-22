@@ -142,6 +142,14 @@ at 12 instances, before mask submission. Its off-only sample is not an outline
 cost comparison. The next diagnostic revision records native shader compilation
 state and console errors to distinguish compiler failure from pending readiness.
 
+The diagnostic rerun at `83765fee` reproduced the WebGL2 deadline with no shader
+console error; the surviving native world and mask Effects were ready. Composition
+now samples explicit mip level zero, matching WGSL and the unmipped mask/style/depth
+targets. This removes implicit texture derivatives from the bounded branch/loop
+sampling without changing filtering or identity/depth precision. The native
+WebGL2 cost case and survivor-pixel cases must pass before this is accepted as
+the driver-path repair; the original readiness deadline is unchanged.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

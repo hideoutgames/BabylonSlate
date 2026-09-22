@@ -197,7 +197,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   const groups = ["strict", "through", "selection"];
   const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
   const glslCandidates = groups.map((group, groupIndex) => `if (activeGroups[${groupIndex}] > 0.5) {
-    float center = decodeId(texture2D(${group}Mask, vUV).rgb);
+    float center = decodeId(textureLod(${group}Mask, vUV, 0.0).rgb);
     float best = 1e10;
     float chosen = 1e10;
     vec4 stroke = vec4(0.0);
@@ -206,13 +206,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
       ${offsets.map(([x, y]) => `{
         vec2 delta = vec2(${x}.0, ${y}.0) * float(radius);
         vec2 uv = vUV + delta / screenSize;
-        float id = decodeId(texture2D(${group}Mask, uv).rgb);
+        float id = decodeId(textureLod(${group}Mask, uv, 0.0).rgb);
         if (id > 0.0 && id != center) {
-          vec4 style = texture2D(${group}Style, idUV(id));
+          vec4 style = textureLod(${group}Style, idUV(id), 0.0);
           float distance = length(delta);
           bool visible = true;
-          ${group === "strict" ? `float candidateDepth = texture2D(strictDepth, uv).r;
-          float destinationDepth = texture2D(strictDepth, vUV).r;
+          ${group === "strict" ? `float candidateDepth = textureLod(strictDepth, uv, 0.0).r;
+          float destinationDepth = textureLod(strictDepth, vUV, 0.0).r;
           visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;` : ""}
           float score = distance / max(style.a, 0.25);
           if (visible && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
