@@ -62,7 +62,7 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
   const kind = typeof source.kind === "string" ? source.kind : null;
   const supported =
     worldKind === "2d"
-      ? ["box2d", "circle", "capsule2d", "polygon", "chain"]
+      ? ["box", "box2d", "circle", "capsule2d", "polygon", "chain"]
       : ["box", "sphere", "capsule", "cylinder", "convex", "mesh"];
   if (source.kind != null && !supported.includes(String(source.kind)))
     throw new Error("Unsupported collider shape");
@@ -87,6 +87,8 @@ function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
           points: parsePoints2(source.points),
           loop: source.loop === true,
         };
+      // SceneLayer colliders also accept the shared authored box dimensions.
+      case "box":
       case "box2d":
       default:
         return {

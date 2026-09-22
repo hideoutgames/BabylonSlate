@@ -35,7 +35,7 @@ describe("bounded texture preparation ownership", () => {
     const live = cache.acquireTexture("live", engine, new Uint8Array([1, 2, 3]));
     await live.ready;
     const baseline = cache.resourceStats();
-    const nativeBaseline = engine.getLoadedTexturesCache().length;
+    const nativeBaseline = engine.getLoadedTexturesCache().filter((texture) => texture._references > 0).length;
     const createTexture = engine.createTexture.bind(engine);
     const create = vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
       args[5] = null;
@@ -56,7 +56,8 @@ describe("bounded texture preparation ownership", () => {
       await expect(b.ready).rejects.toThrow("final owner");
       expect(isDisposedGpuTexture(b.resource)).toBe(true);
       expect(cache.resourceStats()).toEqual(baseline);
-      expect(engine.getLoadedTexturesCache()).toHaveLength(nativeBaseline);
+      // NullEngine keeps released cache slots; live native references must return to baseline.
+      expect(engine.getLoadedTexturesCache().filter((texture) => texture._references > 0)).toHaveLength(nativeBaseline);
       expect(live.resource.isReady()).toBe(true);
       b.resource.onLoadObservable.notifyObservers(b.resource as never);
       await Promise.resolve();
@@ -71,7 +72,7 @@ describe("bounded texture preparation ownership", () => {
     await live.ready;
     const baseline = cache.resourceStats();
     const bytes = cache.accountedBytes();
-    const nativeBaseline = engine.getLoadedTexturesCache().length;
+    const nativeBaseline = engine.getLoadedTexturesCache().filter((texture) => texture._references > 0).length;
     const source = new Blob([new Uint8Array([4, 5, 6])]);
     const header = source.slice(0, 64 * 1024);
     let finish!: (value: ArrayBuffer) => void;
@@ -99,7 +100,8 @@ describe("bounded texture preparation ownership", () => {
       pending.release();
       cache.flushUnreferenced();
       expect(cache.resourceStats()).toEqual(baseline);
-      expect(engine.getLoadedTexturesCache()).toHaveLength(nativeBaseline);
+      // NullEngine keeps released cache slots; live native references must return to baseline.
+      expect(engine.getLoadedTexturesCache().filter((texture) => texture._references > 0)).toHaveLength(nativeBaseline);
       finish(new ArrayBuffer(0));
       pending.resource.onLoadObservable.notifyObservers(pending.resource as never);
       await vi.advanceTimersByTimeAsync(0);
@@ -572,7 +574,7 @@ describe("resource cache getTexture", () => {
 describe("Play texture cache invariant with getTexture", () => {
   it("Play open/close cycle does not grow accounted bytes after flush", () => {
     const engine = textureEngine();
-    const before = engine.getLoadedTexturesCache().length;
+    const before = engine.getLoadedTexturesCache().filter((texture) => texture._references > 0).length;
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array(32 * 32 * 4);
     // Editor retain

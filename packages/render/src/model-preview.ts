@@ -1,10 +1,10 @@
 import "./gltf-loader";
 import { applyMaterialBounds } from "./material-bounds";
 import type {
-  AbstractMesh,
   AnimationGroup,
   Material,
 } from "@babylonjs/core";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { loadModelContainer } from "./model-container";
@@ -183,7 +183,7 @@ export async function loadModelPreviewSource(
     const previous = previewBundles.get(host);
     // Frame the candidate alone; the prior generation can still be visible.
     wrapper.computeWorldMatrix(true);
-    const extent = wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh.getTotalVertices() > 0);
+    const extent = wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh instanceof AbstractMesh && mesh.getTotalVertices() > 0);
     const center = extent.min.add(extent.max).scale(0.5);
     if ([center.x, center.y, center.z].every(Number.isFinite)) host.camera.setTarget(center);
     const size = extent.max.subtract(extent.min).length();

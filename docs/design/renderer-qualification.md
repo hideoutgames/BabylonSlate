@@ -12,6 +12,10 @@ At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cove
 
 ## Engine follow-up: deferred local verification
 
+### CI integration repairs (2026-09-22)
+
+The first hosted run exposed preview bounds visiting transform nodes, software queries dropping body rotation, and the shared authored box needing its existing SceneLayer 2D projection. These are corrected with the existing failing consumer regressions. Fixture updates await transactional publication/retirement, use nondegenerate authored scales, and control only absent NullEngine cube/raw upload boundaries. NullEngine deliberately retains released internal-cache slots; its lifetime assertions count nonzero native references, while browser fixtures still count actual GPU resources. The Make Transform node's unauthored scale default is a separate source finding; physics continues rejecting explicitly degenerate scale.
+
 ### Current verification checkpoint (2026-09-22)
 
 At `85b4d4c`, the shared runner admitted both native batches with the installed combined patch: the five-case trigger/teleport/constraint/controller/contact selector passed, then `packages/physics/src/havok-transactions.test.ts packages/physics/src/havok-lifecycle.test.ts` passed all 18 cases. This supersedes the native failures recorded below. The persistent fixture covers 300 compound edits, final detachment and reattachment, asymmetric local poses, bounded owned native/helper resources, rollback, immediate teleport queries and velocity policy. Subsequent changes through `5e86f522` do not alter that physics implementation or dependency patch, so this evidence is retained.

@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, InternalTexture, InternalTextureSource, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import {
@@ -221,6 +222,7 @@ describe("Play createEngine view", () => {
 
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
+    mockCubeTextureIO(engine);
     // NullEngine stores raw bytes but never marks the upload complete. Model
     // the real synchronous raw-texture upload boundary without bypassing the
     // scene's texture readiness checks (individual tests can hold a texture).
@@ -251,7 +253,7 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
-  it("retires particle owners on world replacement and SceneLayer lifecycle commands", () => {
+  it("retires particle owners on world replacement and SceneLayer lifecycle commands", async () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: engine, playMode: true,
@@ -298,6 +300,7 @@ describe("Play createEngine view", () => {
     expect(liveLeases).toBe(0);
     assign(6);
     handle.dispose();
+    await handle.whenReleased();
     expect(liveLeases).toBe(0);
   });
 

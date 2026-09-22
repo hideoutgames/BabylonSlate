@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   Constants,
@@ -8,7 +9,7 @@ import {
 } from "@babylonjs/core";
 import { ResourceCache } from "./resource-cache";
 
-it("keeps a released pending upload pinned until failure, then releases every native wrapper", async () => {
+it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {
   const { cache, engine } = host();
   let fail: NonNullable<Parameters<typeof engine.createTexture>[6]> | undefined;
   const create = NullEngine.prototype.createTexture.bind(engine);
@@ -24,10 +25,10 @@ it("keeps a released pending upload pinned until failure, then releases every na
   lease.release();
   lease.release();
   cache.flushUnreferenced();
-  expect(texture.getInternalTexture()).not.toBeNull();
-  expect(cache.resourceStats()).toMatchObject({ leases: 0, pending: 1 });
+  expect(texture.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toMatchObject({ leases: 0, pending: 0 });
   fail!("controlled upload failure", undefined);
-  await expect(lease.ready).rejects.toThrow("controlled upload failure");
+  await expect(lease.ready).rejects.toThrow("final owner");
   cache.flushUnreferenced();
   expect(texture.getInternalTexture()).toBeNull();
   expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
@@ -96,6 +97,7 @@ function ktx2(width = 8, height = 4, levels = 4) {
 
 function host() {
   const engine = new NullEngine();
+  mockCubeTextureIO(engine);
   const cache = new ResourceCache();
   const create = engine.createTexture.bind(engine);
   // Keep real wrappers/cache/refcounts; control only NullEngine's pretend GPU

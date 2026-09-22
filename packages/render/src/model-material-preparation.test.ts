@@ -57,6 +57,8 @@ function delayedTextures(scene: Scene) {
   void admission.promise.catch(() => {});
   const working = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
   const pending = RawTexture.CreateRGBATexture(new Uint8Array([255, 0, 0, 255]), 1, 1, scene);
+  working.getInternalTexture()!.isReady = true;
+  pending.getInternalTexture()!.isReady = true;
   const released = vi.fn();
   const library = new MaterialLibrary({
     acquireTexture: (guid) => {

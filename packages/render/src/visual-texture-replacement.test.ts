@@ -115,8 +115,11 @@ for (const host of ["play", "editor"] as const) {
       const f = fixture(host, "sprite");
       try {
         f.assign(0); await f.ready();
+        const previous = f.current()!;
+        const count = f.scene.meshes.length;
         f.assign(1);
-        expect(f.scene.meshes.length).toBeGreaterThan(2);
+        expect(f.current()).toBe(previous);
+        expect(f.scene.meshes.length).toBeGreaterThan(count);
         f.disposeOwner();
         expect(f.scene.meshes).toHaveLength(0);
         expect(f.cache.resourceStats().leases).toBe(0);

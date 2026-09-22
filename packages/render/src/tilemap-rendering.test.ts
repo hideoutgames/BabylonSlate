@@ -121,7 +121,7 @@ describe("tilemap rendering", () => {
     }
   });
 
-  it("refreshes painted tiles and layer visibility without changing asset GUIDs", () => {
+  it("refreshes painted tiles and layer visibility without changing asset GUIDs", async () => {
     const { assets, actor, tilemap } = content();
     const sync = new EditorSceneSync(handle.scene);
     sync.setMeshAssets(assets);
@@ -129,15 +129,17 @@ describe("tilemap rendering", () => {
     const painted = setTile(tilemap, "layer-1", 1, 0, 2);
 
     sync.setMeshAssets({ ...assets, tilemaps: new Map([["tilemap", painted]]) });
+    await sync.whenEditorModelsReady();
     expect(chunk(sync.meshForActor(actor.id)!).getTotalVertices()).toBe(8);
     sync.setMeshAssets({ ...assets, tilemaps: new Map([["tilemap", {
       ...painted, layers: painted.layers.map((layer) => ({ ...layer, visible: false })),
     }]]) });
+    await sync.whenEditorModelsReady();
     expect(sync.meshForActor(actor.id)!.getChildMeshes()).toHaveLength(0);
     sync.dispose();
   });
 
-  it("releases old tilemap and sprite materials when painted content rebuilds", () => {
+  it("releases old tilemap and sprite materials when painted content rebuilds", async () => {
     const { assets, actor, tilemap } = content();
     const sprite = { ...createDefaultSpritePayload(), textureGuid: "atlas" };
     assets.spritePayloads = new Map([["sprite", sprite]]);
@@ -155,12 +157,13 @@ describe("tilemap rendering", () => {
     for (const tileId of [2, 1, 2]) {
       const updated = setTile(tilemap, "layer-1", 1, 0, tileId);
       sync.setMeshAssets({ ...assets, tilemaps: new Map([["tilemap", updated]]) });
+      await sync.whenEditorModelsReady();
       expect(handle.scene.materials).toHaveLength(count);
     }
     sync.dispose();
   });
 
-  it("replaces owned atlas materials without disposing the shared texture", () => {
+  it("reuses owned atlas materials and preserves another texture owner", async () => {
     const { assets, actor } = content();
     const root = createActorMesh(handle.scene, actor, assets);
     const tile = chunk(root);
@@ -169,15 +172,18 @@ describe("tilemap rendering", () => {
     const count = handle.scene.materials.length;
 
     applyTilemapAlbedoTextures(root, handle.scene, assets);
-    expect(handle.scene.materials.includes(previous)).toBe(false);
+    expect(tile.material).toBe(previous);
     expect(handle.scene.materials).toHaveLength(count);
+    const borrowed = cache.acquireExisting(texture);
+    await borrowed.ready;
     const current = tile.material;
     root.dispose();
     expect(handle.scene.materials.includes(current!)).toBe(false);
     expect(isDisposedGpuTexture(texture)).toBe(false);
+    borrowed.release();
   });
 
-  it("refreshes atlas UVs after a tileset grid edit and reuses equivalent payloads", () => {
+  it("refreshes atlas UVs after a tileset grid edit and reuses equivalent payloads", async () => {
     const { assets, actor, tileset, tilemap } = content();
     const sync = new EditorSceneSync(handle.scene);
     sync.setMeshAssets(assets);
@@ -185,6 +191,7 @@ describe("tilemap rendering", () => {
     const before = chunk(sync.meshForActor(actor.id)!).getVerticesData(VertexBuffer.UVKind);
     const resized = normalizeTilesetPayload({ ...tileset, tileWidth: 8 });
     sync.setMeshAssets({ ...assets, tilesets: new Map([["tileset", resized]]) });
+    await sync.whenEditorModelsReady();
     const root = sync.meshForActor(actor.id)!;
     expect(chunk(root).getVerticesData(VertexBuffer.UVKind)).not.toEqual(before);
 
