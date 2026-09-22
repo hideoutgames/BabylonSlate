@@ -44,7 +44,14 @@ import type {
   Vec3,
   PhysicsContactEvent,
 } from "./types";
-import { copyColliderDesc, identityColliderPose, normalizedPhysicsPose, sameColliderGeometry, sameColliderPose, validateColliderShape } from "./collider-validation";
+import {
+  copyColliderDesc,
+  identityColliderPose,
+  normalizedPhysicsPose,
+  sameColliderGeometry,
+  sameColliderPose,
+  validateColliderShape,
+} from "./collider-validation";
 import { attachHavokShape, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
@@ -135,13 +142,17 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private disposed = false;
   private stepping = false;
   private pendingMutations: Array<() => void> = [];
+  private readonly removeCollisionObservers: Array<() => void> = [];
   private readonly resetTriggerActors = new Set<string>();
   private pendingContacts: PhysicsContactEvent[] = [];
-  private readonly activeTriggerPairs = new Map<string, {
-    actorAId: string;
-    actorBId: string;
-    contacts: number;
-  }>();
+  private readonly activeTriggerPairs = new Map<
+    string,
+    {
+      actorAId: string;
+      actorBId: string;
+      contacts: number;
+    }
+  >();
 
   private constructor(engine: NullEngine, scene: Scene, plugin: HavokPlugin) {
     this.engine = engine;
@@ -171,8 +182,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   dispose(): void {
     if (this.disposed) return;
-    if (this.stepping) { this.pendingMutations.push(() => this.dispose()); return; }
+    if (this.stepping) {
+      this.pendingMutations.push(() => this.dispose());
+      return;
+    }
     this.disposed = true;
+    for (const remove of this.removeCollisionObservers) remove();
+    this.removeCollisionObservers.length = 0;
     for (const character of this.characters.values()) {
       character.controller.dispose();
       character.shape.dispose();
@@ -199,8 +215,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   createBody(desc: RigidBodyDesc): void {
     this.assertLive();
-    if (this.stepping) throw new Error("Cannot create a physics body during native stepping");
-    if (this.bodies.has(desc.id)) throw new Error(`Physics body already exists: ${desc.id}`);
+    if (this.stepping)
+      throw new Error("Cannot create a physics body during native stepping");
+    if (this.bodies.has(desc.id))
+      throw new Error(`Physics body already exists: ${desc.id}`);
     const transform = normalizedPhysicsPose(desc.transform);
     const node = new TransformNode(desc.id, this.scene);
     let body: PhysicsBody | undefined;
@@ -208,19 +226,37 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       node.position.copyFrom(toVector3(transform.position));
       node.rotationQuaternion = toQuaternion(transform.rotation);
       node.computeWorldMatrix(true);
-      body = new PhysicsBody(node, motionTypeOf(desc.motionType), false, this.scene);
-      const record: BodyRecord = { desc: { ...desc, transform }, node, body,
-        colliders: new Map(), container: null, uncertainShapes: new Set() };
+      body = new PhysicsBody(
+        node,
+        motionTypeOf(desc.motionType),
+        false,
+        this.scene,
+      );
+      const record: BodyRecord = {
+        desc: { ...desc, transform },
+        node,
+        body,
+        colliders: new Map(),
+        container: null,
+        uncertainShapes: new Set(),
+      };
       this.applyMotionType(record);
       this.applyBodyTuning(record);
       this.enableCollisionCallbacks(body);
       this.bodies.set(desc.id, record);
       this.bodyIdByPhysicsBody.set(body, desc.id);
-    } catch (error) { body?.dispose(); node.dispose(); throw error; }
+    } catch (error) {
+      body?.dispose();
+      node.dispose();
+      throw error;
+    }
   }
 
   destroyBody(bodyId: string): void {
-    if (this.stepping) { this.pendingMutations.push(() => this.destroyBody(bodyId)); return; }
+    if (this.stepping) {
+      this.pendingMutations.push(() => this.destroyBody(bodyId));
+      return;
+    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.retireTriggerPairs(record.desc.actorId);
@@ -238,37 +274,83 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.bodies.delete(bodyId);
   }
 
-  teleportBody(bodyId: string, transform: PhysicsTransform, options: TeleportOptions = {}): void {
+  teleportBody(
+    bodyId: string,
+    transform: PhysicsTransform,
+    options: TeleportOptions = {},
+  ): void {
     const pose = normalizedPhysicsPose(transform);
-    if (this.stepping) { this.pendingMutations.push(() => this.teleportBody(bodyId, pose, options)); return; }
+    const velocity = options.velocity;
+    if (this.stepping) {
+      this.pendingMutations.push(() =>
+        this.teleportBody(bodyId, pose, { velocity }),
+      );
+      return;
+    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
     const body = record.body;
-    const linear = options.velocity === "reset" ? Vector3.Zero() : body.getLinearVelocity();
-    const angular = options.velocity === "reset" ? Vector3.Zero() : body.getAngularVelocity();
+    const previousPose = this.getBodyTransform(bodyId)!;
+    const previousLinear = body.getLinearVelocity(),
+      previousAngular = body.getAngularVelocity();
+    const linear = velocity === "reset" ? Vector3.Zero() : previousLinear;
+    const angular = velocity === "reset" ? Vector3.Zero() : previousAngular;
     record.node.position.copyFrom(toVector3(pose.position));
     record.node.rotationQuaternion = toQuaternion(pose.rotation);
-    teleportHavokBody(this.plugin, body);
-    body.setLinearVelocity(linear);
-    body.setAngularVelocity(angular);
-    // Explicit teleports wake sleeping bodies, then restore ordinary simulation control.
-    this.plugin.setActivationControl(body, PhysicsActivationControl.ALWAYS_ACTIVE);
-    this.plugin.setActivationControl(body, PhysicsActivationControl.SIMULATION_CONTROLLED);
+    try {
+      teleportHavokBody(this.plugin, body);
+      body.setLinearVelocity(linear);
+      body.setAngularVelocity(angular);
+      // Explicit teleports wake sleeping bodies, then restore ordinary simulation control.
+      this.plugin.setActivationControl(
+        body,
+        PhysicsActivationControl.ALWAYS_ACTIVE,
+      );
+      this.plugin.setActivationControl(
+        body,
+        PhysicsActivationControl.SIMULATION_CONTROLLED,
+      );
+    } catch (error) {
+      record.node.position.copyFrom(toVector3(previousPose.position));
+      record.node.rotationQuaternion = toQuaternion(previousPose.rotation);
+      try {
+        teleportHavokBody(this.plugin, body);
+        body.setLinearVelocity(previousLinear);
+        body.setAngularVelocity(previousAngular);
+      } catch (rollbackError) {
+        record.mutationFailure = new AggregateError(
+          [error, rollbackError],
+          `Havok teleport rollback failed for ${bodyId}`,
+        );
+        throw record.mutationFailure;
+      }
+      throw error;
+    }
     record.desc.transform = pose;
     for (const character of this.characters.values()) {
-      if (character.desc.bodyId === bodyId) character.controller.setPosition(toVector3(pose.position));
+      if (character.desc.bodyId === bodyId)
+        character.controller.setPosition(toVector3(pose.position));
     }
   }
 
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
     const pose = normalizedPhysicsPose(transform);
-    if (this.stepping) { this.pendingMutations.push(() => this.setBodyTargetTransform(bodyId, pose)); return; }
+    if (this.stepping) {
+      this.pendingMutations.push(() =>
+        this.setBodyTargetTransform(bodyId, pose),
+      );
+      return;
+    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
-    if (record.desc.motionType !== "kinematic") throw new Error("Only kinematic bodies accept motion targets");
-    record.body.setTargetTransform(toVector3(pose.position), toQuaternion(pose.rotation));
+    if (record.desc.motionType !== "kinematic")
+      throw new Error("Only kinematic bodies accept motion targets");
+    record.body.setTargetTransform(
+      toVector3(pose.position),
+      toQuaternion(pose.rotation),
+    );
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
@@ -301,7 +383,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const current = body.getLinearVelocity();
     for (const axis of ["x", "y", "z"] as const) {
       const value = velocity[axis];
-      if (typeof value === "number" && Number.isFinite(value)) current[axis] = value;
+      if (typeof value === "number" && Number.isFinite(value))
+        current[axis] = value;
     }
     body.setLinearVelocity(current);
   }
@@ -354,15 +437,26 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     const collider = this.colliders.get(colliderId);
-    if (collider) this.applyColliderChanges(collider.desc.bodyId, { upsert: [], remove: [colliderId] });
+    if (collider)
+      this.applyColliderChanges(collider.desc.bodyId, {
+        upsert: [],
+        remove: [colliderId],
+      });
   }
 
   applyColliderChanges(bodyId: string, changes: ColliderChanges): void {
     this.assertLive();
     // Copy and validate every descriptor before any native allocation or mutation.
     const upsert = changes.upsert.map(copyColliderDesc);
+    if (new Set(upsert.map((desc) => desc.id)).size !== upsert.length)
+      throw new Error("Duplicate collider ID in transaction");
     const remove = [...changes.remove];
-    if (this.stepping) { this.pendingMutations.push(() => this.applyColliderChanges(bodyId, { upsert, remove })); return; }
+    if (this.stepping) {
+      this.pendingMutations.push(() =>
+        this.applyColliderChanges(bodyId, { upsert, remove }),
+      );
+      return;
+    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
@@ -373,21 +467,40 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     let topologyChanged = remove.some((id) => record.colliders.has(id));
     try {
       for (const desc of upsert) {
-        if (desc.bodyId !== bodyId) throw new Error("Collider transaction crosses body ownership");
-        if (!isShape3D(desc.shape)) throw new Error("A 3D body cannot own a planar collider");
+        if (desc.bodyId !== bodyId)
+          throw new Error("Collider transaction crosses body ownership");
+        if (!isShape3D(desc.shape))
+          throw new Error("A 3D body cannot own a planar collider");
         const previous = this.colliders.get(desc.id);
-        if (previous && previous.desc.bodyId !== bodyId) throw new Error(`Collider belongs to another body: ${desc.id}`);
-        const sameGeometry = previous && sameColliderGeometry(previous.desc.shape, desc.shape);
-        const shape = sameGeometry ? previous.shape : this.createQueryShape(desc.shape);
+        if (previous && previous.desc.bodyId !== bodyId)
+          throw new Error(`Collider belongs to another body: ${desc.id}`);
+        const sameGeometry =
+          previous && sameColliderGeometry(previous.desc.shape, desc.shape);
+        const shape = sameGeometry
+          ? previous.shape
+          : this.createQueryShape(desc.shape);
         if (!sameGeometry) provisional.add(shape);
-        topologyChanged ||= !previous || !sameGeometry || !sameColliderPose(previous.desc, desc);
+        topologyChanged ||=
+          !previous || !sameGeometry || !sameColliderPose(previous.desc, desc);
         next.set(desc.id, { desc, shape });
       }
       // Container child indices are derived from this live order, never used as IDs.
-      if (topologyChanged && next.size && !(next.size === 1 && identityColliderPose(next.values().next().value!.desc))) {
+      if (
+        topologyChanged &&
+        next.size &&
+        !(
+          next.size === 1 &&
+          identityColliderPose(next.values().next().value!.desc)
+        )
+      ) {
         container = new PhysicsShapeContainer(this.scene);
         provisional.add(container);
-        for (const child of next.values()) container.addChild(child.shape, toVector3(child.desc.translation!), toQuaternion(child.desc.rotation!));
+        for (const child of next.values())
+          container.addChild(
+            child.shape,
+            toVector3(child.desc.translation!),
+            toQuaternion(child.desc.rotation!),
+          );
       }
     } catch (error) {
       container?.dispose();
@@ -396,41 +509,59 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     const body = record.body;
     const oldAttachment = body.shape;
-    const linear = body.getLinearVelocity(), angular = body.getAngularVelocity();
+    const linear = body.getLinearVelocity(),
+      angular = body.getAngularVelocity();
     const attachment = container ?? next.values().next().value?.shape ?? null;
     try {
       if (topologyChanged) attachHavokShape(this.plugin, body, attachment);
-      for (const child of next.values()) this.applyShapeTuning(child.shape, child.desc);
+      for (const child of next.values())
+        this.applyShapeTuning(child.shape, child.desc);
       if (topologyChanged) this.applyBodyTuning(record);
       body.setLinearVelocity(linear);
       body.setAngularVelocity(angular);
     } catch (error) {
       try {
         if (topologyChanged) attachHavokShape(this.plugin, body, oldAttachment);
-        for (const child of record.colliders.values()) this.applyShapeTuning(child.shape, child.desc);
+        for (const child of record.colliders.values())
+          this.applyShapeTuning(child.shape, child.desc);
         this.applyBodyTuning(record);
         body.setLinearVelocity(linear);
         body.setAngularVelocity(angular);
       } catch (rollbackError) {
         for (const shape of provisional) record.uncertainShapes.add(shape);
-        record.mutationFailure = new AggregateError([error, rollbackError], `Havok collider rollback failed for ${bodyId}`);
+        record.mutationFailure = new AggregateError(
+          [error, rollbackError],
+          `Havok collider rollback failed for ${bodyId}`,
+        );
         throw record.mutationFailure;
       }
       container?.dispose();
       for (const shape of provisional) if (shape !== container) shape.dispose();
       throw error;
     }
-    const oldColliders = record.colliders, oldContainer = record.container;
+    const oldColliders = record.colliders,
+      oldContainer = record.container;
     record.colliders = next;
     if (topologyChanged) record.container = container;
     for (const id of oldColliders.keys()) this.colliders.delete(id);
     for (const [id, collider] of next) this.colliders.set(id, collider);
-    if (topologyChanged) {
+    const changedContactPolicy = upsert.some((desc) => {
+      const previous = oldColliders.get(desc.id)?.desc;
+      return (
+        previous &&
+        (previous.isTrigger !== desc.isTrigger ||
+          previous.layer !== desc.layer ||
+          previous.mask !== desc.mask)
+      );
+    });
+    if (topologyChanged || changedContactPolicy)
       this.retireTriggerPairs(record.desc.actorId);
+    if (topologyChanged) {
       oldContainer?.dispose();
     }
     const liveShapes = new Set([...next.values()].map((child) => child.shape));
-    for (const child of oldColliders.values()) if (!liveShapes.has(child.shape)) child.shape.dispose();
+    for (const child of oldColliders.values())
+      if (!liveShapes.has(child.shape)) child.shape.dispose();
   }
 
   private applyShapeTuning(shape: PhysicsShape, desc: ColliderDesc): void {
@@ -447,7 +578,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (typeof tuning.isTrigger === "boolean") {
       next.isTrigger = tuning.isTrigger;
     }
-    if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+    if (
+      typeof tuning.friction === "number" &&
+      Number.isFinite(tuning.friction)
+    ) {
       next.friction = tuning.friction;
     }
     if (
@@ -481,8 +615,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.flushMutations();
     if (dt <= 0) return;
     this.stepping = true;
-    try { this.scene.getPhysicsEngine()?._step(dt); }
-    finally { this.stepping = false; this.resetTriggerActors.clear(); }
+    try {
+      this.scene.getPhysicsEngine()?._step(dt);
+    } finally {
+      this.stepping = false;
+      this.resetTriggerActors.clear();
+    }
     this.flushMutations();
   }
 
@@ -510,7 +648,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (ignored.size) {
         for (const record of this.bodies.values()) {
           if (!ignored.has(record.desc.actorId)) continue;
-          for (const shape of [record.body.shape, ...[...record.colliders.values()].map((c) => c.shape)]) {
+          for (const shape of [
+            record.body.shape,
+            ...[...record.colliders.values()].map((c) => c.shape),
+          ]) {
             if (!shape || memberships.has(shape)) continue;
             memberships.set(shape, shape.filterMembershipMask);
             shape.filterMembershipMask = 0;
@@ -568,48 +709,58 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!isShape3D(shape)) return miss();
     const queryShape = this.createQueryShape(shape);
     try {
-    const input = new ShapeCastResult();
-    const hit = new ShapeCastResult();
-    this.plugin.shapeCast(
-      {
-        shape: queryShape,
-        rotation: toQuaternion(start.rotation),
-        startPosition: toVector3(start.position),
-        endPosition: toVector3(end.position),
-        shouldHitTriggers: false,
-      },
-      input,
-      hit,
-    );
-    if (!hit.hasHit) return miss();
-    const dx = end.position.x - start.position.x;
-    const dy = end.position.y - start.position.y;
-    const dz = end.position.z - start.position.z;
-    const path = Math.hypot(dx, dy, dz);
-    return this.hitFromCast(
-      true,
-      hit.hitPoint,
-      hit.hitNormal,
-      path * hit.hitFraction,
-      hit.body,
-    );
-    } finally { queryShape.dispose(); }
+      const input = new ShapeCastResult();
+      const hit = new ShapeCastResult();
+      this.plugin.shapeCast(
+        {
+          shape: queryShape,
+          rotation: toQuaternion(start.rotation),
+          startPosition: toVector3(start.position),
+          endPosition: toVector3(end.position),
+          shouldHitTriggers: false,
+        },
+        input,
+        hit,
+      );
+      if (!hit.hasHit) return miss();
+      const dx = end.position.x - start.position.x;
+      const dy = end.position.y - start.position.y;
+      const dz = end.position.z - start.position.z;
+      const path = Math.hypot(dx, dy, dz);
+      return this.hitFromCast(
+        true,
+        hit.hitPoint,
+        hit.hitNormal,
+        path * hit.hitFraction,
+        hit.body,
+      );
+    } finally {
+      queryShape.dispose();
+    }
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
     const record = this.bodies.get(desc.bodyId);
     if (!record) return;
     if (this.characters.has(desc.id)) this.destroyCharacterController(desc.id);
-    const shape = new PhysicsShapeCapsule(new Vector3(0, 0.5, 0), new Vector3(0, -0.5, 0), 0.4, this.scene);
-    try {
-    const controller = new PhysicsCharacterController(
-      record.node.position.clone(),
-      { shape, capsuleHeight: 1.8, capsuleRadius: 0.4 },
+    const shape = new PhysicsShapeCapsule(
+      new Vector3(0, 0.5, 0),
+      new Vector3(0, -0.5, 0),
+      0.4,
       this.scene,
     );
-    controller.keepDistance = desc.offset;
-    this.characters.set(desc.id, { desc: { ...desc }, controller, shape });
-    } catch (error) { shape.dispose(); throw error; }
+    try {
+      const controller = new PhysicsCharacterController(
+        record.node.position.clone(),
+        { shape, capsuleHeight: 1.8, capsuleRadius: 0.4 },
+        this.scene,
+      );
+      controller.keepDistance = desc.offset;
+      this.characters.set(desc.id, { desc: { ...desc }, controller, shape });
+    } catch (error) {
+      shape.dispose();
+      throw error;
+    }
   }
 
   destroyCharacterController(id: string): void {
@@ -652,25 +803,28 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return this.getBodyTransform(character.desc.bodyId);
   }
 
-
   private enableCollisionCallbacks(body: PhysicsBody): void {
     body.setCollisionCallbackEnabled(true);
   }
 
   private bindCollisionObservables(): void {
-    const plugin = this.plugin as HavokPlugin & {
-      onCollisionObservable?: { add: (cb: (event: unknown) => void) => void };
-      onTriggerCollisionObservable?: { add: (cb: (event: unknown) => void) => void };
-    };
-    plugin.onCollisionObservable?.add((event) => {
+    const plugin = this.plugin;
+    const collision = plugin.onCollisionObservable.add((event) => {
       this.recordPluginContact(event, false);
     });
-    plugin.onTriggerCollisionObservable?.add((event) => {
+    const trigger = plugin.onTriggerCollisionObservable.add((event) => {
       this.recordPluginContact(event, true);
     });
+    this.removeCollisionObservers.push(
+      () => plugin.onCollisionObservable.remove(collision),
+      () => plugin.onTriggerCollisionObservable.remove(trigger),
+    );
   }
 
-  private recordPluginContact(raw: unknown, fromTriggerObservable: boolean): void {
+  private recordPluginContact(
+    raw: unknown,
+    fromTriggerObservable: boolean,
+  ): void {
     const event = raw as {
       type?: string;
       collider?: PhysicsBody;
@@ -688,7 +842,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       type === PhysicsEventType.TRIGGER_ENTERED ||
       type === PhysicsEventType.TRIGGER_EXITED;
     if (isTriggerEvent) {
-      kind = type === PhysicsEventType.TRIGGER_EXITED ? "overlapEnd" : "overlapBegin";
+      kind =
+        type === PhysicsEventType.TRIGGER_EXITED
+          ? "overlapEnd"
+          : "overlapBegin";
     } else if (
       type === PhysicsEventType.COLLISION_STARTED ||
       type === PhysicsEventType.COLLISION_CONTINUED ||
@@ -727,9 +884,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           pair.contacts += 1;
           return;
         }
-        this.activeTriggerPairs.set(pairKey, { actorAId: a, actorBId: b, contacts: 1 });
+        this.activeTriggerPairs.set(pairKey, {
+          actorAId: a,
+          actorBId: b,
+          contacts: 1,
+        });
       } else {
-        if (this.resetTriggerActors.has(a) || this.resetTriggerActors.has(b)) return;
+        if (this.resetTriggerActors.has(a) || this.resetTriggerActors.has(b))
+          return;
         if (!pair) return;
         pair.contacts -= 1;
         if (pair.contacts > 0) return;
@@ -739,7 +901,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const key = `${kind}|${a}|${b}`;
     if (
       this.pendingContacts.some(
-        (existing) => `${existing.kind}|${existing.actorAId}|${existing.actorBId}` === key,
+        (existing) =>
+          `${existing.kind}|${existing.actorAId}|${existing.actorBId}` === key,
       )
     ) {
       return;
@@ -759,7 +922,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     });
   }
 
-  private firstColliderIdForActor(actorId: string, preferTrigger = false): string | undefined {
+  private firstColliderIdForActor(
+    actorId: string,
+    preferTrigger = false,
+  ): string | undefined {
     let first: string | undefined;
     for (const [id, collider] of this.colliders) {
       const body = this.bodies.get(collider.desc.bodyId);
@@ -792,7 +958,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     body.setLinearDamping(record.desc.linearDamping);
     body.setAngularDamping(record.desc.angularDamping);
     body.setGravityFactor(record.desc.gravityScale);
-    body.setMassProperties({ mass: record.desc.motionType === "static" ? 0 : Math.max(record.desc.mass, 1e-6) });
+    body.setMassProperties({
+      mass:
+        record.desc.motionType === "static"
+          ? 0
+          : Math.max(record.desc.mass, 1e-6),
+    });
   }
 
   /** Shape construction owns helpers from their first allocation. Havok copies
@@ -801,24 +972,53 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     validateColliderShape(shape);
     const origin = Vector3.Zero();
     switch (shape.kind) {
-      case "box": return new PhysicsShapeBox(origin, Quaternion.Identity(), toVector3({
-        x: shape.halfExtents.x * 2, y: shape.halfExtents.y * 2, z: shape.halfExtents.z * 2 }), this.scene);
-      case "sphere": return new PhysicsShapeSphere(origin, shape.radius, this.scene);
-      case "capsule": return new PhysicsShapeCapsule(new Vector3(0, -shape.halfHeight, 0), new Vector3(0, shape.halfHeight, 0), shape.radius, this.scene);
-      case "cylinder": return new PhysicsShapeCylinder(new Vector3(0, -shape.height / 2, 0), new Vector3(0, shape.height / 2, 0), shape.radius, this.scene);
-      case "convex": case "mesh": {
+      case "box":
+        return new PhysicsShapeBox(
+          origin,
+          Quaternion.Identity(),
+          toVector3({
+            x: shape.halfExtents.x * 2,
+            y: shape.halfExtents.y * 2,
+            z: shape.halfExtents.z * 2,
+          }),
+          this.scene,
+        );
+      case "sphere":
+        return new PhysicsShapeSphere(origin, shape.radius, this.scene);
+      case "capsule":
+        return new PhysicsShapeCapsule(
+          new Vector3(0, -shape.halfHeight, 0),
+          new Vector3(0, shape.halfHeight, 0),
+          shape.radius,
+          this.scene,
+        );
+      case "cylinder":
+        return new PhysicsShapeCylinder(
+          new Vector3(0, -shape.height / 2, 0),
+          new Vector3(0, shape.height / 2, 0),
+          shape.radius,
+          this.scene,
+        );
+      case "convex":
+      case "mesh": {
         const mesh = new Mesh(`physics-${shape.kind}`, this.scene);
         try {
           mesh.isVisible = false;
           const data = new VertexData();
-          const points = shape.kind === "convex" ? shape.points : shape.vertices;
+          const points =
+            shape.kind === "convex" ? shape.points : shape.vertices;
           data.positions = points.flatMap((p) => [p.x, p.y, p.z]);
           data.indices = shape.kind === "mesh" ? [...shape.indices] : [];
           data.applyToMesh(mesh);
-          return shape.kind === "convex" ? new PhysicsShapeConvexHull(mesh, this.scene) : new PhysicsShapeMesh(mesh, this.scene);
-        } finally { mesh.dispose(); }
+          return shape.kind === "convex"
+            ? new PhysicsShapeConvexHull(mesh, this.scene)
+            : new PhysicsShapeMesh(mesh, this.scene);
+        } finally {
+          mesh.dispose();
+        }
       }
-      default: throw new Error("Unsupported 3D collider shape");
+      default:
+        throw new Error("Unsupported 3D collider shape");
     }
   }
 
@@ -849,7 +1049,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     record.body.dispose();
     record.container?.dispose();
     // If rollback failed, both generations remain owned until the native user is gone.
-    for (const shape of record.uncertainShapes) if (shape instanceof PhysicsShapeContainer) shape.dispose();
+    for (const shape of record.uncertainShapes)
+      if (shape instanceof PhysicsShapeContainer) shape.dispose();
     for (const collider of record.colliders.values()) collider.shape.dispose();
     for (const shape of record.uncertainShapes) shape.dispose();
     record.uncertainShapes.clear();
@@ -863,19 +1064,30 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   private flushMutations(): void {
     this.assertLive();
-    if (this.stepping && this.pendingMutations.length) throw new Error("Queued physics mutations cannot be queried from native callbacks");
+    if (this.stepping && this.pendingMutations.length)
+      throw new Error(
+        "Queued physics mutations cannot be queried from native callbacks",
+      );
     if (this.stepping) return;
-    while (this.pendingMutations.length && !this.disposed) this.pendingMutations.shift()!();
+    while (this.pendingMutations.length && !this.disposed)
+      this.pendingMutations.shift()!();
     for (const record of this.bodies.values()) this.assertHealthy(record);
   }
 
   private retireTriggerPairs(actorId: string): void {
-    this.pendingContacts = this.pendingContacts.filter((event) => event.actorAId !== actorId && event.actorBId !== actorId);
+    this.pendingContacts = this.pendingContacts.filter(
+      (event) => event.actorAId !== actorId && event.actorBId !== actorId,
+    );
     for (const [key, pair] of this.activeTriggerPairs) {
       if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
       this.activeTriggerPairs.delete(key);
-      this.pendingContacts.push({ kind: "overlapEnd", actorAId: pair.actorAId, actorBId: pair.actorBId,
-        location: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: 1, z: 0 } });
+      this.pendingContacts.push({
+        kind: "overlapEnd",
+        actorAId: pair.actorAId,
+        actorBId: pair.actorBId,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
     }
     this.resetTriggerActors.add(actorId);
   }

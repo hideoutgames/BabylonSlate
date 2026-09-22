@@ -1,4 +1,5 @@
 import type { ColliderShape, Quat, Vec3 } from "./types";
+import { normalizedPhysicsPose } from "./collider-validation";
 
 export type ColliderLocalTransform = {
   position: Vec3;
@@ -34,10 +35,7 @@ export function multiplyQuat(a: Quat, b: Quat): Quat {
 export function isIdentityQuat(rotation: Quat | undefined): boolean {
   if (!rotation) return true;
   return (
-    rotation.x === 0 &&
-    rotation.y === 0 &&
-    rotation.z === 0 &&
-    rotation.w === 1
+    rotation.x === 0 && rotation.y === 0 && rotation.z === 0 && rotation.w === 1
   );
 }
 
@@ -58,6 +56,46 @@ export function bakeColliderLocal(
   local: ColliderLocalTransform,
   actorScale: Vec3,
 ): { shape: ColliderShape; translation: Vec3; rotation: Quat } {
+  const pose = normalizedPhysicsPose(local);
+  const is2d = ["box2d", "circle", "capsule2d", "polygon", "chain"].includes(
+    shape.kind,
+  );
+  for (const axis of is2d
+    ? (["x", "y"] as const)
+    : (["x", "y", "z"] as const)) {
+    if (
+      !Number.isFinite(local.scale[axis]) ||
+      !Number.isFinite(actorScale[axis]) ||
+      local.scale[axis] === 0 ||
+      actorScale[axis] === 0
+    ) {
+      throw new Error("Collider scale must be finite and nonzero");
+    }
+  }
+  // A rigid attachment cannot represent shear induced by non-uniform ancestor
+  // scaling and an oblique local rotation. Do not silently approximate it.
+  const axes = [
+    { x: 1, y: 0, z: 0 },
+    { x: 0, y: 1, z: 0 },
+    { x: 0, y: 0, z: 1 },
+  ].map((axis) => {
+    const v = rotateQuatVec(pose.rotation, axis);
+    return {
+      x: v.x * actorScale.x,
+      y: v.y * actorScale.y,
+      z: v.z * actorScale.z,
+    };
+  });
+  for (let i = 0; i < (is2d ? 2 : 3); i++)
+    for (let j = i + 1; j < (is2d ? 2 : 3); j++) {
+      const a = axes[i]!,
+        b = axes[j]!;
+      const relativeDot =
+        (a.x * b.x + a.y * b.y + a.z * b.z) /
+        (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z));
+      if (Math.abs(relativeDot) > 1e-6)
+        throw new Error("Collider transform contains unsupported shear");
+    }
   const scale = {
     x: actorScale.x * local.scale.x,
     y: actorScale.y * local.scale.y,
@@ -70,7 +108,7 @@ export function bakeColliderLocal(
       y: local.position.y * actorScale.y,
       z: local.position.z * actorScale.z,
     },
-    rotation: { ...local.rotation },
+    rotation: pose.rotation,
   };
 }
 
@@ -126,12 +164,18 @@ export function scaleColliderShape(
     case "polygon":
       return {
         kind: "polygon",
-        points: shape.points.map((p) => ({ x: p.x * scale.x, y: p.y * scale.y })),
+        points: shape.points.map((p) => ({
+          x: p.x * scale.x,
+          y: p.y * scale.y,
+        })),
       };
     case "chain":
       return {
         kind: "chain",
-        points: shape.points.map((p) => ({ x: p.x * scale.x, y: p.y * scale.y })),
+        points: shape.points.map((p) => ({
+          x: p.x * scale.x,
+          y: p.y * scale.y,
+        })),
         loop: shape.loop,
       };
     case "convex":
