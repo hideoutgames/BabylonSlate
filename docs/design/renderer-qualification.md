@@ -37,6 +37,14 @@ Before resuming, compare the working head with the recorded checkpoint and selec
 
 Status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
+### Rendering integration checkpoint
+
+`agent/engine-render-ownership-integration` combines A `129f1f4b`, D `5fe391b3`, E `233b75ba` and F `79a00663` through normal merges, plus the browser backend-reporting corrections D `67538a89` and E `b32b9a8f`. B/C and the physics native patch remain separate. The only textual conflict was this qualification page; both the model/text evidence and the deferred-check index were retained.
+
+Manual integration review retained the separate snapshot membership/pose passes, snapshot identity and seen-slot guards, transactional model/text publication, exact texture leases, particle generation cancellation, and all three test-mode browser hooks. Particle systems now retire before the material library during handle disposal, so native users release their per-emitter materials first. The merged Babylon patch and lockfile match E's observer-ownership patch and retain the existing vertex-stream fix.
+
+No tests, static checks, build, dependency installation or browser runs were performed for this integration checkpoint. Earlier delivery results apply only to their recorded sources. Resume the scoped pickup commands above and in the linked architecture notes after dependencies are installed with the final combined patch. This integration branch has no PR and remains unmerged.
+
 ## Coverage matrix
 
 "CI" means the standard e2e suite (Chromium, SwiftShader/software WebGPU via `SOFTWARE_WEBGPU_ARGS`). "Local-only (env gate)" specs enumerate but skip without their flag. "Unit" means Vitest coverage with no browser run.

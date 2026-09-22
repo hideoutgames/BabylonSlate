@@ -943,7 +943,7 @@ From the visual worktree, resume with these explicit scopes; split a batch furth
 ```powershell
 $env:BL_TEST_PROFILE = 'shared'
 pnpm --silent agent:wait local --script test '--' packages/render/src/visual-lifecycle.test.ts packages/render/src/text2d-bitmap.test.ts
-pnpm --silent agent:wait local --script test '--' packages/render/src/glb-anim.test.ts packages/render/src/model-preview.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/glb-anim.test.ts packages/render/src/model-preview.test.ts packages/render/src/scene-lighting.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/text2d-mesh.test.ts packages/render/src/text3d-mesh.test.ts packages/render/src/overlay-texture-quad.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/snapshot-apply.test.ts packages/render/src/editor-scene.test.ts packages/render/src/editor-scene-sync.chunks.test.ts
 pnpm --silent agent:wait local --script test:e2e '--' e2e/visual-generations.spec.ts --project=desktop-chrome

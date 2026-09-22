@@ -2269,8 +2269,8 @@ function initializeEngine(
         debugOverlay?.dispose();
         debugOverlay = null;
         disposeSnapshotBinding(binding);
-        materialLibrary.dispose();
         particleService?.dispose();
+        materialLibrary.dispose();
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose();
