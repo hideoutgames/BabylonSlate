@@ -47,7 +47,7 @@ export type Text2DMeshOptions = {
 
 export type Text2DAssetContext = MeshAssetContext & {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   paused?: boolean;
 };
 

@@ -95,7 +95,7 @@ describe("resource cache", () => {
     cache.dispose();
   });
 
-  it("evicts textures no handle still pins even if getTexture left a refCount", () => {
+  it("evicts released accounting entries while preserving their live siblings", () => {
     const evictions: string[] = [];
     const cache = new ResourceCache({
       byteCeiling: 100,
@@ -103,7 +103,8 @@ describe("resource cache", () => {
     });
     cache.account("gone", 80);
     cache.account("kept", 80);
-    cache.setClientTextures("viewport", ["kept"]);
+    cache.releaseAccounting("gone");
+    cache.evictToCeiling();
     expect(evictions).toContain("gone");
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();

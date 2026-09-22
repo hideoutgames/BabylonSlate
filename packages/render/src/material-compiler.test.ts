@@ -1382,7 +1382,7 @@ describe("material compiler", () => {
       scene.getEngine(),
       bytes,
     );
-    const cached = cachedLease?.resource;
+    const cached = cachedLease?.resource ?? null;
     expect(cached).not.toBeNull();
     // A real sibling checks TextureBlock dirty notifications. Connected samples
     // expose their source texture, but do not own the setter's backing texture.

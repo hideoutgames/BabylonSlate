@@ -117,7 +117,7 @@ it("isolates reflection matrices and intensity while sharing uploaded radiance a
   expect(source.sphericalPolynomial).toBe(polynomial);
   b.dispose();
   expect(source.getInternalTexture()).not.toBeNull();
-  cache.release(source);
+  sourceLease.release();
   cache.flushUnreferenced();
   expect(source.getInternalTexture()).toBeNull();
 });
@@ -170,6 +170,32 @@ it("reuses the view across repeated asset collection and balances every source l
   syncEnvironmentLighting(a);
   expect(a.environmentTexture?.isReady()).toBe(true);
   expect(a.environmentTexture).not.toBe(view);
+});
+
+it("retains a usable environment during a failed successor upload and releases its provisional lease", async () => {
+  const { engine, cache, upload, a, assets } = fixture();
+  applyEnvironmentLighting(a, "environment", assets);
+  const working = a.environmentTexture;
+  let fail!: (message?: string, exception?: unknown) => void;
+  upload.mockImplementationOnce((url, _scene, _scale, _offset, _load, onError) => {
+    fail = onError!;
+    const internal = engine.createTexture(url, false, false, null);
+    internal.isCube = true; internal.isReady = false;
+    return internal;
+  });
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  applyEnvironmentLighting(a, "next", {
+    ...assets, textureBytes: new Map([["next", buildFloatDdsCubeFixture({ color: [1, 0, 0, 1] })]]),
+  });
+  expect(a.environmentTexture).toBe(working);
+  fail("controlled upload failure");
+  await Promise.resolve();
+  cache.flushUnreferenced();
+  expect(a.environmentTexture).toBe(working);
+  expect(working?.isReady()).toBe(true);
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  expect(error).toHaveBeenCalledOnce();
+  expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1, pending: 0 });
 });
 
 it("blocks pending uploads and exposes the current source failure without letting a stale upload poison its replacement", () => {
@@ -346,7 +372,7 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
     );
   applyEnvironmentLighting(a, "environment", assets);
   applyEnvironmentLighting(b, "environment", assets);
-  cache.release(source);
+  sourceLease.release();
   expect(isEnvironmentLightingReady(a)).toBe(false);
   expect(isEnvironmentLightingReady(b)).toBe(false);
   const av = a.environmentTexture!;
@@ -393,7 +419,7 @@ it("keeps all pending face reads alive after rejection and ignores obsolete work
       : new Promise<Float32Array>((resolve) => finish.push(resolve)),
   );
   applyEnvironmentLighting(a, "environment", assets);
-  cache.release(source);
+  sourceLease.release();
   expect(isEnvironmentLightingReady(a)).toBe(false);
   await Promise.resolve();
   upload.mockImplementationOnce((url) => {
@@ -455,6 +481,6 @@ it("decodes RGBD fallback radiance and exposes readback failures to the owning s
     ),
   );
   expect(isEnvironmentLightingReady(a)).toBe(true);
-  cache.release(source);
-  cache.release(broken);
+  sourceLease.release();
+  brokenLease.release();
 });

@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
+import { isSpriteQuad } from "./sprite-quad";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -178,6 +179,7 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
 
 interface AlbedoBinding {
   material: StandardMaterial | null;
+  authored?: boolean;
   lease?: ResourceLease<Texture | CubeTexture>;
   source?: Uint8Array | Blob;
   guid?: string;
@@ -212,18 +214,26 @@ export function applyAlbedoTexture(
     binding.pending?.release(); binding.pending = undefined;
     binding.lease?.release(); binding.lease = undefined;
     if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
-    binding.source = undefined; binding.guid = undefined;
+    binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
     return;
   }
+  // An authored material owns its own texture contract. Sprite animation must not replace it.
+  if (mesh.material && mesh.material !== binding.material && (binding.material || isSpriteQuad(mesh))) {
+    binding.authored = true;
+    binding.cancel?.(); binding.pending?.release(); binding.pending = undefined;
+    binding.lease?.release(); binding.lease = undefined;
+    binding.material?.dispose(false, false); binding.material = null;
+  }
+  if (binding.authored) return;
   const source = assets?.textureBytes?.get(textureGuid);
   if (!source || !assets?.resourceCache) return;
-  const identity = binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  const identity = source instanceof Blob && binding.source === source ? binding.identity : snapshotByteFingerprint(source);
   if (binding.identity === identity && binding.guid === textureGuid &&
     ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
   if (binding.failed === `${textureGuid}:${identity}`) return;
-  // An authored material owns its own texture contract. Sprite animation must not replace it.
-  if (mesh.material && mesh.material !== binding.material && binding.material) return;
-  const next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
+  let next: ResourceLease<Texture | CubeTexture>;
+  try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
+  catch (error) { binding.failed = `${textureGuid}:${identity}`; console.error("Sprite texture replacement failed", error); return; }
   binding.cancel?.(); binding.pending?.release();
   binding.source = source; binding.guid = textureGuid; binding.identity = identity;
   binding.pending = next;

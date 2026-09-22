@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AbstractEngine, Texture } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import {
   MaterialLibrary,
   attachMaterialPreviewGestures,

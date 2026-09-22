@@ -13,6 +13,21 @@ import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
 
 describe("resource cache getTexture", () => {
+  it("keeps exact source URL generations leased independently of GPU wrappers", () => {
+    const cache = new ResourceCache();
+    const owner = bindResourceCacheToHandle(cache);
+    const old = owner.cache.acquireBlobUrl("same-guid", new Uint8Array([1, 2, 3]));
+    const next = owner.cache.acquireBlobUrl("same-guid", new Uint8Array([1, 2, 4]));
+    expect(old.key).not.toBe(next.key);
+    cache.flushUnreferenced();
+    expect(cache.resourceStats()).toMatchObject({ generations: 2, leases: 2 });
+    for (let i = 0; i < 10_000; i++) expect(old.resource).toBeTruthy();
+    next.release(); next.release();
+    cache.flushUnreferenced();
+    expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
+    owner.releaseHandleRetains();
+    expect(cache.resourceStats()).toEqual({ generations: 0, leases: 0, wrappers: 0, pending: 0 });
+  });
   it("honors the largest live view budget regardless of update order", () => {
     const cache = new ResourceCache({ byteCeiling: 100 });
     const high = {};
@@ -95,11 +110,11 @@ describe("resource cache getTexture", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const firstLease = acquireMaterialTexture(cache, "tex", engine, bytes);
-    const first = firstLease?.resource;
+    const first = firstLease?.resource ?? null;
     expect(first).not.toBeNull();
     first!.dispose();
     const secondLease = acquireMaterialTexture(cache, "tex", engine, bytes);
-    const second = secondLease?.resource;
+    const second = secondLease?.resource ?? null;
     expect(second).not.toBeNull();
     expect(second).not.toBe(first);
     expect(second!.getInternalTexture()).not.toBeNull();
@@ -192,7 +207,7 @@ describe("resource cache getTexture", () => {
     });
     const sprite = spriteLease.resource;
     const materialLease = acquireMaterialTexture(cache, "shared", engine, bytes);
-    const material = materialLease?.resource;
+    const material = materialLease?.resource ?? null;
     expect(sprite).toBeInstanceOf(Texture);
     expect((sprite as Texture).invertY).toBe(true);
     const spriteUrl = (sprite as Texture).url ?? "";
@@ -321,7 +336,7 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("keeps a live cube when another client pins unrelated textureBytes", () => {
+  it("keeps a leased cube during unreferenced eviction", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
@@ -335,8 +350,6 @@ describe("resource cache getTexture", () => {
     ];
     const cubeLease = cache.acquireCubeTextureFromImages("engine-default-skybox", scene, files);
     const cube = cubeLease.resource;
-    cache.setClientTextures("viewport", ["tex-albedo"]);
-    cache.setClientTextures("play", ["tex-albedo"]);
     cache.flushUnreferenced();
     expect(isDisposedGpuTexture(cube)).toBe(false);
     expect(cube.getInternalTexture()).not.toBeNull();

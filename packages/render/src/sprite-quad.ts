@@ -8,6 +8,8 @@ import type { SpriteFrame } from "@babylonslate/assets";
 import { spriteFrameUvs } from "@babylonslate/assets";
 
 export const SPRITE_QUAD_NAME_PREFIX = "spriteQuad:";
+const spriteQuads = new WeakSet<Mesh>();
+export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Mesh && spriteQuads.has(mesh); }
 
 /**
  * XY-plane quad with the atlas frame baked into UVs (not BABYLON.Sprite).
@@ -26,6 +28,7 @@ export function createSpriteQuad(
     { width: width || 1, height: height || 1, updatable: true },
     scene,
   );
+  spriteQuads.add(mesh);
   applySpriteFrameUvs(mesh, frame);
   return mesh;
 }
