@@ -22,6 +22,15 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     expect(result.final).toEqual(result.baseline);
     expect(result.particleBuffersAcquired).toBeGreaterThan(0);
     expect(result.liveParticleBuffers).toBe(0);
+    expect(result.sceneIsolation).toHaveLength(2);
+    for (const capture of result.sceneIsolation) {
+      expect(capture.world.red).toBeGreaterThan(100);
+      expect(capture.world.blue).toBe(0);
+      for (const blue of [capture.layer, capture.survivor]) {
+        expect(blue.red).toBe(0);
+        expect(blue.blue).toBeGreaterThan(100);
+      }
+    }
     for (const capture of result.captures) {
       if (["retired", "fractional-retired", "finite-retired"].includes(capture.name)) {
         expect(capture.systems, capture.name).toBe(0);

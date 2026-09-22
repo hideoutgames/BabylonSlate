@@ -1,7 +1,7 @@
 import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, RawTexture, Scene, Vector3, type DataBuffer, type IParticleSystem } from "@babylonjs/core";
 import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import { createAppWebGpuEngine, createParticleMaterialResolver, ParticleService } from "@babylonslate/render";
+import { createAppWebGpuEngine, createParticleMaterialResolver, ParticleService, type ParticleLibrary } from "@babylonslate/render";
 
 /** Native draws, controlled simulation time, and readback; never substitutes processed GPU slots for visible particles. */
 export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gpu: boolean) {
@@ -30,14 +30,15 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
   let releases = 0;
   let resets = 0;
   const diagnostics: unknown[] = [];
-  const service = new ParticleService({ scene, gpuSupported: gpu,
-    acquireTexture: (guid) => {
+  const acquireTexture = (guid: string) => {
       const resource = textures.get(guid);
       if (!resource) return null;
       acquisitions += 1;
       let released = false;
       return { key: guid, resource, release: () => { if (!released) { released = true; releases += 1; } } };
-    }, acquireMaterial: materials.acquire, onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  };
+  const service = new ParticleService({ scene, gpuSupported: gpu,
+    acquireTexture, acquireMaterial: materials.acquire, onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
   });
   const parents = ["red", "blue"].map((guid, index) => {
     const parent = MeshBuilder.CreateBox(guid, { size: 0.01 }, scene);
@@ -70,13 +71,14 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     for (let i = 0; i < bytes.length; i += 4) { red += bytes[i + (bgra ? 2 : 0)]!; blue += bytes[i + (bgra ? 0 : 2)]!; }
     return { red, blue };
   };
-  const configure = (rate: number, lifetime: number, looping: boolean, material: boolean) => service.setLibrary({
+  const libraryFor = (rate: number, lifetime: number, looping: boolean, material: boolean): ParticleLibrary => ({
     emitters: new Map(["red", "blue"].map((guid) => [guid, {
       ...createDefaultParticleEmitterPayload(), textureGuid: guid, materialGuid: material ? "graph" : null,
       capacity: 64, emitRate: rate, minLifeTime: lifetime, maxLifeTime: lifetime, minEmitPower: 0, maxEmitPower: 0,
       minSize: 0.8, maxSize: 0.8, sizeGradient: [{ t: 0, value: 1 }, { t: 1, value: 1 }],
       colorGradient: [{ t: 0, color: [1, 1, 1, 1] as [number, number, number, number] }, { t: 1, color: [1, 1, 1, 1] as [number, number, number, number] }],
     }])), systems: new Map(["red", "blue"].map((guid) => [guid, { ...createDefaultParticleSystemPayload(), emitterGuids: [guid], looping, duration: 0.5 }])) });
+  const configure = (rate: number, lifetime: number, looping: boolean, material: boolean) => service.setLibrary(libraryFor(rate, lifetime, looping, material));
   const simulationSpeeds = new WeakMap<IParticleSystem, number>();
   const assign = (guid: string, speed = 0.05) => {
     service.handleCommand({ type: "assignParticle", actorGuid: guid, componentId: "particle", slotId: guid === "red" ? 1 : 2, particleSystemGuid: guid });
@@ -148,6 +150,51 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     await step(9); await capture("finite-gradient-drain");
     await step(21); await capture("finite-retired");
     if (scene.particleSystems.length) throw new Error("Finite emitter did not complete drain");
+    const sceneIsolation: Array<{ reverse: boolean; world: { red: number; blue: number }; layer: { red: number; blue: number }; survivor: { red: number; blue: number } }> = [];
+    const layer = new Scene(engine);
+    layer.clearColor = new Color4(0, 0, 0, 1);
+    layer.getAnimationRatio = () => 1;
+    const layerCamera = new FreeCamera("Particle SceneLayer camera", camera.position.clone(), layer);
+    layerCamera.setTarget(Vector3.Zero()); layerCamera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    layerCamera.orthoLeft = layerCamera.orthoBottom = -2; layerCamera.orthoRight = layerCamera.orthoTop = 2;
+    layer.activeCamera = layerCamera;
+    const layerMaterials = createParticleMaterialResolver({ scene: layer, documents: new Map([["graph", createDefaultMaterialDocument("Shared particle graph", "particle")]]) });
+    const layered = new ParticleService({ scene, gpuSupported: gpu, acquireTexture,
+      sceneForSlot: (slot) => slot === 2 ? layer : scene,
+      acquireMaterial: (guid, owner) => (owner.scene === layer ? layerMaterials : materials).acquire(guid, owner),
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    layered.setLibrary(libraryFor(20, 0.3, true, true));
+    const layerFrame = async () => {
+      engine.beginFrame(); scene.render(); layer.render(); engine.endFrame();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    };
+    const captureScene = async (owner: Scene) => {
+      engine.beginFrame(); owner.render(); engine.endFrame();
+      return pixels();
+    };
+    try {
+      for (const reverseOrder of [false, true]) {
+        for (const guid of reverseOrder ? ["blue", "red"] : ["red", "blue"]) layered.handleCommand({ type: "assignParticle",
+          slotId: guid === "red" ? 1 : 2, actorGuid: guid, componentId: "particle", particleSystemGuid: guid });
+        const natives = [...scene.particleSystems, ...layer.particleSystems];
+        for (const native of natives) native.updateSpeed = 0;
+        let prepared = false;
+        for (let frame = 0; frame < 120; frame += 1) {
+          if (natives.length === 2 && natives.every((native) => native.isStarted() && native.isReady())) { prepared = true; break; }
+          await layerFrame();
+        }
+        if (!prepared) throw new Error("World/SceneLayer particle materials did not prepare");
+        for (const native of natives) native.updateSpeed = 0.05;
+        for (let frame = 0; frame < 8; frame += 1) await layerFrame();
+        const world = await captureScene(scene);
+        const overlay = await captureScene(layer);
+        layered.handleCommand({ type: "despawn", slotId: 1, actorGuid: "red" });
+        const survivor = await captureScene(layer);
+        sceneIsolation.push({ reverse: reverseOrder, world, layer: overlay, survivor });
+        layered.resetSession();
+      }
+    } finally { layered.dispose(); layerMaterials.dispose(); layer.dispose(); }
     const baseline = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
     configure(20, 0.3, true, false);
@@ -161,7 +208,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     frameCpuMs.sort((a, b) => a - b);
     const percentile = (fraction: number) => frameCpuMs[Math.min(frameCpuMs.length - 1, Math.floor(frameCpuMs.length * fraction))] ?? 0;
     return { backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`, gpu, adapter: engine.getInfo(),
-      captures, diagnostics, resets, acquisitions, releases, baseline, final,
+      captures, sceneIsolation, diagnostics, resets, acquisitions, releases, baseline, final,
       nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
   } finally { service.dispose(); materials.dispose(); scene.dispose(); otherEngine.dispose(); engine.dispose(); canvas.remove(); }
