@@ -117,6 +117,14 @@ phase, completed samples and failure diagnostics in a DOM progress record so
 the failure can be reproduced without losing its location. This remains a FAIL,
 not desktop performance qualification.
 
+The local `perf-gpu` project also admits the explicit shared-outline cost file.
+Its full Chromium/D3D11 launch options are preserved locally; CI still selects
+software WebGPU. Reproduce with `BL_TEST_PROFILE=shared` and
+`pnpm --silent agent:wait local --script test:e2e -- e2e/shared-outline-cost.spec.ts --config playwright.perf.config.ts --project perf-gpu`.
+The first T3 failure does not certify this separate host. After selection cleanup,
+`afff8b31` passed the shared-host and overlay-transform files (35 tests), six-file
+lint, the render-package typecheck and the admitted editor/player build.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

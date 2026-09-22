@@ -6,7 +6,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 // Local cost qualification uses the available adapter. Hosted CI uses software
 // for lifetime invariants only; its timings never qualify desktop GPU cost.
 const graphicsArguments = process.env.CI ? SOFTWARE_WEBGPU_ARGS : [];
-test.use({ launchOptions: { args: graphicsArguments } });
+// Preserve the selected local performance project's hardware launch options.
+if (process.env.CI) test.use({ launchOptions: { args: graphicsArguments } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`shared outline fixed-output cost and repeated retirement on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
@@ -16,7 +17,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await page.waitForFunction(() => "__babylonslateSharedOutlineCostProof" in window);
     const report = await page.evaluate((backend) => (window as unknown as {
       __babylonslateSharedOutlineCostProof: typeof runSharedOutlineCostProof;
-    }).__babylonslateSharedOutlineCostProof(backend), backend);
+    }).__babylonslateSharedOutlineCostProof(backend), backend).catch(async (error: unknown) => {
+      await testInfo.attach("shared-outline-cost-failure", { body: JSON.stringify({
+        progress: await page.getByTestId("shared-outline-cost-progress").textContent(), errors,
+        evidence: renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"),
+      }), contentType: "application/json" });
+      throw error;
+    });
     await testInfo.attach("shared-outline-cost", { body: JSON.stringify({ ...report,
       evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"), graphicsArguments }, errors }), contentType: "application/json" });
     expect(errors).toEqual([]);
