@@ -47,9 +47,14 @@ function multiplyDocument(kind: "gain" | "texture" | "time" | "function") {
   doc.nodes.push(node("multiply", "math.multiply"));
   connect(doc, "sceneColor", "color", "multiply", "a");
   connect(doc, "multiply", "out", "output", "color");
+  const repeatGain = (source: string, pin: string) => {
+    doc.nodes.push(node("gainChannels", "vector.combine"));
+    for (const channel of ["x", "y", "z", "w"]) connect(doc, source, pin, "gainChannels", channel);
+    connect(doc, "gainChannels", "xyzw", "multiply", "b");
+  };
   if (kind === "gain") {
     doc.nodes.push(node("gain", "param.float", { name: "Gain", value: [0.5] }));
-    connect(doc, "gain", "out", "multiply", "b");
+    repeatGain("gain", "out");
   } else if (kind === "texture") {
     doc.nodes.push(node("texture", "texture.sample", { textureGuid: "mask" }));
     connect(doc, "screenUv", "uv", "texture", "uv");
@@ -62,10 +67,10 @@ function multiplyDocument(kind: "gain" | "texture" | "time" | "function") {
     );
     connect(doc, "time", "time", "add", "a");
     connect(doc, "offset", "out", "add", "b");
-    connect(doc, "add", "out", "multiply", "b");
+    repeatGain("add", "out");
   } else {
     doc.nodes.push(node("call", "function.call", { functionGuid: "outer" }));
-    connect(doc, "call", "out_value", "multiply", "b");
+    repeatGain("call", "out_value");
   }
   return doc;
 }

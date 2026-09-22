@@ -6,9 +6,9 @@ math/vector operations (muted). Palette markers use the same roles.
 
 **VectorMask** selects R/G/B/A in Details (R by default). At least one channel
 must remain selected. The output is Float, V2, V3, or V4/Color according to the
-selected count, in RGBA order; the title displays the selection. Vector inputs
-must contain every selected channel: a V2 cannot supply B or A. A disconnected
-input defaults to a zero V4 and remains connectable to any vector width.
+selected count, in RGBA order; the title displays the selection. Numeric inputs
+are padded to V4 before selecting channels: missing G/B are `0` and missing A
+is `1`. A disconnected input retains its zero V4 default.
 
 One authored asset type covers what used to be split between an empty imported
 `Material` stub and an authored `Shader` graph. A **Material** is a node graph
@@ -64,11 +64,24 @@ vectors with a pin hint, not a separate type; the Babylon boundary picks
 `Color3` / `Color4` versus `Vector3` / `Vector4`. Booleans are floats so the
 catalog stays inside the portable block set.
 
-A `float` splats into any vector. Everything else must match exactly:
-truncation and partial widening need an explicit **Split** or **Combine** node
-so the graph says which components move where. Generic nodes (`math.add`,
-`math.mix`, …) resolve their group from the types actually wired in, so a vector
-width propagates down a chain instead of collapsing at the first hop.
+Every numeric output can connect to every numeric input. Conversions preserve
+leading channels, discard trailing channels when narrowing, and fill missing
+Y/Z with `0` and W with `1`. Supplied W values, including `0`, are preserved.
+
+| Source | Float | V2 | V3 | V4 / RGBA |
+| --- | --- | --- | --- | --- |
+| Float `x` | `x` | `(x,0)` | `(x,0,0)` | `(x,0,0,1)` |
+| V2 `(x,y)` | `x` | `(x,y)` | `(x,y,0)` | `(x,y,0,1)` |
+| V3 `(x,y,z)` | `x` | `(x,y)` | `(x,y,z)` | `(x,y,z,1)` |
+| V4 `(x,y,z,w)` | `x` | `(x,y)` | `(x,y,z)` | `(x,y,z,w)` |
+
+RGB color inputs use V3; RGBA inputs use V4. Conversion does not change color
+space. Textures only connect to textures. Generic nodes (`math.add`,
+`math.mix`, …) use the widest connected numeric input, independently of
+connection order, and convert each operand to that width. Declared function
+and Custom GLSL pins retain their explicit types. Disconnected inputs retain
+their authored/catalog defaults. To repeat a scalar across channels (for
+example, a uniform RGB gain), wire it to each desired **Combine** input.
 
 `materialPinsAreCompatible` gives the canvas the same rule through the
 `pinCompatibility` prop on `GraphEditor`; the scripting graph keeps its stricter
@@ -107,8 +120,8 @@ Material graphs use the shared 96px pin safe zone: releasing a wire near a pin
 after leaving its source handle breaks that source pin's links. Releasing on the
 source handle preserves its links; releasing on distant empty canvas opens Add
 Node. Hit tests stay inside the current canvas, including when multiple docked
-or warm Material tabs reuse node IDs. Live hints use the Material Float-to-vector
-connection rule.
+or warm Material tabs reuse node IDs. Live hints and context-sensitive Add Node
+filtering use the same numeric conversion rule as validation.
 
 ## Validation
 
@@ -123,11 +136,17 @@ Offset**, including through a Material Function (`call/inner` node ids).
 ## Lowering and compilation
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:
-topologically ordered operations, explicit operands (including inserted splats),
+topologically ordered operations, explicit operands (including ordered numeric conversions),
 texture bindings, dependencies, cost features and a content hash that ignores
 node positions. Material Function calls are **inlined** here under namespaced
 operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
+
+Conversions compose across every function boundary: V4 `(2,3,4,5)` through a
+V2 input and V4 output becomes `(2,3,0,1)`, never the original V4. The full
+conversion sequence participates in the plan hash. Render realizes conversions
+with Babylon splitter/merger blocks; CPU material baking evaluates the same
+channel rule. These adapters are compiled data, not extra authored graph nodes.
 
 `compileMaterialPlan` instantiates one or more real Babylon blocks per operation
 and connects actual connection points. Texture Sample / `param.texture` bind
@@ -236,8 +255,8 @@ Parameter pins remain 2D. See [environment lighting](render.md) for ownership,
 orientation and irradiance preparation.
 
 Clamp supports connected scalar/vector bounds; comparisons return component-wise
-numeric masks. Refract uses Vector 3 directions and scalar Eta. Split connections
-to components absent from the input vector produce diagnostics. World Tangent
+numeric masks. Refract uses Vector 3 directions and scalar Eta. Split pads its
+numeric input to V4, so missing Y/Z return `0` and missing W returns `1`. World Tangent
 is transformed as a direction by the mesh world matrix.
 
 `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
@@ -462,8 +481,8 @@ Imported-model texture optimization uses published material readiness rather
 than accepting a pending build as proof that replacement textures are bound.
 
 Material pins display compact Float / V2 / V3 / V4 / Texture hints. Bound generic
-vectors use the resolved width for connections and default editors. Scalar Split
-supports X only. Scene snapshots memoize hashes of immutable byte objects so
+vectors use the resolved width for connections and default editors. Scene
+snapshots memoize hashes of immutable byte objects so
 transform-only edits do not repeatedly hash texture files; replace the byte object
 when an asset changes. Material Output groups Surface,
 Emission, Transparency and Geometry pins. Non-surface Details omit surface-only

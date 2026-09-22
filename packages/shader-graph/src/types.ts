@@ -13,6 +13,8 @@ export type MaterialValueType =
   | "vec4"
   | "texture";
 
+export type MaterialNumericType = Exclude<MaterialValueType, "texture">;
+
 export const MATERIAL_NUMERIC_TYPES: readonly MaterialValueType[] = [
   "float",
   "vec2",
@@ -40,29 +42,41 @@ export function componentCount(type: MaterialValueType): number {
   return COMPONENTS[type];
 }
 
-export function isNumericType(type: MaterialValueType): boolean {
-  return type !== "texture";
+export function isNumericType(type: string): type is MaterialNumericType {
+  return type === "float" || type === "vec2" || type === "vec3" || type === "vec4";
 }
 
 export function materialTypeLabel(type: MaterialValueType): string {
   return LABELS[type];
 }
 
-/** Widening applied while lowering so Babylon only ever sees exact types. */
-export type MaterialConversion = { kind: "splat"; to: MaterialValueType };
+/** One numeric input boundary. Keep these in order when inlining functions. */
+export interface MaterialConversion {
+  from: MaterialNumericType;
+  to: MaterialNumericType;
+}
+
+/** Preserve leading channels, discard excess channels, and fill missing XYZW with 0001. */
+export function convertMaterialValue(
+  value: readonly number[],
+  conversion: MaterialConversion,
+): number[] {
+  const sourceWidth = componentCount(conversion.from);
+  return Array.from({ length: componentCount(conversion.to) }, (_, index) => {
+    const fallback = index === 3 ? 1 : 0;
+    return index < sourceWidth ? (value[index] ?? fallback) : fallback;
+  });
+}
 
 /**
- * A float broadcasts into any vector. Everything else must match exactly:
- * truncation and partial widening need an explicit Split / Combine node so the
- * authored graph says which components move where.
+ * Numeric inputs accept every numeric width. Textures only connect to textures.
  */
 export function typesAreAssignable(
   from: MaterialValueType,
   to: MaterialValueType,
 ): boolean {
   if (from === to) return true;
-  if (!isNumericType(from) || !isNumericType(to)) return false;
-  return from === "float";
+  return isNumericType(from) && isNumericType(to);
 }
 
 export function conversionFor(
@@ -70,8 +84,8 @@ export function conversionFor(
   to: MaterialValueType,
 ): MaterialConversion | null {
   if (from === to) return null;
-  if (!typesAreAssignable(from, to)) return null;
-  return { kind: "splat", to };
+  if (!isNumericType(from) || !isNumericType(to)) return null;
+  return { from, to };
 }
 
 export type GenericResolution =
@@ -80,7 +94,7 @@ export type GenericResolution =
 
 /**
  * Resolve one generic pin group from the types actually wired into it.
- * Floats splat, so the group takes the single widest vector present.
+ * The group takes the widest numeric input, independently of connection order.
  */
 export function resolveGenericType(
   connected: readonly MaterialValueType[],
@@ -90,12 +104,9 @@ export function resolveGenericType(
     if (!isNumericType(type)) {
       return { ok: false, conflict: [resolved, type] };
     }
-    if (type === "float" || type === resolved) continue;
-    if (resolved === "float") {
+    if (componentCount(type) > componentCount(resolved)) {
       resolved = type;
-      continue;
     }
-    return { ok: false, conflict: [resolved, type] };
   }
   return { ok: true, type: resolved };
 }

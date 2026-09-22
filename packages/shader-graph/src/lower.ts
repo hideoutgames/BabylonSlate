@@ -13,7 +13,7 @@ import type {
 } from "./document";
 import { createTypeResolver, type TypeResolver } from "./resolve";
 import { resolveMaterialPinDefault } from "./pin-defaults";
-import { componentCount, conversionFor, type MaterialConversion, type MaterialValueType } from "./types";
+import { componentCount, conversionFor, convertMaterialValue, type MaterialConversion, type MaterialValueType } from "./types";
 import {
   validateMaterialDocument,
   type MaterialDiagnostic,
@@ -35,7 +35,7 @@ export type MaterialOperand =
       kind: "operation";
       operationId: string;
       pinId: string;
-      convert?: MaterialConversion;
+      conversions?: MaterialConversion[];
     }
   | {
       kind: "constant";
@@ -189,7 +189,7 @@ function describeOperand(operand: MaterialOperand | null | undefined): string {
     return `c:${operand.type}:${operand.value.join("/")}`;
   }
   return `o:${operand.operationId}:${operand.pinId}${
-    operand.convert ? `:${operand.convert.kind}:${operand.convert.to}` : ""
+    operand.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
   }`;
 }
 
@@ -335,9 +335,9 @@ export function lowerMaterialDocument(
     const conversion = conversionFor(sourceType, targetType);
     if (!conversion) return operand;
     if (operand.kind === "constant") {
-      return constantOperand(targetType, operand.value);
+      return { kind: "constant", type: targetType, value: convertMaterialValue(operand.value, conversion) };
     }
-    return { ...operand, convert: conversion };
+    return { ...operand, conversions: [...(operand.conversions ?? []), conversion] };
   }
 
   /** Resolve a producing pin into an operand, inlining calls and plumbing. */

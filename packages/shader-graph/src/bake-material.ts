@@ -1,4 +1,4 @@
-import { componentCount } from "./types";
+import { componentCount, convertMaterialValue } from "./types";
 import {
   lowerMaterialDocument,
   type MaterialBuildPlan,
@@ -80,9 +80,7 @@ export function resolveBakeDiffuseClosure(
     if (operand.kind === "constant") return [...operand.value];
     const value = values.get(operand.operationId);
     if (!value) throw new Error("Bake Material has an unresolved constant.");
-    return operand.convert
-      ? Array(componentCount(operand.convert.to)).fill(value[0])
-      : [...value];
+    return (operand.conversions ?? []).reduce(convertMaterialValue, [...value]);
   };
   const equal = (name: string, value: number[]) => {
     const actual = evaluate(plan.outputs[name], value);

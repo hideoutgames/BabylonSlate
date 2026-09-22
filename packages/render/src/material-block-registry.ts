@@ -490,32 +490,18 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   },
   "vector.mask": ({ name, operation }): BlockRealization => {
     const split = new VectorSplitterBlock(`${name}_split`);
-    const value = operation.resolvedType === "vec2" ? split.xyIn : operation.resolvedType === "vec3" ? split.xyzIn : split.xyzw;
+    const value = split.xyzw;
     const channels = vectorMaskChannels(operation.properties).map((channel) => [split.x, split.y, split.z, split.w][VECTOR_MASK_CHANNELS.indexOf(channel)]!);
     if (channels.length === 1) return { blocks: [split], inputs: { value }, outputs: { out: channels[0]! } };
     const merge = new VectorMergerBlock(`${name}_merge`);
     channels.forEach((channel, index) => channel.connectTo([merge.x, merge.y, merge.z, merge.w][index]!));
     return { blocks: [split, merge], inputs: { value }, outputs: { out: channels.length === 2 ? merge.xyOut : channels.length === 3 ? merge.xyzOut : merge.xyzw } };
   },
-  "vector.split": ({ name, operation }): BlockRealization => {
-    if (operation.resolvedType === "float") {
-      const block = new AddBlock(name);
-      const zero = constantInput(`${name}_zero`, "float", [0]);
-      zero.output.connectTo(block.right);
-      return { blocks: [block, zero], inputs: { value: block.left }, outputs: { x: block.output } };
-    }
+  "vector.split": ({ name }): BlockRealization => {
     const block = new VectorSplitterBlock(name);
-    // VectorSplitter exposes one input per width; pick the one that matches
-    // so a Vector 2 is not offered to a Vector 4 connector.
-    const value =
-      operation.resolvedType === "vec2"
-        ? block.xyIn
-        : operation.resolvedType === "vec3"
-          ? block.xyzIn
-          : block.xyzw;
     return {
       blocks: [block],
-      inputs: { value },
+      inputs: { value: block.xyzw },
       outputs: { x: block.x, y: block.y, z: block.z, w: block.w },
     };
   },
