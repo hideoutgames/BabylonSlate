@@ -10,12 +10,12 @@ pending qualification; it is not enabled alongside the new host.
 
 | Requirement | Latest evidence | Remaining |
 | --- | --- | --- |
-| Shared ownership and pixels | `b205b472`: WebGPU ownership browser case passed; WebGL2 case failed with absent regular-instance outlines | Repair WebGL2, rerun changed paths on both APIs |
-| Materials, animation, LOD | Same run: both geometry cases failed; captures exposed a stale WebGL native reference and an incorrect orthographic LOD threshold | Corrected fixture readiness/LOD setup and added opacity/thin/morph-alpha cases await execution |
+| Shared ownership and pixels | `b05d4467`: both API cases passed all 43 presented states after repairing regular-instance readiness; software adapters | Hands-on acceptance and current integrated geometry qualification |
+| Materials, animation, LOD | `b05d4467`: both geometry cases failed; LOD passed, but WebGL lazy UV/morph readiness and unpublished color-morph data remained | Repairs at `19fea64c` pass all 18 scene readiness unit cases; both geometry browser cases await admission/execution |
 | Authored/UI/settings | `531e7039`: five explicit UI files, 93 passes; `5308c759`: 75 passes across 11 unchanged core/runtime/render files | Hands-on authoring/history/reopen and new standalone export pixels |
 | Owner/runtime/Class regressions | `eea6009e`: four shared-owner cases and one Class inheritance case passed; failed parent/child lifecycle repaired and passed at `531e7039` | Browser authoring and runtime lifecycle acceptance |
 | Main integration | Normal merge retains snapshot membership/pose separation and rendering bindings; `ec1926c1`: two snapshot files, 67 passes; `bf2dc011`: eight selected outline/area-light cases passed | Current affected browser and CI gates |
-| Static checks | Render typecheck passed `fb203a97`; editor/player build passed `b205b472`; 12-file scoped lint found only the repaired scene-host unused bindings, whose rerun passed `bf2dc011` | Static checks for subsequent relevant edits |
+| Static checks | Render typecheck and five changed render/geometry-file lint checks passed `19fea64c`; editor/player build passed `b05d4467`; earlier scene-host lint repair passed `bf2dc011` | Editor/player build for subsequent readiness edits |
 | Computer Use | Chrome connected; retained parented/scaled area-light Play/save/reopen captures below are from `90267c2b` | Routes A/C and remainder of B on the completed build; texture import permission remains unresolved |
 | Cost/device | Previous shadow evidence retained; no new outline hardware cost claim | Fixed-quality desktop comparison and bounded lifecycle exercise; physical A16 remains deferred |
 | Delivery | Existing branch and draft PR #651 remain unmerged | Complete acceptance, review and exact-head required CI before guarded merge |
@@ -29,6 +29,26 @@ acceptance: [WebGL ownership](../assets/renderer-qualification/2026-09-22-genera
 The [native reference](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgl2-position-and-color-morph-native.png)
 and [outlined frame](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgl2-position-and-color-morph-outlined.png)
 show why direct fixture edits must revalidate readiness before capture.
+
+The later `b05d4467` production ownership run passed on effective WARP WebGL2
+and SwiftShader WebGPU: independently removable consumers, membership order,
+same-instance overlap, strict occlusion, high identities, 48 styles, resizing,
+unchanged requests and all-disabled retirement. These are automated functional
+results, not Computer Use acceptance or representative hardware cost:
+[WebGL2 diagnostics](../assets/renderer-qualification/2026-09-22-shared-ownership/ownership-webgl2.json),
+[WebGPU diagnostics](../assets/renderer-qualification/2026-09-22-shared-ownership/ownership-webgpu.json),
+[WebGL2 presented instances](../assets/renderer-qualification/2026-09-22-shared-ownership/ownership-webgl2-three-disjoint-instances.png),
+[WebGPU presented instances](../assets/renderer-qualification/2026-09-22-shared-ownership/ownership-webgpu-three-disjoint-instances.png).
+Its two geometry failures remain failures. The subsequent readiness repair
+synchronizes Babylon's lazy texture matrices and active morph influences before
+strict readiness probes; it does not replace the missing browser rerun.
+
+At `19fea64c`, `packages/render/src/scene-perf.test.ts` passed all 18 cases,
+including PBR/Standard lazy morph activation and requested hot-swap behavior.
+The earlier four-case selection is a subset, not four additional tests.
+The two geometry browser cases queued without admission for almost six minutes
+and were cancelled without execution. Available memory remained below the
+4 GiB build/browser-plus-reserve requirement; smaller checks were admitted.
 
 The host reserve remains **2 GiB**, explicitly confirmed by the user. All runs
 use shared admission and one worker. One browser attempt was cancelled during
