@@ -414,6 +414,14 @@ describe("Havok explicit native motion", () => {
     try {
       const stage = (label: string) =>
         console.info("trigger mutation stage", label);
+      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
+      const nativeStep = havok.HP_World_Step.bind(havok);
+      vi.spyOn(havok, "HP_World_Step").mockImplementation((...args) => {
+        stage("enter native step");
+        const result = nativeStep(...args);
+        stage("leave native step");
+        return result;
+      });
       body(backend);
       stage("body created");
       const trigger = (id: string, x: number) => ({

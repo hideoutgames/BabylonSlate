@@ -12,6 +12,8 @@ At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cove
 
 ## Engine follow-up: deferred local verification
 
+Verification resumed at `c3519d27` on 2026-09-22 with the shared 2 GiB reserve unchanged. Frozen-lockfile installation of the combined patched dependencies succeeded through admission. The isolated `havok-transactions.test.ts -t 'ends retired trigger' --disableConsoleIntercept` probe timed out at 60 seconds on the second physics step, after compound child removal (`agent-wait-jkcekE`). Its owned process tree was terminated and confirmed absent before removing only its stale admission ticket. Native-step boundary diagnostics were added for the next bounded reproduction; this gate remains failed, not deferred or passed.
+
 On 2026-09-22 the user requested skipping checks that cannot fit the machine's available memory and recording them for later. The team's queued particle check was cancelled before execution; no running check or unrelated process was stopped. `BL_TEST_PROFILE=shared` remains required. The shared `local-resources.json` had a 3 GiB reserve at deferral and changed externally to 2 GiB during source integration; this team left it unchanged. Read the current shared configuration when resuming. Do not bypass admission or repeatedly queue these checks while they cannot fit.
 
 Resume through the current runner from `main`'s `42596fb9`: its default low-memory policy admits one root workload and one worker, with no light-job bypass and at least 2 GiB headroom while preserving any higher configured reserve. Inspect the read-only `pnpm test:resources` report before resuming; do not change host configuration to fit a pending check.
