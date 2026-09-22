@@ -61,7 +61,8 @@ That attempt and the following blocked invocation are not passes.
 The focused `e2e/shared-outline-cost.spec.ts` fixture records a fixed 640×360
 output at scale 1, 12/192 shared-source actors, each consumer separately and all
 consumers together, then repeated membership/resize retirement. It uses the
-available adapter without forcing software and records its actual identity.
+available local adapter without forcing software and records its actual identity;
+hosted CI forces the existing software adapters for functional lifetime checks only.
 It separates synchronous CPU work, optional whole-engine WebGL GPU queries,
 presentation cadence and an explicitly estimated geometry upper bound. Stable
 uploads and zero retired outline allocations are asserted; no frame-rate budget

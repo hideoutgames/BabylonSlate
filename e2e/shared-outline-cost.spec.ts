@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { runSharedOutlineCostProof } from "../apps/editor/src/testing/shared-outline-cost-proof";
 import { renderingEvidence } from "./rendering-evidence";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-// Do not inject software-adapter flags: record whichever adapter actually runs.
-// Software results still protect lifetime invariants, but do not qualify GPU cost.
+// Local cost qualification uses the available adapter. Hosted CI uses software
+// for lifetime invariants only; its timings never qualify desktop GPU cost.
+const graphicsArguments = process.env.CI ? SOFTWARE_WEBGPU_ARGS : [];
+test.use({ launchOptions: { args: graphicsArguments } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`shared outline fixed-output cost and repeated retirement on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
@@ -15,7 +18,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       __babylonslateSharedOutlineCostProof: typeof runSharedOutlineCostProof;
     }).__babylonslateSharedOutlineCostProof(backend), backend);
     await testInfo.attach("shared-outline-cost", { body: JSON.stringify({ ...report,
-      evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"), graphicsArguments: [] }, errors }), contentType: "application/json" });
+      evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"), graphicsArguments }, errors }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(report.effectiveBackend).toBe(backend);
     for (const sample of report.measurements) {
