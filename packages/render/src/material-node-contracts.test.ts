@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -29,6 +29,58 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each([
+    ["math.atan2", ["y", "x"]],
+    ["math.step", ["edge", "value"]],
+    ["math.smoothstep", ["edgeA", "edgeB", "value"]],
+    ["math.remap", ["value", "fromMin", "fromMax", "toMin", "toMax"]],
+    ["vector.reflect", ["incident", "normal"]],
+  ] as const)("compiles mixed widths through every generic input of %s", async (type, pins) => {
+    const doc = createDefaultMaterialDocument("Generic Numeric", "postProcess");
+    node(doc, "wide", "const.vec4", { value: [0.2, 0.4, 0.6, 0.8] });
+    node(doc, "scalar", "param.float", { name: "Value", value: [0.5] });
+    node(doc, "operation", type);
+    doc.edges = [];
+    pins.forEach((pin, index) => wire(doc, index === 0 ? "wide" : "scalar", "out", "operation", pin));
+    wire(doc, "operation", "out", "output", "color");
+    const result = await compile(doc);
+    expect(result.setParameter("Value", { kind: "float", value: 0.75 })).toBe(true);
+  });
+
+  it.each([
+    ["vector.dot", ["a", "b"]],
+    ["vector.distance", ["a", "b"]],
+    ["vector.length", ["value"]],
+    ["vector.normalize", ["value"]],
+    ["vector.reflect", ["incident", "normal"]],
+  ] as const)("compiles Float inputs through %s", async (type, pins) => {
+    const doc = createDefaultMaterialDocument("Scalar Vector", "postProcess");
+    node(doc, "scalar", "const.float", { value: [0.5] });
+    node(doc, "operation", type);
+    doc.edges = [];
+    pins.forEach((pin) => wire(doc, "scalar", "out", "operation", pin));
+    wire(doc, "operation", "out", "output", "color");
+    await compile(doc);
+  });
+
+  it("keeps a widened Float parameter live and supplies opaque alpha", async () => {
+    const doc = createDefaultMaterialDocument("Numeric", "postProcess");
+    node(doc, "source", "param.float", { name: "Value", value: [0.25] });
+    doc.edges = [];
+    wire(doc, "source", "out", "output", "color");
+    const result = await compile(doc);
+    const fragment = result.material.attachedBlocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
+    const merge = fragment.rgba.connectedPoint!.ownerBlock as VectorMergerBlock;
+    expect(merge).toBeInstanceOf(VectorMergerBlock);
+    expect(merge.y.isConnected).toBe(false);
+    expect(merge.z.isConnected).toBe(false);
+    expect((merge.w.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
+    const source = merge.x.connectedPoint!.ownerBlock as InputBlock;
+    expect(source.value).toBe(0.25);
+    expect(result.setParameter("Value", { kind: "float", value: 0.75 })).toBe(true);
+    expect(source.value).toBe(0.75);
+    expect(result.material.compiledShaders).toContain(`vec4(${source.output.associatedVariableName}, 0.0, 0.0,`);
+  });
   it("keeps different legacy GLSL expressions distinct when numeric node IDs sanitize alike", async () => {
     const doc = createDefaultMaterialDocument();
     doc.shadingModel = "unlit";
@@ -213,7 +265,7 @@ describe("material node contracts", () => {
     expect(merge?.getInputByName("x")?.connectedPoint?.name).toBe("x");
     expect(merge?.getInputByName("y")?.connectedPoint?.name).toBe("z");
   });
-  it("allows a scalar Split X output without inventing vector components", async () => {
+  it("retains the authored Split input default", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "split", "vector.split", { "default:value": [0.7] });
     wire(doc, "split", "x", "output", "roughness");

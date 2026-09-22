@@ -80,7 +80,7 @@ describe("material validation", () => {
     expect(codes(doc)).toContain("material.unknownPin");
   });
 
-  it("flags a vector width mismatch instead of silently truncating", () => {
+  it("accepts a wider vector at a narrower material input", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
       id: "wide",
@@ -96,16 +96,10 @@ describe("material validation", () => {
       targetNodeId: "output",
       targetPinId: "baseColor",
     });
-    const diagnostics = validateMaterialDocument(doc);
-    const mismatch = diagnostics.find(
-      (row) => row.code === "material.typeMismatch",
-    );
-    expect(mismatch).toBeDefined();
-    expect(mismatch?.message).toContain("Vector 4");
-    expect(mismatch?.message).toContain("Vector 3");
+    expect(validateMaterialDocument(doc)).toEqual([]);
   });
 
-  it("allows a float to splat into a vector pin", () => {
+  it("allows a float to widen into a vector pin", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
       id: "scalar",
@@ -114,7 +108,7 @@ describe("material validation", () => {
       properties: { value: [0.5] },
     });
     doc.edges.push({
-      id: "splat",
+      id: "widen",
       sourceNodeId: "scalar",
       sourcePinId: "out",
       targetNodeId: "output",
@@ -123,7 +117,7 @@ describe("material validation", () => {
     expect(codes(doc)).not.toContain("material.typeMismatch");
   });
 
-  it("flags a generic node whose inputs disagree on width", () => {
+  it("accepts generic numeric inputs with different widths", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       {
@@ -156,7 +150,7 @@ describe("material validation", () => {
         targetPinId: "b",
       },
     );
-    expect(codes(doc)).toContain("material.genericConflict");
+    expect(validateMaterialDocument(doc)).toEqual([]);
   });
 
   it("flags two edges landing on one input pin", () => {

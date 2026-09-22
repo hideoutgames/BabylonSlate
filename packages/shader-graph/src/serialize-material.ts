@@ -251,8 +251,7 @@ export function hydrateMaterialGraphForEditor(
       for (const pin of pins) {
         if (node.type === "output.surface") pin.group = ({ baseColor: "Surface", emissive: "Emission", opacity: "Transparency", worldPositionOffset: "Geometry" } as Record<string, string>)[pin.id];
         const resolved = pin.direction === "in" ? resolver.inputType(node.id, pin.id) : resolver.outputType(node.id, pin.id);
-        const unconnectedMask = node.type === "vector.mask" && pin.direction === "in" && !graph.edges.some((edge) => edge.target === node.id && edge.targetHandle === pin.id);
-        if (pin.type.kind === "generic" && resolved && resolved !== "float" && !unconnectedMask) pin.type = { kind: resolved };
+        if (pin.type.kind === "generic" && resolved && resolved !== "float") pin.type = { kind: resolved };
         const kind = resolved ?? pin.type.kind;
         pin.typeLabel = kind === "float" ? "Float" : kind === "texture" ? "Texture" : /^vec[234]$/.test(kind) ? `V${kind.slice(-1)}` : "Numeric";
       }
@@ -280,9 +279,8 @@ export function hydrateMaterialGraphForEditor(
 type CanvasPin = { direction: "in" | "out"; type: { kind: string } };
 
 /**
- * Canvas connection rule for material graphs: a Float splats into any vector,
- * generic pins take any numeric value, and textures only meet textures.
- * Truncation stays explicit through a Split node.
+ * Material numeric pins accept every numeric width, including generic pins.
+ * Textures only meet textures.
  */
 export function materialPinsAreCompatible(
   outgoing: CanvasPin,
@@ -291,8 +289,8 @@ export function materialPinsAreCompatible(
   const from = outgoing.type.kind;
   const to = incoming.type.kind;
   if (from === "generic" && to === "generic") return true;
-  if (from === "generic") return to !== "texture";
-  if (to === "generic") return from !== "texture";
+  if (from === "generic") return isNumericType(to);
+  if (to === "generic") return isNumericType(from);
   if (from === "texture" || to === "texture") return from === to;
   return typesAreAssignable(
     from as MaterialValueType,

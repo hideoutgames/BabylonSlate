@@ -86,6 +86,7 @@ const {
   MaterialCompilerResultsPanel,
   MaterialDetailsPanel,
   MaterialFunctionInterfacePanel,
+  MaterialFunctionGraphPanel,
   MaterialGraphPanel,
   MaterialPreviewPanel,
 } = await import("./material-editor");
@@ -467,6 +468,25 @@ describe("Material graph panel", () => {
         '[data-id="output"] [data-handleid="worldPositionOffset"]',
       ),
     ).not.toBeNull();
+  });
+
+  it.each([
+    ["material", "const.float", "output", "baseColor"],
+    ["material", "const.vec4", "output", "roughness"],
+    ["material-function", "const.vec2", "outputs", "out_value"],
+  ])("persists a numeric connection in %s from %s to %s.%s", async (kind, type, targetId, targetPin) => {
+    const doc = kind === "material" ? createDefaultMaterialDocument() : createDefaultMaterialFunctionDocument();
+    doc.nodes.push({ id: "numeric", type: type!, position: { x: 0, y: 0 }, properties: { value: [1, 2, 3, 0] } });
+    harness.kind = kind!;
+    harness.content = doc as unknown as Record<string, unknown>;
+    const { container } = render(kind === "material" ? <MaterialGraphPanel {...panelProps} /> : <MaterialFunctionGraphPanel {...panelProps} />);
+    const sourceSelector = '[data-id="numeric"] [data-handleid="out"][data-handlepos="right"]';
+    await waitFor(() => expect(container.querySelector(sourceSelector)).not.toBeNull());
+    fireEvent.click(container.querySelector(sourceSelector)!);
+    fireEvent.click(container.querySelector(`[data-id="${targetId}"] [data-handleid="${targetPin}"][data-handlepos="left"]`)!);
+    expect(lastCommit().edges.filter((edge) => edge.targetNodeId === targetId && edge.targetPinId === targetPin)).toEqual([
+      expect.objectContaining({ sourceNodeId: "numeric", sourcePinId: "out" }),
+    ]);
   });
 
   it("shows read-only default widgets on unconnected material pins", async () => {

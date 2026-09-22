@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   componentCount,
   conversionFor,
+  convertMaterialValue,
   isNumericType,
   materialTypeLabel,
   resolveGenericType,
@@ -23,12 +24,17 @@ describe("material value types", () => {
     expect(isNumericType("texture")).toBe(false);
   });
 
-  it("splats a float into any vector but never truncates", () => {
-    expect(typesAreAssignable("float", "vec3")).toBe(true);
-    expect(conversionFor("float", "vec3")).toEqual({ kind: "splat", to: "vec3" });
-    expect(typesAreAssignable("vec3", "vec2")).toBe(false);
-    expect(typesAreAssignable("vec2", "vec4")).toBe(false);
-    expect(typesAreAssignable("vec3", "float")).toBe(false);
+  it.each([
+    ["float", [2], [[2], [2, 0], [2, 0, 0], [2, 0, 0, 1]]],
+    ["vec2", [2, -3], [[2], [2, -3], [2, -3, 0], [2, -3, 0, 1]]],
+    ["vec3", [2, -3, 4], [[2], [2, -3], [2, -3, 4], [2, -3, 4, 1]]],
+    ["vec4", [2, -3, 4, 0], [[2], [2, -3], [2, -3, 4], [2, -3, 4, 0]]],
+  ] as const)("converts %s to every numeric width without broadcasting", (from, value, expected) => {
+    for (const [index, to] of (["float", "vec2", "vec3", "vec4"] as const).entries()) {
+      expect(typesAreAssignable(from, to)).toBe(true);
+      const conversion = conversionFor(from, to);
+      expect(conversion ? convertMaterialValue(value, conversion) : value).toEqual(expected[index]);
+    }
   });
 
   it("needs no conversion for identical types", () => {
@@ -52,11 +58,12 @@ describe("material value types", () => {
     expect(resolveGenericType([])).toEqual({ ok: true, type: "float" });
   });
 
-  it("rejects a generic group mixing two different vector widths", () => {
-    expect(resolveGenericType(["vec2", "vec3"])).toEqual({
-      ok: false,
-      conflict: ["vec2", "vec3"],
-    });
+  it.each([
+    ["vec2", "vec3", "float"],
+    ["float", "vec3", "vec2"],
+    ["vec3", "vec2", "float"],
+  ] as const)("resolves mixed widths independently of order: %s %s %s", (...types) => {
+    expect(resolveGenericType(types)).toEqual({ ok: true, type: "vec3" });
   });
 
   it("rejects a generic group containing a texture", () => {
