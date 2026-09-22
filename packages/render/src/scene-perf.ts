@@ -145,20 +145,61 @@ export function applyEditorMaterialFreeze(
   }
 }
 
+/**
+ * Maximum time a loading step may go without observable progress. A slow host
+ * that keeps completing units stays within budget; a hung unit fails promptly.
+ */
 export const SCENE_SHADER_WARM_TIMEOUT_MS = 4_000;
 
-export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<void> {
+export interface StallDeadline {
+  /** Restart the deadline after one unit of progress; `unit` names the next one. */
+  advance(unit: string): void;
+  /** Settle with `work`, or reject once no progress is observed for the budget. */
+  race(work: Promise<void>): Promise<void>;
+}
+
+/**
+ * A deadline that measures stalls, not total duration. The rejection names the
+ * unit in progress and how many settled before it.
+ */
+export function createStallDeadline(
+  describe: (stalled: string | null, completed: number) => string,
+  ms: number,
+): StallDeadline {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      work,
-      new Promise<void>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error("Scene shaders did not become ready before the loading deadline.")), ms);
-      }),
-    ]);
-  } finally {
+  let current: string | null = null;
+  let completed = -1;
+  let reject: ((error: Error) => void) | undefined;
+  const arm = () => {
     if (timer !== undefined) clearTimeout(timer);
-  }
+    timer = setTimeout(() => reject?.(new Error(describe(current, Math.max(completed, 0)))), ms);
+  };
+  return {
+    advance(unit) {
+      current = unit;
+      completed++;
+      if (reject) arm();
+    },
+    async race(work) {
+      try {
+        await Promise.race([
+          work,
+          new Promise<void>((_resolve, fail) => {
+            reject = fail;
+            arm();
+          }),
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        reject = undefined;
+      }
+    },
+  };
+}
+
+function describeShaderStall(stalled: string | null, completed: number): string {
+  const where = stalled ? ` Stalled compiling ${stalled}` : "";
+  return `Scene shaders did not become ready before the loading deadline.${where} after ${completed} compiled variant${completed === 1 ? "" : "s"}.`;
 }
 
 export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => void): Promise<void> {
@@ -169,8 +210,9 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
   };
   check();
   syncSceneLighting(scene);
+  const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS);
   try {
-    await settleOrTimeout((async () => {
+    await deadline.race((async () => {
       for (const mesh of scene.meshes) {
         check();
         if (!(mesh instanceof Mesh)) continue;
@@ -182,15 +224,17 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
           : new Set([material]);
         for (const entry of materials) {
           check();
+          deadline.advance(`"${entry.name}" for "${mesh.name}"`);
           if (entry instanceof NodeMaterial) await prewarmMaterial(entry, mesh);
           else await entry.forceCompilationAsync(mesh);
           check();
           if (mesh.hasThinInstances || mesh.instances.length > 0) {
+            deadline.advance(`"${entry.name}" for instances of "${mesh.name}"`);
             await entry.forceCompilationAsync(mesh, { useInstances: true });
           }
         }
       }
-    })(), SCENE_SHADER_WARM_TIMEOUT_MS);
+    })());
     check();
   } finally {
     // A timeout cannot cancel Babylon's in-flight GPU compile. Its continuation
@@ -329,13 +373,19 @@ export function onSceneReadinessDirty(
 
 /** Native texture decoding may render asynchronously after its load observable. */
 export function isSceneTextureWorkReady(scene: Scene): boolean {
-  if (scene.isDisposed) return false;
+  return pendingSceneTextures(scene).length === 0;
+}
+
+/** Names of scene textures still loading or decoding; throws on a failed load. */
+export function pendingSceneTextures(scene: Scene): string[] {
+  if (scene.isDisposed) return ["<disposed scene>"];
+  const pending: string[] = [];
   for (const texture of scene.textures) {
     if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`,
       { cause: texture.errorObject?.exception });
-    if (!texture.isRenderTarget && !texture.isReady()) return false;
+    if (!texture.isRenderTarget && !texture.isReady()) pending.push(`texture "${texture.name}"`);
   }
-  return true;
+  return pending;
 }
 
 /**
