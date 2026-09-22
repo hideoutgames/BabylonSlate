@@ -56,7 +56,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     });
     await testInfo.attach("shared-outline-qualification", {
       body: JSON.stringify({ ...report, evidence,
-        snapshots: report.snapshots.map(({ image: _image, ...snapshot }) => snapshot), errors, diagnostics }),
+        snapshots: report.snapshots.map((snapshot) => ({ ...snapshot, image: undefined })), errors, diagnostics }),
       contentType: "application/json",
     });
     expect(errors).toEqual([]);
