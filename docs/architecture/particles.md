@@ -116,3 +116,5 @@ Physical A16 measurements were waived for this delivery. Particle-specific expor
 Particle NodeMaterial define changes retire the replaced DrawWrapper after the current frame; Babylon delays effect disposal but destroys its WebGPU draw context immediately. The adapter also releases queued wrappers on engine disposal. Browser proofs count playback resets separately from CPU disposal resets.
 
 The pinned Babylon patch carries the NodeMaterial shader language through particle effect recreation. Without it, a WGSL particle material can request a GLSL replacement after live defines change and never become ready again. This is separate from the adapter's observer and draw-wrapper ownership.
+
+The custom-material adapter registers the native GPU WGSL vertex shader and sets the GPU draw wrapper's instancing flag. Babylon's default effect initialization performs both operations, but the pinned custom-effect path bypasses them; a cold first emitter must prepare without relying on an earlier default-material emitter.

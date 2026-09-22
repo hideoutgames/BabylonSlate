@@ -1,4 +1,7 @@
-import { DrawWrapper, type Effect, type IParticleSystem, type NodeMaterial, type Observer } from "@babylonjs/core";
+import { DrawWrapper, GPUParticleSystem, type Effect, type IParticleSystem, type NodeMaterial, type Observer } from "@babylonjs/core";
+// Custom effects bypass GPUParticleSystem's default effect initializer, which
+// normally imports its WGSL vertex shader before requesting compilation.
+import "@babylonjs/core/ShadersWGSL/gpuRenderParticles.vertex";
 
 type NativeParticleBinder = (
   system: IParticleSystem, blend: number,
@@ -64,6 +67,9 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     if (!currentEffect || !observer || observer === previous?.observer || !(wrapper instanceof DrawWrapper) || wrapper.effect !== currentEffect) {
       throw new Error("Babylon did not install the expected particle binding observer.");
     }
+    // The pinned setCustomEffect omits the instanced context flag set by its
+    // default GPU effect path. GPU particle attributes advance per particle.
+    if (system instanceof GPUParticleSystem && wrapper.drawContext) wrapper.drawContext.useInstancing = true;
     owned.bindings.set(blend, { effect: currentEffect, observer, wrapper });
     // DrawWrapper.dispose delays the Effect, but destroys its draw context
     // immediately. A define change occurs inside onBind, before the current
