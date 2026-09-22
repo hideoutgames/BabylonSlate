@@ -42,10 +42,13 @@ export function parseRigidBodyProperties(
 export function parseColliderProperties(
   properties: Record<string, unknown> | undefined,
   worldKind: "3d" | "2d",
+  options: { validation?: "native" | "authoring" } = {},
 ): ColliderProperties {
   const source = properties ?? {};
   const shape = parseShape(source.shape, worldKind);
-  validateColliderShape(shape);
+  // The inspector must display unfinished point clouds and zero-sized draft
+  // primitives. Simulation callers retain strict geometry validation.
+  if (options.validation !== "authoring") validateColliderShape(shape);
   return {
     shape,
     friction: numberOr(source.friction, 0.5),

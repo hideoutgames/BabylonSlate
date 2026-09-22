@@ -283,7 +283,7 @@ function colliderShapeRows(
   update: (property: string, value: unknown) => void,
   physicsWorld: "3d" | "2d",
 ): PropertyRow[] {
-  const parsed = parseColliderProperties(component.properties, physicsWorld);
+  const parsed = parseColliderProperties(component.properties, physicsWorld, { validation: "authoring" });
   const shape = parsed.shape;
   const kinds: string[] =
     physicsWorld === "2d" ? [...SHAPE_KINDS_2D] : [...SHAPE_KINDS_3D];

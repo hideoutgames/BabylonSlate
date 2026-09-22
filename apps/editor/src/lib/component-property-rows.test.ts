@@ -818,6 +818,15 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("keeps an unfinished primitive editable without admitting it to physics", () => {
+    const result = rowsFor({ id: "col", classId: "ColliderComponent", properties: {
+      shape: { kind: "sphere", radius: 0 },
+    } });
+    expect(result.rows.find((row) => row.id.endsWith("-shape-radius"))).toMatchObject({
+      kind: "number", value: 0,
+    });
+  });
+
   it("skips polygon and mesh point-cloud JSON for collider shapes", () => {
     const mesh = rowsFor({
       id: "col",

@@ -218,3 +218,5 @@ The first native batch covers 300 compound edit cycles, first/middle/final child
 Authored simple-collider factories copy identity TRS arrays for each collider. Editing a source collider must not mutate another component or the defaults used by future primitives. Software queries compose the body rigid pose with collider-local pose before computing their existing conservative bounds.
 
 Make Transform now supplies unit scale when its scale input is unauthored, so graph-created physics actors have a valid default transform. Explicit authored scales remain unchanged, including zero values that physics rejects as degenerate.
+
+Collider property parsing defaults to native geometry validation. Inspector rows explicitly select the authoring mode so empty point clouds and zero-sized draft primitives remain editable; the runtime and native backends still reject those geometries.
