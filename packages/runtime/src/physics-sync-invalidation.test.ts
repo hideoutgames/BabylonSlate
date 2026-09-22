@@ -353,6 +353,7 @@ it.each([
         });
         const y = slot.position.y + center.y;
         expect(y).toBeCloseTo(2 * parentScale.x);
+        console.info("alignment", tick, actor.guid, slot, backend.listDebugColliders());
         expect(
           backend.lineTrace({ x: -5, y, z: 0 }, { x: 5, y, z: 0 }).hit,
         ).toBe(true);
