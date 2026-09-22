@@ -198,6 +198,51 @@ it("retains a usable environment during a failed successor upload and releases i
   expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1, pending: 0 });
 });
 
+it("waits for successor admission even when native pixels are ready, retaining the old environment on rejection", async () => {
+  const { cache, a, assets } = fixture();
+  applyEnvironmentLighting(a, "environment", assets);
+  const working = a.environmentTexture!;
+  const acquire = cache.acquireTexture.bind(cache);
+  let rejectAdmission!: (error: Error) => void;
+  const rejected = new Promise<void>((_resolve, reject) => { rejectAdmission = reject; });
+  const acquisition = vi.spyOn(cache, "acquireTexture").mockImplementationOnce((...args) => {
+    const lease = acquire(...args);
+    expect(lease.resource.isReady()).toBe(true);
+    return { ...lease, ready: rejected };
+  });
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const nextBytes = buildFloatDdsCubeFixture({ color: [1, 0, 0, 1] });
+  applyEnvironmentLighting(a, "rejected", {
+    ...assets, textureBytes: new Map([["rejected", nextBytes]]),
+  });
+  expect(a.environmentTexture).toBe(working);
+  rejectAdmission(new Error("Controlled successor budget rejection"));
+  await expect(rejected).rejects.toThrow("successor budget rejection");
+  cache.flushUnreferenced();
+  expect(a.environmentTexture).toBe(working);
+  expect(working.isReady()).toBe(true);
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1, pending: 0 });
+  expect(error).toHaveBeenCalledOnce();
+  for (let i = 0; i < 100; i++) syncEnvironmentLighting(a);
+  expect(acquisition).toHaveBeenCalledOnce();
+
+  let admit!: () => void;
+  const admitted = new Promise<void>((resolve) => { admit = resolve; });
+  acquisition.mockImplementationOnce((...args) => ({ ...acquire(...args), ready: admitted }));
+  applyEnvironmentLighting(a, "admitted", {
+    ...assets, textureBytes: new Map([["admitted", nextBytes]]),
+  });
+  expect(a.environmentTexture).toBe(working);
+  admit();
+  await admitted;
+  expect(a.environmentTexture).not.toBe(working);
+  expect(a.environmentTexture?.isReady()).toBe(true);
+  expect(working.getInternalTexture()).toBeNull();
+  cache.flushUnreferenced();
+  expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1, pending: 0 });
+});
+
 it("blocks pending uploads and exposes the current source failure without letting a stale upload poison its replacement", () => {
   const { engine, cache, upload, a, assets } = fixture();
   let fail: ((message?: string, exception?: unknown) => void) | undefined;
@@ -436,6 +481,7 @@ it("keeps all pending face reads alive after rejection and ignores obsolete work
     ...assets,
     textureBytes: new Map([["replacement", bytes]]),
   });
+  await vi.waitFor(() => expect(isEnvironmentLightingReady(a)).toBe(true));
   cache.flushUnreferenced();
   expect(source.getInternalTexture()).not.toBeNull();
   expect(isEnvironmentLightingReady(a)).toBe(true);
