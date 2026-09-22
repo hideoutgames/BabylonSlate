@@ -316,8 +316,10 @@ describe("cooperative editor realization", () => {
       signal: controller.signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
       yieldControl: async () => {
-        await delayed.ready;
-        controller.abort(failure);
+        if (requests.mock.calls.length) {
+          await delayed.ready;
+          controller.abort(failure);
+        }
       },
     })).rejects.toBe(failure);
     const root = sync.meshForActor("actor-0")!;

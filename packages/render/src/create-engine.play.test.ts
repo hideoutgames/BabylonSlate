@@ -1630,7 +1630,8 @@ describe("Play createEngine view", () => {
       expect(passes).toHaveLength(2);
 
       await prewarmMaterial(material as NodeMaterial, null);
-      expect(handle.scene.getMaterialByName("material:pp")).toBe(material);
+      // Two independent pass materials intentionally share this display name.
+      expect(handle.scene.materials).toContain(material);
       expect(camera._postProcesses.filter((pass) => pass != null)).toEqual(passes);
       expect(handle.postProcessPassCount()).toBe(2);
 
