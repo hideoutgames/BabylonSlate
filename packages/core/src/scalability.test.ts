@@ -11,6 +11,9 @@ describe("runtime scalability session", () => {
     const { settings, transactions } = session();
     const before = settings.requested;
     expect(settings.request({ kind: "patch", render: { cel: { outlinesEnabled: false, outlineColor: [1, NaN, 0] } } }).status).toBe("failed");
+    const sparse = [1, 1, 0] as [number, number, number];
+    Reflect.deleteProperty(sparse, "1");
+    expect(settings.request({ kind: "patch", frameCap: 45, render: { cel: { outlinesEnabled: false, outlineColor: sparse } } }).status).toBe("failed");
     expect(settings.requested).toEqual(before);
     expect(transactions).toHaveLength(0);
     const result = settings.request({ kind: "patch", render: { cel: { outlinesEnabled: false, outlineColor: [-1, 0.123456, 2], outlineWidth: 99 } } });

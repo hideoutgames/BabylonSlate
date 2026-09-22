@@ -97,7 +97,7 @@ function validatePatch(patch: unknown, template: unknown, prefix = ""): string |
     } else if (ENUMS[path]) {
       if (!ENUMS[path].includes(value)) return `Unsupported value for ${path}.`;
     } else if (Array.isArray(expected)) {
-      if (!Array.isArray(value) || value.length !== expected.length || !value.every((n) => typeof n === "number" && Number.isFinite(n)))
+      if (!Array.isArray(value) || value.length !== expected.length || !Array.from(value).every((n) => typeof n === "number" && Number.isFinite(n)))
         return `${path} requires ${expected.length} finite numbers.`;
     } else if (typeof value !== typeof expected || (typeof value === "number" && !Number.isFinite(value))) {
       return `${path} requires a finite ${typeof expected}.`;
