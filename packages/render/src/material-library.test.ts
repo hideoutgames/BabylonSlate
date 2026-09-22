@@ -6,7 +6,7 @@ import {
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -261,21 +261,21 @@ describe("material library", () => {
     expect(resolveTexture).toHaveBeenCalledWith("tex-1");
   });
 
-  it("does not dispose a ResourceCache Texture when a compiled material is released", () => {
+  it("releases material texture ownership without disposing an independent view's lease", async () => {
     const scene = host();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     disposers.push(() => cache.dispose());
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const cached = getMaterialTexture(
+    const cachedLease = acquireMaterialTexture(
       cache,
       "tex-1",
       scene.getEngine(),
       bytes,
     );
+    const cached = cachedLease?.resource ?? null;
     expect(cached).not.toBeNull();
-    const library = new MaterialLibrary({
-      resolveTexture: (guid) => (guid === "tex-1" ? cached : null),
-    });
+    const acquire = vi.fn((guid: string) => guid === "tex-1" ? acquireMaterialTexture(cache, guid, scene.getEngine(), bytes) : null);
+    const library = new MaterialLibrary({ acquireTexture: acquire, textureIdentity: () => "installed-source" });
     disposers.push(() => library.dispose());
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
@@ -324,7 +324,13 @@ describe("material library", () => {
     );
     const acquired = library.acquire(scene, "mat-1", doc);
     expect(acquired.ok).toBe(true);
+    if (!acquired.ok) throw new Error("Material did not compile");
+    await acquired.ready;
+    expect(library.isReady(scene, "mat-1", doc)).toBe(true);
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(cache.resourceStats().leases).toBe(2);
     library.release(scene, "mat-1");
+    expect(cache.resourceStats().leases).toBe(1);
     expect(isDisposedGpuTexture(cached!)).toBe(false);
   });
 

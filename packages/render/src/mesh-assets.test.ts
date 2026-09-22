@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Material,
   MeshBuilder,
@@ -7,8 +7,8 @@ import {
   StandardMaterial,
   Texture,
 } from "@babylonjs/core";
-import { applyAlbedoTexture, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
+import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 
 describe("meshAssetFingerprint", () => {
@@ -69,12 +69,80 @@ describe("modelSlotFingerprint", () => {
 });
 
 describe("applyAlbedoTexture", () => {
+  it("keeps the previous texture after upload failure and ignores an obsolete completion", async () => {
+    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const sources = installTextureBytes(new Map([
+      ["first", new Uint8Array([1, 2, 3])], ["failed", new Uint8Array([1, 2, 4])], ["winner", new Uint8Array([1, 2, 5])],
+    ]))!;
+    const assets = { resourceCache: cache, textureBytes: sources };
+    applyAlbedoTexture(mesh, scene, "first", assets);
+    const material = mesh.material as StandardMaterial;
+    const working = material.diffuseTexture;
+    const nativeCreate = engine.createTexture.bind(engine);
+    const failures: Array<NonNullable<Parameters<typeof engine.createTexture>[6]>> = [];
+    const create = vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+      failures.push(args[6]!); args[5] = null;
+      const texture = nativeCreate(...args); texture.isReady = false; return texture;
+    });
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      applyAlbedoTexture(mesh, scene, "failed", assets);
+      expect(material.diffuseTexture).toBe(working);
+      failures[0]!("controlled failure", undefined);
+      await Promise.resolve();
+      expect(material.diffuseTexture).toBe(working);
+      expect(report).toHaveBeenCalledOnce();
+      applyAlbedoTexture(mesh, scene, "winner", assets);
+      const winner = cache.acquireTexture("winner", engine, sources.get("winner")!, { noMipmap: true, samplingMode: Texture.NEAREST_SAMPLINGMODE, anisotropicFilteringLevel: 1, hasAlpha: true });
+      winner.resource.getInternalTexture()!.isReady = true;
+      winner.resource.onLoadObservable.notifyObservers(winner.resource as never);
+      await winner.ready;
+      expect(material.diffuseTexture).toBe(winner.resource);
+      failures[0]!("obsolete failure", undefined);
+      await Promise.resolve();
+      expect(material.diffuseTexture).toBe(winner.resource);
+      expect(mesh.material).toBe(material);
+      winner.release();
+    } finally { create.mockRestore(); report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose(); }
+  });
+  it("reapplies equal installed content without acquiring and clears its exact binding", () => {
+    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const acquire = vi.spyOn(cache, "acquireTexture");
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    applyAlbedoTexture(mesh, scene, "atlas", { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", bytes]])) });
+    applyAlbedoTexture(mesh, scene, "atlas", { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", bytes.slice()]])) });
+    expect(acquire).toHaveBeenCalledOnce();
+    applyAlbedoTexture(mesh, scene, null, { resourceCache: cache });
+    expect((mesh.material as StandardMaterial).diffuseTexture).toBeNull();
+    expect(cache.resourceStats().leases).toBe(0);
+    scene.dispose(); cache.dispose(); engine.dispose();
+  });
+  it("keeps the material and binding stable across 10,000 repeated sprite selections", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", new Uint8Array([1, 2, 3, 4])]])) };
+    applyAlbedoTexture(mesh, scene, "atlas", assets);
+    const material = mesh.material;
+    for (let i = 0; i < 10_000; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);
+    expect(mesh.material).toBe(material);
+    scene.dispose();
+    cache.flushUnreferenced();
+    expect(isDisposedGpuTexture((material as StandardMaterial).diffuseTexture!)).toBe(true);
+    cache.dispose();
+    engine.dispose();
+  });
   it("does not dispose a live material Texture when overlay sampling flags differ", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    // NullEngine reserves unknown-format 512x512 uploads as RGBA float.
+    const cache = new ResourceCache({ byteCeiling: 16 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const albedo = getMaterialTexture(cache, "tex-1", engine, bytes);
+    const albedoLease = acquireMaterialTexture(cache, "tex-1", engine, bytes);
+    const albedo = albedoLease?.resource ?? null;
     expect(albedo).not.toBeNull();
     const mesh = MeshBuilder.CreatePlane("overlay", { size: 1 }, scene);
     applyAlbedoTexture(mesh, scene, "tex-1", {

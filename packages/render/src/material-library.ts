@@ -1,3 +1,4 @@
+import { materialTextureBindings, type ResourceLease } from "./resource-cache";
 import type { Mesh, NodeMaterial, Scene, Texture } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
@@ -78,6 +79,8 @@ function documentForPlan(
 
 export interface MaterialLibraryOptions {
   particlePreview?: boolean;
+  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
+  textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
@@ -115,6 +118,11 @@ export class MaterialLibrary {
     this.options = options;
   }
 
+  private generationHash(plan: MaterialBuildPlan): string {
+    if (!this.options.textureIdentity) return plan.hash;
+    return JSON.stringify([plan.hash, plan.textures.map((texture) => [texture.textureGuid, this.options.textureIdentity!(texture.textureGuid) ?? null])]);
+  }
+
   private entriesFor(scene: Scene): Map<string, CacheEntry> {
     const existing = this.scenes.get(scene);
     if (existing) return existing;
@@ -145,7 +153,7 @@ export class MaterialLibrary {
     const entry = this.pending.get(scene)?.get(key) ?? entries.get(key);
     return (
       entry !== undefined &&
-      entry.hash === lowered.plan.hash &&
+      entry.hash === this.generationHash(lowered.plan) &&
       !isDisposedNodeMaterial(entry.material, scene)
     );
   }
@@ -172,39 +180,84 @@ export class MaterialLibrary {
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
     const waiting = pending.get(key);
-    if (waiting?.hash === lowered.plan.hash && !isDisposedNodeMaterial(waiting.material, scene)) {
+    if (waiting?.hash === this.generationHash(lowered.plan) && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
       return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
     }
     if (waiting) { pending.delete(key); waiting.dispose(); }
     if (
       existing &&
-      existing.hash === lowered.plan.hash &&
+      existing.hash === this.generationHash(lowered.plan) &&
       !isDisposedNodeMaterial(existing.material, scene)
     ) {
       existing.refCount += 1;
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
-    const compiled = compileMaterialPlan(lowered.plan, {
+    const textures = materialTextureBindings(this.options.acquireTexture, this.options.textureIdentity);
+    let compiled: ReturnType<typeof compileMaterialPlan>;
+    try { compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       particlePreview: this.options.particlePreview,
       logicalSceneBuffers: options?.logicalSceneBuffers,
-      resolveTexture: this.options.resolveTexture,
+      resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
-    });
+    }); } catch (error) {
+      textures.dispose();
+      throw error;
+    }
     if (materialCompileFailed(compiled)) {
+      textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };
     }
+    const pendingParameters = new Map<string, { texture: Texture; cancel: () => void }>();
+    const pruneTextures = () => textures.prune([...compiled.material.getActiveTextures(), ...[...pendingParameters.values()].map((entry) => entry.texture)]);
+    const cancelParameter = (name: string) => { pendingParameters.get(name)?.cancel(); pendingParameters.delete(name); };
+    const setParameter = (name: string, value: MaterialParameterValue) => {
+      cancelParameter(name);
+      if (this.options.acquireTexture && value.kind === "texture" && value.textureAssetGuid) {
+        const texture = textures.resolve(value.textureAssetGuid);
+        if (!texture || texture.loadingError) { pruneTextures(); return false; }
+        if (!texture.isReady()) {
+          const request = { texture, cancel: () => {} };
+          pendingParameters.set(name, request);
+          const publish = () => {
+            if (pendingParameters.get(name) !== request) return;
+            cancelParameter(name);
+            compiled.setParameter(name, value);
+            pruneTextures();
+          };
+          const ready = textures.ready(value.textureAssetGuid);
+          if (ready) void ready.then(publish, () => {
+            if (pendingParameters.get(name) !== request) return;
+            cancelParameter(name); pruneTextures();
+          });
+          else {
+            const loaded = texture.onLoadObservable.addOnce(publish);
+            request.cancel = () => texture.onLoadObservable.remove(loaded);
+          }
+          pruneTextures();
+          return true;
+        }
+      }
+      const accepted = compiled.setParameter(name, value);
+      pruneTextures();
+      return accepted;
+    };
     const candidate: CacheEntry = {
       material: compiled.material,
-      hash: lowered.plan.hash,
+      hash: this.generationHash(lowered.plan),
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
-      dispose: compiled.dispose,
-      setParameter: compiled.setParameter,
+      dispose: () => { for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
+      setParameter,
       getParameter: compiled.getParameter,
-      resetParameter: compiled.resetParameter,
+      resetParameter: (name) => {
+        cancelParameter(name);
+        const accepted = compiled.resetParameter(name);
+        pruneTextures();
+        return accepted;
+      },
       instanceKey: options?.instanceKey,
       ready: compiled.ready,
     };
@@ -234,7 +287,7 @@ export class MaterialLibrary {
         this.options.onMaterialReady?.(scene, assetGuid);
       });
     }
-    return { ok: true, material: compiled.material, hash: lowered.plan.hash, plan: lowered.plan, ready: compiled.ready };
+    return { ok: true, material: compiled.material, hash: this.generationHash(lowered.plan), plan: lowered.plan, ready: compiled.ready };
   }
 
   release(
@@ -328,7 +381,9 @@ export class MaterialLibrary {
           node.type === `param.${parameter.kind}` &&
           typeof node.properties.name === "string" &&
           node.properties.name.trim() === name,
-      ) && validMaterialParameterValue(parameter, this.options.resolveTexture)
+      ) && (parameter.kind === "texture" && this.options.textureIdentity
+        ? !parameter.textureAssetGuid || this.options.textureIdentity(parameter.textureAssetGuid) !== undefined
+        : validMaterialParameterValue(parameter, this.options.resolveTexture))
     );
   }
 
@@ -368,7 +423,7 @@ export class MaterialLibrary {
   isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
     const plan = this.planFor(doc, options?.unlit);
     const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
-    return plan.ok && !!entry && entry.hash === plan.plan.hash && !isDisposedNodeMaterial(entry.material, scene);
+    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan) && !isDisposedNodeMaterial(entry.material, scene);
   }
 
   /** Recompile changed dependencies while retaining the last usable generation. */

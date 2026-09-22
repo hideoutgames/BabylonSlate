@@ -47,7 +47,7 @@ export type Text2DMeshOptions = {
 
 export type Text2DAssetContext = MeshAssetContext & {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   paused?: boolean;
 };
 
@@ -311,11 +311,11 @@ void main() {
 function msdfAtlasTexture(
   scene: Scene,
   fontGuid: string,
-  png: Uint8Array,
+  png: Uint8Array | Blob,
   assets?: Text2DAssetContext,
-): BaseTexture | null {
+): import("./resource-cache").ResourceLease<BaseTexture> | null {
   if (!assets?.resourceCache) return null;
-  return assets.resourceCache.getTexture(
+  return assets.resourceCache.acquireTexture(
     `font-msdf-png:${fontGuid}`,
     scene.getEngine(),
     png,
@@ -459,7 +459,7 @@ export function createText2DMesh(
   const fontGuid = parsed.fontAssetGuid;
   const json = fontGuid ? assets?.fontMsdfJson?.get(fontGuid) : undefined;
   const png = fontGuid ? assets?.fontMsdfPng?.get(fontGuid) : undefined;
-  const hasPair = Boolean(json && png && json.byteLength > 0 && png.byteLength > 0);
+  const hasPair = Boolean(json && png && json.byteLength > 0 && (png instanceof Blob ? png.size : png.byteLength) > 0);
   if (parsed.renderer === "msdf" && !hasPair) warnMsdfFallback(fontGuid);
   const renderer = resolveText2DRenderer(parsed.renderer, hasPair);
   const fontStack = resolveText2DFontStack(fontGuid, assets);
@@ -490,10 +490,12 @@ export function createText2DMesh(
     text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
   };
 
-  const atlasTexture =
+  const atlasLease =
     renderer === "msdf" && fontGuid && png
       ? msdfAtlasTexture(scene, fontGuid, png, assets)
       : null;
+  const atlasTexture = atlasLease?.resource ?? null;
+  parent.onDisposeObservable.addOnce(() => atlasLease?.release());
 
   const packedCells: ReturnType<typeof rasterizeBitmapGlyph>[] = [];
   const bitmapKeys = new Set<string>();

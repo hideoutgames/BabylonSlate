@@ -1,3 +1,5 @@
+import { installedAssetIdentity } from "@babylonslate/assets";
+import { installTextureBytes } from "@babylonslate/render";
 import { useEffect, useRef, useState } from "react";
 import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
@@ -20,7 +22,7 @@ import {
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   setSceneRenderSettings,
-  getMaterialTexture,
+  acquireMaterialTexture,
   installPreviewEnvironment,
   isColliderVisualMesh,
   loadModelPreviewSource,
@@ -307,24 +309,23 @@ export function ModelPreviewCanvas({
         [],
         extraGuids,
       );
-      const textureBytes = await collectPlayTextureBytes(
+      const textureBytes = installTextureBytes(await collectPlayTextureBytes(
         new Map(),
         new Map(),
         materials.textureGuids,
-      );
+      ))!;
       if (cancelled || hostRef.current !== host) return;
       const lease = bindResourceCacheToHandle(resourceCacheForEngine(engine));
-      const textures = new Map<string, ReturnType<typeof getMaterialTexture>>();
       const library = new MaterialLibrary({
+        textureIdentity: (guid) => { const source = textureBytes.get(guid); return source ? installedAssetIdentity(source) : undefined; },
         functions: () => Object.fromEntries(materials.functions),
-        resolveTexture: (guid) => {
+        acquireTexture: (guid) => {
           const data = textureBytes.get(guid);
           if (!data) return null;
-          if (!textures.has(guid)) textures.set(guid, getMaterialTexture(lease.cache, guid, engine, data));
-          return textures.get(guid) ?? null;
+          return acquireMaterialTexture(lease.cache, guid, engine, data);
         },
       });
-      releaseCandidate = () => { library.dispose(); lease.releaseHandleRetains(); };
+      releaseCandidate = () => { library.dispose(); lease.dispose(); };
       for (const [guid, document] of materials.documents) {
         const acquired = library.acquire(host.scene, guid, document);
         if (materialUnavailable(acquired)) throw new Error(acquired.diagnostics.map((d) => d.message).join("; "));

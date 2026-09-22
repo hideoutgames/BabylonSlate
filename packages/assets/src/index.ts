@@ -3,6 +3,7 @@ export * from "./babasset";
 export * from "./babproject";
 export * from "./blob-store";
 export * from "./bytes";
+export * from "./installed-asset";
 export * from "./clear-asset-refs";
 export * from "./class-asset-refs";
 export * from "./content-root";

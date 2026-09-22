@@ -1,3 +1,4 @@
+import type { ResourceLease } from "./resource-cache";
 import {
   MeshBuilder,
   Texture,
@@ -54,6 +55,7 @@ type LiveComponent = {
   componentId: string;
   slotId: number;
   systems: IParticleSystem[];
+  textures: ResourceLease<Texture>[];
   node: Mesh;
   playing: boolean;
 };
@@ -81,7 +83,8 @@ function liveKey(actorGuid: string, componentId: string): string {
 export class ParticleService {
   private readonly scene: Scene;
   private readonly gpu: boolean;
-  private readonly resolveTexture: (guid: string) => Texture | null;
+  private readonly resolveTexture?: (guid: string) => Texture | null;
+  private readonly acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
   private readonly resolveMaterial?: (guid: string) => NodeMaterial | null;
   private readonly resolveEmitter?: (
     slotId: number,
@@ -95,7 +98,8 @@ export class ParticleService {
   constructor(options: {
     scene: Scene;
     gpuSupported?: boolean;
-    resolveTexture: (guid: string) => Texture | null;
+    resolveTexture?: (guid: string) => Texture | null;
+    acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
     resolveMaterial?: (guid: string) => NodeMaterial | null;
     resolveEmitter?: (slotId: number) => AbstractMesh | null;
     sceneForSlot?: (slotId: number) => Scene | null;
@@ -104,6 +108,7 @@ export class ParticleService {
     this.scene = options.scene;
     this.gpu = gpuParticlesSupported(options.gpuSupported ?? true);
     this.resolveTexture = options.resolveTexture;
+    this.acquireTexture = options.acquireTexture;
     this.resolveMaterial = options.resolveMaterial;
     this.resolveEmitter = options.resolveEmitter;
     this.sceneForSlot = options.sceneForSlot;
@@ -190,6 +195,7 @@ export class ParticleService {
       null;
     if (parent) node.parent = parent;
     const systems: IParticleSystem[] = [];
+    const textures: ResourceLease<Texture>[] = [];
     systemPayload.emitterGuids.forEach((emitterGuid, index) => {
       const emitter = this.library.emitters.get(emitterGuid);
       if (!emitter) {
@@ -201,7 +207,8 @@ export class ParticleService {
         return;
       }
       const textureGuid = emitter.textureGuid?.trim() || null;
-      const texture = textureGuid ? this.resolveTexture(textureGuid) : null;
+      const lease = textureGuid ? this.acquireTexture?.(textureGuid) : null;
+      const texture = lease?.resource ?? (textureGuid ? this.resolveTexture?.(textureGuid) : null);
       if (!texture) {
         this.onDiagnostic?.({
           code: "particle.missing_texture",
@@ -210,7 +217,7 @@ export class ParticleService {
         });
         return;
       }
-      texture.hasAlpha = true;
+      if (!lease) texture.hasAlpha = true;
       const capacity = particleCapacityFor(emitter, this.gpu);
       const system = createBabylonParticleSystem(
         `particle:${key}:${index}`,
@@ -238,9 +245,11 @@ export class ParticleService {
           assetGuid: emitterGuid,
         });
         system.dispose(false);
+        lease?.release();
         return;
       }
       systems.push(system);
+      if (lease) textures.push(lease);
     });
     if (systems.length === 0) {
       node.dispose();
@@ -260,6 +269,7 @@ export class ParticleService {
       componentId: command.componentId,
       slotId: command.slotId,
       systems,
+      textures,
       node,
       playing: false,
     };
@@ -332,6 +342,7 @@ export class ParticleService {
       system.dispose(false);
     }
     entry.node.dispose();
+    for (const lease of entry.textures) lease.release();
     this.live.delete(key);
   }
 

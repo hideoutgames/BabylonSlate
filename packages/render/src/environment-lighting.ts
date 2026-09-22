@@ -3,7 +3,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-perf";
-import type { ResourceCache } from "./resource-cache";
+import type { TextureResources, ResourceLease } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 
 const controllers = new WeakMap<Scene, EnvironmentLighting>();
@@ -55,13 +55,15 @@ class EnvironmentLighting {
   readonly samples = new Set<object>();
   private guid: string | null = null;
   private bytes: Uint8Array | Blob | undefined;
-  private cache: ResourceCache | undefined;
+  private cache: TextureResources | undefined;
   private source: CubeTexture | null = null;
-  private sourceCache: ResourceCache | undefined;
+  private sourceLease: ResourceLease<CubeTexture> | undefined;
+  private pendingLease: ResourceLease<CubeTexture> | undefined;
   private view: CubeTexture | null = null;
   private irradiance: ReturnType<typeof ownEnvironmentIrradiance> | null = null;
   private irradianceChanged = false;
   private requestChanged = false;
+  private preparationError: Error | null = null;
   private settingsKey = "";
   private disposed = false;
   private readonly scene: Scene;
@@ -82,10 +84,11 @@ class EnvironmentLighting {
   configure(
     guid: string | null,
     bytes: Uint8Array | Blob | undefined,
-    cache: ResourceCache | undefined,
+    cache: TextureResources | undefined,
   ): void {
-    this.requestChanged ||=
-      this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
+    const changed = this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
+    this.requestChanged ||= changed;
+    if (changed) this.preparationError = null;
     this.guid = guid;
     this.bytes = bytes;
     this.cache = cache;
@@ -109,57 +112,41 @@ class EnvironmentLighting {
     ) {
       changed = !!this.view || changed;
       this.clear();
-    } else if (
+      this.preparationError = null;
+    } else if (!this.preparationError && (
       this.requestChanged ||
       !this.source ||
       !this.view ||
       isDisposedGpuTexture(this.source) ||
       isDisposedGpuTexture(this.view)
-    ) {
-      const source = this.cache.getTexture(
-        this.guid,
-        this.scene.getEngine(),
-        this.bytes,
-        { isCube: true },
-      ) as CubeTexture;
-      if (
-        source === this.source &&
-        this.sourceCache === this.cache &&
-        this.view &&
-        !isDisposedGpuTexture(this.view)
-      ) {
-        // Re-collected identical bytes may have a new Uint8Array identity.
-        this.cache.release(source);
+    )) {
+      this.pendingLease?.release();
+      this.pendingLease = undefined;
+      let lease: ResourceLease<CubeTexture>;
+      try {
+        lease = this.cache.acquireTexture(this.guid, this.scene.getEngine(), this.bytes, { isCube: true }) as ResourceLease<CubeTexture>;
+      } catch (error) {
+        this.requestChanged = false;
+        if (!this.source) throw error;
+        console.error("Environment texture replacement failed", error);
+        return;
+      }
+      if (lease.resource === this.source && this.view && !isDisposedGpuTexture(this.view)) lease.release();
+      else if (this.source && !lease.resource.isReady() && lease.ready) {
+        this.pendingLease = lease;
+        void lease.ready.then(() => {
+          if (this.pendingLease !== lease || this.disposed || this.scene.isDisposed) { lease.release(); return; }
+          this.pendingLease = undefined;
+          try { this.publish(lease); this.sync(); this.invalidateMaterials(); }
+          catch (error) { lease.release(); console.error("Environment texture replacement failed", error); }
+        }, (error) => {
+          if (this.pendingLease !== lease) return;
+          this.pendingLease = undefined;
+          lease.release();
+          console.error("Environment texture replacement failed", error);
+        });
       } else {
-        let view: CubeTexture;
-        try {
-          // Babylon 9.20 preserves shared irradiance when cloning a cached
-          // CubeTexture. Its matrix lives on the wrapper; uploaded data does not.
-          view = source.clone();
-          if (view.getInternalTexture() !== source.getInternalTexture()) {
-            view.dispose();
-            throw new Error(
-              "Environment view did not share its uploaded cube.",
-            );
-          }
-        } catch (error) {
-          this.cache.release(source);
-          throw error;
-        }
-        this.clear();
-        this.source = source;
-        this.sourceCache = this.cache;
-        this.view = view;
-        this.irradiance = ownEnvironmentIrradiance(
-          view,
-          source,
-          this.cache,
-          () => {
-            if (!this.disposed && this.view === view)
-              this.irradianceChanged = true;
-          },
-        );
-        this.scene.environmentTexture = view;
+        this.publish(lease);
         changed = true;
       }
     }
@@ -180,12 +167,13 @@ class EnvironmentLighting {
       this.invalidateMaterials();
     }
     if (this.source?.loadingError) {
-      throw new Error(
+      this.failInitialPreparation(this.sourceLease!, new Error(
         this.source.errorObject?.message ??
           "Environment texture failed to load.",
         { cause: this.source.errorObject?.exception },
-      );
+      ));
     }
+    if (this.preparationError) throw this.preparationError;
     return (
       !this.view ||
       (this.view.isReady() &&
@@ -194,7 +182,41 @@ class EnvironmentLighting {
     );
   }
 
+  private publish(lease: ResourceLease<CubeTexture>): void {
+    const source = lease.resource;
+    let view: CubeTexture;
+    try {
+      view = source.clone();
+      if (view.getInternalTexture() !== source.getInternalTexture()) {
+        view.dispose();
+        throw new Error("Environment view did not share its uploaded cube.");
+      }
+    } catch (error) { lease.release(); throw error; }
+    let irradiance: ReturnType<typeof ownEnvironmentIrradiance>;
+    try {
+      irradiance = ownEnvironmentIrradiance(view, source, this.cache!, () => {
+        if (!this.disposed && this.view === view) this.irradianceChanged = true;
+      });
+    } catch (error) { view.dispose(); lease.release(); throw error; }
+    this.clear();
+    this.source = source;
+    this.sourceLease = lease;
+    this.view = view;
+    this.irradiance = irradiance;
+    this.scene.environmentTexture = view;
+    void lease.ready?.catch((error) => this.failInitialPreparation(lease, error));
+  }
+
+  private failInitialPreparation(lease: ResourceLease<CubeTexture>, error: unknown): void {
+    if (this.sourceLease !== lease || this.disposed) return;
+    this.preparationError = error instanceof Error ? error : new Error(String(error));
+    this.clear();
+    markSceneReadinessDirty(this.scene);
+  }
+
   private clear(): void {
+    this.pendingLease?.release();
+    this.pendingLease = undefined;
     this.irradiance?.dispose();
     this.irradiance = null;
     this.irradianceChanged = false;
@@ -202,9 +224,9 @@ class EnvironmentLighting {
       this.scene.environmentTexture = null;
     this.view?.dispose();
     this.view = null;
-    if (this.source) this.sourceCache?.release(this.source);
+    this.sourceLease?.release();
     this.source = null;
-    this.sourceCache = undefined;
+    this.sourceLease = undefined;
   }
 
   private invalidateMaterials(): void {

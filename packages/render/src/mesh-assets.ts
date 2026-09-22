@@ -6,13 +6,16 @@ import {
   type AbstractMesh,
   type Mesh,
   type Scene,
+  type Texture,
+  type CubeTexture,
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
-import { PIXEL_ART_TEXTURE_SAMPLING, type ResourceCache } from "./resource-cache";
+import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
+import { isSpriteQuad } from "./sprite-quad";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
-  resourceCache?: ResourceCache;
+  resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Authored Texture payload width/height (source pixels), not LOD GPU bytes. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
@@ -49,7 +52,7 @@ export interface MeshAssetContext {
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   /** MSDF atlas PNG keyed by Font asset guid. */
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   /** CSS font stack when no Font is picked (project default + generic). */
   fontCssStack?: string;
   /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
@@ -73,6 +76,8 @@ function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): s
   return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
+import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@babylonslate/assets";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
 function byteMapFingerprint(
@@ -161,42 +166,113 @@ export function modelSlotFingerprint(
     .join(";");
 }
 
-const ownedAlbedoMaterials = new WeakMap<AbstractMesh, StandardMaterial>();
+/** Copy mutable bytes once at asset installation; resource lookups use immutable identities. */
+export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob> | undefined): ReadonlyMap<string, Blob> | undefined {
+  if (!bytes) return undefined;
+  return new Map([...bytes].map(([guid, source]) => {
+    const kind = source instanceof Uint8Array ? environmentTextureContainer(source) : null;
+    const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
+      : source instanceof Uint8Array && isKtx2Bytes(source) ? "image/ktx2" : "application/octet-stream";
+    return [guid, installAssetBytes(source, mime)];
+  }));
+}
+
+interface AlbedoBinding {
+  material: StandardMaterial | null;
+  authored?: boolean;
+  lease?: ResourceLease<Texture | CubeTexture>;
+  source?: Uint8Array | Blob;
+  guid?: string;
+  identity?: string;
+  failed?: string;
+  pending?: ResourceLease<Texture | CubeTexture>;
+  cancel?: () => void;
+}
+const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 
 export function applyAlbedoTexture(
   mesh: AbstractMesh,
-  scene: Scene,
+  _scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
 ): void {
-  if (!textureGuid || !assets?.resourceCache || !assets.textureBytes) return;
-  const bytes = assets.textureBytes.get(textureGuid);
-  if (!bytes) return;
-  const texture = assets.resourceCache.getTexture(
-    textureGuid,
-    scene.getEngine(),
-    bytes,
-    PIXEL_ART_TEXTURE_SAMPLING,
-  );
-  const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
-  material.disableLighting = true;
-  texture.hasAlpha = true;
-  material.diffuseTexture = texture;
-  material.emissiveTexture = texture;
-  material.emissiveColor = Color3.White();
-  material.useAlphaFromDiffuseTexture = true;
-  material.transparencyMode = Material.MATERIAL_ALPHATEST;
-  material.alphaCutOff = 0.4;
-  const previous = ownedAlbedoMaterials.get(mesh);
-  previous?.dispose(false, false);
-  if (!previous) {
+  const scene = mesh.getScene();
+  let binding = albedoBindings.get(mesh);
+  if (!binding) {
+    binding = { material: null };
+    albedoBindings.set(mesh, binding);
     mesh.onDisposeObservable.addOnce(() => {
-      ownedAlbedoMaterials.get(mesh)?.dispose(false, false);
-      ownedAlbedoMaterials.delete(mesh);
+      binding!.cancel?.();
+      binding!.pending?.release();
+      binding!.lease?.release();
+      binding!.material?.dispose(false, false);
+      albedoBindings.delete(mesh);
     });
   }
-  ownedAlbedoMaterials.set(mesh, material);
-  mesh.material = material;
+  if (!textureGuid) {
+    binding.cancel?.(); binding.cancel = undefined;
+    binding.pending?.release(); binding.pending = undefined;
+    binding.lease?.release(); binding.lease = undefined;
+    if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
+    binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
+    return;
+  }
+  // An authored material owns its own texture contract. Sprite animation must not replace it.
+  if (mesh.material && mesh.material !== binding.material && (binding.material || isSpriteQuad(mesh))) {
+    binding.authored = true;
+    binding.cancel?.(); binding.pending?.release(); binding.pending = undefined;
+    binding.lease?.release(); binding.lease = undefined;
+    binding.material?.dispose(false, false); binding.material = null;
+  }
+  if (binding.authored) return;
+  const source = assets?.textureBytes?.get(textureGuid);
+  if (!source || !assets?.resourceCache) return;
+  const identity = source instanceof Blob && binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  if (binding.identity === identity && binding.guid === textureGuid &&
+    ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
+  if (binding.failed === `${textureGuid}:${identity}`) return;
+  let next: ResourceLease<Texture | CubeTexture>;
+  try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
+  catch (error) { binding.failed = `${textureGuid}:${identity}`; console.error("Sprite texture replacement failed", error); return; }
+  binding.cancel?.(); binding.pending?.release();
+  binding.source = source; binding.guid = textureGuid; binding.identity = identity;
+  binding.pending = next;
+  const publish = () => {
+    if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
+    binding.cancel?.(); binding.cancel = undefined;
+    let material = binding.material;
+    if (!material) {
+      material = new StandardMaterial(`albedo:${textureGuid}`, scene);
+      material.disableLighting = true;
+      material.emissiveColor = Color3.White();
+      material.useAlphaFromDiffuseTexture = true;
+      material.transparencyMode = Material.MATERIAL_ALPHATEST;
+      material.alphaCutOff = 0.4;
+      binding.material = material;
+    }
+    material.diffuseTexture = next.resource;
+    material.emissiveTexture = next.resource;
+    mesh.material = material;
+    const previous = binding.lease;
+    binding.lease = next; binding.pending = undefined;
+    previous?.release();
+  };
+  const failed = (error: unknown) => {
+    if (albedoBindings.get(mesh) !== binding || (binding.pending !== next && binding.lease !== next)) return;
+    if (binding.pending === next) binding.pending = undefined;
+    if (binding.lease === next) {
+      binding.lease = undefined;
+      if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
+    }
+    binding.failed = `${textureGuid}:${identity}`;
+    next.release();
+    console.error("Sprite texture replacement failed", error);
+  };
+  if (!binding.lease || next.resource.isReady()) {
+    publish();
+    void next.ready?.catch(failed);
+  } else if (next.ready) void next.ready.then(publish, failed);
+
 }
 
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */

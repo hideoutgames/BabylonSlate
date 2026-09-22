@@ -1,3 +1,4 @@
+import { installTextureBytes } from "@babylonslate/render";
 import { useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
 import type {
@@ -9,7 +10,7 @@ import {
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
-  getMaterialTexture,
+  acquireMaterialTexture,
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
@@ -146,15 +147,16 @@ export function ParticlePreviewCanvas({
         if (loaded) bytes.set(guid, loaded);
       }
       if (cancelled) return;
+      const sources = installTextureBytes(bytes)!;
       const diagnostics: ParticleServiceDiagnostic[] = [];
       try {
         host = createParticlePreviewScene(engine, { skybox: showSkybox });
         presenter = createMaterialPreviewPresenter(host, canvas);
         cache = resourceCacheForEngine(engine);
-        const resolveTexture = (guid: string) => {
-          const data = bytes.get(guid);
+        const acquireTexture = (guid: string) => {
+          const data = sources.get(guid);
           if (!data || !cache) return null;
-          return getMaterialTexture(cache, guid, engine, data);
+          return acquireMaterialTexture(cache, guid, engine, data, { hasAlpha: true });
         };
         const extraGuids = particleMaterialGuidsFromLibrary(nextLibrary);
         const libraryDocs = collectPlayMaterialLibrary
@@ -168,11 +170,11 @@ export function ParticlePreviewCanvas({
           scene: host.scene,
           documents: libraryDocs.documents,
           functions: libraryDocs.functions,
-          resolveTexture,
+          acquireTexture,
         });
         service = new ParticleService({
           scene: host.scene,
-          resolveTexture,
+          acquireTexture,
           resolveMaterial: materials.resolve,
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
         });
