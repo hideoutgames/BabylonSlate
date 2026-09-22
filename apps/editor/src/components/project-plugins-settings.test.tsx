@@ -45,6 +45,7 @@ function plugin(guid: string): PluginDescriptor {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
   const pack = plugin("pack");
   pack.settings.engineVersion = "old-engine";
   pack.settings.pluginDependencies = [{ guid: "base", version: "0.1" }];
@@ -54,7 +55,10 @@ beforeEach(() => {
   harness.plugins = [pack, base];
   harness.overrides = {};
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("Plugin compatibility confirmation", () => {
   it("keeps an outdated plugin disabled on dismissal or Disable, then enables only after explicit acceptance", async () => {
@@ -68,7 +72,7 @@ describe("Plugin compatibility confirmation", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(harness.overrides.pack).toBeUndefined();
     fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Disable", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
     await waitFor(() => expect(harness.overrides.pack).toEqual({ enabled: false }));
     fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
     fireEvent.click(await screen.findByRole("button", { name: "Try Enable Anyway" }));
@@ -84,7 +88,7 @@ describe("Plugin compatibility confirmation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review Pack Compatibility" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Enable Outdated Plugin" });
     expect(dialog.textContent).toContain("Beta");
-    fireEvent.click(screen.getByRole("button", { name: "Disable", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
     await waitFor(() => expect(harness.overrides.pack).toEqual({ enabled: false }));
   });
 });

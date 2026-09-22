@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION } from "@babylonslate/core";
+import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
   createVfsBlobStore,
@@ -70,7 +70,7 @@ describe("ProjectService plugin roots", () => {
     await writeProjectPlugin(storage, "pack", settings);
     const scene = createDefaultScene();
     const path = "plugins/pack/assets/Scene.scene.babasset";
-    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: scene.version, payload: scene as unknown as Record<string, unknown> }));
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: SCENE_SCHEMA_VERSION, payload: scene as unknown as Record<string, unknown> }));
     await service.remountRegistry();
     await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, displayName: "Renamed" });
     expect(service.plugins[0]!.settings.engineVersion).toBe("older");
