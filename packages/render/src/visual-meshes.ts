@@ -1,5 +1,5 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Mesh, type AbstractMesh, type Material } from "@babylonjs/core";
+import { Mesh, type AbstractMesh, type Material, type Node } from "@babylonjs/core";
 import { isColliderVisualTree } from "./collider-visual";
 
 const CONSTRUCTION_KEY = "babylonslateModelConstructionMaterial";
@@ -25,9 +25,17 @@ function hasGeometry(mesh: AbstractMesh): boolean {
  * Drawn glTF parts under a hidden placeholder. Skip the stub and empty
  * `__root__` meshes so slot 0 is the first real primitive.
  */
-export function visualMeshes(root: AbstractMesh): AbstractMesh[] {
+export function visualMeshes(root: AbstractMesh, excludedRoots?: ReadonlySet<AbstractMesh>): AbstractMesh[] {
   const children = root.getChildMeshes().filter(
-    (mesh) => hasGeometry(mesh) && !isColliderVisualTree(mesh as Mesh),
+    (mesh) => {
+      if (!hasGeometry(mesh) || isColliderVisualTree(mesh as Mesh)) return false;
+      // Exclude foreign actor subtrees before deciding whether this root is a
+      // model placeholder. A hidden primitive must not lose its own identity
+      // merely because another actor is temporarily attached beneath it.
+      for (let node: Node | null = mesh; excludedRoots && node && node !== root; node = node.parent)
+        if (excludedRoots.has(node as AbstractMesh)) return false;
+      return true;
+    },
   );
   if (isColliderVisualTree(root as Mesh)) return [];
   const placeholder =

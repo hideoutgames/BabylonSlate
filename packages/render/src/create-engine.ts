@@ -10,7 +10,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
-import type { AbstractEngine, BaseTexture, Node } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -1394,11 +1394,7 @@ function initializeEngine(
     // Runtime transforms are normally world-space. If a caller attaches actor
     // roots, descendants still belong to their own actor's outline identity.
     const otherRoots = new Set([...binding.meshes.values()].filter((mesh) => mesh !== root));
-    const meshes = visualMeshes(root).filter((mesh) => {
-      for (let node: Node | null = mesh; node && node !== root; node = node.parent)
-        if (otherRoots.has(node as Mesh)) return false;
-      return true;
-    });
+    const meshes = visualMeshes(root, otherRoots);
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);
   };

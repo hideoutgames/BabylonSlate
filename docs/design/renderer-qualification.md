@@ -2,6 +2,15 @@
 
 ## Production outline qualification gate
 
+### Runtime ownership repair — 22 September 2026
+
+The targeted run at `eea6009e` passed the four shared-owner cases and the
+compiled Class inheritance case, but failed the runtime parent/child lifecycle
+case. Foreign actor subtrees are now excluded before identifying hidden model
+placeholders, so attaching a child actor cannot remove the parent's own outline.
+The repair awaits its targeted rerun; generalized browser and manual acceptance
+remain pending. The machine-wide host reserve stays at the user-confirmed 2 GiB.
+
 The September 2026 rendering handoff starts from `ce1162f25cbac930be4789789de6269856e1eb58` (reviewed baseline `bc110765198020d6d9a14a0a67ee357a18148080` plus the WebGPU optional vertex-stream fix). Babylon remains pinned to 9.20.0 with the existing repository patch. The production mesh-outline selection implementation remains in place while the native replacement is qualified.
 
 ### Continuation checkpoint — 22 September 2026
