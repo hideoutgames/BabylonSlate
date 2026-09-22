@@ -139,7 +139,10 @@ test("a transient Windows replacement lock retains the old reservation until ato
   });
   assert.equal(attempts, 3);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
-  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+  assert.deepEqual((await readdir(options.directory)).sort(), [
+    "machine-default.json",
+    "ticket.json",
+  ]);
   let failures = 0;
   await assert.rejects(
     publish(path, previous, async () => {
@@ -150,7 +153,10 @@ test("a transient Windows replacement lock retains the old reservation until ato
   );
   assert.equal(failures, 1);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
-  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+  assert.deepEqual((await readdir(options.directory)).sort(), [
+    "machine-default.json",
+    "ticket.json",
+  ]);
 });
 
 test("four independent callers admit three shared workers and preserve FIFO progress", async (t) => {
