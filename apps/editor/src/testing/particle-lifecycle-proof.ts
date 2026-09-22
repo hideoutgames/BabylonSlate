@@ -134,11 +134,11 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     // native positions separately from processed counts and visible pixels.
     if (backend === "webgpu" && gpu) for (const system of natives) {
       const native = system as unknown as { _attributesStrideSize: number; _platform: {
-        _bufferComputeShader: Array<{ read(): Promise<ArrayBufferView> }>;
+        _bufferComputeShader: Array<{ read(offset?: number, size?: number, buffer?: ArrayBufferView, noDelay?: boolean): Promise<ArrayBufferView> }>;
       } };
       const buffers = [];
       for (const buffer of native._platform._bufferComputeShader) {
-        const data = await buffer.read();
+        const data = await buffer.read(undefined, undefined, undefined, true);
         const floats = new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4);
         buffers.push(Array.from({ length: Math.min(system.getActiveCount(), 8) }, (_, index) =>
           Array.from(floats.subarray(index * native._attributesStrideSize, index * native._attributesStrideSize + 8))));
