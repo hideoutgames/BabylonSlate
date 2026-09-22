@@ -52,6 +52,14 @@ import {
 } from "./shadow-admission";
 
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
+export type EffectiveShadowBias = {
+  layer: number;
+  depthBias: number;
+  normalBias: number;
+  worldTexelSize: number;
+  depthScale: number;
+  mode: "directional-auto" | "manual" | "local-authored";
+};
 export type ShadowLightStatus =
   | "active"
   | "disabled"
@@ -76,6 +84,7 @@ type Entry = {
   status: ShadowLightStatus;
   admittedAt: number;
   distanceSquared: number;
+  effectiveBias: EffectiveShadowBias[];
 };
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
@@ -216,6 +225,7 @@ export class SceneShadowController {
         status: "disabled",
         admittedAt: -Infinity,
         distanceSquared: 0,
+        effectiveBias: [],
       };
       this.entries.set(light, entry);
       light.onDisposeObservable.addOnce(() => {
@@ -247,6 +257,10 @@ export class SceneShadowController {
   }
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
+  }
+  /** Last map draw/readiness probe, bounded to the admitted faces/cascades. */
+  effectiveBias(light: Light): readonly EffectiveShadowBias[] {
+    return this.entries.get(light)?.effectiveBias ?? [];
   }
   /** Refreshes admitted maps after the owning renderer updates caster transforms. */
   refreshShadowMaps(): void {
@@ -293,8 +307,8 @@ export class SceneShadowController {
     }
     return { passes, bytes };
   }
-  diagnostics() {
-    return this.scene.lights.map((light) => {
+  diagnostics(lights: readonly Light[] = this.scene.lights) {
+    return lights.map((light) => {
       const entry = this.entries.get(light);
       const generator = entry?.generator;
       return {
@@ -605,6 +619,7 @@ export class SceneShadowController {
           markSceneReadinessDirty(scene);
         }
         entry.generator = null;
+        entry.effectiveBias.length = 0;
         entry.key = "";
       }
     }

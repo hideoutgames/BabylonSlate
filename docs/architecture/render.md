@@ -545,6 +545,21 @@ diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
 
+`captureShadowDiagnostics(scene, options)` is an explicit, bounded CPU snapshot for
+shadow investigations. Call it after the relevant view draw and supply the build SHA,
+host/OS, backend fallback reason and project unit convention when known. It reuses
+the existing shadow owner and render-path diagnostics; no observers, shadow draws,
+texture readbacks or logging are added. The snapshot keeps the authored request
+separate from admitted map dimensions, effective filters, current native bias and
+the most recent per-layer drawn bias. Cached projection matrices expose each
+directional map's actual footprint/depth interval without recomputing it. Point
+maps label their matrix as the last rendered cube face. Capture is limited to 32
+lights and 256 explicitly selected model meshes, with truncation counts; unknown
+provenance remains null and NullEngine is identified as `null`, not a GPU backend.
+Pass selected meshes to record their current world bounds/transforms without a
+full-scene geometry scan. These dumps document effective state; they do not prove
+the original asset is fixed or qualify native A16 pixels, timing or memory.
+
 Local shadow allocation follows authored priority, then nearest relevant camera
 distance; brightness does not displace a nearer light. Maps have a 250 ms minimum
 residency and a 15% squared-distance retention bonus to reduce camera-boundary

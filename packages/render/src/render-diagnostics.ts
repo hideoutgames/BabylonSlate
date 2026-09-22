@@ -145,7 +145,7 @@ export function createRenderDiagnostics(
   };
 }
 
-function engineAdapterInfo(engine: AbstractEngine) {
+export function engineAdapterInfo(engine: AbstractEngine) {
   const infoEngine = engine as {
     getInfo?: () => {
       vendor?: string;

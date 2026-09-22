@@ -15,6 +15,13 @@ initSessionLiveness();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("shadowSelfShadowingProof")
+) {
+  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof }) => {
+    Object.assign(window, { __babylonslateShadowSelfShadowingProof: runShadowSelfShadowingProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("scenePostProcessHostProof")
 ) {
   void import("./testing/scene-post-process-host-proof").then(({ createScenePostProcessHostProof }) => {
