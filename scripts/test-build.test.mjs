@@ -579,6 +579,13 @@ test("independent hosted bundles preserve player/editor order and cannot substit
   assert.equal(checked.error, undefined);
   assert.equal(checked.identity.buildContract, "standalone-typecheck");
   assert.notEqual(bundled.identity.key, checked.identity.key);
+  assert.equal(
+    verifyArtifactIdentity(
+      { ...bundled.identity, buildContract: checked.identity.buildContract },
+      bundled.identity,
+    ),
+    false,
+  );
   const commands = (
     await readFile(join(directory, ".cache/build-commands.jsonl"), "utf8")
   )

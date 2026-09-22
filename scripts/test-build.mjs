@@ -43,6 +43,7 @@ export function verifyArtifactIdentity(actual, expected) {
     actual.node === expected.node &&
     actual.platform === expected.platform &&
     actual.arch === expected.arch &&
+    actual.buildContract === expected.buildContract &&
     actual.environment === expected.environment,
   );
 }
