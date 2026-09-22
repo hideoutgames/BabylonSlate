@@ -82,6 +82,35 @@ describe("particle incarnation and playback ownership", () => {
     expect(f.service.stats().playing).toBe(0);
   });
 
+  it("keeps assignments and restarted runs frozen when prepared while paused", () => {
+    const f = fixture();
+    f.service.setPaused(true);
+    f.assign();
+    const first = f.scene.particleSystems[0] as ParticleSystem;
+    const advance = (system: ParticleSystem) => {
+      system.emitRate = 100;
+      // Public prewarm stepping uses the same native CPU simulation without a GPU draw.
+      for (let i = 0; i < 10; i += 1) system.animate(true);
+    };
+    advance(first);
+    expect(first.getActiveCount()).toBe(0);
+    f.service.setPaused(false);
+    const preparedSpeed = first.updateSpeed;
+    advance(first);
+    expect(first.getActiveCount()).toBeGreaterThan(0);
+    f.service.setPaused(true);
+    f.play(false);
+    f.play(true);
+    const restarted = f.scene.particleSystems[0] as ParticleSystem;
+    expect(restarted).not.toBe(first);
+    advance(restarted);
+    expect(restarted.getActiveCount()).toBe(0);
+    f.service.setPaused(false);
+    expect(restarted.updateSpeed).toBe(preparedSpeed);
+    advance(restarted);
+    expect(restarted.getActiveCount()).toBeGreaterThan(0);
+  });
+
   it("ignores an old upload rejection after a same-key successor starts", async () => {
     let reject!: (error: unknown) => void;
     const firstUpload = new Promise<void>((_resolve, fail) => { reject = fail; });

@@ -234,7 +234,7 @@ export class ParticleService {
         }
         if (!textureLease) texture.hasAlpha = true;
         const system = createBabylonParticleSystem(`particle:${entry.key}:${index}`, host, particleCapacityFor(emitter, gpu), gpu);
-        const record: NativeEmitter = { system, gpu, pending: 0, lifetime: 0, drainedTime: 0, lastRenderId: -1, lastCameraId: -1, updateSpeed: system.updateSpeed };
+        const record: NativeEmitter = { system, gpu, pending: 0, lifetime: 0, drainedTime: 0, lastRenderId: -1, lastCameraId: -1, updateSpeed: 0 };
         entry.systems.push(record);
         system.emitter = node;
         const materialLease = emitter.materialGuid ? this.acquireMaterial?.(emitter.materialGuid, {
@@ -243,6 +243,7 @@ export class ParticleService {
         if (materialLease) entry.leases.push(materialLease);
         if (emitter.materialGuid && !materialLease) throw new Error("Particle material is unavailable.");
         const ready = applyParticleLook({ system, emitter, systemPayload: payload, gpu, texture, material: materialLease?.resource ?? null });
+        record.updateSpeed = system.updateSpeed;
         record.lifetime = particleLifetimeBound(system);
         if (this.paused) system.updateSpeed = 0;
         applySortingToParticleSystem(system, sorting);
