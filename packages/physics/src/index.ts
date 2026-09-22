@@ -66,3 +66,5 @@ export {
   type PhysicsActorLike,
   type PhysicsPairingWarning,
 } from "./pairing";
+
+export { prepareColliderShape } from "./collider-validation";

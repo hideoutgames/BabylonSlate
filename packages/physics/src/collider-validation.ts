@@ -39,12 +39,28 @@ export function normalizedPhysicsPose(
   };
 }
 
+const preparedShapes = new WeakSet<object>();
+
+/** Own immutable canonical geometry once; pose/tuning mutations may reuse it. */
+export function prepareColliderShape(shape: ColliderShape): ColliderShape {
+  if (preparedShapes.has(shape)) return shape;
+  validateColliderShape(shape);
+  const owned = structuredClone(shape);
+  const freeze = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
+  };
+  freeze(owned);
+  preparedShapes.add(owned);
+  return owned;
+}
+
 export function copyColliderDesc(desc: ColliderDesc): ColliderDesc {
   const pose = normalizedPhysicsPose({
     position: desc.translation ?? { x: 0, y: 0, z: 0 },
     rotation: desc.rotation ?? { x: 0, y: 0, z: 0, w: 1 },
   });
-  validateColliderShape(desc.shape);
   if (
     ![desc.friction, desc.restitution, desc.layer, desc.mask].every(
       Number.isFinite,
@@ -54,7 +70,7 @@ export function copyColliderDesc(desc: ColliderDesc): ColliderDesc {
   }
   return {
     ...desc,
-    shape: structuredClone(desc.shape),
+    shape: prepareColliderShape(desc.shape),
     translation: pose.position,
     rotation: pose.rotation,
   };
