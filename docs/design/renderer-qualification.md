@@ -248,7 +248,12 @@ this correction for `f39b1803`, `cb5fba6e` and `f61ff565` native runs. The
 successful cost reports already overrode that field correctly. The helper now
 uses the selected native project's flags; cost failure reports also use the
 actual flags. A single native receiver case will check the corrected report;
-unchanged production pixel/ownership/settings results are reused.
+unchanged production pixel/ownership/settings results are reused. The native
+WebGPU receiver case passed at `171d3636`, with effective NVIDIA/turing and
+[correct launch flags](../assets/renderer-qualification/2026-09-22-native-settings/171-webgpu-area-light-qualification.json).
+The two reporting files passed scoped lint. Retained shadow reports summarize
+numeric pixel buffers by byte length and SHA-256; all observed diagnostics and
+comparisons remain, without embedding tens of megabytes of repeated buffers.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
