@@ -1,13 +1,17 @@
 import { startBrowserServer } from "./browser-server.mjs";
 import { browserPartitionArgs } from "./browser-partition.mjs";
-import { readFile } from "node:fs/promises";
+import { readBrowserResults } from "./browser-results.mjs";
 import { join, resolve } from "node:path";
-import { commandSignal, runCommand, toolCli } from "./process-runner.mjs";
+import { verifyBrowserArtifact } from "./test-build.mjs";
+import {
+  commandSignal,
+  runCommand,
+  toolCli,
+  repoRoot,
+} from "./process-runner.mjs";
 
 const directory = resolve(process.argv[2]);
-const identity = JSON.parse(
-  await readFile(join(directory, ".test-build.json"), "utf8"),
-);
+const identity = await verifyBrowserArtifact(directory);
 const lifetime = commandSignal();
 const server = await startBrowserServer(directory, identity);
 try {
@@ -27,6 +31,15 @@ try {
     { env, signal: lifetime.signal },
   );
   process.exitCode = result.code;
+  if (result.code === 0) {
+    const outcomes = await readBrowserResults(
+      join(repoRoot, "test-results/timings.json"),
+      server.nonce,
+    );
+    process.stdout.write(
+      JSON.stringify({ event: "browser-results", ...outcomes }) + "\n",
+    );
+  }
 } finally {
   await server.close();
   lifetime.dispose();
