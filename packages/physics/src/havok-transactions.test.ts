@@ -445,7 +445,11 @@ describe("Havok explicit native motion", () => {
       const shapeRefreshHit = trace(backend, 8).hit;
       havok.HP_Body_SetActivationState(handle, havok.ActivationState.ACTIVE);
       const wakeHit = trace(backend, 8).hit;
-      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], immediateHit, shapeRefreshHit, wakeHit });
+      const region = (physicsBody as unknown as { _pluginData: { worldRegion: { world: [bigint] } } })._pluginData.worldRegion;
+      const removed = havok.HP_World_RemoveBody(region.world, handle);
+      const added = havok.HP_World_AddBody(region.world, handle, false);
+      const reinsertHit = trace(backend, 8).hit;
+      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], immediateHit, shapeRefreshHit, wakeHit, reinsertHit, removed, added });
       expect(immediateHit).toBe(true);
       expect(trace(backend).hit).toBe(false);
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
