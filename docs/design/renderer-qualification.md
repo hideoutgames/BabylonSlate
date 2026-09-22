@@ -139,8 +139,11 @@ and required current-head CI remain pending. PR #651 remains draft and unmerged.
 The shared renderer, editor selection host, authored OutlineComponent, default CEL
 outlines, typed settings/Graph controls and runtime/export wiring are implemented
 on PR #651 but **not accepted**. Earlier tables below describe their recorded
-revisions, not the current implementation. The old selection source is retained
-pending qualification; it is not enabled alongside the new host.
+revisions, not the current implementation. Following the two-API ownership and
+geometry fixtures and the native WebGL2/WebGPU manual survivor checks, the old
+selection renderer and its implementation-specific tests are retired. The shared
+host retains a triangle-versus-line/wireframe regression; editor overlay styling
+remains unchanged. This does not complete the outstanding delivery routes.
 
 | Requirement | Latest evidence | Remaining |
 | --- | --- | --- |

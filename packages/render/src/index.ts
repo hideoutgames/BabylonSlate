@@ -32,7 +32,6 @@ export * from "./viewport-shading-mode";
 export * from "./gizmo-host";
 export * from "./gizmo-multi-select";
 export * from "./overlay-transform-box";
-export * from "./selection-outline";
 export * from "./viewport-gestures";
 export * from "./viewport-fly-keys";
 export * from "./two-d";

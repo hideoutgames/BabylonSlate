@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Material, MeshBuilder, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createActor, createDefaultScene, createMeshComponent, outlineBindings } from "@babylonslate/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
@@ -22,6 +22,21 @@ function authored(actorId: string, width = 2) {
 }
 
 describe("authored scene outline host", () => {
+  it("selects triangle visuals without admitting line or wireframe topology", () => {
+    const { scene, host } = setup();
+    const solid = MeshBuilder.CreateBox("solid", {}, scene);
+    const lines = MeshBuilder.CreateLines("lines", { points: [Vector3.Zero(), Vector3.Up()] }, scene);
+    const wire = MeshBuilder.CreateBox("wire", {}, scene);
+    wire.material = new StandardMaterial("wire", scene);
+    wire.material.fillMode = Material.WireFrameFillMode;
+    host.replaceActors([{ id: "actor", meshes: [solid, lines, wire], bindings: [] }]);
+    host.setSelection(["actor"]);
+    expect(host.selection.selected()).toEqual([solid]);
+    expect(host.view.contributions.get("selection")?.targets.flatMap(target => target.meshes)).toEqual([solid]);
+    host.selection.clear();
+    expect(host.view.contributions.has("selection")).toBe(false);
+    expect(solid.renderOutline).toBeFalsy();
+  });
   it("recognizes only outline edits for the graph-preserving authoring route", () => {
     const previous = createDefaultScene();
     const actor = createActor("a", "A", { components: [createMeshComponent("mesh")] });
