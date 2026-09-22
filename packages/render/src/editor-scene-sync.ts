@@ -8,13 +8,13 @@ import type {
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
+  installModelSources,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, isEditorModelPlaceholder, type ModelAnimLoadBinding } from "./glb-anim";
-import { isGltfModelBytes } from "./model-mesh";
 import {
   actorIdFromMeshName,
   actorVisualFingerprint,
@@ -129,6 +129,7 @@ export class EditorSceneSync {
   }
 
   private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {
+    if (assets) assets = { ...assets, modelSources: installModelSources(assets) };
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);
@@ -560,10 +561,11 @@ export class EditorSceneSync {
 
   private beginEditorModelLoad(actor: SerializedActor, root: Mesh): void {
     const guid = this.meshComponentAssetGuid(actor);
-    const bytes = guid ? this.assets?.modelBytes?.get(guid) : undefined;
-    if (!guid || !bytes || !isGltfModelBytes(bytes)) return;
+    const bytes = guid ? this.assets?.modelSources?.get(guid) : undefined;
+    if (!guid || !bytes) return;
     const slotId = ++this.modelLoadSlot;
     this.modelLoadBinding.modelBytes = this.assets?.modelBytes;
+    this.modelLoadBinding.modelSources = this.assets?.modelSources;
     this.modelLoadBinding.modelPayloads = this.assets?.modelPayloads;
     this.modelLoadBinding.modelClipAnimationGuids =
       this.assets?.modelClipAnimationGuids;
@@ -592,9 +594,6 @@ export class EditorSceneSync {
         if (!current) return;
         const wasFrozen = root.isWorldMatrixFrozen;
         applyActorTransform(root, current);
-        this.restoreMeshComponentConstruction(current, root);
-        this.applyModelSlots(current, root);
-        this.bindActorMeshMaterials(current, root);
         // Adoption may land at a yield after this actor's final freeze step.
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
@@ -605,6 +604,13 @@ export class EditorSceneSync {
         }
       },
       ownsLoad,
+      (prepared) => {
+        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+        if (!current || !ownsLoad()) return;
+        this.restoreMeshComponentConstruction(current, prepared);
+        this.applyModelSlots(current, prepared);
+        this.bindActorMeshMaterials(current, prepared);
+      },
     );
   }
 

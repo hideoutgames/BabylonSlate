@@ -1,8 +1,10 @@
+import { installAssetBytes } from "@babylonslate/assets";
 import { Mesh, NullEngine, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import { parseText2DProperties } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
+import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
+import * as modelContainer from "./model-container";
 import { encodeTriangleGlb } from "./model-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
@@ -36,11 +38,11 @@ describe("visual generation ownership", () => {
     const binding = createSnapshotSceneBinding();
     const oldRoot = createModelActorRoot(scene, "old");
     const nextRoot = createModelActorRoot(scene, "next");
-    await beginSlotModelAnimLoad(scene, binding, 0, "model", firstBytes, oldRoot);
+    await beginSlotModelAnimLoad(scene, binding, 0, "model", installAssetBytes(firstBytes), oldRoot);
     const oldMesh = visualMeshes(oldRoot)[0]!;
     expect(oldMesh).toBeInstanceOf(Mesh);
     const oldGeometry = (oldMesh as Mesh).geometry;
-    await beginSlotModelAnimLoad(scene, binding, 1, "model", secondBytes, nextRoot);
+    await beginSlotModelAnimLoad(scene, binding, 1, "model", installAssetBytes(secondBytes), nextRoot);
     expect(visualMeshes(nextRoot)[0]!.getVerticesData(VertexBuffer.PositionKind)![3]).toBe(2);
     expect(oldMesh.isDisposed()).toBe(false);
     expect((oldMesh as Mesh).geometry).toBe(oldGeometry);
@@ -52,12 +54,12 @@ describe("visual generation ownership", () => {
   it("retires original model clone materials after a borrowed material overrides them", async () => {
     const { scene } = host();
     const binding = createSnapshotSceneBinding();
-    const bytes = encodeTriangleGlb();
+    const source = installAssetBytes(encodeTriangleGlb());
     const borrowed = new StandardMaterial("library-owned", scene);
     const cycle = async () => {
       const root = createModelActorRoot(scene, "model");
       binding.meshes.set(0, root);
-      await beginSlotModelAnimLoad(scene, binding, 0, "model", bytes, root);
+      await beginSlotModelAnimLoad(scene, binding, 0, "model", source, root);
       for (const mesh of visualMeshes(root)) mesh.material = borrowed;
       retirePlaySlot(binding, 0);
     };
@@ -67,6 +69,47 @@ describe("visual generation ownership", () => {
     expect(scene.materials).toContain(borrowed);
     expect(scene.materials).toHaveLength(warmed);
     expect(scene.meshes).toHaveLength(0);
+  });
+
+  it("keeps the previous instance on preparation failure and retries that source identity", async () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(scene, "model");
+    const source = installAssetBytes(encodeTriangleGlb());
+    await beginSlotModelAnimLoad(scene, binding, 0, "model", source, root);
+    const previous = visualMeshes(root)[0]!;
+    const next = new Blob([await source.arrayBuffer()], { type: source.type });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const prepare = vi.fn().mockRejectedValueOnce(new Error("injected material preparation failure")).mockResolvedValue(undefined);
+    await expect(beginSlotModelAnimLoad(scene, binding, 0, "model", next, root, undefined, undefined, prepare)).rejects.toThrow("injected");
+    expect(visualMeshes(root)[0]).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    await beginSlotModelAnimLoad(scene, binding, 0, "model", next, root, undefined, undefined, prepare);
+    expect(visualMeshes(root)[0]).not.toBe(previous);
+    expect(previous.isDisposed()).toBe(true);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let an old rejection evict or block a newer successful generation", async () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(scene, "model");
+    const first = installAssetBytes(encodeTriangleGlb());
+    const second = new Blob([await first.arrayBuffer()]);
+    const late = Promise.withResolvers<never>();
+    const entered = Promise.withResolvers<void>();
+    vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(() => { entered.resolve(); return late.promise; });
+    const stale = beginSlotModelAnimLoad(scene, binding, 0, "model", first, root);
+    await entered.promise;
+    await beginSlotModelAnimLoad(scene, binding, 0, "model", second, root);
+    const winner = visualMeshes(root)[0]!;
+    late.reject(new Error("old load rejected"));
+    await stale;
+    await beginSlotModelAnimLoad(scene, binding, 1, "model", second, createModelActorRoot(scene, "another"));
+    expect(glbContainerLoadCount(scene)).toBe(2);
+    expect(visualMeshes(root)[0]).toBe(winner);
+    expect(winner.isDisposed()).toBe(false);
   });
 
   it("retires generated text construction materials in a persistent scene", () => {

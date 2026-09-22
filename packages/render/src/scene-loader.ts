@@ -33,7 +33,7 @@ import {
   hideModelPlaceholder,
   isEditorModelPlaceholder,
 } from "./glb-anim";
-import { isGltfModelBytes } from "./model-mesh";
+import { installModelSources } from "./mesh-assets";
 import { syncAuthoredIllumination, isAuthoredLightClassId } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
@@ -1227,6 +1227,7 @@ export function applySceneToBabylonScene(
 
   const meshAssets: MeshAssetContext = {
     ...(assets ?? {}),
+    modelSources: installModelSources(assets ?? {}),
     drawMeshCollision:
       assets?.drawMeshCollision ?? sceneData.settings.physicsWorld !== "2d",
   };
@@ -1237,6 +1238,7 @@ export function applySceneToBabylonScene(
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
     modelBytes: meshAssets.modelBytes,
+    modelSources: meshAssets.modelSources,
     modelPayloads: meshAssets.modelPayloads,
     modelClipAnimationGuids: meshAssets.modelClipAnimationGuids,
     retargetAnimationLoads: meshAssets.retargetAnimationLoads,
@@ -1253,8 +1255,8 @@ export function applySceneToBabylonScene(
       (component) => component.classId === "MeshComponent",
     )?.properties.assetGuid;
     const bytes =
-      typeof guid === "string" ? assets?.modelBytes?.get(guid) : undefined;
-    if (typeof guid === "string" && bytes && isGltfModelBytes(bytes)) {
+      typeof guid === "string" ? meshAssets.modelSources?.get(guid) : undefined;
+    if (typeof guid === "string" && bytes) {
       const placeholder = editorModelLoadTarget(mesh, actor);
       void beginSlotModelAnimLoad(
         scene,

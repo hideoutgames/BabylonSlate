@@ -23,6 +23,8 @@ export interface MeshAssetContext {
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Immutable installed content used by scene-local decoded model generations. */
+  modelSources?: ReadonlyMap<string, Blob>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /**
    * Editor MeshComponent collision dashes. Session **Show Collisions**
@@ -81,6 +83,12 @@ import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@ba
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
+export function installModelSources(assets: Pick<MeshAssetContext, "modelBytes" | "modelSources">): ReadonlyMap<string, Blob> | undefined {
+  if (assets.modelSources) return assets.modelSources;
+  if (!assets.modelBytes) return undefined;
+  return new Map([...assets.modelBytes].map(([guid, bytes]) => [guid, installAssetBytes(bytes, "model/gltf-binary")]));
+}
+
 function byteMapFingerprint(
   map: ReadonlyMap<string, Uint8Array | Blob> | undefined,
 ): string {
@@ -127,7 +135,7 @@ export function meshAssetFingerprint(
     `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
     `msdf:${byteMapFingerprint(assets.fontMsdfJson)}:${byteMapFingerprint(assets.fontMsdfPng)}`,
     `fontCss:${assets.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets.fontCssStackByGuid)}`,
-    `models:${byteMapFingerprint(assets.modelBytes)}`,
+    `models:${byteMapFingerprint(assets.modelSources ?? assets.modelBytes)}`,
   ].join("|");
 }
 

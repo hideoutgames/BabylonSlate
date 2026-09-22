@@ -1110,7 +1110,7 @@ export function createPlayMesh(
   }
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
-    const bytes = binding?.modelBytes?.get(assetGuid);
+    const bytes = binding?.modelSources?.get(assetGuid);
     if (bytes && binding) {
       void beginSlotModelAnimLoad(
         scene,
@@ -1119,7 +1119,9 @@ export function createPlayMesh(
         assetGuid,
         bytes,
         root,
-        () => applyLoadedModelMaterials(binding, slotId, assetGuid, root),
+        undefined,
+        undefined,
+        (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
       );
     }
     return finishPlayWorldMesh(root);
