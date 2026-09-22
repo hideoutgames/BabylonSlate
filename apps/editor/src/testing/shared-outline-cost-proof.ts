@@ -1,5 +1,5 @@
 /** Fixed-output production measurements. Software adapters are functional evidence only. */
-import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3, type Effect } from "@babylonjs/core";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
@@ -134,7 +134,12 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
   } catch (error) {
     publish("failed", { error: String(error), measurements, lifecycle,
       adapter: engine.getInfo(), tasks: renderer.taskNames(), owner: owner.diagnostics(),
-      view: view.diagnostics(), reservations: managedRenderReservations(engine) });
+      view: view.diagnostics(), reservations: managedRenderReservations(engine),
+      // Read-only native compilation diagnostics for a failed hardware run.
+      effects: Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).map(effect => ({
+        name: effect.name, ready: effect.isReady(), error: effect.getCompilationError(),
+        asynchronous: effect.getPipelineContext()?.isAsync,
+      })) });
     throw new Error(`Shared outline cost failed at ${phase}: ${String(error)}`, { cause: error });
   } finally {
     detach(); await renderer.retire(); view.dispose(); await owner.whenReleased();

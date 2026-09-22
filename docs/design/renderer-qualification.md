@@ -125,6 +125,23 @@ The first T3 failure does not certify this separate host. After selection cleanu
 `afff8b31` passed the shared-host and overlay-transform files (35 tests), six-file
 lint, the render-package typecheck and the admitted editor/player build.
 
+At `f59c85ad`, native-GPU cost qualification produced **one PASS, one FAIL**.
+[WebGPU](../assets/renderer-qualification/2026-09-22-hardware-cost/webgpu.json)
+confirmed NVIDIA/turing, fixed 640×360 scale 1, all 12 consumer/count comparisons
+and eight retirement cycles. At 192 instances the CPU median/p95 was 1.095/1.370 ms
+off, 2.310/2.880 ms all, and 0.790/1.020 ms off-restored. This run shows ordering
+and warmup variance; it is not a causal speedup claim. All consumers used four
+drawing passes/seven records, 5,543,552 accounted bytes, and returned to zero
+after deactivation. WebGPU direct GPU timings were unavailable. Cadence near
+16.9 ms does not establish headroom. The primitive fixture excludes editor gizmo
+cost and cannot establish A16 behavior.
+
+[WebGL2](../assets/renderer-qualification/2026-09-22-hardware-cost/webgl2-failure.json)
+confirmed RTX 2060/D3D11 but timed out preparing the first global contribution
+at 12 instances, before mask submission. Its off-only sample is not an outline
+cost comparison. The next diagnostic revision records native shader compilation
+state and console errors to distinguish compiler failure from pending readiness.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

@@ -12,14 +12,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   test(`shared outline fixed-output cost and repeated retirement on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
+    const consoleErrors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
     await page.goto("/?test=1&sharedOutlineCostProof=1");
     await page.waitForFunction(() => "__babylonslateSharedOutlineCostProof" in window);
     const report = await page.evaluate((backend) => (window as unknown as {
       __babylonslateSharedOutlineCostProof: typeof runSharedOutlineCostProof;
     }).__babylonslateSharedOutlineCostProof(backend), backend).catch(async (error: unknown) => {
       await testInfo.attach("shared-outline-cost-failure", { body: JSON.stringify({
-        progress: await page.getByTestId("shared-outline-cost-progress").textContent(), errors,
+        progress: await page.getByTestId("shared-outline-cost-progress").textContent(), errors, consoleErrors,
         evidence: renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"),
       }), contentType: "application/json" });
       throw error;
