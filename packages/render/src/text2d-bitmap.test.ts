@@ -140,6 +140,22 @@ describe("resolveText2DFontStack", () => {
 });
 
 describe("packBitmapGlyphAtlas", () => {
+  it("balances many unique small cells across both atlas dimensions", () => {
+    const cells = Array.from({ length: 64 }, (_, index) => ({
+      key: String(index), width: 8, height: 8, pixels: new Uint8ClampedArray(8 * 8 * 4).fill(index),
+    }));
+    const packed = packBitmapGlyphAtlas(cells)!;
+    expect(packed.width).toBeLessThanOrEqual(128);
+    expect(packed.height).toBeLessThanOrEqual(128);
+    expect(packed.uvs.size).toBe(64);
+    for (const cell of cells) {
+      const uv = packed.uvs.get(cell.key)!;
+      const x = Math.round(uv.u0 * packed.width);
+      const y = Math.round((1 - uv.v1) * packed.height);
+      expect(packed.pixels[(y * packed.width + x) * 4]).toBe(Number(cell.key));
+    }
+  });
+
   it("assigns distinct UVs and copies both cells onto one atlas", () => {
     const a = rasterizeBitmapGlyph("A", STYLE);
     const i = rasterizeBitmapGlyph("I", STYLE);
