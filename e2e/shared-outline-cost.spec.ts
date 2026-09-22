@@ -11,6 +11,7 @@ if (process.env.CI) test.use({ launchOptions: { args: graphicsArguments } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`shared outline fixed-output cost and repeated retirement on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
+    const launchArguments = process.env.CI ? graphicsArguments : testInfo.project.use.launchOptions?.args ?? [];
     const errors: string[] = [];
     const consoleErrors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -22,13 +23,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }).__babylonslateSharedOutlineCostProof(backend), backend).catch(async (error: unknown) => {
       await testInfo.attach("shared-outline-cost-failure", { body: JSON.stringify({
         progress: await page.getByTestId("shared-outline-cost-progress").textContent(), errors, consoleErrors,
-        evidence: renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"),
+        evidence: renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts", launchArguments),
       }), contentType: "application/json" });
       throw error;
     });
     await testInfo.attach("shared-outline-cost", { body: JSON.stringify({ ...report,
-      evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"),
-        graphicsArguments: process.env.CI ? graphicsArguments : testInfo.project.use.launchOptions?.args ?? [] }, errors }), contentType: "application/json" });
+      evidence: renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts", launchArguments), errors }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(report.effectiveBackend).toBe(backend);
     for (const sample of report.measurements) {

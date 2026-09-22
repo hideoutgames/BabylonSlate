@@ -233,6 +233,23 @@ four changed cases require a repeat. The settings/graph/shadow results remain
 valid for their unchanged production code and fixtures. Computer Use B/C and
 ordinary editor interaction cost remain outstanding.
 
+At `f61ff565`, all four changed area-light cases passed, including independently
+served attribution/license assets in packed and loose exports, effective backend
+assertions and receiver adapter metadata. Seven changed files passed scoped lint.
+The build passed editor/player TypeScript checks.
+
+**Evidence correction:** the common report helper through `f61ff565` incorrectly
+printed software launch arguments for native runs. The actual native project
+used `--use-angle=d3d11 --ignore-gpu-blocklist --enable-gpu-rasterization
+--disable-background-timer-throttling --disable-renderer-backgrounding`.
+Effective API/adapter fields came from the running engines and remain valid.
+Retained JSON is left unchanged; its `graphicsArguments` field is superseded by
+this correction for `f39b1803`, `cb5fba6e` and `f61ff565` native runs. The
+successful cost reports already overrode that field correctly. The helper now
+uses the selected native project's flags; cost failure reports also use the
+actual flags. A single native receiver case will check the corrected report;
+unchanged production pixel/ownership/settings results are reused.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed
@@ -263,14 +280,14 @@ remains unchanged. This does not complete the outstanding delivery routes.
 
 | Requirement | Latest evidence | Remaining |
 | --- | --- | --- |
-| Shared ownership and pixels | `b05d4467`: both API cases passed all 43 presented states after repairing regular-instance readiness; software adapters | Hands-on acceptance and current integrated geometry qualification |
-| Materials, animation, LOD | `6cc7cce3`: both geometry cases passed on effective software WebGL2/WebGPU after the readiness and morph-data repairs; 18 readiness unit cases passed `19fea64c` | Hands-on authoring and integrated export acceptance |
+| Shared ownership and pixels | `f39b1803`: ownership cases pass on NVIDIA WebGL2/WebGPU; Chrome manual survivors/strict occlusion pass at `6688d680` | Current-build manual critical recheck and independent output route |
+| Materials, animation, LOD | `f39b1803`: both native geometry cases pass; includes cutouts, transparent coverage, animation, thin actor groups, LOD and custom graph deformation | Grouped-model hands-on authoring and export acceptance |
 | Authored/UI/settings | `531e7039`: five explicit UI files, 93 passes; `5308c759`: 75 passes across 11 unchanged core/runtime/render files | Hands-on authoring/history/reopen and new standalone export pixels |
 | Owner/runtime/Class regressions | `eea6009e`: four shared-owner cases and one Class inheritance case passed; failed parent/child lifecycle repaired and passed at `531e7039` | Browser authoring and runtime lifecycle acceptance |
 | Main integration | Normal merge retains snapshot membership/pose separation and rendering bindings; `ec1926c1`: two snapshot files, 67 passes; `bf2dc011`: eight selected outline/area-light cases passed | Current affected browser and CI gates |
-| Static checks | Scoped editor typecheck passed `3bc0146b`; editor/player build and final cost-fixture lint passed `6cc7cce3`; prior scoped checks remain revision-scoped | Required current-head CI |
-| Computer Use | Chrome connected; retained parented/scaled area-light Play/save/reopen captures below are from `90267c2b` | Routes A/C and remainder of B on the completed build; texture import permission remains unresolved |
-| Cost/device | Previous shadow evidence retained; no new outline hardware cost claim | Fixed-quality desktop comparison and bounded lifecycle exercise; physical A16 remains deferred |
+| Static checks | `f61ff565`: seven-file lint and admitted editor/player TypeScript build pass; render typecheck passed `cf363d82` | Reporting-only helper lint and required current-head CI |
+| Computer Use | Chrome native WebGL2/WebGPU Route A substeps pass at `6688d680`; parented/scaled light authoring retained; saved Low ? Scale graph runs in Play | Remainder of B/C, current-build critical checks; Chrome texture-import permission blocked, authorized T3 fallback available |
+| Cost/device | `f39b1803`: fixed-output native API reports, individual/all consumers, 12/192 instances, eight retirement cycles | Ordinary editor/gizmo interaction and Play/transition lifetime; physical A16 deferred |
 | Delivery | Existing branch and draft PR #651 remain unmerged | Complete acceptance, review and exact-head required CI before guarded merge |
 
 The `b205b472` browser run used WARP WebGL2 and SwiftShader WebGPU, both software
