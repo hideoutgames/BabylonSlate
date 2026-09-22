@@ -104,6 +104,6 @@ export async function runVisualGenerationProof(backend: "webgl2" | "webgpu") {
       preparationMs: { p50: durations[49], p95: durations[94], p99: durations[98] },
     };
   } finally {
-    scene.dispose(); owner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
+    scene.dispose(); owner.dispose(); cache.dispose(); engine.dispose(); canvas.remove();
   }
 }
