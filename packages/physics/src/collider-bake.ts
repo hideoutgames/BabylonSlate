@@ -74,6 +74,7 @@ export function bakeColliderLocal(
   }
   // A rigid attachment cannot represent shear induced by non-uniform ancestor
   // scaling and an oblique local rotation. Do not silently approximate it.
+  const parentScale = is2d ? { ...actorScale, z: 1 } : actorScale;
   const axes = [
     { x: 1, y: 0, z: 0 },
     { x: 0, y: 1, z: 0 },
@@ -81,9 +82,9 @@ export function bakeColliderLocal(
   ].map((axis) => {
     const v = rotateQuatVec(pose.rotation, axis);
     return {
-      x: v.x * actorScale.x,
-      y: v.y * actorScale.y,
-      z: v.z * actorScale.z,
+      x: v.x * parentScale.x,
+      y: v.y * parentScale.y,
+      z: v.z * parentScale.z,
     };
   });
   for (let i = 0; i < (is2d ? 2 : 3); i++)
@@ -96,10 +97,21 @@ export function bakeColliderLocal(
       if (Math.abs(relativeDot) > 1e-6)
         throw new Error("Collider transform contains unsupported shear");
     }
+  // Decompose S_parent * R_local into an orthonormal attachment and the
+  // canonical geometry scale. A quarter-turn permutes nonuniform scale axes.
+  // Put any reflection on X so the attachment remains a proper rotation.
+  const lengths = axes.map((axis) => Math.hypot(axis.x, axis.y, axis.z));
+  lengths[0] =
+    lengths[0]! * Math.sign(parentScale.x * parentScale.y * parentScale.z);
+  const basis = axes.map((axis, index) => ({
+    x: axis.x / lengths[index]!,
+    y: axis.y / lengths[index]!,
+    z: axis.z / lengths[index]!,
+  }));
   const scale = {
-    x: actorScale.x * local.scale.x,
-    y: actorScale.y * local.scale.y,
-    z: actorScale.z * local.scale.z,
+    x: lengths[0]! * local.scale.x,
+    y: lengths[1]! * local.scale.y,
+    z: lengths[2]! * local.scale.z,
   };
   return {
     shape: scaleColliderShape(shape, scale),
@@ -108,8 +120,49 @@ export function bakeColliderLocal(
       y: local.position.y * actorScale.y,
       z: local.position.z * actorScale.z,
     },
-    rotation: pose.rotation,
+    rotation: quaternionFromBasis(basis[0]!, basis[1]!, basis[2]!),
   };
+}
+
+/** Matrix columns are a proper orthonormal basis after shear validation. */
+function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3): Quat {
+  const trace = x.x + y.y + z.z;
+  let q: Quat;
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    q = {
+      x: (y.z - z.y) / s,
+      y: (z.x - x.z) / s,
+      z: (x.y - y.x) / s,
+      w: s / 4,
+    };
+  } else if (x.x > y.y && x.x > z.z) {
+    const s = Math.sqrt(1 + x.x - y.y - z.z) * 2;
+    q = {
+      x: s / 4,
+      y: (y.x + x.y) / s,
+      z: (z.x + x.z) / s,
+      w: (y.z - z.y) / s,
+    };
+  } else if (y.y > z.z) {
+    const s = Math.sqrt(1 + y.y - x.x - z.z) * 2;
+    q = {
+      x: (y.x + x.y) / s,
+      y: s / 4,
+      z: (z.y + y.z) / s,
+      w: (z.x - x.z) / s,
+    };
+  } else {
+    const s = Math.sqrt(1 + z.z - x.x - y.y) * 2;
+    q = {
+      x: (z.x + x.z) / s,
+      y: (z.y + y.z) / s,
+      z: s / 4,
+      w: (x.y - y.x) / s,
+    };
+  }
+  return normalizedPhysicsPose({ position: { x: 0, y: 0, z: 0 }, rotation: q })
+    .rotation;
 }
 
 export function scaleColliderShape(

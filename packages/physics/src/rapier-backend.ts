@@ -1,4 +1,7 @@
-import type { InteractionGroups, QueryFilterFlags } from "@dimforge/rapier2d-compat";
+import type {
+  InteractionGroups,
+  QueryFilterFlags,
+} from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
@@ -90,6 +93,7 @@ type RapierApi = {
 
 type RapierBodyDesc = {
   setTranslation(x: number, y: number): RapierBodyDesc;
+  setRotation(angle: number): RapierBodyDesc;
   setLinearDamping(v: number): RapierBodyDesc;
   setAngularDamping(v: number): RapierBodyDesc;
   setGravityScale(v: number): RapierBodyDesc;
@@ -225,6 +229,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   createBody(desc: RigidBodyDesc): void {
+    desc = { ...desc, transform: normalizedPhysicsPose(desc.transform) };
     const R = this.RAPIER;
     let bodyDesc;
     switch (desc.motionType) {
@@ -240,6 +245,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     }
     bodyDesc
       .setTranslation(desc.transform.position.x, desc.transform.position.y)
+      .setRotation(quatToPlanarAngle(desc.transform.rotation))
       .setLinearDamping(desc.linearDamping)
       .setAngularDamping(desc.angularDamping)
       .setGravityScale(desc.gravityScale);
@@ -262,7 +268,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.bodies.delete(bodyId);
   }
 
-  teleportBody(bodyId: string, transform: PhysicsTransform, options: TeleportOptions = {}): void {
+  teleportBody(
+    bodyId: string,
+    transform: PhysicsTransform,
+    options: TeleportOptions = {},
+  ): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
     transform = normalizedPhysicsPose(transform);
@@ -275,13 +285,17 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       rotation: { ...transform.rotation },
     };
     record.body.setRotation(quatToPlanarAngle(transform.rotation), true);
-    if (options.velocity === "reset") { record.body.setLinvel({ x: 0, y: 0 }, true); record.body.setAngvel(0, true); }
+    if (options.velocity === "reset") {
+      record.body.setLinvel({ x: 0, y: 0 }, true);
+      record.body.setAngvel(0, true);
+    }
   }
 
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
-    if (record.desc.motionType !== "kinematic") throw new Error("Only kinematic bodies accept motion targets");
+    if (record.desc.motionType !== "kinematic")
+      throw new Error("Only kinematic bodies accept motion targets");
     const pose = normalizedPhysicsPose(transform);
     record.body.setNextKinematicTranslation(pose.position);
     record.body.setNextKinematicRotation(quatToPlanarAngle(pose.rotation));
@@ -293,7 +307,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const t = record.body.translation();
     return {
       position: { x: t.x, y: t.y, z: 0 },
-      rotation: { x: 0, y: 0, z: Math.sin(record.body.rotation() / 2), w: Math.cos(record.body.rotation() / 2) },
+      rotation: {
+        x: 0,
+        y: 0,
+        z: Math.sin(record.body.rotation() / 2),
+        w: Math.cos(record.body.rotation() / 2),
+      },
     };
   }
 
@@ -325,7 +344,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const next = { x: current.x, y: current.y };
     for (const axis of ["x", "y"] as const) {
       const value = velocity[axis];
-      if (typeof value === "number" && Number.isFinite(value)) next[axis] = value;
+      if (typeof value === "number" && Number.isFinite(value))
+        next[axis] = value;
     }
     record.body.setLinvel(next, true);
   }
@@ -380,19 +400,38 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   applyColliderChanges(bodyId: string, changes: ColliderChanges): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;
+    if (
+      new Set(changes.upsert.map((desc) => desc.id)).size !==
+      changes.upsert.length
+    )
+      throw new Error("Duplicate collider upsert identity");
     const prepared = changes.upsert.map(copyColliderDesc).map((desc) => {
-      if (desc.bodyId !== bodyId || (this.colliders.has(desc.id) && this.colliders.get(desc.id)!.desc.bodyId !== bodyId)) throw new Error("Collider transaction crosses body ownership");
+      if (
+        desc.bodyId !== bodyId ||
+        (this.colliders.has(desc.id) &&
+          this.colliders.get(desc.id)!.desc.bodyId !== bodyId)
+      )
+        throw new Error("Collider transaction crosses body ownership");
       const colliderDesc = this.toColliderDesc(desc);
       if (!colliderDesc) throw new Error("Unsupported planar collider shape");
-      colliderDesc.setFriction(desc.friction).setRestitution(desc.restitution).setSensor(desc.isTrigger)
-        .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS).setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
-      colliderDesc.setTranslation(desc.translation!.x, desc.translation!.y).setRotation(quatToPlanarAngle(desc.rotation!));
+      colliderDesc
+        .setFriction(desc.friction)
+        .setRestitution(desc.restitution)
+        .setSensor(desc.isTrigger)
+        .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+        .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
+      colliderDesc
+        .setTranslation(desc.translation!.x, desc.translation!.y)
+        .setRotation(quatToPlanarAngle(desc.rotation!));
       return { desc, colliderDesc };
     });
     const provisional: ColliderRecord[] = [];
     try {
       for (const { desc, colliderDesc } of prepared) {
-        const record: ColliderRecord = { desc, collider: this.world.createCollider(colliderDesc, body.body) };
+        const record: ColliderRecord = {
+          desc,
+          collider: this.world.createCollider(colliderDesc, body.body),
+        };
         provisional.push(record);
         record.extra = this.createLoopCloseSegment(desc, body.body);
       }
@@ -403,17 +442,27 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       }
       throw error;
     }
-    for (const id of new Set([...changes.remove, ...prepared.map(({ desc }) => desc.id)])) {
-      if (this.colliders.get(id)?.desc.bodyId === bodyId) this.destroyCollider(id);
+    for (const id of new Set([
+      ...changes.remove,
+      ...prepared.map(({ desc }) => desc.id),
+    ])) {
+      if (this.colliders.get(id)?.desc.bodyId === bodyId)
+        this.destroyCollider(id);
     }
     for (const record of provisional) {
       this.colliders.set(record.desc.id, record);
       this.colliderIdByHandle.set(record.collider.handle, record.desc.id);
-      if (record.extra) this.colliderIdByHandle.set(record.extra.handle, record.desc.id);
+      if (record.extra)
+        this.colliderIdByHandle.set(record.extra.handle, record.desc.id);
     }
     if (provisional.some((record) => record.extra)) {
       const previous = this.world.timestep;
-      try { this.world.timestep = 0; this.world.step(); } finally { this.world.timestep = previous; }
+      try {
+        this.world.timestep = 0;
+        this.world.step();
+      } finally {
+        this.world.timestep = previous;
+      }
     }
   }
 
@@ -434,7 +483,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       if (typeof tuning.isTrigger === "boolean") {
         collider.setSensor(tuning.isTrigger);
       }
-      if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+      if (
+        typeof tuning.friction === "number" &&
+        Number.isFinite(tuning.friction)
+      ) {
         collider.setFriction(tuning.friction);
       }
       if (
@@ -449,7 +501,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (typeof tuning.isTrigger === "boolean") {
       record.desc.isTrigger = tuning.isTrigger;
     }
-    if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+    if (
+      typeof tuning.friction === "number" &&
+      Number.isFinite(tuning.friction)
+    ) {
       record.desc.friction = tuning.friction;
     }
     if (
@@ -498,13 +553,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   readTransforms(): ReadonlyMap<string, PhysicsTransform> {
     const out = new Map<string, PhysicsTransform>();
-    for (const [id, record] of this.bodies) {
-      const t = record.body.translation();
-      out.set(id, {
-        position: { x: t.x, y: t.y, z: 0 },
-        rotation: identityRotation(),
-      });
-    }
+    for (const id of this.bodies.keys())
+      out.set(id, this.getBodyTransform(id)!);
     return out;
   }
 
@@ -528,8 +578,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       undefined,
       ignored.size
         ? (collider) => {
-            const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
-            const actorId = bodyId ? this.bodies.get(bodyId)?.desc.actorId : undefined;
+            const bodyId = this.bodyIdByHandle.get(
+              collider.parent()?.handle ?? -1,
+            );
+            const actorId = bodyId
+              ? this.bodies.get(bodyId)?.desc.actorId
+              : undefined;
             return actorId === undefined || !ignored.has(actorId);
           }
         : undefined,
@@ -537,7 +591,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!hit) return miss();
     const point = ray.pointAt(hit.timeOfImpact);
     const bodyId = this.bodyIdByHandle.get(hit.collider.parent()?.handle ?? -1);
-    const actorId = bodyId ? (this.bodies.get(bodyId)?.desc.actorId ?? null) : null;
+    const actorId = bodyId
+      ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
+      : null;
     return {
       hit: true,
       location: { x: point.x, y: point.y, z: 0 },
@@ -622,10 +678,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       (c) => c.desc.bodyId === bodyRecord.desc.id,
     );
     if (!collider) return null;
-    character.controller.computeColliderMovement(
-      collider.collider,
-      { x: translation.x, y: translation.y },
-    );
+    character.controller.computeColliderMovement(collider.collider, {
+      x: translation.x,
+      y: translation.y,
+    });
     const movement = character.controller.computedMovement();
     const current = bodyRecord.body.translation();
     bodyRecord.body.setNextKinematicTranslation({
@@ -647,10 +703,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const shape = desc.shape;
     switch (shape.kind) {
       case "box2d":
-        return R.ColliderDesc.cuboid(
-          shape.halfExtents.x,
-          shape.halfExtents.y,
-        );
+        return R.ColliderDesc.cuboid(shape.halfExtents.x, shape.halfExtents.y);
       case "circle":
         return R.ColliderDesc.ball(shape.radius);
       case "capsule2d":
@@ -685,7 +738,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     body: RapierRigidBody,
   ): RapierCollider | undefined {
     const shape = desc.shape;
-    if (shape.kind !== "chain" || shape.loop !== true || shape.points.length < 2) {
+    if (
+      shape.kind !== "chain" ||
+      shape.loop !== true ||
+      shape.points.length < 2
+    ) {
       return undefined;
     }
     const first = shape.points[0]!;

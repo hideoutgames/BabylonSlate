@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { bakeColliderLocal } from "./collider-bake";
+import { bakeColliderLocal, rotateQuatVec } from "./collider-bake";
 import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
 
 it("preserves scaled asymmetric vertices and one local pose while rejecting non-rigid or degenerate input", () => {
@@ -21,10 +21,10 @@ it("preserves scaled asymmetric vertices and one local pose while rejecting non-
     shape: {
       kind: "convex",
       points: [
-        { x: 0, y: 0, z: 0 },
+        { x: -0, y: 0, z: 0 },
         { x: -8, y: 0, z: 0 },
-        { x: 0, y: 3, z: 0 },
-        { x: 0, y: 0, z: 6 },
+        { x: -0, y: 3, z: 0 },
+        { x: -0, y: 0, z: 6 },
       ],
     },
     translation: { x: 2, y: 6, z: 12 },
@@ -72,4 +72,29 @@ it("preserves scaled asymmetric vertices and one local pose while rejecting non-
       mask: 1,
     }),
   ).toThrow("Degenerate");
+});
+
+it("keeps reflected and quarter-turned hulls aligned under nonuniform parent scale", () => {
+  const shape = { kind: "convex" as const, points: [{ x: 1, y: 2, z: 3 }] };
+  const rotation = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+  const local = {
+    position: { x: 1, y: 0, z: 0 },
+    rotation,
+    scale: { x: 2, y: 3, z: 4 },
+  };
+  for (const parent of [
+    { x: 2, y: 3, z: 4 },
+    { x: -2, y: 3, z: 4 },
+  ]) {
+    const baked = bakeColliderLocal(shape, local, parent);
+    expect(baked.shape.kind).toBe("convex");
+    if (baked.shape.kind !== "convex") throw new Error("Expected hull");
+    const actual = rotateQuatVec(baked.rotation, baked.shape.points[0]!);
+    const original = rotateQuatVec(rotation, { x: 2, y: 6, z: 12 });
+    expect(actual.x + baked.translation.x).toBeCloseTo(
+      original.x * parent.x + parent.x,
+    );
+    expect(actual.y).toBeCloseTo(original.y * parent.y);
+    expect(actual.z).toBeCloseTo(original.z * parent.z);
+  }
 });
