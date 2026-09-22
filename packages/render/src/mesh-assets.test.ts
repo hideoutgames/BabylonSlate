@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Material,
   MeshBuilder,
@@ -7,7 +7,7 @@ import {
   StandardMaterial,
   Texture,
 } from "@babylonjs/core";
-import { applyAlbedoTexture, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
+import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 
@@ -69,12 +69,25 @@ describe("modelSlotFingerprint", () => {
 });
 
 describe("applyAlbedoTexture", () => {
+  it("reapplies equal installed content without acquiring and clears its exact binding", () => {
+    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const acquire = vi.spyOn(cache, "acquireTexture");
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    applyAlbedoTexture(mesh, scene, "atlas", { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", bytes]])) });
+    applyAlbedoTexture(mesh, scene, "atlas", { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", bytes.slice()]])) });
+    expect(acquire).toHaveBeenCalledOnce();
+    applyAlbedoTexture(mesh, scene, null, { resourceCache: cache });
+    expect((mesh.material as StandardMaterial).diffuseTexture).toBeNull();
+    expect(cache.resourceStats().leases).toBe(0);
+    scene.dispose(); cache.dispose(); engine.dispose();
+  });
   it("keeps the material and binding stable across 10,000 repeated sprite selections", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache();
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
-    const assets = { resourceCache: cache, textureBytes: new Map([["atlas", new Uint8Array([1, 2, 3, 4])]]) };
+    const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", new Uint8Array([1, 2, 3, 4])]])) };
     applyAlbedoTexture(mesh, scene, "atlas", assets);
     const material = mesh.material;
     for (let i = 0; i < 10_000; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);
@@ -91,7 +104,7 @@ describe("applyAlbedoTexture", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const albedoLease = acquireMaterialTexture(cache, "tex-1", engine, bytes);
-    const albedo = albedoLease?.resource;
+    const albedo = albedoLease?.resource ?? null;
     expect(albedo).not.toBeNull();
     const mesh = MeshBuilder.CreatePlane("overlay", { size: 1 }, scene);
     applyAlbedoTexture(mesh, scene, "tex-1", {

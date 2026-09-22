@@ -73,6 +73,7 @@ export function resolveSkyboxCubeTexture(scene: Scene, faces: SkyboxFaces = empt
   const cache = assets?.resourceCache ?? resourceCacheForEngine(scene.getEngine());
   if (skyboxFaceGuids(parsed).length === 0) return createEngineDefaultCubeTexture(scene, cache);
   const sources: ResourceLease<string>[] = [];
+  const pendingSources: ResourceLease<string>[] = [];
   try {
     const files = SKYBOX_FACE_KEYS.map((key) => {
       const guid = parsed[key];
@@ -80,18 +81,25 @@ export function resolveSkyboxCubeTexture(scene: Scene, faces: SkyboxFaces = empt
       if (!guid || !bytes) return engineDefaultSkyboxFaceUrl(key);
       const lease = cache.acquireBlobUrl(guid, bytes);
       sources.push(lease);
+      // Native cube upload may outlive a handle's outstanding-lease safety net.
+      pendingSources.push(cache.acquireExisting(lease.resource));
       return lease.resource;
     });
     const cube = cache.acquireCubeTextureFromImages(skyboxCubeCacheGuid(parsed), scene, files);
+    const finishPreparation = () => { for (const source of pendingSources) source.release(); };
+    if (cube.ready) void cube.ready.then(finishPreparation, finishPreparation); else finishPreparation();
     let released = false;
     return { resource: cube.resource, key: cube.key, ready: cube.ready, release() {
       if (released) return;
       released = true;
       cube.release();
-      const releaseSources = () => { for (const source of sources) source.release(); };
-      if (cube.ready) void cube.ready.then(releaseSources, releaseSources); else releaseSources();
+      for (const source of sources) source.release();
     } };
-  } catch (error) { for (const source of sources) source.release(); throw error; }
+  } catch (error) {
+    for (const source of pendingSources) source.release();
+    for (const source of sources) source.release();
+    throw error;
+  }
 }
 
 export function createSkyboxMesh(

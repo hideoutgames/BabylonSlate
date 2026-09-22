@@ -1,4 +1,4 @@
-import { copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { installedAssetHeader, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -29,6 +29,7 @@ export interface TextureSamplingOptions {
   useSRGBBuffer?: boolean;
   isCube?: boolean;
   hasAlpha?: boolean;
+  anisotropicFilteringLevel?: number;
 }
 
 interface CacheEntry {
@@ -36,6 +37,8 @@ interface CacheEntry {
   key: string;
   blobUrl: string;
   extraBlobUrls: string[];
+  uploadUrls?: Map<string, string>;
+  textureUploads?: Map<string, string>;
   bytes: number;
   refCount: number;
   pending?: number;
@@ -125,15 +128,18 @@ function ktx2LoaderHints(bytes: Uint8Array | Blob): {
   return { mimeType: "image/ktx2", forcedExtension: ".ktx2" };
 }
 
-function samplingKey(options: TextureSamplingOptions = {}): string {
+function uploadSamplingKey(options: TextureSamplingOptions = {}): string {
   return [
     options.noMipmap ? "1" : "0",
     String(options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE),
     options.invertY === false ? "0" : "1",
     options.useSRGBBuffer ? "1" : "0",
     options.isCube ? "1" : "0",
-    options.hasAlpha ? "1" : "0",
   ].join(":");
+}
+
+function samplingKey(options: TextureSamplingOptions = {}): string {
+  return `${uploadSamplingKey(options)}:${options.hasAlpha ? 1 : 0}:${options.anisotropicFilteringLevel ?? 4}`;
 }
 
 /** KTX2 still needs `#.ktx2`. Never add `#nomip` / `#ninv` — that breaks blob upload. */
@@ -155,6 +161,7 @@ function revokeExtraBlobUrls(entry: CacheEntry): void {
     revokeBlobUrl(extra);
   }
   entry.extraBlobUrls.length = 0;
+  entry.uploadUrls?.clear();
 }
 
 function revokeEntryBlobUrls(entry: CacheEntry): void {
@@ -188,6 +195,18 @@ function disposeEntryTextures(entry: CacheEntry): void {
     texture.dispose();
   }
   entry.textures.clear();
+  entry.textureUploads?.clear();
+}
+
+const textureRequests = new WeakMap<BaseTexture, {
+  cache: ResourceCache; assetGuid: string; engine: AbstractEngine; bytes: Uint8Array | Blob; options: TextureSamplingOptions;
+}>();
+
+/** Lazily isolate wrapper sampling state while sharing a compatible native upload. */
+export function acquireTextureVariant(texture: Texture, options: TextureSamplingOptions): ResourceLease<Texture> | null {
+  const request = textureRequests.get(texture);
+  if (!request) return null;
+  return request.cache.acquireTexture(request.assetGuid, request.engine, request.bytes, { ...request.options, ...options }) as ResourceLease<Texture>;
 }
 
 const caches = new WeakMap<AbstractEngine, ResourceCache>();
@@ -230,7 +249,6 @@ export class ResourceCache {
   private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
   private readonly textureKeys = new WeakMap<BaseTexture, string>();
   private readonly urlKeys = new Map<string, string>();
-  private readonly clientTextures = new Map<string, Set<string>>();
   private clock = 0;
   private totalBytes = 0;
 
@@ -245,6 +263,7 @@ export class ResourceCache {
   /** A lease owns one exact generation. Reading its resource never acquires again. */
   acquireTexture(assetGuid: string, engine: AbstractEngine, bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {}): ResourceLease<Texture | CubeTexture> {
+    options = { ...options, anisotropicFilteringLevel: Math.max(1, Math.min(options.anisotropicFilteringLevel ?? 4, engine.getCaps().maxAnisotropy ?? 4)) };
     const lease = this.lease(this.prepareTexture(assetGuid, engine, bytes, options));
     return { ...lease, key: `${lease.key}\0${samplingKey(options)}` };
   }
@@ -271,6 +290,22 @@ export class ResourceCache {
       released = true;
       this.release(key);
     } };
+  }
+
+  private assertAdmitted(): void {
+    this.evictToCeiling();
+    const policies = [...this.clientBudgets.values()];
+    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
+    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
+    const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
+    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
+    if (this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
+  }
+
+  resourceStats() {
+    const entries = [...this.entries.values()];
+    return { generations: entries.length, wrappers: entries.reduce((n, entry) => n + entry.textures.size, 0),
+      leases: entries.reduce((n, entry) => n + entry.refCount, 0), pending: entries.reduce((n, entry) => n + (entry.pending ?? 0), 0) };
   }
 
   private preparing(entry: CacheEntry) {
@@ -330,32 +365,8 @@ export class ResourceCache {
     if (enabled) this.evictToCeiling();
   }
 
-  /**
-   * Pin GPU textures still referenced by one EngineHandle (viewport, Play,
-   * Prefab). Union across clients so a shared cache does not evict a guid
-   * another view still holds. Live GPU wrappers with `refCount > 0` (skybox
-   * cubes, handle retains) stay referenced even when they are not in the pin
-   * set. Accounted entries with no wrapper still follow pins-only. When no
-   * client has registered, eviction uses `refCount` (tests and thumbnail paths).
-   */
-  setClientTextures(clientId: string, guids: Iterable<string>): void {
-    this.clientTextures.set(clientId, new Set(guids));
-    this.evictToCeiling();
-  }
-
-  clearClientTextures(clientId: string): void {
-    if (!this.clientTextures.delete(clientId)) return;
-    this.evictToCeiling();
-  }
-
   private isUnreferenced(entry: CacheEntry): boolean {
-    if (entry.pending) return false;
-    if (anyLiveTexture(entry)) return entry.refCount === 0;
-    if (this.clientTextures.size === 0) return entry.refCount === 0;
-    for (const guids of this.clientTextures.values()) {
-      if (guids.has(entry.assetGuid)) return false;
-    }
-    return true;
+    return !entry.pending && entry.refCount === 0;
   }
 
   private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob): string {
@@ -430,7 +441,8 @@ export class ResourceCache {
     }
     this.prepareBlobUrl(assetGuid, bytes);
     const entry = this.entries.get(variantKey)!;
-    const blobUrl = this.blobUrlForSamplingKey(entry);
+    const uploadKey = uploadSamplingKey(options);
+    const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
     const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
@@ -464,31 +476,42 @@ export class ResourceCache {
     }
     preparation.observe(texture);
     texture.hasAlpha = options.hasAlpha === true;
+    texture.anisotropicFilteringLevel = options.anisotropicFilteringLevel ?? 4;
+    textureRequests.set(texture, { cache: this, assetGuid, engine, bytes, options });
+    entry.textureUploads ??= new Map();
+    entry.textureUploads.set(key, uploadKey);
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
-    this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true);
+    try {
+      this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
+      this.assertAdmitted();
+    } catch (error) {
+      texture.dispose();
+      this.release(entry.key);
+      if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "admission");
+      throw error;
+    }
     return texture;
   }
 
-  /** First wrapper uses the canonical blob URL; later keys get a new object URL. */
-  private blobUrlForSamplingKey(entry: CacheEntry): string {
-    let live = 0;
-    for (const texture of entry.textures.values()) {
-      if (!isDisposedGpuTexture(texture)) live += 1;
-    }
-    if (live === 0) return entry.blobUrl;
+  /** Wrappers with identical uploads share native storage; upload variants get another URL. */
+  private blobUrlForSamplingKey(entry: CacheEntry, uploadKey: string): string {
+    entry.uploadUrls ??= new Map();
+    const existing = entry.uploadUrls.get(uploadKey);
+    if (existing) return existing;
+    let url = entry.blobUrl;
     const blob = this.blobs.get(entry.key);
-    if (!blob || typeof URL === "undefined" || !URL.createObjectURL) {
-      return entry.blobUrl;
+    if (entry.uploadUrls.size && blob && typeof URL !== "undefined" && URL.createObjectURL) {
+      url = URL.createObjectURL(blob);
+      entry.extraBlobUrls.push(url);
     }
-    const extra = URL.createObjectURL(blob);
-    entry.extraBlobUrls.push(extra);
-    return extra;
+    entry.uploadUrls.set(uploadKey, url);
+    return url;
   }
 
   /**
    * Six-face cubemap (`px, py, pz, nx, ny, nz`) for skyboxes. IBL still uses
-   * `getTexture(..., { isCube: true })` with a single DDS/ENV URL.
+   * `acquireTexture(..., { isCube: true })` with a single DDS/ENV URL.
    */
   private prepareCubeTextureFromImages(
     assetGuid: string,
@@ -528,7 +551,7 @@ export class ResourceCache {
   }
 
   /**
-   * Drop GPU Texture wrappers but keep blob URLs so the next `getTexture`
+   * Drop GPU Texture wrappers but keep blob URLs so the next `acquireTexture`
    * rebuilds. Used after WebGL context restore.
    */
   releaseGpuTextures(): void {
@@ -635,12 +658,14 @@ export class ResourceCache {
     texture: Texture | CubeTexture,
     bytes: Uint8Array | Blob | undefined,
     withMips: boolean,
+    uploadKey = sampling,
   ): void {
     entry.samplingDisposers ??= new Map();
     entry.samplingDisposers.get(sampling)?.();
     let active = true;
-    let headerPending = bytes instanceof Blob;
-    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : null;
+    const installedHeader = bytes instanceof Blob ? installedAssetHeader(bytes) : undefined;
+    let headerPending = bytes instanceof Blob && !installedHeader;
+    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : installedHeader ? textureSourceSize(installedHeader) : null;
     const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
     const update = () => {
       if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
@@ -654,7 +679,7 @@ export class ResourceCache {
         format: Constants.TEXTUREFORMAT_RGBA, type: size.reserveType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE,
         generateMipMaps: withMips,
       }, size.ktx2MipLevels ?? size.mipLevels) : null);
-      if (estimate !== null) this.setSamplingBytes(entry, sampling, estimate);
+      if (estimate !== null) this.setSamplingBytes(entry, uploadKey, estimate);
     };
     // Texture and CubeTexture declare distinct generic Observable overloads.
     const load = texture instanceof CubeTexture
@@ -665,7 +690,8 @@ export class ResourceCache {
       cancel();
       entry.samplingDisposers!.delete(sampling);
       entry.textures.delete(sampling);
-      this.setSamplingBytes(entry, sampling, 0);
+      entry.textureUploads?.delete(sampling);
+      if (![...entry.textureUploads?.values() ?? []].includes(uploadKey)) this.setSamplingBytes(entry, uploadKey, 0);
     });
     const cancel = () => {
       active = false;
@@ -676,7 +702,7 @@ export class ResourceCache {
     };
     entry.samplingDisposers.set(sampling, cancel);
     update();
-    if (bytes instanceof Blob) {
+    if (bytes instanceof Blob && !installedHeader) {
       // Bound temporary header storage; unusual raster headers can still be
       // measured from the real upload when their dimensions are unavailable.
       void bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
@@ -761,12 +787,11 @@ export class ResourceCacheOwner implements TextureResources {
   setBudgetEnabled(enabled: boolean) { this.inner.setClientBudgetEnabled(this, enabled); }
   setClientBudget(...args: Parameters<ResourceCache["setClientBudget"]>) { this.inner.setClientBudget(...args); }
   setClientBudgetEnabled(...args: Parameters<ResourceCache["setClientBudgetEnabled"]>) { this.inner.setClientBudgetEnabled(...args); }
-  setClientTextures(...args: Parameters<ResourceCache["setClientTextures"]>) { this.inner.setClientTextures(...args); }
-  clearClientTextures(clientId: string) { this.inner.clearClientTextures(clientId); }
   account(...args: Parameters<ResourceCache["account"]>) { this.inner.account(...args); }
   accountTextureSize(...args: Parameters<ResourceCache["accountTextureSize"]>) { this.inner.accountTextureSize(...args); }
   releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
   accountedBytes() { return this.inner.accountedBytes(); }
+  resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
   flushUnreferenced() { this.inner.flushUnreferenced(); }
   releaseGpuTextures() { this.inner.releaseGpuTextures(); }
@@ -791,6 +816,7 @@ export function bindResourceCacheToHandle(inner: ResourceCache): {
 export const PIXEL_ART_TEXTURE_SAMPLING: TextureSamplingOptions = {
   noMipmap: true,
   samplingMode: Texture.NEAREST_SAMPLINGMODE,
+  anisotropicFilteringLevel: 1,
 };
 
 /** glTF / NodeMaterial albedo: do not invert Y (Babylon glTF loader convention). */

@@ -72,7 +72,7 @@ it("rejects cubes at 2D material and dynamic parameter admission without allocat
       isCube: true,
     }).resource,
   ).toThrow(/MIME/);
-  expect(acquireMaterialTexture(cache, "environment", engine, bytes)?.resource).toBeNull();
+  expect(acquireMaterialTexture(cache, "environment", engine, bytes)).toBeNull();
   expect(engine.getLoadedTexturesCache()).toHaveLength(before);
   expect(() => cache.acquireTexture("environment", engine, bytes).resource).toThrow(/2D/);
   const cubeLease = cache.acquireTexture("environment", engine, bytes, { isCube: true });

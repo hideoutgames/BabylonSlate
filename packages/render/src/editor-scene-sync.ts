@@ -9,6 +9,7 @@ import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
   installModelSources,
+  installTextureBytes,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
   type MeshAssetContext,
@@ -129,7 +130,12 @@ export class EditorSceneSync {
   }
 
   private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {
-    if (assets) assets = { ...assets, modelSources: installModelSources(assets) };
+    if (assets) assets = {
+      ...assets,
+      modelSources: installModelSources(assets),
+      textureBytes: installTextureBytes(assets.textureBytes),
+      fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
+    };
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);

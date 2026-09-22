@@ -58,6 +58,7 @@ class EnvironmentLighting {
   private cache: TextureResources | undefined;
   private source: CubeTexture | null = null;
   private sourceLease: ResourceLease<CubeTexture> | undefined;
+  private pendingLease: ResourceLease<CubeTexture> | undefined;
   private view: CubeTexture | null = null;
   private irradiance: ReturnType<typeof ownEnvironmentIrradiance> | null = null;
   private irradianceChanged = false;
@@ -116,51 +117,33 @@ class EnvironmentLighting {
       isDisposedGpuTexture(this.source) ||
       isDisposedGpuTexture(this.view)
     ) {
-      const lease = this.cache.acquireTexture(
-        this.guid,
-        this.scene.getEngine(),
-        this.bytes,
-        { isCube: true },
-      ) as ResourceLease<CubeTexture>;
-      const source = lease.resource;
-      if (
-        source === this.source &&
-
-        this.view &&
-        !isDisposedGpuTexture(this.view)
-      ) {
-        // Re-collected identical bytes may have a new Uint8Array identity.
-        lease.release();
-      } else {
-        let view: CubeTexture;
-        try {
-          // Babylon 9.20 preserves shared irradiance when cloning a cached
-          // CubeTexture. Its matrix lives on the wrapper; uploaded data does not.
-          view = source.clone();
-          if (view.getInternalTexture() !== source.getInternalTexture()) {
-            view.dispose();
-            throw new Error(
-              "Environment view did not share its uploaded cube.",
-            );
-          }
-        } catch (error) {
+      this.pendingLease?.release();
+      this.pendingLease = undefined;
+      let lease: ResourceLease<CubeTexture>;
+      try {
+        lease = this.cache.acquireTexture(this.guid, this.scene.getEngine(), this.bytes, { isCube: true }) as ResourceLease<CubeTexture>;
+      } catch (error) {
+        this.requestChanged = false;
+        if (!this.source) throw error;
+        console.error("Environment texture replacement failed", error);
+        return;
+      }
+      if (lease.resource === this.source && this.view && !isDisposedGpuTexture(this.view)) lease.release();
+      else if (this.source && !lease.resource.isReady() && lease.ready) {
+        this.pendingLease = lease;
+        void lease.ready.then(() => {
+          if (this.pendingLease !== lease || this.disposed || this.scene.isDisposed) { lease.release(); return; }
+          this.pendingLease = undefined;
+          try { this.publish(lease); this.sync(); this.invalidateMaterials(); }
+          catch (error) { lease.release(); console.error("Environment texture replacement failed", error); }
+        }, (error) => {
+          if (this.pendingLease !== lease) return;
+          this.pendingLease = undefined;
           lease.release();
-          throw error;
-        }
-        this.clear();
-        this.source = source;
-        this.sourceLease = lease;
-        this.view = view;
-        this.irradiance = ownEnvironmentIrradiance(
-          view,
-          source,
-          this.cache,
-          () => {
-            if (!this.disposed && this.view === view)
-              this.irradianceChanged = true;
-          },
-        );
-        this.scene.environmentTexture = view;
+          console.error("Environment texture replacement failed", error);
+        });
+      } else {
+        this.publish(lease);
         changed = true;
       }
     }
@@ -195,7 +178,29 @@ class EnvironmentLighting {
     );
   }
 
+  private publish(lease: ResourceLease<CubeTexture>): void {
+    const source = lease.resource;
+    let view: CubeTexture;
+    try {
+      view = source.clone();
+      if (view.getInternalTexture() !== source.getInternalTexture()) {
+        view.dispose();
+        throw new Error("Environment view did not share its uploaded cube.");
+      }
+    } catch (error) { lease.release(); throw error; }
+    this.clear();
+    this.source = source;
+    this.sourceLease = lease;
+    this.view = view;
+    this.irradiance = ownEnvironmentIrradiance(view, source, this.cache!, () => {
+      if (!this.disposed && this.view === view) this.irradianceChanged = true;
+    });
+    this.scene.environmentTexture = view;
+  }
+
   private clear(): void {
+    this.pendingLease?.release();
+    this.pendingLease = undefined;
     this.irradiance?.dispose();
     this.irradiance = null;
     this.irradianceChanged = false;

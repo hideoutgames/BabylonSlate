@@ -101,8 +101,6 @@ import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-bu
 import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
 import {
   isSkyboxMesh,
-  skyboxCubeCacheGuid,
-  skyboxCubeCacheGuidsFromScene,
 } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
@@ -943,7 +941,6 @@ function initializeEngine(
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
   onRollback(() => cacheBinding.releaseHandleRetains());
-  onRollback(() => resourceCache.clearClientTextures(scene.uid));
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
     resourceCache.setByteCeiling(options.textureByteCeiling);
@@ -1006,10 +1003,6 @@ function initializeEngine(
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
   binding.texturePixelSizes = options.texturePixelSizes;
-  resourceCache.setClientTextures(
-    scene.uid,
-    options.textureBytes?.keys() ?? [],
-  );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
   binding.fontMsdfPng = installTextureBytes(options.fontMsdfPng);
@@ -1412,25 +1405,10 @@ function initializeEngine(
     };
   };
 
-  const pinClientTextures = () => {
-    const guids = new Set<string>(binding.textureBytes?.keys() ?? []);
-    for (const props of binding.skyboxProps.values()) {
-      guids.add(skyboxCubeCacheGuid(props.faces));
-    }
-    for (const guid of skyboxCubeCacheGuidsFromScene(
-      editorSync?.serializedScene() ?? null,
-    )) {
-      guids.add(guid);
-    }
-    resourceCache.setClientTextures(scene.uid, guids);
-  };
-
-  let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
       binding.texturePixelSizes = assets.texturePixelSizes;
-      pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;
       binding.fontMsdfPng = installTextureBytes(assets.fontMsdfPng);
@@ -1489,7 +1467,6 @@ function initializeEngine(
     assertCurrent(generation);
     freezeLibraryMaterials();
     rebuildPostProcessStack();
-    pinClientTextures();
     lastBakedSceneGuid = load.sceneAssetGuid;
     bakedSession.apply(sceneData, bakeHost(load.sceneAssetGuid, load.signal));
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
@@ -1513,7 +1490,6 @@ function initializeEngine(
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
-      pinClientTextures();
       bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
@@ -1534,14 +1510,12 @@ function initializeEngine(
       });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
-      pinClientTextures();
       bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
-    pinClientTextures();
     bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
   };
 
@@ -2294,7 +2268,6 @@ function initializeEngine(
         debugOverlay = null;
         disposeSnapshotBinding(binding);
         materialLibrary.dispose();
-        resourceCache.clearClientTextures(scene.uid);
         particleService?.dispose();
         scene.dispose();
         rttPresent?.dispose();
@@ -2489,7 +2462,6 @@ function initializeEngine(
         } else {
           applyAssignMesh(scene, binding, command);
         }
-        pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
           command.slotId,

@@ -195,14 +195,18 @@ export class MaterialLibrary {
     }
 
     const textures = materialTextureBindings(this.options.acquireTexture);
-    const compiled = compileMaterialPlan(lowered.plan, {
+    let compiled: ReturnType<typeof compileMaterialPlan>;
+    try { compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       particlePreview: this.options.particlePreview,
       logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
-    });
+    }); } catch (error) {
+      textures.dispose();
+      throw error;
+    }
     if (materialCompileFailed(compiled)) {
       textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };
@@ -419,7 +423,7 @@ export class MaterialLibrary {
   isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
     const plan = this.planFor(doc, options?.unlit);
     const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
-    return plan.ok && !!entry && entry.hash === plan.plan.hash && !isDisposedNodeMaterial(entry.material, scene);
+    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan) && !isDisposedNodeMaterial(entry.material, scene);
   }
 
   /** Recompile changed dependencies while retaining the last usable generation. */
