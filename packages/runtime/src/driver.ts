@@ -3688,6 +3688,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.emit({
         type: "assignMesh",
         slotId,
+        actorGuid: actor.guid,
         meshAssetGuid: null,
         meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
         light: {

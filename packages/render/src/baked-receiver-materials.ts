@@ -122,6 +122,8 @@ interface AppliedReceiver {
   /** Null when the mesh's material cannot consume the atlas; the entry stays watched so a later supported assignment still wraps. */
   variant: Material | null;
   excludedLights: Light[];
+  /** Light-kind sources that had no runtime light yet at wrap() — re-resolved on every sync. */
+  pendingExclusions: Extract<BakedLightingSource, { kind: "light" }>[];
   observer: Observer<AbstractMesh>;
   retargeting: boolean;
 }
@@ -194,6 +196,7 @@ export class BakedReceiverMaterials {
       original: current ?? null,
       variant,
       excludedLights: [],
+      pendingExclusions: [],
       observer: mesh.onMaterialChangedObservable.add(() => {
         const applied = this.applied.get(mesh);
         if (!applied || applied.retargeting || this.released) return;
@@ -214,7 +217,13 @@ export class BakedReceiverMaterials {
         const lightSource = sources.get(contribution.sourceId);
         if (!lightSource || lightSource.kind !== "light") continue;
         const light = lightForSource(lightSource);
-        if (light && !light.excludedMeshes.includes(mesh)) {
+        // Play/player light visuals spawn via snapshot assignMesh after the
+        // bake applies; keep the source pending so a later sync excludes it.
+        if (!light) {
+          entry.pendingExclusions.push(lightSource);
+          continue;
+        }
+        if (!light.excludedMeshes.includes(mesh)) {
           light.excludedMeshes.push(mesh);
           entry.excludedLights.push(light);
         }
@@ -261,6 +270,19 @@ export class BakedReceiverMaterials {
   }
 
   private refreshExclusions(mesh: Mesh, entry: AppliedReceiver): void {
+    if (entry.pendingExclusions.length) {
+      entry.pendingExclusions = entry.pendingExclusions.filter((source) => {
+        const light = entry.lightForSource(source);
+        if (!light) return true;
+        if (!light.excludedMeshes.includes(mesh)) {
+          light.excludedMeshes.push(mesh);
+        }
+        if (!entry.excludedLights.includes(light)) {
+          entry.excludedLights.push(light);
+        }
+        return false;
+      });
+    }
     for (const light of entry.excludedLights) {
       if (light.isDisposed()) continue;
       if (!light.excludedMeshes.includes(mesh)) {
@@ -291,10 +313,30 @@ export class BakedReceiverMaterials {
     mesh: string;
     material: string | null;
     slateBaked: boolean;
+    excludedLights: string[];
+    lightDefines: number | null;
   }> {
     return [...this.applied].map(([mesh, entry]) => {
       const defines = mesh.subMeshes
-        .map((subMesh) => String(subMesh.effect?.defines ?? ""))
+        .flatMap((subMesh) => {
+          // `subMesh.effect` resolves only the current render pass's draw
+          // wrapper; Play/player frames can leave a different pass current, so
+          // scan every compiled wrapper, preferring the current pass's effect.
+          const wrappers =
+            (
+              subMesh as {
+                _drawWrappers?: readonly ({
+                  effect?: { defines?: unknown } | null;
+                } | null)[];
+              }
+            )._drawWrappers ?? [];
+          return [
+            subMesh.effect?.defines,
+            ...wrappers.map((wrapper) => wrapper?.effect?.defines),
+          ]
+            .map((defines) => String(defines ?? ""))
+            .filter((defines) => defines.length > 0);
+        })
         .join("\n");
       return {
         mesh: mesh.name,
@@ -305,6 +347,13 @@ export class BakedReceiverMaterials {
         slateBaked: defines.length
           ? /\bSLATE_BAKED\b/.test(defines)
           : variantCarriesBake(entry.variant),
+        excludedLights: entry.excludedLights.map((light) => light.name),
+        // Realtime light defines on the compiled receiver effect; null until
+        // an effect exists so the count cannot be mistaken for zero.
+        lightDefines: defines.length
+          ? (defines.match(/#define (?:DIR|POINT|SPOT|HEMI)LIGHT\d+/g) ?? [])
+              .length
+          : null,
       };
     });
   }

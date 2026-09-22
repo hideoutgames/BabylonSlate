@@ -95,6 +95,25 @@ test("Preview Build hydrates packed bake assets and shades the receiver with the
     body: await canvas.screenshot(),
     contentType: "image/png",
   });
+  // Runtime-work evidence: the bake applied, the receiver carries SLATE_BAKED,
+  // the Static lamp is excluded through excludedMeshes and the compiled effect
+  // keeps zero realtime light defines.
+  const session = baked as {
+    state: string;
+    receivers: Array<{
+      slateBaked: boolean;
+      excludedLights: string[];
+      lightDefines: number | null;
+    }>;
+  } | null;
+  expect(session?.state).toBe("applied");
+  expect(session?.receivers).toHaveLength(1);
+  expect(session?.receivers[0]!.slateBaked).toBe(true);
+  expect(session?.receivers[0]!.excludedLights).toHaveLength(1);
+  expect(session?.receivers[0]!.excludedLights[0]).toMatch(
+    /^authoredLight:/,
+  );
+  expect(session?.receivers[0]!.lightDefines).toBe(0);
   if (pixelError) throw pixelError;
   await page.getByTestId("preview-build-close").click();
 });
