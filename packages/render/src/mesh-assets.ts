@@ -14,6 +14,7 @@ import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease }
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-perf";
+import { skyboxMeshPreparation } from "./skybox";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -197,9 +198,23 @@ interface AlbedoBinding {
   identity?: string;
   failed?: string;
   pending?: ResourceLease<Texture | CubeTexture>;
+  preparation?: Promise<void>;
   cancel?: () => void;
 }
 const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
+
+/** Construction-time readiness for owned sprite/tilemap and skybox textures only. */
+export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void> | undefined {
+  const pending: Promise<void>[] = [];
+  for (const mesh of [root, ...root.getChildMeshes()]) {
+    const binding = albedoBindings.get(mesh);
+    const albedo = binding?.preparation;
+    const skybox = skyboxMeshPreparation(mesh);
+    if (albedo) pending.push(albedo);
+    if (skybox) pending.push(skybox);
+  }
+  return pending.length ? Promise.all(pending).then(() => undefined) : undefined;
+}
 
 function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial): void {
   const mode = mesh.visibility > 0 && mesh.visibility < 1
@@ -258,6 +273,7 @@ export function applyAlbedoTexture(
   if (!textureGuid) {
     binding.cancel?.(); binding.cancel = undefined;
     binding.pending?.release(); binding.pending = undefined;
+    binding.preparation = undefined;
     binding.lease?.release(); binding.lease = undefined;
     if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
     binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
@@ -277,10 +293,17 @@ export function applyAlbedoTexture(
   if (binding.failed === `${textureGuid}:${identity}`) return;
   let next: ResourceLease<Texture | CubeTexture>;
   try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
-  catch (error) { binding.failed = `${textureGuid}:${identity}`; console.error("Sprite texture replacement failed", error); return; }
+  catch (error) {
+    binding.failed = `${textureGuid}:${identity}`;
+    binding.preparation = Promise.reject(error);
+    void binding.preparation.catch(() => {});
+    console.error("Sprite texture replacement failed", error);
+    return;
+  }
   binding.cancel?.(); binding.pending?.release();
   binding.source = source; binding.guid = textureGuid; binding.identity = identity;
   binding.pending = next;
+  binding.preparation = next.ready;
   const publish = () => {
     if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
     binding.cancel?.(); binding.cancel = undefined;
