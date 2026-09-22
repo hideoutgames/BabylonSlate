@@ -10,7 +10,7 @@ export function renderingEvidence(sceneSource: string) {
     kind: "desktop-functional-only",
     recordedAt: new Date().toISOString(),
     buildRevision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-    buildKey: process.env.BL_TEST_BUILD_KEY,
+    artifactSha256: process.env.BL_TEST_BUILD_KEY,
     sceneSource,
     sceneSourceSha256: createHash("sha256").update(readFileSync(sceneSource)).digest("hex"),
     host: { os: platform(), osVersion: release(), arch: arch(), cpu: cpus()[0]?.model },

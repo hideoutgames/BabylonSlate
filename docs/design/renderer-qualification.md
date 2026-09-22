@@ -120,6 +120,15 @@ The user approved a machine-wide 1 GiB host reserve while retaining shared mode,
 one heavy phase, bounded queue fairness and all source/artifact checks. Old-policy
 queued jobs have cleared. Checks remain serialized and explicitly selected; this
 resource adjustment does not convert queued, cancelled or stale work into passes.
+The user subsequently retained a 2 GiB machine-wide reserve; the 1 GiB setting
+above records the earlier run only. Subsequent verification will use the updated
+host policy from `main` after normal integration.
+
+Security scanning classified the historical evidence's `buildKey` SHA-256 values
+as generic credentials. They identify public build artifacts, not access tokens.
+The exception requires both one of the four exact stock/shared-outline JSON paths
+and one of those two exact hashes. Future captures name the field `artifactSha256`;
+other content and credential values remain scanned, including commit history.
 
 The bounded candidate is now opt-in through the production Scene render
 coordinator; its [design and limits](../architecture/render.md#shared-outline-candidate-22-september-2026)
