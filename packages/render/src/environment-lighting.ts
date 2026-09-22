@@ -63,6 +63,7 @@ class EnvironmentLighting {
   private irradiance: ReturnType<typeof ownEnvironmentIrradiance> | null = null;
   private irradianceChanged = false;
   private requestChanged = false;
+  private preparationError: Error | null = null;
   private settingsKey = "";
   private disposed = false;
   private readonly scene: Scene;
@@ -85,8 +86,9 @@ class EnvironmentLighting {
     bytes: Uint8Array | Blob | undefined,
     cache: TextureResources | undefined,
   ): void {
-    this.requestChanged ||=
-      this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
+    const changed = this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
+    this.requestChanged ||= changed;
+    if (changed) this.preparationError = null;
     this.guid = guid;
     this.bytes = bytes;
     this.cache = cache;
@@ -110,13 +112,14 @@ class EnvironmentLighting {
     ) {
       changed = !!this.view || changed;
       this.clear();
-    } else if (
+      this.preparationError = null;
+    } else if (!this.preparationError && (
       this.requestChanged ||
       !this.source ||
       !this.view ||
       isDisposedGpuTexture(this.source) ||
       isDisposedGpuTexture(this.view)
-    ) {
+    )) {
       this.pendingLease?.release();
       this.pendingLease = undefined;
       let lease: ResourceLease<CubeTexture>;
@@ -164,12 +167,13 @@ class EnvironmentLighting {
       this.invalidateMaterials();
     }
     if (this.source?.loadingError) {
-      throw new Error(
+      this.failInitialPreparation(this.sourceLease!, new Error(
         this.source.errorObject?.message ??
           "Environment texture failed to load.",
         { cause: this.source.errorObject?.exception },
-      );
+      ));
     }
+    if (this.preparationError) throw this.preparationError;
     return (
       !this.view ||
       (this.view.isReady() &&
@@ -200,6 +204,14 @@ class EnvironmentLighting {
     this.view = view;
     this.irradiance = irradiance;
     this.scene.environmentTexture = view;
+    void lease.ready?.catch((error) => this.failInitialPreparation(lease, error));
+  }
+
+  private failInitialPreparation(lease: ResourceLease<CubeTexture>, error: unknown): void {
+    if (this.sourceLease !== lease || this.disposed) return;
+    this.preparationError = error instanceof Error ? error : new Error(String(error));
+    this.clear();
+    markSceneReadinessDirty(this.scene);
   }
 
   private clear(): void {
