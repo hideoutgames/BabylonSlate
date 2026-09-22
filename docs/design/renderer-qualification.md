@@ -1,5 +1,41 @@
 # Renderer qualification
 
+## Current continuation status — 22 September 2026
+
+The shared renderer, editor selection host, authored OutlineComponent, default CEL
+outlines, typed settings/Graph controls and runtime/export wiring are implemented
+on PR #651 but **not accepted**. Earlier tables below describe their recorded
+revisions, not the current implementation. The old selection source is retained
+pending qualification; it is not enabled alongside the new host.
+
+| Requirement | Latest evidence | Remaining |
+| --- | --- | --- |
+| Shared ownership and pixels | `b205b472`: WebGPU ownership browser case passed; WebGL2 case failed with absent regular-instance outlines | Repair WebGL2, rerun changed paths on both APIs |
+| Materials, animation, LOD | Same run: both geometry cases failed; captures exposed a stale WebGL native reference and an incorrect orthographic LOD threshold | Corrected fixture readiness/LOD setup and added opacity/thin/morph-alpha cases await execution |
+| Authored/UI/settings | `531e7039`: five explicit UI files, 93 passes; `5308c759`: 75 passes across 11 unchanged core/runtime/render files | Hands-on authoring/history/reopen and new standalone export pixels |
+| Owner/runtime/Class regressions | `eea6009e`: four shared-owner cases and one Class inheritance case passed; failed parent/child lifecycle repaired and passed at `531e7039` | Browser authoring and runtime lifecycle acceptance |
+| Main integration | Normal merge retains snapshot membership/pose separation and rendering bindings; `ec1926c1`: two snapshot files, 67 passes; `bf2dc011`: eight selected outline/area-light cases passed | Current affected browser and CI gates |
+| Static checks | Render typecheck passed `fb203a97`; editor/player build passed `b205b472`; 12-file scoped lint found only the repaired scene-host unused bindings, whose rerun passed `bf2dc011` | Static checks for subsequent relevant edits |
+| Computer Use | Chrome connected; retained parented/scaled area-light Play/save/reopen captures below are from `90267c2b` | Routes A/C and remainder of B on the completed build; texture import permission remains unresolved |
+| Cost/device | Previous shadow evidence retained; no new outline hardware cost claim | Fixed-quality desktop comparison and bounded lifecycle exercise; physical A16 remains deferred |
+| Delivery | Existing branch and draft PR #651 remain unmerged | Complete acceptance, review and exact-head required CI before guarded merge |
+
+The `b205b472` browser run used WARP WebGL2 and SwiftShader WebGPU, both software
+renderers. Its evidence is retained as failures, not hardware timing or release
+acceptance: [WebGL ownership](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/ownership-webgl2.json),
+[WebGPU ownership](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/ownership-webgpu.json),
+[WebGL geometry](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgl2.json),
+[WebGPU geometry](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgpu.json).
+The [native reference](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgl2-position-and-color-morph-native.png)
+and [outlined frame](../assets/renderer-qualification/2026-09-22-generalized-outline-failures/geometry-webgl2-position-and-color-morph-outlined.png)
+show why direct fixture edits must revalidate readiness before capture.
+
+The host reserve remains **2 GiB**, explicitly confirmed by the user. All runs
+use shared admission and one worker. One browser attempt was cancelled during
+the transition from queue to build; its verified owned process tree was stopped
+and its retained ticket removed only after confirming no descendants remained.
+That attempt and the following blocked invocation are not passes.
+
 ## Production outline qualification gate
 
 ### Runtime ownership repair — 22 September 2026
