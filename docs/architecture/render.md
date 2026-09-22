@@ -882,3 +882,8 @@ Project render settings carry a versioned color pipeline (`render.effects.colorP
 Defaults reproduce prior output exactly, so legacy projects without the block load unchanged. Missing or invalid fields normalize to the display-identical defaults above.
 
 **D2 (not implemented).** SSAO, TAA, SSR, LUT and capture stages remain out of scope; the versioned stage contract reserves `colorPipeline.version` for their addition.
+# Transactional generated visuals
+
+Model preparation retains the current editor or Play hierarchy until the next source generation, material bindings and animation groups are usable. A failed structural editor replacement keeps the prior visual, and obsolete staged roots are disposed when their apply generation is superseded. Playback borrows animation groups from the visual bundle; bundle retirement removes its matching playback references.
+
+Bitmap text preflight includes the still-live representation and text siblings already staged in the same actor replacement. Each complete replacement publishes before the predecessor is retired. Allocation-limit rejection keeps the previous text and is retried only after the authored request, installed assets or native texture limit changes.

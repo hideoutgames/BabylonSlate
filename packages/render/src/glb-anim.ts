@@ -602,6 +602,15 @@ export function beginSlotModelAnimLoad(
         placeholder.onDisposeObservable.addOnce(() => disposePlaceholderInstance(placeholder));
       }
       binding.slotAnimationGroups.set(slotId, [...existing.filter((group) => !previousGroups.has(group)), ...wrapped]);
+      // Playback borrows these groups; releasing a visual must also drop its
+      // lookup references, including editor generations with fresh slot IDs.
+      prepared.bundle.releaseWith(() => {
+        const current = binding.slotAnimationGroups?.get(slotId);
+        if (!current) return;
+        const remaining = current.filter((group) => !wrapped.includes(group));
+        if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
+        else binding.slotAnimationGroups!.delete(slotId);
+      });
       // An instantiated hierarchy is not ready until all retarget sources and
       // groups are installed. A replacement must own that remaining work.
       meta[MODEL_LOAD_KEY] = key;

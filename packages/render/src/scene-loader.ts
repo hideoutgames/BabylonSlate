@@ -61,7 +61,7 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
   applyWorldVisualGroup,
   applyComponentSorting,
@@ -893,6 +893,7 @@ function createActorOriginHierarchy(
     actor.components.map((component) => [component.id, component]),
   );
   const meshes = new Map<string, Mesh>();
+  let retainedBitmapBytes = assets?.retainedTextBitmapBytes ?? 0;
   try {
     for (const component of visuals) {
       const mesh = createMeshForComponent(
@@ -900,9 +901,10 @@ function createActorOriginHierarchy(
         editorComponentMeshName(actor.id, component.id),
         actor,
         component,
-        assets,
+        { ...assets, retainedTextBitmapBytes: retainedBitmapBytes },
       );
       mesh.parent = root;
+      retainedBitmapBytes += text2DBitmapBytes(mesh);
       applySerializedTransform(
         mesh,
         component.transform ?? identitySerializedTransform(),

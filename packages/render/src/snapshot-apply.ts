@@ -1030,6 +1030,7 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
+  let retainedBitmapBytes = text2DBitmapBytes(binding.meshes.get(slotId));
   try {
     for (const part of parts ?? []) {
       const child = createPlayMesh(
@@ -1042,8 +1043,10 @@ function createPlayVisual(
         part.text3d,
         part.text2d,
         deferredModels,
+        retainedBitmapBytes,
       );
       child.parent = root;
+      retainedBitmapBytes += text2DBitmapBytes(child);
       applyPartTransform(child, part);
       meshes.set(part.componentId, child);
     }
@@ -1071,6 +1074,7 @@ export function createPlayMesh(
   partText3d?: Text3DProperties,
   partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
   deferredModels?: Array<() => void>,
+  retainedBitmapBytes?: number,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -1169,7 +1173,7 @@ export function createPlayMesh(
     return createText2DMesh(scene, name, props ?? {}, binding, {
       rich: meshKind === "2drichtext",
       isPaused: () => binding?.paused === true,
-      bitmapLimits: { retainedBytes: text2DBitmapBytes(binding?.meshes.get(slotId)) },
+      bitmapLimits: { retainedBytes: retainedBitmapBytes ?? text2DBitmapBytes(binding?.meshes.get(slotId)) },
     });
   }
   if (assetGuid) {

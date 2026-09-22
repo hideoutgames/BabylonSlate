@@ -64,6 +64,7 @@ export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
   private readonly meshKinds = new Map<string, string | null>();
   private readonly rejectedVisuals = new Map<string, string>();
+  private readonly pendingVisuals = new Map<string, Mesh>();
   private applyGeneration = 0;
   private pendingApply: AbortController | null = null;
   private realization: Promise<void> | null = null;
@@ -279,19 +280,55 @@ export class EditorSceneSync {
     index = 0;
     for (const actor of sceneData.actors) {
       let mesh = this.meshes.get(actor.id);
-      const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}`;
+      let prepared = false;
+      const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}|${this.scene.getEngine().getCaps().maxTextureSize}`;
       if ((!mesh || retired.has(actor.id) || mesh.isDisposed()) && this.rejectedVisuals.get(actor.id) !== descriptor) {
+        let replacement: Mesh | undefined;
         try {
-          const replacement = createActorMesh(this.scene, actor, {
+          replacement = createActorMesh(this.scene, actor, {
             ...assets, retainedTextBitmapBytes: text2DBitmapBytes(mesh),
           }, sceneData.actors);
           const previous = mesh;
+          this.prepareActorVisual(actor, replacement);
+          const modelGuid = this.meshComponentAssetGuid(actor);
+          if (previous && !previous.isDisposed() && modelGuid) {
+            // Keep the working hierarchy until the candidate's model, material,
+            // skeleton and animation generation has prepared successfully.
+            replacement.setEnabled(false);
+            const candidate = replacement;
+            if (!this.assets?.modelSources?.has(modelGuid)) {
+              candidate.dispose();
+            } else {
+              this.pendingVisuals.set(actor.id, candidate);
+              const load = this.beginEditorModelLoad(actor, candidate, {
+                ownsLoad: () => this.pendingVisuals.get(actor.id) === candidate,
+                onAdopted: () => {
+                  candidate.parent = previous.parent;
+                  for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
+                  this.meshes.set(actor.id, candidate);
+                  this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
+                  this.pendingVisuals.delete(actor.id);
+                  candidate.setEnabled(true);
+                  previous.dispose();
+                },
+              });
+              void load?.finally(() => {
+                if (this.pendingVisuals.get(actor.id) === candidate) this.pendingVisuals.delete(actor.id);
+                if (this.meshes.get(actor.id) !== candidate) candidate.dispose();
+              }).catch(() => {});
+            }
+            applyActorTransform(previous, actor);
+            yield 0.2 + 0.3 * ++index / actorCount;
+            continue;
+          }
           mesh = replacement;
+          prepared = true;
           this.meshes.set(actor.id, mesh);
           this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
           this.rejectedVisuals.delete(actor.id);
           previous?.dispose();
         } catch (error) {
+          if (replacement && replacement !== this.meshes.get(actor.id)) replacement.dispose();
           if (!(error instanceof BitmapAllocationLimitError) || !mesh || mesh.isDisposed()) throw error;
           this.rejectedVisuals.set(actor.id, descriptor);
           console.warn(`[render] ${error.code}: ${error.message}`);
@@ -299,14 +336,7 @@ export class EditorSceneSync {
       }
       if (!mesh) continue;
       this.beginEditorModelLoad(actor, mesh);
-      applyActorTransform(mesh, actor);
-      applyComponentChildTransforms(mesh, actor);
-      applyEditorBillboardFromActor(mesh, actor);
-      for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
-      applyActorComponentSorting(mesh, actor, this.sortingLayers);
-      this.restoreMeshComponentConstruction(actor, mesh);
-      this.applyModelSlots(actor, mesh);
-      this.bindActorMeshMaterials(actor, mesh);
+      if (!prepared) this.prepareActorVisual(actor, mesh);
       yield 0.2 + 0.3 * ++index / actorCount;
     }
     index = 0;
@@ -446,6 +476,19 @@ export class EditorSceneSync {
     // own submissions. Generation ownership prevents obsolete adoption.
     this.modelLoadBinding.slotAnimLoads?.clear();
     this.modelLoadBinding.slotAnimEpoch?.clear();
+    for (const candidate of this.pendingVisuals.values()) candidate.dispose();
+    this.pendingVisuals.clear();
+  }
+
+  private prepareActorVisual(actor: SerializedActor, mesh: Mesh): void {
+    applyActorTransform(mesh, actor);
+    applyComponentChildTransforms(mesh, actor);
+    applyEditorBillboardFromActor(mesh, actor);
+    for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
+    applyActorComponentSorting(mesh, actor, this.sortingLayers);
+    this.restoreMeshComponentConstruction(actor, mesh);
+    this.applyModelSlots(actor, mesh);
+    this.bindActorMeshMaterials(actor, mesh);
   }
 
   pendingModelLoadCount(): number {
@@ -565,7 +608,10 @@ export class EditorSceneSync {
     );
   }
 
-  private beginEditorModelLoad(actor: SerializedActor, root: Mesh): void {
+  private beginEditorModelLoad(actor: SerializedActor, root: Mesh, publication?: {
+    ownsLoad: () => boolean;
+    onAdopted: () => void;
+  }): Promise<void> | undefined {
     const guid = this.meshComponentAssetGuid(actor);
     const bytes = guid ? this.assets?.modelSources?.get(guid) : undefined;
     if (!guid || !bytes) return;
@@ -586,8 +632,8 @@ export class EditorSceneSync {
     const generation = this.applyGeneration;
     const signal = this.pendingApply?.signal;
     const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
-      !root.isDisposed() && !placeholder.isDisposed() && this.meshes.get(actor.id) === root;
-    void beginSlotModelAnimLoad(
+      !root.isDisposed() && !placeholder.isDisposed() && (publication ? publication.ownsLoad() : this.meshes.get(actor.id) === root);
+    return beginSlotModelAnimLoad(
       this.scene,
       this.modelLoadBinding,
       slotId,
@@ -596,6 +642,7 @@ export class EditorSceneSync {
       placeholder,
       () => {
         if (!ownsLoad()) return;
+        publication?.onAdopted();
         const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
         if (!current) return;
         const wasFrozen = root.isWorldMatrixFrozen;
@@ -716,6 +763,7 @@ export class EditorSceneSync {
     this.realization = null;
     ++this.applyGeneration;
     this.applyingScene = null;
+    this.resetModelReadiness();
     for (const mesh of this.meshes.values()) {
       mesh.dispose();
     }

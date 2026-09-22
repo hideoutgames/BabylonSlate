@@ -1,7 +1,7 @@
 import { installAssetBytes } from "@babylonslate/assets";
 import { Animation, AnimationGroup, FreeCamera, Mesh, NullEngine, PBRMaterial, RawTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
-import { parseText2DProperties } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, parseText2DProperties } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
 import * as modelContainer from "./model-container";
@@ -10,6 +10,7 @@ import { applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./s
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
 import { visualMeshes } from "./visual-meshes";
+import { EditorSceneSync } from "./editor-scene-sync";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -69,6 +70,36 @@ describe("visual generation ownership", () => {
     expect(scene.materials).toContain(borrowed);
     expect(scene.materials).toHaveLength(warmed);
     expect(scene.meshes).toHaveLength(0);
+    expect(binding.slotAnimationGroups?.size ?? 0).toBe(0);
+  });
+
+  it("stages editor model replacement and preserves the working hierarchy on failure", async () => {
+    const { scene } = host();
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({ modelSources: new Map([["model", installAssetBytes(encodeTriangleGlb())]]) });
+    const component = createMeshComponent("mesh", "box");
+    const document = { ...createDefaultScene(), actors: [createActor("actor", "Actor", { components: [component] })] };
+    sync.apply(document);
+    const previous = sync.meshForActor("actor")!;
+    let reject!: (error: Error) => void;
+    vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const next = structuredClone(document);
+    next.actors[0]!.components[0]!.properties.assetGuid = "model";
+    sync.apply(next);
+    expect(sync.meshForActor("actor")).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    await vi.waitFor(() => expect(reject).toBeDefined());
+    reject(new Error("injected editor load failure"));
+    await expect(sync.whenEditorModelsReady()).rejects.toThrow("injected");
+    expect(sync.meshForActor("actor")).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    sync.apply(next);
+    await sync.whenEditorModelsReady();
+    expect(sync.meshForActor("actor")).not.toBe(previous);
+    expect(previous.isDisposed()).toBe(true);
+    expect(visualMeshes(sync.meshForActor("actor")!)[0]!.getTotalVertices()).toBe(3);
+    sync.dispose();
   });
 
   it("keeps the previous instance on preparation failure and retries that source identity", async () => {
@@ -222,5 +253,34 @@ describe("visual generation ownership", () => {
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d: parseText2DProperties({ text: "B", size: 16 }) });
     expect(binding.meshes.get(0)).not.toBe(previous);
     expect(previous.isDisposed()).toBe(true);
+  });
+
+  it("includes already staged siblings in a multipart text replacement budget", () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    const text2d = parseText2DProperties({ text: "A", size: 16, renderer: "bitmap" });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d });
+    const previous = binding.meshes.get(0)!;
+    const warmed = { materials: scene.materials.length, textures: scene.textures.length, meshes: scene.meshes.length };
+    const plan = bitmap.planBitmapGlyphAtlas;
+    let budget: number | undefined;
+    vi.spyOn(bitmap, "planBitmapGlyphAtlas").mockImplementation((cells, limits) => {
+      const result = plan(cells, { ...limits!, maxWorkingBytes: budget ?? limits!.maxWorkingBytes });
+      budget ??= result?.workingBytes;
+      return result;
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rasterize = vi.spyOn(bitmap, "rasterizeBitmapGlyph");
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d,
+      parts: ["first", "second"].map((componentId) => ({
+        componentId, meshKind: "2dtext", meshAssetGuid: null, text2d, parentId: null,
+        position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+      })),
+    });
+    expect(binding.meshes.get(0)).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    expect(rasterize).toHaveBeenCalledTimes(1);
+    expect({ materials: scene.materials.length, textures: scene.textures.length, meshes: scene.meshes.length }).toEqual(warmed);
   });
 });

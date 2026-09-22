@@ -44,12 +44,12 @@ export async function runVisualGenerationProof(backend: "webgl2" | "webgpu") {
   const pixels = async () => {
     await scene.whenReadyAsync();
     engine.beginFrame(); scene.render(); engine.endFrame();
-    const copy = document.createElement("canvas"); copy.width = copy.height = 128;
-    const context = copy.getContext("2d")!; context.drawImage(canvas, 0, 0);
-    const data = context.getImageData(0, 0, 128, 128).data;
+    const readback = await engine.readPixels(0, 0, 128, 128);
+    const data = new Uint8Array(readback.buffer, readback.byteOffset, readback.byteLength);
+    const bgra = engine.isWebGPU && (navigator as Navigator & { gpu: { getPreferredCanvasFormat(): string } }).gpu.getPreferredCanvasFormat() === "bgra8unorm";
     let red = 0, white = 0;
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i]! > 180 && data[i + 1]! < 40 && data[i + 2]! < 40) red++;
+      if (data[i + (bgra ? 2 : 0)]! > 180 && data[i + 1]! < 40 && data[i + (bgra ? 0 : 2)]! < 40) red++;
       if (data[i]! > 180 && data[i + 1]! > 180 && data[i + 2]! > 180) white++;
     }
     return { red, white };
