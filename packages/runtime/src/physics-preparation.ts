@@ -1,6 +1,9 @@
 import type { Actor } from "@babylonslate/object-model";
 import type { Transform } from "@babylonslate/core";
-import { actorParentGuid } from "./actor-world-transform";
+import {
+  actorParentGuid,
+  composeParentChildTransform,
+} from "./actor-world-transform";
 import {
   colliderLocalPose,
   multiplyQuat,
@@ -137,21 +140,14 @@ export function physicsWorldTransforms(
     };
     if (parent && !parent.destroyed) {
       const ancestor = resolve(parent);
-      const local = colliderLocalPose(
+      // Validate the supported shear-free TRS boundary, but retain the shared
+      // authored actor composition used by snapshots and rendering.
+      colliderLocalPose(
         kind === "2d" ? "box2d" : "box",
         actor.transform,
         ancestor.scale,
       );
-      const translation = rotateQuatVec(ancestor.rotation, local.translation);
-      transform = {
-        position: {
-          x: ancestor.position.x + translation.x,
-          y: ancestor.position.y + translation.y,
-          z: ancestor.position.z + translation.z,
-        },
-        rotation: multiplyQuat(ancestor.rotation, local.rotation),
-        scale: local.scale,
-      };
+      transform = composeParentChildTransform(ancestor, actor.transform);
     }
     const bodyPose = bodyPoses?.get(actor.guid);
     if (bodyPose)
