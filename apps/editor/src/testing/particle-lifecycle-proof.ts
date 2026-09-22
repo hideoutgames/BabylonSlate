@@ -1,4 +1,4 @@
-import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, RawTexture, Scene, Vector3, type DataBuffer, type IParticleSystem } from "@babylonjs/core";
+import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, RawTexture, Scene, Vector3, type DataBuffer, type IParticleSystem } from "@babylonjs/core";
 import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createAppWebGpuEngine, createParticleMaterialResolver, ParticleService } from "@babylonslate/render";
@@ -9,6 +9,8 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
   canvas.width = canvas.height = 64;
   document.getElementById("root")!.append(canvas);
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
+  // LastCreatedEngine deliberately lacks GPU particle support. The owning engine still must win.
+  const otherEngine = new NullEngine();
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 1);
   // Native animate is invoked by the real Scene; one tick is updateSpeed simulation units.
@@ -156,5 +158,5 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
       captures, diagnostics, resets, acquisitions, releases, baseline, final,
       nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
-  } finally { service.dispose(); materials.dispose(); scene.dispose(); engine.dispose(); canvas.remove(); }
+  } finally { service.dispose(); materials.dispose(); scene.dispose(); otherEngine.dispose(); engine.dispose(); canvas.remove(); }
 }
