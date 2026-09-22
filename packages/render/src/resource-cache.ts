@@ -860,7 +860,15 @@ export function materialTextureBindings(acquire: ((guid: string) => ResourceLeas
     ready(guid: string) { return leases.get(bindingKey(guid))?.ready; },
     prune(textures: readonly BaseTexture[]) {
       const used = new Set(textures);
-      for (const [guid, lease] of leases) if (!used.has(lease.resource)) { leases.delete(guid); lease.release(); }
+      const generations = new Set(textures.flatMap((texture) => {
+        const request = textureRequests.get(texture);
+        return request ? [request.cache.resourceKey(texture)] : [];
+      }));
+      for (const [key, lease] of leases) {
+        const request = textureRequests.get(lease.resource);
+        if (used.has(lease.resource) || (request && generations.has(request.cache.resourceKey(lease.resource)))) continue;
+        leases.delete(key); lease.release();
+      }
     },
     dispose() { for (const lease of leases.values()) lease.release(); leases.clear(); },
   };
