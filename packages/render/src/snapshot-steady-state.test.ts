@@ -1,7 +1,6 @@
-import { FreeCamera, Vector3 } from "@babylonjs/core";
+import { FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
@@ -10,7 +9,7 @@ import {
 } from "./snapshot-apply";
 import type { SampledSnapshot } from "./snapshot-sync";
 
-const handles: ReturnType<typeof createTestEngine>[] = [];
+const handles: Array<{ engine: NullEngine; scene: Scene }> = [];
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -21,7 +20,10 @@ afterEach(() => {
 });
 
 function fixture(actorCount: number) {
-  const handle = createTestEngine();
+  // Keep this fixture's stable material texture-free: NullEngine cannot upload
+  // the editor default checker texture and would strand strict readiness.
+  const engine = new NullEngine();
+  const handle = { engine, scene: new Scene(engine) };
   handles.push(handle);
   const { scene } = handle;
   scene.activeCamera = new FreeCamera("snapshot-camera", new Vector3(0, 0, -40), scene);
