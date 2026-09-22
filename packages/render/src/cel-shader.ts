@@ -10,7 +10,10 @@ import { lightsFragmentFunctionsWGSL } from "@babylonjs/core/ShadersWGSL/Shaders
 import { sceneRenderingSettings } from "./render-settings";
 import { checkedShader } from "./checked-shader";
 import { withShadowDistanceFade } from "./shadow-shader";
-import { celClusteredLighting } from "./clustered-cel-shader";
+import {
+  celClusteredLighting,
+  celClusteredLightingWGSL,
+} from "./clustered-cel-shader";
 
 export const CEL_UNIFORMS = [
   "slateCelBands",
@@ -150,7 +153,9 @@ vec3 slateCelSurfaceLight(vec3 color, float peak) {
 
 /** Retain Babylon's light transforms, colors, ranges, cones and shadow bindings. */
 export function celLightingFunctions(source: string, wgsl: boolean): string {
-  if (!wgsl) source = celClusteredLighting(source);
+  source = wgsl
+    ? celClusteredLightingWGSL(source)
+    : celClusteredLighting(source);
   return (
     checkedShader(source, wgsl ? "lighting WGSL" : "lighting GLSL")
       // Colored sky/ground fills must not reintroduce a smooth hue gradient.
@@ -184,12 +189,14 @@ for (const wgsl of [false, true]) {
   const fragment = (wgsl ? lightFragmentWGSL : lightFragment).shader;
   store.slateCelLightFragment = checkedShader(
     withShadowDistanceFade(
-      wgsl
-        ? fragment
-        : checkedShader(fragment, "clustered CEL sequential call").replace(
-            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness);}",
-            "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness,slateCelPeak);}",
-          ).value,
+      checkedShader(fragment, "clustered CEL sequential call").replace(
+        wgsl
+          ? "vec2u(light{X}.vSliceRanges[sliceIndex].xy),glossiness);}"
+          : "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness);}",
+        wgsl
+          ? "vec2u(light{X}.vSliceRanges[sliceIndex].xy),glossiness,slateCelPeak);}"
+          : "ivec2(light{X}.vSliceRanges[sliceIndex]),glossiness,slateCelPeak);}",
+      ).value,
       wgsl,
     ),
     wgsl ? "light fragment WGSL" : "light fragment GLSL",
@@ -202,10 +209,7 @@ for (const wgsl of [false, true]) {
       ) => `${wgsl ? "var slateCelIncoming{X}: f32" : "float slateCelIncoming{X}"}=slateCelStrength(info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow});
 slateCelWins=0.0;
 if (slateCelIncoming{X}>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
-${
-  wgsl
-    ? "slateCelPeak=max(slateCelPeak,slateCelIncoming{X});slateCelTotal+=slateCelIncoming{X};"
-    : `#ifdef CLUSTLIGHT{X}
+#ifdef CLUSTLIGHT{X}
 // The children already compared against the conventional prefix in sequence.
 // Comparing their final maximum again would break epsilon ties.
 slateCelWins=info.slateCelWins;
@@ -214,8 +218,7 @@ slateCelTotal+=info.slateCelTotal;
 #else
 slateCelPeak=max(slateCelPeak,slateCelIncoming{X});
 slateCelTotal+=slateCelIncoming{X};
-#endif`
-}
+#endif
 diffuseBase=slateCelAccumulate(diffuseBase,info.diffuse*${shadow === "shadow" ? "slateCelShadowVisibility(shadow)" : shadow},slateCelWins);`,
       2,
     )
