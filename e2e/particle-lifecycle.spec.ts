@@ -31,7 +31,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       } else if (["restart-blue", "surviving-blue"].includes(capture.name)) {
         expect(capture.red, capture.name).toBe(0);
         expect(capture.blue, capture.name).toBeGreaterThan(100);
-      } else if (["fractional-emission", "finite-visible"].includes(capture.name)) {
+      } else if (["fractional-emission", "finite-visible", "finite-gradient-drain"].includes(capture.name)) {
         expect(capture.red, capture.name).toBeGreaterThan(100);
       } else {
         expect(capture.red, capture.name).toBeGreaterThan(100);

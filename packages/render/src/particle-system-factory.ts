@@ -46,11 +46,11 @@ export function particleSimulationDelta(system: IParticleSystem): number {
 
 /** Historical maxima also cover particles emitted before a lifetime edit. */
 export function particleLifetimeBound(system: IParticleSystem): number {
-  let factor = 1;
+  let lifetime = Math.max(system.minLifeTime, system.maxLifeTime);
   for (const gradient of system.getLifeTimeGradients() ?? []) {
-    factor = Math.max(factor, gradient.factor1, gradient.factor2 ?? gradient.factor1);
+    // Babylon's GPU update shaders use these values as absolute lifetimes.
+    lifetime = Math.max(lifetime, gradient.factor1, gradient.factor2 ?? gradient.factor1);
   }
-  const lifetime = Math.max(system.minLifeTime, system.maxLifeTime) * factor;
   if (!Number.isFinite(lifetime) || lifetime < 0) throw new Error("Particle lifetime must be finite and nonnegative.");
   return lifetime;
 }

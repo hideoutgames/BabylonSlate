@@ -17,6 +17,7 @@ import {
   createBabylonParticleSystem,
   gpuParticlesSupported,
   particleCapacityFor,
+  particleLifetimeBound,
 } from "./particle-system-factory";
 
 describe("particle-system-factory", () => {
@@ -218,6 +219,17 @@ describe("particle-system-factory", () => {
     expect(oldEffect).not.toHaveBeenCalled();
     live.dispose(false);
     library.dispose();
+  });
+
+  it("bounds absolute lifetime gradients even when base lifetime is less than one", () => {
+    const { scene } = host();
+    const system = createBabylonParticleSystem("gradient", scene, 16, false);
+    system.minLifeTime = 0.1;
+    system.maxLifeTime = 0.2;
+    system.addLifeTimeGradient(0, 1.5, 2);
+    system.addLifeTimeGradient(1, 0.5);
+    expect(particleLifetimeBound(system)).toBe(2);
+    system.dispose(false);
   });
 
   it("removes the custom readiness check when effect preparation fails", async () => {

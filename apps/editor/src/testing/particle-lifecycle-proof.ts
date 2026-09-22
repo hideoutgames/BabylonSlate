@@ -111,16 +111,19 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     engine.setSize(64, 64);
     configure(20, 0.3, true, true);
     const natives = [assign("red"), assign("blue")];
+    for (const system of natives) system.minLifeTime = system.maxLifeTime = 0.8;
     await ready(natives); await step(8); await capture("two-textures");
     const stable = { acquisitions, releases, materials: scene.materials.length, systems: scene.particleSystems.length };
     for (let i = 0; i < 1000; i += 1) { play("red", true); play("blue", true); }
     if (acquisitions !== stable.acquisitions || releases !== stable.releases || scene.materials.length !== stable.materials || resets !== 0)
       throw new Error("Repeated Play changed stable resource ownership");
+    // Existing particles keep their older lifetime after an authoring edit.
+    for (const system of natives) system.minLifeTime = system.maxLifeTime = 0.3;
     play("red", false); play("blue", false);
     service.setPaused(true); await step(12); await capture("paused-drain");
     if (scene.particleSystems.length !== 2) throw new Error("Paused simulation advanced drain time");
     service.setPaused(false); await step(2); await capture("draining");
-    await step(8); await capture("retired");
+    await step(18); await capture("retired");
     if (scene.particleSystems.length || acquisitions !== releases) throw new Error("Stopped particles retained native systems or leases");
     play("blue", true); await ready(scene.particleSystems); await step(5); await capture("restart-blue");
     service.resetSession();
@@ -139,8 +142,11 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     play("red", false); await step(10); await capture("fractional-retired");
     configure(20, 0.3, false, false);
     const finite = assign("red");
+    finite.addLifeTimeGradient(0, 0.75);
+    finite.addLifeTimeGradient(1, 0.75);
     await ready([finite]); await step(4); await capture("finite-visible");
-    await step(30); await capture("finite-retired");
+    await step(9); await capture("finite-gradient-drain");
+    await step(21); await capture("finite-retired");
     if (scene.particleSystems.length) throw new Error("Finite emitter did not complete drain");
     const baseline = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
