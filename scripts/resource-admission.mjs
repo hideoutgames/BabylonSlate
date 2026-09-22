@@ -9,20 +9,30 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { freemem, tmpdir } from "node:os";
-import { join } from "node:path";
+import { freemem, tmpdir, homedir, totalmem } from "node:os";
+import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   DEFAULT_RESOURCE_CAPACITY,
   readLocalResourceConfig,
 } from "./local-resource-config.mjs";
 
-export const admissionDirectory = join(
-  tmpdir(),
-  "babylonslate-test-admission-v1",
-);
+export function resourceStateDirectory(
+  env = process.env,
+  platform = process.platform,
+) {
+  // Retain the existing v1 namespace at the normal per-user Windows TEMP path.
+  // Shell-specific TEMP/TMP values must not create independent coordinators.
+  return resolve(
+    platform === "win32"
+      ? join(env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Temp")
+      : tmpdir(),
+    "babylonslate-test-admission-v1",
+  );
+}
+export const admissionDirectory = resourceStateDirectory();
 export const capacity = DEFAULT_RESOURCE_CAPACITY;
-const standardPolicy = { capacity, maxHeavy: 3, maxBypasses: 3 };
+const standardPolicy = { capacity, maxHeavy: 3, maxRoots: 3, maxBypasses: 3 };
 export const workloads = {
   tooling: { workers: 1, browsers: 0, memoryGiB: 0.75 },
   unit: { workers: 1, browsers: 0, memoryGiB: 1.5 },
@@ -45,7 +55,7 @@ export function workloadFor(name, env = process.env) {
   if (
     profile === "shared" ||
     ["tooling", "typecheck", "docs", "build"].includes(name) ||
-    env.CI === "true"
+    env.BL_EXECUTION_POLICY === "hosted-ci"
   )
     return { ...request };
   return { ...request, workers: 2, memoryGiB: request.memoryGiB * 2 };
@@ -57,14 +67,12 @@ function alive(pid) {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return error.code === "EPERM";
+    return error.code !== "ESRCH";
   }
 }
 
 function isHeavy(request) {
-  return (
-    request.workers >= 2 || request.memoryGiB >= 2 || request.browsers > 0
-  );
+  return request.workers >= 2 || request.memoryGiB >= 2 || request.browsers > 0;
 }
 
 async function readJson(path) {
@@ -151,12 +159,34 @@ async function locked(directory, check, operation) {
 /** Per-user admission shared by every worktree. Limits are reservations, not OS quotas. */
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
-  const config = options.capacity
-    ? { ...standardPolicy, capacity: options.capacity }
-    : await readLocalResourceConfig(options.env ?? process.env);
+  if (!options.directory && process.platform === "win32") {
+    const legacy = resolve(tmpdir(), "babylonslate-test-admission-v1", "queue");
+    if (legacy.toLowerCase() !== join(directory, "queue").toLowerCase()) {
+      const entries = await readdir(legacy).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+      if (entries.some((file) => file.endsWith(".json")))
+        throw new Error(
+          "A different TEMP directory contains legacy admission tickets; quiesce those runs before using the canonical per-user queue",
+        );
+    }
+  }
+  const config =
+    options.config ??
+    (options.capacity
+      ? { ...standardPolicy, capacity: options.capacity }
+      : await readLocalResourceConfig(options.env ?? process.env));
+  request = {
+    ...request,
+    ...(config.profile === "low-memory"
+      ? { workers: config.capacity.workers }
+      : {}),
+  };
   const policy = {
     capacity: { ...config.capacity },
     maxHeavy: config.maxHeavy,
+    maxRoots: config.maxRoots ?? 3,
     maxBypasses: config.maxBypasses,
   };
   const limits = policy.capacity;
@@ -195,6 +225,7 @@ export async function acquireResources(request, options = {}) {
     });
   });
   let announced = false;
+  let waitingReason = "Waiting for an older queued workload";
   try {
     for (;;) {
       check();
@@ -205,7 +236,17 @@ export async function acquireResources(request, options = {}) {
           .sort()) {
           const path = join(queue, name),
             row = await readJson(path);
-          if (!row || (!alive(row.pid) && !alive(row.childPid))) {
+          if (!row)
+            throw new Error(
+              `Unreadable admission ticket: ${path}; ownership must be established before retrying`,
+            );
+          if (!alive(row.pid) && !alive(row.childPid)) {
+            // Updated roots retain uncertain ownership after abrupt death.
+            // Never assume a dead immediate parent proves its whole tree exited.
+            if (row.active && row.ownershipVersion === 2)
+              throw new Error(
+                `Uncertain owned process cleanup: ${path}; inspect the stopped run before releasing its reservation`,
+              );
             await rm(path, { force: true });
             continue;
           }
@@ -223,17 +264,74 @@ export async function acquireResources(request, options = {}) {
           ]),
         );
         const heavyCount = active.filter((row) => isHeavy(row.request)).length;
-        const freeMemory = (options.freeMemory ?? freemem)();
-        const fits = (candidate, candidatePolicy) =>
-          keys.every(
-            (key) =>
-              used[key] + candidate[key] <= candidatePolicy.capacity[key],
-          ) &&
-          (!isHeavy(candidate) || heavyCount < candidatePolicy.maxHeavy) &&
-          freeMemory >=
-            (candidatePolicy.capacity.reserveGiB + candidate.memoryGiB) *
-              1024 ** 3;
-        if (!fits(request, policy)) return false;
+        const freeMemory = (
+          options.freeMemory ?? (() => process.availableMemory?.() ?? freemem())
+        )();
+        const effectiveLimit =
+          options.memoryLimit?.() ??
+          Math.min(totalmem(), process.constrainedMemory?.() || Infinity);
+        const currentConfig = options.capacity
+          ? config
+          : await readLocalResourceConfig(options.env ?? process.env);
+        const restrictive = (candidatePolicy) => {
+          const policies = [
+            candidatePolicy,
+            currentConfig,
+            ...active.map((row) => row.policy ?? standardPolicy),
+          ];
+          return {
+            capacity: {
+              ...Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  Math.min(...policies.map((value) => value.capacity[key])),
+                ]),
+              ),
+              reserveGiB: Math.max(
+                ...policies.map((value) => value.capacity.reserveGiB),
+              ),
+            },
+            maxRoots: Math.min(...policies.map((value) => value.maxRoots ?? 3)),
+            maxHeavy: Math.min(...policies.map((value) => value.maxHeavy)),
+            maxBypasses: Math.min(
+              ...policies.map((value) => value.maxBypasses),
+            ),
+          };
+        };
+        const fits = (candidate, originalPolicy) => {
+          const candidatePolicy = restrictive(originalPolicy);
+          // Until resident usage is measured, reserve the complete unallocated
+          // promise conservatively. This may queue more work, never less.
+          const requiredGiB =
+            candidatePolicy.capacity.reserveGiB +
+            candidate.memoryGiB +
+            used.memoryGiB;
+          return (
+            Number.isFinite(freeMemory) &&
+            freeMemory > 0 &&
+            active.length < candidatePolicy.maxRoots &&
+            keys.every(
+              (key) =>
+                used[key] + candidate[key] <= candidatePolicy.capacity[key],
+            ) &&
+            (!isHeavy(candidate) || heavyCount < candidatePolicy.maxHeavy) &&
+            used.memoryGiB + candidate.memoryGiB <=
+              effectiveLimit / 1024 ** 3 -
+                candidatePolicy.capacity.reserveGiB &&
+            freeMemory >= requiredGiB * 1024 ** 3
+          );
+        };
+        if (!fits(request, policy)) {
+          waitingReason = active.length
+            ? "Active owned workload or reserved capacity"
+            : "Insufficient or unknown available memory above host reserve";
+          await publish(ticket, {
+            ...rows.find((row) => row.path === ticket),
+            path: undefined,
+            waitingReason,
+          });
+          return false;
+        }
         const older = waiting.slice(0, position);
         if (
           older.length &&
@@ -260,12 +358,24 @@ export async function acquireResources(request, options = {}) {
           token,
           request,
           active: true,
+          policy: {
+            ...restrictive(policy),
+            maxBypasses: Math.min(
+              policy.maxBypasses,
+              currentConfig.maxBypasses,
+            ),
+          },
+          ...(options.owned ? { ownershipVersion: 2, scopes: [] } : {}),
         });
         return true;
       });
       if (admitted) break;
       if (!announced) {
-        options.onQueued?.();
+        options.onQueued?.({
+          reason: waitingReason,
+          request,
+          reserveGiB: policy.capacity.reserveGiB,
+        });
         announced = true;
       }
       await delay(options.pollMs ?? 1000);
@@ -276,16 +386,38 @@ export async function acquireResources(request, options = {}) {
       request,
       queueMs: Date.now() - started,
       async child(pid) {
-        await publish(ticket, {
-          pid: process.pid,
-          childPid: pid,
-          token,
-          request,
-          active: true,
+        await locked(directory, check, async () => {
+          const row = await readJson(ticket);
+          if (row?.token !== token)
+            throw new Error(
+              "Resource ownership changed before child registration",
+            );
+          await publish(ticket, { ...row, childPid: pid });
         });
       },
       async release() {
-        await rm(ticket, { force: true });
+        const releaseDeadline = Date.now() + 10_000;
+        await locked(
+          directory,
+          () => {
+            if (Date.now() > releaseDeadline)
+              throw new Error(
+                "Resource release deadline expired; reservation retained",
+              );
+          },
+          async () => {
+            const row = await readJson(ticket);
+            if (row?.scopes?.length)
+              throw new Error(
+                "Owned nested stages remain; reservation retained",
+              );
+            if (options.owned && row?.childPid && alive(row.childPid))
+              throw new Error(
+                "Owned child cleanup is uncertain; reservation retained",
+              );
+            await rm(ticket, { force: true });
+          },
+        );
       },
     };
   } catch (error) {
@@ -310,4 +442,95 @@ export async function inheritedLease(value, request) {
   } catch {
     return false;
   }
+}
+
+/** Nested stages are sequential within each inherited scope, with no upgrades. */
+export async function claimInheritedLease(value, request) {
+  if (!value) return null;
+  const { ticket, token, scope = token } = JSON.parse(value);
+  const directory = resolve(ticket, "../..");
+  const id = randomUUID();
+  const deadline = Date.now() + 10_000;
+  const check = () => {
+    if (Date.now() > deadline)
+      throw new Error(
+        "Nested ownership lock deadline expired; reservation retained",
+      );
+  };
+  await locked(directory, check, async () => {
+    const row = await readJson(ticket);
+    if (!row?.active || row.token !== token || !alive(row.pid))
+      throw new Error("Inherited resource ownership is stale or invalid");
+    const scopes = row.scopes ?? [];
+    if (scope !== token && !scopes.some((item) => item.id === scope))
+      throw new Error("Inherited execution scope is stale");
+    const parentRequest =
+      scope === token
+        ? row.request
+        : scopes.find((item) => item.id === scope).request;
+    if (
+      !["workers", "browsers", "memoryGiB"].every(
+        (key) => request[key] <= parentRequest[key],
+      )
+    )
+      throw new Error(
+        "Nested workload exceeds its inherited reservation; release the parent before acquiring a larger workload",
+      );
+    if (scopes.some((item) => item.parent === scope))
+      throw new Error(
+        "Parallel nested workloads cannot share one execution budget",
+      );
+    await publish(ticket, {
+      ...row,
+      scopes: [...scopes, { id, parent: scope, pid: process.pid, request }],
+    });
+  });
+  return {
+    ticket,
+    token,
+    scope: id,
+    async child(pid) {
+      await locked(directory, check, async () => {
+        const row = await readJson(ticket);
+        if (row?.token !== token)
+          throw new Error("Inherited ownership disappeared");
+        await publish(ticket, {
+          ...row,
+          scopes: row.scopes.map((item) =>
+            item.id === id ? { ...item, childPid: pid } : item,
+          ),
+        });
+      });
+    },
+    async release() {
+      const releaseDeadline = Date.now() + 10_000;
+      await locked(
+        directory,
+        () => {
+          if (Date.now() > releaseDeadline)
+            throw new Error(
+              "Nested release deadline expired; reservation retained",
+            );
+        },
+        async () => {
+          const row = await readJson(ticket);
+          if (row?.token !== token)
+            throw new Error("Inherited ownership disappeared");
+          if (row.scopes.some((item) => item.parent === id))
+            throw new Error(
+              "Nested descendants still own the execution budget",
+            );
+          const childPid = row.scopes.find((item) => item.id === id)?.childPid;
+          if (childPid && alive(childPid))
+            throw new Error(
+              "Nested child cleanup is uncertain; reservation retained",
+            );
+          await publish(ticket, {
+            ...row,
+            scopes: row.scopes.filter((item) => item.id !== id),
+          });
+        },
+      );
+    },
+  };
 }
