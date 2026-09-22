@@ -1,4 +1,4 @@
-import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, RawTexture, Scene, Vector3, type IParticleSystem } from "@babylonjs/core";
+import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, RawTexture, Scene, Vector3, type DataBuffer, type IParticleSystem } from "@babylonjs/core";
 import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createAppWebGpuEngine, createParticleMaterialResolver, ParticleService } from "@babylonslate/render";
@@ -43,9 +43,17 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     service.bindSlot(index + 1, parent);
     return parent;
   });
+  const particleBuffers = new Set<DataBuffer>();
   const step = async (count = 1) => {
     for (let i = 0; i < count; i += 1) {
       engine.beginFrame(); scene.render(); engine.endFrame();
+      for (const system of scene.particleSystems) {
+        for (const vertex of Object.values(system.vertexBuffers ?? {})) {
+          const buffer = vertex.getBuffer();
+          if (buffer) particleBuffers.add(buffer);
+        }
+        if (system.indexBuffer) particleBuffers.add(system.indexBuffer);
+      }
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
   };
@@ -88,9 +96,10 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     }
     throw new Error(`Particle preparation did not finish: ${JSON.stringify(diagnostics)}`);
   };
-  const captures: Array<{ name: string; red: number; blue: number; systems: number; processed: number[] }> = [];
+  const captures: Array<{ name: string; red: number; blue: number; systems: number; processed: number[]; configuredSimulationStep: number[] }> = [];
   const capture = async (name: string) => captures.push({ name, ...await pixels(), systems: scene.particleSystems.length,
-    processed: scene.particleSystems.map((system) => system.getActiveCount()) });
+    processed: scene.particleSystems.map((system) => system.getActiveCount()),
+    configuredSimulationStep: scene.particleSystems.map((system) => system.updateSpeed) });
   try {
     engine.setSize(64, 64);
     configure(20, 0.3, true, true);
@@ -137,6 +146,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     const final = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
     return { backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`, gpu, adapter: engine.getInfo(),
-      captures, diagnostics, resets, acquisitions, releases, baseline, final };
+      captures, diagnostics, resets, acquisitions, releases, baseline, final,
+      particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
   } finally { service.dispose(); materials.dispose(); scene.dispose(); engine.dispose(); canvas.remove(); }
 }

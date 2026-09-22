@@ -265,7 +265,7 @@ describe("Play createEngine view", () => {
     const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene);
     const acquire = ResourceCache.prototype.acquireTexture;
     let liveLeases = 0;
-    vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (...args) {
+    vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, ...args) {
       if (args[0] !== "particle-texture") return acquire.apply(this, args);
       liveLeases += 1;
       return { resource: texture, key: "controlled-particle-texture", release: () => { liveLeases -= 1; } };

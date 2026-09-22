@@ -20,6 +20,8 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     expect(result.resets).toBe(0);
     expect(result.acquisitions).toBe(result.releases);
     expect(result.final).toEqual(result.baseline);
+    expect(result.particleBuffersAcquired).toBeGreaterThan(0);
+    expect(result.liveParticleBuffers).toBe(0);
     for (const capture of result.captures) {
       if (["retired", "fractional-retired", "finite-retired"].includes(capture.name)) {
         expect(capture.systems, capture.name).toBe(0);

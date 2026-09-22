@@ -23,6 +23,7 @@ describe("scene and emitter material ownership", () => {
     const blue = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 255, 255]), 1, 1, blueScene);
     const materials: ResourceLease<NodeMaterial>[] = [];
     const expectedTextures = new Map<NodeMaterial, RawTexture>();
+    let requestedTexture = red;
     let textureOwners = 0;
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
       sceneForSlot: (slot) => slot === 2 ? blueScene : host.scene,
@@ -33,7 +34,7 @@ describe("scene and emitter material ownership", () => {
       acquireMaterial: (guid, owner) => {
         const lease = acquireParticleMaterial(library, guid, document, owner)!;
         materials.push(lease);
-        expectedTextures.set(lease.resource, owner.instanceKey.includes(":red:") ? red : blue);
+        expectedTextures.set(lease.resource, requestedTexture);
         return lease;
       },
     });
@@ -41,8 +42,11 @@ describe("scene and emitter material ownership", () => {
     service.setLibrary({ emitters: new Map(["red", "blue"].map((guid) => [guid, {
       ...createDefaultParticleEmitterPayload(), textureGuid: guid, materialGuid: "graph",
     }])), systems: new Map(["red", "blue"].map((guid) => [guid, { ...createDefaultParticleSystemPayload(), emitterGuids: [guid] }])) });
-    for (const guid of reverse ? ["blue", "red"] : ["red", "blue"]) service.handleCommand({ type: "assignParticle",
-      slotId: guid === "red" ? 1 : 2, actorGuid: guid, componentId: "particle", particleSystemGuid: guid });
+    for (const guid of reverse ? ["blue", "red"] : ["red", "blue"]) {
+      requestedTexture = guid === "red" ? red : blue;
+      service.handleCommand({ type: "assignParticle",
+        slotId: guid === "red" ? 1 : 2, actorGuid: guid, componentId: "particle", particleSystemGuid: guid });
+    }
     await vi.waitFor(() => {
       expect(host.scene.particleSystems[0]?.isStarted()).toBe(true);
       expect(blueScene.particleSystems.find((system) => system.particleTexture === blue)?.isStarted()).toBe(true);
