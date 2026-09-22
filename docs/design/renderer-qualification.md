@@ -39,7 +39,7 @@ Before resuming, compare the working head with the recorded checkpoint and selec
 
 ### Combined source checkpoint
 
-At `2248293d`, `agent/engine-followup-integration` combines rendering ownership with native lifecycle B `94314580`, physics preparation C `cf81fff2`, material admission `bef1b987`, bounded texture preparation `ae6b86ee` and texture hierarchy staging `f5aa8549`. Later model/material and multipart publication corrections must be included before production verification. This branch has no PR and has not been installed, typechecked, built or tested. Source integration does not close any deferred gate above.
+At `4fbb2e8a`, `agent/engine-followup-integration` combines rendering ownership with native lifecycle B `94314580`, physics preparation C `cf81fff2`, material admission `bef1b987`, bounded texture preparation `ae6b86ee`, texture hierarchy staging `f5aa8549`, model material preparation `e07e7e9d`, exact private material release `96018dba` and multipart publication `885e53b8`. This branch has no PR and has not been installed, typechecked, built or tested. Source integration does not close any deferred gate above.
 
 Merge `01d342ac` includes `main` through `556c4e34`: A's confirmed merge, the shared execution policy from `42596fb9`, and `f48a4adc`'s loading-stall diagnostics, WebGPU/clustered-material fixes and graph conversion behavior. Source review is not execution evidence. Include `snapshot-steady-state.test.ts`, the loading/dedup cases in `create-engine.play.test.ts`, and `scene-perf.test.ts` when resuming the combined snapshot/readiness segment. The already listed material-library and particle ownership cases cover the directly affected publication consumers; these checks remain unrun on the combined head.
 
@@ -58,9 +58,12 @@ pnpm --silent agent:wait local --script test '--' packages/render/src/resource-c
 pnpm --silent agent:wait local --script test '--' packages/render/src/environment-lighting.test.ts -t 'waits for successor admission'
 pnpm --silent agent:wait local --script test '--' packages/render/src/visual-texture-replacement.test.ts packages/render/src/skybox.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/model-material-preparation.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/visual-model-parts.test.ts
 ```
 
 The first three selectors cover `bef1b987`'s five material-admission cases, `ae6b86ee`'s four preparation-lifetime cases and `07ecf628`'s environment admission case. At `f5aa8549`, eleven hierarchy cases use real Babylon meshes/materials/cache leases with controlled preparation outcomes; cube IO is mocked. They cover Play/editor rejection, stale completion, owner disposal and first-skybox cleanup, not browser decode or pixels. `e07e7e9d` adds seven valid-GLB model material admission, shader preparation and cancellation cases. `96018dba` adds exact asset-filtered private material release; include `material-library.test.ts` in full in the selected material batch to cover it. None of these authored cases supplies a passing native resource count yet.
+
+`885e53b8` adds eight unexecuted valid animated-GLB multipart cases: initial/replacement publication, failure/retry with retained ownership, supersession/removal and material commands during preparation, including A-to-B, A-to-B-to-C and A-to-B-to-A private-owner transitions. The combined source retains the old hierarchy until every prepared part can publish its visual and animation ownership together. This pending-visual correction does not implement a separate transaction for standalone material-GUID assignment; that pre-existing mutation path remains a separate source follow-up, not a tested ownership guarantee.
 
 After those corrections pass, resume only their affected consumers from the architecture notes, including `material-parameters.test.ts`, `resource-cache-upload.test.ts`, `snapshot-apply.test.ts`, `editor-scene-sync.chunks.test.ts` and `scene-loader.test.ts`, then scoped static and browser segments. Browser runs must report requested/effective backend and driver. Software WebGPU is a local correctness result; fallback does not pass a WebGPU gate. Real packaged Havok is required for collider/teleport acceptance, and browser emission/readback remains required for GPU particle behavior.
 
