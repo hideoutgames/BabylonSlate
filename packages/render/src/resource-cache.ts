@@ -1,4 +1,4 @@
-import { copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { installedAssetHeader, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -273,6 +273,22 @@ export class ResourceCache {
     } };
   }
 
+  private assertAdmitted(): void {
+    this.evictToCeiling();
+    const policies = [...this.clientBudgets.values()];
+    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
+    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
+    const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
+    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
+    if (this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
+  }
+
+  resourceStats() {
+    const entries = [...this.entries.values()];
+    return { generations: entries.length, wrappers: entries.reduce((n, entry) => n + entry.textures.size, 0),
+      leases: entries.reduce((n, entry) => n + entry.refCount, 0), pending: entries.reduce((n, entry) => n + (entry.pending ?? 0), 0) };
+  }
+
   private preparing(entry: CacheEntry) {
     entry.pending = (entry.pending ?? 0) + 1;
     let active = true;
@@ -466,7 +482,15 @@ export class ResourceCache {
     texture.hasAlpha = options.hasAlpha === true;
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
-    this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true);
+    try {
+      this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true);
+      this.assertAdmitted();
+    } catch (error) {
+      texture.dispose();
+      this.release(entry.key);
+      if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "admission");
+      throw error;
+    }
     return texture;
   }
 
@@ -639,8 +663,9 @@ export class ResourceCache {
     entry.samplingDisposers ??= new Map();
     entry.samplingDisposers.get(sampling)?.();
     let active = true;
-    let headerPending = bytes instanceof Blob;
-    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : null;
+    const installedHeader = bytes instanceof Blob ? installedAssetHeader(bytes) : undefined;
+    let headerPending = bytes instanceof Blob && !installedHeader;
+    let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : installedHeader ? textureSourceSize(installedHeader) : null;
     const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
     const update = () => {
       if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
@@ -676,7 +701,7 @@ export class ResourceCache {
     };
     entry.samplingDisposers.set(sampling, cancel);
     update();
-    if (bytes instanceof Blob) {
+    if (bytes instanceof Blob && !installedHeader) {
       // Bound temporary header storage; unusual raster headers can still be
       // measured from the real upload when their dimensions are unavailable.
       void bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
@@ -767,6 +792,7 @@ export class ResourceCacheOwner implements TextureResources {
   accountTextureSize(...args: Parameters<ResourceCache["accountTextureSize"]>) { this.inner.accountTextureSize(...args); }
   releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
   accountedBytes() { return this.inner.accountedBytes(); }
+  resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
   flushUnreferenced() { this.inner.flushUnreferenced(); }
   releaseGpuTextures() { this.inner.releaseGpuTextures(); }
