@@ -40,7 +40,7 @@ describe("PlaceActorsDialog", () => {
     fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
       target: { value: "sphere" },
     });
-    const row = screen.getByRole("button", { name: "Sphere Shapes" });
+    const row = screen.getByRole("button", { name: /sphere shapes/i });
     fireEvent.keyDown(row, { key: "Enter", isComposing: true });
     expect(screen.getByTestId("place-actors-catalog")).toBeTruthy();
     fireEvent.keyDown(row, { key: "Enter" });
