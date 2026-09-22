@@ -200,7 +200,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     } finally { layered.dispose(); layerMaterials.dispose(); layer.dispose(); }
     const baseline = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
-    configure(20, 0.3, true, false);
+    configure(20, 0.3, true, true);
     for (let cycle = 0; cycle < 100; cycle += 1) {
       const system = assign("red");
       await ready([system]); await step(2); service.resetSession();
@@ -210,7 +210,9 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
       gpuTextures: engine.getLoadedTexturesCache().length };
     frameCpuMs.sort((a, b) => a - b);
     const percentile = (fraction: number) => frameCpuMs[Math.min(frameCpuMs.length - 1, Math.floor(frameCpuMs.length * fraction))] ?? 0;
-    return { backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`, gpu, adapter: engine.getInfo(),
+    return { requestedBackend: backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`,
+      simulation: gpu ? "gpu" : "cpu", driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(), userAgent: navigator.userAgent,
+      resolution: { width: 64, height: 64 },
       captures, sceneIsolation, diagnostics, resets, acquisitions, releases, baseline, final,
       nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };

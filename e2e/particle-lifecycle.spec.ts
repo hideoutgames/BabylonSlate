@@ -14,6 +14,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       __babylonslateParticleLifecycleProof: typeof runParticleLifecycleProof;
     }).__babylonslateParticleLifecycleProof(backend, gpu), { backend, gpu });
     await testInfo.attach("particle-lifecycle", { body: JSON.stringify(result), contentType: "application/json" });
+    expect(result.requestedBackend).toBe(backend);
     expect(result.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
     expect(result.diagnostics).toEqual([]);
