@@ -11,6 +11,8 @@ import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
 import { visualMeshes } from "./visual-meshes";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { createText3DMesh } from "./text3d-mesh";
+import { createOverlayTextureQuad } from "./overlay-texture-quad";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -232,6 +234,21 @@ describe("visual generation ownership", () => {
     const warmed = { materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length };
     for (let index = 0; index < 200; index += 1) cycle();
     expect({ materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length }).toEqual(warmed);
+  });
+
+  it.each(["3D text", "overlay texture"])("retires %s construction materials after an authored override", (kind) => {
+    const { scene } = host();
+    const borrowed = new StandardMaterial("authored", scene);
+    const cycle = () => {
+      const mesh = kind === "3D text" ? createText3DMesh(scene, "text", { text: "T" }) : createOverlayTextureQuad(scene, "overlay", null);
+      mesh.material = borrowed;
+      mesh.dispose();
+    };
+    cycle();
+    const warmed = { materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length };
+    for (let index = 0; index < 100; index++) cycle();
+    expect({ materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length }).toEqual(warmed);
+    expect(scene.materials).toContain(borrowed);
   });
 
   it("rejects an oversized glyph before rasterizing or attaching a partial text tree", () => {

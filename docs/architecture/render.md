@@ -1,6 +1,6 @@
 # Render sync and resource cache (P4)
 
-Generated text records its pick, glyph, underline and construction materials in a visual bundle at creation, including materials later replaced by an inline image. Retirement cancels effects, disposes render users and owned materials/wrappers, then releases shared atlas leases. Borrowed material-library results remain library-owned.
+Generated text records its pick, glyph, underline and construction materials in a visual bundle at creation, including materials later replaced by an inline image. The same bundle pattern owns the construction material of 3D text and overlay texture quads even after an authored material replaces it. Retirement cancels effects, disposes render users and owned materials/wrappers, then releases shared atlas leases. Borrowed material-library results remain library-owned.
 
 Model realization consumes immutable `modelSources` installed beside the raw `modelBytes` used for synchronous collision extraction. Scene-local decoded generations are keyed by the installed source identity and the texture-slimming decision before unpacking bytes. Instance scale and animation/retarget dependencies belong to the instance descriptor. Preparing and live instances hold exact source leases; an older generation is retired after its last instance releases it. A failed source entry is removed by exact entry identity, permitting retry without evicting a newer request.
 
