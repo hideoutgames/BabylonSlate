@@ -202,6 +202,7 @@ import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
+import { acquireParticleMaterial } from "./particle-material";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
@@ -1111,11 +1112,9 @@ function initializeEngine(
           if (!bytes) return null;
           return acquireMaterialTexture(resourceCache, guid, engine, bytes, { hasAlpha: true });
         },
-        resolveMaterial: (guid) => {
-          const live = binding.resolveMaterial?.(guid);
-          return live && "createEffectForParticles" in live
-            ? (live as import("@babylonjs/core").NodeMaterial)
-            : null;
+        acquireMaterial: (guid, owner) => {
+          const document = materialDocuments.get(guid);
+          return document ? acquireParticleMaterial(materialLibrary, guid, document, owner) : null;
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
         onDiagnostic: options.onParticleDiagnostic,
@@ -1258,7 +1257,9 @@ function initializeEngine(
   binding.isOverlaySlot = (slotId) =>
     sceneLayerCompositor?.layerIdForSlot(slotId) != null;
   particleService?.setSceneForSlot(
-    (slotId) => sceneLayerCompositor?.sceneForSlot(slotId) ?? null,
+    (slotId) => binding.isOverlaySlot?.(slotId)
+      ? sceneLayerCompositor?.sceneForSlot(slotId) ?? null
+      : scene,
   );
   const pendingOverlayAssign = new Map<
     number,
@@ -2416,6 +2417,7 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
         worldSceneAssetGuid = command.sceneAssetGuid;
@@ -2427,6 +2429,7 @@ function initializeEngine(
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {
+          particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
           cancelPresentation(new Error("SceneLayer loading was superseded."), `layer:${command.layerId}`);
           layerLoads.set(command.layerId, { loadId: command.layerLoadId, ready: false });
         }
@@ -2437,12 +2440,14 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
+        particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
         cancelPresentation(new Error("SceneLayer was removed."), `layer:${command.layerId}`);
         layerLoads.delete(command.layerId);
         sceneLayerCompositor?.remove(command.layerId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
+        particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) != null);
         for (const layerId of layerLoads.keys()) cancelPresentation(new Error("SceneLayer was removed."), `layer:${layerId}`);
         layerLoads.clear();
         pendingOverlayAssign.clear();
@@ -2599,6 +2604,7 @@ function initializeEngine(
       binding.paused = paused;
       scheduler.setPaused(paused);
       audioService?.setPaused(paused);
+      particleService?.setPaused(paused);
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);

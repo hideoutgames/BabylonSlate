@@ -52,7 +52,7 @@ describe("particle-system-factory", () => {
   });
 
   it("does not claim GPU support when the caller opts out", () => {
-    expect(gpuParticlesSupported(false)).toBe(false);
+    expect(gpuParticlesSupported(host().scene.getEngine(), false)).toBe(false);
   });
 
   it("applies box spawn, standard blend, local space, and drag onto a live system", () => {
