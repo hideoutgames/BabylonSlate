@@ -77,24 +77,26 @@ for (const backend of ["webgl2", "webgpu"] as const)
           contentType: "application/json",
         });
         if (backend === "webgl2" && configuration === "low" && mode === "pbr") {
+          for (const receiverPlane of [false, true]) {
           const native = await page.evaluate(
             (input) => (window as unknown as {
               __babylonslateShadowNativeProof: typeof runNativeShadowProof;
             }).__babylonslateShadowNativeProof(input!),
-            result.nativeInput,
+            { ...result.nativeInput!, receiverPlane },
           );
           for (const capture of native.captures)
-            await testInfo.attach(`native-${capture.name}`, {
+            await testInfo.attach(`${receiverPlane ? "native-plane" : "native"}-${capture.name}`, {
               body: Buffer.from(capture.png, "base64"),
               contentType: "image/png",
             });
-          await testInfo.attach("native-effective-settings", {
+          await testInfo.attach(`${receiverPlane ? "native-plane" : "native"}-effective-settings`, {
             body: JSON.stringify({ ...native, captures: native.captures.map(({ png: _png, pixels: _pixels, ...capture }) => capture) }),
             contentType: "application/json",
           });
           for (const error of Object.values(native.effective.comparisonError)) {
             expect(error, "matched native projection and camera").not.toBeNull();
             expect(error!).toBeLessThan(0.00001);
+          }
           }
         }
         expect(errors).toEqual([]);

@@ -15,6 +15,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
+import { withReceiverPlaneProbe } from "./shadow-receiver-plane-probe";
 import {
   SHADOW_BOXES,
   SHADOW_CAMERA_TARGET,
@@ -25,6 +26,7 @@ import {
 } from "./shadow-self-shadowing-fixture";
 
 export type NativeShadowProofInput = {
+  receiverPlane?: boolean;
   cameraPosition: readonly number[];
   cameraNear: number;
   cameraFar: number;
@@ -76,7 +78,9 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
   try {
     // Use the pinned upstream include while compiling this scene's fresh effects.
     // A fresh engine prevents reuse of effects compiled with an earlier probe.
-    ShaderStore.IncludesShadersStore.lightFragment = lightFragment.shader;
+    ShaderStore.IncludesShadersStore.lightFragment = input.receiverPlane
+      ? withReceiverPlaneProbe(lightFragment.shader, false, { strength: 1, cap: 4 / 1024 })
+      : lightFragment.shader;
     engine = new Engine(canvas, false, {
       preserveDrawingBuffer: true,
       stencil: true,
@@ -159,7 +163,11 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
       const deadline = performance.now() + 30_000;
       // Own the polling lifetime: racing Babylon's asynchronous readiness
       // helpers against a timeout would leave their internal timers alive.
-      while (!nativeScene.isReady() || !generator.getShadowMap()!.isReadyForRendering()) {
+      for (;;) {
+        const castersReady = nativeScene.meshes.every((mesh) =>
+          mesh.subMeshes.every((subMesh) => generator.isReady(subMesh, false, false)),
+        );
+        if (nativeScene.isReady() && castersReady) return;
         if (performance.now() >= deadline)
           throw new Error("Native shader readiness timed out");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
@@ -213,7 +221,7 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
       SIZE,
     );
     key.shadowEnabled = true;
-    await render();
+    const firstShadowed = await render();
     const shadowed = await render();
     const cameraMatrix = Array.from(nativeScene.getTransformMatrix().asArray());
     const map = generator.getShadowMap()!;
@@ -223,6 +231,7 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
       qualification:
         "Native Babylon baseline comparison; not an upstream defect or original-asset proof",
       effective: {
+        receiverPlaneDiagnostic: input.receiverPlane ?? false,
         backend: "webgl2",
         webGLVersion: nativeEngine.webGLVersion,
         adapter: nativeEngine.getGlInfo(),
@@ -262,6 +271,12 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
           png: png(reference),
           pixels: reference,
           regions: {},
+        },
+        {
+          name: "native-first-shadowed",
+          png: png(firstShadowed),
+          pixels: firstShadowed,
+          regions: shadowRegions(reference, firstShadowed, points, SIZE),
         },
         {
           name: "native-authored-manual",
