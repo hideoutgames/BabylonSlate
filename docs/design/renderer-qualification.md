@@ -246,6 +246,17 @@ state restoration. It does not change production rendering and excludes clamped
 cascades, whose fragment-written depth cannot use this raster correction.
 Production geometry and projection fitting remain unchanged.
 
+The `90132d14` raster-slope experiment executed real caster draws and restored
+the original raster state. It also fails: factor 1 retains 21/25 thin edge
+pixels but leaves 52/356 head samples dark; factor 1.25 retains only 12/25 edge
+pixels and still leaves 24/356 head samples dark. A test-only receiver-plane
+experiment now adjusts comparison depth using each surface's projected
+gradient and fractional texel position, retaining native PCF fetches and CSM
+depth clamping. Its result is explicitly labeled diagnostic and uses fixed
+authored caster offsets; it is not the production automatic policy. A fresh
+native Babylon scene compares the same captured projection and light state.
+Host assertions now sample exact screenshot pixels without image resampling.
+
 Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
 retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
 cancelled while awaiting shared resource admission, before any build or browser

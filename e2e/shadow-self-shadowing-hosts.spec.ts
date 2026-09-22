@@ -211,27 +211,64 @@ async function freshFrames(canvas: Locator, host: Host) {
     )
     .toBeGreaterThan(before + 2);
 }
-async function pixels(canvas: Locator) {
-  // Screenshot observes the presented canvas even when WebGL has discarded its
-  // default framebuffer. Decode that exact image for both the oracle and evidence.
-  const png = await canvas.screenshot();
-  const image = await canvas.evaluate(async (_element, base64) => {
-    const source = new Image();
-    source.src = `data:image/png;base64,${base64}`;
-    await source.decode();
-    const copy = document.createElement("canvas");
-    const scale = Math.min(1, 384 / Math.max(source.width, source.height));
-    copy.width = Math.max(1, Math.round(source.width * scale));
-    copy.height = Math.max(1, Math.round(source.height * scale));
-    const ctx = copy.getContext("2d")!;
-    ctx.drawImage(source, 0, 0, copy.width, copy.height);
-    return {
-      width: copy.width,
-      height: copy.height,
-      pixels: Array.from(ctx.getImageData(0, 0, copy.width, copy.height).data),
-    };
-  }, png.toString("base64"));
-  return { ...image, png };
+async function pixels(canvas: Locator, state: ShadowDiagnostics) {
+  // Preserve native screenshot pixels: resizing can average narrow acne away.
+  // A PNG IHDR supplies the exact dimensions before decoding the bounded image.
+  const png = await canvas.screenshot({ type: "png" });
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  if (width < 1 || height < 1 || width > 2048 || height > 2048)
+    throw new Error("Shadow host capture exceeds the bounded 2048px surface");
+  const points = shadowSurfaceSamples(
+    state.camera!.position as ShadowTriple,
+    state.camera!.viewProjection as number[],
+    shadowNormalize(
+      SHADOW_LIGHT_DIRECTION.map((value) => -value) as ShadowTriple,
+    ),
+    width,
+    height,
+    state.viewport.cameraViewport!,
+  );
+  if (points.length > 8192)
+    throw new Error("Shadow sample population exceeds fixture limit");
+  const sampled = await canvas.evaluate(
+    async (_element, { base64, points, width, height }) => {
+      const source = new Image();
+      source.src = `data:image/png;base64,${base64}`;
+      await source.decode();
+      if (source.naturalWidth !== width || source.naturalHeight !== height)
+        throw new Error(
+          "Decoded shadow capture dimensions differ from PNG IHDR",
+        );
+      const copy = document.createElement("canvas");
+      copy.width = width;
+      copy.height = height;
+      const ctx = copy.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(source, 0, 0);
+      // Cache small tiles, returning only sampled RGBA values across the boundary.
+      // Each sample is the exact native screenshot pixel, without interpolation.
+      const tiles = new Map<string, ImageData>();
+      return points.flatMap(({ x, y }) => {
+        const left = Math.floor(x / 32) * 32;
+        const top = Math.floor(y / 32) * 32;
+        const key = `${left}:${top}`;
+        let tile = tiles.get(key);
+        if (!tile) {
+          tile = ctx.getImageData(
+            left,
+            top,
+            Math.min(32, width - left),
+            Math.min(32, height - top),
+          );
+          tiles.set(key, tile);
+        }
+        const offset = ((y - top) * tile.width + x - left) * 4;
+        return Array.from(tile.data.subarray(offset, offset + 4));
+      });
+    },
+    { base64: png.toString("base64"), points, width, height },
+  );
+  return { width, height, pixels: sampled, points, png };
 }
 const sun = (state: ShadowDiagnostics | null) =>
   state?.lights.find(
@@ -344,7 +381,7 @@ for (const mode of ["pbr", "cel"] as const) {
         expect(allocation.lastDrawBias[0]!.depthBias, host).toBeGreaterThan(
           render.shadows.depthBias,
         );
-        const shadowed = await pixels(canvas);
+        const shadowed = await pixels(canvas, automatic);
         await testInfo.attach(`${host}-shadowed`, {
           body: shadowed.png,
           contentType: "image/png",
@@ -396,17 +433,14 @@ for (const mode of ["pbr", "cel"] as const) {
           .poll(async () => sun(await diagnostics(canvas, host))?.generator)
           .toBeNull();
         await freshFrames(canvas, host);
-        const points = shadowSurfaceSamples(
-          automatic.camera!.position as ShadowTriple,
-          automatic.camera!.viewProjection as number[],
-          shadowNormalize(
-            SHADOW_LIGHT_DIRECTION.map((value) => -value) as ShadowTriple,
-          ),
-          shadowed.width,
-          shadowed.height,
-          automatic.viewport.cameraViewport!,
-        );
-        let reference = await pixels(canvas);
+        // The sparse values form a compact row only AFTER native pixel sampling;
+        // adapt coordinates to the shared classifier without altering intensities.
+        const points = shadowed.points.map((point, index) => ({
+          ...point,
+          x: index,
+          y: 0,
+        }));
+        let reference = await pixels(canvas, automatic);
         // Scene frames alone do not prove that the replacement receiver
         // shader and any asynchronous canvas copy have presented. Require the
         // shadow-off image to brighten known occlusions before using it as an
@@ -414,7 +448,7 @@ for (const mode of ["pbr", "cel"] as const) {
         await expect
           .poll(
             async () => {
-              reference = await pixels(canvas);
+              reference = await pixels(canvas, automatic);
               if (
                 reference.width !== shadowed.width ||
                 reference.height !== shadowed.height
@@ -424,7 +458,7 @@ for (const mode of ["pbr", "cel"] as const) {
                 reference.pixels,
                 shadowed.pixels,
                 points,
-                shadowed.width,
+                points.length,
               );
               return ["torso", "ground"].every(
                 (name) => (visible[name]?.retainedContact ?? 0) > 5,
@@ -444,7 +478,7 @@ for (const mode of ["pbr", "cel"] as const) {
           reference.pixels,
           shadowed.pixels,
           points,
-          shadowed.width,
+          points.length,
         );
         const hostEvidence = { host, automatic, manual: manualState, regions };
         evidence.push(hostEvidence);
@@ -452,7 +486,15 @@ for (const mode of ["pbr", "cel"] as const) {
           body: JSON.stringify(hostEvidence),
           contentType: "application/json",
         });
-        for (const name of ["head", "torso", "ground"]) {
+        for (const name of [
+          "head",
+          "torso",
+          "left-arm",
+          "right-arm",
+          "left-leg",
+          "right-leg",
+          "ground",
+        ]) {
           expect(
             regions[name]?.lit ?? 0,
             `${host} ${name} lit population`,

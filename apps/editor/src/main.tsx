@@ -17,8 +17,11 @@ if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("shadowSelfShadowingProof")
 ) {
-  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof }) => {
-    Object.assign(window, { __babylonslateShadowSelfShadowingProof: runShadowSelfShadowingProof });
+  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof, runNativeShadowProof }) => {
+    Object.assign(window, {
+      __babylonslateShadowSelfShadowingProof: runShadowSelfShadowingProof,
+      __babylonslateShadowNativeProof: runNativeShadowProof,
+    });
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&

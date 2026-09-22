@@ -24,6 +24,7 @@ import {
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { installSingleMapPcfSlopeProbe } from "./shadow-slope-probe";
+import { installReceiverPlaneProbe } from "./shadow-receiver-plane-probe";
 
 import {
   SHADOW_BOXES,
@@ -39,11 +40,13 @@ import {
 } from "./shadow-self-shadowing-fixture";
 
 const SIZE = 384;
+export { runNativeShadowProof } from "./shadow-native-proof";
 
 export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",
   mode: "pbr" | "cel",
   configuration: "low" | "cascade-fallback" | "cascades",
+  options: { receiverPlane?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
@@ -57,6 +60,9 @@ export async function runShadowSelfShadowingProof(
           disableWebGL2Support: false,
         });
   if (configuration === "cascade-fallback") engine._features.supportCSM = false;
+  const receiverProbe = options.receiverPlane
+    ? installReceiverPlaneProbe({ strength: 1, cap: 4 / 1024 })
+    : null;
   const scene = new Scene(engine);
   const graph = new ForwardSceneFrameGraph(scene);
   try {
@@ -109,7 +115,7 @@ export async function runShadowSelfShadowingProof(
     ) => {
       setSceneRenderSettings(scene, {
         mode,
-        shadows: { ...authored, autoBias, depthBias, normalBias, distance },
+        shadows: { ...authored, autoBias: receiverProbe ? false : autoBias, depthBias, normalBias, distance },
         cel: normalizeCelShadingSettings({
           specularEnabled: false,
           shadowStrength: 1,
@@ -226,6 +232,7 @@ export async function runShadowSelfShadowingProof(
       });
     };
     const slopeSweep = async (pose: string) => {
+      if (receiverProbe) return;
       settings(false);
       await graph.prepare(camera);
       for (const factor of [0.5, 0.75, 1, 1.25]) {
@@ -246,6 +253,30 @@ export async function runShadowSelfShadowingProof(
     settings(false);
     await referencePose("baseline");
     await capture("authored-manual");
+    const nativeGenerator = light.getShadowGenerator() as ShadowGenerator;
+    const nativeInput = configuration === "low" ? {
+      cameraPosition: camera.position.asArray(),
+      cameraNear: camera.minZ,
+      cameraFar: camera.maxZ,
+      cameraFov: camera.fov,
+      cameraViewProjection: Array.from(scene.getTransformMatrix().asArray()),
+      lightPosition: light.position.asArray(),
+      lightDirection: light.direction.asArray(),
+      lightView: Array.from(nativeGenerator.viewMatrix.asArray()),
+      lightProjection: Array.from(nativeGenerator.projectionMatrix.asArray()),
+      mapSize: nativeGenerator.getShadowMap()!.getSize().width,
+      depthBias: authored.depthBias,
+      normalBias: authored.normalBias,
+      filteringQuality: nativeGenerator.filteringQuality,
+      shadowMinZ: light.shadowMinZ!,
+      shadowMaxZ: light.shadowMaxZ!,
+      imageProcessing: {
+        exposure: scene.imageProcessingConfiguration.exposure,
+        contrast: scene.imageProcessingConfiguration.contrast,
+        toneMappingEnabled: scene.imageProcessingConfiguration.toneMappingEnabled,
+        toneMappingType: scene.imageProcessingConfiguration.toneMappingType,
+      },
+    } : undefined;
     settings(true);
     await capture("automatic", true);
     if (configuration === "low") {
@@ -359,6 +390,8 @@ export async function runShadowSelfShadowingProof(
     }
     return {
       synthetic: true,
+      receiverPlaneDiagnostic: receiverProbe?.evidence ?? null,
+      nativeInput,
       backend,
       mode,
       configuration,
@@ -388,6 +421,7 @@ export async function runShadowSelfShadowingProof(
     graph.dispose();
     scene.dispose();
     engine.dispose();
+    receiverProbe?.dispose();
     canvas.remove();
   }
 }

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 import type { runShadowSelfShadowingProof } from "../apps/editor/src/testing/shadow-self-shadowing-proof";
+import type { runNativeShadowProof } from "../apps/editor/src/testing/shadow-native-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -33,7 +34,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
             ).__babylonslateShadowSelfShadowingProof === "function",
         );
         const result = await page.evaluate(
-          ({ backend, mode, configuration }) =>
+          ({ backend, mode, configuration, receiverPlane }) =>
             (
               window as unknown as {
                 __babylonslateShadowSelfShadowingProof: typeof runShadowSelfShadowingProof;
@@ -42,8 +43,9 @@ for (const backend of ["webgl2", "webgpu"] as const)
               backend,
               mode,
               configuration,
+              { receiverPlane },
             ),
-          { backend, mode, configuration },
+          { backend, mode, configuration, receiverPlane: process.env.BL_SHADOW_RECEIVER_PROBE === "1" },
         );
         for (const capture of result.captures)
           await testInfo.attach(capture.name, {
@@ -74,6 +76,27 @@ for (const backend of ["webgl2", "webgpu"] as const)
           ),
           contentType: "application/json",
         });
+        if (backend === "webgl2" && configuration === "low" && mode === "pbr") {
+          const native = await page.evaluate(
+            (input) => (window as unknown as {
+              __babylonslateShadowNativeProof: typeof runNativeShadowProof;
+            }).__babylonslateShadowNativeProof(input!),
+            result.nativeInput,
+          );
+          for (const capture of native.captures)
+            await testInfo.attach(`native-${capture.name}`, {
+              body: Buffer.from(capture.png, "base64"),
+              contentType: "image/png",
+            });
+          await testInfo.attach("native-effective-settings", {
+            body: JSON.stringify({ ...native, captures: native.captures.map(({ png: _png, pixels: _pixels, ...capture }) => capture) }),
+            contentType: "application/json",
+          });
+          for (const error of Object.values(native.effective.comparisonError)) {
+            expect(error, "matched native projection and camera").not.toBeNull();
+            expect(error!).toBeLessThan(0.00001);
+          }
+        }
         expect(errors).toEqual([]);
         expect(result.backend).toBe(backend);
         expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
