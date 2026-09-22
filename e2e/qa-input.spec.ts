@@ -9,6 +9,7 @@ import {
 } from "./open-test-project";
 import { guidForPath } from "./material-graph";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { saveAllIfEnabled } from "./save-all";
 
 const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
   nodes: ["Jump", "Fire", "Confirm"].flatMap((action, index) => [
@@ -98,8 +99,7 @@ for (const preview of [false, true]) {
         graph,
       ),
     ).toBe(true);
-    await page.getByTestId("save-all-project").click();
-    await expect(page.getByTestId("save-all-project")).toBeDisabled();
+    await saveAllIfEnabled(page);
     await page.reload();
     await openTestProject(page);
     await openAssetFromBrowser(page, "assets/Input/Jump.inputaction.babasset");

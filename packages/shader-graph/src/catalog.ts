@@ -45,6 +45,8 @@ export interface MaterialNodeDefinition {
   type: string;
   title: string;
   category: string;
+  /** Additional names, operators and formulas accepted by Add Node search. */
+  searchAliases?: readonly string[];
   /** Legal domains. Undefined means the node works in every domain. */
   domains?: readonly MaterialDomain[];
   /** Legal stages. Undefined means the node works in both. */
@@ -67,6 +69,52 @@ const VEC3: MaterialPinType = { kind: "vec3" };
 const VEC4: MaterialPinType = { kind: "vec4" };
 const TEXTURE: MaterialPinType = { kind: "texture" };
 
+const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  "math.add": ["+","a + b","plus","sum"],
+  "math.subtract": ["-","−","a - b","minus"],
+  "math.multiply": ["*","×","·","a * b","a × b","product"],
+  "math.divide": ["/","÷","a / b","quotient"],
+  "math.negate": ["-","−","-x","negation"],
+  "math.reciprocal": ["1/x","1 / x","inverse"],
+  "math.radians": ["radians(x)","deg2rad","x * pi / 180"],
+  "math.degrees": ["degrees(x)","rad2deg","x * 180 / pi"],
+  "math.sin": ["sin","sin(x)"],
+  "math.cos": ["cos","cos(x)"],
+  "math.tan": ["tan","tan(x)"],
+  "math.asin": ["asin","asin(x)","inverse sine"],
+  "math.acos": ["acos","acos(x)","inverse cosine"],
+  "math.atan": ["atan","atan(x)","inverse tangent"],
+  "math.atan2": ["atan2","atan2(y,x)"],
+  "math.pow": ["^","**","pow","pow(a,b)","a^b","a**b"],
+  "math.exp": ["exp","exp(x)","e^x"],
+  "math.exp2": ["exp2","exp2(x)","2^x"],
+  "math.log": ["log","ln","log(x)","ln(x)"],
+  "math.log2": ["log2","log2(x)"],
+  "math.sqrt": ["√","sqrt","sqrt(x)","√x"],
+  "math.inverseSqrt": ["inversesqrt","rsqrt","1/sqrt(x)","1/√x"],
+  "math.abs": ["abs","abs(x)","|x|"],
+  "math.sign": ["sign(x)","sgn"],
+  "math.floor": ["floor(x)","⌊x⌋"],
+  "math.ceil": ["ceil","ceil(x)","⌈x⌉"],
+  "math.round": ["round(x)"],
+  "math.fract": ["fract","frac","fract(x)","x-floor(x)"],
+  "math.mod": ["%","mod","fmod","a % b","mod(a,b)","remainder"],
+  "math.min": ["min","min(a,b)"],
+  "math.max": ["max","max(a,b)"],
+  "math.clamp": ["clamp(x,min,max)"],
+  "math.saturate": ["clamp(x,0,1)","saturate(x)"],
+  "math.mix": ["lerp","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
+  "math.step": ["step(edge,x)"],
+  "math.smoothstep": ["smoothstep","smoothstep(a,b,x)"],
+  "math.remap": ["remap(x,a,b,c,d)"],
+  "logic.equal": ["=","==","===","a == b"],
+  "logic.notEqual": ["!=","!==","≠","a != b"],
+  "logic.lessThan": ["<","a < b"],
+  "logic.greaterThan": [">","a > b"],
+  "vector.normalize": ["normalize(x)","x/length(x)"],
+  "vector.reflect": ["reflect(i,n)"],
+};
+
 function generic(
   type: string,
   title: string,
@@ -78,6 +126,7 @@ function generic(
     type,
     title,
     category,
+    searchAliases: MATERIAL_SEARCH_ALIASES[type],
     cost,
     inputs: inputs.map((id, index) => ({
       id,
@@ -387,9 +436,54 @@ const MATH_NODES: MaterialNodeDefinition[] = [
   generic("math.remap", "Remap", "Math", ["value", "fromMin", "fromMax", "toMin", "toMax"], 3),
 ];
 
+const NOISE_NODES: MaterialNodeDefinition[] = [
+  {
+    type: "noise.perlin",
+    title: "Perlin Noise",
+    category: "Noise",
+    searchAliases: ["PerlinNoise", "simplex", "Simplex Perlin 3D"],
+    cost: 32,
+    inputs: [{ id: "coordinates", name: "Coordinates", type: VEC3, defaultValue: [0, 0, 0] }],
+    outputs: [{ id: "out", name: "Value", type: FLOAT }],
+  },
+  {
+    type: "noise.voronoi",
+    title: "Voronoi Noise",
+    category: "Noise",
+    searchAliases: ["VoronoiNoise", "cellular", "cells"],
+    cost: 48,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "offset", name: "Offset", type: FLOAT, defaultValue: [0] },
+      { id: "density", name: "Density", type: FLOAT, defaultValue: [5] },
+    ],
+    outputs: [
+      { id: "out", name: "Value", type: FLOAT },
+      { id: "cells", name: "Cells", type: FLOAT },
+    ],
+  },
+  {
+    type: "noise.worley",
+    title: "Worley Noise",
+    category: "Noise",
+    searchAliases: ["WorleyNoise", "cellular", "Worley 3D"],
+    cost: 64,
+    inputs: [
+      { id: "coordinates", name: "Coordinates", type: VEC3, defaultValue: [0, 0, 0] },
+      { id: "jitter", name: "Jitter", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [
+      { id: "out", name: "Distances", type: VEC2 },
+      { id: "f1", name: "F1", type: FLOAT },
+      { id: "f2", name: "F2", type: FLOAT },
+    ],
+  },
+];
+
 const VECTOR_NODES: MaterialNodeDefinition[] = [
   {
     type: "vector.dot",
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Product",
     category: "Vector",
     cost: 1,
@@ -401,6 +495,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "vector.cross",
+    searchAliases: ["×","cross","cross(a,b)","a × b"],
     title: "Cross Product",
     category: "Vector",
     cost: 2,
@@ -412,6 +507,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "vector.length",
+    searchAliases: ["length(x)","magnitude","|v|"],
     title: "Length",
     category: "Vector",
     cost: 2,
@@ -420,6 +516,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "vector.distance",
+    searchAliases: ["distance(a,b)","length(a-b)"],
     title: "Distance",
     category: "Vector",
     cost: 2,
@@ -433,6 +530,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   generic("vector.reflect", "Reflect", "Vector", ["incident", "normal"], 3),
   {
     type: "vector.refract", title: "Refract", category: "Vector", cost: 4,
+    searchAliases: ["refract(i,n,eta)"],
     inputs: [
       { id: "incident", name: "Incident", type: VEC3, defaultValue: [0, 0, -1] },
       { id: "normal", name: "Normal", type: VEC3, defaultValue: [0, 0, 1] },
@@ -484,6 +582,7 @@ const LOGIC_NODES: MaterialNodeDefinition[] = [
   generic("logic.greaterThan", "Greater Than", "Logic", ["a", "b"]),
   {
     type: "logic.select",
+    searchAliases: ["?:", "condition ? a : b"],
     title: "Select",
     category: "Logic",
     cost: 1,
@@ -499,6 +598,7 @@ const LOGIC_NODES: MaterialNodeDefinition[] = [
 const DERIVATIVE_NODES: MaterialNodeDefinition[] = [
   {
     type: "derivative.ddx",
+    searchAliases: ["dFdx","ddx(x)","d/dx"],
     title: "DDX",
     category: "Derivative",
     stages: ["fragment"],
@@ -509,6 +609,7 @@ const DERIVATIVE_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "derivative.ddy",
+    searchAliases: ["dFdy","ddy(x)","d/dy"],
     title: "DDY",
     category: "Derivative",
     stages: ["fragment"],
@@ -519,6 +620,7 @@ const DERIVATIVE_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "derivative.fwidth",
+    searchAliases: ["fwidth(x)","abs(ddx(x))+abs(ddy(x))"],
     title: "Fwidth",
     category: "Derivative",
     stages: ["fragment"],
@@ -760,6 +862,7 @@ export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...CONSTANT_NODES,
   ...INPUT_NODES,
   ...MATH_NODES,
+  ...NOISE_NODES,
   ...VECTOR_NODES,
   ...LOGIC_NODES,
   ...DERIVATIVE_NODES,

@@ -41,6 +41,8 @@ export async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnos
 export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<void> {
   const button = page.getByTestId("save-all-project");
   await expect(button).toBeVisible();
+  // Save All is also disabled while writing; wait for that invocation to settle.
+  await expect(button).toHaveAttribute("aria-busy", "false", { timeout });
   if (!(await button.isEnabled())) {
     return;
   }
@@ -68,11 +70,12 @@ export async function saveAllIfEnabled(page: Page, timeout = 15_000): Promise<vo
           return {
             dirty: diagnostics.dirty.length,
             disabled: await button.isDisabled(),
+            busy: await button.getAttribute("aria-busy"),
           };
         },
         { timeout },
       )
-      .toEqual({ dirty: 0, disabled: true });
+      .toEqual({ dirty: 0, disabled: true, busy: "false" });
   } catch (error) {
     const diagnostics = await readSaveAllDiagnostics(page);
     throw new Error(

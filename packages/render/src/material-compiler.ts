@@ -246,7 +246,13 @@ export function compileMaterialPlan(
   // Engine-owned plumbing must exist before operations so nodes such as World
   // Normal and Screen UV read the real transformed values.
   try {
-    if (material.mode === NodeMaterialModes.Particle) prepareNodeMaterialParticleBindings(material);
+    if (material.mode === NodeMaterialModes.Particle) {
+      prepareNodeMaterialParticleBindings(material);
+      const uv = new InputBlock(`${options.name}_particleUv`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      uv.setAsAttribute("particle_uv");
+      created.push(uv);
+      plumbing.uv = uv.output;
+    }
     if (plan.domain === "postProcess") {
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),

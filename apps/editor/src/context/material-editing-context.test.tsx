@@ -8,6 +8,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useEffect, useRef, type ReactNode } from "react";
+import { RefreshCwIcon } from "lucide-react";
+import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { ActionFeedbackButton } from "../components/action-feedback-button";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import {
   MaterialEditingProvider,
@@ -218,13 +221,13 @@ function AttachCanvas() {
 function RenderProbe() {
   const { control } = useMaterialRenderControl();
   return (
-    <button
-      type="button"
+    <TooltipProvider><ActionFeedbackButton
+      label="Render"
+      icon={RefreshCwIcon}
+      feedback={control?.feedback}
       disabled={control?.disabled ?? true}
-      onClick={() => control?.requestRender()}
-    >
-      Render
-    </button>
+      onAction={() => control?.requestRender()}
+    /></TooltipProvider>
   );
 }
 
@@ -352,10 +355,12 @@ describe("MaterialEditingProvider preview isolation", () => {
             ? { ok: true, material: {}, hash: "hash" }
             : { ok: false, diagnostics: [] };
         fireEvent.click(button);
+        expect(button.getAttribute("aria-busy")).toBe("true");
         await act(async () => {
           await vi.advanceTimersByTimeAsync(0);
         });
         expect(button.hasAttribute("disabled")).toBe(true);
+        expect(button.getAttribute("data-action-state")).toBe(result);
 
         await act(async () => {
           await vi.advanceTimersByTimeAsync(MANUAL_RENDER_COOLDOWN_MS - 1);
@@ -365,6 +370,10 @@ describe("MaterialEditingProvider preview isolation", () => {
           await vi.advanceTimersByTimeAsync(1);
         });
         expect(button.hasAttribute("disabled")).toBe(false);
+        if (result === "error") {
+          fireEvent.click(button);
+          expect(screen.getByRole("status").textContent).toBe("Render In Progress");
+        }
       } finally {
         vi.useRealTimers();
       }

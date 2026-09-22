@@ -42,7 +42,7 @@ describe("AddComponentDialog", () => {
         projectItems={[projectModel]}
       />,
     );
-    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-hero"));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Hero Model" }), { key: " " });
     expect(onSelect).toHaveBeenCalledWith({
       classId: "MeshComponent",
       properties: { assetGuid: "hero" },

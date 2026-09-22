@@ -2,7 +2,6 @@ import {
   MultiMaterial,
   NodeMaterial,
   PBRBaseMaterial,
-  PBRMaterial,
   StandardMaterial,
   type AbstractMesh,
   type Light,
@@ -85,12 +84,6 @@ function bakedMaterialVariant(
     if (flags.unlit === true || flags.disableLighting === true) return null;
     const variant = material.clone(`baked:${material.name}`);
     if (!variant) return null;
-    if (sampling.includesEnvironment && variant instanceof PBRMaterial) {
-      // The atlas already carries environment diffuse irradiance; rebinding the
-      // receiver's IBL would count the environment twice. Known v1 gap: this
-      // also removes the environment's specular radiance from the receiver.
-      variant.environmentIntensity = 0;
-    }
     new BakedIrradiancePlugin(variant, sampling);
     return variant;
   }

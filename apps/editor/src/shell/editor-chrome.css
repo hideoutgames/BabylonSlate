@@ -109,6 +109,30 @@
   border-radius: var(--radius-sm);
 }
 
+.chrome-action-feedback:not(:disabled):active,
+.chrome-action-feedback[data-action-state="pending"],
+.chrome-action-feedback[data-action-state="success"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--ring);
+}
+
+.chrome-action-feedback[data-action-state="error"] {
+  color: var(--destructive);
+  border-color: var(--destructive);
+}
+
+.chrome-action-feedback[data-action-state="pending"],
+.chrome-action-feedback[data-action-state="success"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-action-feedback {
+    transition: none;
+  }
+}
+
 .editor-chrome-tabs {
   display: flex;
   min-width: 0;

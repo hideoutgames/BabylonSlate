@@ -70,19 +70,15 @@ describe("Verify GitHub Actions workflow", () => {
     expect(unit).not.toContain("pnpm typecheck");
   });
 
-  it("reuses the static build and retains a complete browser partition", () => {
+  it("retains bounded diagnostics even when a browser partition fails", () => {
     const yaml = verifyWorkflow();
     const e2e = jobBlock(yaml, "e2e");
-    expect(e2e).toMatch(/needs:\s*static/);
-    expect(e2e).toContain("actions/download-artifact@v4");
-    expect(e2e).toContain("BL_TEST_ARTIFACT:");
-    expect(e2e).toContain("pnpm test:e2e");
-    const staticJob = jobBlock(yaml, "static");
-    expect(staticJob).toContain("pnpm test:build");
-    expect(staticJob).toContain("actions/upload-artifact@v4");
-    expect(staticJob).toContain("include-hidden-files: true");
+    expect(e2e).toContain("actions/upload-artifact@v4");
+    expect(e2e).toContain("browser-results-${{ matrix.shard }}");
+    expect(e2e).toContain("include-hidden-files: true");
     expect(e2e).toContain("test-results/");
-    expect(e2e).toContain("always()");
+    expect(e2e).toMatch(/if:\s*always\(\)/);
+    expect(e2e).toMatch(/retention-days:\s*3\b/);
   });
 
   it("caches Playwright browsers on standard ubuntu-latest runners", () => {

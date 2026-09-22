@@ -213,12 +213,12 @@ describe("plugin enablement UI", () => {
       pluginDependencyStatus("a", [
         { code: "plugin.engine_unsatisfiable", pluginGuid: "a" },
       ]),
-    ).toBe("Engine Range");
+    ).toBe("Engine Version Changed");
     expect(
       pluginDependencyStatus("a", [
         { code: "plugin.unsatisfiable", pluginGuid: "a" },
       ]),
-    ).toBe("Unsatisfiable Range");
+    ).toBe("Dependency Version Changed");
   });
 
   it("lists the plugin GUID as a read-only identity field", () => {

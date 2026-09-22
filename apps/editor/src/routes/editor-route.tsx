@@ -203,7 +203,12 @@ function EditorLayout() {
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!shouldPromptBeforeUnload(dirtyDocuments.length + Number(Boolean(projectDirty)))) return;
+      if (
+        !shouldPromptBeforeUnload(
+          dirtyDocuments.length + Number(Boolean(projectDirty)),
+        )
+      )
+        return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -269,7 +274,7 @@ function EditorLayout() {
     <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
-        onSaveProject={() => void requestSave()}
+        onSaveProject={requestSave}
         onCloseDocument={requestCloseDocument}
         onCloseAllDocuments={requestCloseAllDocuments}
       />

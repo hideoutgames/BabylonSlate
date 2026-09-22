@@ -15,6 +15,7 @@ import {
   mountEnabledPlugins,
   resolvePluginEnabled,
   resolvePluginGraph,
+  pluginCompatibilityKey,
   shadowEnginePlugins,
   writeProjectPlugin,
 } from "./plugin-host";
@@ -48,7 +49,7 @@ async function writePluginFolder(
         guid: asset.guid,
         type: asset.type,
         name: asset.name,
-        engineVersion: "0.0.0",
+        engineVersion: "0.0.1",
         version: 1,
         mode: "thin",
         dependencies: asset.dependencies ?? [],
@@ -183,6 +184,32 @@ describe("shadowEnginePlugins", () => {
 });
 
 describe("resolvePluginGraph", () => {
+  it("accepts only the reviewed engine and dependency versions, never missing dependencies or cycles", () => {
+    const base = { pluginGuid: "base", settings: createDefaultPluginSettings({ pluginGuid: "base", displayName: "Base" }) };
+    const pack = { pluginGuid: "pack", settings: createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" }) };
+    pack.settings.engineVersion = "older";
+    pack.settings.version = "0.1";
+    pack.settings.pluginDependencies = [{ guid: "base", version: "2.7" }];
+    base.settings.version = "2.8";
+    const plugins = [pack, base];
+    expect(resolvePluginGraph(plugins).order.map((entry) => entry.pluginGuid)).toEqual(["base"]);
+    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(pack, plugins) } };
+    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
+    expect(resolvePluginGraph(plugins, undefined, overrides).diagnostics).toEqual([]);
+    base.settings.version = "2.9";
+    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base"]);
+    base.settings.version = "2.8";
+    pack.settings.version = "0.2";
+    expect(resolvePluginGraph(plugins, undefined, overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base"]);
+    pack.settings.version = "0.1";
+    expect(resolvePluginGraph(plugins, "new-engine", overrides).order).toEqual([]);
+    expect(resolvePluginGraph([pack], undefined, { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(pack, [pack]) } }).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "plugin.missing" }));
+    base.settings.pluginDependencies = [{ guid: "pack", version: "0.1" }];
+    expect(resolvePluginGraph(plugins, undefined, overrides).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "plugin.cycle" }));
+  });
+
   it("topologically orders plugins by dependency", () => {
     const base = createDefaultPluginSettings({
       pluginGuid: "base",
@@ -192,7 +219,7 @@ describe("resolvePluginGraph", () => {
       pluginGuid: "extra",
       displayName: "Extra",
     });
-    extra.pluginDependencies = [{ guid: "base", versionRange: "^1.0.0" }];
+    extra.pluginDependencies = [{ guid: "base", version: "1.2.0" }];
     base.version = "1.2.0";
     extra.version = "1.0.0";
     const { order, diagnostics } = resolvePluginGraph(
@@ -200,7 +227,7 @@ describe("resolvePluginGraph", () => {
         { pluginGuid: extra.pluginGuid, settings: extra },
         { pluginGuid: base.pluginGuid, settings: base },
       ],
-      "0.0.0",
+      "0.0.1",
     );
     expect(diagnostics).toEqual([]);
     expect(order.map((entry) => entry.pluginGuid)).toEqual(["base", "extra"]);
@@ -215,14 +242,14 @@ describe("resolvePluginGraph", () => {
       pluginGuid: "b",
       displayName: "B",
     });
-    a.pluginDependencies = [{ guid: "b", versionRange: "^1.0.0" }];
-    b.pluginDependencies = [{ guid: "a", versionRange: "^1.0.0" }];
+    a.pluginDependencies = [{ guid: "b", version: "1.0.0" }];
+    b.pluginDependencies = [{ guid: "a", version: "1.0.0" }];
     const { order, diagnostics } = resolvePluginGraph(
       [
         { pluginGuid: a.pluginGuid, settings: a },
         { pluginGuid: b.pluginGuid, settings: b },
       ],
-      "0.0.0",
+      "0.0.1",
     );
     expect(order).toEqual([]);
     expect(diagnostics.some((row) => row.code === "plugin.cycle")).toBe(true);
@@ -241,29 +268,29 @@ describe("resolvePluginGraph", () => {
       pluginGuid: "solo",
       displayName: "Solo",
     });
-    a.pluginDependencies = [{ guid: "b", versionRange: "^1.0.0" }];
-    b.pluginDependencies = [{ guid: "a", versionRange: "^1.0.0" }];
+    a.pluginDependencies = [{ guid: "b", version: "1.0.0" }];
+    b.pluginDependencies = [{ guid: "a", version: "1.0.0" }];
     const { order, diagnostics } = resolvePluginGraph(
       [
         { pluginGuid: a.pluginGuid, settings: a },
         { pluginGuid: b.pluginGuid, settings: b },
         { pluginGuid: solo.pluginGuid, settings: solo },
       ],
-      "0.0.0",
+      "0.0.1",
     );
     expect(order.map((entry) => entry.pluginGuid)).toEqual(["solo"]);
     expect(diagnostics.some((row) => row.code === "plugin.cycle")).toBe(true);
   });
 
-  it("reports unsatisfiable plugin and engine ranges and missing deps", () => {
+  it("reports changed plugin and engine versions and missing dependencies", () => {
     const extra = createDefaultPluginSettings({
       pluginGuid: "extra",
       displayName: "Extra",
     });
-    extra.engineVersionRange = "^2.0.0";
+    extra.engineVersion = "2.0.0";
     extra.pluginDependencies = [
-      { guid: "base", versionRange: "^2.0.0" },
-      { guid: "ghost", versionRange: "^1.0.0" },
+      { guid: "base", version: "2.0.0" },
+      { guid: "ghost", version: "1.0.0" },
     ];
     const base = createDefaultPluginSettings({
       pluginGuid: "base",
@@ -275,7 +302,7 @@ describe("resolvePluginGraph", () => {
         { pluginGuid: extra.pluginGuid, settings: extra },
         { pluginGuid: base.pluginGuid, settings: base },
       ],
-      "0.0.0",
+      "0.0.1",
     );
     const codes = diagnostics.map((row) => row.code).sort();
     expect(codes).toContain("plugin.engine_unsatisfiable");
@@ -292,14 +319,14 @@ describe("resolvePluginGraph", () => {
       }),
     }));
     plugins[0]!.settings.pluginDependencies = [
-      { guid: "middle", versionRange: "^1.0.0" },
+      { guid: "middle", version: "1.0.0" },
     ];
     plugins[1]!.settings.pluginDependencies = [
-      { guid: "base", versionRange: "^1.0.0" },
+      { guid: "base", version: "1.0.0" },
     ];
-    plugins[2]!.settings.engineVersionRange = "^2.0.0";
+    plugins[2]!.settings.engineVersion = "2.0.0";
 
-    const { order, diagnostics } = resolvePluginGraph(plugins, "0.0.0");
+    const { order, diagnostics } = resolvePluginGraph(plugins, "0.0.1");
 
     expect(order.map((plugin) => plugin.pluginGuid)).toEqual(["solo"]);
     expect(diagnostics).toEqual(
@@ -365,7 +392,7 @@ describe("mountEnabledPlugins", () => {
       pluginGuid: "extra",
       displayName: "Extra",
     });
-    extra.pluginDependencies = [{ guid: "base", versionRange: "^1.0.0" }];
+    extra.pluginDependencies = [{ guid: "base", version: "1.0.0" }];
     await writePluginFolder(storage, "Base", base);
     await writePluginFolder(storage, "Extra", extra, [
       {
@@ -450,8 +477,8 @@ describe("mountEnabledPlugins", () => {
       pluginGuid: "solo",
       displayName: "Solo",
     });
-    a.pluginDependencies = [{ guid: "b", versionRange: "^1.0.0" }];
-    b.pluginDependencies = [{ guid: "a", versionRange: "^1.0.0" }];
+    a.pluginDependencies = [{ guid: "b", version: "1.0.0" }];
+    b.pluginDependencies = [{ guid: "a", version: "1.0.0" }];
     await writePluginFolder(storage, "A", a, [
       {
         relativePath: "A.class.babasset",
@@ -504,7 +531,7 @@ describe("indexUnresolvedPlaceholders", () => {
         guid: "scene-1",
         type: "Scene",
         name: "Main",
-        engineVersion: "0.0.0",
+        engineVersion: "0.0.1",
         version: 1,
         mode: "thin",
         dependencies: ["plugin-tex"],

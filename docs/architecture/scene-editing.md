@@ -6,6 +6,8 @@ SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world
 
 Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
 
+Place Actors and Class Add Component share the Add Node result-row appearance: contiguous striped rows, type icons, names and muted secondary labels. Search, categories and project asset bindings remain available; actor/component results stay unwindowed.
+
 ## SerializedScene v4
 
 Scene Defaults lists Post Process passes and Scene Layers as compact two-line entries: a single-line asset picker with Open Asset, followed by Enabled, layer Z-Order, and reorder/remove controls. Names truncate with full names and paths available on hover. Desktop controls are 28px; coarse-pointer controls expand and wrap without overlapping. Counts appear beside Add. Reordering moves the complete entry, preserving independent Enabled and Z-Order values even when an asset appears more than once.

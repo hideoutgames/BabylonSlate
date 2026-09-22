@@ -498,6 +498,12 @@ export function MaterialEditingProvider({
     return registerRenderControl(documentId, {
       disabled: renderDisabled,
       requestRender,
+      feedback: {
+        status: !renderActionEnabled(previewState) ? "pending"
+          : previewState.lastError ? "error"
+            : renderCoolingDown && previewState.status === "ready" ? "success" : "idle",
+        message: renderActionEnabled(previewState) ? previewState.lastError ?? undefined : undefined,
+      },
     });
   }, [
     active,
@@ -505,6 +511,8 @@ export function MaterialEditingProvider({
     isFunctionDocument,
     registerRenderControl,
     renderDisabled,
+    previewState,
+    renderCoolingDown,
     requestRender,
   ]);
 

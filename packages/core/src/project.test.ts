@@ -764,6 +764,16 @@ describe("project schema", () => {
     });
   });
 
+  it("persists accepted plugin compatibility only while the plugin is enabled", () => {
+    expect(normalizeProjectSettings({ pluginOverrides: {
+      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
+      off: { enabled: false, acceptedCompatibility: "old-context" },
+    } }).pluginOverrides).toEqual({
+      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
+      off: { enabled: false },
+    });
+  });
+
   it("normalizes export preset plugin overrides", () => {
     expect(
       normalizeProjectSettings({
