@@ -43,6 +43,10 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     system.onDisposeObservable.remove(owned.disposeObserver);
   };
   const bind: NativeParticleBinder = function(system, blend, onCompiled, onError, effect, defines, joined) {
+    // Material defines and vertex streams depend on the lazily allocated
+    // gradient textures. Prepare them before capturing the first custom effect,
+    // rather than replacing a mismatched effect during its first native draw.
+    if (system instanceof GPUParticleSystem && !effect) system._recreateUpdateEffect();
     let owned = systems.get(system);
     if (!owned) {
       owned = { bindings: new Map(), disposeObserver: system.onDisposeObservable.addOnce(() => releaseSystem(system)) };

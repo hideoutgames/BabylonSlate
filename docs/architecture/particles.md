@@ -118,3 +118,5 @@ Particle NodeMaterial define changes retire the replaced DrawWrapper after the c
 The pinned Babylon patch carries the NodeMaterial shader language through particle effect recreation. Without it, a WGSL particle material can request a GLSL replacement after live defines change and never become ready again. This is separate from the adapter's observer and draw-wrapper ownership.
 
 The custom-material adapter registers the native GPU WGSL vertex shader and sets the GPU draw wrapper's instancing flag. Babylon's default effect initialization performs both operations, but the pinned custom-effect path bypasses them; a cold first emitter must prepare without relying on an earlier default-material emitter.
+
+That version boundary also prepares native update/gradient resources before creating the custom render effect. Gradient-backed streams differ from per-particle color streams; selecting their defines during the first draw is too late for that draw's captured wrapper. The browser fixture checks validation messages as well as visible pixels.

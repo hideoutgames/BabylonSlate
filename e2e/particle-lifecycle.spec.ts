@@ -22,6 +22,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     expect(result.requestedBackend).toBe(backend);
     expect(result.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
+    expect(gpuMessages.filter((message) => /GPUValidationError|WebGPU uncaptured|GL_INVALID|Invalid fragment shader|Error while parsing WGSL/.test(message))).toEqual([]);
     expect(result.diagnostics).toEqual([]);
     expect(result.resets).toBe(0);
     expect(result.acquisitions).toBe(result.releases);
