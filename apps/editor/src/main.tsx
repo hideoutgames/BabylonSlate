@@ -7,9 +7,11 @@ import {
   initializeCapacitorLifecycle,
 } from "@babylonslate/vfs";
 import App from "./App";
+import { initSessionLiveness } from "./lib/session-liveness";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
+initSessionLiveness();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
