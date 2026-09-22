@@ -27,7 +27,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       throw error;
     });
     await testInfo.attach("shared-outline-cost", { body: JSON.stringify({ ...report,
-      evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"), graphicsArguments }, errors }), contentType: "application/json" });
+      evidence: { ...renderingEvidence("apps/editor/src/testing/shared-outline-cost-proof.ts"),
+        graphicsArguments: process.env.CI ? graphicsArguments : testInfo.project.use.launchOptions?.args ?? [] }, errors }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(report.effectiveBackend).toBe(backend);
     for (const sample of report.measurements) {

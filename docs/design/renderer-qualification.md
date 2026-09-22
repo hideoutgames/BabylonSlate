@@ -164,6 +164,11 @@ checks the owning mesh's membership and both mesh lifetimes. A focused regressio
 holds native shader readiness pending across pruning, then releases the program
 with its instance. The temporary task probe and ineffective composition LOD
 experiment were removed before verifying the ownership repair.
+The focused instance-program lifetime regression passed at `b2d84a51`.
+For native survivor/geometry qualification, set `BL_RENDER_NATIVE_GPU=1` and
+select the explicit `shared-outline.spec.ts` and `shared-outline-geometry.spec.ts`
+files with the local `perf-gpu` configuration. Default runs and CI retain their
+software adapter configuration; native results must still record effective APIs.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
