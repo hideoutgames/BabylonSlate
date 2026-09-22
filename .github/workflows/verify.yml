@@ -37,17 +37,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm --filter docs-site build
-      - run: pnpm test:build
-        id: test-build
-        env:
-          BL_TEST_TYPECHECKED: "1"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: test-build
-          path: ${{ steps.test-build.outputs.directory }}
-          include-hidden-files: true
-          retention-days: 1
-          if-no-files-found: error
 
   unit:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -65,7 +54,6 @@ jobs:
       - run: pnpm test:coverage
 
   e2e:
-    needs: static
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -92,13 +80,11 @@ jobs:
       # Playwright's extra CJK/cyrillic font apt packages (~21MB) time out
       # when seven shards hit the Ubuntu archive together. The suite has no
       # screenshot baselines that need those fonts.
-      - uses: actions/download-artifact@v4
-        with:
-          name: test-build
-          path: .cache/ci-test-build
+      # Bundle on this runner; static remains independently required for merge.
+      # The immutable build is verified before this shard executes its tests.
       - run: pnpm test:e2e --partition=${{ matrix.shard }}/7
         env:
-          BL_TEST_ARTIFACT: .cache/ci-test-build
+          BL_TEST_BUILD_MODE: ci-bundle
       - uses: actions/upload-artifact@v4
         if: always()
         with:

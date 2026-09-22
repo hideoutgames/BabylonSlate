@@ -64,7 +64,18 @@ async function validArtifact(directory, expected) {
 async function currentIdentity(environment) {
   return artifactIdentity(await buildInputState(repoRoot), {
     environment: await buildEnvironmentFingerprint(repoRoot, environment),
+    buildContract: buildContract(environment),
   });
+}
+
+function buildContract(environment) {
+  const mode = environment.BL_TEST_BUILD_MODE ?? "standalone";
+  if (mode === "standalone") return "standalone-typecheck";
+  if (mode !== "ci-bundle" || !hostedExecution(environment))
+    throw new Error(
+      "ci-bundle builds require the explicit GitHub-hosted execution policy; local standalone builds retain typechecking",
+    );
+  return "independent-required-static";
 }
 
 async function assertUnchanged(expected, environment, message) {
@@ -179,8 +190,9 @@ export async function buildOwnedArtifact() {
     await report(cached, true);
     return;
   }
-  // CI static already typechecked both apps; local standalone builds include typechecks.
-  if (hostedExecution() && process.env.BL_TEST_TYPECHECKED === "1") {
+  // Each hosted browser shard bundles independently. This is not a claim that
+  // typechecking already passed: the separate required static check owns it.
+  if (buildContract(process.env) === "independent-required-static") {
     await runPnpm("build", ["--filter", "player", "exec", "vite", "build"]);
     await runPnpm("build", ["--filter", "editor", "exec", "vite", "build"]);
   } else await runPnpm("build", ["--filter", "editor", "build"]);

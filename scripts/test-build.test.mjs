@@ -77,6 +77,8 @@ export async function runStage(profile, command, args, options = {}) {
   } finally { process.env = original; }
 }
 export async function runPnpm(profile, args) {
+  if (process.env.FIXTURE_FAIL_FILTER && args[1] === process.env.FIXTURE_FAIL_FILTER)
+    throw new Error('Selected bundle failed');
   const dist = join(repoRoot, 'apps/editor/dist');
   await mkdir(join(dist, 'assets'), { recursive: true });
   await mkdir(join(repoRoot, '.cache'), { recursive: true });
@@ -556,3 +558,59 @@ test("local CI assertions cannot opt into unchecked hosted bundle commands", asy
     .map((line) => JSON.parse(line));
   assert.deepEqual(commands, [["--filter", "editor", "build"]]);
 });
+
+const hostedBundle = {
+  BL_EXECUTION_POLICY: "hosted-ci",
+  GITHUB_ACTIONS: "true",
+  RUNNER_ENVIRONMENT: "github-hosted",
+  GITHUB_RUN_ID: "123",
+  GITHUB_REPOSITORY: "fixture/repo",
+  RUNNER_OS: "Linux",
+  BL_TEST_BUILD_MODE: "ci-bundle",
+};
+
+test("independent hosted bundles preserve player/editor order and cannot substitute for standalone typechecking", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("independent-bundle");
+  const bundled = await f.run(directory, hostedBundle);
+  assert.equal(bundled.error, undefined);
+  assert.equal(bundled.identity.buildContract, "independent-required-static");
+  const checked = await f.run(directory);
+  assert.equal(checked.error, undefined);
+  assert.equal(checked.identity.buildContract, "standalone-typecheck");
+  assert.notEqual(bundled.identity.key, checked.identity.key);
+  const commands = (
+    await readFile(join(directory, ".cache/build-commands.jsonl"), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(commands, [
+    ["--filter", "player", "exec", "vite", "build"],
+    ["--filter", "editor", "exec", "vite", "build"],
+    ["--filter", "editor", "build"],
+  ]);
+  const local = await f.run(directory, {
+    CI: "true",
+    BL_TEST_BUILD_MODE: "ci-bundle",
+  });
+  assert.match(local.error ?? "", /require the explicit GitHub-hosted/);
+  assert.equal(await compilations(directory), 3);
+});
+
+for (const app of ["player", "editor"]) {
+  test(`a failed ${app} bundle publishes no independent browser artifact`, async (t) => {
+    const f = await fixture(t);
+    const directory = await f.worktree(`failed-${app}`);
+    const result = await f.run(directory, {
+      ...hostedBundle,
+      FIXTURE_FAIL_FILTER: app,
+    });
+    assert.match(result.error ?? "", /Selected bundle failed/);
+    assert.equal(
+      (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
+      0,
+    );
+    assert.equal((await publishedArtifacts(f.cache)).length, 0);
+  });
+}

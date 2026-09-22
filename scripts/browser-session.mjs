@@ -1,8 +1,14 @@
 import { startBrowserServer } from "./browser-server.mjs";
 import { browserPartitionArgs } from "./browser-partition.mjs";
+import { readBrowserResults } from "./browser-results.mjs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { commandSignal, runCommand, toolCli } from "./process-runner.mjs";
+import {
+  commandSignal,
+  runCommand,
+  toolCli,
+  repoRoot,
+} from "./process-runner.mjs";
 
 const directory = resolve(process.argv[2]);
 const identity = JSON.parse(
@@ -27,6 +33,15 @@ try {
     { env, signal: lifetime.signal },
   );
   process.exitCode = result.code;
+  if (result.code === 0) {
+    const outcomes = await readBrowserResults(
+      join(repoRoot, "test-results/timings.json"),
+      server.nonce,
+    );
+    process.stdout.write(
+      JSON.stringify({ event: "browser-results", ...outcomes }) + "\n",
+    );
+  }
 } finally {
   await server.close();
   lifetime.dispose();
