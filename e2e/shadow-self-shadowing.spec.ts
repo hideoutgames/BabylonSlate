@@ -34,7 +34,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
             ).__babylonslateShadowSelfShadowingProof === "function",
         );
         const result = await page.evaluate(
-          ({ backend, mode, configuration, receiverPlane }) =>
+          ({ backend, mode, configuration, receiverPlane, receiverTexel }) =>
             (
               window as unknown as {
                 __babylonslateShadowSelfShadowingProof: typeof runShadowSelfShadowingProof;
@@ -43,9 +43,9 @@ for (const backend of ["webgl2", "webgpu"] as const)
               backend,
               mode,
               configuration,
-              { receiverPlane },
+              { receiverPlane, receiverTexel },
             ),
-          { backend, mode, configuration, receiverPlane: process.env.BL_SHADOW_RECEIVER_PROBE === "1" },
+          { backend, mode, configuration, receiverPlane: process.env.BL_SHADOW_RECEIVER_PROBE === "1", receiverTexel: process.env.BL_SHADOW_RECEIVER_PROBE === "texel" },
         );
         for (const capture of result.captures)
           await testInfo.attach(capture.name, {

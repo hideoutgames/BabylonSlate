@@ -257,6 +257,26 @@ authored caster offsets; it is not the production automatic policy. A fresh
 native Babylon scene compares the same captured projection and light state.
 Host assertions now sample exact screenshot pixels without image resampling.
 
+At `4a41ecda`, the receiver-plane experiment removes the visible face bands,
+but the WebGL2 PBR head-top check still fails (56/356 samples, 36 unique grazing
+top-face pixels). Actual WebGPU executed on SwiftShader and has zero head
+failures at this pose; neither result qualifies A16. The matched native
+Babylon baseline has exactly matching camera/light matrices and decoded RGBA
+identical to the earlier managed authored baseline. This confirms that the
+synthetic acne does not require the FrameGraph bridge.
+
+Independent four-texel ray tests identified a test-oracle defect: several arm
+and leg samples are valid filtered transitions despite an unoccluded center
+ray. All 36 second-angle thin-edge pixels match ideal PCF shading within 0.8
+green levels; the old binary darkness gate wrongly rejects 13 valid partial
+shadows. Those raw counts above must not be interpreted alone as contact loss.
+The revised oracle uses the admitted projection's complete PCF footprint to
+separate known lit, strongly occluded and penumbra samples without relaxing
+the intensity thresholds. A separate, unqualified per-texel comparison probe
+is available to isolate the remaining grazing-face behavior; it preserves
+logical filter weights but increases comparison instructions and is not a
+production or A16 performance claim.
+
 Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
 retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
 cancelled while awaiting shared resource admission, before any build or browser

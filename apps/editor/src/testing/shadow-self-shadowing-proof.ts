@@ -25,6 +25,7 @@ import {
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { installSingleMapPcfSlopeProbe } from "./shadow-slope-probe";
 import { installReceiverPlaneProbe } from "./shadow-receiver-plane-probe";
+import { installReceiverTexelProbe } from "./shadow-receiver-texel-probe";
 
 import {
   SHADOW_BOXES,
@@ -46,7 +47,7 @@ export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",
   mode: "pbr" | "cel",
   configuration: "low" | "cascade-fallback" | "cascades",
-  options: { receiverPlane?: boolean } = {},
+  options: { receiverPlane?: boolean; receiverTexel?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
@@ -60,7 +61,9 @@ export async function runShadowSelfShadowingProof(
           disableWebGL2Support: false,
         });
   if (configuration === "cascade-fallback") engine._features.supportCSM = false;
-  const receiverProbe = options.receiverPlane
+  const receiverProbe = options.receiverTexel
+    ? installReceiverTexelProbe({ cap: 4 / 1024 })
+    : options.receiverPlane
     ? installReceiverPlaneProbe({ strength: 1, cap: 4 / 1024 })
     : null;
   const scene = new Scene(engine);
@@ -189,9 +192,16 @@ export async function runShadowSelfShadowingProof(
         sceneUnits: "synthetic world units",
         meshes: scene.meshes,
       });
-    const referencePose = async (name: string) => {
-      light.shadowEnabled = false;
-      reference = await render();
+    const updatePoints = () => {
+      const generator = light.getShadowGenerator() as ShadowGenerator;
+      const size = generator.getShadowMap()!.getSize();
+      const filter = configuration === "cascades" ? undefined : {
+        kind: "directional-single-pcf1" as const,
+        view: Array.from(generator.viewMatrix.asArray()),
+        projection: Array.from(generator.projectionMatrix.asArray()),
+        width: size.width,
+        height: size.height,
+      };
       points = shadowSurfaceSamples(
         camera.position.asArray() as ShadowTriple,
         Array.from(scene.getTransformMatrix().asArray()),
@@ -200,6 +210,7 @@ export async function runShadowSelfShadowingProof(
         SIZE,
         camera.viewport,
         boxes,
+        filter,
       );
       points.push(
         ...shadowThinContactEdgeSamples(
@@ -210,8 +221,13 @@ export async function runShadowSelfShadowingProof(
           SIZE,
           camera.viewport,
           boxes,
+          filter,
         ),
       );
+    };
+    const referencePose = async (name: string) => {
+      light.shadowEnabled = false;
+      reference = await render();
       captures.push({
         name: `${name}-shadow-contribution-off`,
         png: png(reference),
@@ -223,6 +239,8 @@ export async function runShadowSelfShadowingProof(
     };
     const capture = async (name: string, assertions = false) => {
       const pixels = await render();
+      // Use this draw's light matrices, including after changing the pose.
+      updatePoints();
       captures.push({
         name,
         png: png(pixels),
@@ -279,6 +297,7 @@ export async function runShadowSelfShadowingProof(
     } : undefined;
     settings(true);
     await capture("automatic", true);
+    await capture("automatic-repeat", true);
     if (configuration === "low") {
       // Native 9.20 PCF depth comparison moves 0.5*bias on BOTH backends.
       // 160-world-unit Low footprint/depth, 1024 map: these are independently

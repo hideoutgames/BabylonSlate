@@ -155,25 +155,19 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
     generator.normalBias = input.normalBias;
     generator.frustumEdgeFalloff = 0;
     generator.getShadowMap()!.renderList = [...nativeScene.meshes];
-    const boundedReady = async (pending: Promise<unknown>) => {
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          pending,
-          new Promise<never>((_resolve, reject) => {
-            timeout = setTimeout(
-              () => reject(new Error("Native shader readiness timed out")),
-              30_000,
-            );
-          }),
-        ]);
-      } finally {
-        clearTimeout(timeout);
+    const boundedReady = async () => {
+      const deadline = performance.now() + 30_000;
+      // Own the polling lifetime: racing Babylon's asynchronous readiness
+      // helpers against a timeout would leave their internal timers alive.
+      while (!nativeScene.isReady() || !generator.getShadowMap()!.isReadyForRendering()) {
+        if (performance.now() >= deadline)
+          throw new Error("Native shader readiness timed out");
+        await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
     };
-    await boundedReady(generator.forceCompilationAsync());
+    await boundedReady();
     const render = async () => {
-      await boundedReady(nativeScene.whenReadyAsync());
+      await boundedReady();
       nativeEngine.beginFrame();
       try {
         nativeScene.render();

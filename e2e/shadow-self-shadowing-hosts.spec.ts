@@ -228,6 +228,14 @@ async function pixels(canvas: Locator, state: ShadowDiagnostics) {
     width,
     height,
     state.viewport.cameraViewport!,
+    SHADOW_BOXES,
+    sun(state)?.generator?.cascades === 1 ? {
+      kind: "directional-single-pcf1",
+      view: sun(state)!.generator!.projections[0]!.view!,
+      projection: sun(state)!.generator!.projections[0]!.matrix!,
+      width: sun(state)!.generator!.map!.width,
+      height: sun(state)!.generator!.map!.height,
+    } : undefined,
   );
   if (points.length > 8192)
     throw new Error("Shadow sample population exceeds fixture limit");
