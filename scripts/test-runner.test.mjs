@@ -17,12 +17,16 @@ test("explicit Node and docs tests use the lighter unit workload", () => {
 
 test("one resolved policy reaches child worker settings regardless of local CI flags", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "runner lease "));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let lease;
+  t.after(async () => {
+    await lease?.release();
+    await rm(directory, { recursive: true, force: true });
+  });
   const config = join(directory, "standard.json");
   const low = join(directory, "low.json");
   await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
   await writeFile(low, JSON.stringify({ version: 1, profile: "low-memory" }));
-  const lease = await acquireResources(
+  lease = await acquireResources(
     { workers: 3, browsers: 1, memoryGiB: 6 },
     {
       directory,
@@ -30,7 +34,6 @@ test("one resolved policy reaches child worker settings regardless of local CI f
       freeMemory: () => 16 * 1024 ** 3,
     },
   );
-  t.after(() => lease.release());
   for (const [env, expected] of [
     [{ BL_TEST_PROFILE: "fast", CI: "" }, ["2", "2"]],
     [{ BL_TEST_PROFILE: "fast", CI: "true" }, ["2", "2"]],

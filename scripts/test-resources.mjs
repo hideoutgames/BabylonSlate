@@ -16,6 +16,12 @@ async function canonical(path) {
   }
 }
 
+function numericFields(value, keys) {
+  return Object.fromEntries(
+    keys.map((key) => [key, Number.isFinite(value?.[key]) ? value[key] : null]),
+  );
+}
+
 export async function resourceReport(options = {}) {
   const env = options.env ?? process.env;
   const errors = [];
@@ -42,12 +48,34 @@ export async function resourceReport(options = {}) {
         );
         // No arbitrary ticket fields, environment, commands, or tokens in reports.
         tickets.push({
-          pid: row.pid,
-          childPid: row.childPid ?? null,
+          ...numericFields(row, ["pid", "childPid"]),
           active: row.active === true,
-          reservation: row.request,
-          policy: row.policy ?? null,
-          waitingReason: row.waitingReason ?? null,
+          reservation: numericFields(row.request, [
+            "workers",
+            "browsers",
+            "memoryGiB",
+          ]),
+          policy: row.policy
+            ? {
+                ...numericFields(row.policy, [
+                  "maxRoots",
+                  "maxHeavy",
+                  "maxBypasses",
+                ]),
+                capacity: numericFields(row.policy.capacity, [
+                  "workers",
+                  "browsers",
+                  "memoryGiB",
+                  "reserveGiB",
+                ]),
+              }
+            : null,
+          waitingReason: [
+            "Active owned workload or reserved capacity",
+            "Insufficient or unknown available memory above host reserve",
+          ].includes(row.waitingReason)
+            ? row.waitingReason
+            : null,
         });
       } catch {
         errors.push("An admission ticket could not be observed");

@@ -35,6 +35,7 @@ async function fixture(t) {
     env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: configPath },
     pollMs: 5,
     freeMemory: () => 16 * 1024 ** 3,
+    memoryLimit: () => 16 * 1024 ** 3,
   };
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };

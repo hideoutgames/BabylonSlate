@@ -225,6 +225,8 @@ Low-memory enables the verified disk build cache by default. `cacheDirectory` ca
 
 The following are standard-profile accounting estimates. Every low-memory root uses three accounting slots regardless of its actual single worker. Keep `BL_TEST_PROFILE=shared`; never reduce estimates, lower reserves, increase heaps, or bypass admission to escape a queue.
 
+For local GLB regressions, `BL_TEST_MODEL_SOURCE` can point `e2e/model-pose.spec.ts` at an existing animated model on disk. It imports that file, checks a stable Model pose and advancing Animation pixels, and keeps the source outside the repository. Without the override, the test uses the bundled Mannequin.
+
 | Workload | Worker slots | Memory reservation |
 | --- | ---: | ---: |
 | Node tooling | 1 | 0.75 GiB |

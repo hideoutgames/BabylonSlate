@@ -76,11 +76,12 @@ export async function runStage(profile, command, args, options = {}) {
     return await (await import('./test-build.mjs')).buildOwnedArtifact();
   } finally { process.env = original; }
 }
-export async function runPnpm() {
+export async function runPnpm(profile, args) {
   const dist = join(repoRoot, 'apps/editor/dist');
   await mkdir(join(dist, 'assets'), { recursive: true });
   await mkdir(join(repoRoot, '.cache'), { recursive: true });
   await appendFile(join(repoRoot, '.cache/compilations.log'), 'compile\\n');
+  await appendFile(join(repoRoot, '.cache/build-commands.jsonl'), JSON.stringify(args)+'\\n');
   await writeFile(join(dist, 'index.html'), '<script type="module" src="/assets/main.js"></script>');
   await writeFile(join(dist, 'assets/main.js'), await readFile(join(repoRoot, 'apps/editor/src/main.js')));
   if (process.env.FIXTURE_BUILD_CHANGE)
@@ -540,4 +541,18 @@ test("hosted CI and explicitly disabled shared caches retain worktree-local arti
     );
     assert.equal((await publishedArtifacts(f.cache)).length, 0);
   }
+});
+
+test("local CI assertions cannot opt into unchecked hosted bundle commands", async (t) => {
+  const f = await fixture(t);
+  const local = await f.worktree("local-ci");
+  const result = await f.run(local, { CI: "true", BL_TEST_TYPECHECKED: "1" });
+  assert.equal(result.error, undefined);
+  const commands = (
+    await readFile(join(local, ".cache/build-commands.jsonl"), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(commands, [["--filter", "editor", "build"]]);
 });

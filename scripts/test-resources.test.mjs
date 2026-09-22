@@ -41,6 +41,10 @@ test("diagnostics expose owned reservations without secrets or unrelated environ
       token: "private-ticket-token",
       command: "private-command",
       request: { workers: 1, memoryGiB: 2, browsers: 0 },
+      policy: {
+        command: "private-policy-command",
+        capacity: { secret: "private-capacity-value" },
+      },
     }),
   );
   const report = await resourceReport({
