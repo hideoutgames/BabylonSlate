@@ -32,6 +32,23 @@ shader/graph preparation and the host draw boundary. A focused host regression
 models the native resize notification and requires actual 384×216 output before
 presentation; the loose WebGPU export remains the integration acceptance case.
 
+At `6688d680`, the four selected loading/output unit cases passed, followed by
+all five selected browser cases: three standalone settings variants and both
+Scalability Play APIs. Five changed files passed scoped lint; the scoped editor
+typecheck passed. The initial unit attempt used NullEngine's fixed scale-1 getter;
+its driver boundary was corrected to model native scale storage before this pass.
+The browser cases verify 384×216 and 240×135 output, actual component pixels,
+preserved effects after resizing, scene transitions, compiled settings/reset and
+reload. These are effective WARP WebGL2/SwiftShader WebGPU functional results:
+[WebGL2 output](../assets/renderer-qualification/2026-09-22-settings-repair/webgl2-standalone-final-diagnostics.json),
+[WebGPU output](../assets/renderer-qualification/2026-09-22-settings-repair/webgpu-standalone-final-diagnostics.json),
+[injected fallback](../assets/renderer-qualification/2026-09-22-settings-repair/fallback-standalone-final-diagnostics.json),
+[WebGL2 graph](../assets/renderer-qualification/2026-09-22-settings-repair/webgl2-play-compiled-scalability.json),
+[WebGPU graph](../assets/renderer-qualification/2026-09-22-settings-repair/webgpu-play-compiled-scalability.json),
+[WebGPU CEL pixels](../assets/renderer-qualification/2026-09-22-settings-repair/webgpu-authored-cel.png).
+The earlier loose-export failures remain historical failures, superseded for this
+path by the repaired five-case run. Manual acceptance and hardware cost remain open.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed
