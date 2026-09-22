@@ -1115,6 +1115,23 @@ function initializeEngine(
       })
     : null;
   onRollback(() => particleService?.dispose());
+  binding.slotVisualReady = (slotId, successor) => {
+    // Move emitter nodes before recursive retirement of the old visual root.
+    particleService?.bindSlot(slotId, successor);
+    queueMicrotask(() => {
+      if (successor.isDisposed() || binding.meshes.get(slotId) !== successor) return;
+      appliedSnapshotIdentity = null;
+      const pending = binding.pendingAnimState?.get(slotId);
+      if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
+        animationGroups: successor.getScene().animationGroups,
+        spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+        spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
+        applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
+      }), pending);
+      scheduler.invalidate("snapshot");
+    });
+  };
+
   if (particleService && options.particleLibrary) {
     particleService.setLibrary(options.particleLibrary);
   }

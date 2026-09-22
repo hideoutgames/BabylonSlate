@@ -28,6 +28,12 @@ import { RENDERING_GROUP } from "./sorting";
 export { encodePngRgba } from "./default-skybox/png";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
+const preparations = new WeakMap<AbstractMesh, Promise<void>>();
+
+/** Owned cube upload/accounting work captured when this skybox was constructed. */
+export function skyboxMeshPreparation(mesh: AbstractMesh): Promise<void> | undefined {
+  return preparations.get(mesh);
+}
 
 /** ResourceCache key for a skybox cubemap (not a project Texture guid). */
 export function skyboxCubeCacheGuid(faces?: SkyboxFaces | null): string {
@@ -109,29 +115,58 @@ export function createSkyboxMesh(
   size = DEFAULT_SKYBOX_SIZE,
 ): Mesh {
   const cubeTexture = cubeLease.resource;
-  const mesh = MeshBuilder.CreateBox(name, { size: parseSkyboxSize(size) }, scene);
-  const material = new PBRMaterial(`${name}:skybox`, scene);
-  material.backFaceCulling = false;
-  material.disableLighting = true;
-  material.twoSidedLighting = true;
-  // Infinite-far sky depth is not comparable with ordinary camera depth.
-  material.disableDepthWrite = true;
-  cubeTexture.coordinatesMode = Texture.SKYBOX_MODE;
-  material.reflectionTexture = cubeTexture;
-  material.onDisposeObservable.add(() => {
-    if (material.reflectionTexture === cubeTexture) {
-      material.reflectionTexture = null;
+  let mesh: Mesh | undefined;
+  let material: PBRMaterial | undefined;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    try { material?.dispose(false, false); } finally { cubeLease.release(); }
+  };
+  try {
+    mesh = MeshBuilder.CreateBox(name, { size: parseSkyboxSize(size) }, scene);
+    material = new PBRMaterial(`${name}:skybox`, scene);
+    const ownedMaterial = material;
+    const ownedMesh = mesh;
+    material.backFaceCulling = false;
+    material.disableLighting = true;
+    material.twoSidedLighting = true;
+    // Infinite-far sky depth is not comparable with ordinary camera depth.
+    material.disableDepthWrite = true;
+    cubeTexture.coordinatesMode = Texture.SKYBOX_MODE;
+    material.reflectionTexture = cubeTexture;
+    material.onDisposeObservable.add(() => {
+      if (ownedMaterial.reflectionTexture === cubeTexture) {
+        ownedMaterial.reflectionTexture = null;
+      }
+    });
+    mesh.material = material;
+    mesh.onDisposeObservable.addOnce(release);
+    if (cubeLease.ready) {
+      preparations.set(mesh, cubeLease.ready);
+      void cubeLease.ready.catch((error: unknown) => {
+        if (released || ownedMesh.isDisposed()) return;
+        // An initial failure leaves a disabled placeholder, with no abandoned
+        // material keeping scene readiness blocked. Staged owners retire it.
+        if (ownedMesh.material === ownedMaterial) {
+          ownedMesh.material = null;
+          ownedMesh.setEnabled(false);
+        }
+        release();
+        console.warn(`[render] Skybox ${name} preparation failed: ${String(error)}`);
+      });
     }
-  });
-  mesh.material = material;
-  mesh.onDisposeObservable.addOnce(() => { material.dispose(false, false); cubeLease.release(); });
-  mesh.ignoreCameraMaxZ = true;
-  mesh.receiveShadows = false;
-  mesh.applyFog = false;
-  mesh.isPickable = false;
-  mesh.renderingGroupId = RENDERING_GROUP.background;
-  mesh.metadata = { ...(mesh.metadata ?? {}), skybox: true };
-  return mesh;
+    mesh.ignoreCameraMaxZ = true;
+    mesh.receiveShadows = false;
+    mesh.applyFog = false;
+    mesh.isPickable = false;
+    mesh.renderingGroupId = RENDERING_GROUP.background;
+    mesh.metadata = { ...(mesh.metadata ?? {}), skybox: true };
+    return mesh;
+  } catch (error) {
+    try { mesh?.dispose(); } finally { release(); }
+    throw error;
+  }
 }
 
 export function createSkyboxMeshForFaces(

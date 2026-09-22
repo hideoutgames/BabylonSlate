@@ -40,6 +40,7 @@ import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
   restoreAlbedoMaterial,
+  ownedVisualTexturePreparation,
   applyTilemapAlbedoTextures,
   meshAssetFingerprint,
   type MeshAssetContext,
@@ -165,6 +166,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimEpoch?: Map<number, number>;
   /** Called after a slot's AnimationGroups are registered (replay pending seek). */
   slotAnimReady?: (slotId: number) => void;
+  /** Move external render users to a prepared successor before retiring its predecessor. */
+  slotVisualReady?: (slotId: number, successor: Mesh) => void;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
   /** Material asset guid per slot (whole actor), keyed by slotId. */
@@ -529,10 +532,11 @@ function applyPlayShadows(scene: Scene): void {
 }
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
-const pendingModelVisuals = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+const rejectedTextureAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
 
-function cancelPendingModelVisual(binding: SnapshotSceneBinding, slotId: number): void {
-  const pending = pendingModelVisuals.get(binding);
+function cancelPendingVisualReplacement(binding: SnapshotSceneBinding, slotId: number): void {
+  const pending = pendingVisualReplacements.get(binding);
   pending?.get(slotId)?.dispose();
   pending?.delete(slotId);
 }
@@ -543,7 +547,7 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
-  cancelPendingModelVisual(binding, command.slotId);
+  cancelPendingVisualReplacement(binding, command.slotId);
   const primaryId = !partsNeedOrigin(command.parts)
     ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
     : undefined;
@@ -577,6 +581,14 @@ export function applyAssignMesh(
     binding.meshParts.set(command.slotId, command.parts);
   } else {
     binding.meshParts.delete(command.slotId);
+  }
+  if (command.skybox) {
+    binding.skyboxProps.set(command.slotId, command.skybox);
+  } else if (meshKind === "skybox") {
+    binding.skyboxProps.set(command.slotId, {
+      size: 1000,
+      faces: emptySkyboxFaces(),
+    });
   }
   if (command.light) binding.lightProps.set(command.slotId, command.light);
   if (command.text3d) {
@@ -652,8 +664,8 @@ export function applyAssignMesh(
   if (existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
     const guid = command.meshAssetGuid;
     const staged = createModelActorRoot(scene, existing.name);
-    const pending = pendingModelVisuals.get(binding) ?? new Map<number, Mesh>();
-    pendingModelVisuals.set(binding, pending);
+    const pending = pendingVisualReplacements.get(binding) ?? new Map<number, Mesh>();
+    pendingVisualReplacements.set(binding, pending);
     pending.set(command.slotId, staged);
     const ownsLoad = () => pending.get(command.slotId) === staged && binding.meshes.get(command.slotId) === existing;
     const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, staged,
@@ -676,6 +688,77 @@ export function applyAssignMesh(
       if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
       if (binding.meshes.get(command.slotId) !== staged) staged.dispose();
     }).catch(() => {});
+    return;
+  }
+  const ownsTexture = (kind: string | null | undefined) =>
+    kind === "skybox" || kind === "sprite" || kind === "tilemap";
+  if (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind)))) {
+    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    const rejected = rejectedTextureAssignments.get(binding) ?? new Map<number, string>();
+    rejectedTextureAssignments.set(binding, rejected);
+    if (rejected.get(command.slotId) === descriptor) return;
+    const targets: PlayVisualTargets = { spriteOverlays: new Map(), lights: new Map(), cameras: new Map() };
+    const deferred: Array<() => void> = [];
+    let candidate: Mesh | undefined;
+    let adopted = false;
+    const releaseProvisional = () => {
+      if (adopted) return;
+      for (const light of targets.lights.values()) light.dispose();
+      for (const camera of targets.cameras.values()) camera.dispose();
+      targets.lights.clear(); targets.cameras.clear();
+    };
+    try {
+      candidate = createPlayVisual(scene, command.slotId, binding, deferred, targets);
+      candidate.setEnabled(false);
+      candidate.onDisposeObservable.addOnce(releaseProvisional);
+      stampOverlayPick(candidate, command);
+      applyMaterialToActorMeshes(binding, command.slotId, candidate);
+    } catch (error) {
+      candidate?.dispose(); releaseProvisional();
+      rejected.set(command.slotId, descriptor);
+      console.warn(`[render] Visual texture replacement failed: ${String(error)}`);
+      return;
+    }
+    const staged = candidate;
+    const pending = pendingVisualReplacements.get(binding) ?? new Map<number, Mesh>();
+    pendingVisualReplacements.set(binding, pending);
+    pending.set(command.slotId, staged);
+    const ownsLoad = () => pending.get(command.slotId) === staged &&
+      binding.meshes.get(command.slotId) === existing && !staged.isDisposed() && !scene.isDisposed;
+    void (ownedVisualTexturePreparation(staged) ?? Promise.resolve()).then(() => {
+      if (!ownsLoad()) return;
+      staged.position.copyFrom(existing.position);
+      staged.rotation.copyFrom(existing.rotation);
+      staged.rotationQuaternion = existing.rotationQuaternion?.clone() ?? null;
+      staged.scaling.copyFrom(existing.scaling);
+      staged.parent = existing.parent;
+      applyMaterialToActorMeshes(binding, command.slotId, staged);
+      // Retirement must not cancel this winning candidate or its new helpers.
+      binding.slotVisualReady?.(command.slotId, staged);
+      pending.delete(command.slotId);
+      disposeSlotVisuals(binding, command.slotId);
+      binding.meshes.set(command.slotId, staged);
+      for (const [slot, overlay] of targets.spriteOverlays) (binding.spriteOverlays ??= new Map()).set(slot, overlay);
+      for (const [slot, light] of targets.lights) {
+        binding.lights.set(slot, light);
+        const props = binding.lightProps.get(slot);
+        if (props) applyAuthoredLightProperties(light, props); else light.setEnabled(true);
+      }
+      for (const [slot, camera] of targets.cameras) binding.cameras.set(slot, camera);
+      adopted = true;
+      rejected.delete(command.slotId);
+      staged.setEnabled(true);
+      setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
+      for (const start of deferred) start();
+      refreshPlayActiveCamera(scene, binding);
+      applyPlayShadows(scene);
+    }, () => {
+      if (ownsLoad()) rejected.set(command.slotId, descriptor);
+      // The exact texture owner reports preparation failure once.
+    }).finally(() => {
+      if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
+      if (!adopted) staged.dispose();
+    }).catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
     return;
   }
   const stagesText = meshKind === "2dtext" || meshKind === "2drichtext" ||
@@ -708,14 +791,6 @@ export function applyAssignMesh(
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
-  if (command.skybox) {
-    binding.skyboxProps.set(command.slotId, command.skybox);
-  } else if (meshKind === "skybox") {
-    binding.skyboxProps.set(command.slotId, {
-      size: 1000,
-      faces: emptySkyboxFaces(),
-    });
-  }
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
   for (const start of deferredModels) start();
@@ -735,6 +810,7 @@ export function migratePlaySlotVisual(
   const existing = binding.meshes.get(slotId);
   if (!existing) return null;
   if (existing.getScene() === scene) return existing;
+  cancelPendingVisualReplacement(binding, slotId);
   const position = existing.position.clone();
   const rotationQuaternion = existing.rotationQuaternion?.clone();
   const rotation = existing.rotation.clone();
@@ -932,7 +1008,8 @@ export function retirePlaySlot(
   slotId: number,
 ): void {
   rejectedTextAssignments.get(binding)?.delete(slotId);
-  cancelPendingModelVisual(binding, slotId);
+  rejectedTextureAssignments.get(binding)?.delete(slotId);
+  cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
@@ -1000,7 +1077,7 @@ function disposeSlotVisuals(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
-  cancelPendingModelVisual(binding, slotId);
+  cancelPendingVisualReplacement(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.spriteOverlays?.get(slotId)?.dispose();
@@ -1012,17 +1089,24 @@ function disposeSlotVisuals(
   binding.cameras.delete(slotId);
 }
 
+type PlayVisualTargets = {
+  spriteOverlays: Map<number, Mesh>;
+  lights: Map<number, Light>;
+  cameras: Map<number, Camera>;
+};
+
 function createPlayVisual(
   scene: Scene,
   slotId: number,
   binding: SnapshotSceneBinding,
   deferredModels?: Array<() => void>,
+  targets?: PlayVisualTargets,
 ): Mesh {
   const parts = binding.meshParts.get(slotId);
   const meshKind = binding.meshKinds.get(slotId);
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
-    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels);
+    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels, undefined, targets);
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1048,6 +1132,7 @@ function createPlayVisual(
         part.text2d,
         deferredModels,
         retainedBitmapBytes,
+        targets,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1079,6 +1164,7 @@ export function createPlayMesh(
   partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
   deferredModels?: Array<() => void>,
   retainedBitmapBytes?: number,
+  targets?: PlayVisualTargets,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -1123,7 +1209,7 @@ export function createPlayMesh(
       overlay.parent = mesh;
       overlay.visibility = 0;
       applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding);
-      binding.spriteOverlays.set(slotId, overlay);
+      (targets?.spriteOverlays ?? binding.spriteOverlays).set(slotId, overlay);
     }
     return mesh;
   }
@@ -1254,8 +1340,9 @@ export function createPlayMesh(
               : new PointLight(lightName, Vector3.Zero(), scene);
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
-      binding.lights.set(slotId, light);
-      applyPlayShadows(scene);
+      (targets?.lights ?? binding.lights).set(slotId, light);
+      if (targets) light.setEnabled(false);
+      else applyPlayShadows(scene);
     }
     if (meshKind === "camera" && binding) {
       const camera = new UniversalCamera(
@@ -1271,8 +1358,8 @@ export function createPlayMesh(
       camera.inputs.clear();
       const props = binding.cameraProps.get(slotId);
       if (props) applyAuthoredCameraProperties(camera, props);
-      binding.cameras.set(slotId, camera);
-      refreshPlayActiveCamera(scene, binding);
+      (targets?.cameras ?? binding.cameras).set(slotId, camera);
+      if (!targets) refreshPlayActiveCamera(scene, binding);
     }
     return finishPlayWorldMesh(mesh);
   }
@@ -1422,6 +1509,12 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  const pending = pendingVisualReplacements.get(binding);
+  for (const candidate of pending?.values() ?? []) candidate.dispose();
+  pending?.clear();
+  pendingVisualReplacements.delete(binding);
+  rejectedTextureAssignments.delete(binding);
+  rejectedTextAssignments.delete(binding);
   binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
