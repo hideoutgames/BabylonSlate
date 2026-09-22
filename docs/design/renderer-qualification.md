@@ -89,6 +89,38 @@ are retained. Route B as a whole remains **PENDING**: texture preparation,
 asymmetric orientation, parenting, Play and reopen are not established by these
 initial steps. Routes A/C and native WebGPU manual qualification also remain pending.
 
+The next Computer Use segment ran the integrity-checked production artifact for
+`90267c2bd41846e6924d54cf367fff51dd4b0057` (key
+`5ed00cf36afd408b3c33a38fec982e640be153b44b47b75f8e3e85f8f9277875`).
+It reopened the same project, parented Emitter Copy under Emitter using an
+Outliner pointer drag, reset the child transform to position (0,1,0), rotation
+(0,0,0), scale (1,1,1), and changed parent scale to (1.5,0.75,1). The parent light
+component was disabled while its child remained enabled. Width 3, height 2,
+orange color and intensity 12 persisted. Play presented illuminated floor/box
+pixels without editor guides. Stop followed by application reload and normal
+project reopen retained the parent/child hierarchy and child properties; Save All
+remained disabled. These steps **PASS**, but do not qualify textured orientation.
+Actual captures: [parented editor](../assets/renderer-qualification/2026-09-22-computer-use/area-light-parented-scaled.png),
+[Play](../assets/renderer-qualification/2026-09-22-computer-use/area-light-parented-play.png),
+[reopened child](../assets/renderer-qualification/2026-09-22-computer-use/area-light-parented-reopened.png).
+
+Normal Content Browser Import opened a multiple-file chooser, but Computer Use
+`setFiles` failed with Chrome's `Not allowed` error. The extension's **Allow
+access to file URLs** permission was requested from the user. The ordinary
+Texture/Prepare Emission, asymmetric orientation, replace/clear and cancellation
+subroute is **BLOCKED** at this point; no automated substitute is counted as a
+manual pass. Numeric source fixtures are retained in
+`e2e/fixtures/area-emission-asymmetric.png` and `area-emission-swapped.png` for
+reproduction once import is available. The manual session has not yet collected
+the owning Engine adapter identity, so it establishes no hardware cost or native
+WebGPU coverage. A pre-existing DockView context-menu enterprise-module console
+error was observed; no rendering error was shown in this Play segment.
+
+The user approved a machine-wide 1 GiB host reserve while retaining shared mode,
+one heavy phase, bounded queue fairness and all source/artifact checks. Old-policy
+queued jobs have cleared. Checks remain serialized and explicitly selected; this
+resource adjustment does not convert queued, cancelled or stale work into passes.
+
 The bounded candidate is now opt-in through the production Scene render
 coordinator; its [design and limits](../architecture/render.md#shared-outline-candidate-22-september-2026)
 describe ownership, formats and the four-draw/seven-record maximum. It has not
