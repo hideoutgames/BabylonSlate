@@ -21,9 +21,9 @@ export function materialViewportTestSnapshot(
     meshUniqueId: visual.uniqueId,
     diagnostic: {
       enabled: visual.isEnabled(), visible: visual.isVisible, visibility: visual.visibility,
-      vertices: visual.getTotalVertices(), world: Array.from(visual.computeWorldMatrix(true).asArray()),
+      vertices: visual.getTotalVertices(), world: Array.from(visual.getWorldMatrix().asArray()),
       bounds: [visual.getBoundingInfo().boundingBox.minimumWorld.asArray(), visual.getBoundingInfo().boundingBox.maximumWorld.asArray()],
-      material: material ? { ready: material.isReady(visual), backFaceCulling: material.backFaceCulling,
+      material: material ? { backFaceCulling: material.backFaceCulling,
         alpha: material.alpha, textures: material.getActiveTextures().map(texture => ({
           name: texture.name, ready: texture.isReady(), size: texture.getSize(), alpha: texture.hasAlpha,
           disposed: !texture.getInternalTexture(),
