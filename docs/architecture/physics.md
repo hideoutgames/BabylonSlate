@@ -60,7 +60,7 @@ Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld(
 
 Havok bodies live independently of collider count. Each body owns its current collider shapes and optional compound container; colliders use canonical scaled geometry and one attachment-local rigid pose. `applyColliderChanges` prepares a body’s upserts/removals together, attaches the next topology to the existing body, then publishes IDs and retires detached resources. Failed preparation preserves the working set. Failed native attachment rolls back; a failed rollback is reported and its possibly attached resources remain owned until teardown.
 
-The Babylon 9.20.0 adapter detaches the final shape through `HavokPlugin.setShape(body, null)` before clearing `body.shape`. The setter alone does not detach Havok geometry. The repository patch supplies `[0n]` for the plugin’s null native handle: Havok 1.3.14’s generated binding requires a one-element `HP_ShapeId` tuple, and the upstream scalar `0n` throws before detachment. Replacement reapplies authored mass while recalculating derived inertia, preserving velocities independently. Native bodies/controllers retire before their owned shapes. Mesh helpers are scoped to synchronous shape construction (Havok copies their data); query shapes retire in `finally`.
+The Babylon 9.20.0 adapter detaches the final shape through `HavokPlugin.setShape(body, null)` before clearing `body.shape`. The setter alone does not detach Havok geometry. The repository patch supplies `[0n]` for the plugin’s null native handle: Havok 1.3.14’s generated binding requires a one-element `HP_ShapeId` tuple, and the upstream scalar `0n` throws before detachment. Replacement reapplies authored mass while recalculating derived inertia, preserving velocities independently. Native bodies/controllers retire before their owned shapes. Malformed shape parameters, unsupported shape kinds, degenerate triangles, and unsupported shear are rejected before native allocation; the built-in complex sphere omits its zero-area pole faces. Mesh helpers are scoped to synchronous shape construction (Havok copies their data); query shapes retire in `finally`.
 
 `teleportBody` immediately updates native pose without a render callback, normalizes valid quaternions, preserves linear/angular velocity by default, and accepts `{ velocity: "reset" }`. Teleports wake sleeping bodies. The pinned Havok binding updates pose immediately but leaves world query membership stale after a completed step. The isolated worker adapter refreshes membership by removing/reinserting the same native body handle, without a solver step or Babylon body removal; native result failures roll back through the same adapter. Body identity, callbacks, and native users remain attached to that handle. `setBodyTargetTransform` moves kinematic bodies through native targets. Dynamic simulation readback does not teleport. Requests made during native contact callbacks queue until stepping finishes; a query cannot observe queued changes from within that callback. Collider transactions retire prior actor-pair trigger bookkeeping; native contacts in the next step establish the replacement’s overlap lifetime.
 
@@ -180,3 +180,32 @@ pnpm --silent agent:wait local --script test '--' packages/physics/src/collider-
 ```
 
 The invalidation fixtures cover ordinary shape ownership/replacement, local pose, filter/material tuning, effective scale, nonphysics parents and shear failure, same-GUID component/actor replacement, eligibility changes, and same/changed installed model generations. Still pending: all listed tests; real-Havok unchanged-content construction/resource counts; preparation/simulation/readback timing distributions; scoped physics/runtime/object-model typechecks and changed-file lint; independent review; relevant browser/player integration; and required PR CI/merge. No broad local suite is requested. Keep existing native trigger/teleport failures visible until their corrected cases pass.
+
+
+## Native lifecycle verification pickup
+
+Local checks were deferred at the user's request on 2026-09-22. Branch `agent/engine-physics-lifecycle-b`, implementation checkpoint `82ae49a0`, is **unverified and unmerged**; no PR exists. Keep `BL_TEST_PROFILE=shared` and the machine-wide resource configuration unchanged when resuming. The physical A16 check was waived; local native/browser evidence is still required.
+
+- Baseline `2bbb3ef8`: three real packaged-Havok lifecycle regressions failed (native removal, shape ownership, query helpers). Later null-detachment/resource tests ran, but the native transaction delivery has not passed as a whole.
+- At `df12f40b`, immediate teleport changed native QTransform but the next ray missed. A controlled same-body world reinsert made the ray hit; the production adapter/result-check correction at `6c775fc7` has **not been tested**. Do not count mirrored node positions as query proof.
+- The 60-second transaction selector timed out inside the trigger generation fixture. Its helper terminated its own child tree. Temporary per-case/stage diagnostics remain to locate the exact native operation; remove them after fixing the failure. A timeout is not a passed resource/trigger test.
+- Packaged Havok is `1.3.14`, Babylon is patched `9.20.0`; packaged/vendor WASM SHA-256 is `026917766F534C156286F07975850978DABF17C42E742BBFAAEBBCB2215E4E11` (case-insensitive). The patch includes the required nullable shape tuple and checked native attachment/teleport results. Recompute the lockfile patch identity after combining other patch changes.
+
+Resume the release-critical cases first, with bounded timeouts (PowerShell):
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'ends retired trigger' --disableConsoleIntercept
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'teleports falling|keeps constraints|retains controller|defers contact' --disableConsoleIntercept
+pnpm --silent agent:wait local --script test --timeout-seconds 120 '--' packages/physics/src/havok-transactions.test.ts packages/physics/src/havok-lifecycle.test.ts
+```
+
+After those diagnoses pass, run these explicit affected files in separate admitted batches:
+
+```powershell
+pnpm --silent agent:wait local --script test '--' packages/physics/src/collider-validation.test.ts packages/runtime/src/physics-sync-transactions.test.ts packages/runtime/src/physics-teleport-runtime.test.ts
+pnpm --silent agent:wait local --script test '--' packages/physics/src/physics.test.ts packages/physics/src/havok-v2.test.ts packages/physics/src/line-trace.test.ts packages/assets/src/mesh-collision.test.ts
+pnpm --silent agent:wait local --script test '--' packages/runtime/src/physics-sync.test.ts packages/runtime/src/physics-duplicate-identities.test.ts packages/runtime/src/collision-events.test.ts packages/runtime/src/tilemap-physics.test.ts packages/runtime/src/script-host-physics-queries.test.ts
+```
+
+The first native batch covers 300 compound edit cycles, first/middle/final child removal, asymmetric local poses, provisional cleanup/rollback failure, immediate queries, falling/sleeping velocity policy, native constraints/controllers, and contact-callback ordering. The affected consumer batches cover generated sphere validation, Rapier query/trigger behavior, source replacement, runtime gameplay teleport, SceneLayer routing, and existing mesh/sprite/tilemap collision behavior. All remain pending against the current correction. Also pending: scoped physics/runtime typechecks, lint on changed TypeScript, relevant browser/player integration, independent review, and required PR CI/merge. No full local suite is requested.
