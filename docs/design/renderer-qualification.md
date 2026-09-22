@@ -260,6 +260,7 @@ failed result rather than being relabeled.
 | Render, player and editor package typechecks, serialized through shared admission | `d1469bf8` | Passed; subsequent editor fixture edits are not covered by this result |
 | Selected `shadow-self-shadowing.spec.ts`, desktop Chrome, `webgl2 low pbr` | `d1469bf8` | Failed the real pixel assertion; images and effective state retained locally |
 | Same selected browser case with extended depth/distance diagnostics and registered thin caster | `65faac7d` | Build passed; browser never started before the 900-second admission timeout |
+| ESLint on the three updated synthetic fixture/spec files and controller test | `8d69b890` | Never started before the 180-second shared-admission timeout; latest fixture static verification remains pending |
 
 Focused unit commands used `pnpm --silent agent:wait local --script test --`
 with only the named files. Browser commands used
