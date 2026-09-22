@@ -11,6 +11,14 @@ function distribution(values: number[]) {
 }
 
 export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
+  const progress = document.createElement("pre");
+  progress.dataset.testid = "shared-outline-cost-progress";
+  document.getElementById("root")!.append(progress);
+  let phase = "engine initialization";
+  const publish = (status: string, detail: unknown = null) => {
+    progress.textContent = JSON.stringify({ backend, phase, status, detail });
+  };
+  publish("running");
   const canvas = document.createElement("canvas");
   canvas.width = 640; canvas.height = 360;
   document.getElementById("root")!.append(canvas);
@@ -74,6 +82,8 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
         view.replaceContributions(contributions, instances); renderer.invalidate();
       };
       for (const mode of ["off", "global", "component", "selection", "all", "off-restored"]) {
+        phase = `${count} instances: ${mode}`;
+        publish("preparing", { measurements, lifecycle });
         setMode(mode); await warm();
         const before = { owner: owner.diagnostics(), view: view.diagnostics() };
         const cpu: number[] = [], cadence: number[] = [], gpu: number[] = [], draws: number[] = [];
@@ -94,8 +104,14 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
           after: { owner: owner.diagnostics(), view: view.diagnostics() } });
       }
       for (let cycle = 0; cycle < 4; cycle++) {
+        phase = `${count} instances: lifecycle ${cycle} all at 800x450`;
+        publish("preparing", { measurements, lifecycle });
         setMode("all"); engine.setSize(800, 450); renderer.invalidate(); await warm();
+        phase = `${count} instances: lifecycle ${cycle} selection`;
+        publish("preparing", { measurements, lifecycle });
         setMode("selection"); await warm();
+        phase = `${count} instances: lifecycle ${cycle} off at 640x360`;
+        publish("preparing", { measurements, lifecycle });
         setMode("off"); engine.setSize(640, 360); renderer.invalidate(); await warm();
         await owner.whenReleased();
         lifecycle.push({ count, cycle, reservations: managedRenderReservations(engine), owner: owner.diagnostics(),
@@ -104,6 +120,7 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
       for (const mesh of instances) mesh.dispose();
       renderer.invalidate();
     }
+    publish("complete", { measurements, lifecycle });
     return { requestedBackend: backend, effectiveBackend: engine.isWebGPU ? "webgpu" : engine instanceof Engine && engine.webGLVersion === 2 ? "webgl2" : "webgl1",
       adapter: engine.getInfo(), viewport: { width: innerWidth, height: innerHeight }, devicePixelRatio,
       output: { width: 640, height: 360, dynamicResolution: false, samples: 1 },
@@ -114,6 +131,11 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
         geometry: "Conservative submitted triangle upper bound, not a measured GPU counter",
         interaction: "Synthetic membership/resize only; hands-on gizmo and Play/scene transitions require separate acceptance" },
       measurements, lifecycle };
+  } catch (error) {
+    publish("failed", { error: String(error), measurements, lifecycle,
+      adapter: engine.getInfo(), tasks: renderer.taskNames(), owner: owner.diagnostics(),
+      view: view.diagnostics(), reservations: managedRenderReservations(engine) });
+    throw new Error(`Shared outline cost failed at ${phase}: ${String(error)}`, { cause: error });
   } finally {
     detach(); await renderer.retire(); view.dispose(); await owner.whenReleased();
     instrument?.dispose(); scene.dispose(); engine.dispose(); canvas.remove();

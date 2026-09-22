@@ -101,6 +101,22 @@ routes, independent output acceptance and hardware cost remain open. Retrying
 normal Texture import in Chrome still failed at `fileChooser.setFiles` with
 `Not allowed`; no Texture preparation pass is claimed. The PR is unmerged.
 
+The normal Class editor was used to add and wire Begin Play → Set Scalability
+Preset (Low) → Set Render Scale (0.8), compile without diagnostics, save, and
+place the Class through Add Actor → Project. Play on native WebGPU changed the
+actual buffer from 1280×527 to 1024×421; stopping left Save All disabled. This
+qualifies this authored chain, not the still-pending manual changed-event,
+effective-readback and reset chain:
+[saved graph](../assets/renderer-qualification/2026-09-22-computer-use-cel/scalability-authored-chain.png),
+[presented output](../assets/renderer-qualification/2026-09-22-computer-use-cel/scalability-authored-play.png).
+
+The authorized T3 fallback uses Chromium 150 on the same RTX 2060 through
+ANGLE/D3D11. Its first hardware cost run failed with Scene rendering preparation
+timed out; no complete timing report was returned. The fixture now retains
+phase, completed samples and failure diagnostics in a DOM progress record so
+the failure can be reproduced without losing its location. This remains a FAIL,
+not desktop performance qualification.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed
