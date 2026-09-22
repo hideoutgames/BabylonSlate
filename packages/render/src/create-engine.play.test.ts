@@ -438,6 +438,10 @@ describe("Play createEngine view", () => {
 
   it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
     const engine = sharedEngine();
+    // NullEngine hard-codes scale 1; model the native scale storage boundary.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
     const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);
     let width = 256, height = 256;
