@@ -981,6 +981,10 @@ class InProcessRuntime implements RuntimeDriver {
         if (!target) return;
         this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
+      teleportActor: (actor, options) => {
+        const sync = actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
+        sync.teleportActor(actor, this.world, options);
+      },
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },

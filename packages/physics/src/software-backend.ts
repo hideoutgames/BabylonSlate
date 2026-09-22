@@ -1,4 +1,5 @@
 import type { PhysicsBackend } from "./backend";
+import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import {
   isIdentityQuat,
@@ -7,6 +8,7 @@ import {
 import type {
   CharacterControllerDesc,
   ColliderDesc,
+  ColliderChanges,
   ColliderShape,
   HitResult,
   LineTraceOptions,
@@ -14,6 +16,7 @@ import type {
   OverlapResult,
   PhysicsContactEvent,
   PhysicsTransform,
+  TeleportOptions,
   PhysicsWorldKind,
   RigidBodyDesc,
   RigidBodyTuning,
@@ -312,10 +315,18 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     }
   }
 
-  setBodyTransform(bodyId: string, transform: PhysicsTransform): void {
+  teleportBody(bodyId: string, transform: PhysicsTransform, options: TeleportOptions = {}): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;
-    body.transform = cloneTransform(transform);
+    body.transform = normalizedPhysicsPose(transform);
+    if (options.velocity === "reset") { body.linearVelocity = vec(); body.angularVelocity = vec(); }
+  }
+
+  setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
+    const body = this.bodies.get(bodyId);
+    if (!body) return;
+    if (body.desc.motionType !== "kinematic") throw new Error("Only kinematic bodies accept motion targets");
+    body.transform = normalizedPhysicsPose(transform);
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
@@ -381,7 +392,19 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     this.assertLive();
     if (this.kind === "2d" && isShape3D(desc.shape)) return;
     if (this.kind === "3d" && isShape2D(desc.shape)) return;
-    this.colliders.set(desc.id, { desc: { ...desc } });
+    this.applyColliderChanges(desc.bodyId, { upsert: [desc], remove: [] });
+  }
+
+  applyColliderChanges(bodyId: string, changes: ColliderChanges): void {
+    this.assertLive();
+    const prepared = changes.upsert.map(copyColliderDesc);
+    for (const desc of prepared) {
+      if (desc.bodyId !== bodyId || (this.colliders.has(desc.id) && this.colliders.get(desc.id)!.desc.bodyId !== bodyId)) throw new Error("Collider transaction crosses body ownership");
+    }
+    for (const id of changes.remove) {
+      if (this.colliders.get(id)?.desc.bodyId === bodyId) this.colliders.delete(id);
+    }
+    for (const desc of prepared) this.colliders.set(desc.id, { desc });
   }
 
   destroyCollider(colliderId: string): void {

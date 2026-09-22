@@ -756,7 +756,7 @@ describe("@babylonslate/physics", () => {
     expect(backend.pollContacts().some((event) => event.kind === "overlapBegin")).toBe(
       false,
     );
-    backend.setBodyTransform("b", {
+    backend.teleportBody("b", {
       position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     });
@@ -818,7 +818,7 @@ describe("@babylonslate/physics", () => {
       ]),
     );
     expect(begun.some((event) => event.kind === "hit")).toBe(false);
-    triggerBackend.setBodyTransform("b", {
+    triggerBackend.teleportBody("b", {
       position: { x: 10, y: 0, z: 0 },
       rotation: identityRotation(),
     });

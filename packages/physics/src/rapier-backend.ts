@@ -3,12 +3,14 @@ import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
+  ColliderChanges,
   ColliderTuning,
   HitResult,
   LineTraceOptions,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsTransform,
+  TeleportOptions,
   RigidBodyDesc,
   RigidBodyTuning,
   Vec3,
@@ -16,6 +18,7 @@ import type {
 } from "./types";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
+import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
 
 type RapierEventQueue = {
   drainCollisionEvents(
@@ -109,9 +112,13 @@ type RapierRigidBody = {
   linvel(): { x: number; y: number };
   setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
+  rotation(): number;
+  setRotation(angle: number, wakeUp: boolean): void;
+  setAngvel(velocity: number, wakeUp: boolean): void;
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
   setNextKinematicTranslation(t: { x: number; y: number }): void;
+  setNextKinematicRotation(angle: number): void;
   setGravityScale(scale: number, wakeUp: boolean): void;
   setLinearDamping(damping: number): void;
   setAngularDamping(damping: number): void;
@@ -255,9 +262,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.bodies.delete(bodyId);
   }
 
-  setBodyTransform(bodyId: string, transform: PhysicsTransform): void {
+  teleportBody(bodyId: string, transform: PhysicsTransform, options: TeleportOptions = {}): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
+    transform = normalizedPhysicsPose(transform);
     record.body.setTranslation(
       { x: transform.position.x, y: transform.position.y },
       true,
@@ -266,6 +274,17 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       position: { ...transform.position, z: 0 },
       rotation: { ...transform.rotation },
     };
+    record.body.setRotation(quatToPlanarAngle(transform.rotation), true);
+    if (options.velocity === "reset") { record.body.setLinvel({ x: 0, y: 0 }, true); record.body.setAngvel(0, true); }
+  }
+
+  setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
+    const record = this.bodies.get(bodyId);
+    if (!record) return;
+    if (record.desc.motionType !== "kinematic") throw new Error("Only kinematic bodies accept motion targets");
+    const pose = normalizedPhysicsPose(transform);
+    record.body.setNextKinematicTranslation(pose.position);
+    record.body.setNextKinematicRotation(quatToPlanarAngle(pose.rotation));
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
@@ -274,7 +293,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const t = record.body.translation();
     return {
       position: { x: t.x, y: t.y, z: 0 },
-      rotation: identityRotation(),
+      rotation: { x: 0, y: 0, z: Math.sin(record.body.rotation() / 2), w: Math.cos(record.body.rotation() / 2) },
     };
   }
 
@@ -355,32 +374,46 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   createCollider(desc: ColliderDesc): void {
-    const body = this.bodies.get(desc.bodyId);
+    this.applyColliderChanges(desc.bodyId, { upsert: [desc], remove: [] });
+  }
+
+  applyColliderChanges(bodyId: string, changes: ColliderChanges): void {
+    const body = this.bodies.get(bodyId);
     if (!body) return;
-    const colliderDesc = this.toColliderDesc(desc);
-    if (!colliderDesc) return;
-    colliderDesc
-      .setFriction(desc.friction)
-      .setRestitution(desc.restitution)
-      .setSensor(desc.isTrigger)
-      .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
-      .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
-    if (desc.translation) {
-      colliderDesc.setTranslation(desc.translation.x, desc.translation.y);
+    const prepared = changes.upsert.map(copyColliderDesc).map((desc) => {
+      if (desc.bodyId !== bodyId || (this.colliders.has(desc.id) && this.colliders.get(desc.id)!.desc.bodyId !== bodyId)) throw new Error("Collider transaction crosses body ownership");
+      const colliderDesc = this.toColliderDesc(desc);
+      if (!colliderDesc) throw new Error("Unsupported planar collider shape");
+      colliderDesc.setFriction(desc.friction).setRestitution(desc.restitution).setSensor(desc.isTrigger)
+        .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS).setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
+      colliderDesc.setTranslation(desc.translation!.x, desc.translation!.y).setRotation(quatToPlanarAngle(desc.rotation!));
+      return { desc, colliderDesc };
+    });
+    const provisional: ColliderRecord[] = [];
+    try {
+      for (const { desc, colliderDesc } of prepared) {
+        const record: ColliderRecord = { desc, collider: this.world.createCollider(colliderDesc, body.body) };
+        provisional.push(record);
+        record.extra = this.createLoopCloseSegment(desc, body.body);
+      }
+    } catch (error) {
+      for (const record of provisional) {
+        this.world.removeCollider(record.collider, false);
+        if (record.extra) this.world.removeCollider(record.extra, false);
+      }
+      throw error;
     }
-    if (desc.rotation) {
-      colliderDesc.setRotation(quatToPlanarAngle(desc.rotation));
+    for (const id of new Set([...changes.remove, ...prepared.map(({ desc }) => desc.id)])) {
+      if (this.colliders.get(id)?.desc.bodyId === bodyId) this.destroyCollider(id);
     }
-    const collider = this.world.createCollider(colliderDesc, body.body);
-    const extra = this.createLoopCloseSegment(desc, body.body);
-    this.colliders.set(desc.id, { desc: { ...desc }, collider, extra });
-    this.colliderIdByHandle.set(collider.handle, desc.id);
-    if (extra) this.colliderIdByHandle.set(extra.handle, desc.id);
-    if (extra) {
-      const prev = this.world.timestep;
-      this.world.timestep = 0;
-      this.world.step();
-      this.world.timestep = prev;
+    for (const record of provisional) {
+      this.colliders.set(record.desc.id, record);
+      this.colliderIdByHandle.set(record.collider.handle, record.desc.id);
+      if (record.extra) this.colliderIdByHandle.set(record.extra.handle, record.desc.id);
+    }
+    if (provisional.some((record) => record.extra)) {
+      const previous = this.world.timestep;
+      try { this.world.timestep = 0; this.world.step(); } finally { this.world.timestep = previous; }
     }
   }
 
