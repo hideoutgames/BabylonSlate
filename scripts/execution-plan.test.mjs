@@ -30,7 +30,7 @@ test("low-memory policy clamps fast/CI requests without making builds impossible
       assert.equal(plan.workers, 1);
       assert.equal(plan.browserWorkers, 1);
       assert.equal(plan.retries, 0);
-      assert.equal(plan.config.capacity.reserveGiB, Math.max(3, reserve));
+      assert.equal(plan.config.capacity.reserveGiB, Math.max(2, reserve));
       assert.equal(plan.config.maxRoots, 1);
       assert.equal(plan.config.maxBypasses, 0);
       assert.ok(plan.request.workers <= plan.config.capacity.workers);

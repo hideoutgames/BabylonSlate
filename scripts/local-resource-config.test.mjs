@@ -39,7 +39,7 @@ async function fixture(t, config) {
   };
 }
 
-test("one user configuration lets separate callers build with five GiB free", async (t) => {
+test("one user configuration lets separate callers build with four GiB free", async (t) => {
   const { path, options } = await fixture(t, {
     version: 1,
     profile: "low-memory",
@@ -47,6 +47,7 @@ test("one user configuration lets separate callers build with five GiB free", as
   for (const directory of ["first-worktree", "second-worktree"]) {
     const lease = await acquireResources(workloadFor("build", {}), {
       ...options,
+      freeMemory: () => 4 * 1024 ** 3,
       directory: join(options.directory, directory),
     });
     await lease.release();
@@ -101,7 +102,7 @@ test("missing settings serialize locally and CI=true cannot ignore machine setti
   const { options } = await fixture(t);
   const defaults = await readLocalResourceConfig(options.env);
   assert.equal(defaults.maxRoots, 1);
-  assert.equal(defaults.capacity.reserveGiB, 3);
+  assert.equal(defaults.capacity.reserveGiB, 2);
   await (await acquireResources(workloadFor("build", {}), options)).release();
   const { path } = await fixture(t, { version: 999 });
   await assert.rejects(

@@ -9,6 +9,7 @@ export const DEFAULT_RESOURCE_CAPACITY = Object.freeze({
   memoryGiB: 6,
   reserveGiB: 4,
 });
+const LOW_MEMORY_RESERVE_GIB = 2;
 
 function invalid(path, reason) {
   return new Error(
@@ -56,7 +57,10 @@ export async function readLocalResourceConfig(env = process.env) {
   const defaults = {
     path,
     profile: path ? "low-memory" : "hosted-ci",
-    capacity: { ...DEFAULT_RESOURCE_CAPACITY, reserveGiB: path ? 3 : 4 },
+    capacity: {
+      ...DEFAULT_RESOURCE_CAPACITY,
+      reserveGiB: path ? LOW_MEMORY_RESERVE_GIB : 4,
+    },
     maxHeavy: path ? 1 : 3,
     maxRoots: path ? 1 : 3,
     maxBypasses: path ? 0 : 3,
@@ -94,7 +98,11 @@ export async function readLocalResourceConfig(env = process.env) {
 
   const lowMemory = config.profile === "low-memory";
   const reserveGiB =
-    config.reserveGiB === undefined ? (lowMemory ? 3 : 4) : config.reserveGiB;
+    config.reserveGiB === undefined
+      ? lowMemory
+        ? LOW_MEMORY_RESERVE_GIB
+        : 4
+      : config.reserveGiB;
   const maxHeavy =
     config.maxHeavy === undefined ? (lowMemory ? 1 : 3) : config.maxHeavy;
   const maxBypasses = config.maxBypasses === undefined ? 3 : config.maxBypasses;
@@ -124,7 +132,9 @@ export async function readLocalResourceConfig(env = process.env) {
     profile: config.profile,
     capacity: {
       ...DEFAULT_RESOURCE_CAPACITY,
-      reserveGiB: lowMemory ? Math.max(3, reserveGiB) : reserveGiB,
+      reserveGiB: lowMemory
+        ? Math.max(LOW_MEMORY_RESERVE_GIB, reserveGiB)
+        : reserveGiB,
     },
     maxHeavy: lowMemory ? 1 : maxHeavy,
     maxRoots: lowMemory ? 1 : 3,
