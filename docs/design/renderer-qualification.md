@@ -1,5 +1,30 @@
 # Renderer qualification
 
+## Engine follow-up: deferred local verification
+
+On 2026-09-22 the user requested skipping checks that cannot fit the machine's available memory and recording them for later. The team's queued particle check was cancelled before execution; no running check or unrelated process was stopped. `BL_TEST_PROFILE=shared` remains required. The shared `local-resources.json` currently has a 3 GiB reserve and was left unchanged. Do not bypass admission or repeatedly queue these checks while they cannot fit.
+
+Physical A16 verification is waived for this follow-up. Local browser/native verification is deferred where listed below, not counted as passed. No desktop or software-WebGPU result establishes device performance. Required CI and merge gates remain unchanged.
+
+| Delivery | Recorded source/evidence | Pickup |
+| --- | --- | --- |
+| A: snapshot synchronization | `3d0031bd`, `t3code/engine-ownership-performance`. Four explicit unit files passed 192 cases at `ba76a60f`; scoped render typecheck/lint passed. Two desktop Play/Preview pixel cases passed at `2c1f29ae`. Snapshot-attributable global dirty/cleanup counts fell from 120 per 120 samples to zero. | No local check was deferred for A. [PR #657](https://github.com/hideoutgames/BabylonSlate/pull/657) remains unmerged, awaiting the normal Verify slot and current-head CI. |
+| B: native physics lifecycle | `82ae49a0`, `agent/engine-physics-lifecycle-b`. Earlier real-Havok removal/resource cases passed, but the immediate teleport ray failed and a compound trigger case hung before the latest corrections. Those corrections are unverified. | Resume the isolated native trigger and teleport/constraint/controller cases first, then the explicit lifecycle/transaction files, affected Rapier/runtime callers and scoped static checks. Keep native detachment/teleport gates open. |
+| C: dirty physics preparation | Frozen baseline fixture `de96b6d3`, `agent/engine-physics-dirty-c`; implementation is on a separate branch. The new five-case preparation fixture has not run. | Run `packages/runtime/src/physics-sync-preparation.test.ts` at the frozen baseline before comparing the implementation. Validate native B before treating C as deliverable. |
+| D: texture leases and stable sprites | Source `b8a11880`, notes `5fe391b3`, `agent/engine-texture-leases-d`. Earlier batch: 68 passed, 7 failed. Fixture repairs and subsequent upload/admission fixes are unverified; the earlier typecheck at `0e675860` does not certify the current head. | [Exact unit, editor, static and browser commands](https://github.com/hideoutgames/BabylonSlate/blob/5fe391b36d555041c4e79bbcca2def0c4a152c7c/docs/architecture/render.md#texture-ownership-verification-pickup). Includes the 10,000-selection WebGL2/WebGPU fixture. |
+| E: model/text visual lifetimes | Source `64599304`, notes `233b75ba`, `agent/engine-visual-lifecycle-e`. Baseline: 5 failures/6 passes; implementation at `e36439b1`: 18/18 in the same two files. Later editor staging, multipart budgets and additional ownership changes are unverified. | [Exact segmented native/consumer/browser commands](https://github.com/hideoutgames/BabylonSlate/blob/233b75ba/docs/architecture/render.md#visual-ownership-verification-pickup), plus scoped static checks. Combine the AssetContainer and physics patch hunks before final integration verification. |
+| F: particles | `79a00663`, `agent/engine-particles-f`. 49 cases passed across earlier checkpoints. Two follow-up cases at `150ee60a` were cancelled while queued, with no execution. Later clock-ordering, D integration and browser changes are unverified. | [Particle pickup commands and evidence](https://github.com/hideoutgames/BabylonSlate/blob/79a006630853b990d971a5e805ac70e1382771ed/docs/architecture/particles.md). Resume the two selected lifecycle cases, scoped render/editor checks and four CPU/GPU × WebGL2/WebGPU browser cases. Particle-specific exported-player lifecycle verification remains open. |
+
+The first native-physics probes, from the B worktree, are deliberately bounded and sequential:
+
+```powershell
+$env:BL_TEST_PROFILE = 'shared'
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'ends retired trigger' --disableConsoleIntercept
+pnpm --silent agent:wait local --script test --timeout-seconds 60 '--' packages/physics/src/havok-transactions.test.ts -t 'teleports falling|keeps constraints|retains controller|defers contact' --disableConsoleIntercept
+```
+
+Before resuming, compare the working head with the recorded checkpoint and select checks affected by intervening source, dependency or configuration changes. Keep failed, cancelled and unexecuted results separate from passes. Record exact source, command, backend and resource/operation counts for each resumed batch. B–F have no delivery PR yet; the work remains unmerged and is not verified complete.
+
 Status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
 ## Coverage matrix
