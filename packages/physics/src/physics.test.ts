@@ -17,6 +17,22 @@ function identity() {
   };
 }
 
+it("keeps Rapier teleport/target rotation consistent in direct and batched readback", async () => {
+  const backend = await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  try {
+    const quarterTurn = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
+    backend.createBody({ id: "planar", actorId: "planar", motionType: "kinematic", mass: 1, linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: quarterTurn } });
+    expect(backend.getBodyTransform("planar")!.rotation.z).toBeCloseTo(Math.SQRT1_2);
+    backend.teleportBody("planar", { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 2 } });
+    expect(backend.readTransforms().get("planar")!.rotation.w).toBeCloseTo(1);
+    backend.setBodyTargetTransform("planar", { position: { x: 4, y: 1, z: 0 }, rotation: quarterTurn });
+    backend.step(1 / 60);
+    expect(backend.getBodyTransform("planar")!.position.x).toBeCloseTo(4);
+    expect(backend.readTransforms().get("planar")!.rotation.z).toBeCloseTo(Math.SQRT1_2);
+  } finally { backend.dispose(); }
+});
+
 async function runFallScenario(backend: PhysicsBackend): Promise<number> {
   backend.createBody({
     id: "dynamic",

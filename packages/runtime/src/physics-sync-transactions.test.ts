@@ -30,6 +30,29 @@ function collider(world: World, actor: Actor, guid: string, x: number) {
 }
 
 describe("atomic runtime collider publication", () => {
+  it("preserves rotated model-local scale and rejects shear before replacing a usable collider", () => {
+    const { world, actor, backend, sync } = fixture();
+    actor.attachComponent(world.createComponent({
+      classId: "MeshComponent", guid: "scaled-model",
+      transform: { ...identityTransform(), position: { x: 3, y: 0, z: 0 }, scale: { x: 2, y: 1, z: 1 } },
+      variables: { assetGuid: "model", collisionMode: "simple" },
+    }));
+    const install = (angle: number) => sync.setModelContent({ models: {
+      model: { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [{
+        id: "box", name: "box", kind: "box", position: [1, 0, 0], rotation: [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)], scale: [1, 1, 1],
+        halfExtents: { x: 1, y: 2, z: 0.5 },
+      }] },
+    } });
+    try {
+      install(Math.PI / 2);
+      sync.syncFromWorld(world);
+      expect(backend.lineTrace({ x: 8, y: 3, z: 0 }, { x: 8, y: -3, z: 0 }).hit).toBe(true);
+      expect(backend.lineTrace({ x: 10, y: 3, z: 0 }, { x: 10, y: -3, z: 0 }).hit).toBe(false);
+      install(Math.PI / 4);
+      expect(() => sync.syncFromWorld(world)).toThrow("shear");
+      expect(backend.lineTrace({ x: 8, y: 3, z: 0 }, { x: 8, y: -3, z: 0 }).hit).toBe(true);
+    } finally { sync.dispose(); }
+  });
   it("coalesces ordinary and mesh edits, retries a failed batch, and removes only current membership", () => {
     const { world, actor, backend, sync } = fixture();
     const first = collider(world, actor, "first", -4);

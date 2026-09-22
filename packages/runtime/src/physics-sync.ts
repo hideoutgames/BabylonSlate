@@ -795,5 +795,3 @@ function toMap<T>(
   if (value instanceof Map) return new Map(value);
   return new Map(Object.entries(value));
 }
-
-
