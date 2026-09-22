@@ -14,6 +14,13 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { createText3DMesh } from "./text3d-mesh";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
@@ -210,8 +217,8 @@ describe("visual generation ownership", () => {
     const root = createModelActorRoot(scene, "model");
     const first = installAssetBytes(encodeTriangleGlb());
     const second = new Blob([await first.arrayBuffer()]);
-    const late = Promise.withResolvers<never>();
-    const entered = Promise.withResolvers<void>();
+    const late = deferred<never>();
+    const entered = deferred<void>();
     vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(() => { entered.resolve(); return late.promise; });
     const stale = beginSlotModelAnimLoad(scene, binding, 0, "model", first, root);
     await entered.promise;

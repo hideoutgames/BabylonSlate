@@ -5,6 +5,13 @@ import { encodeParentedAnimatedTriangleGlb } from "./model-mesh";
 import * as modelContainer from "./model-container";
 import { applyAssignMesh, applyAssignMaterial, applySetMaterialParameter, createSnapshotSceneBinding, disposeSnapshotBinding, retirePlaySlot, type AssignMeshCommand } from "./snapshot-apply";
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
 function fixture() {
@@ -44,8 +51,8 @@ describe("Play multipart model publication", () => {
     if (replacement) await initialModel(f);
     const previous = f.binding.meshes.get(1);
     const previousGroups = f.binding.slotAnimationGroups?.get(1);
-    const entered = Promise.withResolvers<void>();
-    const ready = Promise.withResolvers<void>();
+    const entered = deferred<void>();
+    const ready = deferred<void>();
     const nativeLoad = modelContainer.loadModelContainer;
     vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
       if (args[2] === "second.glb") { entered.resolve(); await ready.promise; }
@@ -77,8 +84,8 @@ describe("Play multipart model publication", () => {
     const retained = ownedMaterial(f);
     const previous = await initialModel(f);
     const previousGroups = f.binding.slotAnimationGroups!.get(1);
-    const entered = Promise.withResolvers<void>();
-    const failure = Promise.withResolvers<void>();
+    const entered = deferred<void>();
+    const failure = deferred<void>();
     const nativeLoad = modelContainer.loadModelContainer;
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const loader = vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
@@ -132,10 +139,10 @@ describe("Play multipart model publication", () => {
       }
     };
     const previous = await initialModel(f);
-    const modelEntered = Promise.withResolvers<void>();
-    const modelReady = Promise.withResolvers<void>();
-    const materialEntered = Promise.withResolvers<void>();
-    const materialReady = Promise.withResolvers<void>();
+    const modelEntered = deferred<void>();
+    const modelReady = deferred<void>();
+    const materialEntered = deferred<void>();
+    const materialReady = deferred<void>();
     vi.spyOn(material, "forceCompilationAsync").mockImplementation(() => {
       materialEntered.resolve();
       return materialReady.promise;
@@ -152,7 +159,7 @@ describe("Play multipart model publication", () => {
       const assignPrivate = (guid: string) => {
         applyAssignMaterial(f.scene, f.binding, { type: "assignMaterial", slotId: 1, materialAssetGuid: guid });
         obsolete.push(f.binding.slotAnimLoads!.get(1)!);
-        applySetMaterialParameter(f.scene, f.binding, { type: "setMaterialParameter", slotId: 1,
+        applySetMaterialParameter(f.binding, { type: "setMaterialParameter", slotId: 1,
           materialAssetGuid: guid, parameterName: "amount", parameter: { kind: "float", value: 0.5 } });
       };
       assignPrivate("late");
@@ -186,8 +193,8 @@ describe("Play multipart model publication", () => {
   it("makes superseded multipart completion inert and retires pending models on owner removal", async () => {
     const f = fixture();
     await initialModel(f);
-    const entered = Promise.withResolvers<void>();
-    const ready = Promise.withResolvers<void>();
+    const entered = deferred<void>();
+    const ready = deferred<void>();
     const nativeLoad = modelContainer.loadModelContainer;
     vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
       if (args[2] === "second.glb") { entered.resolve(); await ready.promise; }

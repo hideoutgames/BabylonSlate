@@ -70,7 +70,7 @@ function fixture(host: Host, kind: Kind) {
     generation = index;
     if (host === "editor") sync.apply(document(index));
     else applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshKind: kind,
-      meshAssetGuid: kind === "sprite" ? `sprite-${index}` : undefined,
+      meshAssetGuid: kind === "sprite" ? `sprite-${index}` : null,
       skybox: kind === "skybox" ? { size: 1000, faces: { ...emptySkyboxFaces(), px: `texture-${index}` } } : undefined,
     });
   };

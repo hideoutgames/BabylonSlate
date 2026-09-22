@@ -8,6 +8,13 @@ import { encodeUvHierarchyGlb } from "./model-mesh";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()?.();
@@ -46,7 +53,7 @@ async function host() {
 }
 
 function delayedTextures(scene: Scene) {
-  const admission = Promise.withResolvers<void>();
+  const admission = deferred<void>();
   void admission.promise.catch(() => {});
   const working = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
   const pending = RawTexture.CreateRGBATexture(new Uint8Array([255, 0, 0, 255]), 1, 1, scene);
@@ -70,7 +77,7 @@ describe("staged model material admission", () => {
     const f = await host();
     const textures = delayedTextures(f.scene);
     expect(textures.pending.isReady()).toBe(true);
-    const entered = Promise.withResolvers<void>();
+    const entered = deferred<void>();
     const load = beginSlotModelAnimLoad(f.scene, f.binding, 0, "model", f.next, f.root, undefined, undefined, (staging) => {
       const material = textures.library.resolve(f.scene, "material", textureDocument("pending"));
       for (const mesh of visualMeshes(staging)) mesh.material = material;
@@ -91,7 +98,7 @@ describe("staged model material admission", () => {
     const first = textures.library.acquire(f.scene, "material", textureDocument("working"));
     if (!first.ok) throw new Error("Initial graph did not compile");
     await first.ready;
-    const entered = Promise.withResolvers<void>();
+    const entered = deferred<void>();
     const load = beginSlotModelAnimLoad(f.scene, f.binding, 0, "model", f.next, f.root, undefined, undefined, (staging) => {
       const material = textures.library.resolve(f.scene, "material", textureDocument("pending"));
       expect(material).toBe(first.material);
@@ -112,7 +119,7 @@ describe("staged model material admission", () => {
     const first = textures.library.acquire(f.scene, "material", doc, { instanceKey: "actor" });
     if (!first.ok) throw new Error("Initial graph did not compile");
     await first.ready;
-    const entered = Promise.withResolvers<void>();
+    const entered = deferred<void>();
     const load = beginSlotModelAnimLoad(f.scene, f.binding, 0, "model", f.next, f.root, undefined, undefined, (staging) => {
       const material = textures.library.resolve(f.scene, "material", doc, {
         instanceKey: "actor", parameters: new Map([["Albedo", { kind: "texture", textureAssetGuid: "pending" }]]),
@@ -136,7 +143,7 @@ describe("staged model material admission", () => {
     const first = textures.library.acquire(f.scene, "material", doc, { instanceKey: "actor" });
     if (!first.ok) throw new Error("Initial graph did not compile");
     await first.ready;
-    const entered = Promise.withResolvers<void>();
+    const entered = deferred<void>();
     const parameters = new Map([["Albedo", { kind: "texture" as const, textureAssetGuid: "pending" }]]);
     const load = beginSlotModelAnimLoad(f.scene, f.binding, 0, "model", f.next, f.root, undefined, undefined, (staging) => {
       const material = textures.library.resolve(f.scene, "material", doc, { instanceKey: "actor", parameters });
@@ -193,7 +200,7 @@ describe("staged model material admission", () => {
   it("cancels a pending material generation without waiting for late admission", async () => {
     const f = await host();
     const textures = delayedTextures(f.scene);
-    const entered = Promise.withResolvers<void>();
+    const entered = deferred<void>();
     const load = beginSlotModelAnimLoad(f.scene, f.binding, 0, "model", f.next, f.root, undefined, undefined, (staging) => {
       const material = textures.library.resolve(f.scene, "material", textureDocument("pending"));
       for (const mesh of visualMeshes(staging)) mesh.material = material;
