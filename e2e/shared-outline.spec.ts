@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { runSharedOutlineProof } from "../apps/editor/src/testing/shared-outline-proof";
+import type { runSharedOutlineProof, SharedOutlineProofProgress } from "../apps/editor/src/testing/shared-outline-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { renderingEvidence } from "./rendering-evidence";
 
@@ -8,21 +8,60 @@ test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`shared production outlines preserve consumers, occlusion and bounded work on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
+    const evidence = renderingEvidence("apps/editor/src/testing/shared-outline-proof.ts");
+    await testInfo.attach("shared-outline-run", {
+      body: JSON.stringify({ requestedBackend: backend, evidence }), contentType: "application/json",
+    });
     const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const diagnostics: Array<{ kind: string; text: string; location?: { url: string; lineNumber: number; columnNumber: number } }> = [];
+    const pendingDiagnostics: Promise<void>[] = [];
+    const progress: Omit<SharedOutlineProofProgress, "image">[] = [];
+    const recordDiagnostic = (entry: typeof diagnostics[number]) => {
+      diagnostics.push(entry);
+      pendingDiagnostics.push(testInfo.attach(`browser-diagnostic-${diagnostics.length}`, {
+        body: JSON.stringify(entry), contentType: "application/json",
+      }));
+    };
+    page.on("pageerror", (error) => {
+      errors.push(error.message);
+      recordDiagnostic({ kind: "page-error", text: error.message });
+    });
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning")
+        recordDiagnostic({ kind: `console-${message.type()}`, text: message.text(), location: message.location() });
+    });
+    await page.exposeFunction("__babylonslateSharedOutlineProgress", async (entry: SharedOutlineProofProgress) => {
+      const { image, ...record } = entry;
+      progress.push(record);
+      if (image)
+        await testInfo.attach(entry.stage, { body: Buffer.from(image.split(",")[1]!, "base64"), contentType: "image/png" });
+      await testInfo.attach(`progress-${progress.length}-${entry.stage}`, {
+        body: JSON.stringify(record), contentType: "application/json",
+      });
+    });
     await page.goto("/?test=1&sharedOutlineProof=1");
     await page.waitForFunction(() => "__babylonslateSharedOutlineProof" in window);
-    const report = await page.evaluate((backend) => (window as unknown as {
-      __babylonslateSharedOutlineProof: typeof runSharedOutlineProof;
-    }).__babylonslateSharedOutlineProof(backend), backend);
-    for (const snapshot of report.snapshots)
-      await testInfo.attach(snapshot.name, { body: Buffer.from(snapshot.image.split(",")[1]!, "base64"), contentType: "image/png" });
+    const report = await page.evaluate((backend) => {
+      const host = window as unknown as {
+        __babylonslateSharedOutlineProof: typeof runSharedOutlineProof;
+        __babylonslateSharedOutlineProgress: (entry: SharedOutlineProofProgress) => Promise<void>;
+      };
+      return host.__babylonslateSharedOutlineProof(backend, (entry) => host.__babylonslateSharedOutlineProgress(entry));
+    }, backend).finally(async () => {
+      await Promise.all(pendingDiagnostics);
+      await testInfo.attach("shared-outline-progress", {
+        body: JSON.stringify({ evidence, progress, diagnostics }),
+        contentType: "application/json",
+      });
+    });
     await testInfo.attach("shared-outline-qualification", {
-      body: JSON.stringify({ ...report, evidence: renderingEvidence("apps/editor/src/testing/shared-outline-proof.ts"),
-        snapshots: report.snapshots.map(({ image: _image, ...snapshot }) => snapshot), errors }),
+      body: JSON.stringify({ ...report, evidence,
+        snapshots: report.snapshots.map(({ image: _image, ...snapshot }) => snapshot), errors, diagnostics }),
       contentType: "application/json",
     });
     expect(errors).toEqual([]);
+    expect(diagnostics.filter((entry) => entry.kind === "console-error" ||
+      /GPUValidationError|validation error|WebGL.*INVALID_|shader.*(?:error|failed)/i.test(entry.text))).toEqual([]);
     expect(report.effectiveBackend).toBe(backend);
     const at = (name: string) => {
       const snapshot = report.snapshots.find((entry) => entry.name === name);

@@ -4,7 +4,15 @@ import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, re
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedLightingReservations } from "@babylonslate/render/managed-lighting-resources";
 
-export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
+export interface SharedOutlineProofProgress {
+  stage: string;
+  state: "metadata" | "preparing" | "captured" | "retiring";
+  data?: Record<string, unknown>;
+  image?: string;
+}
+
+export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
+  onProgress?: (progress: SharedOutlineProofProgress) => void | Promise<void>) {
   const canvas = document.createElement("canvas");
   const width = canvas.width = 240, height = canvas.height = 120;
   document.getElementById("root")!.append(canvas);
@@ -12,6 +20,14 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: false,
   });
   engine.setSize(width, height);
+  const webGLVersion = engine instanceof Engine ? engine.webGLVersion : null;
+  const effectiveBackend = engine.isWebGPU ? "webgpu" : webGLVersion === 2 ? "webgl2" : "webgl1";
+  await onProgress?.({ stage: "engine-created", state: "metadata", data: {
+    backend, effectiveBackend, webGLVersion, babylonVersion: Engine.Version,
+    adapter: engine.getInfo(), width: canvas.width, height: canvas.height,
+    viewport: { width: innerWidth, height: innerHeight }, devicePixelRatio,
+    renderScale: 1 / engine.getHardwareScalingLevel(), userAgent: navigator.userAgent,
+  } });
   requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 1);
@@ -54,6 +70,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
   const snapshots = [];
   const waitFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const capture = async (name: string) => {
+    await onProgress?.({ stage: name, state: "preparing" });
     const prepared = await renderer.prepare();
     for (let frame = 0; frame < 3; frame++) {
       engine.beginFrame();
@@ -103,6 +120,8 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
       owner: owner.diagnostics(), view: view.diagnostics(),
     };
     snapshots.push(snapshot);
+    const { image, ...data } = snapshot;
+    await onProgress?.({ stage: name, state: "captured", data, image });
     return snapshot;
   };
   const mount = (key: string, contribution = contributions[key]!) => {
@@ -111,6 +130,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     return () => view.removeContribution(key);
   };
   const retireWithoutDrawing = async () => {
+    await onProgress?.({ stage: "unpresented-retirement", state: "preparing" });
     const before = managedLightingReservations(engine);
     const unpresentedScene = new Scene(engine);
     const unpresentedCamera = new FreeCamera("Unpresented Camera", new Vector3(0, 0, -4), unpresentedScene);
@@ -129,6 +149,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
       });
       const prepared = await unpresentedRenderer.prepare();
       const allocated = managedLightingReservations(engine);
+      await onProgress?.({ stage: "unpresented-retirement", state: "retiring", data: { before, allocated, preparedPath: prepared.path } });
       unpresentedDetach();
       unpresentedView.dispose();
       await unpresentedRenderer.retire();
@@ -286,7 +307,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     await capture("all-disabled-steady");
     const unpresentedRetirement = await retireWithoutDrawing();
     return {
-      backend, effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2",
+      backend, effectiveBackend, webGLVersion,
       babylonVersion: Engine.Version, adapter: engine.getInfo(),
       width: canvas.width, height: canvas.height, viewport: { width: innerWidth, height: innerHeight },
       devicePixelRatio, renderScale: 1 / engine.getHardwareScalingLevel(),

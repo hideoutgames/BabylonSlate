@@ -1158,3 +1158,14 @@ authoring/runtime/export wiring and cost qualification are subsequent acceptance
 requirements, not claims established by this design note. Repository search at
 this checkpoint found thin-instance proof code but no authored thin-instance
 mapping API; the implementation must define that boundary explicitly.
+
+The subsequent source audit identifies concrete generalization work still
+required before adoption: per-submaterial alpha/culling coverage, UV2-only
+cutouts, color morph shader defines, live material coverage changes and late LOD
+registrations. Authored Material Graph displacement and arbitrary discard need
+an identity-mask variant from the existing material plan; the generic selection
+shader cannot reproduce them. A replacement MultiMaterial is insufficient:
+Babylon's single current-submaterial cache resets DrawWrappers across passes
+when world and mask materials alternate. Keep original submaterial lookup and
+per-pass effect ownership when extending that path. Thin-instance targets are
+currently rejected explicitly, rather than silently rendered as one actor.
