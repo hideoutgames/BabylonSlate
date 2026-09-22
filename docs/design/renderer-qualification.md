@@ -153,6 +153,9 @@ The `b3956b34` native WebGL2 rerun still timed out at the same step, so explicit
 LOD alone is not a demonstrated repair. A preparation-only diagnostic probe now
 retains each pending task and outline subpass readiness before retirement removes
 the failed graph. It does not draw or run inside measured steady-state samples.
+At `36532517` this narrowed the failure to the strict geometry mask: composition
+and all preceding FrameGraph tasks were ready. Per-submesh diagnostic records
+are retained by the next probe; no composition repair is claimed from this result.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions

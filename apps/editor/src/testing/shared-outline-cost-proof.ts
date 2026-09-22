@@ -1,5 +1,5 @@
 /** Fixed-output production measurements. Software adapters are functional evidence only. */
-import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3, type Effect } from "@babylonjs/core";
+import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3, type Effect, type SubMesh, type DrawWrapper } from "@babylonjs/core";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
@@ -60,10 +60,14 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
     const probe = setInterval(() => {
       const graph = (renderer as unknown as { graph: { graph: FrameGraph | null } }).graph.graph;
       lastReadiness = graph?.tasks.map(task => {
-        const outline = task as unknown as { compose?: { isReady(): boolean; effect?: Effect }; masks?: { group: string; objects: { isReady(): boolean } }[] };
+        const outline = task as unknown as { compose?: { isReady(): boolean; effect?: Effect }; masks?: { group: string; objects: { isReady(): boolean }; renderer: { programs: Map<SubMesh, { wrapper?: DrawWrapper }> } }[] };
         return { name: task.name, ready: task.isReady(), compose: outline.compose && {
           ready: outline.compose.isReady(), error: outline.compose.effect?.getCompilationError(),
-        }, masks: outline.masks?.map(mask => ({ group: mask.group, ready: mask.objects.isReady() })) };
+        }, masks: outline.masks?.map(mask => ({ group: mask.group, ready: mask.objects.isReady(),
+          programs: [...mask.renderer.programs].map(([subMesh, program]) => ({ mesh: subMesh.getMesh().name,
+            renderingMesh: subMesh.getRenderingMesh().name, defines: program.wrapper?.defines,
+            ready: program.wrapper?.effect?.isReady(), error: program.wrapper?.effect?.getCompilationError(),
+          })) })) };
       });
     }, 250);
     try { await renderer.prepare(); } finally { clearInterval(probe); }
