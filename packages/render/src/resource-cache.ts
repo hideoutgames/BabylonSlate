@@ -1,4 +1,4 @@
-import { installedAssetHeader, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -664,8 +664,11 @@ export class ResourceCache {
     entry.samplingDisposers.get(sampling)?.();
     let active = true;
     const installedHeader = bytes instanceof Blob ? installedAssetHeader(bytes) : undefined;
+    const environment = bytes instanceof Blob ? installedEnvironmentInfo(bytes) : undefined;
     let headerPending = bytes instanceof Blob && !installedHeader;
     let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : installedHeader ? textureSourceSize(installedHeader) : null;
+    if (environment) size = { width: environment.width, height: environment.height, mipLevels: environment.mipLevels,
+      reserveType: environment.encoding === "linearFloat32" ? Constants.TEXTURETYPE_FLOAT : Constants.TEXTURETYPE_HALF_FLOAT };
     const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
     const update = () => {
       if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
