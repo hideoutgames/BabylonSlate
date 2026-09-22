@@ -1,13 +1,11 @@
 /** Test-only synthetic box-character fixture. Readbacks never run in production. */
 import {
-  CascadedShadowGenerator,
   Color3,
   Color4,
   DirectionalLight,
   Engine,
   FreeCamera,
   HemisphericLight,
-  Matrix,
   MeshBuilder,
   PBRMaterial,
   Scene,
@@ -25,168 +23,19 @@ import {
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 
+import {
+  SHADOW_BOXES,
+  SHADOW_CAMERA_POSITION,
+  SHADOW_CAMERA_TARGET,
+  SHADOW_CAMERA_FOV,
+  SHADOW_LIGHT_DIRECTION,
+  shadowSurfaceSamples,
+  shadowRegions,
+  type ShadowTriple,
+  type ShadowBox,
+} from "./shadow-self-shadowing-fixture";
+
 const SIZE = 384;
-type Triple = [number, number, number];
-type Box = { name: string; center: Triple; size: Triple };
-// Touching, hard-normal primitive faces; there are no model or texture assets.
-const BOXES: Box[] = [
-  { name: "head", center: [0, 3.55, 0], size: [1.6, 1.1, 1.25] },
-  { name: "torso", center: [0, 2.25, 0], size: [1.15, 1.5, 0.7] },
-  { name: "left-arm", center: [-0.8, 2.2, 0], size: [0.45, 1.6, 0.7] },
-  { name: "right-arm", center: [0.8, 2.2, 0], size: [0.45, 1.6, 0.7] },
-  { name: "left-leg", center: [-0.325, 0.75, 0], size: [0.5, 1.5, 0.65] },
-  { name: "right-leg", center: [0.325, 0.75, 0], size: [0.5, 1.5, 0.65] },
-];
-
-/** Independent slab-ray oracle, using authored primitive bounds, never shadow data. */
-function blocker(point: Vector3, direction: Vector3, maxDistance = Infinity) {
-  let nearest: { name: string; distance: number } | null = null;
-  for (const box of BOXES) {
-    let near = -Infinity;
-    let far = Infinity;
-    for (let axis = 0; axis < 3; axis++) {
-      const origin = point.asArray()[axis]!;
-      const ray = direction.asArray()[axis]!;
-      const minimum = box.center[axis]! - box.size[axis]! / 2;
-      const maximum = box.center[axis]! + box.size[axis]! / 2;
-      if (Math.abs(ray) < 1e-8) {
-        if (origin < minimum || origin > maximum) far = -Infinity;
-      } else {
-        const a = (minimum - origin) / ray;
-        const b = (maximum - origin) / ray;
-        near = Math.max(near, Math.min(a, b));
-        far = Math.min(far, Math.max(a, b));
-      }
-    }
-    if (
-      near > 1e-4 &&
-      far >= near &&
-      near < maxDistance &&
-      (!nearest || near < nearest.distance)
-    )
-      nearest = { name: box.name, distance: near };
-  }
-  return nearest;
-}
-
-function samples(scene: Scene, camera: FreeCamera, toLight: Vector3) {
-  const result: {
-    region: string;
-    expected: "lit" | "contact";
-    x: number;
-    y: number;
-  }[] = [];
-  const add = (
-    point: Vector3,
-    normal: Vector3,
-    tangentA: Vector3,
-    tangentB: Vector3,
-    region: string,
-  ) => {
-    if (Vector3.Dot(normal, toLight) < 0.2) return;
-    const toCamera = camera.position.subtract(point);
-    if (
-      Vector3.Dot(normal, toCamera) <= 0 ||
-      blocker(
-        point,
-        toCamera.normalize(),
-        Vector3.Distance(camera.position, point),
-      )
-    )
-      return;
-    const hit = blocker(point, toLight);
-    // Only compare interior lit regions and near contacts. Exclude geometric
-    // penumbra boundaries using four independent nearby visibility rays.
-    for (const tangent of [tangentA, tangentB])
-      for (const sign of [-1, 1])
-        if (
-          Boolean(blocker(point.add(tangent.scale(0.12 * sign)), toLight)) !==
-          Boolean(hit)
-        )
-          return;
-    if (hit && hit.distance > 1.2) return;
-    const screen = Vector3.Project(
-      point,
-      Matrix.Identity(),
-      scene.getTransformMatrix(),
-      camera.viewport.toGlobal(SIZE, SIZE),
-    );
-    const x = Math.round(screen.x),
-      y = Math.round(screen.y);
-    if (x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2) return;
-    result.push({ region, expected: hit ? "contact" : "lit", x, y });
-  };
-  for (const box of BOXES) {
-    for (const axis of [0, 1, 2]) {
-      const a = (axis + 1) % 3,
-        b = (axis + 2) % 3;
-      for (const side of [-1, 1]) {
-        const normal = [0, 0, 0],
-          ta = [0, 0, 0],
-          tb = [0, 0, 0];
-        normal[axis] = side;
-        ta[a] = 1;
-        tb[b] = 1;
-        for (let u = -0.4; u <= 0.401; u += 0.08)
-          for (let v = -0.4; v <= 0.401; v += 0.08) {
-            const point = [...box.center];
-            point[axis] = box.center[axis]! + (side * box.size[axis]!) / 2;
-            point[a] = box.center[a]! + u * box.size[a]!;
-            point[b] = box.center[b]! + v * box.size[b]!;
-            add(
-              Vector3.FromArray(point),
-              Vector3.FromArray(normal),
-              Vector3.FromArray(ta),
-              Vector3.FromArray(tb),
-              box.name,
-            );
-          }
-      }
-    }
-  }
-  for (let x = -1.8; x <= 1.8; x += 0.08)
-    for (let z = -1.2; z <= 1.8; z += 0.08)
-      add(
-        new Vector3(x, 0, z),
-        Vector3.Up(),
-        Vector3.Right(),
-        Vector3.Forward(),
-        "ground",
-      );
-  return result;
-}
-
-function regions(
-  reference: number[],
-  shadowed: number[],
-  points: ReturnType<typeof samples>,
-) {
-  const result: Record<
-    string,
-    { lit: number; falseDark: number; contact: number; retainedContact: number }
-  > = {};
-  for (const sample of points) {
-    const offset = (sample.y * SIZE + sample.x) * 4;
-    // Neutral material means luminance does not depend on a channel swizzle.
-    const before = reference[offset + 1]!;
-    if (before < 40) continue;
-    const value = (result[sample.region] ??= {
-      lit: 0,
-      falseDark: 0,
-      contact: 0,
-      retainedContact: 0,
-    });
-    const ratio = shadowed[offset + 1]! / before;
-    if (sample.expected === "lit") {
-      value.lit++;
-      if (ratio < 0.85) value.falseDark++;
-    } else {
-      value.contact++;
-      if (ratio < 0.85) value.retainedContact++;
-    }
-  }
-  return result;
-}
 
 export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",
@@ -211,17 +60,17 @@ export async function runShadowSelfShadowingProof(
     scene.clearColor = new Color4(0.04, 0.04, 0.04, 1);
     const camera = new FreeCamera(
       "fixed close view",
-      new Vector3(-5, 4.2, -7),
+      Vector3.FromArray(SHADOW_CAMERA_POSITION),
       scene,
     );
-    camera.setTarget(new Vector3(0, 1.9, 0));
+    camera.setTarget(Vector3.FromArray(SHADOW_CAMERA_TARGET));
     camera.minZ = 0.1;
     camera.maxZ = 100;
-    camera.fov = 0.62;
+    camera.fov = SHADOW_CAMERA_FOV;
     scene.activeCamera = camera;
     const light = new DirectionalLight(
       "oblique key",
-      new Vector3(0.7, -1, 0.5).normalize(),
+      Vector3.FromArray(SHADOW_LIGHT_DIRECTION).normalize(),
       scene,
     );
     applyAuthoredLightProperties(light, { intensity: 2, castShadows: true });
@@ -230,7 +79,7 @@ export async function runShadowSelfShadowingProof(
     material.albedoColor = new Color3(0.6, 0.6, 0.6);
     material.metallic = 0;
     material.roughness = 1;
-    for (const box of BOXES) {
+    for (const box of SHADOW_BOXES) {
       const mesh = MeshBuilder.CreateBox(
         box.name,
         { width: box.size[0], height: box.size[1], depth: box.size[2] },
@@ -249,10 +98,14 @@ export async function runShadowSelfShadowingProof(
       profile: "low",
       cascades: configuration === "low" ? 1 : 2,
     });
-    const settings = (autoBias: boolean) => {
+    const settings = (
+      autoBias: boolean,
+      depthBias = authored.depthBias,
+      normalBias = authored.normalBias,
+    ) => {
       setSceneRenderSettings(scene, {
         mode,
-        shadows: { ...authored, autoBias },
+        shadows: { ...authored, autoBias, depthBias, normalBias },
         cel: normalizeCelShadingSettings({
           specularEnabled: false,
           shadowStrength: 1,
@@ -262,8 +115,9 @@ export async function runShadowSelfShadowingProof(
     const captures: {
       name: string;
       png: string;
-      effective: unknown;
-      regions: ReturnType<typeof regions>;
+      effective: ReturnType<typeof captureShadowDiagnostics>;
+      assertions: boolean;
+      regions: ReturnType<typeof shadowRegions>;
     }[] = [];
     const render = async () => {
       const ready = await graph.prepare(camera);
@@ -314,47 +168,102 @@ export async function runShadowSelfShadowingProof(
         );
       return copy.toDataURL("image/png").split(",")[1]!;
     };
-    settings(false);
-    light.shadowEnabled = false;
-    const reference = await render();
-    const points = samples(scene, camera, light.direction.negate());
-    captures.push({
-      name: "shadow-contribution-off",
-      png: png(reference),
-      effective: null,
-      regions: {},
-    });
-    light.shadowEnabled = true;
-    for (const autoBias of [false, true]) {
-      settings(autoBias);
-      const image = await render();
-      const generator = light.getShadowGenerator()!;
-      const map = generator.getShadowMap()!;
-      captures.push({
-        name: autoBias ? "automatic" : "authored-manual",
-        png: png(image),
-        effective: {
-          generator: generator.getClassName(),
-          dimensions: map.getSize(),
-          cascades:
-            generator instanceof CascadedShadowGenerator
-              ? generator.numCascades
-              : 1,
-          bias: generator.bias,
-          normalBias: generator.normalBias,
-          filter: generator.filter,
-          filteringQuality: generator.filteringQuality,
-          minZ: light.shadowMinZ,
-          maxZ: light.shadowMaxZ,
-          diagnostics: captureShadowDiagnostics(scene, {
-            host: "synthetic FrameGraph proof",
-            requestedBackend: backend,
-            sceneUnits: "synthetic world units",
-            meshes: scene.meshes,
-          }),
-        },
-        regions: regions(reference, image, points),
+    const boxes: ShadowBox[] = [...SHADOW_BOXES];
+    let reference: number[] = [];
+    let points: ReturnType<typeof shadowSurfaceSamples> = [];
+    const diagnostics = () =>
+      captureShadowDiagnostics(scene, {
+        host: "synthetic FrameGraph proof",
+        requestedBackend: backend,
+        sceneUnits: "synthetic world units",
+        meshes: scene.meshes,
       });
+    const referencePose = async (name: string) => {
+      light.shadowEnabled = false;
+      reference = await render();
+      points = shadowSurfaceSamples(
+        camera.position.asArray() as ShadowTriple,
+        Array.from(scene.getTransformMatrix().asArray()),
+        light.direction.negate().asArray() as ShadowTriple,
+        SIZE,
+        SIZE,
+        camera.viewport,
+        boxes,
+      );
+      captures.push({
+        name: `${name}-shadow-contribution-off`,
+        png: png(reference),
+        effective: diagnostics(),
+        assertions: false,
+        regions: {},
+      });
+      light.shadowEnabled = true;
+    };
+    const capture = async (name: string, assertions = false) => {
+      const pixels = await render();
+      captures.push({
+        name,
+        png: png(pixels),
+        effective: diagnostics(),
+        assertions,
+        regions: shadowRegions(reference, pixels, points, SIZE),
+      });
+    };
+    settings(false);
+    await referencePose("baseline");
+    await capture("authored-manual");
+    settings(true);
+    await capture("automatic", true);
+    if (configuration === "low") {
+      // Native 9.20 PCF depth comparison moves 0.5*bias on BOTH backends.
+      // 160-world-unit Low footprint/depth, 1024 map: these are independently
+      // hand-derived quarter, half and three-quarter texel depth corrections.
+      // Keep normal bias fixed, then restore depth for the separate normal sweep.
+      for (const [name, bias] of [
+        ["quarter", 0.00048828125],
+        ["half", 0.0009765625],
+        ["three-quarter", 0.00146484375],
+      ] as const) {
+        settings(false, bias);
+        await capture(`manual-depth-${name}-texel`);
+      }
+      for (const normalBias of [0, 0.005, 0.01]) {
+        settings(false, authored.depthBias, normalBias);
+        await capture(`manual-normal-${normalBias}`);
+      }
+      settings(true);
+      // Deliberately separate geometry experiment: retain the principal pose
+      // above unchanged, then introduce a thin contact resting on the floor.
+      const thin: ShadowBox = {
+        name: "thin-slab",
+        center: [-1.45, 0.5, -0.1],
+        size: [0.08, 1, 0.7],
+      };
+      boxes.push(thin);
+      const mesh = MeshBuilder.CreateBox(
+        thin.name,
+        { width: thin.size[0], height: thin.size[1], depth: thin.size[2] },
+        scene,
+      );
+      mesh.position = Vector3.FromArray(thin.center);
+      mesh.material = material;
+      setSceneRenderSettings(scene);
+      await referencePose("thin-contact");
+      await capture("automatic-thin-contact", true);
+      light.direction = new Vector3(0.45, -0.8, 0.75).normalize();
+      await referencePose("second-light-angle");
+      await capture("automatic-second-light-angle", true);
+    } else if (configuration === "cascades") {
+      // Dolly through the first split while retaining the same target and
+      // projection settings. Capture each view's own independent reference.
+      const target = Vector3.FromArray(SHADOW_CAMERA_TARGET);
+      const offset = Vector3.FromArray(SHADOW_CAMERA_POSITION).subtract(target);
+      for (const scale of [1.4, 1.8]) {
+        camera.position.copyFrom(target.add(offset.scale(scale)));
+        camera.setTarget(target);
+        await referencePose(`camera-dolly-${scale}`);
+        await capture(`automatic-camera-dolly-${scale}`, true);
+      }
     }
     return {
       synthetic: true,
@@ -365,7 +274,7 @@ export async function runShadowSelfShadowingProof(
       width: SIZE,
       height: SIZE,
       authored,
-      boxes: BOXES,
+      boxes,
       camera: {
         position: camera.position.asArray(),
         minZ: camera.minZ,

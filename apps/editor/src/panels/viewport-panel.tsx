@@ -1,6 +1,6 @@
 import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import type { AbstractEngine } from "@babylonjs/core";
-import { EngineStore } from "@babylonjs/core";
+import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
@@ -10,6 +10,7 @@ import {
   beginGizmoMultiSelectDrag,
   collectNavBakeGeometry,
   createEngine,
+  captureShadowDiagnostics,
   EDITOR_CANVAS_COLOR_SCHEME,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
@@ -942,6 +943,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
+        shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
+        setRenderSettings: EngineHandle["setRenderSettings"];
+        setShadowCaptureView: (position: [number, number, number], target: [number, number, number], fov: number) => void;
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         environmentLightingProof: () => Promise<Record<string, unknown>>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
@@ -1094,6 +1098,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           measurements.add(cancel);
           sampleResources(0);
         });
+      },
+      shadowDiagnostics: () => {
+        const handle = engineRef.current;
+        return handle ? captureShadowDiagnostics(handle.scene, { host: "editor", meshes: handle.scene.meshes }) : null;
+      },
+      setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
+      setShadowCaptureView: (position, target, fov) => {
+        const handle = engineRef.current;
+        const camera = handle?.editor?.camera.camera;
+        if (!handle || !camera) throw new Error("No editor camera for shadow capture");
+        camera.setTarget(Vector3.FromArray(target));
+        camera.setPosition(Vector3.FromArray(position));
+        camera.fov = fov;
+        camera.minZ = 0.1;
+        camera.maxZ = 100;
+        handle.scheduler.invalidate("camera");
       },
       renderingBaseline: () => {
         const handle = engineRef.current;

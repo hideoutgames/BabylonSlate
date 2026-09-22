@@ -73,31 +73,58 @@ for (const backend of ["webgl2", "webgpu"] as const)
         expect(errors).toEqual([]);
         expect(result.backend).toBe(backend);
         expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
-        const automatic = result.captures.find(
-          (capture) => capture.name === "automatic",
-        )!;
-        // The oracle classifies world-space surface points by ray/AABB occlusion,
-        // independently of the shadow map. Compare only known lit interiors and
-        // known nearby contacts against the same frozen direct-light image.
-        for (const name of ["head", "torso", "ground"]) {
-          const region = automatic.regions[name]!;
-          expect(region.lit, `${name} lit sample population`).toBeGreaterThan(
-            20,
-          );
+        const mapIds = result.captures.map(
+          (capture) =>
+            capture.effective.lights.find(
+              (light) => light.name === "oblique key",
+            )?.generator?.map?.id,
+        );
+        expect(mapIds[0]).toBeDefined();
+        expect(
+          new Set(mapIds).size,
+          "bias and pose edits reuse the admitted map",
+        ).toBe(1);
+        for (const capture of result.captures) {
           expect(
-            region.falseDark / region.lit,
-            `${name} spurious dark surface samples`,
-          ).toBeLessThan(0.05);
-        }
-        for (const name of ["torso", "ground"]) {
-          const region = automatic.regions[name]!;
-          expect(
-            region.contact,
-            `${name} known occlusion population`,
-          ).toBeGreaterThan(5);
-          expect(
-            region.retainedContact / region.contact,
-            `${name} preserved self-shadow/contact coverage`,
-          ).toBeGreaterThan(0.8);
+            capture.effective.backend.actual,
+            `${capture.name} executed backend`,
+          ).toBe(backend);
+          if (!capture.assertions) continue;
+          const generator = capture.effective.lights.find(
+            (light) => light.name === "oblique key",
+          )!.generator!;
+          expect(generator.cascades).toBe(configuration === "cascades" ? 2 : 1);
+          expect(generator.map?.width).toBe(1024);
+          expect(generator.map?.height).toBe(1024);
+          // The oracle classifies world-space points by independent ray/AABB
+          // occlusion. Each pose compares frozen direct lighting in known lit
+          // interiors and nearby contacts, never whole-image difference alone.
+          for (const name of ["head", "torso", "left-arm", "ground"]) {
+            const region = capture.regions[name]!;
+            expect(
+              region.lit,
+              `${capture.name} ${name} lit population`,
+            ).toBeGreaterThan(20);
+            expect(
+              region.falseDark / region.lit,
+              `${capture.name} ${name} spurious dark surface samples`,
+            ).toBeLessThan(0.05);
+          }
+          const contacts =
+            capture.name.includes("thin-contact") ||
+            capture.name.includes("second-light-angle")
+              ? ["torso", "ground", "thin-contact-ground"]
+              : ["torso", "ground"];
+          for (const name of contacts) {
+            const region = capture.regions[name]!;
+            expect(
+              region.contact,
+              `${capture.name} ${name} known occlusion population`,
+            ).toBeGreaterThan(5);
+            expect(
+              region.retainedContact / region.contact,
+              `${capture.name} ${name} preserved contact coverage`,
+            ).toBeGreaterThan(0.8);
+          }
         }
       });

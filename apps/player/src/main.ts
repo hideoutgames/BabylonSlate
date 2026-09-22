@@ -210,6 +210,7 @@ async function launchLoaded(
           visuals: () => ReturnType<typeof session.visuals>;
           meshMaterialNames: () => string[];
           rendering: typeof session.rendering;
+          shadowDiagnostics: typeof session.shadowDiagnostics;
           bakedSession: typeof session.bakedSession;
           postProcessPassCount: typeof session.postProcessPassCount;
           renderTasks: typeof session.renderTasks;
@@ -219,6 +220,7 @@ async function launchLoaded(
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
+      shadowDiagnostics: () => session.shadowDiagnostics(),
       meshMaterialNames: () => session.meshMaterialNames(),
       bakedSession: () => session.bakedSession(),
       postProcessPassCount: () => session.postProcessPassCount(),
