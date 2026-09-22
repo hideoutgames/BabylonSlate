@@ -98,7 +98,10 @@ export async function runVisualGenerationProof(backend: "webgl2" | "webgpu") {
     text.dispose();
     durations.sort((a, b) => a - b);
     return {
+      requestedBackend: backend,
       backend: engine.isWebGPU ? "webgpu" : engine.webGLVersion === 2 ? "webgl2" : "webgl1",
+      driver: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+      userAgent: navigator.userAgent,
       warmed, retired, richPixels, modelPixels, beforeFailure, afterFailure, preservedText,
       afterModelDisposal, borrowedMaterialAlive,
       preparationMs: { p50: durations[49], p95: durations[94], p99: durations[98] },
