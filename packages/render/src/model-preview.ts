@@ -10,7 +10,6 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { loadModelContainer } from "./model-container";
 import { normalizeModelImportScale, type ModelMaterialSlot } from "@babylonslate/assets";
 import {
-  aimPreviewCameraAtMesh,
   createMaterialPreviewScene,
   type MaterialPreviewScene,
 } from "./material-preview";
@@ -21,7 +20,6 @@ import {
 } from "./model-mesh";
 import {
   constructionMaterialOf,
-  visualHierarchyBoundingVectors,
   visualMeshes,
 } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
@@ -155,6 +153,8 @@ export async function loadModelPreviewSource(
     bundle.dispose();
     return null;
   }
+  const priorTarget = host.camera.target.clone();
+  const priorRadius = host.camera.radius;
   try {
     const wrapper = new TransformNode(MODEL_IMPORT_SCALE_NODE_NAME, host.scene);
     bundle.ownRenderUser({ dispose: () => { if (!wrapper.isDisposed()) wrapper.dispose(true); } });
@@ -181,26 +181,31 @@ export async function loadModelPreviewSource(
       if (mesh.skeleton) mesh.refreshBoundingInfo({ applySkeleton: true });
     }
     const previous = previewBundles.get(host);
-    container.addAllToScene();
-    wrapper.parent = host.mesh;
-    wrapper.setEnabled(true);
-    previewBundles.set(host, bundle);
-    const observer = host.mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    bundle.cancelWith(() => host.mesh.onDisposeObservable.remove(observer));
-    aimPreviewCameraAtMesh(host.camera, host.mesh);
-    const extent = visualHierarchyBoundingVectors(host.mesh);
+    // Frame the candidate alone; the prior generation can still be visible.
+    wrapper.computeWorldMatrix(true);
+    const extent = wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh.getTotalVertices() > 0);
+    const center = extent.min.add(extent.max).scale(0.5);
+    if ([center.x, center.y, center.z].every(Number.isFinite)) host.camera.setTarget(center);
     const size = extent.max.subtract(extent.min).length();
     if (Number.isFinite(size) && size > 0) {
       const lower = host.camera.lowerRadiusLimit ?? 0.5;
       const upper = host.camera.upperRadiusLimit ?? 400;
       host.camera.radius = Math.min(upper, Math.max(lower, size * 1.2));
     }
+    container.addAllToScene();
+    wrapper.parent = host.mesh;
+    wrapper.setEnabled(true);
+    previewBundles.set(host, bundle);
+    const observer = host.mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    bundle.cancelWith(() => host.mesh.onDisposeObservable.remove(observer));
     previous?.dispose();
     return {
       dispose: () => bundle.dispose(),
       animationGroups: container.animationGroups,
     };
   } catch (error) {
+    host.camera.setTarget(priorTarget);
+    host.camera.radius = priorRadius;
     bundle.dispose();
     throw error;
   }

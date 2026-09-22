@@ -507,7 +507,7 @@ export function createText2DMesh(
   };
   const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
   for (const [key, request] of requests) {
-    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits));
+    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key)));
   }
   // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
   if (!options.metrics) layout = layoutText2DFromProperties(properties, layoutOptions).layout;

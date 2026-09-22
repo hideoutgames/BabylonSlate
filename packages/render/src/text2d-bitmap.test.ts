@@ -38,6 +38,7 @@ describe("rasterizeBitmapGlyph", () => {
   function withMockCanvas(
     getImageData: (w: number, h: number) => Uint8ClampedArray,
     run: () => void,
+    width: () => number = () => 16,
   ): void {
     const previous = (globalThis as { document?: unknown }).document;
     (globalThis as { document: unknown }).document = {
@@ -55,7 +56,7 @@ describe("rasterizeBitmapGlyph", () => {
             miterLimit: 0,
             lineWidth: 0,
             measureText: () => ({
-              width: 16,
+              width: width(),
               actualBoundingBoxAscent: 16,
               actualBoundingBoxDescent: 4,
             }),
@@ -79,6 +80,15 @@ describe("rasterizeBitmapGlyph", () => {
       }
     }
   }
+
+  it("rejects changed canvas metrics before allocating glyph pixels", () => {
+    let measurements = 0;
+    let readbacks = 0;
+    withMockCanvas((w, h) => { readbacks += 1; return new Uint8ClampedArray(w * h * 4); }, () => {
+      expect(() => rasterizeBitmapGlyph("A", STYLE, "sans-serif", { maxTextureSize: 64, maxWorkingBytes: 1_000_000 })).toThrow(/allocation limit/i);
+      expect(readbacks).toBe(0);
+    }, () => ++measurements === 1 ? 16 : 1000);
+  });
 
   it("falls back to the 5x7 bitmap when canvas paints a solid rectangle", () => {
     withMockCanvas((w, h) => {

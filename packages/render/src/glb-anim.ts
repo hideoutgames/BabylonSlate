@@ -437,6 +437,7 @@ function prepareModelInstance(
     const instance = bundle.ownRenderUser(container.instantiateModelsToScene(keepSourceName, false, { doNotInstantiate: true }));
     for (const node of instance.rootNodes) node.parent = wrapper;
     const copies = new Map<unknown, unknown>();
+    const textureCopies = new Map<unknown, Set<unknown>>();
     const cloneMaterial = (source: Material): Material => {
       const previous = copies.get(source) as Material | undefined;
       if (previous) return previous;
@@ -453,7 +454,11 @@ function prepareModelInstance(
         for (const [index, texture] of clone.getActiveTextures().entries()) {
           if (!borrowed.includes(texture)) bundle.ownTexture(texture);
           const original = borrowed[index];
-          if (original) copies.set(original, texture);
+          if (original) {
+            const variants = textureCopies.get(original) ?? new Set<unknown>();
+            variants.add(texture);
+            textureCopies.set(original, variants);
+          }
         }
       }
       return clone;
@@ -465,8 +470,15 @@ function prepareModelInstance(
     // With Babylon material cloning disabled, material/texture animation targets
     // still reference the source. Redirect them to this generation's clones.
     for (const group of instance.animationGroups) {
-      for (const targeted of group.targetedAnimations) {
-        targeted.target = copies.get(targeted.target) ?? targeted.target;
+      for (const targeted of [...group.targetedAnimations]) {
+        const textures = textureCopies.get(targeted.target);
+        if (textures?.size) {
+          const [first, ...rest] = textures;
+          targeted.target = first;
+          for (const target of rest) group.addTargetedAnimation(targeted.animation.clone(), target);
+        } else {
+          targeted.target = copies.get(targeted.target) ?? targeted.target;
+        }
       }
     }
     return { bundle, staging, wrapper, instance, groups: [] };

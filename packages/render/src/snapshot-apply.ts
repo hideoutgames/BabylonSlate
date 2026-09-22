@@ -40,6 +40,7 @@ import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
   applyTilemapAlbedoTextures,
+  meshAssetFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
@@ -673,16 +674,18 @@ export function applyAssignMesh(
     }).catch(() => {});
     return;
   }
-  const stagesText = meshKind === "2dtext" || meshKind === "2drichtext";
+  const stagesText = meshKind === "2dtext" || meshKind === "2drichtext" ||
+    command.parts?.some((part) => part.meshKind === "2dtext" || part.meshKind === "2drichtext");
   // Text performs all allocation checks and construction while its predecessor
   // remains usable. Native retirement must not erase the newly authored props.
   let stagedText: Mesh | null = null;
+  const deferredModels: Array<() => void> = [];
   if (stagesText) {
-    const descriptor = JSON.stringify(command);
+    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
     const rejected = rejectedTextAssignments.get(binding);
     if (existing && rejected?.get(command.slotId) === descriptor) return;
     try {
-      stagedText = createPlayVisual(scene, command.slotId, binding);
+      stagedText = createPlayVisual(scene, command.slotId, binding, deferredModels);
       rejected?.delete(command.slotId);
     } catch (error) {
       if (!(error instanceof BitmapAllocationLimitError) || !existing) throw error;
@@ -711,6 +714,7 @@ export function applyAssignMesh(
   }
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  for (const start of deferredModels) start();
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
@@ -746,7 +750,9 @@ export function migratePlaySlotVisual(
   }
   rebuilt.scaling.copyFrom(scaling);
   if (metadata && typeof metadata === "object") {
-    rebuilt.metadata = { ...(rebuilt.metadata ?? {}), ...metadata };
+    const identity = { ...metadata };
+    for (const key of ["visualBundle", "babylonslateModelInstance", "babylonslateModelLoadKey", "disposeModelOnDespawn"]) delete identity[key];
+    rebuilt.metadata = { ...identity, ...(rebuilt.metadata ?? {}) };
   }
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
@@ -1006,12 +1012,13 @@ function createPlayVisual(
   scene: Scene,
   slotId: number,
   binding: SnapshotSceneBinding,
+  deferredModels?: Array<() => void>,
 ): Mesh {
   const parts = binding.meshParts.get(slotId);
   const meshKind = binding.meshKinds.get(slotId);
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
-    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
+    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels);
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1034,6 +1041,7 @@ function createPlayVisual(
         playComponentMeshName(slotId, part.componentId),
         part.text3d,
         part.text2d,
+        deferredModels,
       );
       child.parent = root;
       applyPartTransform(child, part);
@@ -1062,6 +1070,7 @@ export function createPlayMesh(
   meshName?: string,
   partText3d?: Text3DProperties,
   partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
+  deferredModels?: Array<() => void>,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -1167,7 +1176,7 @@ export function createPlayMesh(
     const root = createModelActorRoot(scene, name);
     const bytes = binding?.modelSources?.get(assetGuid);
     if (bytes && binding) {
-      void beginSlotModelAnimLoad(
+      const start = () => { void beginSlotModelAnimLoad(
         scene,
         binding,
         slotId,
@@ -1177,7 +1186,9 @@ export function createPlayMesh(
         undefined,
         undefined,
         (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
-      );
+      ); };
+      if (deferredModels) deferredModels.push(start);
+      else start();
     }
     return finishPlayWorldMesh(root);
   }

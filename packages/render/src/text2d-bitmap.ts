@@ -295,6 +295,8 @@ function tryCanvasRasterize(
   style: RichTextStyle,
   stack: string,
   key: string,
+  limits: BitmapAllocationLimits,
+  expected: BitmapGlyphMeasurement,
 ): BitmapGlyphCell | null {
   if (typeof document === "undefined" || typeof document.createElement !== "function") {
     return null;
@@ -319,6 +321,10 @@ function tryCanvasRasterize(
       : style.size * 0.25;
   const width = Math.max(1, Math.ceil((measured.width || style.size * 0.5) + pad * 2));
   const height = Math.max(1, Math.ceil(ascent + descent + pad * 2));
+  checkedCellBytes(width, height, limits);
+  if (width > expected.width || height > expected.height) {
+    throw new BitmapAllocationLimitError("font metrics changed after allocation preflight.");
+  }
   canvas.width = width;
   canvas.height = height;
   ctx.clearRect(0, 0, width, height);
@@ -347,11 +353,13 @@ export function rasterizeBitmapGlyph(
   style: RichTextStyle,
   stack = DEFAULT_TEXT2D_FONT_STACK,
   limits: BitmapAllocationLimits = defaultLimits,
+  measurement?: BitmapGlyphMeasurement,
 ): BitmapGlyphCell {
-  planBitmapGlyphAtlas([measureBitmapGlyph(ch, style, stack)], limits);
+  const measured = measurement ?? measureBitmapGlyph(ch, style, stack);
+  planBitmapGlyphAtlas([measured], limits);
   const key = bitmapGlyphKey(ch, style, stack);
   return (
-    tryCanvasRasterize(ch, style, stack, key) ??
+    tryCanvasRasterize(ch, style, stack, key, limits, measured) ??
     rasterizeSoftwareBitmapGlyph(ch, style, key)
   );
 }
