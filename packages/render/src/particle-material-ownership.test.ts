@@ -13,17 +13,19 @@ const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
 
 describe("scene and emitter material ownership", () => {
-  it.each([false, true])("isolates one graph's two emitter textures and scenes (reverse=%s)", async (reverse) => {
+  it.each([{ reverse: false, splitScene: false }, { reverse: true, splitScene: false }, { reverse: false, splitScene: true }, { reverse: true, splitScene: true }])("isolates one graph's emitter textures ($reverse/$splitScene)", async ({ reverse, splitScene }) => {
     const host = createTestEngine();
     const overlay = new Scene(host.engine);
+    const blueScene = splitScene ? overlay : host.scene;
     const library = new MaterialLibrary();
     const document = createDefaultMaterialDocument("Shared graph", "particle");
     const red = RawTexture.CreateRGBATexture(new Uint8Array([255, 0, 0, 255]), 1, 1, host.scene);
-    const blue = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 255, 255]), 1, 1, overlay);
+    const blue = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 255, 255]), 1, 1, blueScene);
     const materials: ResourceLease<NodeMaterial>[] = [];
+    const expectedTextures = new Map<NodeMaterial, RawTexture>();
     let textureOwners = 0;
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
-      sceneForSlot: (slot) => slot === 2 ? overlay : host.scene,
+      sceneForSlot: (slot) => slot === 2 ? blueScene : host.scene,
       acquireTexture: (guid) => {
         textureOwners += 1;
         return { key: guid, resource: guid === "red" ? red : blue, release: () => { textureOwners -= 1; } };
@@ -31,6 +33,7 @@ describe("scene and emitter material ownership", () => {
       acquireMaterial: (guid, owner) => {
         const lease = acquireParticleMaterial(library, guid, document, owner)!;
         materials.push(lease);
+        expectedTextures.set(lease.resource, owner.instanceKey.includes(":red:") ? red : blue);
         return lease;
       },
     });
@@ -42,23 +45,24 @@ describe("scene and emitter material ownership", () => {
       slotId: guid === "red" ? 1 : 2, actorGuid: guid, componentId: "particle", particleSystemGuid: guid });
     await vi.waitFor(() => {
       expect(host.scene.particleSystems[0]?.isStarted()).toBe(true);
-      expect(overlay.particleSystems[0]?.isStarted()).toBe(true);
+      expect(blueScene.particleSystems.find((system) => system.particleTexture === blue)?.isStarted()).toBe(true);
     });
     expect(materials[0]!.resource).not.toBe(materials[1]!.resource);
     for (const lease of materials) {
       const material = lease.resource;
-      const expected = material.getScene() === host.scene ? red : blue;
+      const expected = expectedTextures.get(material)!;
+      expect(material.getScene()).toBe(expected === red ? host.scene : blueScene);
       const blocks = material.attachedBlocks.filter((block) => block instanceof ParticleTextureBlock);
       expect(blocks.length).toBeGreaterThan(0);
       for (const block of blocks) expect((block as ParticleTextureBlock).texture).toBe(expected);
     }
-    const survivor = overlay.particleSystems[0]!;
+    const survivor = blueScene.particleSystems.find((system) => system.particleTexture === blue)!;
     service.handleCommand({ type: "despawn", slotId: 1, actorGuid: "red" });
     expect(textureOwners).toBe(1);
-    expect(host.scene.particleSystems).toHaveLength(0);
-    expect(overlay.particleSystems).toEqual([survivor]);
+    expect(host.scene.particleSystems).toHaveLength(splitScene ? 0 : 1);
+    expect(blueScene.particleSystems).toEqual([survivor]);
     expect(survivor.particleTexture).toBe(blue);
-    expect(overlay.materials).toContain(materials.find((lease) => lease.resource.getScene() === overlay)!.resource);
+    expect(blueScene.materials).toContain(materials.find((lease) => expectedTextures.get(lease.resource) === blue)!.resource);
     service.dispose();
     expect(textureOwners).toBe(0);
   });

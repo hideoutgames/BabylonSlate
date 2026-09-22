@@ -369,7 +369,7 @@ export class ParticleService {
     for (const cancel of entry.cancel.splice(0)) cancel();
     for (const { system } of entry.systems.splice(0)) { system.stop(); system.dispose(false); }
     entry.node?.dispose(); entry.node = null;
-    for (const lease of entry.leases.splice(0)) lease.release();
+    for (const lease of entry.leases.splice(0).reverse()) lease.release();
     entry.scene = null;
     entry.building = false;
   }

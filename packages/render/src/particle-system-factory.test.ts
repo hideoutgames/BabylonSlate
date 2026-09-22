@@ -219,4 +219,19 @@ describe("particle-system-factory", () => {
     live.dispose(false);
     library.dispose();
   });
+
+  it("removes the custom readiness check when effect preparation fails", async () => {
+    const { scene, texture } = host();
+    const system = createBabylonParticleSystem("failed", scene, 16, false);
+    const material = new NodeMaterial("failed material", scene);
+    material.mode = NodeMaterialModes.Particle;
+    material.createEffectForParticles = () => { throw new Error("controlled effect failure"); };
+    const add = vi.spyOn(scene, "addIsReadyCheck");
+    const remove = vi.spyOn(scene, "removeIsReadyCheck");
+    await expect(applyParticleLook({ system, emitter: createDefaultParticleEmitterPayload(),
+      systemPayload: createDefaultParticleSystemPayload(), gpu: false, texture, material })).rejects.toThrow("controlled effect failure");
+    expect(remove).toHaveBeenCalledWith(add.mock.calls[0]![0]);
+    system.dispose(false);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
 });

@@ -246,7 +246,11 @@ export function applyParticleLook(options: {
     options.system.particleTexture = options.texture;
   }
   pendingParticleMaterials.get(options.system)?.();
-  if (options.material && options.material.mode === NodeMaterialModes.Particle) {
+  if (options.material) {
+    const materialScene = options.system.getScene();
+    if (!materialScene || options.material.mode !== NodeMaterialModes.Particle || isDisposedNodeMaterial(options.material, materialScene)) {
+      throw new Error("Particle material must be a live particle-domain instance in the system's owning scene.");
+    }
     if (options.texture) {
       bindParticleTextureBlocks(options.material, options.texture);
     }
