@@ -276,9 +276,13 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 Per-Scene GLB containers (`glb-anim.ts`) account GPU vertex+index bytes (`accountedGeometryBytesForScene`). The HUD shows `geo` and **Geo High** when that exceeds `GEOMETRY_BYTE_CEILING` (512 MB). Geometry is **not** LRU-evicted and has **no** Engine Setting.
 
+An authored sprite Material temporarily overrides the retained automatic sprite material; it does not retire that construction material or its exact texture lease. Clearing the assignment restores the automatic material immediately, including static sprites. Animation requests resume its binding after the clear. A pending texture completion can update the retained automatic material but cannot replace a newer authored assignment. Mesh retirement disposes its owned material and releases its lease without disposing the borrowed authored Material.
+
 ### Texture ownership verification pickup
 
 Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. The current source checkpoint is `b8a11880eaf9ef3a3d992ee16fe32cf97254406a`. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current 3 GiB headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
+
+The rendering integration adds three unexecuted `mesh-assets.test.ts` regressions for static material restoration, animation resumption and a pending upload racing authored assignment. The defect was found by source tracing at `a4fa188c`; no pre-fix execution is claimed. Resume with `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'restores a static sprite|resumes the latest animation texture|does not let a pending sprite upload'`, then the affected snapshot/animation consumer cases and scoped render checks.
 
 Recorded evidence:
 

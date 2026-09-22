@@ -12,6 +12,7 @@ import {
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
+import { applyMaterialBounds } from "./material-bounds";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -189,7 +190,6 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
 
 interface AlbedoBinding {
   material: StandardMaterial | null;
-  authored?: boolean;
   lease?: ResourceLease<Texture | CubeTexture>;
   source?: Uint8Array | Blob;
   guid?: string;
@@ -199,6 +199,15 @@ interface AlbedoBinding {
   cancel?: () => void;
 }
 const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
+
+/** Restore the mesh's owned construction material after a borrowed assignment clears. */
+export function restoreAlbedoMaterial(mesh: AbstractMesh): boolean {
+  const material = albedoBindings.get(mesh)?.material;
+  if (!material) return false;
+  mesh.material = material;
+  applyMaterialBounds(mesh);
+  return true;
+}
 
 export function applyAlbedoTexture(
   mesh: AbstractMesh,
@@ -214,8 +223,8 @@ export function applyAlbedoTexture(
     mesh.onDisposeObservable.addOnce(() => {
       binding!.cancel?.();
       binding!.pending?.release();
-      binding!.lease?.release();
       binding!.material?.dispose(false, false);
+      binding!.lease?.release();
       albedoBindings.delete(mesh);
     });
   }
@@ -227,14 +236,12 @@ export function applyAlbedoTexture(
     binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
     return;
   }
-  // An authored material owns its own texture contract. Sprite animation must not replace it.
+  // An authored material owns its own texture contract. Keep the construction
+  // material and its exact lease alive so clearing the override can restore it.
   if (mesh.material && mesh.material !== binding.material && (binding.material || isSpriteQuad(mesh))) {
-    binding.authored = true;
-    binding.cancel?.(); binding.pending?.release(); binding.pending = undefined;
-    binding.lease?.release(); binding.lease = undefined;
-    binding.material?.dispose(false, false); binding.material = null;
+    return;
   }
-  if (binding.authored) return;
+  if (!mesh.material && binding.material) restoreAlbedoMaterial(mesh);
   const source = assets?.textureBytes?.get(textureGuid);
   if (!source || !assets?.resourceCache) return;
   const identity = source instanceof Blob && binding.source === source ? binding.identity : snapshotByteFingerprint(source);
@@ -250,6 +257,7 @@ export function applyAlbedoTexture(
   const publish = () => {
     if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
     binding.cancel?.(); binding.cancel = undefined;
+    const publishToMesh = !mesh.material || mesh.material === binding.material || (!binding.material && !isSpriteQuad(mesh));
     let material = binding.material;
     if (!material) {
       material = new StandardMaterial(`albedo:${textureGuid}`, scene);
@@ -262,7 +270,9 @@ export function applyAlbedoTexture(
     }
     material.diffuseTexture = next.resource;
     material.emissiveTexture = next.resource;
-    mesh.material = material;
+    // Preparation may finish after an authored assignment. Update only our
+    // retained material in that case; the borrowed material remains attached.
+    if (publishToMesh) mesh.material = material;
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();

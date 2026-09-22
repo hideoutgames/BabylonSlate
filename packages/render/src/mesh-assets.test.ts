@@ -10,6 +10,11 @@ import {
 import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
+import { createSpriteQuad } from "./sprite-quad";
+import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { constructionMaterialOf } from "./visual-meshes";
 
 describe("meshAssetFingerprint", () => {
   it("detects same-size texture replacements while retaining equal-content snapshot keys", () => {
@@ -69,6 +74,115 @@ describe("modelSlotFingerprint", () => {
 });
 
 describe("applyAlbedoTexture", () => {
+  function spriteFixture() {
+    const engine = new NullEngine({ renderWidth: 64, renderHeight: 64, textureSize: 4,
+      deterministicLockstep: false, lockstepMaxSteps: 1 });
+    const scene = new Scene(engine);
+    const cache = new ResourceCache();
+    const sprite = createDefaultSpritePayload();
+    sprite.textureGuid = "atlas";
+    const mesh = createSpriteQuad(scene, "actor-1", sprite.frames[0]!);
+    const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([
+      ["atlas", new Uint8Array([1, 2, 3])], ["next", new Uint8Array([1, 2, 4])],
+    ]))! };
+    const acquire = vi.spyOn(cache, "acquireTexture");
+    applyAlbedoTexture(mesh, scene, "atlas", assets);
+    const auto = mesh.material as StandardMaterial;
+    const authored = new StandardMaterial("authored", scene);
+    const binding = createSnapshotSceneBinding();
+    binding.meshes.set(1, mesh);
+    binding.meshAssetGuids.set(1, "sprite");
+    binding.resolveMaterial = () => authored;
+    const assign = (materialAssetGuid: string | null) => applyAssignMaterial(scene, binding, {
+      type: "assignMaterial", slotId: 1, materialAssetGuid,
+    });
+    return { engine, scene, cache, sprite, mesh, assets, acquire, auto, authored, binding, assign,
+      dispose: () => { scene.dispose(); cache.dispose(); engine.dispose(); } };
+  }
+
+  it("restores a static sprite's owned material immediately after clearing an authored assignment", () => {
+    const f = spriteFixture();
+    try {
+      const construction = constructionMaterialOf(f.mesh);
+      const texture = f.auto.diffuseTexture;
+      const bounds = f.mesh.getBoundingInfo();
+      f.authored.metadata = { boundsPadding: 2 };
+      f.assign("authored");
+      applyAlbedoTexture(f.mesh, f.scene, "atlas", f.assets);
+      expect(f.mesh.material).toBe(f.authored);
+      expect(f.scene.materials).toContain(construction);
+      expect(f.cache.resourceStats().leases).toBe(1);
+      f.assign(null);
+      expect(f.mesh.material).toBe(f.auto);
+      expect(f.mesh.getBoundingInfo()).toBe(bounds);
+      expect(f.auto.diffuseTexture).toBe(texture);
+      expect(f.acquire).toHaveBeenCalledOnce();
+      f.mesh.dispose();
+      expect(f.scene.materials).not.toContain(f.auto);
+      expect(f.scene.materials).toContain(f.authored);
+      expect(f.cache.resourceStats().leases).toBe(0);
+    } finally { f.dispose(); }
+  });
+
+  it("resumes the latest animation texture after clearing an authored sprite material", async () => {
+    const f = spriteFixture();
+    try {
+      const animation = createDefaultSpriteAnimationPayload();
+      animation.frames[0]!.textureGuid = "next";
+      const host = sceneAnimHostFromBinding(f.binding, {
+        animationGroups: [], spritePayloads: new Map([["sprite", f.sprite]]),
+        spriteAnimations: new Map([["animation", animation]]),
+        applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, f.assets),
+      });
+      const command = { type: "animState" as const, slotId: 1, stateId: "idle", normalisedTime: 0,
+        blendWeights: { idle: 1 }, clipName: "Idle", clipKind: "sprite" as const, clipAssetGuid: "animation" };
+      f.assign("authored");
+      applyAnimStateToScene(host, command);
+      expect(f.mesh.material).toBe(f.authored);
+      expect(f.acquire).toHaveBeenCalledOnce();
+      f.assign(null);
+      applyAnimStateToScene(host, command);
+      expect(f.acquire).toHaveBeenCalledTimes(2);
+      const next = f.acquire.mock.results[1]!.value as ReturnType<ResourceCache["acquireTexture"]>;
+      next.resource.getInternalTexture()!.isReady = true;
+      next.resource.onLoadObservable.notifyObservers(next.resource as never);
+      await next.ready;
+      expect(f.mesh.material).toBe(f.auto);
+      expect(f.auto.diffuseTexture).toBe(next.resource);
+      expect(f.cache.resourceStats().leases).toBe(1);
+      for (let i = 0; i < 100; i++) applyAnimStateToScene(host, command);
+      expect(f.acquire).toHaveBeenCalledTimes(2);
+      expect(f.scene.materials).toContain(f.authored);
+    } finally { f.dispose(); }
+  });
+
+  it("does not let a pending sprite upload replace a newer authored material assignment", async () => {
+    const f = spriteFixture();
+    const nativeCreate = f.engine.createTexture.bind(f.engine);
+    const create = vi.spyOn(f.engine, "createTexture").mockImplementation((...args) => {
+      args[5] = null;
+      const texture = nativeCreate(...args);
+      texture.isReady = false;
+      return texture;
+    });
+    try {
+      applyAlbedoTexture(f.mesh, f.scene, "next", f.assets);
+      const next = f.acquire.mock.results[1]!.value as ReturnType<ResourceCache["acquireTexture"]>;
+      const previous = f.auto.diffuseTexture;
+      f.assign("authored");
+      expect(f.auto.diffuseTexture).toBe(previous);
+      next.resource.getInternalTexture()!.isReady = true;
+      next.resource.onLoadObservable.notifyObservers(next.resource as never);
+      await next.ready;
+      expect(f.mesh.material).toBe(f.authored);
+      expect(f.auto.diffuseTexture).toBe(next.resource);
+      f.assign(null);
+      expect(f.mesh.material).toBe(f.auto);
+      expect(f.auto.diffuseTexture).toBe(next.resource);
+      expect(f.cache.resourceStats().leases).toBe(1);
+    } finally { create.mockRestore(); f.dispose(); }
+  });
+
   it("keeps the previous texture after upload failure and ignores an obsolete completion", async () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);

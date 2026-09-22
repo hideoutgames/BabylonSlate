@@ -39,6 +39,7 @@ import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
+  restoreAlbedoMaterial,
   applyTilemapAlbedoTextures,
   meshAssetFingerprint,
   type MeshAssetContext,
@@ -413,7 +414,7 @@ export function applyMaterialToActorMeshes(
     const componentId = componentIdForPlayMesh(target, slotId, binding);
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {
-      target.material = null;
+      if (!restoreAlbedoMaterial(target)) target.material = null;
       continue;
     }
     if (!guid) continue;
