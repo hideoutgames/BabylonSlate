@@ -9,6 +9,7 @@ import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-re
 import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineView } from "./shared-outline";
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
+import { CelMaterial } from "./cel-material";
 
 type MaskProgram = { source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant };
 
@@ -83,7 +84,11 @@ export class SharedOutlineMaskRenderer {
     }
     if (!program) {
       const variant = acquireAuthoredOutlineVariant(source);
-      if (!variant && !["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "BackgroundMaterial"].includes(source.getClassName()))
+      // The engine's CEL adapter changes lighting, not StandardMaterial coverage.
+      // Only admit the actual adapter with its original hooks, never an arbitrary
+      // custom material that happens to use the same class name.
+      const nativeCel = source instanceof CelMaterial && source.hasOriginalShadowHooks();
+      if (!variant && !nativeCel && !["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "BackgroundMaterial"].includes(source.getClassName()))
         throw new Error(`Shared outlines cannot reproduce the coverage of custom material "${source.name}".`);
       program = { source, variant }; this.programs.set(subMesh, program);
     }

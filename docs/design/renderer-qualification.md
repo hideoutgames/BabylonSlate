@@ -2,6 +2,15 @@
 
 ## Current continuation status — 22 September 2026
 
+Computer Use on build `6cc7cce3` reached OutlineComponent authoring in Chrome
+153 on the NVIDIA RTX 2060 (effective WebGL2, DPR 1.5, 720×272 drawing buffer).
+The magenta width-4 component was visible, but changing Project Settings to CEL
+failed scene loading: the mask renderer rejected `engineDefaultMaterial:CEL`.
+This is a **FAIL**, not completed Route A acceptance. The repair admits the
+engine's native CEL adapter with its original hooks and retains StandardMaterial
+coverage semantics. The two-API geometry fixture now includes default CEL and
+CEL alpha-cutout silhouettes; verification and a hands-on rerun are pending.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

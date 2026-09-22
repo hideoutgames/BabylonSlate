@@ -5,7 +5,7 @@ import {
   Skeleton, StandardMaterial, Texture, Vector3, VertexBuffer, FreeCamera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { compileMaterialPlan, createAppWebGpuEngine, requestRenderPath, SharedOutlineOwner } from "@babylonslate/render";
+import { compileMaterialPlan, createAppWebGpuEngine, requestRenderPath, setSceneRenderSettings, SharedOutlineOwner } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -130,6 +130,27 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
   };
   let disposeAuthored: (() => void) | undefined;
   try {
+    // Production CEL adaptation must work for the default material as well as
+    // assigned cutouts; a hand-written StandardMaterial fixture missed this.
+    const previousDefault = scene.defaultMaterial;
+    const celSource = new PBRMaterial("CEL Default Coverage", scene);
+    celSource.emissiveColor = new Color3(0.4, 0.4, 0.4);
+    scene.defaultMaterial = celSource;
+    const celTarget = MeshBuilder.CreatePlane("Default CEL Target", { size: 1 }, scene);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    await pair("cel-default-material", [contribution([celTarget])]);
+    setSceneRenderSettings(scene, { mode: "pbr" });
+    const celAlpha = RawTexture.CreateRGBATexture(new Uint8Array([255,255,255,0, 255,255,255,255]), 2, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    celAlpha.hasAlpha = true;
+    celSource.albedoTexture = celAlpha; celSource.useAlphaFromAlbedoTexture = true;
+    celSource.transparencyMode = Material.MATERIAL_ALPHATEST;
+    celTarget.material = celSource;
+    setSceneRenderSettings(scene, { mode: "cel" });
+    await pair("cel-native-cutout", [contribution([celTarget])]);
+    setSceneRenderSettings(scene, { mode: "pbr" });
+    clear(); scene.defaultMaterial = previousDefault;
+    celSource.dispose(false, true);
+
     // Two independently dispatched submaterials in one grouped actor.
     const opaque = MeshBuilder.CreatePlane("Opaque Submesh", { size: 1 }, scene); opaque.position.x = -0.7; opaque.material = material;
     const cutout = MeshBuilder.CreatePlane("Cutout Submesh", { size: 1 }, scene); cutout.position.x = 0.7;

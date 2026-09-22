@@ -62,6 +62,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.rendered.outline.renderRecordCount, result.name).toBeLessThanOrEqual(7);
     }
     const submeshes = at("multi-material-cutout");
+    expect(at("cel-default-material").native.count).toBeGreaterThan(1_000);
+    expect(at("cel-native-cutout").native.count).toBeGreaterThan(0);
+    expect(at("cel-native-cutout").native.count).toBeLessThan(at("cel-default-material").native.count * 0.6);
     expect(submeshes.native.count).toBeGreaterThan(1_500);
     expect(at("live-alpha-cutoff").native.count).toBeLessThan(submeshes.native.count);
     expect(at("live-uv-transform").native.centroid![0]).not.toBe(at("live-alpha-cutoff").native.centroid![0]);
