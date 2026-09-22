@@ -426,7 +426,8 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "math.atan": trigonometry(TrigonometryBlockOperations.ArcTan),
   "math.atan2": componentwise(({ name }) => {
     const block = new ArcTan2Block(name);
-    return single(block, { y: block.y, x: block.x }, { out: block.output });
+    // Babylon names its first atan(y, x) argument `x`.
+    return single(block, { y: block.x, x: block.y }, { out: block.output });
   }),
   "math.pow": ({ name }) => {
     const block = new PowBlock(name);
