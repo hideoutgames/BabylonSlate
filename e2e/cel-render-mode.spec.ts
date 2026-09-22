@@ -24,6 +24,8 @@ import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
+  await info.attach("scene-texture-pixels", { body: JSON.stringify(await page.evaluate(() =>
+    (window as unknown as { __babylonslateViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__babylonslateViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
   await info.attach("scene-materials", { body: JSON.stringify(await page.evaluate(() =>
     (window as unknown as { __babylonslateViewportTest?: { sceneVisuals(): unknown } }).__babylonslateViewportTest?.sceneVisuals() ?? [])), contentType: "application/json" });
 });

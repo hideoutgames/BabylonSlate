@@ -24,6 +24,12 @@ const textureGuid = "00000000-0000-4000-8000-000000000010";
 const tilesetGuid = "00000000-0000-4000-8000-000000000011";
 const tilemapGuid = "00000000-0000-4000-8000-000000000012";
 
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  await info.attach("scene-texture-pixels", { body: JSON.stringify(await page.evaluate(() =>
+    (window as unknown as { __babylonslateViewportTest?: { sceneTexturePixels(): Promise<unknown> } }).__babylonslateViewportTest?.sceneTexturePixels() ?? [])), contentType: "application/json" });
+});
+
 // Numeric solid-color fixtures, with no pictorial assets or generated artwork.
 async function greenPng(page: Page, width: number, height: number) {
   const bytes = await page.evaluate(
