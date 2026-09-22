@@ -37,6 +37,8 @@ The old shared build upload/download and the browser dependency on `static` are 
 
 A zero browser exit code is accepted only with a JSON report bearing this invocation's server nonce and containing executed passing tests. Missing/stale reports, all-skipped selections, runner errors and unexpected outcomes fail. Existing skips and retry outcomes remain visible in a compact result log; reports never replace required browser execution.
 
+After admission, the browser session rechecks source, toolchain, build contract and file integrity before starting its server. A source edit while a completed build waits for browser capacity fails clearly rather than exercising a stale bundle or silently rebuilding.
+
 This is a provisional pilot, not a measured speedup. Earlier post-typecheck builds took 8–10 seconds, but independent cold builds must be measured. Compare full required-check latency, queue delay, aggregate runner seconds, retries, failures, test inventory and build duration against the control, recording exact source, lockfile, Node and runner image. Starting browsers early can consume work when static later fails. Keep the existing two-ready-PR admission cadence and treat 20 jobs as the repository's planning budget; actual account concurrency and overlapping main/Preview/Security activity must be observed.
 
 Accept the pilot only if repeated comparable runs preserve complete execution and show a useful latency/reliability benefit for the extra builds. A 15% median reduction is an initial target, not a forecast. Cold/warm comparisons and broader live observations remain necessary; no full local suite is required for this measurement.

@@ -94,9 +94,11 @@ export async function runPnpm(profile, args) {
     await writeFile(
       join(directory, "run.mjs"),
       `
-import { buildTestArtifact } from './scripts/test-build.mjs';
+import { buildTestArtifact, verifyBrowserArtifact } from './scripts/test-build.mjs';
 try {
-  const result = await buildTestArtifact({ env: JSON.parse(process.env.FIXTURE_OPTIONS || '{}') });
+  const result = process.env.FIXTURE_CHECK_ARTIFACT
+    ? await verifyBrowserArtifact(process.env.FIXTURE_CHECK_ARTIFACT)
+    : await buildTestArtifact({ env: JSON.parse(process.env.FIXTURE_OPTIONS || '{}') });
   process.stdout.write(JSON.stringify(result));
 } catch (error) {
   process.stdout.write(JSON.stringify({ error: error.message }));
@@ -490,6 +492,31 @@ test("a source changed during compilation publishes neither local nor shared out
     (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
     0,
   );
+});
+
+test("a queued browser rejects changed source or damaged build files without starting another compilation", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("queued-browser");
+  const built = await f.run(directory);
+  assert.equal(built.error, undefined);
+  const checked = await f.run(directory, {
+    FIXTURE_CHECK_ARTIFACT: built.directory,
+  });
+  assert.equal(checked.key, built.identity.key);
+  const source = join(directory, "apps/editor/src/main.js");
+  const original = await readFile(source);
+  await writeFile(source, "changed while browser waited");
+  const stale = await f.run(directory, {
+    FIXTURE_CHECK_ARTIFACT: built.directory,
+  });
+  assert.match(stale.error ?? "", /does not match current source/);
+  await writeFile(source, original);
+  await writeFile(join(built.directory, "assets/main.js"), "damaged chunk");
+  const damaged = await f.run(directory, {
+    FIXTURE_CHECK_ARTIFACT: built.directory,
+  });
+  assert.match(damaged.error ?? "", /file integrity/);
+  assert.equal(await compilations(directory), 1);
 });
 
 test("concurrent same-key publishers leave complete independently verifiable artifacts", async (t) => {

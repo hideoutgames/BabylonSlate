@@ -1,8 +1,8 @@
 import { startBrowserServer } from "./browser-server.mjs";
 import { browserPartitionArgs } from "./browser-partition.mjs";
 import { readBrowserResults } from "./browser-results.mjs";
-import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { verifyBrowserArtifact } from "./test-build.mjs";
 import {
   commandSignal,
   runCommand,
@@ -11,9 +11,7 @@ import {
 } from "./process-runner.mjs";
 
 const directory = resolve(process.argv[2]);
-const identity = JSON.parse(
-  await readFile(join(directory, ".test-build.json"), "utf8"),
-);
+const identity = await verifyBrowserArtifact(directory);
 const lifetime = commandSignal();
 const server = await startBrowserServer(directory, identity);
 try {

@@ -84,6 +84,24 @@ async function assertUnchanged(expected, environment, message) {
     throw new Error(message);
 }
 
+/** Recheck after browser admission: source can change while a built run queues. */
+export async function verifyBrowserArtifact(
+  directory,
+  environment = process.env,
+) {
+  const identity = await currentIdentity(environment);
+  if (!(await validArtifact(directory, identity)))
+    throw new Error(
+      "Browser artifact does not match current source, toolchain, build contract or file integrity",
+    );
+  await assertUnchanged(
+    identity,
+    environment,
+    "Source changed while verifying the queued browser artifact",
+  );
+  return identity;
+}
+
 async function sharedCache(environment) {
   if (hostedExecution(environment)) return null;
   return (await readLocalResourceConfig(environment)).cacheDirectory;
@@ -224,11 +242,7 @@ export async function runBrowserTests(args, options = {}) {
   let artifact;
   if (environment.BL_TEST_ARTIFACT) {
     const directory = resolve(repoRoot, environment.BL_TEST_ARTIFACT);
-    const identity = await currentIdentity(environment);
-    if (!(await validArtifact(directory, identity)))
-      throw new Error(
-        "Downloaded test artifact does not match this source and toolchain",
-      );
+    const identity = await verifyBrowserArtifact(directory, environment);
     artifact = { directory, identity };
   } else artifact = await buildTestArtifact(options);
   return runStage(
