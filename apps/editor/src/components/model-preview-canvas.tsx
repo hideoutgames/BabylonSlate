@@ -325,7 +325,7 @@ export function ModelPreviewCanvas({
           return acquireMaterialTexture(lease.cache, guid, engine, data);
         },
       });
-      releaseCandidate = () => { library.dispose(); lease.releaseHandleRetains(); };
+      releaseCandidate = () => { library.dispose(); lease.dispose(); };
       for (const [guid, document] of materials.documents) {
         const acquired = library.acquire(host.scene, guid, document);
         if (materialUnavailable(acquired)) throw new Error(acquired.diagnostics.map((d) => d.message).join("; "));
