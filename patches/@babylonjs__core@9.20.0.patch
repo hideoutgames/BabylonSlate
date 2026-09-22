@@ -354,3 +354,27 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
      }
      /**
       * Encode the texture to RGBD if possible.
+diff --git a/assetContainer.js b/assetContainer.js
+--- a/assetContainer.js
++++ b/assetContainer.js
+@@ -202,7 +202,7 @@
+         }
+         this.scene = scene;
+         this["proceduralTextures"] = [];
+-        scene.onDisposeObservable.add(() => {
++        this._onSceneDisposeObserver = scene.onDisposeObservable.add(() => {
+             if (!this._wasAddedToScene) {
+                 this.dispose();
+             }
+@@ -849,6 +849,11 @@
+      * Disposes all the assets in the container
+      */
+     dispose() {
++        // BabylonSlate: retired model generations must not retain Scene observers.
++        if (this._onSceneDisposeObserver) {
++            this.scene.onDisposeObservable.remove(this._onSceneDisposeObserver);
++            this._onSceneDisposeObserver = null;
++        }
+         const cameras = this.cameras.slice(0);
+         for (const camera of cameras) {
+             camera.dispose();

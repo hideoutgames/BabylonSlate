@@ -159,7 +159,7 @@ import {
   playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
-import { applyAlbedoTexture, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import {
@@ -1010,6 +1010,7 @@ function initializeEngine(
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
   binding.modelBytes = options.modelBytes;
+  binding.modelSources = installModelSources(options);
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
   binding.retargetAnimationLoads = options.retargetAnimationLoads;
@@ -1415,6 +1416,7 @@ function initializeEngine(
       binding.fontCssStack = assets.fontCssStack;
       binding.fontCssStackByGuid = assets.fontCssStackByGuid;
       binding.modelBytes = assets.modelBytes;
+      binding.modelSources = installModelSources(assets);
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
       binding.retargetAnimationLoads = assets.retargetAnimationLoads;
@@ -1430,7 +1432,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -1775,7 +1777,7 @@ function initializeEngine(
         const sceneData = editorSync.serializedScene();
         return sceneData ? calculateEditorDropTransforms({
           sceneData, selectedActorIds, maxDistance, meshForActor: (id) => editorSync.meshForActor(id),
-          assets: { modelBytes: binding.modelBytes, modelPayloads: binding.modelPayloads,
+          assets: { modelBytes: binding.modelBytes, modelSources: binding.modelSources, modelPayloads: binding.modelPayloads,
             spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
             pixelsPerUnit: binding.pixelsPerUnit },
         }) : [];

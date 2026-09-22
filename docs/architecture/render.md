@@ -1,5 +1,15 @@
 # Render sync and resource cache (P4)
 
+Generated text records its pick, glyph, underline and construction materials in a visual bundle at creation, including materials later replaced by an inline image. The same bundle pattern owns the construction material of 3D text and overlay texture quads even after an authored material replaces it. Retirement cancels effects, disposes render users and owned materials/wrappers, then releases shared atlas leases. Borrowed material-library results remain library-owned.
+
+Model realization consumes immutable `modelSources` installed beside the raw `modelBytes` used for synchronous collision extraction. Scene-local decoded generations are keyed by the installed source identity and the texture-slimming decision before unpacking bytes. Instance scale and animation/retarget dependencies belong to the instance descriptor. Preparing and live instances hold exact source leases; an older generation is retired after its last instance releases it. A failed source entry is removed by exact entry identity, permitting retry without evicting a newer request.
+
+Model instances stage independent nodes, explicit material clones and animation bindings before publication to the winning placeholder epoch. Babylon automatic material cloning is disabled; a per-instance map records each material and MultiMaterial, and newly cloned texture wrappers are owned separately from source references. Standard/PBR serialization clones texture wrappers (except borrowed render targets); clone adapters compare the supported material's active texture references and keep the source lease for borrowed resources. Material/texture animation targets follow the clone map. `InstantiatedEntries` owns native roots, skeletons and animation groups; slot playback views borrow those groups. Failure retires the provisional bundle and preserves the previous visual. Preview containers similarly reject publication to a disposed or superseded host.
+
+The pinned Babylon patch retains and removes `AssetContainer`'s scene-disposal observer when the container retires. Upstream 9.20 leaves that callback registered after explicit disposal, retaining a container for every replaced generation. The patch preserves automatic scene cleanup and is exercised by persistent-scene generation/observer counts.
+
+Bitmap text measures unique styled cells before rasterization. A balanced single-atlas shelf plan checks finite dimensions, the owning engine's texture cap and a 64 MiB working-set budget covering cells, staging, CPU/GPU atlas storage and the still-live prior bitmap. Internal fixtures can inject smaller limits. `text.bitmap_allocation_limit` rejects the replacement before glyph pixel allocation. Play and editor preserve the previous text, suppress repeated identical rejected requests and retry changed requests. This keeps the existing glyph layout, picking and effects; it does not add pages or batching. Targeted native lifecycle and allocation fixtures are required before qualification; their implementation alone is not a passing result.
+
 Shared Scene/Play views and asset previews accept Babylon's AbstractEngine contract, which both WebGL2 and WebGPU implement. Engine construction remains a separate project-lifetime responsibility; a Scene never changes its owning backend in place.
 `createAppWebGpuEngine` asynchronously creates a project Engine with local KTX2/mesh decoders, exact sRGB conversion and large-world support. It requests only supported compression, float filtering/blending and timer features. Failed initialization releases partial GPU resources, native listeners and EngineStore ownership through a pinned Babylon 9.20 cleanup adapter; ordinary initialized Engines retain native disposal. Cancellation waits for uncancellable browser adapter/device requests to settle and then disposes the superseded Engine. Callers must serialize backend transitions and supply a fresh canvas for a different graphics context.
 RGBA render-target readback for preview canvases and thumbnails preserves the returned buffer view's byte range and flips rows on both backends. Babylon 9.20 renders WebGPU targets with inverted clip-space Y to preserve its WebGL texture convention; the Engine's default-framebuffer origin does not describe these targets. Swap-chain BGRA readback is a separate format from these RGBA targets.
@@ -915,3 +925,28 @@ Project render settings carry a versioned color pipeline (`render.effects.colorP
 Defaults reproduce prior output exactly, so legacy projects without the block load unchanged. Missing or invalid fields normalize to the display-identical defaults above.
 
 **D2 (not implemented).** SSAO, TAA, SSR, LUT and capture stages remain out of scope; the versioned stage contract reserves `colorPipeline.version` for their addition.
+
+## Transactional generated visuals
+
+Model preparation retains the current editor or Play hierarchy until the next source generation, material bindings and animation groups are usable. A failed structural editor replacement keeps the prior visual, and obsolete staged roots are disposed when their apply generation is superseded. Playback borrows animation groups from the visual bundle; bundle retirement removes its matching playback references.
+
+Bitmap text preflight includes the still-live representation and text siblings already staged in the same actor replacement. Each complete replacement publishes before the predecessor is retired. Allocation-limit rejection keeps the previous text and is retried only after the authored request, installed assets or native texture limit changes.
+
+### Visual ownership verification pickup
+
+Local checks that cannot fit available memory are deferred at the user's request (2026-09-22). Keep `BL_TEST_PROFILE=shared`, the shared resource configuration and normal admission; run these batches sequentially when resources permit. No skipped check is a pass.
+
+Source checkpoint: `64599304`, branch `agent/engine-visual-implementation-e` (also integrated into `agent/engine-visual-lifecycle-e`). The baseline at `ea3c9667` had 5 failures and 6 passes in `visual-lifecycle.test.ts` and `text2d-bitmap.test.ts`: model/text material growth from 2 to 202, same-length source aliasing and allocation defects. The same two files passed 18 cases at `e36439b1`. Later editor staging, multipart accounting, texture-animation fan-out coverage and construction-material ownership changes remain unverified. Earlier passes do not certify this later checkpoint.
+
+From the visual worktree, resume with these explicit scopes; split a batch further if necessary:
+
+```powershell
+$env:BL_TEST_PROFILE = 'shared'
+pnpm --silent agent:wait local --script test '--' packages/render/src/visual-lifecycle.test.ts packages/render/src/text2d-bitmap.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/glb-anim.test.ts packages/render/src/model-preview.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/text2d-mesh.test.ts packages/render/src/text3d-mesh.test.ts packages/render/src/overlay-texture-quad.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/snapshot-apply.test.ts packages/render/src/editor-scene.test.ts packages/render/src/editor-scene-sync.chunks.test.ts
+pnpm --silent agent:wait local --script test:e2e '--' e2e/visual-generations.spec.ts --project=desktop-chrome
+```
+
+Also pending: admitted, scoped `@babylonslate/render` and editor typechecks and ESLint on the changed files (use the resource-admitted owner wrapper in the texture pickup section). The browser fixture records requested/effective backend, driver and user agent. Physical A16 verification is waived; browser checks are deferred, not waived. The Babylon patch must combine this AssetContainer observer fix with the physics adapter patch before final verification. There is no visual-delivery PR yet; CI and merge remain open.

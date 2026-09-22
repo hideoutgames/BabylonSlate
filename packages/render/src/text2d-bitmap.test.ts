@@ -3,6 +3,7 @@ import type { RichTextStyle } from "@babylonslate/core";
 import {
   bitmapGlyphKey,
   packBitmapGlyphAtlas,
+  planBitmapGlyphAtlas,
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
 } from "./text2d-bitmap";
@@ -37,6 +38,7 @@ describe("rasterizeBitmapGlyph", () => {
   function withMockCanvas(
     getImageData: (w: number, h: number) => Uint8ClampedArray,
     run: () => void,
+    width: () => number = () => 16,
   ): void {
     const previous = (globalThis as { document?: unknown }).document;
     (globalThis as { document: unknown }).document = {
@@ -54,7 +56,7 @@ describe("rasterizeBitmapGlyph", () => {
             miterLimit: 0,
             lineWidth: 0,
             measureText: () => ({
-              width: 16,
+              width: width(),
               actualBoundingBoxAscent: 16,
               actualBoundingBoxDescent: 4,
             }),
@@ -78,6 +80,15 @@ describe("rasterizeBitmapGlyph", () => {
       }
     }
   }
+
+  it("rejects changed canvas metrics before allocating glyph pixels", () => {
+    let measurements = 0;
+    let readbacks = 0;
+    withMockCanvas((w, h) => { readbacks += 1; return new Uint8ClampedArray(w * h * 4); }, () => {
+      expect(() => rasterizeBitmapGlyph("A", STYLE, "sans-serif", { maxTextureSize: 64, maxWorkingBytes: 1_000_000 })).toThrow(/allocation limit/i);
+      expect(readbacks).toBe(0);
+    }, () => ++measurements === 1 ? 16 : 1000);
+  });
 
   it("falls back to the 5x7 bitmap when canvas paints a solid rectangle", () => {
     withMockCanvas((w, h) => {
@@ -140,6 +151,30 @@ describe("resolveText2DFontStack", () => {
 });
 
 describe("packBitmapGlyphAtlas", () => {
+  it("rejects invalid dimensions and budgets including the retained representation before packing", () => {
+    const limits = { maxTextureSize: 64, maxWorkingBytes: 1024 };
+    for (const width of [NaN, Infinity, -1, Number.MAX_SAFE_INTEGER]) {
+      expect(() => planBitmapGlyphAtlas([{ key: "A", width, height: 8 }], limits)).toThrow(/allocation limit/i);
+    }
+    expect(planBitmapGlyphAtlas([{ key: "A", width: 2, height: 2 }], limits)).toBeTruthy();
+    expect(() => planBitmapGlyphAtlas([{ key: "A", width: 2, height: 2 }], { ...limits, retainedBytes: 900 })).toThrow(/allocation limit/i);
+  });
+  it("balances many unique small cells across both atlas dimensions", () => {
+    const cells = Array.from({ length: 64 }, (_, index) => ({
+      key: String(index), width: 8, height: 8, pixels: new Uint8ClampedArray(8 * 8 * 4).fill(index),
+    }));
+    const packed = packBitmapGlyphAtlas(cells)!;
+    expect(packed.width).toBeLessThanOrEqual(128);
+    expect(packed.height).toBeLessThanOrEqual(128);
+    expect(packed.uvs.size).toBe(64);
+    for (const cell of cells) {
+      const uv = packed.uvs.get(cell.key)!;
+      const x = Math.round(uv.u0 * packed.width);
+      const y = Math.round((1 - uv.v1) * packed.height);
+      expect(packed.pixels[(y * packed.width + x) * 4]).toBe(Number(cell.key));
+    }
+  });
+
   it("assigns distinct UVs and copies both cells onto one atlas", () => {
     const a = rasterizeBitmapGlyph("A", STYLE);
     const i = rasterizeBitmapGlyph("I", STYLE);

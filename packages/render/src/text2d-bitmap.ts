@@ -17,7 +17,104 @@ export type PackedBitmapGlyphAtlas = {
   height: number;
   pixels: Uint8Array;
   uvs: Map<string, { u0: number; v0: number; u1: number; v1: number }>;
+  workingBytes: number;
 };
+
+export type BitmapAllocationLimits = {
+  maxTextureSize: number;
+  maxWorkingBytes: number;
+  /** The representation that remains usable until this replacement commits. */
+  retainedBytes?: number;
+};
+
+export const DEFAULT_BITMAP_WORKING_BYTES = 64 * 1024 * 1024;
+const defaultLimits: BitmapAllocationLimits = {
+  maxTextureSize: 8192,
+  maxWorkingBytes: DEFAULT_BITMAP_WORKING_BYTES,
+};
+
+export class BitmapAllocationLimitError extends Error {
+  readonly code = "text.bitmap_allocation_limit";
+  constructor(detail: string) {
+    super(`Bitmap text allocation limit: ${detail}`);
+    this.name = "BitmapAllocationLimitError";
+  }
+}
+
+type GlyphSize = { key: string; width: number; height: number };
+export type BitmapGlyphMeasurement = GlyphSize & { layoutWidth: number; layoutHeight: number };
+export type BitmapAtlasPlan = {
+  width: number;
+  height: number;
+  workingBytes: number;
+  placed: Array<GlyphSize & { x: number; y: number }>;
+};
+
+function checkedCellBytes(width: number, height: number, limits: BitmapAllocationLimits): number {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 ||
+    width > limits.maxTextureSize || height > limits.maxTextureSize) {
+    throw new BitmapAllocationLimitError(`cell ${width} × ${height} exceeds supported dimensions.`);
+  }
+  const bytes = width * height * 4;
+  if (!Number.isSafeInteger(bytes) || bytes > limits.maxWorkingBytes) {
+    throw new BitmapAllocationLimitError("cell byte count exceeds the working-set budget.");
+  }
+  return bytes;
+}
+
+/** Compute bounds and budget before any glyph or atlas pixel allocation. */
+export function planBitmapGlyphAtlas(
+  cells: readonly GlyphSize[],
+  limits: BitmapAllocationLimits = defaultLimits,
+): BitmapAtlasPlan | null {
+  if (!cells.length) return null;
+  const retained = limits.retainedBytes ?? 0;
+  if (!Number.isSafeInteger(limits.maxTextureSize) || limits.maxTextureSize < 8 ||
+    !Number.isSafeInteger(limits.maxWorkingBytes) || limits.maxWorkingBytes <= 0 ||
+    !Number.isSafeInteger(retained) || retained < 0) {
+    throw new BitmapAllocationLimitError("invalid dimensions or working-set budget.");
+  }
+  let cellBytes = 0;
+  let largestCell = 0;
+  let minWidth = 8;
+  for (const cell of cells) {
+    const bytes = checkedCellBytes(cell.width, cell.height, limits);
+    cellBytes += bytes;
+    largestCell = Math.max(largestCell, bytes);
+    minWidth = Math.max(minWidth, cell.width + 2);
+    if (!Number.isSafeInteger(cellBytes) || cellBytes + retained > limits.maxWorkingBytes) {
+      throw new BitmapAllocationLimitError("unique glyph cells exceed the working-set budget.");
+    }
+  }
+  let best: BitmapAtlasPlan | null = null;
+  for (let width = nextPowerOfTwo(minWidth); width <= limits.maxTextureSize; width *= 2) {
+    let x = 1, y = 1, rowHeight = 0;
+    const placed: BitmapAtlasPlan["placed"] = [];
+    for (const cell of cells) {
+      if (x + cell.width + 1 > width) {
+        x = 1;
+        y += rowHeight + 1;
+        rowHeight = 0;
+      }
+      placed.push({ ...cell, x, y });
+      x += cell.width + 1;
+      rowHeight = Math.max(rowHeight, cell.height);
+    }
+    const height = nextPowerOfTwo(y + rowHeight + 1);
+    if (height > limits.maxTextureSize) continue;
+    const atlasBytes = width * height * 4;
+    if (!Number.isSafeInteger(atlasBytes) || atlasBytes > limits.maxWorkingBytes) continue;
+    // Unique cells + canvas/readback staging + CPU/GPU atlas + still-live old text.
+    const workingBytes = cellBytes + 2 * largestCell + 2 * atlasBytes + retained;
+    if (!Number.isSafeInteger(workingBytes) || workingBytes > limits.maxWorkingBytes) continue;
+    if (!best || width * height < best.width * best.height ||
+      (width * height === best.width * best.height && Math.abs(width - height) < Math.abs(best.width - best.height))) {
+      best = { width, height, placed, workingBytes };
+    }
+  }
+  if (!best) throw new BitmapAllocationLimitError("single atlas cannot fit the texture dimensions and working-set budget.");
+  return best;
+}
 
 export const DEFAULT_TEXT2D_FONT_STACK = "sans-serif";
 
@@ -81,9 +178,55 @@ function isLetterShapedAlpha(pixels: Uint8ClampedArray, width: number, height: n
 }
 
 function nextPowerOfTwo(value: number): number {
+  if (!Number.isFinite(value) || value <= 0 || value > Number.MAX_SAFE_INTEGER / 2) {
+    throw new BitmapAllocationLimitError("invalid atlas dimension.");
+  }
   let size = 8;
   while (size < value) size *= 2;
   return size;
+}
+
+function softwareGlyphSize(style: RichTextStyle) {
+  const scale = Math.max(1, Math.round(style.size / ASCII_BITMAP_ROWS));
+  const outlinePx = Math.max(0, Math.round(style.outline));
+  return {
+    width: ASCII_BITMAP_COLS * scale + (style.bold ? scale : 0) + outlinePx * 2 + 2,
+    height: ASCII_BITMAP_ROWS * scale + outlinePx * 2 + 2,
+  };
+}
+
+function canvasGlyphSize(ctx: CanvasRenderingContext2D, ch: string, style: RichTextStyle) {
+  const measured = ctx.measureText(ch);
+  const pad = Math.max(2, Math.ceil(style.outline) + 1);
+  const ascent = measured.actualBoundingBoxAscent > 0 ? measured.actualBoundingBoxAscent : style.size * 0.8;
+  const descent = measured.actualBoundingBoxDescent > 0 ? measured.actualBoundingBoxDescent : style.size * 0.25;
+  return {
+    width: Math.max(1, Math.ceil((measured.width || style.size * 0.5) + pad * 2)),
+    height: Math.max(1, Math.ceil(ascent + descent + pad * 2)),
+    pad,
+  };
+}
+
+/** Measure both native text and fallback bounds without painting either. */
+export function measureBitmapGlyph(ch: string, style: RichTextStyle, stack = DEFAULT_TEXT2D_FONT_STACK): BitmapGlyphMeasurement {
+  const software = softwareGlyphSize(style);
+  let layout = software;
+  if (typeof document !== "undefined" && typeof document.createElement === "function") {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.font = cssFontForText2D(style, stack);
+      layout = canvasGlyphSize(ctx, ch, style);
+    }
+  }
+  return {
+    key: bitmapGlyphKey(ch, style, stack),
+    width: Math.max(layout.width, software.width),
+    height: Math.max(layout.height, software.height),
+    layoutWidth: layout.width,
+    layoutHeight: layout.height,
+  };
 }
 
 function rasterizeSoftwareBitmapGlyph(
@@ -152,11 +295,14 @@ function tryCanvasRasterize(
   style: RichTextStyle,
   stack: string,
   key: string,
+  limits: BitmapAllocationLimits,
+  expected: BitmapGlyphMeasurement,
 ): BitmapGlyphCell | null {
   if (typeof document === "undefined" || typeof document.createElement !== "function") {
     return null;
   }
   const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const font = cssFontForText2D(style, stack);
@@ -175,6 +321,10 @@ function tryCanvasRasterize(
       : style.size * 0.25;
   const width = Math.max(1, Math.ceil((measured.width || style.size * 0.5) + pad * 2));
   const height = Math.max(1, Math.ceil(ascent + descent + pad * 2));
+  checkedCellBytes(width, height, limits);
+  if (width > expected.width || height > expected.height) {
+    throw new BitmapAllocationLimitError("font metrics changed after allocation preflight.");
+  }
   canvas.width = width;
   canvas.height = height;
   ctx.clearRect(0, 0, width, height);
@@ -202,10 +352,14 @@ export function rasterizeBitmapGlyph(
   ch: string,
   style: RichTextStyle,
   stack = DEFAULT_TEXT2D_FONT_STACK,
+  limits: BitmapAllocationLimits = defaultLimits,
+  measurement?: BitmapGlyphMeasurement,
 ): BitmapGlyphCell {
+  const measured = measurement ?? measureBitmapGlyph(ch, style, stack);
+  planBitmapGlyphAtlas([measured], limits);
   const key = bitmapGlyphKey(ch, style, stack);
   return (
-    tryCanvasRasterize(ch, style, stack, key) ??
+    tryCanvasRasterize(ch, style, stack, key, limits, measured) ??
     rasterizeSoftwareBitmapGlyph(ch, style, key)
   );
 }
@@ -213,30 +367,25 @@ export function rasterizeBitmapGlyph(
 /** Shelf-pack unique glyph cells onto a power-of-two RGBA atlas. */
 export function packBitmapGlyphAtlas(
   cells: readonly BitmapGlyphCell[],
+  limits: BitmapAllocationLimits = defaultLimits,
+  preparedPlan?: BitmapAtlasPlan | null,
 ): PackedBitmapGlyphAtlas | null {
   if (cells.length === 0) return null;
-  const pad = 1;
-  let atlasW = 32;
-  const maxCellW = Math.max(...cells.map((cell) => cell.width));
-  while (atlasW < maxCellW + pad * 2) atlasW *= 2;
-  let x = pad;
-  let y = pad;
-  let rowH = 0;
-  const placed: Array<{ cell: BitmapGlyphCell; x: number; y: number }> = [];
-  for (const cell of cells) {
-    if (x + cell.width + pad > atlasW) {
-      x = pad;
-      y += rowH + pad;
-      rowH = 0;
+  const plan = preparedPlan ?? planBitmapGlyphAtlas(cells, limits)!;
+  const atlasW = plan.width;
+  const atlasH = plan.height;
+  const byKey = new Map(cells.map((cell) => [cell.key, cell]));
+  for (const place of plan.placed) {
+    const cell = byKey.get(place.key);
+    if (!cell || cell.width > place.width || cell.height > place.height ||
+      cell.pixels.length !== checkedCellBytes(cell.width, cell.height, limits)) {
+      throw new BitmapAllocationLimitError("glyph changed after allocation preflight.");
     }
-    placed.push({ cell, x, y });
-    x += cell.width + pad;
-    rowH = Math.max(rowH, cell.height);
   }
-  const atlasH = nextPowerOfTwo(y + rowH + pad);
   const pixels = new Uint8Array(atlasW * atlasH * 4);
   const uvs = new Map<string, { u0: number; v0: number; u1: number; v1: number }>();
-  for (const { cell, x: px, y: py } of placed) {
+  for (const { key, x: px, y: py } of plan.placed) {
+    const cell = byKey.get(key)!;
     for (let row = 0; row < cell.height; row++) {
       const src = row * cell.width * 4;
       const dst = ((py + row) * atlasW + px) * 4;
@@ -249,7 +398,7 @@ export function packBitmapGlyphAtlas(
       v1: 1 - py / atlasH,
     });
   }
-  return { width: atlasW, height: atlasH, pixels, uvs };
+  return { width: atlasW, height: atlasH, pixels, uvs, workingBytes: plan.workingBytes };
 }
 
 export function resolveText2DFontStack(

@@ -11,7 +11,9 @@ import App from "./App";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 
-if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textureLeaseProof")) {
+if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("visualGenerationProof")) {
+  void import("./testing/visual-generation-proof").then(({ runVisualGenerationProof }) => Object.assign(window, { __visualGenerationProof: runVisualGenerationProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textureLeaseProof")) {
   void import("./testing/texture-lease-proof").then(({ runTextureLeaseProof }) => Object.assign(window, { __textureLeaseProof: runTextureLeaseProof }));
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&

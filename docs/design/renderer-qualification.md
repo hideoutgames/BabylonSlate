@@ -1,5 +1,15 @@
 # Renderer qualification
 
+## Model and generated-text lifetime follow-up
+
+The physical A16 run is waived for this follow-up at the user's request; local native and browser fixtures provide its acceptance evidence, without a device-performance claim.
+
+At `ea3c9667`, the targeted `visual-lifecycle.test.ts` and `text2d-bitmap.test.ts` baseline ran against Babylon 9.20: 5 failed, 6 passed. Two valid same-length GLBs aliased the old vertex value. Model and generated-text material counts each grew from 2 to 202 over 200 cycles. Oversized text was accepted under an injected 64-pixel cap, and 64 small cells produced an unnecessarily tall 256-pixel atlas.
+
+At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cover 200 source-generation replacements with native resource/observer counts, failed preparation/retry, late rejection after newer success, retained text after allocation rejection, and changing canvas measurements. The native patch removes retired AssetContainer scene observers; this head's patch identity is `b3f3611b5c6f5cd75f3e70a5df4809d1378275c980a582d7e7e1951ed9731b10` (before integration of the physics patch). The later shared-texture-animation fixture and rich-text markup extension have not yet run.
+
+`e2e/visual-generations.spec.ts` is a test-build-only WebGL2/WebGPU pixel and lifetime fixture with 100 model and rich-text replacements, MSDF plus bitmap fallback, borrowed material survival and rejected-text preservation. Its browser run, affected-consumer checks and scoped static checks are still pending. Its timing samples include the fixture's preparation and draw work; they are not isolated GPU or A16 measurements.
+
 Status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
 ## Coverage matrix

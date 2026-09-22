@@ -7,6 +7,7 @@ import {
 } from "@babylonjs/core";
 import { sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { VisualBundle } from "./visual-bundle";
 
 export const OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE = { width: 1, height: 1 };
 
@@ -86,12 +87,20 @@ export function createOverlayTextureQuad(
     { width: size.width, height: size.height },
     scene,
   );
-  const material = new StandardMaterial(`${name}-unlit`, scene);
-  material.disableLighting = true;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.White();
-  material.backFaceCulling = false;
-  mesh.material = material;
-  applyAlbedoTexture(mesh, scene, textureGuid, assets);
-  return mesh;
+  const bundle = new VisualBundle();
+  bundle.ownRenderUser(mesh);
+  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+  try {
+    const material = bundle.ownMaterial(new StandardMaterial(`${name}-unlit`, scene));
+    material.disableLighting = true;
+    material.emissiveColor = Color3.White();
+    material.diffuseColor = Color3.White();
+    material.backFaceCulling = false;
+    mesh.material = material;
+    applyAlbedoTexture(mesh, scene, textureGuid, assets);
+    return mesh;
+  } catch (error) {
+    bundle.dispose();
+    throw error;
+  }
 }
