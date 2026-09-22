@@ -36,7 +36,7 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
-import { calibratedShadowBias } from "./shadow-bias";
+import { resolveDirectionalShadowBias } from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
@@ -54,6 +54,8 @@ import {
 type ShadowLight = DirectionalLight | PointLight | SpotLight;
 export type EffectiveShadowBias = {
   layer: number;
+  cameraId: string | null;
+  renderId: number;
   depthBias: number;
   normalBias: number;
   worldTexelSize: number;
@@ -258,7 +260,7 @@ export class SceneShadowController {
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
-  /** Last map draw/readiness probe, bounded to the admitted faces/cascades. */
+  /** Last completed map pass, bounded to the admitted faces/cascades. */
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {
     return this.entries.get(light)?.effectiveBias ?? [];
   }
@@ -729,33 +731,66 @@ export class SceneShadowController {
               -1,
               true,
             );
-          if (generator instanceof CascadedShadowGenerator)
-            map?.onBeforeRenderObservable.add((layer) => {
-              const settings = entry.settings!;
-              if (!settings.autoBias) return;
-              const min = generator.getCascadeMinExtents(layer);
-              const max = generator.getCascadeMaxExtents(layer);
-              if (min && max) {
-                const extent = Math.max(max.x - min.x, max.y - min.y);
-                generator.bias = calibratedShadowBias(
-                  mapSize,
-                  extent,
-                  max.z - min.z,
-                  settings.filterQuality,
-                  settings.depthBias,
-                );
-                const kernelRadius =
-                  settings.filterQuality === "high"
-                    ? 2.5
-                    : settings.filterQuality === "medium"
-                      ? 1.5
-                      : 0.5;
-                generator.normalBias = Math.max(
-                  settings.normalBias,
-                  (kernelRadius * extent) / mapSize,
-                );
-              }
+          // Registered after Babylon 9.20's native observer: single-map view /
+          // projection and the CSM layer are current, caster uniforms are not
+          // bound yet. Never derive from the previous frame in applySettings.
+          let preparedBias: EffectiveShadowBias | null = null;
+          let clearedForDraw = false;
+          map?.onBeforeRenderObservable.add((layer) => {
+            clearedForDraw = false;
+            const settings = entry.settings!;
+            const automatic = settings.autoBias && directionalLight;
+            const projection = generator instanceof CascadedShadowGenerator
+              ? generator.getCascadeProjectionMatrix(layer)
+              : generator.projectionMatrix;
+            const size = map.getSize();
+            const matrix = projection?.m;
+            const effective = resolveDirectionalShadowBias({
+              width: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0,
+              height: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0,
+              depth: matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0,
+              mapWidth: size.width,
+              mapHeight: size.height,
+              filter: generator.usePercentageCloserFiltering ? "pcf"
+                : generator.useContactHardeningShadow ? "pcss"
+                  : generator.usePoissonSampling ? "poisson" : "none",
+              filterQuality: generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
+                : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low",
+              poissonRadiusTexels: generator.blurScale,
+              depthClamp: generator instanceof CascadedShadowGenerator && generator.depthClamp,
+              authoredDepthBias: settings.depthBias,
+              authoredNormalBias: settings.normalBias,
             });
+            generator.bias = effective.bias;
+            generator.normalBias = effective.normalBias;
+            const record = preparedBias ??= {
+              layer, cameraId: null, renderId: -1, depthBias: 0, normalBias: 0, worldTexelSize: 0, depthScale: 0,
+              mode: "manual",
+            };
+            record.layer = layer;
+            record.depthBias = effective.bias;
+            record.cameraId = (generator.camera ?? scene.activeCamera)?.id ?? null;
+            record.renderId = scene.getRenderId();
+            record.normalBias = effective.normalBias;
+            record.worldTexelSize = effective.worldTexelSize;
+            record.depthScale = effective.depthScale;
+            record.mode = !settings.autoBias ? "manual" : automatic ? "directional-auto" : "local-authored";
+          });
+          // Native readiness probes emit before/after-render without drawing.
+          // Only actual RTT passes (including empty maps and snapshot rendering)
+          // emit clear before their successful after-render notification. Keep
+          // prepared values private until that pass has finished, so evidence
+          // cannot relabel a cached map after another camera's readiness probe.
+          map?.onClearObservable.add(() => { clearedForDraw = true; });
+          map?.onAfterRenderObservable.add(() => {
+            if (!clearedForDraw || !preparedBias) return;
+            const record = entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
+            Object.assign(record, preparedBias, {
+              depthBias: generator.bias,
+              normalBias: generator.normalBias,
+            });
+            clearedForDraw = false;
+          });
           let activePlanes: Plane[] | null = null;
           if (map)
             map.getCustomRenderList = (layer) => {

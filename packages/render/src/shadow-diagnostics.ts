@@ -57,8 +57,16 @@ function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
   const z0 = ((halfZ ? 0 : -1) - m[14]) / m[10];
   const z1 = (1 - m[14]) / m[10];
   return {
-    min: [finite(Math.min(x0, x1)), finite(Math.min(y0, y1)), finite(Math.min(z0, z1))],
-    max: [finite(Math.max(x0, x1)), finite(Math.max(y0, y1)), finite(Math.max(z0, z1))],
+    min: [
+      finite(Math.min(x0, x1)),
+      finite(Math.min(y0, y1)),
+      finite(Math.min(z0, z1)),
+    ],
+    max: [
+      finite(Math.max(x0, x1)),
+      finite(Math.max(y0, y1)),
+      finite(Math.max(z0, z1)),
+    ],
     width: finite(Math.abs(x1 - x0)),
     height: finite(Math.abs(y1 - y0)),
     depth: finite(Math.abs(z1 - z0)),
@@ -78,7 +86,10 @@ function filterName(generator: ShadowGenerator) {
  * Never logs, reads pixels, installs observers, creates an owner or recalculates
  * shadow matrices. Missing provenance/projection is null, not qualification proof.
  */
-export function captureShadowDiagnostics(scene: Scene, options: ShadowDiagnosticOptions = {}) {
+export function captureShadowDiagnostics(
+  scene: Scene,
+  options: ShadowDiagnosticOptions = {},
+) {
   const engine = scene.getEngine();
   const controller = findSceneShadowController(scene);
   const state = sceneRenderingSettings(scene);
@@ -102,7 +113,14 @@ export function captureShadowDiagnostics(scene: Scene, options: ShadowDiagnostic
     },
     backend: {
       requested: options.requestedBackend ?? pipeline.requested.gpuBackend,
-      actual: engine instanceof NullEngine ? "null" : engine.isWebGPU ? "webgpu" : "webgl2",
+      actual:
+        engine instanceof NullEngine
+          ? "null"
+          : engine.isWebGPU
+            ? "webgpu"
+            : (engine as { webGLVersion?: number }).webGLVersion === 1
+              ? "webgl1"
+              : "webgl2",
       fallbackReason: text(options.backendFallbackReason),
       adapter: engineAdapterInfo(engine),
       ndcHalfZRange: engine.isNDCHalfZRange,
@@ -117,88 +135,161 @@ export function captureShadowDiagnostics(scene: Scene, options: ShadowDiagnostic
     viewport: {
       cssWidth: finite(canvas?.clientWidth),
       cssHeight: finite(canvas?.clientHeight),
-      devicePixelRatio: typeof devicePixelRatio === "number" ? finite(devicePixelRatio) : null,
+      devicePixelRatio:
+        typeof devicePixelRatio === "number" ? finite(devicePixelRatio) : null,
       renderWidth: renderSize?.width ?? engine.getRenderWidth(),
       renderHeight: renderSize?.height ?? engine.getRenderHeight(),
       scalingLevel: engine.getHardwareScalingLevel(),
-      cameraViewport: camera ? {
-        x: camera.viewport.x, y: camera.viewport.y,
-        width: camera.viewport.width, height: camera.viewport.height,
-      } : null,
+      cameraViewport: camera
+        ? {
+            x: camera.viewport.x,
+            y: camera.viewport.y,
+            width: camera.viewport.width,
+            height: camera.viewport.height,
+          }
+        : null,
     },
-    camera: camera ? {
-      id: text(camera.id),
-      name: text(camera.name),
-      mode: camera.mode === 1 ? "orthographic" : "perspective",
-      position: vector(camera.globalPosition),
-      near: finite(camera.minZ),
-      far: finite(camera.maxZ),
-      fov: finite(camera.fov),
-      ortho: {
-        left: finite(camera.orthoLeft), right: finite(camera.orthoRight),
-        top: finite(camera.orthoTop), bottom: finite(camera.orthoBottom),
-      },
-      worldMatrix: matrix(camera.getWorldMatrix()),
-    } : null,
+    camera: camera
+      ? {
+          id: text(camera.id),
+          name: text(camera.name),
+          mode: camera.mode === 1 ? "orthographic" : "perspective",
+          position: vector(camera.globalPosition),
+          near: finite(camera.minZ),
+          far: finite(camera.maxZ),
+          fov: finite(camera.fov),
+          ortho: {
+            left: finite(camera.orthoLeft),
+            right: finite(camera.orthoRight),
+            top: finite(camera.orthoTop),
+            bottom: finite(camera.orthoBottom),
+          },
+          worldMatrix: matrix(camera.getWorldMatrix()),
+          view: matrix(scene.getViewMatrix()),
+          projection: matrix(scene.getProjectionMatrix()),
+          viewProjection: matrix(scene.getTransformMatrix()),
+        }
+      : null,
     requestedShadows: { ...state.shadows },
     lights: lights.map((light, index) => {
       const generator = controller?.generator(light);
       const map = generator?.getShadowMap();
       const dimensions = map?.getSize();
-      const shadowLight = light instanceof DirectionalLight || light instanceof PointLight || light instanceof SpotLight
-        ? light : null;
+      const shadowLight =
+        light instanceof DirectionalLight ||
+        light instanceof PointLight ||
+        light instanceof SpotLight
+          ? light
+          : null;
       const parentMatrix = light.parent?.getWorldMatrix();
-      const direction = shadowLight && !(shadowLight instanceof PointLight) ? shadowLight.direction : null;
+      const direction =
+        shadowLight && !(shadowLight instanceof PointLight)
+          ? shadowLight.direction
+          : null;
       const position = shadowLight?.position;
-      const requestedMapSize = light instanceof DirectionalLight ? state.shadows.mapSize : state.shadows.localMapSize;
-      const cascades = generator instanceof CascadedShadowGenerator ? generator.numCascades : 1;
+      const requestedMapSize =
+        light instanceof DirectionalLight
+          ? state.shadows.mapSize
+          : state.shadows.localMapSize;
+      const cascades =
+        generator instanceof CascadedShadowGenerator
+          ? generator.numCascades
+          : 1;
       return {
         id: text(light.id),
         name: text(light.name),
         type: light.getClassName(),
         requested: controller?.requestsShadow(light) ?? false,
         status: statuses[index] ? { ...statuses[index] } : null,
-        worldPosition: vector(position && parentMatrix ? Vector3.TransformCoordinates(position, parentMatrix) : position),
-        worldDirection: vector(direction && parentMatrix ? Vector3.TransformNormal(direction, parentMatrix).normalize() : direction?.normalizeToNew()),
+        worldPosition: vector(
+          position && parentMatrix
+            ? Vector3.TransformCoordinates(position, parentMatrix)
+            : position,
+        ),
+        worldDirection: vector(
+          direction && parentMatrix
+            ? Vector3.TransformNormal(direction, parentMatrix).normalize()
+            : direction?.normalizeToNew(),
+        ),
         parentWorldMatrix: matrix(parentMatrix),
         requestedMapSize,
-        allocationDownsized: dimensions ? dimensions.width < requestedMapSize : null,
-        generator: generator ? {
-          type: generator.getClassName(),
-          cameraId: text((generator.camera ?? camera)?.id),
-          map: dimensions ? { width: dimensions.width, height: dimensions.height, cube: map!.isCube } : null,
-          cascades,
-          filter: filterName(generator),
-          filteringQuality: generator.filteringQuality,
-          autoBias: state.shadows.autoBias,
-          // For CSM these scalars may be restored after drawing; never label
-          // them as the value that was used by every cascade.
-          currentBias: { depth: finite(generator.bias), normalWorld: finite(generator.normalBias) },
-          lastDrawBias: controller?.effectiveBias(light).map((entry) => ({ ...entry })) ?? [],
-          depthTexture: generator.usePercentageCloserFiltering || generator.useContactHardeningShadow,
-          cubeDistanceDepth: shadowLight?.needCube() ?? false,
-          nativeDepthMin: camera && shadowLight ? finite(shadowLight.getDepthMinZ(camera)) : null,
-          nativeDepthMax: camera && shadowLight ? finite(shadowLight.getDepthMaxZ(camera)) : null,
-          projections: Array.from({ length: Math.min(cascades, 4) }, (_, layer) => {
-            const projection = generator instanceof CascadedShadowGenerator
-              ? generator.getCascadeProjectionMatrix(layer) : generator.projectionMatrix;
-            return {
-              layer,
-              scope: map?.isCube ? "last-rendered-cube-face" : "layer",
-              matrix: matrix(projection),
-              view: matrix(generator instanceof CascadedShadowGenerator
-                ? generator.getCascadeViewMatrix(layer) : generator.viewMatrix),
-              orthographicExtents: orthographicExtents(projection, engine.isNDCHalfZRange),
-            };
-          }),
-        } : null,
+        allocationDownsized: dimensions
+          ? dimensions.width < requestedMapSize
+          : null,
+        generator: generator
+          ? {
+              type: generator.getClassName(),
+              cameraId: text((generator.camera ?? camera)?.id),
+              map: dimensions
+                ? {
+                    id: map!.uniqueId,
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    cube: map!.isCube,
+                  }
+                : null,
+              cascades,
+              filter: filterName(generator),
+              filteringQuality: generator.filteringQuality,
+              autoBias: state.shadows.autoBias,
+              // For CSM these scalars may be restored after drawing; never label
+              // them as the value that was used by every cascade.
+              currentBias: {
+                depth: finite(generator.bias),
+                normalWorld: finite(generator.normalBias),
+              },
+              lastDrawBias:
+                controller
+                  ?.effectiveBias(light)
+                  .map((entry) => ({ ...entry })) ?? [],
+              depthTexture:
+                generator.usePercentageCloserFiltering ||
+                generator.useContactHardeningShadow,
+              cubeDistanceDepth: shadowLight?.needCube() ?? false,
+              nativeDepthMin:
+                camera && shadowLight
+                  ? finite(shadowLight.getDepthMinZ(camera))
+                  : null,
+              nativeDepthMax:
+                camera && shadowLight
+                  ? finite(shadowLight.getDepthMaxZ(camera))
+                  : null,
+              projections: Array.from(
+                { length: Math.min(cascades, 4) },
+                (_, layer) => {
+                  const projection =
+                    generator instanceof CascadedShadowGenerator
+                      ? generator.getCascadeProjectionMatrix(layer)
+                      : generator.projectionMatrix;
+                  return {
+                    layer,
+                    scope: map?.isCube ? "last-rendered-cube-face" : "layer",
+                    matrix: matrix(projection),
+                    view: matrix(
+                      generator instanceof CascadedShadowGenerator
+                        ? generator.getCascadeViewMatrix(layer)
+                        : generator.viewMatrix,
+                    ),
+                    orthographicExtents: orthographicExtents(
+                      projection,
+                      engine.isNDCHalfZRange,
+                    ),
+                  };
+                },
+              ),
+            }
+          : null,
       };
     }),
     models: meshes.map((mesh) => {
       const bounds = mesh.getBoundingInfo().boundingBox;
       return {
-        id: text(mesh.id), name: text(mesh.name),
-        worldBounds: { min: vector(bounds.minimumWorld), max: vector(bounds.maximumWorld) },
+        id: text(mesh.id),
+        name: text(mesh.name),
+        worldBounds: {
+          min: vector(bounds.minimumWorld),
+          max: vector(bounds.maximumWorld),
+        },
         worldMatrix: matrix(mesh.getWorldMatrix()),
         receiveShadows: mesh.receiveShadows,
       };

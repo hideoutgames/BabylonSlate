@@ -98,7 +98,7 @@ const fields: {
     key: "autoBias",
     label: "Automatic Shadow Bias",
     description:
-      "Calibrate directional cascade bias from texel size and filter footprint, using the authored depth and normal offsets as minimums. Disable for manual offsets.",
+      "Adapt directional maps and cascades to their projection and resolution, using Depth Bias as a minimum. Normal Bias stays as authored. Point and spot lights use authored offsets. Disable for manual directional offsets.",
   },
   {
     key: "normalBias",

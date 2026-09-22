@@ -10,7 +10,10 @@ import {
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { findSceneShadowController, sceneShadowController } from "./shadow-controller";
+import {
+  findSceneShadowController,
+  sceneShadowController,
+} from "./shadow-controller";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 
 const engines: NullEngine[] = [];
@@ -29,7 +32,11 @@ function fixture() {
     textureHalfFloatLinearFiltering: true,
   });
   const scene = new Scene(engine);
-  scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 2, -10), scene);
+  scene.activeCamera = new UniversalCamera(
+    "camera",
+    new Vector3(0, 2, -10),
+    scene,
+  );
   return scene;
 }
 
@@ -39,8 +46,12 @@ describe("opt-in shadow evidence capture", () => {
     updateSceneRenderingSettings(scene, {
       gpuBackend: "webgpu",
       shadows: normalizeShadowSettings({
-        mapSize: 1024, cascades: 1, distance: 10,
-        autoBias: false, depthBias: 0.002, normalBias: 0.007,
+        mapSize: 1024,
+        cascades: 1,
+        distance: 10,
+        autoBias: false,
+        depthBias: 0.002,
+        normalBias: 0.007,
       }),
     });
     const parent = new TransformNode("light-parent", scene);
@@ -57,11 +68,19 @@ describe("opt-in shadow evidence capture", () => {
     const renderMap = vi.spyOn(generator.getShadowMap()!, "render");
 
     const evidence = captureShadowDiagnostics(scene, {
-      buildSha: "revision", host: "unit-test", backendFallbackReason: "No native GPU in this test",
+      buildSha: "revision",
+      host: "unit-test",
+      backendFallbackReason: "No native GPU in this test",
     });
 
-    expect(evidence.backend).toMatchObject({ requested: "webgpu", actual: "null" });
-    expect(evidence.requestedShadows).toMatchObject({ mapSize: 1024, cascades: 1 });
+    expect(evidence.backend).toMatchObject({
+      requested: "webgpu",
+      actual: "null",
+    });
+    expect(evidence.requestedShadows).toMatchObject({
+      mapSize: 1024,
+      cascades: 1,
+    });
     expect(evidence.lights[0]).toMatchObject({
       requested: true,
       allocationDownsized: true,
@@ -72,7 +91,8 @@ describe("opt-in shadow evidence capture", () => {
         currentBias: { depth: 0.002, normalWorld: 0.007 },
       },
     });
-    const footprint = evidence.lights[0]!.generator!.projections[0]!.orthographicExtents!;
+    const footprint =
+      evidence.lights[0]!.generator!.projections[0]!.orthographicExtents!;
     expect(footprint.width).toBeCloseTo(20);
     expect(footprint.height).toBeCloseTo(20);
     expect(footprint.depth).toBeCloseTo(20);
@@ -80,7 +100,9 @@ describe("opt-in shadow evidence capture", () => {
     expect(renderMap).not.toHaveBeenCalled();
     // Captured evidence must remain attached to its original settings/draw.
     generator.bias = 0.01;
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ mapSize: 512 }) });
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ mapSize: 512 }),
+    });
     expect(evidence.lights[0]!.generator!.currentBias.depth).toBe(0.002);
     expect(evidence.requestedShadows.mapSize).toBe(1024);
   });
@@ -95,17 +117,26 @@ describe("opt-in shadow evidence capture", () => {
     const omitted = MeshBuilder.CreateBox("omitted", { size: 1 }, scene);
     const omittedBounds = vi.spyOn(omitted, "getBoundingInfo");
     const evidence = captureShadowDiagnostics(scene, {
-      meshes: [captured, omitted], maxLights: 1, maxMeshes: 1,
+      meshes: [captured, omitted],
+      maxLights: 1,
+      maxMeshes: 1,
     });
 
     expect(findSceneShadowController(scene)).toBeUndefined();
     expect(evidence.truncated).toEqual({ lights: 1, meshes: 1 });
     expect(evidence.models).toEqual([
-      expect.objectContaining({ worldBounds: { min: [1, -1, -1], max: [3, 1, 1] } }),
+      expect.objectContaining({
+        worldBounds: { min: [1, -1, -1], max: [3, 1, 1] },
+      }),
     ]);
     expect(omittedBounds).not.toHaveBeenCalled();
     expect(evidence.lights[0]!.generator).toBeNull();
-    expect(evidence.provenance).toMatchObject({ buildSha: null, host: null, os: null, sceneUnits: null });
+    expect(evidence.provenance).toMatchObject({
+      buildSha: null,
+      host: null,
+      os: null,
+      sceneUnits: null,
+    });
     expect(JSON.parse(JSON.stringify(evidence))).toEqual(evidence);
   });
 });

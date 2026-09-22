@@ -92,7 +92,7 @@ The Basic 3D template recalculates the bundled Mannequin's normals from its exis
 - `settings.render.mode` / `settings.render.cel` persist in the project and player manifest. Optional `scene.settings.celShading` keys are normalized and resolved independently. Missing/invalid values inherit; finite values are bounded before shader binding.
 - `setSceneRenderSettings` is scene-local. Authored material graphs switch their surface output in place, preserving parameter bindings, textures, deformation and freeze policy. Imported PBR/Standard surfaces use native CEL adapters, including MultiMaterial slots; original materials and borrowed textures remain available for PBR restoration. Scene disposal releases adapters and listeners. The replacement pass is event-driven rather than per-frame: a settings call marks it dirty, as do `onNewMeshAddedObservable`/`onMeshRemovedObservable`, `onNewMaterialAddedObservable`/`onMaterialRemovedObservable`, each mesh's `onMaterialChangedObservable`, and a `scene.defaultMaterial` identity check; the `onBeforeRenderObservable` entry only consumes that flag and returns on clean frames, so `scene.meshes` is never scanned when nothing changed. Scene readiness is invalidated only when the pass actually replaces a material, swaps `scene.defaultMaterial`, or changes a MultiMaterial child list, and `syncSceneLighting` runs on those frames only — unchanged CEL frames do not defeat the strict readiness cache.
 - Scene viewport rendering changes recreate the GPU scene, recollect saved assets and warm shaders before revealing it. Camera pose, selection and unsaved scene content survive; inactive CEL settings do not reload PBR. **Reload Scene** uses the same full reload path.
-- CEL directional shadows scale depth bias with the shadow projection texel size to avoid self-shadow speckling on curved and flat surfaces with large receivers; PBR retains its existing bias.
+- Directional Auto Bias adapts both PBR and CEL shadow maps to the current projection and admitted resolution. Manual mode retains authored offsets.
 - Mode switches invalidate inherited default-material shader caches and refresh the editor's frozen active meshes after material readiness. Rapid graph switches coalesce while shader blocks load, so an open scene follows the latest mode without reopening it.
 - Scene/Prefab viewports, Material/Model/Animation/Skeleton previews, Play and the player share this policy. Scene overrides apply to world scenes; asset previews use project defaults.
 
@@ -533,7 +533,31 @@ per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
 Skinned/morphing casters and materials with deformation padding bypass static
 bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
-Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
+Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle.
+
+Directional **Auto Bias** covers single maps, cascades and capability fallback.
+It reads each current orthographic projection and actual allocated dimensions
+after Babylon's native preparation, before caster uniforms bind. Depth Bias is
+an authored floor in native Babylon units; derived values never enter project,
+scene or runtime serialization. Normal Bias is a world-space inset and remains
+exactly authored: automatic mode adds no displacement at split-normal edges.
+Manual mode uses both authored values exactly after input normalization.
+
+The depth policy starts with half a world texel across the effective sampling
+footprint (PCF reconstruction width 1/3/5, Poisson's actual blur radius, or a base
+texel for PCSS). Babylon 9.20 GLSL/WGSL hardware comparison depth changes by
+`0.5 × bias`, or `1.5 × bias` for depth-clamped CSM PCF; color-depth comparison
+changes by `1 × bias`. Reverse depth changes direction, not these magnitudes.
+PCSS has a separate blocker-search color metric; sample count is not treated as
+a fixed filter width. The automatic native value is limited to the existing
+0.05 input range for recovering projections, while authored floors remain intact.
+These bounds do not promise correctness for arbitrary thin geometry.
+
+Point and spot **automatic adjustment remains unsupported**. Their perspective
+and radial depth paths retain authored offsets, reported as `local-authored` in
+detailed diagnostics. Local cache invalidation still observes authored bias
+edits before its draw decision. This change does not alter shadow coverage,
+map/pass/sampler budgets, ownership or the borrowed FrameGraph textures.
 
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators

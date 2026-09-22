@@ -10,6 +10,7 @@ import {
   SpotLight,
   RenderTargetTexture,
   Scene,
+  ShadowGenerator,
   UniversalCamera,
   TransformNode,
   Vector3,
@@ -68,6 +69,33 @@ function fixture() {
   });
   return { scene, controller: sceneShadowController(scene) };
 }
+
+/** Run real RTT preparation/clear callbacks; NullEngine still does not prove pixels. */
+function prepareShadowLayers(generator: ShadowGenerator): void {
+  const scene = generator.getLight().getScene();
+  scene.incrementRenderId();
+  const map = generator.getShadowMap()!;
+  map.render();
+}
+
+function enableHeadlessCascades(scene: Scene): void {
+  const engine = scene.getEngine();
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
+  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
+    const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
+    const dimensions = typeof size === "number" ? { width: size, height: size } : size;
+    texture.width = texture.baseWidth = dimensions.width;
+    texture.height = texture.baseHeight = dimensions.height;
+    texture.depth = texture.baseDepth = dimensions.layers ?? 0;
+    texture.is2DArray = texture.depth > 0;
+    texture.format = options.depthTextureFormat ?? 14;
+    texture.isReady = true;
+    engine.getLoadedTexturesCache().push(texture);
+    return texture;
+  });
+}
+
 describe("shared shadow lifecycle", () => {
   it("downsizes an oversized Ultra sun within conservative memory admission while retaining requested settings", () => {
     const { scene, controller } = fixture();
@@ -146,6 +174,14 @@ describe("shared shadow lifecycle", () => {
       expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
       expect(owner._features.supportCSM).toBe(ownerSupport);
       expect(latest._features.supportCSM).toBe(latestSupport);
+      prepareShadowLayers(generator!);
+      expect(generator!.bias).toBeGreaterThan(authored.depthBias);
+      expect(generator!.normalBias).toBe(authored.normalBias);
+      expect(controller.effectiveBias(light)[0]).toMatchObject({
+        mode: "directional-auto",
+        depthBias: generator!.bias,
+      });
+      expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
     },
   );
 
@@ -195,6 +231,110 @@ describe("shared shadow lifecycle", () => {
     controller.register(light, false);
     controller.sync();
     expect(controller.generator(light)).toBeNull();
+  });
+  it("adapts Low to admitted map dimensions and updates projection and allocation in the current draw", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    engine.getCaps().maxTextureSize = 256;
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings(qualityPresetPatch("low").shadows),
+    });
+    const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(light, true);
+    controller.sync();
+    const generator = controller.generator(light)!;
+    expect(generator.getShadowMap()!.getSize().width).toBe(256);
+    expect(generator.usePoissonSampling).toBe(true);
+    prepareShadowLayers(generator);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.625, 8);
+    expect(generator.bias).toBeCloseTo(0.0078125, 8);
+    expect(generator.normalBias).toBe(0.005);
+    expect(sceneRenderingSettings(scene).shadows.mapSize).toBe(1024);
+
+    updateSceneRenderingSettings(scene, { shadows: { distance: 160 } });
+    controller.sync();
+    prepareShadowLayers(generator);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(1.25, 8);
+    // Poisson uses its effective radius, not requested PCF quality.
+    generator.blurScale = 0.5;
+    prepareShadowLayers(generator);
+    expect(generator.bias).toBeCloseTo(0.001953125, 8);
+
+    engine.getCaps().maxTextureSize = 4096;
+    controller.sync();
+    const recovered = controller.generator(light)!;
+    expect(recovered).not.toBe(generator);
+    expect(recovered.getShadowMap()!.getSize().width).toBe(1024);
+    prepareShadowLayers(recovered);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.3125, 8);
+    expect(recovered.bias).toBeCloseTo(0.001953125, 8);
+  });
+
+  it("reads the replacement camera projection before deriving directional bias", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 10, mapSize: 512 }),
+    });
+    const light = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(light, true);
+    controller.sync();
+    const generator = controller.generator(light)!;
+    prepareShadowLayers(generator);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(20 / 512, 8);
+    const replacement = new UniversalCamera("orthographic", new Vector3(4, 3, -8), scene);
+    replacement.mode = 1;
+    replacement.orthoLeft = -40;
+    replacement.orthoRight = 40;
+    replacement.orthoBottom = -20;
+    replacement.orthoTop = 20;
+    scene.activeCamera = replacement;
+    controller.sync();
+    prepareShadowLayers(generator);
+    expect(controller.generator(light)).toBe(generator);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(80 / 512, 8);
+  });
+
+  it("derives each cascade from its current extents and restores exact manual bias", () => {
+    const { scene, controller } = fixture();
+    enableHeadlessCascades(scene);
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({
+        cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low",
+        depthBias: 0, normalBias: 0.001,
+      }),
+    });
+    const caster = MeshBuilder.CreateBox("caster", { size: 5 }, scene);
+    controller.setParticipation(caster, { castShadows: true, receiveShadows: true });
+    const light = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+    controller.register(light, true);
+    controller.sync();
+    const generator = controller.generator(light) as CascadedShadowGenerator;
+    expect(generator).toBeInstanceOf(CascadedShadowGenerator);
+    prepareShadowLayers(generator);
+    const effective = controller.effectiveBias(light).map((value) => ({ ...value }));
+    expect(effective).toHaveLength(2);
+    expect(effective[1].worldTexelSize).toBeGreaterThan(effective[0].worldTexelSize);
+    for (let layer = 0; layer < 2; layer++) {
+      const min = generator.getCascadeMinExtents(layer)!;
+      const max = generator.getCascadeMaxExtents(layer)!;
+      const texel = Math.max(max.x - min.x, max.y - min.y) / 1024;
+      expect(effective[layer].worldTexelSize).toBeCloseTo(texel, 8);
+      expect(effective[layer].depthBias).toBeCloseTo(Math.min(0.05, (texel / 2) / (max.z - min.z) / 1.5), 8);
+      expect(effective[layer].normalBias).toBe(0.001);
+    }
+    scene.activeCamera!.position.x += 6;
+    scene.activeCamera!.getViewMatrix(true);
+    prepareShadowLayers(generator);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(effective[0].worldTexelSize, 8);
+
+    updateSceneRenderingSettings(scene, { shadows: { autoBias: false, depthBias: 0.002, normalBias: 0.025 } });
+    controller.sync();
+    prepareShadowLayers(generator);
+    expect(generator.bias).toBe(0.002);
+    expect(generator.normalBias).toBe(0.025);
+    expect(controller.effectiveBias(light).map(({ mode, depthBias, normalBias }) => ({ mode, depthBias, normalBias })))
+      .toEqual([{ mode: "manual", depthBias: 0.002, normalBias: 0.025 }, { mode: "manual", depthBias: 0.002, normalBias: 0.025 }]);
+    expect(sceneRenderingSettings(scene).shadows).toMatchObject({ autoBias: false, depthBias: 0.002, normalBias: 0.025 });
   });
   it("budgets local lights separately and transfers capacity when an owner is disabled", () => {
     const { scene, controller } = fixture();
