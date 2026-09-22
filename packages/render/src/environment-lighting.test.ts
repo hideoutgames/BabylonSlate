@@ -117,7 +117,7 @@ it("isolates reflection matrices and intensity while sharing uploaded radiance a
   expect(source.sphericalPolynomial).toBe(polynomial);
   b.dispose();
   expect(source.getInternalTexture()).not.toBeNull();
-  cache.release(source);
+  sourceLease.release();
   cache.flushUnreferenced();
   expect(source.getInternalTexture()).toBeNull();
 });
@@ -346,7 +346,7 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
     );
   applyEnvironmentLighting(a, "environment", assets);
   applyEnvironmentLighting(b, "environment", assets);
-  cache.release(source);
+  sourceLease.release();
   expect(isEnvironmentLightingReady(a)).toBe(false);
   expect(isEnvironmentLightingReady(b)).toBe(false);
   const av = a.environmentTexture!;
@@ -393,7 +393,7 @@ it("keeps all pending face reads alive after rejection and ignores obsolete work
       : new Promise<Float32Array>((resolve) => finish.push(resolve)),
   );
   applyEnvironmentLighting(a, "environment", assets);
-  cache.release(source);
+  sourceLease.release();
   expect(isEnvironmentLightingReady(a)).toBe(false);
   await Promise.resolve();
   upload.mockImplementationOnce((url) => {
@@ -455,6 +455,6 @@ it("decodes RGBD fallback radiance and exposes readback failures to the owning s
     ),
   );
   expect(isEnvironmentLightingReady(a)).toBe(true);
-  cache.release(source);
-  cache.release(broken);
+  sourceLease.release();
+  brokenLease.release();
 });

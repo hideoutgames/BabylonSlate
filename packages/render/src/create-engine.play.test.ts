@@ -353,7 +353,7 @@ describe("Play createEngine view", () => {
     // Accounting only: no GPU or CPU allocation. A failed view's disabled
     // budget must not prevent the remaining clients from evicting unused data.
     cache.account("unused-after-failure", 4 * 1024 ** 3);
-    cache.release("unused-after-failure");
+    cache.releaseAccounting("unused-after-failure");
     cache.evictToCeiling();
     expect(cache.accountedBytes()).toBe(retainedBytes);
     sibling.scheduler.invalidate("manual");
