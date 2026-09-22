@@ -160,6 +160,13 @@ describe("material graph serialization", () => {
     const palette = materialPaletteNodes("surface");
     const multiply = palette.find((entry) => entry.id === "math.multiply");
     expect(multiply?.pins.some((pin) => pin.id === "a")).toBe(true);
+    expect(multiply?.searchAliases).toContain("×");
+    expect(palette.find((entry) => entry.id === "math.add")?.searchAliases).toContain("+");
+    expect(palette.find((entry) => entry.id === "math.sqrt")?.searchAliases).toContain("sqrt(x)");
+    expect(palette.find((entry) => entry.id === "vector.dot")?.searchAliases).toContain("·");
+    expect(palette.find((entry) => entry.id === "vector.cross")?.searchAliases).toContain("×");
+    expect(palette.find((entry) => entry.id === "logic.select")?.searchAliases).toContain("?:");
+    expect(palette.find((entry) => entry.id === "noise.perlin")?.searchAliases).toContain("PerlinNoise");
     expect(palette.some((entry) => entry.id === "output.postProcess")).toBe(
       false,
     );

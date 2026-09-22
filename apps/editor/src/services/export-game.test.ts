@@ -13,12 +13,12 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { createDefaultPluginSettings } from "@babylonslate/assets";
+import { createDefaultPluginSettings, pluginCompatibilityKey } from "@babylonslate/assets";
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   parseScriptRegistry,
 } from "@babylonslate/exporter";
-import { collectAndExportGame } from "./export-game";
+import { collectAndExportGame, resolveExportPluginGraph } from "./export-game";
 import type { ExportIndexedAsset } from "@babylonslate/exporter";
 
 function asset(
@@ -39,6 +39,20 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it("honors reviewed plugin compatibility in exports while still rejecting missing dependencies", () => {
+    const plugin = { pluginGuid: "pack", settings: createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" }) };
+    plugin.settings.engineVersion = "older";
+    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(plugin, [plugin]) } };
+    const preset = defaultExportPreset();
+    preset.pluginOverrides = { pack: { enabled: true } };
+    expect(resolveExportPluginGraph([plugin], overrides, preset).order).toEqual([plugin]);
+    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toEqual([]);
+    plugin.settings.pluginDependencies = [{ guid: "missing", version: "0.1" }];
+    overrides.pack.acceptedCompatibility = pluginCompatibilityKey(plugin, [plugin]);
+    expect(resolveExportPluginGraph([plugin], overrides, preset).order).toEqual([]);
+    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toContainEqual(expect.objectContaining({ code: "plugin.missing" }));
+  });
+
   it.each(["Class variable", "Spawn Actor dropdown"])("packs the inherited prefab referenced only by a %s", async (source) => {
     const mesh = createMeshComponent("parent-mesh", "box");
     const childCollider = {
@@ -454,7 +468,7 @@ describe("collectAndExportGame", () => {
     dependent.enabledByDefault = true;
     dependency.enabledByDefault = true;
     dependent.pluginDependencies = [
-      { guid: "dependency", versionRange: "^1.0.0" },
+      { guid: "dependency", version: "1.0.0" },
     ];
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

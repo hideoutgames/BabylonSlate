@@ -208,19 +208,22 @@ describe("ModelPreview", () => {
     ).toBe("true");
   });
 
-  it("toggles Show Collision on the glTF preview toolbar", () => {
-    render(
-      <ModelColliderSessionProvider>
+  it("starts each Model session with collision hidden and lets the toolbar show it", () => {
+    const preview = (session: string) => (
+      <ModelColliderSessionProvider key={session}>
         <ModelPreview
           payload={{ materialSlots: [], clipNames: [] }}
           sourceBytes={encodeTriangleGlb()}
         />
-      </ModelColliderSessionProvider>,
+      </ModelColliderSessionProvider>
     );
+    const { rerender } = render(preview("first"));
     const toggle = screen.getByTestId("model-show-collision");
-    expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    rerender(preview("reopened"));
+    expect(screen.getByTestId("model-show-collision").getAttribute("aria-pressed")).toBe("false");
   });
 });
 

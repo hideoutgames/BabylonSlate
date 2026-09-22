@@ -37,6 +37,8 @@ export type PaletteNode = {
   id: string;
   title: string;
   category: string;
+  /** Additional names, operators and formulas accepted by Add Node search. */
+  searchAliases?: readonly string[];
   /** Pin defs from the host registry so Add node creates connectable handles. */
   pins?: SerializedPin[];
   /** Default property bag (message, severity, …) merged into node data. */

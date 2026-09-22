@@ -149,6 +149,8 @@ describe("importPluginZip", () => {
       pluginGuid: "pack-guid",
       displayName: "My Pack",
     });
+    settings.version = "2.7";
+    settings.engineVersion = "older-engine";
     const descriptor = await writeProjectPlugin(source, "my-pack", settings);
     await writeClass(source, "plugins/my-pack/assets/Hero.class.babasset", {
       guid: "hero-1",
@@ -167,6 +169,8 @@ describe("importPluginZip", () => {
     expect(plan.kind).toBe("install");
     const imported = await applyPluginImport(dest, inspected, plan);
     expect(imported.pluginGuid).toBe("pack-guid");
+    expect(imported.settings.version).toBe("2.7");
+    expect(imported.settings.engineVersion).toBe("older-engine");
     expect(imported.folderPath).toBe("plugins/my-pack");
     expect(await dest.exists("plugins/my-pack/my-pack.plugin.babasset")).toBe(
       true,

@@ -74,6 +74,7 @@ export const quatNodes: NodeDefinition[] = [
   },
   {
     id: "quat.multiply",
+    searchAliases: ["*","×","a * b"],
     title: "Multiply Quaternion",
     category: "quaternion",
     pure: true,
@@ -88,6 +89,7 @@ export const quatNodes: NodeDefinition[] = [
   },
   {
     id: "quat.inverse",
+    searchAliases: ["inverse(q)","q^-1"],
     title: "Inverse Quaternion",
     category: "quaternion",
     pure: true,
@@ -101,6 +103,7 @@ export const quatNodes: NodeDefinition[] = [
   },
   {
     id: "quat.slerp",
+    searchAliases: ["slerp(a,b,t)"],
     title: "Slerp Quaternion",
     category: "quaternion",
     pure: true,
@@ -130,6 +133,7 @@ export const quatNodes: NodeDefinition[] = [
   },
   {
     id: "quat.normalize",
+    searchAliases: ["normalize(q)"],
     title: "Normalize Quaternion",
     category: "quaternion",
     pure: true,

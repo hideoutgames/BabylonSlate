@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { PROJECT_FILE } from "@babylonslate/core";
+import { PROJECT_FILE, createDefaultScene, ENGINE_VERSION, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
   createVfsBlobStore,
   createEmptyProjectFiles,
   encodeBabasset,
+  encodeAssetDocument,
   encodePluginSettingsDocument,
+  pluginCompatibilityKey,
   inspectBabplugin,
   writeProjectPlugin,
   buildStarterContentFiles,
@@ -61,6 +63,72 @@ async function writeClassAsset(
 }
 
 describe("ProjectService plugin roots", () => {
+  it("refreshes automatic compatibility only after an authored plugin-content change", async () => {
+    const { storage, service } = await scaffolded();
+    const settings = createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" });
+    settings.engineVersion = "older";
+    await writeProjectPlugin(storage, "pack", settings);
+    const scene = createDefaultScene();
+    const path = "plugins/pack/assets/Scene.scene.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: SCENE_SCHEMA_VERSION, payload: scene as unknown as Record<string, unknown> }));
+    await service.remountRegistry();
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, displayName: "Renamed" });
+    expect(service.plugins[0]!.settings.engineVersion).toBe("older");
+    await service.saveDocument("scene", path, scene);
+    expect(service.plugins[0]!.settings.engineVersion).toBe("older");
+    await service.saveDocument("scene", path, { ...scene, name: "Changed Scene" });
+    expect(service.plugins[0]!.settings.engineVersion).toBe(ENGINE_VERSION);
+    expect(service.plugins[0]!.settings.displayName).toBe("Renamed");
+    // A stale open settings tab must not undo the newer authoring stamp.
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, description: "Edited Description" });
+    expect(service.plugins[0]!.settings.engineVersion).toBe(ENGINE_VERSION);
+  });
+
+  it("records the current environment when the author saves a new plugin version", async () => {
+    const { storage, service } = await scaffolded();
+    const base = createDefaultPluginSettings({ pluginGuid: "base", displayName: "Base" });
+    base.version = "2.7";
+    const settings = createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" });
+    settings.version = "0.1";
+    settings.engineVersion = "older";
+    settings.pluginDependencies = [{ guid: "base", version: "0.1" }];
+    await writeProjectPlugin(storage, "base", base);
+    await writeProjectPlugin(storage, "pack", settings);
+    await service.remountRegistry();
+    const opened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
+    expect(opened).toMatchObject({ version: "0.1", engineVersion: "older" });
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...opened, displayName: "Renamed" });
+    expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.1", engineVersion: "older", pluginDependencies: [{ guid: "base", version: "0.1" }] });
+    const reopened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...reopened, version: "0.2" });
+    expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.2", engineVersion: ENGINE_VERSION, pluginDependencies: [{ guid: "base", version: "2.7" }] });
+  });
+
+  it("retains reviewed compatibility through remount and export, and blocks changed dependencies", async () => {
+    const { storage, service } = await scaffolded();
+    const base = createDefaultPluginSettings({ pluginGuid: "base", displayName: "Base" });
+    base.enabledByDefault = true;
+    base.version = "2.7";
+    const pack = createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" });
+    pack.engineVersion = "older";
+    pack.pluginDependencies = [{ guid: "base", version: "0.1" }];
+    await writeProjectPlugin(storage, "base", base);
+    await writeProjectPlugin(storage, "pack", pack);
+    await writeClassAsset(storage, "plugins/pack/assets/Hero.class.babasset", { guid: "hero", name: "Hero" });
+    await service.remountRegistry();
+    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(
+      service.plugins.find((entry) => entry.pluginGuid === "pack")!, service.plugins,
+    ) } };
+    await service.applyPluginOverrides(overrides);
+    expect(service.registry?.getRoot("plugin:pack")).toBeTruthy();
+    await service.remountRegistry();
+    expect(service.registry?.getRoot("plugin:pack")).toBeTruthy();
+    expect((await service.listExportAssets(new Set(["base", "pack"]))).some((asset) => asset.header.guid === "hero")).toBe(true);
+    await service.saveDocument("plugin-settings", "plugins/base/base.plugin.babasset", { ...base, version: "2.8" });
+    expect(service.registry?.getRoot("plugin:pack")).toBeUndefined();
+    expect(service.pluginGraphDiagnostics).toContainEqual(expect.objectContaining({ code: "plugin.unsatisfiable", pluginGuid: "pack" }));
+  });
+
   it("indexes export-enabled dependencies without changing the editor's disabled roots", async () => {
     const { storage, service } = await scaffolded();
     const dependency = createDefaultPluginSettings({
@@ -71,7 +139,7 @@ describe("ProjectService plugin roots", () => {
       pluginGuid: "extra",
       displayName: "Extra",
     });
-    dependent.pluginDependencies = [{ guid: "base", versionRange: "^1.0.0" }];
+    dependent.pluginDependencies = [{ guid: "base", version: "1.0.0" }];
     await writeProjectPlugin(storage, "base", dependency);
     await writeProjectPlugin(storage, "extra", dependent);
     await writeClassAsset(
@@ -220,7 +288,7 @@ describe("ProjectService plugin roots", () => {
       iconKey: "Box",
       experimental: true,
       enabledByDefault: true,
-      pluginDependencies: [{ guid: "missing-plugin", versionRange: "^1.0.0" }],
+      pluginDependencies: [{ guid: "missing-plugin", version: "1.0.0" }],
     });
     expect(service.plugins.find((plugin) => plugin.pluginGuid === created.pluginGuid)?.settings)
       .toMatchObject({ displayName: "Renamed Pack", iconKey: "Box", experimental: true });
@@ -236,7 +304,7 @@ describe("ProjectService plugin roots", () => {
     const dependency = createDefaultPluginSettings({ pluginGuid: "dependency", displayName: "Dependency" });
     const dependent = createDefaultPluginSettings({ pluginGuid: "dependent", displayName: "Dependent" });
     dependent.enabledByDefault = true;
-    dependent.pluginDependencies = [{ guid: "dependency", versionRange: "^1.0.0" }];
+    dependent.pluginDependencies = [{ guid: "dependency", version: "1.0.0" }];
     await writeProjectPlugin(storage, "dependency", dependency);
     await writeProjectPlugin(storage, "dependent", dependent);
     await service.remountRegistry();

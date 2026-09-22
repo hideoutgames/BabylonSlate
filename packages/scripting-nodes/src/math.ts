@@ -5,6 +5,7 @@ import {
   INT,
   BOOL,
 } from "@babylonslate/scripting";
+import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 
 function binary(
   id: string,
@@ -16,6 +17,7 @@ function binary(
     id,
     title,
     category: "math",
+    searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
     pure: true,
     pins: () => [
       pin("a", "a", "in", type),
@@ -41,6 +43,7 @@ export const mathNodes: NodeDefinition[] = [
   binary("math.mod_int", "Modulo Int", "%", INT),
   {
     id: "math.negate",
+    searchAliases: ["-","−","-x","negation"],
     title: "Negate",
     category: "math",
     pure: true,
@@ -52,6 +55,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.abs",
+    searchAliases: ["abs","abs(x)","|x|"],
     title: "Abs",
     category: "math",
     pure: true,
@@ -63,6 +67,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.compare",
+    searchAliases: ["≈","~=","approximately equal"],
     title: "Nearly Equal",
     category: "math",
     pure: true,
@@ -77,6 +82,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.equals",
+    searchAliases: ["=","==","===","a == b"],
     title: "Equal",
     category: "math",
     pure: true,
@@ -91,6 +97,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.notEquals",
+    searchAliases: ["!=","!==","≠","a != b"],
     title: "Not Equal",
     category: "math",
     pure: true,
@@ -105,6 +112,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.greater",
+    searchAliases: [">","a > b"],
     title: "Greater Than",
     category: "math",
     pure: true,
@@ -117,6 +125,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.greaterEqual",
+    searchAliases: [">=","≥","a >= b"],
     title: "Greater or Equal",
     category: "math",
     pure: true,
@@ -131,6 +140,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.less",
+    searchAliases: ["<","a < b"],
     title: "Less Than",
     category: "math",
     pure: true,
@@ -143,6 +153,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.lessEqual",
+    searchAliases: ["<=","≤","a <= b"],
     title: "Less or Equal",
     category: "math",
     pure: true,
@@ -157,6 +168,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "boolean.and",
+    searchAliases: ["&&","∧","a && b"],
     title: "Boolean And",
     category: "math",
     pure: true,
@@ -171,6 +183,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "boolean.or",
+    searchAliases: ["||","∨","a || b"],
     title: "Boolean Or",
     category: "math",
     pure: true,
@@ -185,6 +198,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "boolean.not",
+    searchAliases: ["!","¬","!x"],
     title: "Boolean Not",
     category: "math",
     pure: true,
@@ -196,6 +210,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.lerp",
+    searchAliases: ["lerp","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
     title: "Lerp",
     category: "math",
     pure: true,
@@ -211,6 +226,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.clamp",
+    searchAliases: ["clamp(x,min,max)"],
     title: "Clamp",
     category: "math",
     pure: true,
@@ -226,6 +242,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.min",
+    searchAliases: ["min","min(a,b)"],
     title: "Min",
     category: "math",
     pure: true,
@@ -240,6 +257,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.max",
+    searchAliases: ["max","max(a,b)"],
     title: "Max",
     category: "math",
     pure: true,
@@ -254,6 +272,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.sin",
+    searchAliases: ["sin","sin(x)"],
     title: "Sin",
     category: "math",
     pure: true,
@@ -265,6 +284,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.cos",
+    searchAliases: ["cos","cos(x)"],
     title: "Cos",
     category: "math",
     pure: true,
@@ -276,6 +296,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.degrees",
+    searchAliases: ["degrees(x)","rad2deg","x * 180 / pi"],
     title: "Radians To Degrees",
     category: "math",
     pure: true,
@@ -289,6 +310,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.radians",
+    searchAliases: ["radians(x)","deg2rad","x * pi / 180"],
     title: "Degrees To Radians",
     category: "math",
     pure: true,
@@ -302,6 +324,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.floor",
+    searchAliases: ["floor(x)","⌊x⌋"],
     title: "Floor",
     category: "math",
     pure: true,
@@ -313,6 +336,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.ceil",
+    searchAliases: ["ceil","ceil(x)","⌈x⌉"],
     title: "Ceil",
     category: "math",
     pure: true,
@@ -324,6 +348,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.round",
+    searchAliases: ["round(x)"],
     title: "Round",
     category: "math",
     pure: true,
@@ -335,6 +360,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.sign",
+    searchAliases: ["sign(x)","sgn"],
     title: "Sign",
     category: "math",
     pure: true,
@@ -346,6 +372,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.power",
+    searchAliases: ["^","**","pow","pow(a,b)","a^b","a**b"],
     title: "Power",
     category: "math",
     pure: true,
@@ -360,6 +387,7 @@ export const mathNodes: NodeDefinition[] = [
   },
   {
     id: "math.sqrt",
+    searchAliases: ["√","sqrt","sqrt(x)","√x"],
     title: "Sqrt",
     category: "math",
     pure: true,

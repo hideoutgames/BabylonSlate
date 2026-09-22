@@ -26,7 +26,7 @@ export async function buildStarterContentFiles(): Promise<ProjectTreeFile[]> {
   settings.description = "Bundled engine starter classes with no artwork.";
   settings.author = "BabylonSlate";
   settings.category = "Engine";
-  settings.engineVersionRange = `^${ENGINE_VERSION}`;
+  settings.engineVersion = ENGINE_VERSION;
 
   const classBytes = await encodeAssetDocument(
     {

@@ -13,6 +13,7 @@ import {
   openTestProject,
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
+import { saveAllIfEnabled } from "./save-all";
 
 test("H9: a large References graph focuses its asset and keeps Close inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -155,8 +156,7 @@ test("H17: referenced Class deletion confirms twice and clears open scene usages
   await page.getByTestId("content-browser-delete-references-confirm").click();
   await expect(page.getByRole("dialog", { name: "Deleting Assets", exact: true })).toHaveCount(0, { timeout: 30_000 });
   await expect(tile).toHaveCount(0);
-  await page.getByTestId("save-all-project").click();
-  await expect(page.getByTestId("save-all-project")).toBeDisabled();
+  await saveAllIfEnabled(page);
   const actors = await page.evaluate(async () => {
     const bytes = await (globalThis as unknown as { __babylonslateTest: { readAssetChunk(path: string, chunk: string): Promise<Uint8Array> } })
       .__babylonslateTest.readAssetChunk("assets/main.scene.babasset", "document");
