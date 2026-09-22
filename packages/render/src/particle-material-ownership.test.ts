@@ -19,6 +19,8 @@ describe("scene and emitter material ownership", () => {
     const blueScene = splitScene ? overlay : host.scene;
     const library = new MaterialLibrary();
     const document = createDefaultMaterialDocument("Shared graph", "particle");
+    document.nodes.push({ id: "texture", type: "input.particleTexture", position: { x: 0, y: 80 }, properties: {} });
+    document.edges = [{ id: "texture-output", sourceNodeId: "texture", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
     const red = RawTexture.CreateRGBATexture(new Uint8Array([255, 0, 0, 255]), 1, 1, host.scene);
     const blue = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 255, 255]), 1, 1, blueScene);
     const materials: ResourceLease<NodeMaterial>[] = [];

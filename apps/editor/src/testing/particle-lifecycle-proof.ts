@@ -25,7 +25,10 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     texture.hasAlpha = true;
     return [guid, texture] as const;
   }));
-  const materials = createParticleMaterialResolver({ scene, documents: new Map([["graph", createDefaultMaterialDocument("Shared particle graph", "particle")]]) });
+  const graph = createDefaultMaterialDocument("Shared particle graph", "particle");
+  graph.nodes.push({ id: "texture", type: "input.particleTexture", position: { x: 0, y: 80 }, properties: {} });
+  graph.edges = [{ id: "texture-output", sourceNodeId: "texture", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
+  const materials = createParticleMaterialResolver({ scene, documents: new Map([["graph", graph]]) });
   let acquisitions = 0;
   let releases = 0;
   let resets = 0;
@@ -158,7 +161,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     layerCamera.setTarget(Vector3.Zero()); layerCamera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     layerCamera.orthoLeft = layerCamera.orthoBottom = -2; layerCamera.orthoRight = layerCamera.orthoTop = 2;
     layer.activeCamera = layerCamera;
-    const layerMaterials = createParticleMaterialResolver({ scene: layer, documents: new Map([["graph", createDefaultMaterialDocument("Shared particle graph", "particle")]]) });
+    const layerMaterials = createParticleMaterialResolver({ scene: layer, documents: new Map([["graph", graph]]) });
     const layered = new ParticleService({ scene, gpuSupported: gpu, acquireTexture,
       sceneForSlot: (slot) => slot === 2 ? layer : scene,
       acquireMaterial: (guid, owner) => (owner.scene === layer ? layerMaterials : materials).acquire(guid, owner),
