@@ -297,6 +297,31 @@ describe("material library", () => {
     expect(scene.materials).not.toContain(first.material);
   });
 
+  it("retires only the replaced asset for an owner while preserving its pending successor", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const previous = library.acquire(scene, "old", tinted(1), { instanceKey: "actor" });
+    const unrelated = library.acquire(scene, "old", tinted(1), { instanceKey: "other-actor" });
+    if (!previous.ok || !unrelated.ok) throw new Error("Expected initial private materials");
+    await Promise.all([previous.ready, unrelated.ready]);
+    const successor = library.acquire(scene, "next", tinted(0.25), { instanceKey: "actor" });
+    const obsolete = library.acquire(scene, "old", tinted(0.5), { instanceKey: "actor" });
+    if (!successor.ok || !obsolete.ok) throw new Error("Expected pending private materials");
+
+    library.releaseInstance("actor", "old");
+    expect(await obsolete.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
+    expect(await successor.ready).toEqual([]);
+    expect(scene.materials).not.toContain(previous.material);
+    expect(scene.materials).not.toContain(obsolete.material);
+    expect(library.materialFor(scene, "next", { instanceKey: "actor" })).toBe(successor.material);
+    expect(library.materialFor(scene, "old", { instanceKey: "other-actor" })).toBe(unrelated.material);
+
+    library.releaseInstance("actor");
+    expect(scene.materials).not.toContain(successor.material);
+    expect(scene.materials).toContain(unrelated.material);
+  });
+
   it("recompiles when the graph content changes", () => {
     const scene = host();
     const library = new MaterialLibrary();

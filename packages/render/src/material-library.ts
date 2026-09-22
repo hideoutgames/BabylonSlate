@@ -98,6 +98,7 @@ export interface MaterialLibraryOptions {
 }
 
 interface CacheEntry {
+  assetGuid: string;
   material: NodeMaterial;
   hash: string;
   refCount: number;
@@ -348,6 +349,7 @@ export class MaterialLibrary {
       return accepted;
     };
     const candidate: CacheEntry = {
+      assetGuid,
       material: compiled.material,
       hash: this.generationHash(lowered.plan),
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
@@ -468,18 +470,18 @@ export class MaterialLibrary {
     return material;
   }
 
-  /** Drop a component's private materials when its assignment changes or it despawns. */
-  releaseInstance(instanceKey: string): void {
+  /** Retire one replaced asset, or all private materials when the owner despawns. */
+  releaseInstance(instanceKey: string, assetGuid?: string): void {
     for (const scene of this.tracked) {
       const pending = this.pending.get(scene)!;
       for (const [key, entry] of pending) {
-        if (entry.instanceKey !== instanceKey) continue;
+        if (entry.instanceKey !== instanceKey || (assetGuid !== undefined && entry.assetGuid !== assetGuid)) continue;
         pending.delete(key);
         entry.dispose();
       }
       const entries = this.scenes.get(scene)!;
       for (const [key, entry] of entries) {
-        if (entry.instanceKey !== instanceKey) continue;
+        if (entry.instanceKey !== instanceKey || (assetGuid !== undefined && entry.assetGuid !== assetGuid)) continue;
         entry.dispose();
         entries.delete(key);
       }
