@@ -115,6 +115,8 @@ describe("Havok attachment transactions", () => {
       body(backend, "body", "dynamic");
       backend.createCollider(box());
       const physicsBody = native(backend);
+      const stage = (label: string) => console.info("native mutation stage", label);
+      stage("body and box created");
       const oldInertia = physicsBody.getMassProperties().inertia!.clone();
       physicsBody.setLinearVelocity(new Vector3(3, -2, 1));
       const initialShape = physicsBody.shape;
@@ -125,6 +127,7 @@ describe("Havok attachment transactions", () => {
         friction: 0.8,
         isTrigger: true,
       });
+      stage("trigger and filter updated");
       expect(init).not.toHaveBeenCalled();
       expect(physicsBody.shape).toBe(initialShape);
       expect(physicsBody.shape!.isTrigger).toBe(true);
@@ -133,8 +136,10 @@ describe("Havok attachment transactions", () => {
         upsert: [{ ...box(), translation: { x: 2, y: 0, z: 0 } }],
         remove: [],
       });
+      stage("local pose committed");
       expect(init).toHaveBeenCalledTimes(1); // A pose container, no new geometry.
       expect(trace(backend, 2).hit).toBe(true);
+      stage("local pose queried");
       init.mockClear();
       backend.applyColliderChanges("body", {
         upsert: [
@@ -145,6 +150,7 @@ describe("Havok attachment transactions", () => {
         ],
         remove: [],
       });
+      stage("resize committed");
       expect(init).toHaveBeenCalledTimes(1);
       expect(physicsBody.getMassProperties().mass).toBeCloseTo(2);
       expect(physicsBody.getMassProperties().inertia!.y).toBeGreaterThan(
@@ -430,6 +436,10 @@ describe("Havok explicit native motion", () => {
         ...pose(8),
         rotation: { x: 0, y: 0, z: 0, w: 3 },
       });
+      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
+      const handle = (physicsBody as unknown as { _pluginData: { hpBodyId: [bigint] } })._pluginData.hpBodyId;
+      expect(havok.HP_Body_GetQTransform(handle)[1][0]).toEqual([8, 0, 0]);
+      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], bounds: physicsBody.getBoundingBox().minimumWorld.asArray(), hit: trace(backend, 8).hit });
       expect(trace(backend, 8).hit).toBe(true);
       expect(trace(backend).hit).toBe(false);
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
