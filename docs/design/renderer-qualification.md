@@ -4,6 +4,57 @@
 
 The September 2026 rendering handoff starts from `ce1162f25cbac930be4789789de6269856e1eb58` (reviewed baseline `bc110765198020d6d9a14a0a67ee357a18148080` plus the WebGPU optional vertex-stream fix). Babylon remains pinned to 9.20.0 with the existing repository patch. The production mesh-outline selection implementation remains in place while the native replacement is qualified.
 
+### Continuation checkpoint — 22 September 2026
+
+Ownership resumed on the existing `zeron/babylonslate-rendering-handoff` branch
+and [draft PR #651](https://github.com/hideoutgames/BabylonSlate/pull/651), with
+clean inspected head `31fdadcf08399661be1bbcb5e290eb38441e226b`. Existing commits,
+implementation and revision-scoped evidence are retained.
+
+The continuation now authorizes a bounded-pass shared-outline extension if the
+pinned failure is reproduced and no smaller native-compatible correction meets
+the full contract. This is a new, narrow implementation authorization, not a
+retroactive approval or acceptance of the previous design. It retains Babylon
+9.20.0, existing FrameGraph/view ownership and the shared resource ledger. The
+production selection replacement, OutlineComponent and default CEL outlines
+remain unimplemented at this checkpoint; the authorization does not qualify them.
+
+| Requirement | Retained evidence / implementation | Remaining requirement |
+| --- | --- | --- |
+| Coordinated outlines | Existing selection renderer retained; stock failure reproduced again below | Production shared owner, independent styles/membership, strict CEL occlusion, all three consumers, authoring/export/hydration and lifecycle qualification |
+| Rectangular lights | Native/graph PBR/CEL receiver and transform cases; authored component, guides and shared resources | Hands-on dimension/color/intensity/gizmo route; asymmetric textured orientation and remaining supported receiver cases |
+| Prepared emission and exports | Version 3 cancellable, validated processor; cached uploads; real packed/loose player lifecycle cases | Hands-on replace/clear/cancel/source-invalidation route; independent output acceptance with the completed outline system |
+| Light authoring and inheritance | Automated discovery, preparation, history, duplicate/remove/reopen at `a523e5ee`; real compiler inheritance and independent spawn/despawn at `66f6291f` | Computer Use routes and additional parented/scaled textured authoring |
+| Settings and Scalability | Saved Class compilation/Play events at `686dc574`; standalone retained setters at `562fe445`; requested/effective separation and session reset | Manual graph authoring and visible application; new outline fields; remaining per-field rendered checks (the settings fixture disables shadow casting) |
+| Output size and effects | Actual 384×216 / 240×135 locked-output scaling and prepared FXAA resize regression at `96b2331a` | Preserve these checks through the new integration and manual routes |
+| Performance and ownership | Shadow invalidation repair; equal-output RTX 2060 CPU comparison below | Equal-quality outline baseline/individual/all-consumer cost, bounded lifecycle and allocation retirement; no demonstrated GPU/A16 headroom |
+| Hosts and release | Historical desktop software-API functional coverage | Computer Use acceptance, current-head required CI/reviews and merge; physical A16 qualification remains **DEFERRED** |
+
+The selected immediate verification scope was only
+`e2e/native-outline-qualification.spec.ts`, through the admitted shared runner
+with one worker. Both harness cases passed at the clean inspected head in
+7.5 seconds, reproducing the limitation at 128×96: WARP WebGL2 retained
+204 → 204 → 204 CEL red pixels, while effective SwiftShader WebGPU produced
+204 → 204 → 0. Clearing the component removed the shared instance-selection
+buffer on both APIs. These are two successful **stock-limitation reproductions**,
+not production outline acceptance or hardware timing results.
+
+Retained artifacts are available under the OS temporary
+`BabylonSlate-rendering-handoff-evidence` directory: native/settings PNG and JSON
+captures, `area-2c788764`, and `perf-before-1f2768d2` / `perf-after-a909bff9`.
+Their images and profiles were enumerated but not inspected during this
+checkpoint. Machine-local availability alone is not durable handoff evidence;
+portable fixtures remain in `e2e/`, and this document records their provenance.
+
+Computer Use was attempted immediately. `cua.getState()` returned no enabled
+surfaces, and `cua.createBrowserTab` for both `iab` and `chrome` returned
+`Browser is not available`. The user-authorized T3 browser was then opened
+to a blank tab; no acceptance was performed there. After the user opened Chrome,
+a repeated `cua.getState()` found the Chrome extension and
+`cua.createBrowserTab` succeeded. A working Chrome Computer Use session is now
+established. Build/API qualification and all hands-on routes remain **PENDING**
+at this checkpoint. Automated fixtures do not establish a Computer Use pass.
+
 `e2e/native-outline-qualification.spec.ts` runs the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance. Run just this file with the shared browser runner; the JSON attachment lists blockers and actual API, mask type, dimensions and browser. Screenshots come from the actual presented canvas.
 
 Physical iPad A16 testing is **deferred by the user for this delivery (21 September 2026)**. No physical-device baseline, equal-quality before/after timings, sustained thermal behavior or device mask-format qualification has been measured. Desktop WebGL/WebGPU captures are functional evidence only. Do not enable a costly default based on these runs or substitute an alternate outline renderer without the requested product approval.
@@ -19,7 +70,7 @@ Build `48314f7f090ef8fd404dca5dc62344337c54e77c`, Babylon 9.20.0, Windows 10.0.1
 | CEL red pixels after clearing only the component consumer | 204 | **0** |
 | Shared instance-selection buffer after that clear | **Removed** | **Removed** |
 
-The fixture uses 128×96 pixels, scale 1, a float32 native mask (`mainTextureType = 1`), and three warm-up draws after readiness per membership state. WebGL2 retaining its previous pixels does not establish safe buffer ownership. WebGPU visibly loses the unchanged CEL outline. This is the concrete failure supporting the pending request for a shared bounded-pass extension; it is not approval to implement that extension. Depth occlusion, per-thin-instance ownership, mask-ID precision at scale, deformation and transparency remain unqualified.
+The fixture uses 128×96 pixels, scale 1, a float32 native mask (`mainTextureType = 1`), and three warm-up draws after readiness per membership state. WebGL2 retaining its previous pixels does not establish safe buffer ownership. WebGPU visibly loses the unchanged CEL outline. At that revision, this failure supported the pending request for a shared bounded-pass extension; it did not establish approval. The later authorization is recorded in the continuation checkpoint above. Depth occlusion, per-thin-instance ownership, mask-ID precision at scale, deformation and transparency remain unqualified.
 
 The same build passed three standalone settings cases: packed WebGL2, loose WebGPU, and packed requested-WebGPU with an injected adapter failure and effective WebGL2. Each boots authored CEL with five bands, specular off, environment disabled, shadows disabled, FXAA, a 480×270 output, scale 0.8 and cap 30. Presented pixels change under a live PBR request and return exactly when CEL is restored. Scale 0.5 and cap 20 survive a transition whose second-scene geometry is verified; reload restores 0.8/30. The stored manifest retains project defaults. The rejected adapter's diagnostic contains `qualification adapter failure`. This verifies the tested fields, not every rendering setting or every host.
 
@@ -61,11 +112,11 @@ not that per-view sizing contract.
 | Priority / work | Status and next requirement |
 | --- | --- |
 | P0 physical A16 baseline and budgets | **Deferred by user; not a current delivery gate.** No A16 CPU/GPU/p50/p95/p99, input latency, sustained memory or remaining-headroom claims. Agree the representative scene and explicit 60 fps (16.7 ms) or 30 fps (33.3 ms) target, then measure equal content/quality before and after. CPU and GPU headroom must be reported separately. |
-| P0 settings contract | Shared authored/export/boot normalization and the cases above are implemented. Complete per-field rendered application, all hosts and backend capability tests remain. See the [application inventory](../architecture/render.md#rendering-handoff-application-contract). |
-| P1 editor/component/global CEL outlines | **Native ownership gate failed; alternative approval pending.** Production selection remains the existing mesh-outline implementation. No OutlineComponent/global outline schema or default-on switch is advertised. Lifecycle, strict occlusion, compositing, style grouping, coverage and zero-work-disabled acceptance remain. |
+| P0 settings contract | Shared authored/export/boot normalization, actual output scaling, saved Class Play and standalone retained-setter cases are implemented; see the later dated evidence below. Complete per-field rendered application and hands-on host/backend acceptance remain. See the [application inventory](../architecture/render.md#rendering-handoff-application-contract). |
+| P1 editor/component/global CEL outlines | **Native ownership gate failed; narrow shared-extension implementation authorized on 22 September.** Production selection remains the existing mesh-outline implementation. No OutlineComponent/global outline schema or default-on switch is advertised. Implementation, lifecycle, strict occlusion, compositing, style grouping, coverage and zero-work-disabled acceptance remain. |
 | P1 Class Graph scalability | Shared typed session transactions, safe-boundary renderer application, acknowledgements, coalescing, events and the Scalability node category are implemented. Compiled Class graphs exercise all presets and retained setters in both Play backends and standalone exports. Outline controls await the outline implementation. |
 | P1 measured headroom | A desktop before/after CPU profile identified and removed redundant shadow-flag material invalidation at identical content, output and quality. Capped frame cadence stayed unchanged. Absolute CPU/GPU frame headroom, pass/memory savings and A16 comparisons remain **unmeasured**. |
-| P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Native/graph PBR and CEL, standalone textured lifecycle, and large-source filtering browser fixtures pass. Additional transform/material cases and full authoring coverage remain under verification. |
+| P2 rectangular area light | Authored component, transforms, debug visualization, explicit unshadowed policy, cancellable cached emission processing, export/boot assets and shared GPU ownership are implemented. Later evidence below records automated receiver/transform, authoring/history/reopen, compiler inheritance and standalone lifecycle passes. Hands-on acceptance, asymmetric textured orientation and remaining supported material cases are still required. |
 | P0 release | **Not accepted.** The requested production feature set is incomplete. A16 hardware testing is deferred by user; browser acceptance remains required. |
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.

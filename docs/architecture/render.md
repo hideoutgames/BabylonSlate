@@ -1092,3 +1092,69 @@ admission and strict readiness caching. No allocation, shadow quality or authore
 light setting changes. The targeted regression detects this redundant per-frame
 invalidation; browser shadow parity and desktop profiling are recorded in
 [renderer qualification](../design/renderer-qualification.md).
+
+### Shared outline candidate (22 September 2026)
+
+The continuation authorizes a bounded shared extension after reproducing the
+pinned native failure. This is a design checkpoint, **not production acceptance**.
+The stock fixture again reproduced removal of another consumer's regular-instance
+buffer on both APIs and loss of its pixels on effective WebGPU. Stock layers also
+overwrite mesh-owned selection IDs; reference counting alone cannot isolate
+overlapping memberships. Native composition exposes one color/width per layer,
+attenuates occluded edges, and silently falls back from float to half/byte masks.
+These properties do not meet independent styles and strict CEL visibility.
+
+- **Ownership:** one Scene owner assigns stable actor/group identities and owns
+  the source/LOD/thin-instance identity registrations. View owners hold separate
+  consumer contributions and style tables. Consumers never clear mesh-owned
+  state. The same actor key groups model meshes and survives contribution order
+  changes. Selection exists only in its editor view; runtime views never inherit
+  it. Per-pass instance buffers remain distinct on WebGPU. Identical identity
+  sequences skip uploads; changed spans alone update an existing buffer.
+- **Representation:** background is ID zero; actor IDs 1–65,535 are encoded into
+  RGB bytes in nearest-sampled RGBA8 masks, without blending, mipmaps or MSAA.
+  No float/half render-target fallback can merge identities. Nearest RGBA32F
+  style tables retain RGB and output-pixel width (0.25–8); float textures are
+  sampled, not rendered to. Capacity or resource admission failure rejects the
+  new transaction with a diagnostic while preserving valid prior contributions.
+  No arbitrary style quantization or silent member dropping is permitted.
+- **Visibility and overlap:** strict gameplay, intentional through-mesh gameplay,
+  and editor selection use three distinct mask groups. Enabled components replace
+  their target's global CEL contribution; removing the component reveals CEL.
+  Selection composes last. Strict masks include ordinary occluders as ID zero,
+  with depth testing/writes, and composition additionally compares candidate and
+  destination depth so dilation cannot spill onto a foreground occluder.
+  Through/selection masks depth-test only their own members. Strict CEL never
+  borrows through-mesh visibility. Opaque surfaces occlude; alpha-tested surfaces
+  use their actual texture/cutoff; transparent surfaces conservatively occlude
+  where covered. Custom alpha/deformation paths require explicit qualification.
+- **Pass budget:** at most three geometry-mask passes and one fullscreen compose
+  per view, independent of actor/style count; separate clears make at most seven
+  FrameGraph render records. Geometry submissions and pixels still scale with
+  content, output size and width. Reuse matching sampleable scene depth where
+  camera, size, samples, representation and transparent-occluder semantics agree;
+  otherwise the single strict mask produces its shared depth while drawing its
+  occluders. No per-consumer full-scene depth pass is added.
+- **Ordering:** masks and composition belong to the existing view FrameGraph,
+  after scene transparency and the authored/display-color stages, before FXAA
+  and the single output copy. SceneLayers subsequently compose in their existing
+  order; editor overlays remain outside gameplay. The extension adds no render
+  loop and no hidden classic-renderer fallback.
+- **Lifetime:** allocate only for an active view at actual output resolution;
+  reserve replacement peaks through the shared Engine resource ledger. Track
+  mask/depth/style textures and instance buffers, including source/LOD aliases.
+  Membership/color/width edits update existing tables without graph/material
+  rebuilding; topology/size changes prepare a replacement through current view
+  readiness. Dispose tasks before graph storage and release reservations only
+  after native retirement (WebGPU's next end-frame drain). With every consumer
+  inactive, retire all outline-only allocations and execute no outline passes.
+
+The first production slice is regular meshes and three independently removable
+same-source instance consumers, including overlapping membership and order
+changes, on actual WebGL2 and effective WebGPU. Keep the old editor selection
+path until replacement survivor-pixel tests and hands-on acceptance pass. LOD,
+thin index mappings, animated/alpha/custom receivers, depth reuse, complete
+authoring/runtime/export wiring and cost qualification are subsequent acceptance
+requirements, not claims established by this design note. Repository search at
+this checkpoint found thin-instance proof code but no authored thin-instance
+mapping API; the implementation must define that boundary explicitly.
