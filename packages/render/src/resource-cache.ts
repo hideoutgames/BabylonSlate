@@ -316,6 +316,8 @@ export class ResourceCache {
   private preparing(entry: CacheEntry) {
     entry.pending = (entry.pending ?? 0) + 1;
     let active = true;
+    let validate: (() => void | Promise<void>) | undefined;
+    let retire: (() => void) | undefined;
     let resolve!: () => void;
     let reject!: (error: Error) => void;
     const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
@@ -327,17 +329,33 @@ export class ResourceCache {
       entry.pending = Math.max(0, (entry.pending ?? 1) - 1);
       if (error) reject(error); else resolve();
     };
-    return { ready, onLoad: () => settle(), onError: (message?: string) => settle(new Error(message ?? "Texture upload failed")),
+    const failed = (error: unknown) => {
+      if (!active) return;
+      settle(error instanceof Error ? error : new Error(String(error)));
+      retire?.();
+    };
+    const loaded = () => {
+      if (!active) return;
+      try {
+        const checked = validate?.();
+        if (checked) void checked.then(() => settle(), failed);
+        else settle();
+      } catch (error) { failed(error); }
+    };
+    return { ready, validate: (check: () => void | Promise<void>, dispose: () => void) => { validate = check; retire = dispose; },
+      // A constructor may call onLoad before its wrapper/accounting is installed.
+      onLoad: () => { void Promise.resolve().then(loaded); },
+      onError: (message?: string) => settle(new Error(message ?? "Texture upload failed")),
       observe: (texture: Texture | CubeTexture) => {
         this.readiness.set(texture, ready);
-        if (texture.isReady()) settle();
+        if (texture.isReady()) loaded();
         else if (texture.loadingError) settle(new Error(texture.errorObject?.message ?? "Texture upload failed"));
         else {
           if (texture instanceof CubeTexture) {
-            const load = texture.onLoadObservable.addOnce(() => settle());
+            const load = texture.onLoadObservable.addOnce(loaded);
             texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
           } else {
-            const load = texture.onLoadObservable.addOnce(() => settle());
+            const load = texture.onLoadObservable.addOnce(loaded);
             texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
           }
         }
@@ -479,7 +497,6 @@ export class ResourceCache {
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
       throw error;
     }
-    preparation.observe(texture);
     texture.hasAlpha = options.hasAlpha === true;
     texture.anisotropicFilteringLevel = options.anisotropicFilteringLevel ?? 4;
     textureRequests.set(texture, { cache: this, assetGuid, engine, bytes, options });
@@ -488,9 +505,12 @@ export class ResourceCache {
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
     try {
-      this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
+      const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
+      preparation.validate(() => measured ? measured.then(() => this.assertAdmitted()) : this.assertAdmitted(), () => texture.dispose());
       this.assertAdmitted();
+      preparation.observe(texture);
     } catch (error) {
+      preparation.onError();
       texture.dispose();
       this.release(entry.key);
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "admission");
@@ -545,9 +565,10 @@ export class ResourceCache {
       texture = createEngineCubeTextureFromImages(scene.getEngine(), files, noMipmap, preparation);
       this.textureKeys.set(texture, variantKey);
       entry.textures.set(key, texture);
-      preparation.observe(texture);
-      this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
+      const measured = this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
+      preparation.validate(() => measured ? measured.then(() => this.assertAdmitted()) : this.assertAdmitted(), () => texture?.dispose());
       this.assertAdmitted();
+      preparation.observe(texture);
       return texture;
     } catch (error) {
       preparation.onError();
@@ -667,7 +688,7 @@ export class ResourceCache {
     bytes: Uint8Array | Blob | undefined,
     withMips: boolean,
     uploadKey = sampling,
-  ): void {
+  ): Promise<void> | undefined {
     entry.samplingDisposers ??= new Map();
     entry.samplingDisposers.get(sampling)?.();
     let active = true;
@@ -716,7 +737,7 @@ export class ResourceCache {
     if (bytes instanceof Blob && !installedHeader) {
       // Bound temporary header storage; unusual raster headers can still be
       // measured from the real upload when their dimensions are unavailable.
-      void bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
+      return bytes.slice(0, 64 * 1024).arrayBuffer().then((header) => {
         if (!current()) return;
         size = textureSourceSize(new Uint8Array(header));
         headerPending = false;

@@ -340,6 +340,27 @@ describe("resource cache getTexture", () => {
     working.release(); cache.dispose(); scene.dispose(); engine.dispose();
   });
 
+  it("rejects a delayed cube upload before its lease becomes publishable", async () => {
+    const engine = textureEngine(); const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 40_000 });
+    const working = cache.acquireCubeTextureFromImages("working", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
+    await working.ready;
+    vi.mocked(engine.createCubeTexture).mockImplementationOnce((url) => {
+      const internal = engine.createTexture(url, false, false, null);
+      internal.isCube = true; internal.isReady = false;
+      return internal;
+    });
+    const next = cache.acquireCubeTextureFromImages("next", scene, ["other-px", "py", "pz", "nx", "ny", "nz"]);
+    next.resource.getInternalTexture()!.isReady = true;
+    next.resource.onLoadObservable.notifyObservers(next.resource);
+    await expect(next.ready).rejects.toThrow(/budget/);
+    expect(next.resource.getInternalTexture()).toBeNull();
+    expect(working.resource.isReady()).toBe(true);
+    next.release(); cache.flushUnreferenced();
+    expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+    working.release(); cache.dispose(); scene.dispose(); engine.dispose();
+  });
+
   it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
