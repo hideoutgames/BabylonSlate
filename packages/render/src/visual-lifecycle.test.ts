@@ -78,9 +78,15 @@ describe("visual generation ownership", () => {
     const sync = new EditorSceneSync(scene);
     sync.setMeshAssets({ modelSources: new Map([["model", installAssetBytes(encodeTriangleGlb())]]) });
     const component = createMeshComponent("mesh", "box");
-    const document = { ...createDefaultScene(), actors: [createActor("actor", "Actor", { components: [component] })] };
+    const document = { ...createDefaultScene(), actors: [
+      createActor("actor", "Actor", { parentId: "parent", components: [component] }),
+      createActor("parent", "Parent"),
+      createActor("child", "Child", { parentId: "actor" }),
+    ] };
     sync.apply(document);
     const previous = sync.meshForActor("actor")!;
+    const parent = sync.meshForActor("parent")!;
+    const child = sync.meshForActor("child")!;
     let reject!: (error: Error) => void;
     vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -89,16 +95,23 @@ describe("visual generation ownership", () => {
     sync.apply(next);
     expect(sync.meshForActor("actor")).toBe(previous);
     expect(previous.isDisposed()).toBe(false);
+    expect(previous.parent).toBe(parent);
+    expect(child.parent).toBe(previous);
     await vi.waitFor(() => expect(reject).toBeDefined());
     reject(new Error("injected editor load failure"));
     await expect(sync.whenEditorModelsReady()).rejects.toThrow("injected");
     expect(sync.meshForActor("actor")).toBe(previous);
     expect(previous.isDisposed()).toBe(false);
+    expect(child.parent).toBe(previous);
     sync.apply(next);
     await sync.whenEditorModelsReady();
     expect(sync.meshForActor("actor")).not.toBe(previous);
     expect(previous.isDisposed()).toBe(true);
-    expect(visualMeshes(sync.meshForActor("actor")!)[0]!.getTotalVertices()).toBe(3);
+    const adopted = sync.meshForActor("actor")!;
+    expect(adopted.parent).toBe(parent);
+    expect(child.parent).toBe(adopted);
+    expect(child.isDisposed()).toBe(false);
+    expect(visualMeshes(adopted).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
     sync.dispose();
   });
 
