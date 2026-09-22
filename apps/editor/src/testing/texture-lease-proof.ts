@@ -1,0 +1,94 @@
+/** Test-build-only real buffer/material and solid-color pixel ownership fixture. */
+import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
+import {
+  applyAlbedoTexture, applySpriteAnimationAssetFrame, applySpriteFrameUvs,
+  bindResourceCacheToHandle, createAppWebGpuEngine, createSpriteQuad,
+  encodePngRgba, installTextureBytes, PIXEL_ART_TEXTURE_SAMPLING, ResourceCache,
+} from "@babylonslate/render";
+
+export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
+  const cache = new ResourceCache();
+  const owner = bindResourceCacheToHandle(cache);
+  const siblingOwner = bindResourceCacheToHandle(cache);
+  const scene = new Scene(engine);
+  const layer = new Scene(engine);
+  const frame = { name: "solid", u: 0, v: 0, uSize: 1, vSize: 1, durationMs: 100, pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 };
+  const sources = installTextureBytes(new Map([
+    ["solid", encodePngRgba(1, 1, new Uint8Array([255, 0, 0, 255]))],
+    ["atlas", encodePngRgba(2, 1, new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]))],
+  ]))!;
+  const assets = { resourceCache: owner.cache, textureBytes: sources };
+  const mesh = createSpriteQuad(scene, "primary", frame);
+  const sibling = createSpriteQuad(layer, "layer", frame);
+  const animation = createDefaultSpriteAnimationPayload();
+  animation.frames[0] = { ...animation.frames[0]!, textureGuid: "solid", width: 100, height: 100 };
+  const apply = () => applySpriteAnimationAssetFrame(mesh, animation, 0, { applyTexture: (target, guid) => applyAlbedoTexture(target, target.getScene(), guid, assets) });
+  const operations = { acquisitions: 0, materials: 0, buffers: 0, updates: 0 };
+  const originalAcquire = owner.cache.acquireTexture.bind(owner.cache);
+  owner.cache.acquireTexture = (...args) => { operations.acquisitions++; return originalAcquire(...args); };
+  const originalCreate = engine.createVertexBuffer.bind(engine);
+  engine.createVertexBuffer = (...args) => { operations.buffers++; return originalCreate(...args); };
+  const originalDynamic = engine.createDynamicVertexBuffer.bind(engine);
+  engine.createDynamicVertexBuffer = (...args) => { operations.buffers++; return originalDynamic(...args); };
+  const originalUpdate = engine.updateDynamicVertexBuffer.bind(engine);
+  engine.updateDynamicVertexBuffer = (...args) => { operations.updates++; return originalUpdate(...args); };
+  scene.onNewMaterialAddedObservable.add(() => operations.materials++);
+  const reset = () => Object.assign(operations, { acquisitions: 0, materials: 0, buffers: 0, updates: 0 });
+  const pixels = async () => {
+    engine.beginFrame(); scene.render(); engine.endFrame();
+    return Array.from(new Uint8Array((await engine.readPixels(32, 32, 1, 1)).buffer));
+  };
+  try {
+    const camera = new FreeCamera("camera", new Vector3(0, 0, -2), scene);
+    camera.setTarget(Vector3.Zero()); scene.activeCamera = camera;
+    scene.clearColor = new Color4(0, 0, 0, 1);
+    apply();
+    applyAlbedoTexture(sibling, scene, "solid", { resourceCache: siblingOwner.cache, textureBytes: sources });
+    const atlas = cache.acquireTexture("atlas", engine, sources.get("atlas")!, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
+    await atlas.ready; atlas.release();
+    await scene.whenReadyAsync();
+    apply(); await pixels();
+    const material = mesh.material;
+    const uvBuffer = mesh.getVertexBuffer(VertexBuffer.UVKind);
+    const positionBuffer = mesh.getVertexBuffer(VertexBuffer.PositionKind);
+    reset();
+    const before = performance.now();
+    for (let i = 0; i < 10_000; i++) apply();
+    const stableMs = performance.now() - before;
+    const stable = { ...operations };
+    const stableResources = mesh.material === material && mesh.getVertexBuffer(VertexBuffer.UVKind) === uvBuffer && mesh.getVertexBuffer(VertexBuffer.PositionKind) === positionBuffer;
+    reset();
+    animation.frames[0]!.width = 150;
+    animation.frames[0]!.pivot.x = 0.25;
+    apply();
+    const dimensions = { ...operations };
+    animation.frames[0]!.width = 100;
+    animation.frames[0]!.pivot.x = 0.5;
+    apply();
+    reset();
+    applyAlbedoTexture(mesh, layer, "atlas", assets);
+    applySpriteFrameUvs(mesh, { ...frame, uSize: 0.5 });
+    const red = await pixels();
+    applySpriteFrameUvs(mesh, { ...frame, u: 0.5, uSize: 0.5 });
+    const green = await pixels();
+    const atlasChange = { ...operations };
+    const authored = new StandardMaterial("authored", scene);
+    authored.disableLighting = true; authored.emissiveColor = Color3.Blue();
+    mesh.material = authored;
+    apply();
+    const preservesAuthored = mesh.material === authored;
+    const layerMaterialScene = sibling.material?.getScene() === layer;
+    scene.dispose(); owner.releaseHandleRetains(); cache.flushUnreferenced();
+    const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
+    const siblingSurvives = siblingTexture?.isReady() === true;
+    layer.dispose(); siblingOwner.releaseHandleRetains(); cache.flushUnreferenced();
+    return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableResources, dimensions, atlasChange, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
+  } finally {
+    scene.dispose(); layer.dispose(); owner.releaseHandleRetains(); siblingOwner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
+  }
+}

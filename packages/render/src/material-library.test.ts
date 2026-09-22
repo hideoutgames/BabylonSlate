@@ -272,7 +272,7 @@ describe("material library", () => {
       scene.getEngine(),
       bytes,
     );
-    const cached = cachedLease?.resource;
+    const cached = cachedLease?.resource ?? null;
     expect(cached).not.toBeNull();
     const library = new MaterialLibrary({
       resolveTexture: (guid) => (guid === "tex-1" ? cached : null),

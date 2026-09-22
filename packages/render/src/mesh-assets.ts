@@ -178,6 +178,7 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
 
 interface AlbedoBinding {
   material: StandardMaterial | null;
+  authored?: boolean;
   lease?: ResourceLease<Texture | CubeTexture>;
   source?: Uint8Array | Blob;
   guid?: string;
@@ -222,8 +223,16 @@ export function applyAlbedoTexture(
     ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
   if (binding.failed === `${textureGuid}:${identity}`) return;
   // An authored material owns its own texture contract. Sprite animation must not replace it.
-  if (mesh.material && mesh.material !== binding.material && binding.material) return;
-  const next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
+  if (mesh.material && mesh.material !== binding.material && binding.material) {
+    binding.authored = true;
+    binding.cancel?.(); binding.pending?.release(); binding.pending = undefined;
+    binding.lease?.release(); binding.lease = undefined;
+    binding.material.dispose(false, false); binding.material = null;
+  }
+  if (binding.authored) return;
+  let next: ResourceLease<Texture | CubeTexture>;
+  try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
+  catch (error) { binding.failed = `${textureGuid}:${identity}`; console.error("Sprite texture replacement failed", error); return; }
   binding.cancel?.(); binding.pending?.release();
   binding.source = source; binding.guid = textureGuid; binding.identity = identity;
   binding.pending = next;

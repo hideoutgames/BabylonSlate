@@ -8,6 +8,35 @@ import {
 } from "@babylonjs/core";
 import { ResourceCache } from "./resource-cache";
 
+it("keeps a released pending upload pinned until failure, then releases every native wrapper", async () => {
+  const { cache, engine } = host();
+  let fail: ((message?: string) => void) | undefined;
+  const create = engine.createTexture.bind(engine);
+  vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+    fail = args[6] ?? undefined;
+    return create(...args);
+  });
+  const lease = cache.acquireTexture("pending", engine, ktx2());
+  const texture = lease.resource;
+  lease.release();
+  lease.release();
+  cache.flushUnreferenced();
+  expect(texture.getInternalTexture()).not.toBeNull();
+  expect(cache.resourceStats()).toMatchObject({ leases: 0, pending: 1 });
+  fail!("controlled upload failure");
+  await expect(lease.ready).rejects.toThrow("controlled upload failure");
+  cache.flushUnreferenced();
+  expect(texture.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
+it("reclaims provisional URLs and ownership when native texture construction throws", () => {
+  const { cache, engine } = host();
+  vi.spyOn(engine, "createTexture").mockImplementation(() => { throw new Error("controlled constructor failure"); });
+  expect(() => cache.acquireTexture("failed", engine, ktx2())).toThrow("controlled constructor failure");
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
 const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()!();

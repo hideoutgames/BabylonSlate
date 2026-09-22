@@ -95,11 +95,11 @@ describe("resource cache getTexture", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const firstLease = acquireMaterialTexture(cache, "tex", engine, bytes);
-    const first = firstLease?.resource;
+    const first = firstLease?.resource ?? null;
     expect(first).not.toBeNull();
     first!.dispose();
     const secondLease = acquireMaterialTexture(cache, "tex", engine, bytes);
-    const second = secondLease?.resource;
+    const second = secondLease?.resource ?? null;
     expect(second).not.toBeNull();
     expect(second).not.toBe(first);
     expect(second!.getInternalTexture()).not.toBeNull();
@@ -192,7 +192,7 @@ describe("resource cache getTexture", () => {
     });
     const sprite = spriteLease.resource;
     const materialLease = acquireMaterialTexture(cache, "shared", engine, bytes);
-    const material = materialLease?.resource;
+    const material = materialLease?.resource ?? null;
     expect(sprite).toBeInstanceOf(Texture);
     expect((sprite as Texture).invertY).toBe(true);
     const spriteUrl = (sprite as Texture).url ?? "";
