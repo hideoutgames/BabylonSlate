@@ -87,7 +87,7 @@ describe("applyAlbedoTexture", () => {
     const scene = new Scene(engine);
     const cache = new ResourceCache();
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
-    const assets = { resourceCache: cache, textureBytes: new Map([["atlas", new Uint8Array([1, 2, 3, 4])]]) };
+    const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", new Uint8Array([1, 2, 3, 4])]])) };
     applyAlbedoTexture(mesh, scene, "atlas", assets);
     const material = mesh.material;
     for (let i = 0; i < 10_000; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);

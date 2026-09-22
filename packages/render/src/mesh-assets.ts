@@ -226,7 +226,7 @@ export function applyAlbedoTexture(
   if (binding.authored) return;
   const source = assets?.textureBytes?.get(textureGuid);
   if (!source || !assets?.resourceCache) return;
-  const identity = binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  const identity = source instanceof Blob && binding.source === source ? binding.identity : snapshotByteFingerprint(source);
   if (binding.identity === identity && binding.guid === textureGuid &&
     ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
   if (binding.failed === `${textureGuid}:${identity}`) return;
