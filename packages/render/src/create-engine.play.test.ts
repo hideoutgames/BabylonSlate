@@ -1585,16 +1585,16 @@ describe("Play createEngine view", () => {
     vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function (this: SceneRenderCoordinator) {
       return retire.call(this).then(() => held);
     });
-    const clearTextures = vi.spyOn(handle.resourceCache, "clearClientTextures");
+    const retireTextures = vi.spyOn(handle.resourceCache, "dispose");
     const stopped = vi.spyOn(engine, "stopRenderLoop");
     handle.dispose();
     expect(stopped).toHaveBeenCalled();
     expect(handle.scene.isDisposed).toBe(false);
     expect(engine.isDisposed).toBe(false);
-    expect(clearTextures).not.toHaveBeenCalled();
+    expect(retireTextures).not.toHaveBeenCalled();
     release();
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
-    expect(clearTextures).toHaveBeenCalledWith(handle.scene.uid);
+    expect(retireTextures).toHaveBeenCalledOnce();
     expect(engine.isDisposed).toBe(false);
   });
 

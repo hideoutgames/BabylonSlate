@@ -249,7 +249,6 @@ export class ResourceCache {
   private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
   private readonly textureKeys = new WeakMap<BaseTexture, string>();
   private readonly urlKeys = new Map<string, string>();
-  private readonly clientTextures = new Map<string, Set<string>>();
   private clock = 0;
   private totalBytes = 0;
 
@@ -366,32 +365,8 @@ export class ResourceCache {
     if (enabled) this.evictToCeiling();
   }
 
-  /**
-   * Pin GPU textures still referenced by one EngineHandle (viewport, Play,
-   * Prefab). Union across clients so a shared cache does not evict a guid
-   * another view still holds. Live GPU wrappers with `refCount > 0` (skybox
-   * cubes, handle retains) stay referenced even when they are not in the pin
-   * set. Accounted entries with no wrapper still follow pins-only. When no
-   * client has registered, eviction uses `refCount` (tests and thumbnail paths).
-   */
-  setClientTextures(clientId: string, guids: Iterable<string>): void {
-    this.clientTextures.set(clientId, new Set(guids));
-    this.evictToCeiling();
-  }
-
-  clearClientTextures(clientId: string): void {
-    if (!this.clientTextures.delete(clientId)) return;
-    this.evictToCeiling();
-  }
-
   private isUnreferenced(entry: CacheEntry): boolean {
-    if (entry.pending) return false;
-    if (anyLiveTexture(entry)) return entry.refCount === 0;
-    if (this.clientTextures.size === 0) return entry.refCount === 0;
-    for (const guids of this.clientTextures.values()) {
-      if (guids.has(entry.assetGuid)) return false;
-    }
-    return true;
+    return !entry.pending && entry.refCount === 0;
   }
 
   private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob): string {
@@ -536,7 +511,7 @@ export class ResourceCache {
 
   /**
    * Six-face cubemap (`px, py, pz, nx, ny, nz`) for skyboxes. IBL still uses
-   * `getTexture(..., { isCube: true })` with a single DDS/ENV URL.
+   * `acquireTexture(..., { isCube: true })` with a single DDS/ENV URL.
    */
   private prepareCubeTextureFromImages(
     assetGuid: string,
@@ -576,7 +551,7 @@ export class ResourceCache {
   }
 
   /**
-   * Drop GPU Texture wrappers but keep blob URLs so the next `getTexture`
+   * Drop GPU Texture wrappers but keep blob URLs so the next `acquireTexture`
    * rebuilds. Used after WebGL context restore.
    */
   releaseGpuTextures(): void {
@@ -812,8 +787,6 @@ export class ResourceCacheOwner implements TextureResources {
   setBudgetEnabled(enabled: boolean) { this.inner.setClientBudgetEnabled(this, enabled); }
   setClientBudget(...args: Parameters<ResourceCache["setClientBudget"]>) { this.inner.setClientBudget(...args); }
   setClientBudgetEnabled(...args: Parameters<ResourceCache["setClientBudgetEnabled"]>) { this.inner.setClientBudgetEnabled(...args); }
-  setClientTextures(...args: Parameters<ResourceCache["setClientTextures"]>) { this.inner.setClientTextures(...args); }
-  clearClientTextures(clientId: string) { this.inner.clearClientTextures(clientId); }
   account(...args: Parameters<ResourceCache["account"]>) { this.inner.account(...args); }
   accountTextureSize(...args: Parameters<ResourceCache["accountTextureSize"]>) { this.inner.accountTextureSize(...args); }
   releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
