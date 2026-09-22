@@ -1097,6 +1097,12 @@ invalidation; browser shadow parity and desktop profiling are recorded in
 
 ### Shared outline candidate (22 September 2026)
 
+Strict material readiness resolves Babylon's lazy morph influence and texture
+matrix state before probing shader variants. Otherwise a UV identity transition
+or newly active morph can first dirty defines during drawing, allowing an older
+WebGL hot-swap effect into a frame reported ready. This work occurs during the
+existing invalidated readiness probes, not on unchanged steady-state frames.
+
 The continuation authorizes a bounded shared extension after reproducing the
 pinned native failure. This is a design checkpoint, **not production acceptance**.
 The stock fixture again reproduced removal of another consumer's regular-instance

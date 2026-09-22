@@ -249,10 +249,16 @@ type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }
 /** Probe requested material variants instead of Babylon's older hot-swap effects. */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   const scene = mesh.getScene();
+  // Native influence edits become attribute-dirty only when the manager resolves
+  // its active targets. Resolve before native readiness can accept old defines.
+  void mesh.morphTargetManager?.numInfluencers;
   const states = new Map<Material, readonly [boolean, boolean, boolean]>();
   const capture = (material: Material | null | undefined): void => {
     if (!material || states.has(material)) return;
     states.set(material, [material.allowShaderHotSwapping, material.checkReadyOnEveryCall, material.checkReadyOnlyOnce]);
+    // UV transform setters similarly defer texture-define invalidation until
+    // getTextureMatrix detects an identity/nonidentity transition at bind time.
+    for (const texture of material.getActiveTextures()) texture.getTextureMatrix();
     // Material.forceCompilation also disables hot swapping. Its temporary
     // submesh bypasses these caches; our live submeshes need public cache flags.
     material.allowShaderHotSwapping = false;

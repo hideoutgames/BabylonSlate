@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Mesh,
   MeshBuilder,
+  MorphTarget,
+  MorphTargetManager,
   HemisphericLight,
   NodeMaterial,
   NodeMaterialModes,
@@ -335,6 +337,42 @@ describe("prewarmSceneMaterials", () => {
       scene.dispose();
       engine.dispose();
     }
+  });
+
+  it.each([PBRMaterial, StandardMaterial])("waits for lazily activated morph shaders on %s before presenting", async (MaterialType) => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    const mesh = MeshBuilder.CreateBox("morphed", {}, scene);
+    const material = new MaterialType("receiver", scene); mesh.material = material;
+    const manager = new MorphTargetManager(scene); mesh.morphTargetManager = manager;
+    const target = MorphTarget.FromMesh(mesh, "pose", 0); manager.addTarget(target);
+    try {
+      await material.forceCompilationAsync(mesh);
+      expect(isSceneFrameReady(scene)).toBe(true);
+      const previous = mesh.subMeshes[0]!.effect!;
+      let compiled = false;
+      const delayed = new WeakSet<Effect>();
+      const createEffect = engine.createEffect.bind(engine);
+      vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
+        const effect = createEffect(...args);
+        if (effect !== previous && !delayed.has(effect)) {
+          delayed.add(effect);
+          const ready = effect.isReady.bind(effect);
+          vi.spyOn(effect, "isReady").mockImplementation(() => compiled && ready());
+        }
+        return effect;
+      });
+      target.influence = 1;
+      // No bind/draw or manager getter should be necessary to invalidate the
+      // old no-morph variant before the strict presentation gate examines it.
+      expect(isSceneFrameReady(scene)).toBe(false);
+      compiled = true;
+      expect(isSceneFrameReady(scene)).toBe(true);
+      expect(mesh.subMeshes[0]!.effect).not.toBe(previous);
+      expect(mesh.subMeshes[0]!.effect!.defines).toContain("#define MORPHTARGETS");
+      expect(material.allowShaderHotSwapping).toBe(true);
+    } finally { vi.restoreAllMocks(); scene.dispose(); engine.dispose(); }
   });
 
   it("restores shared render state when a PCF shadow readiness callback throws", () => {
