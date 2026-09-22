@@ -13,6 +13,7 @@ import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayl
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
+import { markSceneReadinessDirty } from "./scene-perf";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -200,12 +201,38 @@ interface AlbedoBinding {
 }
 const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 
+function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial): void {
+  const mode = mesh.visibility > 0 && mesh.visibility < 1
+    ? Material.MATERIAL_ALPHATESTANDBLEND
+    : Material.MATERIAL_ALPHATEST;
+  if (material.transparencyMode === mode) return;
+  material.transparencyMode = mode;
+  // Babylon's material setter dirties local shader defines but emits none of
+  // the scene observables used by the strict readiness cache.
+  markSceneReadinessDirty(mesh.getScene());
+}
+
+/** Weight changes preserve owned cutouts while opting fractional weights into blending. */
+export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): void {
+  const material = mesh.material;
+  const owned = albedoBindings.get(mesh)?.material;
+  const blended = material?.needAlphaBlendingForMesh(mesh);
+  mesh.visibility = visibility;
+  if (owned && material === owned) {
+    syncAlbedoTransparency(mesh, owned);
+  } else if (material && blended !== material.needAlphaBlendingForMesh(mesh)) {
+    // Authored materials retain their own alpha policy, including automatic mode.
+    markSceneReadinessDirty(mesh.getScene());
+  }
+}
+
 /** Restore the mesh's owned construction material after a borrowed assignment clears. */
 export function restoreAlbedoMaterial(mesh: AbstractMesh): boolean {
   const material = albedoBindings.get(mesh)?.material;
   if (!material) return false;
   mesh.material = material;
   applyMaterialBounds(mesh);
+  syncAlbedoTransparency(mesh, material);
   return true;
 }
 
@@ -272,7 +299,10 @@ export function applyAlbedoTexture(
     material.emissiveTexture = next.resource;
     // Preparation may finish after an authored assignment. Update only our
     // retained material in that case; the borrowed material remains attached.
-    if (publishToMesh) mesh.material = material;
+    if (publishToMesh) {
+      mesh.material = material;
+      syncAlbedoTransparency(mesh, material);
+    }
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();
@@ -288,10 +318,14 @@ export function applyAlbedoTexture(
     next.release();
     console.error("Sprite texture replacement failed", error);
   };
-  if (!binding.lease || next.resource.isReady()) {
+  if (!binding.lease) {
     publish();
     void next.ready?.catch(failed);
-  } else if (next.ready) void next.ready.then(publish, failed);
+  } else if (next.ready) {
+    // Native readiness can precede asynchronous byte accounting/admission.
+    // Keep the working lease until the complete successor preparation succeeds.
+    void next.ready.then(publish, failed);
+  } else if (next.resource.isReady()) publish();
 
 }
 

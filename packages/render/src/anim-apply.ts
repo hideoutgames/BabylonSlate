@@ -6,6 +6,7 @@ import {
   spriteClipFrameAt,
 } from "@babylonslate/assets";
 import { applySpriteFrameUvs, setSpriteQuadSize } from "./sprite-quad";
+import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 /**
@@ -223,14 +224,14 @@ function applySpriteLayers(
   }
   const primary = layers[0]!;
   applySpriteLayer(slot, slot.mesh, primary);
-  slot.mesh.visibility = primary.weight;
+  applySpriteVisibility(slot.mesh, primary.weight);
   if (slot.overlayMesh) {
     const secondary = layers[1];
     if (secondary) {
       applySpriteLayer(slot, slot.overlayMesh, secondary);
-      slot.overlayMesh.visibility = secondary.weight;
+      applySpriteVisibility(slot.overlayMesh, secondary.weight);
     } else {
-      slot.overlayMesh.visibility = 0;
+      applySpriteVisibility(slot.overlayMesh, 0);
     }
   }
 }

@@ -17,6 +17,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.atlasChange).toEqual({ acquisitions: 1, materials: 0, buffers: 0, updates: 2 });
     expect(result.crossfade).toEqual({ acquisitions: 0, materials: 0, buffers: 0, updates: 0 });
     expect(result.crossfadeWeights).toEqual([0.2, 0.8]);
+    // Red primary, then green overlay over black: ordinary source-over gives
+    // roughly (41,153,0) at .4/.6 and (10,204,0) at .2/.8.
+    const { primary04, primary02 } = result.crossfadePixels;
+    expect(primary04[0]).toBeGreaterThan(25); expect(primary04[0]).toBeLessThan(65);
+    expect(primary04[1]).toBeGreaterThan(125); expect(primary04[1]).toBeLessThan(180);
+    expect(primary02[0]).toBeLessThan(25);
+    expect(primary02[1]).toBeGreaterThan(185); expect(primary02[1]).toBeLessThan(225);
+    expect(primary04[0]! - primary02[0]!).toBeGreaterThan(10);
+    expect(primary02[1]! - primary04[1]!).toBeGreaterThan(20);
+    expect(primary04[2]).toBeLessThan(10); expect(primary02[2]).toBeLessThan(10);
     expect(result.independentAtlases).toBe(true);
     expect(result.red[0]).toBeGreaterThan(200); expect(result.red[1]).toBeLessThan(20);
     expect(result.green[1]).toBeGreaterThan(200); expect(result.green[0]).toBeLessThan(20);
