@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PhysicsShapeContainer } from "@babylonjs/core/Physics/v2/physicsShape";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
@@ -10,6 +10,7 @@ import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
 afterEach(() => vi.restoreAllMocks());
+beforeEach(({ task }) => console.info("native fixture started", task.name));
 const pose = (x = 0, y = 0, z = 0): PhysicsTransform => ({
   position: { x, y, z },
   rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -439,8 +440,13 @@ describe("Havok explicit native motion", () => {
       const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
       const handle = (physicsBody as unknown as { _pluginData: { hpBodyId: [bigint] } })._pluginData.hpBodyId;
       expect(havok.HP_Body_GetQTransform(handle)[1][0]).toEqual([8, 0, 0]);
-      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], bounds: physicsBody.getBoundingBox().minimumWorld.asArray(), hit: trace(backend, 8).hit });
-      expect(trace(backend, 8).hit).toBe(true);
+      const immediateHit = trace(backend, 8).hit;
+      physicsBody.shape = physicsBody.shape;
+      const shapeRefreshHit = trace(backend, 8).hit;
+      havok.HP_Body_SetActivationState(handle, havok.ActivationState.ACTIVE);
+      const wakeHit = trace(backend, 8).hit;
+      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], immediateHit, shapeRefreshHit, wakeHit });
+      expect(immediateHit).toBe(true);
       expect(trace(backend).hit).toBe(false);
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
       expect(physicsBody.getLinearVelocity().asArray()).toEqual(linear);
