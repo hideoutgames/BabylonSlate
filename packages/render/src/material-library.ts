@@ -423,7 +423,7 @@ export class MaterialLibrary {
   isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
     const plan = this.planFor(doc, options?.unlit);
     const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
-    return plan.ok && !!entry && entry.hash === plan.plan.hash && !isDisposedNodeMaterial(entry.material, scene);
+    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan) && !isDisposedNodeMaterial(entry.material, scene);
   }
 
   /** Recompile changed dependencies while retaining the last usable generation. */

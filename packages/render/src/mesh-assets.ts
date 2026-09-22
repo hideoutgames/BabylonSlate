@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
+import { isSpriteQuad } from "./sprite-quad";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -217,11 +218,11 @@ export function applyAlbedoTexture(
     return;
   }
   // An authored material owns its own texture contract. Sprite animation must not replace it.
-  if (mesh.material && mesh.material !== binding.material && binding.material) {
+  if (mesh.material && mesh.material !== binding.material && (binding.material || isSpriteQuad(mesh))) {
     binding.authored = true;
     binding.cancel?.(); binding.pending?.release(); binding.pending = undefined;
     binding.lease?.release(); binding.lease = undefined;
-    binding.material.dispose(false, false); binding.material = null;
+    binding.material?.dispose(false, false); binding.material = null;
   }
   if (binding.authored) return;
   const source = assets?.textureBytes?.get(textureGuid);
