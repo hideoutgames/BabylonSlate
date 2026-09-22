@@ -69,6 +69,43 @@ describe("modelSlotFingerprint", () => {
 });
 
 describe("applyAlbedoTexture", () => {
+  it("keeps the previous texture after upload failure and ignores an obsolete completion", async () => {
+    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const sources = installTextureBytes(new Map([
+      ["first", new Uint8Array([1, 2, 3])], ["failed", new Uint8Array([1, 2, 4])], ["winner", new Uint8Array([1, 2, 5])],
+    ]))!;
+    const assets = { resourceCache: cache, textureBytes: sources };
+    applyAlbedoTexture(mesh, scene, "first", assets);
+    const material = mesh.material as StandardMaterial;
+    const working = material.diffuseTexture;
+    const nativeCreate = engine.createTexture.bind(engine);
+    const failures: Array<NonNullable<Parameters<typeof engine.createTexture>[6]>> = [];
+    const create = vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+      failures.push(args[6]!); args[5] = null;
+      const texture = nativeCreate(...args); texture.isReady = false; return texture;
+    });
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      applyAlbedoTexture(mesh, scene, "failed", assets);
+      expect(material.diffuseTexture).toBe(working);
+      failures[0]!("controlled failure", undefined);
+      await Promise.resolve();
+      expect(material.diffuseTexture).toBe(working);
+      expect(report).toHaveBeenCalledOnce();
+      applyAlbedoTexture(mesh, scene, "winner", assets);
+      const winner = cache.acquireTexture("winner", engine, sources.get("winner")!, { noMipmap: true, samplingMode: Texture.NEAREST_SAMPLINGMODE, anisotropicFilteringLevel: 1, hasAlpha: true });
+      winner.resource.getInternalTexture()!.isReady = true;
+      winner.resource.onLoadObservable.notifyObservers(winner.resource as never);
+      await winner.ready;
+      expect(material.diffuseTexture).toBe(winner.resource);
+      failures[0]!("obsolete failure", undefined);
+      await Promise.resolve();
+      expect(material.diffuseTexture).toBe(winner.resource);
+      expect(mesh.material).toBe(material);
+      winner.release();
+    } finally { create.mockRestore(); report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose(); }
+  });
   it("reapplies equal installed content without acquiring and clears its exact binding", () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
