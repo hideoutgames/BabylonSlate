@@ -417,7 +417,14 @@ describe("MaterialEditingProvider preview isolation", () => {
     });
     expect(harness.cachedTextures).toHaveLength(1);
     expect(harness.cachedTextures[0]!.guid).toBe("tex-1");
-    expect(new Uint8Array(await harness.cachedTextures[0]!.bytes.arrayBuffer())).toEqual(new Uint8Array([9, 9, 9]));
+    // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
+    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(harness.cachedTextures[0]!.bytes);
+    });
+    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([9, 9, 9]));
   });
 
   it("recompiles onto a new preview Scene after the canvas remounts", async () => {
