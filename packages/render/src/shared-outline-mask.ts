@@ -63,9 +63,13 @@ export class SharedOutlineMaskRenderer {
   }
   private instances(subMesh: SubMesh) {
     const mesh = subMesh.getRenderingMesh();
-    const batch = mesh._getInstancesRenderList(subMesh._id, !!subMesh.getReplacementMesh());
-    return { batch, hardware: !!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances ||
-      !!mesh._userInstancedBuffersStorage?.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] };
+    const replacement = !!subMesh.getReplacementMesh();
+    const batch = mesh._getInstancesRenderList(subMesh._id, replacement);
+    // Readiness precedes visibility dispatch and the first ID VBO. Registration
+    // keeps async compilation on the same variant before and during drawing.
+    // Mirrored replacement draws retain Babylon's noninstanced world transform.
+    return { batch, hardware: !replacement && (!!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances ||
+      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined) };
   }
   private ready(subMesh: SubMesh): boolean {
     const source = this.source(subMesh);
