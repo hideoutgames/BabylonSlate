@@ -25,7 +25,9 @@ import { CelMaterial } from "./cel-material";
  * PI` for PBR's normalized diffuse and `albedo * E * coverage` for Standard's
  * unnormalized light convention. CEL adapters receive only declarations;
  * their `SLATE_BAKED` sample lives inside the shared environment accumulation
- * and enters the same ramp.
+ * and enters the same ramp. Under `SLATE_BAKED_ENV` the atlas also supplies
+ * the environment's diffuse irradiance, so the plugin zeroes PBR's
+ * `finalIrradiance` while `environmentRadiance` (specular) keeps rendering.
  */
 export class BakedIrradiancePlugin extends MaterialPluginBase {
   readonly sampling: BakedIrradianceSampling;
@@ -133,6 +135,17 @@ export class BakedIrradiancePlugin extends MaterialPluginBase {
       const add = `#if defined(SLATE_BAKED) && !defined(UNLIT)\ndiffuseBase+=slateBakedIrradianceSample()${scale};\n#endif\n`;
       code[wgsl ? "!(var finalDiffuse: vec3f=)" : "!(vec3 finalDiffuse=)"] =
         `${add}$1`;
+      if (this._material instanceof PBRBaseMaterial) {
+        // The atlas carries environment diffuse, so drop PBR's own IBL
+        // irradiance without touching `environmentIntensity`: specular
+        // radiance keeps its environment reflections. Mirrors the graph
+        // block's SLATE_BAKED_ENV gate in scene-pbr-lighting-block.ts.
+        code[
+          wgsl
+            ? "!(var finalIrradiance: vec3f=reflectionOut.environmentIrradiance;)"
+            : "!(vec3 finalIrradiance=reflectionOut.environmentIrradiance;)"
+        ] = `$1\n#ifdef SLATE_BAKED_ENV\nfinalIrradiance=${wgsl ? "vec3f" : "vec3"}(0.);\n#endif\n`;
+      }
     }
     return code;
   }
