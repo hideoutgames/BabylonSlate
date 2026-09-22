@@ -1,4 +1,4 @@
-import { installedAssetHeader, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -664,8 +664,11 @@ export class ResourceCache {
     entry.samplingDisposers.get(sampling)?.();
     let active = true;
     const installedHeader = bytes instanceof Blob ? installedAssetHeader(bytes) : undefined;
+    const environment = bytes instanceof Blob ? installedEnvironmentInfo(bytes) : undefined;
     let headerPending = bytes instanceof Blob && !installedHeader;
     let size = bytes instanceof Uint8Array ? textureSourceSize(bytes) : installedHeader ? textureSourceSize(installedHeader) : null;
+    if (environment) size = { width: environment.width, height: environment.height, mipLevels: environment.mipLevels,
+      reserveType: environment.encoding === "linearFloat32" ? Constants.TEXTURETYPE_FLOAT : Constants.TEXTURETYPE_HALF_FLOAT };
     const current = () => active && this.entries.get(entry.key) === entry && entry.textures.get(sampling) === texture;
     const update = () => {
       if (!current() || headerPending || isDisposedGpuTexture(texture)) return;
@@ -843,22 +846,32 @@ export function acquireMaterialTexture(
 }
 
 /** One material generation owns its sampled textures; compiler callbacks only borrow. */
-export function materialTextureBindings(acquire: ((guid: string) => ResourceLease<Texture> | null) | undefined) {
+export function materialTextureBindings(acquire: ((guid: string) => ResourceLease<Texture> | null) | undefined, identity?: (guid: string) => string | undefined) {
   const leases = new Map<string, ResourceLease<Texture>>();
+  const bindingKey = (guid: string) => `${guid}\0${identity?.(guid) ?? ""}`;
   return {
     resolve(guid: string): Texture | null {
-      const current = leases.get(guid);
+      const key = bindingKey(guid);
+      const current = leases.get(key);
       if (current && !isDisposedGpuTexture(current.resource)) return current.resource;
       const next = acquire?.(guid);
       if (!next) return null;
-      leases.set(guid, next);
+      leases.set(key, next);
       current?.release();
       return next.resource;
     },
-    ready(guid: string) { return leases.get(guid)?.ready; },
+    ready(guid: string) { return leases.get(bindingKey(guid))?.ready; },
     prune(textures: readonly BaseTexture[]) {
       const used = new Set(textures);
-      for (const [guid, lease] of leases) if (!used.has(lease.resource)) { leases.delete(guid); lease.release(); }
+      const generations = new Set(textures.flatMap((texture) => {
+        const request = textureRequests.get(texture);
+        return request ? [request.cache.resourceKey(texture)] : [];
+      }));
+      for (const [key, lease] of leases) {
+        const request = textureRequests.get(lease.resource);
+        if (used.has(lease.resource) || (request && generations.has(request.cache.resourceKey(lease.resource)))) continue;
+        leases.delete(key); lease.release();
+      }
     },
     dispose() { for (const lease of leases.values()) lease.release(); leases.clear(); },
   };

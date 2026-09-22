@@ -10,7 +10,7 @@ import { ResourceCache } from "./resource-cache";
 
 it("keeps a released pending upload pinned until failure, then releases every native wrapper", async () => {
   const { cache, engine } = host();
-  let fail: ((message?: string) => void) | undefined;
+  let fail: NonNullable<Parameters<typeof engine.createTexture>[6]> | undefined;
   const create = NullEngine.prototype.createTexture.bind(engine);
   vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
     fail = args[6] ?? undefined;
@@ -26,7 +26,7 @@ it("keeps a released pending upload pinned until failure, then releases every na
   cache.flushUnreferenced();
   expect(texture.getInternalTexture()).not.toBeNull();
   expect(cache.resourceStats()).toMatchObject({ leases: 0, pending: 1 });
-  fail!("controlled upload failure");
+  fail!("controlled upload failure", undefined);
   await expect(lease.ready).rejects.toThrow("controlled upload failure");
   cache.flushUnreferenced();
   expect(texture.getInternalTexture()).toBeNull();
