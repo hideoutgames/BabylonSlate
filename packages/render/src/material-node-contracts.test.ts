@@ -29,6 +29,40 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each([
+    ["math.atan2", ["y", "x"]],
+    ["math.step", ["edge", "value"]],
+    ["math.smoothstep", ["edgeA", "edgeB", "value"]],
+    ["math.remap", ["value", "fromMin", "fromMax", "toMin", "toMax"]],
+    ["vector.reflect", ["incident", "normal"]],
+  ] as const)("compiles mixed widths through every generic input of %s", async (type, pins) => {
+    const doc = createDefaultMaterialDocument("Generic Numeric", "postProcess");
+    node(doc, "wide", "const.vec4", { value: [0.2, 0.4, 0.6, 0.8] });
+    node(doc, "scalar", "param.float", { name: "Value", value: [0.5] });
+    node(doc, "operation", type);
+    doc.edges = [];
+    pins.forEach((pin, index) => wire(doc, index === 0 ? "wide" : "scalar", "out", "operation", pin));
+    wire(doc, "operation", "out", "output", "color");
+    const result = await compile(doc);
+    expect(result.setParameter("Value", { kind: "float", value: 0.75 })).toBe(true);
+  });
+
+  it.each([
+    ["vector.dot", ["a", "b"]],
+    ["vector.distance", ["a", "b"]],
+    ["vector.length", ["value"]],
+    ["vector.normalize", ["value"]],
+    ["vector.reflect", ["incident", "normal"]],
+  ] as const)("compiles Float inputs through %s", async (type, pins) => {
+    const doc = createDefaultMaterialDocument("Scalar Vector", "postProcess");
+    node(doc, "scalar", "const.float", { value: [0.5] });
+    node(doc, "operation", type);
+    doc.edges = [];
+    pins.forEach((pin) => wire(doc, "scalar", "out", "operation", pin));
+    wire(doc, "operation", "out", "output", "color");
+    await compile(doc);
+  });
+
   it("keeps a widened Float parameter live and supplies opaque alpha", async () => {
     const doc = createDefaultMaterialDocument("Numeric", "postProcess");
     node(doc, "source", "param.float", { name: "Value", value: [0.25] });

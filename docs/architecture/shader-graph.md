@@ -83,6 +83,11 @@ and Custom GLSL pins retain their explicit types. Disconnected inputs retain
 their authored/catalog defaults. To repeat a scalar across channels (for
 example, a uniform RGB gain), wire it to each desired **Combine** input.
 
+Step, Smoothstep, Atan2 and Remap evaluate each resolved channel separately,
+including connected bounds. Reflect preserves the resolved width. For scalar
+inputs, Dot is multiplication, Length and Distance use absolute magnitude,
+and Normalize returns the sign (zero remains zero).
+
 `materialPinsAreCompatible` gives the canvas the same rule through the
 `pinCompatibility` prop on `GraphEditor`; the scripting graph keeps its stricter
 exact-kind default.

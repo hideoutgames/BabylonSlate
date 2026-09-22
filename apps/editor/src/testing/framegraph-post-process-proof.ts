@@ -19,6 +19,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialGraphNode,
+  type MaterialNumericType,
 } from "@babylonslate/shader-graph";
 
 function node(id: string, type: string, properties = {}): MaterialGraphNode {
@@ -100,7 +101,10 @@ async function ready(predicate: () => boolean) {
   }
 }
 
-export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runFrameGraphPostProcessProof(
+  backend: "webgl2" | "webgpu" = "webgl2",
+  scenario: "bindings" | "numeric" = "bindings",
+) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 16;
   document.getElementById("root")!.append(canvas);
@@ -316,6 +320,83 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
     });
   };
   try {
+    if (scenario === "numeric") {
+      const types: MaterialNumericType[] = ["float", "vec2", "vec3", "vec4"];
+      const values = { float: [32 / 255], vec2: [32 / 255, 96 / 255], vec3: [32 / 255, 96 / 255, 160 / 255], vec4: [32 / 255, 96 / 255, 160 / 255, 0] };
+      for (const target of types) {
+        const fn = createDefaultMaterialFunctionDocument(target);
+        fn.inputs[0] = { ...fn.inputs[0]!, type: target, defaultValue: values[target] };
+        fn.outputs[0]!.type = target;
+        functionDocuments[`numeric-${target}`] = fn;
+      }
+      for (const from of types) for (const to of types) {
+        const doc = createDefaultMaterialDocument("Numeric Conversion", "postProcess");
+        doc.nodes.push(node("numeric", `const.${from}`, { value: values[from] }), node("boundary", "function.call", { functionGuid: `numeric-${to}` }));
+        doc.edges = [];
+        connect(doc, "numeric", "out", "boundary", "in_value");
+        connect(doc, "boundary", "out_value", "output", "color");
+        await rebuild([doc]);
+        await capture(`${from}-${to}`);
+      }
+      for (const from of types) {
+        const doc = createDefaultMaterialDocument("Padded Mask", "postProcess");
+        doc.nodes.push(node("numeric", `const.${from}`, { value: values[from] }), node("mask", "vector.mask", { r: false, b: true, a: true }));
+        doc.edges = [];
+        connect(doc, "numeric", "out", "mask", "value");
+        connect(doc, "mask", "out", "output", "color");
+        await rebuild([doc]);
+        await capture(`mask-${from}`);
+      }
+      for (const order of ["a", "b"]) {
+        const doc = createDefaultMaterialDocument("Mixed Add", "postProcess");
+        doc.nodes.push(node("pair", "const.vec2", { value: values.vec2 }), node("triple", "const.vec3", { value: [16 / 255, 8 / 255, 64 / 255] }), node("add", "math.add"));
+        doc.edges = [];
+        connect(doc, "pair", "out", "add", order);
+        connect(doc, "triple", "out", "add", order === "a" ? "b" : "a");
+        connect(doc, "add", "out", "output", "color");
+        await rebuild([doc]);
+        await capture(`mixed-${order}`);
+      }
+      const mathCases: Array<{ name: string; type: string; inputs: Record<string, number[]> }> = [
+        { name: "step", type: "math.step", inputs: { edge: [0.5, 0.5], value: [0.75] } },
+        { name: "atan2", type: "math.atan2", inputs: { y: [0.5], x: [0.5, 0.5] } },
+        { name: "smoothstep", type: "math.smoothstep", inputs: { edgeA: [0.25], edgeB: [1, 1, 1], value: [0.625, 0.5, 1] } },
+        { name: "remap", type: "math.remap", inputs: { value: [0.5, 0.25, 0.75], fromMin: [0.25], fromMax: [1, 1, 1], toMin: [0], toMax: [1, 1, 1] } },
+        { name: "reflect-vec4", type: "vector.reflect", inputs: { incident: [0.2, 0.3, 0.4, -0.5], normal: [0, 0, 0, 1] } },
+        { name: "reflect-vec2", type: "vector.reflect", inputs: { incident: [0.25, -0.5], normal: [0, 1] } },
+        { name: "reflect-float", type: "vector.reflect", inputs: { incident: [-0.25], normal: [1] } },
+        { name: "dot-float", type: "vector.dot", inputs: { a: [0.5], b: [0.5] } },
+        { name: "distance-float", type: "vector.distance", inputs: { a: [0.25], b: [0.75] } },
+        { name: "length-float", type: "vector.length", inputs: { value: [-0.5] } },
+        { name: "normalize-float", type: "vector.normalize", inputs: { value: [0.5] } },
+      ];
+      for (const example of mathCases) {
+        const doc = createDefaultMaterialDocument(example.name, "postProcess");
+        doc.nodes.push(node("operation", example.type));
+        doc.edges = [];
+        for (const [pin, value] of Object.entries(example.inputs)) {
+          doc.nodes.push(node(pin, `const.${types[value.length - 1]}`, { value }));
+          connect(doc, pin, "out", "operation", pin);
+        }
+        connect(doc, "operation", "out", "output", "color");
+        await rebuild([doc]);
+        await capture(example.name);
+      }
+      const live = createDefaultMaterialDocument("Live Numeric", "postProcess");
+      live.nodes.push(node("value", "param.float", { name: "Value", value: [0.25] }), node("split", "vector.split"));
+      live.edges = [];
+      connect(live, "value", "out", "output", "color");
+      await rebuild([live]);
+      await capture("live-before");
+      if (!stack!.tasks[0]!.setParameter("Value", { kind: "float", value: 0.75 }) ||
+        !legacy!.setParameter("entry-0", "Value", { kind: "float", value: 0.75 })) throw new Error("Converted parameter was not live");
+      await capture("live-after");
+      live.edges = [];
+      connect(live, "value", "out", "split", "value");
+      connect(live, "split", "w", "output", "color");
+      await rebuild([live]);
+      await capture("split-missing-w");
+    } else {
     const gain = multiplyDocument("gain");
     await rebuild([gain]);
     await capture("color");
@@ -437,6 +518,7 @@ export async function runFrameGraphPostProcessProof(backend: "webgl2" | "webgpu"
       !stack!.tasks[0]!.resetParameter("Gain") || !legacy!.resetParameter("entry-0", "Gain"))
       throw new Error("Compiled default reset failed");
     await capture("compiled-default-reset");
+    }
     stack!.dispose();
     legacy!.dispose();
     graph!.dispose();
