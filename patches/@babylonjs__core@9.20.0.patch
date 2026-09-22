@@ -410,3 +410,15 @@ diff --git a/assetContainer.js b/assetContainer.js
          const cameras = this.cameras.slice(0);
          for (const camera of cameras) {
              camera.dispose();
+diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.pure.js
+--- a/Materials/Node/nodeMaterial.pure.js
++++ b/Materials/Node/nodeMaterial.pure.js
+@@ -1109,7 +1109,7 @@
+                         Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
+                         effect = this.getScene()
+                             .getEngine()
+-                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem);
++                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem, this.shaderLanguage);
+                         particleSystem.setCustomEffect(effect, blendMode);
+                         this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
+                         return;

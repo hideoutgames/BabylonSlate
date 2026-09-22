@@ -114,3 +114,5 @@ Resume these exact scopes with `BL_TEST_PROFILE=shared` when resources allow:
 Physical A16 measurements were waived for this delivery. Particle-specific exported-player lifecycle verification remains open. No device timing or GPU output result is inferred from NullEngine tests; the user authorized deferring checks that cannot currently be admitted, not treating them as passed.
 
 Particle NodeMaterial define changes retire the replaced DrawWrapper after the current frame; Babylon delays effect disposal but destroys its WebGPU draw context immediately. The adapter also releases queued wrappers on engine disposal. Browser proofs count playback resets separately from CPU disposal resets.
+
+The pinned Babylon patch carries the NodeMaterial shader language through particle effect recreation. Without it, a WGSL particle material can request a GLSL replacement after live defines change and never become ready again. This is separate from the adapter's observer and draw-wrapper ownership.
