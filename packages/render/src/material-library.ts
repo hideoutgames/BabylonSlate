@@ -1,5 +1,7 @@
 import { materialTextureBindings, type ResourceLease } from "./resource-cache";
-import type { Mesh, NodeMaterial, Scene, Texture } from "@babylonjs/core";
+import type { Material, NodeMaterial, Scene, Texture } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
   lowerMaterialDocument,
@@ -32,6 +34,14 @@ export interface UnavailableMaterial {
 }
 
 export type MaterialAcquireResult = AcquiredMaterial | UnavailableMaterial;
+
+const ownedPreparations = new WeakMap<Material, () => Promise<readonly MaterialDiagnostic[]>>();
+
+/** Borrow the exact currently requested library preparation without acquiring.
+ * A working material can still represent a pending replacement returned by resolve(). */
+export function ownedMaterialPreparation(material: Material): Promise<readonly MaterialDiagnostic[]> | undefined {
+  return ownedPreparations.get(material)?.();
+}
 
 /** See `materialCompileFailed`: the editor compiles this without strict mode. */
 export function materialUnavailable(
@@ -97,6 +107,7 @@ interface CacheEntry {
   resetParameter: (name: string) => boolean;
   instanceKey?: string;
   ready: Promise<readonly MaterialDiagnostic[]>;
+  preparation: () => Promise<readonly MaterialDiagnostic[]>;
 }
 
 /**
@@ -229,52 +240,104 @@ export class MaterialLibrary {
           (error: unknown) => [textureFailure(error)],
         )
       : compiled.ready;
-    const ready = texturePreparations.length
-      ? Promise.race([prepared, new Promise<readonly MaterialDiagnostic[]>((resolve) => {
-          cancelPreparation = () => resolve([{ code: "material.compile.cancelled", message: "Material preparation was cancelled", severity: "error" }]);
-        })])
-      : prepared;
+    const nativePrepared = prepared.then(async (diagnostics) => {
+      if (diagnostics.length) return diagnostics;
+      const parameters = await prepareParameters();
+      if (parameters.length) return parameters;
+      const uses = (material: Material | null): boolean => material === compiled.material ||
+        (existing !== undefined && material === existing.material) ||
+        (material instanceof MultiMaterial && material.subMaterials.some(uses));
+      try {
+        // A changed graph cannot retire its predecessor before the replacement
+        // compiles for its actual users, including unpublished model meshes.
+        for (const mesh of scene.meshes) {
+          if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || !uses(mesh.material)) continue;
+          if (retired || scene.isDisposed) return [cancelledDiagnostic()];
+          await prewarmMaterial(compiled.material, mesh);
+        }
+        return retired || scene.isDisposed ? [cancelledDiagnostic()] : [];
+      } catch (error) {
+        return [{ code: "material.compile.failed", message: error instanceof Error ? error.message : "Material shader preparation failed", severity: "error" as const }];
+      }
+    });
+    let retired = false;
+    const cancelledDiagnostic = (): MaterialDiagnostic => ({ code: "material.compile.cancelled", message: "Material preparation was cancelled", severity: "error" });
+    const ready = Promise.race([nativePrepared, new Promise<readonly MaterialDiagnostic[]>((resolve) => {
+      cancelPreparation = () => { retired = true; resolve([cancelledDiagnostic()]); };
+    })]);
     const textureDefaults = new Map(lowered.plan.operations
       .filter((operation) => operation.nodeType === "param.texture" && operation.source.callPath.length === 0)
       .map((operation) => {
         const name = String(operation.properties.name ?? "").trim();
         return [name, compiled.getParameter(name)] as const;
       }));
-    const pendingParameters = new Map<string, { texture: Texture; cancel: () => void }>();
+    const pendingParameters = new Map<string, { texture: Texture; guid: string; identity: string | undefined; ready: Promise<readonly MaterialDiagnostic[]>; cancel: () => void }>();
+    const parameterFailures = new Map<string, readonly MaterialDiagnostic[]>();
+    const prepareParameters = () => {
+      const failures = [...parameterFailures.values()].flat();
+      return Promise.all([...pendingParameters.values()].map((request) => request.ready))
+        .then((results) => [...results.flat(), ...failures]);
+    };
     const pruneTextures = () => textures.prune([...compiled.material.getActiveTextures(), ...[...pendingParameters.values()].map((entry) => entry.texture)]);
     const cancelParameter = (name: string) => { pendingParameters.get(name)?.cancel(); pendingParameters.delete(name); };
     const setParameter = (name: string, value: MaterialParameterValue) => {
       const previous = compiled.getParameter(name);
       if (previous?.kind !== value.kind) return false;
+      const pendingParameter = pendingParameters.get(name);
+      if (value.kind === "texture" && value.textureAssetGuid && pendingParameter &&
+        pendingParameter.guid === value.textureAssetGuid &&
+        pendingParameter.identity === this.options.textureIdentity?.(value.textureAssetGuid)) return true;
       cancelParameter(name);
+      parameterFailures.delete(name);
       if (this.options.acquireTexture && value.kind === "texture" && value.textureAssetGuid) {
         const guid = value.textureAssetGuid;
         const parameter = { ...value };
         const identity = this.options.textureIdentity?.(guid);
         const texture = textures.resolve(guid);
-        if (!texture || texture.loadingError) { pruneTextures(); return false; }
+        if (!texture || texture.loadingError) {
+          parameterFailures.set(name, [textureFailure(new Error(`Material texture parameter "${name}" could not acquire ${guid}`))]);
+          pruneTextures();
+          return false;
+        }
         const preparation = textures.ready(guid);
         const alreadyBound = previous.kind === "texture" && previous.textureAssetGuid === guid &&
           compiled.material.getActiveTextures().includes(texture);
         if (!alreadyBound && (preparation || !texture.isReady())) {
-          const request = { texture, cancel: () => {} };
+          let complete!: (diagnostics: readonly MaterialDiagnostic[]) => void;
+          const request = {
+            texture, guid, identity,
+            ready: new Promise<readonly MaterialDiagnostic[]>((resolve) => { complete = resolve; }),
+            cancel: () => {},
+          };
+          let detach = () => {};
+          const settle = (diagnostics: readonly MaterialDiagnostic[]) => {
+            if (pendingParameters.get(name) !== request) return;
+            pendingParameters.delete(name);
+            detach();
+            if (diagnostics.length) parameterFailures.set(name, diagnostics);
+            complete(diagnostics);
+          };
+          request.cancel = () => settle([{ code: "material.compile.cancelled", message: `Material texture parameter "${name}" was cancelled`, severity: "error" }]);
           pendingParameters.set(name, request);
           const publish = () => {
             if (pendingParameters.get(name) !== request) return;
-            cancelParameter(name);
             // The completed lease belongs to the captured source generation.
-            if (identity === this.options.textureIdentity?.(guid))
-              compiled.setParameter(name, parameter);
+            try {
+              const accepted = identity === this.options.textureIdentity?.(guid) && compiled.setParameter(name, parameter);
+              settle(accepted ? [] : [textureFailure(new Error(`Material texture parameter "${name}" was superseded`))]);
+            } catch (error) { settle([textureFailure(error)]); }
             pruneTextures();
           };
           if (preparation) void preparation.then(publish, (error: unknown) => {
             if (pendingParameters.get(name) !== request) return;
-            cancelParameter(name); pruneTextures();
-            this.options.onTextureError?.(textureFailure(error));
+            const diagnostic = textureFailure(error);
+            settle([diagnostic]);
+            pruneTextures();
+            this.options.onTextureError?.(diagnostic);
           });
           else {
             const loaded = texture.onLoadObservable.addOnce(publish);
-            request.cancel = () => texture.onLoadObservable.remove(loaded);
+            detach = () => { texture.onLoadObservable.remove(loaded); };
           }
           pruneTextures();
           return true;
@@ -295,25 +358,37 @@ export class MaterialLibrary {
         const value = textureDefaults.get(name);
         if (value) return setParameter(name, value);
         cancelParameter(name);
+        parameterFailures.delete(name);
         const accepted = compiled.resetParameter(name);
         pruneTextures();
         return accepted;
       },
       instanceKey: options?.instanceKey,
       ready,
+      preparation: () => Promise.all([ready, prepareParameters()]).then((results) => results.flat()),
     };
+    ownedPreparations.set(candidate.material, () => (pending.get(key) ?? candidate).preparation());
+    if (existing) ownedPreparations.set(existing.material, () => (pending.get(key) ?? existing).preparation());
     const publish = () => {
       if (existing) {
         // Runtime assignments can already point at the previous generation.
+        const replaceSubmaterials = (material: Material) => {
+          if (!(material instanceof MultiMaterial)) return;
+          material.subMaterials = material.subMaterials.map((child) => {
+            if (child === existing.material) return candidate.material;
+            if (child) replaceSubmaterials(child);
+            return child;
+          });
+        };
         for (const mesh of scene.meshes) {
           if (mesh.material === existing.material) { mesh.material = candidate.material; applyMaterialBounds(mesh); }
+          else if (mesh.material) replaceSubmaterials(mesh.material);
         }
         existing.dispose();
       }
       entries.set(key, candidate);
     };
-    if (compiled.buildState === "ready" && texturePreparations.length === 0) publish();
-    else {
+    {
       pending.set(key, candidate);
       void ready.then((errors) => {
         if (pending.get(key) !== candidate) return;

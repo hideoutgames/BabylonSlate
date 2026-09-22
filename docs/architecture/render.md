@@ -290,7 +290,7 @@ Replacing a texture-bearing skybox, sprite or tilemap visual prepares a disabled
 
 ### Texture ownership verification pickup
 
-Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. The current source checkpoint is `b8a11880eaf9ef3a3d992ee16fe32cf97254406a`. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current 3 GiB headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
+Delivery D remains unmerged; no PR exists. The historical texture branch checkpoint was `b8a11880eaf9ef3a3d992ee16fe32cf97254406a` on `agent/engine-texture-leases-d`. Resume checks on the current combined `agent/engine-followup-integration` branch. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current configured headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
 
 The rendering integration adds three unexecuted `mesh-assets.test.ts` regressions for static material restoration, animation resumption and a pending upload racing authored assignment. The defect was found by source tracing at `a4fa188c`; no pre-fix execution is claimed. Resume with `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'restores a static sprite|resumes the latest animation texture|does not let a pending sprite upload'`, then the affected snapshot/animation consumer cases and scoped render checks.
 
@@ -952,7 +952,7 @@ Defaults reproduce prior output exactly, so legacy projects without the block lo
 
 ## Transactional generated visuals
 
-Model preparation retains the current editor or Play hierarchy until the next source generation, material bindings and animation groups are usable. A failed structural editor replacement keeps the prior visual, and obsolete staged roots are disposed when their apply generation is superseded. Playback borrows animation groups from the visual bundle; bundle retirement removes its matching playback references.
+Model preparation retains the current editor or Play hierarchy until the next source generation, material bindings and animation groups are usable. Staged GLBs borrow the exact requested MaterialLibrary generation's readiness, including current authored texture parameter admission; resolving a working predecessor does not bypass a pending successor. Library successors compile for their current mesh users before replacing predecessor materials. Imported and assigned mesh variants finish native shader preparation before the model bundle publishes. Texture leases retain their admission deadline, while each native shader variant uses the existing shader stall deadline. Slot invalidation, placeholder disposal and scene disposal cancel the pending model owner; late completions cannot publish it. A failed structural editor replacement keeps the prior visual, and obsolete staged roots are disposed when their apply generation is superseded. Playback borrows animation groups from the visual bundle; bundle retirement removes its matching playback references.
 
 Bitmap text preflight includes the still-live representation and text siblings already staged in the same actor replacement. Each complete replacement publishes before the predecessor is retired. Allocation-limit rejection keeps the previous text and is retried only after the authored request, installed assets or native texture limit changes.
 
@@ -962,10 +962,11 @@ Local checks that cannot fit available memory are deferred at the user's request
 
 Source checkpoint: `64599304`, branch `agent/engine-visual-implementation-e` (also integrated into `agent/engine-visual-lifecycle-e`). The baseline at `ea3c9667` had 5 failures and 6 passes in `visual-lifecycle.test.ts` and `text2d-bitmap.test.ts`: model/text material growth from 2 to 202, same-length source aliasing and allocation defects. The same two files passed 18 cases at `e36439b1`. Later editor staging, multipart accounting, texture-animation fan-out coverage and construction-material ownership changes remain unverified. Earlier passes do not certify this later checkpoint.
 
-From the visual worktree, resume with these explicit scopes; split a batch further if necessary:
+The source checkpoint above is historical. Resume on the current combined `agent/engine-followup-integration` branch with these explicit scopes; split a batch further if necessary. The material admission/native preparation and cancellation cases below are authored but unexecuted:
 
 ```powershell
 $env:BL_TEST_PROFILE = 'shared'
+pnpm --silent agent:wait local --script test '--' packages/render/src/model-material-preparation.test.ts packages/render/src/material-library.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/visual-lifecycle.test.ts packages/render/src/text2d-bitmap.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/glb-anim.test.ts packages/render/src/model-preview.test.ts packages/render/src/scene-lighting.test.ts
 pnpm --silent agent:wait local --script test '--' packages/render/src/text2d-mesh.test.ts packages/render/src/text3d-mesh.test.ts packages/render/src/overlay-texture-quad.test.ts
