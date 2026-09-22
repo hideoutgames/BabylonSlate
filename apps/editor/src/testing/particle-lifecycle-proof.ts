@@ -44,9 +44,12 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     return parent;
   });
   const particleBuffers = new Set<DataBuffer>();
+  const frameCpuMs: number[] = [];
   const step = async (count = 1) => {
     for (let i = 0; i < count; i += 1) {
+      const started = performance.now();
       engine.beginFrame(); scene.render(); engine.endFrame();
+      frameCpuMs.push(performance.now() - started);
       for (const system of scene.particleSystems) {
         for (const vertex of Object.values(system.vertexBuffers ?? {})) {
           const buffer = vertex.getBuffer();
@@ -87,9 +90,11 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
   };
   const play = (guid: string, playing: boolean) => service.handleCommand({ type: "setParticlePlaying", actorGuid: guid, playing });
   const ready = async (systems: IParticleSystem[]) => {
+    const pending = [...systems];
+    if (!pending.length) throw new Error("No particle systems were prepared");
     for (let i = 0; i < 120; i += 1) {
-      if (systems.every((system) => system.isStarted() && system.isReady())) {
-        for (const system of systems) system.updateSpeed = simulationSpeeds.get(system) ?? 0.05;
+      if (pending.every((system) => system.isStarted() && system.isReady())) {
+        for (const system of pending) system.updateSpeed = simulationSpeeds.get(system) ?? 0.05;
         return;
       }
       await step();
@@ -145,8 +150,11 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     await step(2);
     const final = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
+    frameCpuMs.sort((a, b) => a - b);
+    const percentile = (fraction: number) => frameCpuMs[Math.min(frameCpuMs.length - 1, Math.floor(frameCpuMs.length * fraction))] ?? 0;
     return { backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`, gpu, adapter: engine.getInfo(),
       captures, diagnostics, resets, acquisitions, releases, baseline, final,
+      nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
   } finally { service.dispose(); materials.dispose(); scene.dispose(); engine.dispose(); canvas.remove(); }
 }

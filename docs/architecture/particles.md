@@ -1,6 +1,6 @@
 # Particles
 
-P17 wraps Babylon `GPUParticleSystem` / `ParticleSystem` as **billboard quads only**. Spec: [engineplan.md](../engineplan.md) Â§2.7. Live Babylon docs: `/features/featuresDeepDive/particles`.
+P17 wraps Babylon `GPUParticleSystem` / `ParticleSystem` as **billboard quads only**. Spec: [engineplan.md](../engineplan.md) §2.7. Live Babylon docs: `/features/featuresDeepDive/particles`.
 
 ## Why wrap Babylon
 
@@ -21,29 +21,29 @@ Do **not** write a custom thin-instance simulator, Solid Particle System, points
 
 ## Authoring
 
-- **New Asset â†’ Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
+- **New Asset → Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
 - DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. **Loading Preview** overlays the canvas until the first `present()`. After boot, skipped emitters show **No Texture** or **Missing Emitter** (catalog Empty) instead of a black canvas. Emitter Preview with no Texture guid shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Preview compiles an optional particle-domain Material and calls `createEffectForParticles`.
-- **System Preview** loads each slot's Particle Emitter **document** payload (open tab first, else `loadAssetDocument`). Registry `header.payload` is empty for Emitters (`headerMetaForSave` has no Particle case) â€” do not treat `{}` as authored look.
+- **System Preview** loads each slot's Particle Emitter **document** payload (open tab first, else `loadAssetDocument`). Registry `header.payload` is empty for Emitters (`headerMetaForSave` has no Particle case) — do not treat `{}` as authored look.
 - Failed emitter-document or texture reads and renderer startup show **Preview Failed** with **Retry** and guidance to check linked assets in Details. Runtime diagnostic overlays keep the preview canvas mounted so editing an asset or retrying can restart it. Failed attempts release their disposable preview resources before retrying; the shared Engine stays alive.
-- System Preview defaults to the engine cubemap (`createSkyboxMesh` + `createEngineDefaultCubeTexture`, not `scene.createDefaultSkybox`). Details boolean **Preview Skybox** (`previewSkybox`, schema v1, missing â†’ true) is editor-only and ignored at runtime. Emitter Preview stays the near-black studio.
+- System Preview defaults to the engine cubemap (`createSkyboxMesh` + `createEngineDefaultCubeTexture`, not `scene.createDefaultSkybox`). Details boolean **Preview Skybox** (`previewSkybox`, schema v1, missing → true) is editor-only and ignored at runtime. Emitter Preview stays the near-black studio.
 - Lucide `Sparkles` (Particle System / ParticleComponent) and `Wind` (Particle Emitter); family color matches Material.
-- **Place Actors â†’ Particles** and **Place Actors â†’ Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
+- **Place Actors → Particles** and **Place Actors → Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
 - Add Component / Search: `ParticleComponent` (`particleSystemGuid`, play-on-start, sorting layer/order).
 - Editor viewport uses a camera-facing billboard helper (`billboard:particle`), same as audio/light/camera. Play hides that helper (`meshKind: "particle"`).
 
-Emitter Details: Texture, optional particle-domain Material (AssetPicker filters `domain === "particle"`), capacity 16â€“4096, emit rate, blend Standard/Additive, shape point/box/sphere/cone, lifetime/speed/size min/max, gravity, color start/end (RGB + alpha), angular speed, pre-warm cycles. Look lives here â€” do not duplicate Emitter fields onto System slots.
+Emitter Details: Texture, optional particle-domain Material (AssetPicker filters `domain === "particle"`), capacity 16–4096, emit rate, blend Standard/Additive, shape point/box/sphere/cone, lifetime/speed/size min/max, gravity, color start/end (RGB + alpha), angular speed, pre-warm cycles. Look lives here — do not duplicate Emitter fields onto System slots.
 
 System Details: space world/local, looping, duration, up to 8 Emitter slots (duplicates allowed), **Preview Skybox**.
 
 ## GPU-safe authored surface
 
-Construct `GPUParticleSystem` when the owning engine supports transform feedback or compute, with `emitRateControl: true`; else `ParticleSystem` with `min(capacity, 512)`. Capacity default 256, clamp 16â€“4096.
+Construct `GPUParticleSystem` when the owning engine supports transform feedback or compute, with `emitRateControl: true`; else `ParticleSystem` with `min(capacity, 512)`. Capacity default 256, clamp 16–4096.
 
-Author only the shared CPU/GPU surface: `emitRate`; `createPointEmitter` / `createBoxEmitter` / `createSphereEmitter` / `createConeEmitter`; `minLifeTime` / `maxLifeTime`; `minEmitPower` / `maxEmitPower`; `gravity`; `minSize` / `maxSize` plus single-value `addSizeGradient` / `addColorGradient` (2â€“8 keys); angular speed **or** one `addAngularSpeedGradient` (gradient wins when both are authored); optional `addDragGradient` (0 and 1 keys); `blendMode` Standard / Additive; `isLocal`; looping vs `targetStopDuration`; capped `preWarmCycles`.
+Author only the shared CPU/GPU surface: `emitRate`; `createPointEmitter` / `createBoxEmitter` / `createSphereEmitter` / `createConeEmitter`; `minLifeTime` / `maxLifeTime`; `minEmitPower` / `maxEmitPower`; `gravity`; `minSize` / `maxSize` plus single-value `addSizeGradient` / `addColorGradient` (2–8 keys); angular speed **or** one `addAngularSpeedGradient` (gradient wins when both are authored); optional `addDragGradient` (0 and 1 keys); `blendMode` Standard / Additive; `isLocal`; looping vs `targetStopDuration`; capped `preWarmCycles`.
 
 GPU `stop()` stops emission while existing particles drain; the owner retires native resources after its simulation-time lifetime bound. Do not author sub-emitters, bursts (`manualEmitCount`), `disposeOnStop`, dual min/max gradient values, emit-rate / start-size gradients, `textureMask`, or mesh emitters.
 
-Always set `system.particleTexture` from the Emitter Texture guid (an owned texture lease with `invertY: false` and `hasAlpha: true`). Before `createEffectForParticles`, copy that texture onto every `ParticleTextureBlock` on the particle-domain NodeMaterial so the effect does not sample Babylon's empty/error checker. An NME Particle Texture preview node is not a second source of truth â€” live sampling is `system.particleTexture`.
+Always set `system.particleTexture` from the Emitter Texture guid (an owned texture lease with `invertY: false` and `hasAlpha: true`). Before `createEffectForParticles`, copy that texture onto every `ParticleTextureBlock` on the particle-domain NodeMaterial so the effect does not sample Babylon's empty/error checker. An NME Particle Texture preview node is not a second source of truth — live sampling is `system.particleTexture`.
 
 ## Particle-domain materials
 
@@ -58,7 +58,7 @@ Shared math / Mix / Combine stay legal. Hide world attributes, WPO, PBR metallic
 
 ## Runtime
 
-`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Each Particle System slot becomes one Babylon `GPUParticleSystem` (or CPU `ParticleSystem`). The Babylon `emitter` is an **enabled** mesh parented to the actor origin (`isVisible = true`, `visibility = 0`, `alwaysSelectAsActiveMesh`, not pickable). Do not `setEnabled(false)` or `isVisible = false` â€” Play uses `performancePriority = Intermediate`, and hidden emitters drop out of the active mesh list so GPU particles never draw. Readiness-gated `start()` and normal draining `stop()` are separate from immediate bundle retirement. Texture and material completion must match the live incarnation, owner scene, generation, and desired playback state. Play close, `changescene`, despawn, and `assignParticle` with a null guid retire the bundle immediately. CPU fallback capacity is `min(capacity, 512)`.
+`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Each Particle System slot becomes one Babylon `GPUParticleSystem` (or CPU `ParticleSystem`). The Babylon `emitter` is an **enabled** mesh parented to the actor origin (`isVisible = true`, `visibility = 0`, `alwaysSelectAsActiveMesh`, not pickable). Do not `setEnabled(false)` or `isVisible = false` — Play uses `performancePriority = Intermediate`, and hidden emitters drop out of the active mesh list so GPU particles never draw. Readiness-gated `start()` and normal draining `stop()` are separate from immediate bundle retirement. Texture and material completion must match the live incarnation, owner scene, generation, and desired playback state. Play close, `changescene`, despawn, and `assignParticle` with a null guid retire the bundle immediately. CPU fallback capacity is `min(capacity, 512)`.
 
 Overlay Play and `apps/player` pass a particle library (Emitter + System payloads) into `createEngine`, same pattern as `audioLibrary` / `textureBytes`. Packed player hydrates `ParticleEmitter` / `ParticleSystem` JSON from the pack. Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return `systems` to 0.
 
@@ -66,11 +66,11 @@ Missing Texture skips that emitter and logs `particle.missing_texture` (asset gu
 
 Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Optional particle-domain Material compiles through `MaterialLibrary` then `createEffectForParticles`. Prefab Preview uses that Engine too (`p18-shared-prefab-engine`).
 
-Scripting: **Play Particles** (`particles.play`) / **Stop Particles** (`particles.stop`) â€” exec + optional `actorRef("Actor")` (unconnected â†’ `ctx.self`). Graphs emit `setParticlePlaying` only.
+Scripting: **Play Particles** (`particles.play`) / **Stop Particles** (`particles.stop`) — exec + optional `actorRef("Actor")` (unconnected → `ctx.self`). Graphs emit `setParticlePlaying` only.
 
 ## Commands
 
-Worker â†’ main. Main thread resolves Emitter / System payloads from the Play particle library.
+Worker → main. Main thread resolves Emitter / System payloads from the Play particle library.
 
 ```ts
 | { type: "assignParticle"; slotId: number; actorGuid: string; componentId: string;
