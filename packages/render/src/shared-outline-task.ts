@@ -121,6 +121,9 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (!this.view.active) return;
       const effect = this.compose.effect;
       context.applyFullScreenEffect(this.compose.drawWrapper, () => {
+        // FrameGraph binds the DrawWrapper directly, so EffectWrapper's
+        // onApply default for the native postprocess vertex shader does not run.
+        effect.setFloat2("scale", 1, 1);
         effect.setFloat2("screenSize", this.width, this.height);
         effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
         effect.setFloat("maximumWidth", this.view.maximumWidth);
@@ -147,32 +150,34 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (!active) continue;
       const sources = new Set<Mesh>();
       for (const mesh of record.objects.objectList.meshes ?? []) {
-        if (!mesh.material || !mesh.subMeshes?.length) continue;
+        if (!mesh.subMeshes?.length) continue;
         const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : mesh as Mesh;
         sources.add(source);
         for (const lod of source.getLODLevels()) if (lod.mesh) sources.add(lod.mesh);
       }
       for (const source of sources) {
         let existing = record.materials.get(source);
-        if (existing && existing.source !== source.material) {
-          this.retireMaterial(existing.mask); record.materials.delete(source); existing = undefined;
+        const effectiveMaterial = source.material ?? this._frameGraph.scene.defaultMaterial;
+        if (existing && existing.source !== effectiveMaterial) {
+          this.retireMaterial(existing.mask, source, record.objects.objectRenderer.renderPassId);
+          record.materials.delete(source); existing = undefined;
         }
         if (!existing) {
           const mask = this.createMaskMaterial(source, record.group);
-          existing = { source: source.material, mask }; record.materials.set(source, existing);
+          existing = { source: effectiveMaterial, mask }; record.materials.set(source, existing);
           record.objects.objectRenderer.setMaterialForRendering(source, mask);
         }
         existing.mask.setTexture("styleSampler", this.view.styleTexture(record.group));
         existing.mask.setVector2("tableSize", new Vector2(this.view.tableWidth, this.view.tableHeight));
       }
       for (const [source, entry] of record.materials) if (source.isDisposed()) {
-        this.retireMaterial(entry.mask); record.materials.delete(source);
+        this.retireMaterial(entry.mask, source, record.objects.objectRenderer.renderPassId); record.materials.delete(source);
       }
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;
   }
   private createMaskMaterial(source: Mesh, group: SharedOutlineGroup): ShaderMaterial {
-    const original = source.material;
+    const original = source.material ?? this._frameGraph.scene.defaultMaterial;
     const texture = original?.needAlphaTestingForMesh(source) ? original.getAlphaTestTexture() : null;
     const uv2 = texture?.coordinatesIndex === 1 && source.isVerticesDataPresent("uv2");
     const alphaTest = !!texture && source.isVerticesDataPresent(uv2 ? "uv2" : "uv");
@@ -210,16 +215,33 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     ]);
     this.lease.commit(resources); this.committed = true;
   }
-  private retireMaterial(material: ShaderMaterial): void {
-    this.retirements.push(retireOwnedEffect(material.getEffect(), () => material.dispose(true, false)));
+  private retireMaterial(material: ShaderMaterial, source: Mesh, pass: number): void {
+    const wrappers: OwnedEffectRetirement[] = [];
+    for (const subMesh of source.subMeshes ?? []) {
+      const wrapper = subMesh._getDrawWrapper(pass);
+      if (!wrapper) continue;
+      // Transfer the actual per-pass reference before native detachment resets
+      // the cache. getEffect() only reports the last bound variant and misses
+      // variants compiled during preparation that have never drawn.
+      subMesh._removeDrawWrapper(pass, false);
+      if (wrapper.effect) source.geometry?._releaseVertexArrayObject(wrapper.effect);
+      wrappers.push(retireOwnedEffect(wrapper.effect, () => wrapper.dispose(true)));
+    }
+    if (!source.isDisposed()) source.setMaterialForRenderPass(pass, undefined);
+    let released = false;
+    const disposal = Promise.all(wrappers.map((entry) => entry.released)).then(() => {
+      material.dispose(true, false); released = true;
+    });
+    const completion = Promise.all(wrappers.map((entry) => entry.completion)).then(() => disposal);
+    void completion.catch(() => {});
+    this.retirements.push({ completion, released: disposal, isReleased: () => released });
   }
   override dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const record of this.masks) {
       for (const [source, entry] of record.materials) {
-        if (!source.isDisposed()) record.objects.objectRenderer.setMaterialForRendering(source, undefined);
-        this.retireMaterial(entry.mask);
+        this.retireMaterial(entry.mask, source, record.objects.objectRenderer.renderPassId);
       }
       record.materials.clear();
       this.view.owner.retireRenderPass(record.objects.objectRenderer.renderPassId);

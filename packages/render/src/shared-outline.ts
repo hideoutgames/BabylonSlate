@@ -2,6 +2,7 @@ import {
   Constants, RawTexture, Texture, VertexBuffer,
   type AbstractMesh, type InstancedMesh, type Mesh, type Scene,
 } from "@babylonjs/core";
+import type { WebGPUDrawContext } from "@babylonjs/core/Engines/WebGPU/webgpuDrawContext";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
@@ -193,7 +194,7 @@ export class SharedOutlineOwner {
       // retain its own unchanged data while another pass renders a different list.
       source._invalidateInstanceVertexArrayObject();
     }
-    if (replacement) { source._invalidateInstanceVertexArrayObject(); source.resetDrawCache(); }
+    if (replacement) this.invalidateBindings(source, pass);
   }
   private retireBuffer(record: BufferRecord): void {
     record.buffer.dispose(); this.bufferBytes -= record.data.byteLength;
@@ -212,7 +213,7 @@ export class SharedOutlineOwner {
     }
     if (source.instancedBuffers) delete source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE];
     for (const instance of source.instances) if (instance.instancedBuffers) delete instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE];
-    source._invalidateInstanceVertexArrayObject(); source.resetDrawCache();
+    this.invalidateBindings(source);
     this.sources.delete(source);
   }
   trackRelease(release: Promise<void>): void {
@@ -230,7 +231,24 @@ export class SharedOutlineOwner {
       const storage = source._userInstancedBuffersStorage;
       if (storage?.renderPasses?.[pass]) delete storage.renderPasses[pass][SHARED_OUTLINE_ATTRIBUTE];
       if (storage?.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] === buffer.buffer) delete storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE];
-      source._invalidateInstanceVertexArrayObject(); source.resetDrawCache();
+      this.invalidateBindings(source, pass);
+    }
+  }
+  private invalidateBindings(source: Mesh, pass?: number): void {
+    source._invalidateInstanceVertexArrayObject();
+    // A new VBO invalidates captured vertex handles, not compiled shaders.
+    // resetDrawCache() disposes owned Effects and races task retirement.
+    for (const subMesh of source.subMeshes ?? []) {
+      for (const id of pass === undefined ? this.renderPasses : [pass]) {
+        const wrapper = subMesh._getDrawWrapper(id);
+        // This can run after material binding inside a native mesh draw. A
+        // full reset would erase this frame's uniform/storage-buffer bindings.
+        // Vertex handles are captured only by the fast bundle; its layout and
+        // uniform bind groups are unchanged by replacement of this ID stream.
+        if (this.scene.getEngine().isWebGPU && wrapper?.drawContext)
+          (wrapper.drawContext as WebGPUDrawContext).fastBundle = undefined;
+        if (wrapper) wrapper._forceRebindOnNextCall = true;
+      }
     }
   }
   removeView(view: SharedOutlineView): void { this.views.delete(view); this.reconcile(); }
@@ -258,6 +276,7 @@ export class SharedOutlineView {
   isDisposed = false;
   private preparedRevision = -1;
   private readonly styles = new Map<SharedOutlineGroup, StyleRecord>();
+  private readonly activeGroups = new Set<SharedOutlineGroup>();
   private styleUploads = 0;
   tableWidth = 1;
   tableHeight = 1;
@@ -346,14 +365,18 @@ export class SharedOutlineView {
       }
     }
     this.maximumWidth = maximumWidth;
+    this.activeGroups.clear();
+    for (const group of SHARED_OUTLINE_GROUPS) {
+      const data = arrays.get(group)!;
+      for (let index = 3; index < data.length; index += 4) if (data[index]! > 0) {
+        this.activeGroups.add(group); break;
+      }
+    }
     this.tableWidth = width; this.tableHeight = height; this.preparedRevision = this.revision;
   }
   styleTexture(group: SharedOutlineGroup): RawTexture { this.prepare(); return this.styles.get(group)!.texture; }
   groupActive(group: SharedOutlineGroup): boolean {
-    this.prepare(); const data = this.styles.get(group)?.data;
-    if (!data) return false;
-    for (let index = 3; index < data.length; index += 4) if (data[index]! > 0) return true;
-    return false;
+    this.prepare(); return this.activeGroups.has(group);
   }
   meshesForGroup(group: SharedOutlineGroup): AbstractMesh[] {
     this.prepare();
@@ -370,7 +393,7 @@ export class SharedOutlineView {
     record.texture.dispose();
     this.owner.trackRelease(releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), record.lease));
   }
-  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.preparedRevision = -1; }
+  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.preparedRevision = -1; }
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;

@@ -102,7 +102,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
           bool visible = true;
           ${group === "strict" ? `float candidateDepth = texture2D(strictDepth, uv).r;
           float destinationDepth = texture2D(strictDepth, vUV).r;
-          visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth - 0.00002 : candidateDepth <= destinationDepth + 0.00002;` : ""}
+          visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;` : ""}
           float score = distance / max(style.a, 0.25);
           if (visible && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
             stroke = vec4(style.rgb, 1.0); best = score; chosen = id;
@@ -142,7 +142,7 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
           var visible = true;
           ${group === "strict" ? `let candidateDepth = textureSampleLevel(strictDepth, strictDepthSampler, uv, 0.0).r;
           let destinationDepth = textureSampleLevel(strictDepth, strictDepthSampler, fragmentInputs.vUV, 0.0).r;
-          visible = select(candidateDepth <= destinationDepth + 0.00002, candidateDepth >= destinationDepth - 0.00002, uniforms.reverseDepth > 0.5);` : ""}
+          visible = select(candidateDepth <= destinationDepth, candidateDepth >= destinationDepth, uniforms.reverseDepth > 0.5);` : ""}
           let score = distance / max(style.a, 0.25);
           if (visible && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
             stroke = vec4f(style.rgb, 1.0); best = score; chosen = id;

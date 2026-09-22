@@ -73,6 +73,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     const pixels = context.getImageData(0, 0, captureWidth, captureHeight).data;
     const lanes = Array.from({ length: 3 }, () => ({ red: 0, green: 0, blue: 0 }));
     let coveredPartialRed = 0;
+    let coveredBoundaryRed = 0;
     for (let y = 0; y < captureHeight; y++) for (let x = 0; x < captureWidth; x++) {
       const offset = (y * captureWidth + x) * 4;
       const r = pixels[offset]!, g = pixels[offset + 1]!, b = pixels[offset + 2]!;
@@ -82,16 +83,20 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
         // Right half of the middle receiver, well inside the nearer occluder.
         if (x >= 127 / width * captureWidth && x <= 138 / width * captureWidth &&
           y >= 40 / height * captureHeight && y <= 80 / height * captureHeight) coveredPartialRed++;
+        if (x >= 124 / width * captureWidth && x <= 126 / width * captureWidth &&
+          y >= 48 / height * captureHeight && y <= 72 / height * captureHeight) coveredBoundaryRed++;
       }
       if (g > 200 && r < 40 && b < 40) lane.green++;
       if (b > 200 && r < 40 && g < 40) lane.blue++;
     }
     const snapshot = {
-      name, image: copy.toDataURL("image/png"), lanes, coveredPartialRed,
+      name, image: copy.toDataURL("image/png"), lanes, coveredPartialRed, coveredBoundaryRed,
       drawingBuffer: { width: captureWidth, height: captureHeight },
       draws: readEngineDrawCalls(engine), tasks: renderer.taskNames(),
       outline: renderer.sharedOutlineDiagnostics(),
-      graphs: scene.frameGraphs.map(objectId),
+      // The coordinator deliberately removes its graph from scene.frameGraphs.
+      // Its real ObjectRenderers are recreated on a graph rebuild, unlike that empty list.
+      renderers: scene.objectRenderers.map(objectId),
       textures: engine.getLoadedTexturesCache().map(objectId).sort((a, b) => a - b),
       objectRenderers: scene.objectRenderers.length,
       reservations: managedLightingReservations(engine),
@@ -104,6 +109,45 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     view.setContribution(key, contribution);
     // This is the same cleanup a component/view host owns on disposal.
     return () => view.removeContribution(key);
+  };
+  const retireWithoutDrawing = async () => {
+    const before = managedLightingReservations(engine);
+    const unpresentedScene = new Scene(engine);
+    const unpresentedCamera = new FreeCamera("Unpresented Camera", new Vector3(0, 0, -4), unpresentedScene);
+    unpresentedCamera.setTarget(Vector3.Zero());
+    unpresentedScene.activeCamera = unpresentedCamera;
+    const mesh = MeshBuilder.CreateBox("Unpresented Receiver", { size: 1 }, unpresentedScene);
+    const unpresentedOwner = SharedOutlineOwner.forScene(unpresentedScene);
+    const unpresentedView = unpresentedOwner.createView("unpresented-outline-view");
+    const unpresentedRenderer = new SceneRenderCoordinator(unpresentedScene);
+    const unpresentedDetach = unpresentedRenderer.attachSharedOutline(unpresentedView);
+    let deadline: number | undefined;
+    try {
+      unpresentedView.setContribution("selection", {
+        kind: "selection", targets: [{ key: "unpresented-actor", meshes: [mesh] }],
+        color: [0, 1, 0], width: 2, throughMeshes: true,
+      });
+      const prepared = await unpresentedRenderer.prepare();
+      const allocated = managedLightingReservations(engine);
+      unpresentedDetach();
+      unpresentedView.dispose();
+      await unpresentedRenderer.retire();
+      const released = Promise.all([unpresentedRenderer.whenReleased(), unpresentedOwner.whenReleased()]);
+      // No unpresentedRenderer.render() occurs. Existing Engine boundaries drain
+      // deferred native frees without treating an unpresented scene as accepted.
+      for (let frame = 0; frame < 3; frame++) {
+        await waitFrame();
+        engine.beginFrame(); engine.endFrame();
+      }
+      await Promise.race([released, new Promise<never>((_, reject) => {
+        deadline = window.setTimeout(() => reject(new Error("Prepared but unpresented outline resources did not retire.")), 5_000);
+      })]);
+      return { preparedPath: prepared.path, before, allocated,
+        after: managedLightingReservations(engine), retainedRenderers: unpresentedScene.objectRenderers.length };
+    } finally {
+      window.clearTimeout(deadline);
+      unpresentedDetach(); unpresentedView.dispose(); unpresentedRenderer.dispose(); unpresentedScene.dispose();
+    }
   };
   try {
     await capture("disabled-baseline");
@@ -130,6 +174,18 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     await capture("sibling-view-selection-isolated");
     siblingView.dispose();
     await capture("sibling-view-disposed");
+
+    const defaultMaterialMesh = MeshBuilder.CreateBox("No Assigned Material", { size: 0.35 }, scene);
+    defaultMaterialMesh.position.set(0, 1.05, 0);
+    // Null is a real ordinary-mesh authoring state; Babylon draws scene.defaultMaterial.
+    defaultMaterialMesh.material = null;
+    mount("default-material-selection", { ...contributions.selection!, targets: [{ key: "default-material-actor", meshes: [defaultMaterialMesh] }] });
+    renderer.invalidate();
+    await capture("no-assigned-material-selected");
+    view.removeContribution("default-material-selection");
+    defaultMaterialMesh.dispose();
+    renderer.invalidate();
+    await capture("no-assigned-material-removed");
 
     for (const removed of ["component", "global", "selection"]) {
       view.removeContribution(removed);
@@ -173,6 +229,16 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     for (const mesh of occluders) mesh.dispose();
     renderer.invalidate();
     await capture("occluders-removed");
+    // The box front is z=-0.4. This nearer plane is distinguishable in depth32,
+    // but a broad normalized-depth epsilon can incorrectly paint onto its face.
+    const closeOccluder = MeshBuilder.CreatePlane("Close Partial Occluder", { width: 0.65, height: 1.2 }, scene);
+    closeOccluder.material = material;
+    closeOccluder.position.set(0.4, 0, -0.4001);
+    renderer.invalidate();
+    await capture("close-partial-occluder");
+    closeOccluder.dispose();
+    renderer.invalidate();
+    await capture("close-partial-occluder-removed");
 
     // Forty-eight independent colors use the same visibility-group pass budget.
     mount("component", { ...contributions.component!, throughMeshes: true });
@@ -218,6 +284,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     renderer.invalidate();
     await capture("all-disabled-retired");
     await capture("all-disabled-steady");
+    const unpresentedRetirement = await retireWithoutDrawing();
     return {
       backend, effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2",
       babylonVersion: Engine.Version, adapter: engine.getInfo(),
@@ -226,6 +293,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
       userAgent: navigator.userAgent,
       warmup: "Three production coordinator draws after ready preparation per state",
       highIdentities,
+      unpresentedRetirement,
       snapshots,
     };
   } finally {

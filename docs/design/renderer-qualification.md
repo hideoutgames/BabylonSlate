@@ -89,6 +89,24 @@ are retained. Route B as a whole remains **PENDING**: texture preparation,
 asymmetric orientation, parenting, Play and reopen are not established by these
 initial steps. Routes A/C and native WebGPU manual qualification also remain pending.
 
+The bounded candidate is now opt-in through the production Scene render
+coordinator; its [design and limits](../architecture/render.md#shared-outline-candidate-22-september-2026)
+describe ownership, formats and the four-draw/seven-record maximum. It has not
+replaced editor selection or gained authored component/global controls. At
+`ccf3c585`, four selected admission/coordinator unit cases and the render package
+typecheck passed. These tests establish atomic rejection and explicit graph
+ownership, not rendered acceptance. The candidate browser cases and changed-file
+lint were queued, then cancelled before execution because shared memory
+admission had not admitted them and review found repairs to make.
+
+The next candidate revision fixes default-material masking, transfers every
+per-pass DrawWrapper before retiring effects, preserves WebGPU buffer bindings
+when invalidating cached draw bundles, and removes an unsafe fixed depth
+tolerance. Its two-API pixel fixture now covers close partial occlusion,
+default-material geometry, actual ObjectRenderer identities and disposal after
+preparation before the first draw. These additions remain unverified until their
+recorded run; successful stock-bug reproduction remains separate evidence.
+
 `e2e/native-outline-qualification.spec.ts` runs the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance. Run just this file with the shared browser runner; the JSON attachment lists blockers and actual API, mask type, dimensions and browser. Screenshots come from the actual presented canvas.
 
 Physical iPad A16 testing is **deferred by the user for this delivery (21 September 2026)**. No physical-device baseline, equal-quality before/after timings, sustained thermal behavior or device mask-format qualification has been measured. Desktop WebGL/WebGPU captures are functional evidence only. Do not enable a costly default based on these runs or substitute an alternate outline renderer without the requested product approval.
