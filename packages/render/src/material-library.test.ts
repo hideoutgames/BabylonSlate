@@ -81,6 +81,22 @@ function textureLibrary() {
 }
 
 describe("material library", () => {
+  it("keeps compile-time texture preparation alive when an initial override replaces its binding", async () => {
+    const f = textureLibrary();
+    const initial = deferredTextureSource();
+    f.sources.set("first", initial.source);
+    f.sources.set("next", new Uint8Array([4, 5, 6]));
+    const acquired = f.library.acquire(f.scene, "material", textureDocument("first"));
+    if (!acquired.ok) throw new Error("Material did not compile");
+    expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "next" })).toBe(true);
+    await f.leases.get("next")!.ready;
+    initial.finish();
+    expect(await acquired.ready).toEqual([]);
+    expect(f.library.isReady(f.scene, "material", textureDocument("first"))).toBe(true);
+    expect((acquired.material.getBlockByName("sample") as TextureBlock).texture).toBe(f.leases.get("next")!.resource);
+    expect(f.onTextureError).not.toHaveBeenCalled();
+  });
+
   it("preserves the working texture parameter when native-ready replacement fails delayed admission", async () => {
     const f = textureLibrary();
     const deferred = deferredTextureSource();
