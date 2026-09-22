@@ -325,9 +325,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         );
         throw record.mutationFailure;
       }
+      this.retireTriggerPairs(record.desc.actorId);
       throw error;
     }
     record.desc.transform = pose;
+    // World membership refresh retires native pairs without emitting exits.
+    this.retireTriggerPairs(record.desc.actorId);
     for (const character of this.characters.values()) {
       if (character.desc.bodyId === bodyId)
         character.controller.setPosition(toVector3(pose.position));
@@ -535,6 +538,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         );
         throw record.mutationFailure;
       }
+      if (topologyChanged) this.retireTriggerPairs(record.desc.actorId);
       container?.dispose();
       for (const shape of provisional) if (shape !== container) shape.dispose();
       throw error;
