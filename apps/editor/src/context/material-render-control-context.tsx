@@ -6,10 +6,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { ActionFeedback } from "../lib/action-feedback";
 
 export interface MaterialRenderControl {
   disabled: boolean;
   requestRender: () => void;
+  feedback?: ActionFeedback;
 }
 
 interface RegisteredControl {
@@ -19,10 +21,7 @@ interface RegisteredControl {
 
 interface MaterialRenderControlValue {
   control: MaterialRenderControl | null;
-  register: (
-    ownerId: string,
-    control: MaterialRenderControl,
-  ) => () => void;
+  register: (ownerId: string, control: MaterialRenderControl) => () => void;
 }
 
 const MaterialRenderControlContext =

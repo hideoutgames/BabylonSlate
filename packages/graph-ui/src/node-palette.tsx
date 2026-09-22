@@ -1,11 +1,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   CatalogDialog,
+  CatalogResultRow,
   humanizePropertyLabel,
   WindowedList,
   isCoarsePointerEnvironment,
 } from "@babylonslate/editor-kit";
-import { buttonVariants } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -39,9 +39,20 @@ type PaletteRow =
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return nodes;
-  return nodes.filter((node) =>
-    `${node.title} ${node.category}`.toLowerCase().includes(needle),
-  );
+  const formula = needle.replace(/\s+/g, "");
+  const symbolsOnly = /^[^\p{L}\p{N}\s]+$/u.test(formula);
+  return nodes.filter((node) => {
+    const aliasMatch = node.searchAliases?.some((alias) => {
+      const normalized = alias.toLowerCase().replace(/\s+/g, "");
+      return symbolsOnly ? normalized === formula : normalized.includes(formula);
+    });
+    return aliasMatch || (
+      !symbolsOnly &&
+      `${node.title} ${node.category} ${humanizePropertyLabel(node.category)}`
+        .toLowerCase()
+        .includes(needle)
+    );
+  });
 }
 
 function flattenPaletteRows(
@@ -97,7 +108,7 @@ function PaletteWindowedList({
           if (row.kind === "header")
             return (
               <h3 className="flex h-full items-center px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {row.category}
+                {humanizePropertyLabel(row.category)}
               </h3>
             );
           const node = row.node;
@@ -106,56 +117,39 @@ function PaletteWindowedList({
             onOpenChange(false);
           };
           return (
-            <div
+            <CatalogResultRow
               role="option"
               id={`${listId}-${encodeURIComponent(node.id)}`}
-              aria-selected={node.id === activeId}
-              title={node.description}
+              tooltip={node.description}
               aria-description={node.description}
+              active={node.id === activeId}
+              striped={row.striped}
               tabIndex={-1}
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "touch" }),
-                "h-full w-full min-h-0 justify-start gap-2 overflow-hidden touch-pan-y",
-                node.id === activeId
-                  ? "bg-accent text-accent-foreground"
-                  : row.striped && "bg-list-stripe",
-              )}
+              className="h-full"
               data-testid={`node-palette-item-${node.id}`}
-              onClick={commit}
+              onSelect={commit}
               onFocus={() => onActiveChange(node.id)}
-              onKeyDown={(event) => {
-                if (
-                  event.nativeEvent.isComposing ||
-                  (event.key !== "Enter" && event.key !== " ")
-                )
-                  return;
-                event.preventDefault();
-                commit();
-              }}
-            >
-              <span
-                className={cn(
-                  "size-2.5 shrink-0 rounded-sm",
-                  nodeRoleClass(
-                    nodeVisualRole({
-                      nodeType: node.id,
-                      title: node.title,
-                      category: node.category,
-                      pure: node.pure,
-                      material: node.defaultData?.__material === true,
-                      latent: node.latent,
-                    }),
-                  ),
-                )}
-                aria-hidden="true"
-              />
-              <span className="flex min-w-0 flex-col items-start leading-tight">
-                <span className="truncate">{node.title}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {humanizePropertyLabel(node.category)}
-                </span>
-              </span>
-            </div>
+              title={node.title}
+              description={humanizePropertyLabel(node.category)}
+              leading={
+                <span
+                  className={cn(
+                    "size-2.5 shrink-0 rounded-sm",
+                    nodeRoleClass(
+                      nodeVisualRole({
+                        nodeType: node.id,
+                        title: node.title,
+                        category: node.category,
+                        pure: node.pure,
+                        material: node.defaultData?.__material === true,
+                        latent: node.latent,
+                      }),
+                    ),
+                  )}
+                  aria-hidden="true"
+                />
+              }
+            />
           );
         }}
       </WindowedList>
@@ -204,7 +198,7 @@ export function NodePalette({
     }
     const listed = [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, count]) => ({ id, label: id, count }));
+      .map(([id, count]) => ({ id, label: humanizePropertyLabel(id), count }));
     return [
       {
         id: "all",

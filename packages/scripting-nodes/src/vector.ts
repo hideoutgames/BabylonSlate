@@ -7,6 +7,7 @@ import {
   VEC4,
   type PinType,
 } from "@babylonslate/scripting";
+import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 
 const AXES2 = ["x", "y"] as const;
 const AXES3 = ["x", "y", "z"] as const;
@@ -52,6 +53,7 @@ function binaryVec(
     id,
     title,
     category: "vector",
+    searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
     pure: true,
     pins: () => [
       pin("a", "A", "in", type),
@@ -75,6 +77,7 @@ function scaleVec(
     id,
     title,
     category: "vector",
+    searchAliases: ["*", "×", "v * s"],
     pure: true,
     pins: () => [
       pin(vectorPinId, "V", "in", type),
@@ -121,6 +124,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.add3",
+    searchAliases: ["+","a + b","plus","sum"],
     title: "Add Vector3",
     category: "vector",
     pure: true,
@@ -139,6 +143,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.scale3",
+    searchAliases: ["*","×","v * s"],
     title: "Scale Vector3",
     category: "vector",
     pure: true,
@@ -227,6 +232,7 @@ export const vectorNodes: NodeDefinition[] = [
   binaryVec("vector.div3", "Divide Vector3", VEC3, "/", AXES3),
   {
     id: "vector.dot3",
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector3",
     category: "vector",
     pure: true,
@@ -241,6 +247,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.cross3",
+    searchAliases: ["×","cross","cross(a,b)","a × b"],
     title: "Cross Vector3",
     category: "vector",
     pure: true,
@@ -259,6 +266,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.length3",
+    searchAliases: ["length(x)","magnitude","|v|"],
     title: "Vector3 Length",
     category: "vector",
     pure: true,
@@ -270,6 +278,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lengthSquared3",
+    searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
     title: "Vector3 Length Squared",
     category: "vector",
     pure: true,
@@ -281,6 +290,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.normalize3",
+    searchAliases: ["normalize(x)","x/length(x)"],
     title: "Normalize Vector3",
     category: "vector",
     pure: true,
@@ -298,6 +308,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.distance3",
+    searchAliases: ["distance(a,b)","length(a-b)"],
     title: "Distance Vector3",
     category: "vector",
     pure: true,
@@ -312,6 +323,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lerp3",
+    searchAliases: ["mix","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
     title: "Lerp Vector3",
     category: "vector",
     pure: true,
@@ -332,6 +344,7 @@ export const vectorNodes: NodeDefinition[] = [
   scaleVec("vector.scale2", "Scale Vector2", VEC2, AXES2),
   {
     id: "vector.dot2",
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector2",
     category: "vector",
     pure: true,
@@ -346,6 +359,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.length2",
+    searchAliases: ["length(x)","magnitude","|v|"],
     title: "Vector2 Length",
     category: "vector",
     pure: true,
@@ -357,6 +371,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lengthSquared2",
+    searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
     title: "Vector2 Length Squared",
     category: "vector",
     pure: true,
@@ -368,6 +383,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.normalize2",
+    searchAliases: ["normalize(x)","x/length(x)"],
     title: "Normalize Vector2",
     category: "vector",
     pure: true,
@@ -384,6 +400,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.distance2",
+    searchAliases: ["distance(a,b)","length(a-b)"],
     title: "Distance Vector2",
     category: "vector",
     pure: true,
@@ -398,6 +415,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lerp2",
+    searchAliases: ["mix","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
     title: "Lerp Vector2",
     category: "vector",
     pure: true,
@@ -418,6 +436,7 @@ export const vectorNodes: NodeDefinition[] = [
   scaleVec("vector.scale4", "Scale Vector4", VEC4, AXES4),
   {
     id: "vector.dot4",
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector4",
     category: "vector",
     pure: true,
@@ -432,6 +451,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.length4",
+    searchAliases: ["length(x)","magnitude","|v|"],
     title: "Vector4 Length",
     category: "vector",
     pure: true,
@@ -443,6 +463,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lengthSquared4",
+    searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
     title: "Vector4 Length Squared",
     category: "vector",
     pure: true,
@@ -454,6 +475,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.normalize4",
+    searchAliases: ["normalize(x)","x/length(x)"],
     title: "Normalize Vector4",
     category: "vector",
     pure: true,
@@ -471,6 +493,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.distance4",
+    searchAliases: ["distance(a,b)","length(a-b)"],
     title: "Distance Vector4",
     category: "vector",
     pure: true,
@@ -485,6 +508,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.lerp4",
+    searchAliases: ["mix","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
     title: "Lerp Vector4",
     category: "vector",
     pure: true,

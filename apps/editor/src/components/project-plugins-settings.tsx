@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { OctagonAlertIcon, PuzzleIcon } from "lucide-react";
 import { NamePromptDialog } from "@babylonslate/editor-kit";
-import type { PluginDescriptor } from "@babylonslate/assets";
+import { pluginCompatibilityDiagnostics, pluginCompatibilityKey, type PluginDescriptor } from "@babylonslate/assets";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -116,10 +116,19 @@ export function ProjectPluginsSettings() {
     [overrides, pluginDescriptors],
   );
 
-  const setEnabled = async (plugin: PluginDescriptor, enabled: boolean) => {
+  const candidatePlugins = (plugin: PluginDescriptor) => rows
+    .filter((row) => row.enabled || row.plugin.pluginGuid === plugin.pluginGuid)
+    .map((row) => row.plugin);
+
+  const setEnabled = async (plugin: PluginDescriptor, enabled: boolean, acceptCompatibility = false) => {
     const next = {
       ...overrides,
-      [plugin.pluginGuid]: { enabled },
+      [plugin.pluginGuid]: {
+        enabled,
+        ...(enabled && acceptCompatibility ? {
+          acceptedCompatibility: pluginCompatibilityKey(plugin, candidatePlugins(plugin)),
+        } : {}),
+      },
     };
     // Mount/unmount before flipping project settings so Content Browser roots
     // never resolve as enabled while the registry root is still missing.
@@ -128,7 +137,8 @@ export function ProjectPluginsSettings() {
   };
 
   const requestEnableChange = (plugin: PluginDescriptor, enabled: boolean) => {
-    if (enabled && pluginEnableNeedsConfirm(plugin.settings)) {
+    if (enabled && (pluginEnableNeedsConfirm(plugin.settings) ||
+      pluginCompatibilityDiagnostics(plugin, candidatePlugins(plugin)).length > 0)) {
       setConfirmEnable(plugin);
       return;
     }
@@ -148,6 +158,10 @@ export function ProjectPluginsSettings() {
     }
     void run(enabled ? "Enabling Plugin" : "Disabling Plugin", () => setEnabled(plugin, enabled));
   };
+
+  const compatibilityWarnings = confirmEnable
+    ? pluginCompatibilityDiagnostics(confirmEnable, candidatePlugins(confirmEnable))
+    : [];
 
   const runImport = async (
     bytes: Uint8Array,
@@ -263,6 +277,14 @@ export function ProjectPluginsSettings() {
                     data-testid={`settings-plugin-enable-${plugin.pluginGuid}`}
                     aria-label={`Enable ${plugin.settings.displayName}`}
                   />
+                  {enabled && pluginCompatibilityDiagnostics(plugin, candidatePlugins(plugin)).length > 0 &&
+                    overrides[plugin.pluginGuid]?.acceptedCompatibility !== pluginCompatibilityKey(plugin, candidatePlugins(plugin)) ? (
+                    <Button type="button" variant="outline" size="sm" disabled={Boolean(pending)}
+                      onClick={() => setConfirmEnable(plugin)}
+                      aria-label={`Review ${plugin.settings.displayName} Compatibility`}>
+                      Review Compatibility
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="outline"
@@ -373,25 +395,33 @@ export function ProjectPluginsSettings() {
           if (!open) setConfirmEnable(null);
         }}
       >
-        <AlertDialogContent data-testid="settings-plugin-experimental-dialog">
+        <AlertDialogContent data-testid={compatibilityWarnings.length > 0
+          ? "settings-plugin-compatibility-dialog" : "settings-plugin-experimental-dialog"}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Enable {confirmEnable ? maturityLabels(confirmEnable).join(" / ") : "Experimental"} Plugin
+              {compatibilityWarnings.length > 0 ? "Enable Outdated Plugin" :
+                `Enable ${confirmEnable ? maturityLabels(confirmEnable).join(" / ") : "Experimental"} Plugin`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmEnable?.settings.displayName} is marked{" "}
-              {confirmEnable ? maturityLabels(confirmEnable).join(" and ") : "Experimental"}.
+              {compatibilityWarnings.map((warning) => warning.message).join(" ")}
+              {confirmEnable && pluginEnableNeedsConfirm(confirmEnable.settings)
+                ? ` ${confirmEnable.settings.displayName} is marked ${maturityLabels(confirmEnable).join(" and ")}.` : ""}
+              {compatibilityWarnings.length > 0 ? " Compatibility has not been verified. Disable it or try enabling it anyway." : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {
+              if (confirmEnable && compatibilityWarnings.length > 0) {
+                void run("Disabling Plugin", () => setEnabled(confirmEnable, false));
+              }
+            }}>{compatibilityWarnings.length > 0 ? "Disable" : "Cancel"}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (confirmEnable) void run("Enabling Plugin", () => setEnabled(confirmEnable, true));
+                if (confirmEnable) void run("Enabling Plugin", () => setEnabled(confirmEnable, true, compatibilityWarnings.length > 0));
                 setConfirmEnable(null);
               }}
             >
-              Enable
+              {compatibilityWarnings.length > 0 ? "Try Enable Anyway" : "Enable"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

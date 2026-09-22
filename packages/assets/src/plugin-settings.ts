@@ -6,7 +6,8 @@ export const PLUGIN_FILE_SUFFIX = ".plugin.babasset";
 
 export interface PluginDependency {
   guid: string;
-  versionRange: string;
+  /** Installed author version recorded when the dependency is selected. */
+  version: string;
 }
 
 export interface PluginSettingsPayload {
@@ -21,7 +22,8 @@ export interface PluginSettingsPayload {
   beta: boolean;
   editorUtilityObjects: string[];
   enabledByDefault: boolean;
-  engineVersionRange: string;
+  /** Engine version recorded at creation; reading/importing never updates it. */
+  engineVersion: string;
   pluginDependencies: PluginDependency[];
 }
 
@@ -41,7 +43,7 @@ export function createDefaultPluginSettings(options: {
     beta: false,
     editorUtilityObjects: [],
     enabledByDefault: false,
-    engineVersionRange: `^${ENGINE_VERSION}`,
+    engineVersion: ENGINE_VERSION,
     pluginDependencies: [],
   };
 }
@@ -68,13 +70,10 @@ function normalizeDependencies(value: unknown): PluginDependency[] {
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
     const guid = typeof record.guid === "string" ? record.guid.trim() : "";
-    const versionRange =
-      typeof record.versionRange === "string" && record.versionRange.trim() !== ""
-        ? record.versionRange.trim()
-        : "^1.0.0";
+    const version = typeof record.version === "string" ? record.version.trim() : "";
     if (!guid || seen.has(guid)) continue;
     seen.add(guid);
-    deps.push({ guid, versionRange });
+    deps.push({ guid, version });
   }
   return deps;
 }
@@ -89,7 +88,7 @@ export function normalizePluginSettings(
       ? source.displayName.trim()
       : (fallback.displayName ?? "Plugin");
   const version =
-    typeof source.version === "string" && /^\d+\.\d+\.\d+$/.test(source.version.trim())
+    typeof source.version === "string" && source.version.trim() !== ""
       ? source.version.trim()
       : "1.0.0";
   const iconKey =
@@ -108,11 +107,8 @@ export function normalizePluginSettings(
     beta: source.beta === true,
     editorUtilityObjects: uniqueIds(source.editorUtilityObjects),
     enabledByDefault: source.enabledByDefault === true,
-    engineVersionRange:
-      typeof source.engineVersionRange === "string" &&
-      source.engineVersionRange.trim() !== ""
-        ? source.engineVersionRange.trim()
-        : `^${ENGINE_VERSION}`,
+    engineVersion:
+      typeof source.engineVersion === "string" ? source.engineVersion.trim() : "",
     pluginDependencies: normalizeDependencies(source.pluginDependencies),
   };
 }

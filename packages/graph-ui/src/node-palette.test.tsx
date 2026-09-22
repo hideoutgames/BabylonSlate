@@ -58,6 +58,19 @@ const begin: PaletteNode = {
 };
 
 describe("NodePalette", () => {
+  it("retains node contracts and selection when finding a node through its alias", () => {
+    const onAddNode = vi.fn();
+    const node = { ...log, description: "Changes only this running session.", searchAliases: ["session output"] };
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[node]} onAddNode={onAddNode} />,
+    );
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "session output" } });
+    const row = getByTestId("node-palette-item-debug.log");
+    expect(row.getAttribute("title")).toBe(node.description);
+    expect(row.getAttribute("aria-description")).toBe(node.description);
+    fireEvent.click(row);
+    expect(onAddNode).toHaveBeenCalledWith(node);
+  });
   it("adds the keyboard-selected search result without requiring row tabbing", () => {
     const onAddNode = vi.fn();
     const { getByPlaceholderText, getByTestId } = render(
@@ -219,6 +232,69 @@ describe("NodePalette", () => {
   function paletteItems() {
     return document.querySelectorAll('[data-testid^="node-palette-item-"]');
   }
+
+  it("finds symbol and formula aliases without confusing multiply with power", () => {
+    const nodes: PaletteNode[] = [
+      { id: "add", title: "Add", category: "math", pins: [], searchAliases: ["+", "a + b"] },
+      { id: "multiply", title: "Multiply", category: "math", pins: [], searchAliases: ["*", "×", "a * b"] },
+      { id: "power", title: "Power", category: "math", pins: [], searchAliases: ["**", "^", "pow(a, b)"] },
+      { id: "sqrt", title: "Square Root", category: "math", pins: [], searchAliases: ["√", "sqrt(x)"] },
+    ];
+    const onAddNode = vi.fn();
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={onAddNode} />,
+    );
+    const search = getByPlaceholderText("Search nodes");
+    for (const [query, expectedId] of [
+      ["+", "add"],
+      ["*", "multiply"],
+      ["×", "multiply"],
+      ["**", "power"],
+      ["√", "sqrt"],
+      [" A+B ", "add"],
+      [" POW ( A, B ) ", "power"],
+      ["SQRT (x)", "sqrt"],
+      ["square root", "sqrt"],
+    ]) {
+      fireEvent.change(search, { target: { value: query } });
+      expect([...paletteItems()].map((row) => row.getAttribute("data-testid"))).toEqual([
+        `node-palette-item-${expectedId}`,
+      ]);
+      expect(getByTestId("node-palette-category-math").textContent).toBe("Math1");
+    }
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onAddNode).toHaveBeenCalledWith(nodes[3]);
+  });
+
+  it("keeps symbol searches inside pin-compatible results until context sensitivity is disabled", () => {
+    const compatible = { ...log, searchAliases: ["+"] };
+    const incompatible = { ...begin, searchAliases: ["+"] };
+    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[compatible, incompatible]}
+        onAddNode={() => {}} filterPin={execOut} />,
+    );
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "+" } });
+    expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
+    expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
+    fireEvent.click(getByTestId("node-palette-context-sensitive"));
+    expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
+  });
+
+  it("shows readable category labels while selecting their original IDs", () => {
+    const nodes = [
+      { ...log, category: "math.vector" },
+      { ...begin, category: "uv" },
+    ];
+    const { getByTestId, queryByTestId, getByRole } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+    );
+    expect(getByTestId("node-palette-category-math.vector").textContent).toBe("Math Vector1");
+    expect(getByTestId("node-palette-category-uv").textContent).toBe("UV1");
+    fireEvent.click(getByTestId("node-palette-category-math.vector"));
+    expect(getByRole("combobox", { name: "Category" }).textContent).toContain("Math Vector");
+    expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
+    expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
+  });
 
   function manyNodes(count: number): PaletteNode[] {
     return Array.from({ length: count }, (_, index) => ({

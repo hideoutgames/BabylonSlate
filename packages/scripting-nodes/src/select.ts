@@ -18,6 +18,7 @@ import {
 import { enumGuidOf, enumMembersOf, titleCaseEnumMember } from "./enum";
 
 export const SELECT_OPTION_PIN_PREFIX = "option:";
+const SELECT_SEARCH_ALIASES = ["?:", "condition ? a : b"] as const;
 
 export function selectOptionPinId(memberName: string): string {
   return `${SELECT_OPTION_PIN_PREFIX}${encodeURIComponent(memberName)}`;
@@ -47,6 +48,7 @@ function typedSelect(
     id,
     title,
     category: "select",
+    searchAliases: SELECT_SEARCH_ALIASES,
     pure: true,
     pins: () => [
       pin("index", "Index", "in", BOOL),
@@ -83,6 +85,7 @@ export const selectNodes: NodeDefinition[] = [
     id: "select.bool",
     title: "Select Bool",
     category: "select",
+    searchAliases: SELECT_SEARCH_ALIASES,
     pure: true,
     pins: () => [
       pin("index", "Index", "in", BOOL),

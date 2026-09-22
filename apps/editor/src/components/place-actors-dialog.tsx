@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
-  CatalogItemButton,
+  CatalogResultRow,
   TypeVisualIcon,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
@@ -80,16 +80,17 @@ export function PlaceActorsDialog({
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No matches</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {visible.map((item) => (
-            <CatalogItemButton
+        <div role="group" aria-label="Actors" className="flex flex-col">
+          {visible.map((item, index) => (
+            <CatalogResultRow
               key={item.id}
               data-testid={`place-actors-item-${item.id}`}
-              onClick={() => onSelect(item)}
-            >
-              <TypeVisualIcon visual={visualForPlaceActor(item)} />
-              <span className="truncate">{item.title}</span>
-            </CatalogItemButton>
+              title={item.title}
+              description={item.category}
+              leading={<TypeVisualIcon visual={visualForPlaceActor(item)} />}
+              striped={index % 2 === 1}
+              onSelect={() => onSelect(item)}
+            />
           ))}
         </div>
       )}

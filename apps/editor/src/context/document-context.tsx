@@ -19,6 +19,7 @@ import type {
   AssetDocumentKind,
   DocumentRef,
   ProjectDocument,
+  PluginEnableOverride,
   ProjectFolderHandle,
   ProjectMetadata,
   Result,
@@ -297,7 +298,7 @@ interface DocumentContextValue {
   showPluginContent: boolean;
   setShowPluginContent: (show: boolean) => void;
   applyPluginOverrides: (
-    overrides: Record<string, { enabled: boolean }>,
+    overrides: Record<string, PluginEnableOverride>,
   ) => Promise<void>;
   createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
   deleteProjectPlugin: (guid: string) => Promise<void>;
@@ -1121,7 +1122,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyPluginOverrides = useCallback(
-    async (overrides: Record<string, { enabled: boolean }>) => {
+    async (overrides: Record<string, PluginEnableOverride>) => {
       await projectService.applyPluginOverrides(overrides);
       bump();
     },
@@ -1756,6 +1757,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const list = await projectService.listExportAssets(
         new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
+        Object.fromEntries(pluginGraph.order.map((plugin) => [plugin.pluginGuid, {
+          ...projectPluginOverrides[plugin.pluginGuid],
+          ...preset.pluginOverrides[plugin.pluginGuid],
+          enabled: true,
+        }])),
       );
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const loaded = await loadExportDocuments({

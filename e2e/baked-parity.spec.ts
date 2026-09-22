@@ -71,9 +71,32 @@ test("baked irradiance receiver matches realtime point-light shading within 3/25
       entry.diagnostics.celBaked.bakedTexelSamples,
       `${entry.backend} celBaked missing the baked texel sample`,
     ).toBeGreaterThan(0);
+    // Environment group: a uniform linear-radiance cube and its E = PI * C
+    // atlas must agree on dielectric diffuse AND keep metallic specular.
+    for (const label of ["pbrEnvBaked", "pbrEnvSpecBaked"] as const) {
+      expect(
+        entry.diagnostics[label].slateBakedEnv,
+        `${entry.backend} ${label} compiled without SLATE_BAKED_ENV`,
+      ).toBe(true);
+      expect(
+        entry.diagnostics[label].irradianceGate,
+        `${entry.backend} ${label} missing the finalIrradiance gate`,
+      ).toBe(true);
+    }
+    for (const label of ["pbrEnvRealtime", "pbrEnvSpecRealtime"] as const)
+      expect(
+        entry.diagnostics[label].slateBakedEnv,
+        `${entry.backend} ${label} unexpectedly compiled with SLATE_BAKED_ENV`,
+      ).toBe(false);
+    expect(
+      Math.max(...entry.rows.pbrEnvSpecBaked[Math.floor(entry.rows.pbrEnvSpecBaked.length / 2)]!.slice(0, 3)),
+      `${entry.backend} pbrEnvSpecBaked centre pixel — environment specular lost`,
+    ).toBeGreaterThanOrEqual(40);
     for (const [realtime, baked, label] of [
       [entry.rows.pbrRealtime, entry.rows.pbrBaked, "PBR"],
       [entry.rows.celRealtime, entry.rows.celBaked, "CEL"],
+      [entry.rows.pbrEnvRealtime, entry.rows.pbrEnvBaked, "PBR env"],
+      [entry.rows.pbrEnvSpecRealtime, entry.rows.pbrEnvSpecBaked, "PBR env spec"],
     ] as const) {
       expect(baked.length, `${entry.backend} ${label} row`).toBe(
         realtime.length,

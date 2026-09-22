@@ -9,6 +9,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   PointLight,
+  RawCubeTexture,
   Scene,
   Vector3,
   type AbstractEngine,
@@ -232,9 +233,12 @@ export async function runBakedParityProof() {
           label: string;
           pixels: number[][];
           slateBaked: boolean;
+          slateBakedEnv?: boolean;
           lightDefines: number;
           bakedTexelSamples: number;
           bakedInjection: boolean;
+          irradianceGate?: boolean;
+          environmentIntensity?: number;
         }>;
         for (const [label, material, point, fill] of [
           ["pbrRealtime", realtimePbr, true, false],
@@ -268,6 +272,85 @@ export async function runBakedParityProof() {
             ),
           });
         }
+        // Environment group: a constant-color raw cube produces linear
+        // radiance C = [128,64,32]/255 in every direction, whose diffuse
+        // irradiance is exactly E = PI * C — a uniform atlas reproduces it.
+        // Both realtime lights stay disabled so only environment terms run.
+        const envFaces = Array.from({ length: 6 }, () =>
+          Uint8Array.from([128, 64, 32, 255]),
+        );
+        const environmentTexture = new RawCubeTexture(
+          scene,
+          envFaces,
+          1,
+          Constants.TEXTUREFORMAT_RGBA,
+          Constants.TEXTURETYPE_UNSIGNED_INT,
+          false,
+          false,
+          Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+        );
+        environmentTexture.gammaSpace = false;
+        scene.environmentTexture = environmentTexture;
+        const envAtlas = await analyticAtlas(engine, "environment", () => [
+          (Math.PI * 128) / 255,
+          (Math.PI * 64) / 255,
+          (Math.PI * 32) / 255,
+        ]);
+        atlasLeases.push(envAtlas);
+        const envSampling = {
+          texture: envAtlas.texture,
+          scale: [1, 1] as const,
+          offset: [0, 0] as const,
+          includesEnvironment: true,
+        };
+        const envRealtimePbr = pbr("Realtime env PBR", scene);
+        const envBakedPbr = pbr("Baked env PBR", scene);
+        new BakedIrradiancePlugin(envBakedPbr, envSampling);
+        const envSpecRealtimePbr = pbr("Realtime env spec PBR", scene);
+        envSpecRealtimePbr.metallic = 1;
+        envSpecRealtimePbr.roughness = 0.3;
+        const envSpecBakedPbr = pbr("Baked env spec PBR", scene);
+        envSpecBakedPbr.metallic = 1;
+        envSpecBakedPbr.roughness = 0.3;
+        new BakedIrradiancePlugin(envSpecBakedPbr, envSampling);
+        pointLight.setEnabled(false);
+        fillLight.setEnabled(false);
+        for (const [label, material] of [
+          ["pbrEnvRealtime", envRealtimePbr],
+          ["pbrEnvBaked", envBakedPbr],
+          ["pbrEnvSpecRealtime", envSpecRealtimePbr],
+          ["pbrEnvSpecBaked", envSpecBakedPbr],
+        ] as const) {
+          mesh.material = material;
+          const pixels = await row(engine, scene);
+          const effect = mesh.subMeshes[0]?.effect;
+          const defines = effect?.defines ?? "";
+          const fragment = effect?.fragmentSourceCode ?? "";
+          captures.push({
+            label,
+            pixels,
+            slateBaked: defines.split("\n").includes("#define SLATE_BAKED"),
+            slateBakedEnv: defines
+              .split("\n")
+              .includes("#define SLATE_BAKED_ENV"),
+            lightDefines:
+              defines.match(/#define (?:DIR|POINT|SPOT|HEMI)LIGHT\d+/g)
+                ?.length ?? 0,
+            bakedTexelSamples: (fragment.match(/slateBakedTexel/g) ?? [])
+              .length,
+            bakedInjection: fragment.includes(
+              "diffuseBase+=slateBakedIrradianceSample",
+            ),
+            irradianceGate:
+              fragment.includes("finalIrradiance=vec3(0.);") ||
+              fragment.includes("finalIrradiance=vec3f(0.);")
+                ? true
+                : false,
+            environmentIntensity: material.environmentIntensity,
+          });
+        }
+        scene.environmentTexture = null;
+        environmentTexture.dispose();
         result.push({
           backend,
           driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(),
@@ -296,6 +379,9 @@ export async function runBakedParityProof() {
                 lightDefines: entry.lightDefines,
                 bakedTexelSamples: entry.bakedTexelSamples,
                 bakedInjection: entry.bakedInjection,
+                slateBakedEnv: entry.slateBakedEnv ?? false,
+                irradianceGate: entry.irradianceGate ?? false,
+                environmentIntensity: entry.environmentIntensity,
               },
             ]),
           ),

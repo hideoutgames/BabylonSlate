@@ -113,6 +113,7 @@ export interface MaterialPaletteNode {
   id: string;
   title: string;
   category: string;
+  searchAliases?: readonly string[];
   pins: MaterialGraphPin[];
 }
 
@@ -123,6 +124,7 @@ export function materialPaletteNodes(
     id: definition.type,
     title: definition.title,
     category: definition.category,
+    searchAliases: definition.searchAliases,
     pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type, {}) }),
     defaultData: { ...newNodeDefaults(definition.type, {}), __material: true },
   }));

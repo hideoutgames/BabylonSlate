@@ -18,6 +18,45 @@ with a `domain`, and a **Material Function** is a reusable typed subgraph.
 Babylon-free. `@babylonslate/render` maps a lowered plan onto real Babylon
 NodeMaterial blocks and owns every GPU resource.
 
+## Noise and node search
+
+**Add Node → Noise** provides portable Babylon noise blocks in Material and
+Material Function graphs:
+
+| Node | Inputs | Outputs |
+| --- | --- | --- |
+| Perlin Noise | Coordinates (Vector 3, zero by default) | Value (Float) |
+| Voronoi Noise | UV (mesh/screen UV when unwired), Offset (0), Density (5) | Value and Cells (Float) |
+| Worley Noise | Coordinates (Vector 3, zero by default), Jitter (1) | Distances (Vector 2), F1 and F2 (Float) |
+
+Perlin Noise uses Babylon's **3D simplex Perlin** algorithm, with signed output
+approximately −1 to 1. Multiply by 0.5 and add 0.5 for a color in the 0–1 range.
+Worley returns the nearest and second-nearest Euclidean distances. These nodes
+use native NodeMaterial blocks for GLSL/WGSL and work in vertex and fragment
+stages across the supported material domains. They require no texture assets.
+Their cost weights account for the extra arithmetic, especially cellular noise.
+
+The render adapter subclasses Babylon 9.20's Voronoi block to correct its WGSL:
+the hash uses a local value instead of assigning to an immutable parameter,
+outputs dereference their pointers, and vector additions use explicit splats.
+The native algorithm and GLSL generation are preserved; the workaround is local
+to each NodeMaterial build.
+
+For a varying Perlin/Worley pattern, connect World Position or UV (which widens
+to Vector 3 with zero Z); use Combine to supply a different Z. Zero coordinates
+produce a constant sample. Multiply coordinates to change frequency. Voronoi Density controls its
+frequency directly, and Offset animates the cells. A supplied UV overrides the
+automatic UV source. Controls and connections persist through save/reopen and
+Material Function inlining.
+
+Add Node searches operator aliases and formulas as well as names/categories:
+`+`, `−`, `×`, `÷`, `%`, `^`, `**`, `√`, comparisons and expressions such as
+`a + b`, `sqrt(x)`, `pow(a,b)` and `lerp(a,b,t)`. Dot/Cross accept `·` / `×`,
+and Select accepts `?:` or `condition ? a : b`. Formula whitespace and case do
+not matter; symbol-only searches match explicit aliases. Search retains category
+and Context Sensitive filtering. `PerlinNoise` and `simplex` find Perlin Noise.
+Aliases are catalog metadata and are not stored in authored graph properties.
+
 ## Documents
 
 | Asset type | Document kind | New-asset file name |

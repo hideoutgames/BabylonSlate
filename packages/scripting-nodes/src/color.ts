@@ -9,6 +9,7 @@ import {
 export const colorNodes: NodeDefinition[] = [
   {
     id: "color.lerp",
+    searchAliases: ["mix","mix(a,b,t)","lerp(a,b,t)"],
     title: "Lerp Color",
     category: "color",
     pure: true,
@@ -29,6 +30,7 @@ export const colorNodes: NodeDefinition[] = [
   },
   {
     id: "color.multiply",
+    searchAliases: ["*","×","a * b"],
     title: "Multiply Color",
     category: "color",
     pure: true,
@@ -47,6 +49,7 @@ export const colorNodes: NodeDefinition[] = [
   },
   {
     id: "color.nearlyEqual",
+    searchAliases: ["≈","~="],
     title: "Color Nearly Equal",
     category: "color",
     pure: true,

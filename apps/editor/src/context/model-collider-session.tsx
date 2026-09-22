@@ -21,7 +21,7 @@ export type ModelColliderSessionValue = {
 const ModelColliderSessionContext = createContext<ModelColliderSessionValue>({
   selectedColliderId: null,
   setSelectedColliderId: () => {},
-  showCollision: true,
+  showCollision: false,
   setShowCollision: () => {},
   gizmoTool: "translate",
   setGizmoTool: () => {},
@@ -35,7 +35,7 @@ export function ModelColliderSessionProvider({
   const [selectedColliderId, setSelectedColliderId] = useState<string | null>(
     null,
   );
-  const [showCollision, setShowCollision] = useState(true);
+  const [showCollision, setShowCollision] = useState(false);
   const [gizmoTool, setGizmoTool] =
     useState<ModelColliderGizmoTool>("translate");
   const value = useMemo(

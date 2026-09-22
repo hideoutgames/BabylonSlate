@@ -45,6 +45,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Exporter", link: "/architecture/exporter" },
       { text: "Source control", link: "/architecture/source-control" },
       { text: "Testing", link: "/architecture/testing" },
+      { text: "CI performance", link: "/ci-performance" },
     ],
   },
   {
@@ -52,7 +53,10 @@ export const docsSidebar: SidebarItem[] = [
     collapsed: false,
     items: [
       { text: "Performance budget", link: "/design/perf-budget" },
-      { text: "Renderer qualification", link: "/design/renderer-qualification" },
+      {
+        text: "Renderer qualification",
+        link: "/design/renderer-qualification",
+      },
       { text: "Gestures", link: "/design/gestures" },
     ],
   },

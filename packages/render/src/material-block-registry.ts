@@ -1,6 +1,7 @@
 import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
+import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -59,6 +60,8 @@ import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/ima
 import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
 import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
 import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
+import { SimplexPerlin3DBlock } from "@babylonjs/core/Materials/Node/Blocks/simplexPerlin3DBlock";
+import { WorleyNoise3DBlock } from "@babylonjs/core/Materials/Node/Blocks/worleyNoise3DBlock";
 import type {
   MaterialOperation,
   MaterialValueType,
@@ -401,6 +404,18 @@ const attributeInput = (
 };
 
 const ADAPTERS: Record<string, BlockAdapter> = {
+  "noise.perlin": ({ name }) => {
+    const block = new SimplexPerlin3DBlock(name);
+    return single(block, { coordinates: block.seed }, { out: block.output });
+  },
+  "noise.voronoi": ({ name }) => {
+    const block = new SlateVoronoiNoiseBlock(name);
+    return single(block, { uv: block.seed, offset: block.offset, density: block.density }, { out: block.output, cells: block.cells });
+  },
+  "noise.worley": ({ name }) => {
+    const block = new WorleyNoise3DBlock(name);
+    return single(block, { coordinates: block.seed, jitter: block.jitter }, { out: block.output, f1: block.x, f2: block.y });
+  },
   "math.add": binary(AddBlock),
   "math.subtract": binary(SubtractBlock),
   "math.multiply": binary(MultiplyBlock),

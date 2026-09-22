@@ -240,6 +240,8 @@ export interface SourceControlProjectSettings {
 
 export interface PluginEnableOverride {
   enabled: boolean;
+  /** Exact compatibility context explicitly accepted with Try Enable Anyway. */
+  acceptedCompatibility?: string;
 }
 
 export const DEFAULT_EXPORT_FILE_COUNT_WARN = 800;
@@ -609,7 +611,13 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const enabled = (raw as { enabled?: unknown }).enabled;
     if (typeof enabled !== "boolean") continue;
-    out[guid] = { enabled };
+    const accepted = (raw as { acceptedCompatibility?: unknown }).acceptedCompatibility;
+    out[guid] = {
+      enabled,
+      ...(enabled && typeof accepted === "string" && accepted.trim() !== ""
+        ? { acceptedCompatibility: accepted }
+        : {}),
+    };
   }
   return out;
 }

@@ -78,6 +78,7 @@ export const enumNodes: NodeDefinition[] = [
   },
   {
     id: "enum.equals",
+    searchAliases: ["=", "==", "===", "a == b"],
     title: "Equal Enum",
     category: "enum",
     pure: true,
@@ -95,6 +96,7 @@ export const enumNodes: NodeDefinition[] = [
   },
   {
     id: "enum.notEquals",
+    searchAliases: ["!=", "!==", "≠", "a != b"],
     title: "Not Equal Enum",
     category: "enum",
     pure: true,

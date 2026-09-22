@@ -125,11 +125,13 @@ describe("baked receiver materials", () => {
     expect(indirect.excludedMeshes).not.toContain(mesh);
   });
 
-  it("zeroes PBR environment intensity only when the atlas carries environment irradiance", () => {
+  it("keeps PBR environment intensity when the atlas carries environment irradiance", () => {
     const scene = host();
     const receivers = new BakedReceiverMaterials(scene);
     const baked = MeshBuilder.CreateBox("baked-env", {}, scene);
-    baked.material = new PBRMaterial("env", scene);
+    const envMaterial = new PBRMaterial("env", scene);
+    envMaterial.environmentIntensity = 0.5;
+    baked.material = envMaterial;
     const withEnvironment = receivers.apply(
       baked,
       bindingFor(
@@ -139,7 +141,7 @@ describe("baked receiver materials", () => {
       sources,
       () => null,
     );
-    expect((withEnvironment as PBRMaterial).environmentIntensity).toBe(0);
+    expect((withEnvironment as PBRMaterial).environmentIntensity).toBe(0.5);
     const directOnly = MeshBuilder.CreateBox("direct-only", {}, scene);
     const directMaterial = new PBRMaterial("direct", scene);
     directMaterial.environmentIntensity = 0.5;

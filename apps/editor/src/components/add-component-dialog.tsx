@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   CatalogDialog,
-  CatalogItemButton,
+  CatalogResultRow,
   TypeVisualIcon,
   resolveTypeVisual,
   useCatalogFilter,
@@ -81,27 +81,23 @@ export function AddComponentDialog({
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No matches</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {visible.map((item) => (
-            <CatalogItemButton
+        <div role="group" aria-label="Components" className="flex flex-col">
+          {visible.map((item, index) => (
+            <CatalogResultRow
               key={item.id}
               data-testid={`${testId}-item-${item.id}`}
-              onClick={() => {
+              title={item.label}
+              description={item.description}
+              leading={<TypeVisualIcon visual={visualForAddComponentItem(item)} />}
+              striped={index % 2 === 1}
+              onSelect={() => {
                 onSelect({
                   classId: item.classId,
                   ...(item.properties ? { properties: item.properties } : {}),
                 });
                 onOpenChange(false);
               }}
-            >
-              <TypeVisualIcon visual={visualForAddComponentItem(item)} />
-              <span className="flex min-w-0 flex-col items-start gap-0.5">
-                <span className="truncate">{item.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {item.description}
-                </span>
-              </span>
-            </CatalogItemButton>
+            />
           ))}
         </div>
       )}

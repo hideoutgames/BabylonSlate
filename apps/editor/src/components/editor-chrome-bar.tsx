@@ -68,29 +68,12 @@ import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import {
-  classParentLookup,
-  materialDomainsFromAssets,
-} from "../lib/content-browser-helpers";
-import { classIdForGraphPath } from "../services/script-compiler";
-import {
-  classHierarchyFromParentOf,
-  classMemberSymbolsFromGraphs,
-  knownClassIdSet,
-  validateSerializedGraph,
-} from "../services/graph-validation";
-import {
-  collectClassGraphsForPalette,
-  collectGraphTypeAssets,
-  collectSceneDocumentsForPalette,
-  typeSchemasFromGraphAssets,
-} from "../lib/logic-graph-document";
-import { sceneAssetClassId } from "@babylonslate/object-model";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
+import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { PlayDebugMenuItems } from "./play-debug-menu-items";
@@ -251,7 +234,7 @@ export function EditorChromeBar({
   onCloseAllDocuments,
 }: {
   onCloseProject?: () => void;
-  onSaveProject?: () => void;
+  onSaveProject?: () => Promise<boolean>;
   onCloseDocument?: (id: string) => void;
   onCloseAllDocuments?: () => void;
 }) {
@@ -615,7 +598,10 @@ export function EditorChromeBar({
       >
         <div className="editor-global-toolbar-start">
           <span className="relative inline-flex">
-            <IconActionButton
+            <ActionFeedbackButton
+              key={`save:${projectName}`}
+              icon={SaveAllIcon}
+              iconOnly
               label={
                 dirtyDocuments.length > 0 || projectDirty
                   ? "Save All (unsaved changes)"
@@ -623,14 +609,11 @@ export function EditorChromeBar({
               }
               data-testid="save-all-project"
               className="chrome-icon-button"
-              disabled={!projectName || (dirtyDocuments.length === 0 && !projectDirty)}
-              onClick={() => {
-                if (onSaveProject) onSaveProject();
-                else void saveAll();
-              }}
-            >
-              <SaveAllIcon />
-            </IconActionButton>
+              disabled={
+                !projectName || (dirtyDocuments.length === 0 && !projectDirty)
+              }
+              onAction={onSaveProject ?? saveAll}
+            />
             {dirtyDocuments.length > 0 || projectDirty ? (
               <span
                 data-testid="save-all-dirty"
@@ -638,84 +621,44 @@ export function EditorChromeBar({
               />
             ) : null}
           </span>
-          <IconActionButton
+          <ActionFeedbackButton
+            key={`undo:${activeDocumentId}`}
+            icon={Undo2Icon}
+            iconOnly
             label="Undo"
             data-testid="undo-document"
             className="chrome-icon-button"
             disabled={!canUndoActiveDocument}
-            onClick={() => undoActiveDocument()}
-          >
-            <Undo2Icon />
-          </IconActionButton>
-          <IconActionButton
+            onAction={() => undoActiveDocument()}
+          />
+          <ActionFeedbackButton
+            key={`redo:${activeDocumentId}`}
+            icon={Redo2Icon}
+            iconOnly
             label="Redo"
             data-testid="redo-document"
             className="chrome-icon-button"
             disabled={!canRedoActiveDocument}
-            onClick={() => redoActiveDocument()}
-          >
-            <Redo2Icon />
-          </IconActionButton>
+            onAction={() => redoActiveDocument()}
+          />
           {activeKind === "graph" ? (
             <>
-              <Button
-                size="sm"
-                variant="outline"
+              <ActionFeedbackButton
+                key={`compile:${activeDocumentId}`}
+                icon={HammerIcon}
                 data-testid="compile-graph"
                 className="chrome-action-button"
-                aria-label="Compile"
+                label="Compile"
                 disabled={!projectName || !graphsNeedCompile}
-                onClick={() => {
-                  const graphs = openDocuments.filter(
-                    (doc) => doc.ref.kind === "graph" && doc.content,
-                  );
-                  setDiagnostics(
-                    graphs.flatMap((doc) => {
-                      const parentOf = classParentLookup(
-                        assetRegistry?.list() ?? [],
-                      );
-                      const assets = assetRegistry?.list() ?? [];
-                      const classGraphs = collectClassGraphsForPalette({
-                        assets,
-                        openDocuments,
-                        classIdForPath: classIdForGraphPath,
-                      });
-                      const typeSchemas = typeSchemasFromGraphAssets(
-                        collectGraphTypeAssets({
-                          assets,
-                          openDocuments,
-                        }),
-                      );
-                      const sceneClassIds = collectSceneDocumentsForPalette({
-                        assets,
-                        openDocuments,
-                      }).map((scene) => sceneAssetClassId(scene.guid));
-                      return [
-                        ...validateSerializedGraph(
-                          doc.content as SerializedGraph,
-                          {
-                            assetGuid: doc.ref.path,
-                            graphId: doc.id,
-                            classId: classIdForGraphPath(doc.ref.path),
-                            hierarchy: classHierarchyFromParentOf(parentOf),
-                            members: classMemberSymbolsFromGraphs(classGraphs, {
-                              parentOf,
-                            }),
-                            knownClassIds: knownClassIdSet(parentOf, [
-                              ...Object.keys(classGraphs),
-                              ...sceneClassIds,
-                            ]),
-                            enums: typeSchemas.enums,
-                            structs: typeSchemas.structs,
-                            materialDomains: materialDomainsFromAssets(
-                              assetRegistry?.list() ?? [],
-                              openDocuments,
-                            ),
-                            parentOf,
-                            otherClassGraphs: classGraphs,
-                          },
-                        ),
-                        ...physicsPairingDiagnostics(
+                onAction={async () => {
+                  activateDockPanel("compiler-results");
+                  const result = await collectPlayPreviewScripts();
+                  const diagnostics = [
+                    ...result.diagnostics,
+                    ...openDocuments
+                      .filter((doc) => doc.ref.kind === "graph" && doc.content)
+                      .flatMap((doc) =>
+                        physicsPairingDiagnostics(
                           [
                             {
                               id: PREFAB_ROOT_ID,
@@ -724,21 +667,22 @@ export function EditorChromeBar({
                                 [],
                             },
                           ],
-                          {
-                            assetGuid: doc.ref.path,
-                            graphId: doc.id,
-                          },
+                          { assetGuid: doc.ref.path, graphId: doc.id },
                         ),
-                      ];
-                    }),
+                      ),
+                  ];
+                  setDiagnostics(diagnostics);
+                  const errors = diagnostics.filter(
+                    (entry) => entry.severity === "error",
                   );
-                  void collectPlayPreviewScripts();
-                  activateDockPanel("compiler-results");
+                  if (errors.length)
+                    throw new Error(
+                      `${errors.length} Error(s). See Compiler Results.`,
+                    );
                 }}
               >
-                <HammerIcon data-icon="inline-start" />
                 <span className="chrome-optional-label">Compile</span>
-              </Button>
+              </ActionFeedbackButton>
               {!phone ? (
                 <CompilationErrorIndicator
                   errorCount={errorCount}
@@ -748,22 +692,22 @@ export function EditorChromeBar({
             </>
           ) : null}
           {activeKind === "material" ? (
-            <Button
-              size="sm"
-              variant="outline"
+            <ActionFeedbackButton
+              key={`render:${activeDocumentId}`}
+              icon={RefreshCwIcon}
+              feedback={materialRenderControl?.feedback}
               data-testid="material-render"
               className="chrome-action-button"
-              aria-label="Render"
+              label="Render"
               disabled={
                 !projectName ||
                 !materialRenderControl ||
                 materialRenderControl.disabled
               }
-              onClick={() => materialRenderControl?.requestRender()}
+              onAction={() => materialRenderControl?.requestRender()}
             >
-              <RefreshCwIcon data-icon="inline-start" />
               <span className="chrome-optional-label">Render</span>
-            </Button>
+            </ActionFeedbackButton>
           ) : null}
         </div>
 

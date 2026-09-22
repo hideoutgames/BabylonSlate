@@ -256,8 +256,8 @@ export type PluginDependencyStatusLabel =
   | "Missing Dependency"
   | "Blocked Dependency"
   | "Dependency Cycle"
-  | "Engine Range"
-  | "Unsatisfiable Range";
+  | "Engine Version Changed"
+  | "Dependency Version Changed";
 
 export function pluginDependencyStatus(
   pluginGuid: string,
@@ -288,14 +288,14 @@ export function pluginDependencyStatus(
   if (
     forPlugin.some((diagnostic) => diagnostic.code === "plugin.unsatisfiable")
   ) {
-    return "Unsatisfiable Range";
+    return "Dependency Version Changed";
   }
   if (
     forPlugin.some(
       (diagnostic) => diagnostic.code === "plugin.engine_unsatisfiable",
     )
   ) {
-    return "Engine Range";
+    return "Engine Version Changed";
   }
   return "ok";
 }

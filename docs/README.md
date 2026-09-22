@@ -47,6 +47,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
 | [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
+| [ci-performance.md](ci-performance.md) | CI baseline, independent browser build pilot and rollback |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 | [development/distribution.md](development/distribution.md) | Explicit native distribution, versioning, setup, and recovery |
 | [agents/qa-2026-09-register.md](agents/qa-2026-09-register.md) | September exploratory QA dispositions, evidence and implementation results |

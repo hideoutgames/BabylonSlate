@@ -9,6 +9,13 @@ import {
 } from "./plugin-settings";
 
 describe("PluginSettings payload", () => {
+  it.each(["0.1", "2.7", "1.0.0", "preview-2"])("preserves the author version %s and imported engine identity", (version) => {
+    const settings = normalizePluginSettings({ version, engineVersion: "older" }, { pluginGuid: "pack" });
+    expect(settings.version).toBe(version);
+    expect(settings.engineVersion).toBe("older");
+    expect(normalizePluginSettings({}, { pluginGuid: "pack" }).engineVersion).toBe("");
+  });
+
   it("creates identity, maturity, EUO, export-default, and dependency fields", () => {
     const payload = createDefaultPluginSettings({
       pluginGuid: "plug-1",
@@ -25,7 +32,7 @@ describe("PluginSettings payload", () => {
     expect(payload.beta).toBe(false);
     expect(payload.editorUtilityObjects).toEqual([]);
     expect(payload.enabledByDefault).toBe(false);
-    expect(payload.engineVersionRange).toBe("^0.0.0");
+    expect(payload.engineVersion).toBe("0.0.1");
     expect(payload.pluginDependencies).toEqual([]);
   });
 
@@ -36,8 +43,8 @@ describe("PluginSettings payload", () => {
         version: "1.2.0",
         editorUtilityObjects: [" Tools ", "Tools", "", "Inspector"],
         pluginDependencies: [
-          { guid: " dep-1 ", versionRange: "^1.0.0" },
-          { guid: "", versionRange: "^2.0.0" },
+          { guid: " dep-1 ", version: "1.0.0" },
+          { guid: "", version: "2.0.0" },
         ],
         experimental: true,
         enabledByDefault: true,
@@ -51,7 +58,7 @@ describe("PluginSettings payload", () => {
     expect(payload.enabledByDefault).toBe(true);
     expect(payload.editorUtilityObjects).toEqual(["Tools", "Inspector"]);
     expect(payload.pluginDependencies).toEqual([
-      { guid: "dep-1", versionRange: "^1.0.0" },
+      { guid: "dep-1", version: "1.0.0" },
     ]);
   });
 

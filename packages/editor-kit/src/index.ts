@@ -7,6 +7,7 @@ export {
   type CatalogCategoryGroup,
   type CatalogDialogProps,
 } from "./catalog-dialog";
+export { CatalogResultRow, type CatalogResultRowProps } from "./catalog-result-row";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
 export { DisclosureSection, type DisclosureSectionProps } from "./disclosure-section";

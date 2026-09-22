@@ -51,6 +51,7 @@ export const rotatorNodes: NodeDefinition[] = [
   },
   {
     id: "rotator.lerp",
+    searchAliases: ["lerp(a,b,t)"],
     title: "Lerp Rotator",
     category: "rotator",
     pure: true,
@@ -119,6 +120,7 @@ export const rotatorNodes: NodeDefinition[] = [
   },
   {
     id: "rotator.nearlyEqual",
+    searchAliases: ["≈","~="],
     title: "Rotator Nearly Equal",
     category: "rotator",
     pure: true,
