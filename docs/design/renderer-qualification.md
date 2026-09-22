@@ -2,6 +2,23 @@
 
 ## Current continuation status — 22 September 2026
 
+Latest integration checkpoint: normal merge `106abcaf` incorporates main
+`93638dde`, retaining both catalog search aliases and Scalability descriptions
+through the shared result row. At `3bc0146b`, the scoped editor typecheck passed
+and the two explicit files `packages/graph-ui/src/node-palette.test.tsx` and
+`packages/render/src/shared-outline-material.test.ts` passed 23 tests. Eight
+selected catalog/cost-fixture files passed lint at `106abcaf`; the subsequent
+cost-fixture instrumentation import repair was included in the passing editor
+typecheck. Earlier rendering results below remain scoped to their revisions.
+
+The new fixed-output cost fixture is implemented, but its two cases and the two
+geometry cases did not execute: build admission required 4 GiB including the
+retained 2 GiB reserve, while observed free memory ranged from roughly 3.2 to
+3.9 GiB. Queued attempts were withdrawn when they blocked smaller work; no other
+agent's processes were stopped. Current-build Computer Use, cost, geometry,
+export/settings acceptance and required current-head CI remain **BLOCKED or
+PENDING**, not passed. PR #651 remains draft and unmerged.
+
 The shared renderer, editor selection host, authored OutlineComponent, default CEL
 outlines, typed settings/Graph controls and runtime/export wiring are implemented
 on PR #651 but **not accepted**. Earlier tables below describe their recorded
