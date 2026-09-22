@@ -79,10 +79,27 @@ Normal inspector, outliner, history and pointer interactions produced these
   Pointer orbit changed the visible outlines around the opaque blocker
   ([orbit](../assets/renderer-qualification/2026-09-22-computer-use-cel/orbit-occlusion.png)).
 
+Selecting WebGPU in Project Settings recreated the engine. The renderer confirmed
+native **WebGPU / NVIDIA / turing**, forward, at the same dimensions and scale
+([diagnostics](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-diagnostics.json)).
+The same pointer/inspector route passed
+[adjoining silhouettes](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-adjoining.png),
+[strict hidden geometry with selection](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-strict-hidden.png),
+[intentional through-mesh](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-through-mesh.png)
+and [survivors after component removal](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-survivors.png).
+Disabling both components, deselecting, then disabling global outlines removed
+the visible silhouettes. The settled ledger contained only the existing 65,536
+area-light bytes; depth and postprocess were zero, with zero pending bytes
+([disabled pixels](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-disabled.png),
+[retirement diagnostics](../assets/renderer-qualification/2026-09-22-computer-use-cel/webgpu-disabled-diagnostics.json)).
+Direct GPU timing was unsupported on this WebGPU adapter. Individual diagnostic
+CPU samples are not a controlled performance comparison.
+
 This compact primitive route does not replace the automated shared-instance,
-animation/material/LOD matrix. All-consumers-disabled manual retirement, native
-WebGPU repetition, the remaining texture-preparation and Class Graph routes,
-independent output acceptance and hardware cost remain open. The PR is unmerged.
+animation/material/LOD matrix. The remaining texture-preparation and Class Graph
+routes, independent output acceptance and hardware cost remain open. Retrying
+normal Texture import in Chrome still failed at `fileChooser.setFiles` with
+`Not allowed`; no Texture preparation pass is claimed. The PR is unmerged.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
