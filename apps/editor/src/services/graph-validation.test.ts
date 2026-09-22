@@ -1026,6 +1026,19 @@ describe("scriptPinCompatibility", () => {
 });
 
 describe("scriptPaletteNodes", () => {
+  it("keeps operator and formula aliases on typed arithmetic palette choices", () => {
+    const nodes = scriptPaletteNodes(registry);
+    for (const [id, alias] of [
+      ["math.add", "+"], ["math.add_int", "+"], ["vector.add3", "+"],
+      ["math.mul", "×"], ["vector.div2", "÷"], ["math.lessEqual", "≤"],
+      ["math.notEquals", "!="], ["boolean.and", "&&"],
+      ["math.power", "**"], ["math.sqrt", "sqrt(x)"],
+      ["vector.dot3", "dot(a,b)"], ["color.multiply", "*"], ["quat.multiply", "*"],
+    ]) {
+      expect(nodes.find((node) => node.id === id)?.searchAliases, id).toContain(alias);
+    }
+  });
+
   it("embeds registry pins so Add Node is not an empty box", () => {
     const nodes = scriptPaletteNodes(registry);
     const begin = nodes.find((node) => node.id === "flow.event.beginPlay");

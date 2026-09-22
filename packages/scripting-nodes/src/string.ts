@@ -147,6 +147,7 @@ export const stringNodes: NodeDefinition[] = [
   },
   {
     id: "string.equals",
+    searchAliases: ["=","==","===","a == b"],
     title: "Equals",
     category: "string",
     pure: true,

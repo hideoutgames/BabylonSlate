@@ -29,6 +29,42 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  for (const domain of ["surface", "postProcess", "particle"] as const) {
+    it.each(["perlin", "voronoi", "worley"])(`compiles every %s noise output in ${domain}`, async (kind) => {
+      const doc = createDefaultMaterialDocument("Noise", domain);
+      doc.edges = [];
+      node(doc, "noise", `noise.${kind}`);
+      node(doc, "channels", "vector.combine");
+      if (kind === "worley") {
+        node(doc, "distanceLength", "vector.length");
+        wire(doc, "noise", "out", "distanceLength", "value");
+        wire(doc, "distanceLength", "out", "channels", "x");
+        wire(doc, "noise", "f1", "channels", "y");
+        wire(doc, "noise", "f2", "channels", "z");
+      } else {
+        wire(doc, "noise", "out", "channels", "x");
+        if (kind === "voronoi") wire(doc, "noise", "cells", "channels", "y");
+        else {
+          node(doc, "secondNoise", "noise.perlin", { "default:coordinates": [1, 2, 3] });
+          wire(doc, "secondNoise", "out", "channels", "y");
+        }
+      }
+      wire(doc, "channels", domain === "surface" ? "xyz" : "xyzw", "output", domain === "surface" ? "emissive" : "color");
+      // Noise is legal in the vertex stage too; sharing one operation between
+      // displacement and color must not break Babylon's stage realization.
+      if (domain === "surface") wire(doc, "channels", "xyz", "output", "worldPositionOffset");
+      const result = await compile(doc);
+      const block = result.material.getBlockByName("noise")!;
+      expect(block.getInputByName("seed")?.isConnected).toBe(true);
+      if (kind === "voronoi") {
+        expect(block.getInputByName("density")?.connectedPoint?.ownerBlock).toHaveProperty("value", 5);
+        expect(block.getInputByName("offset")?.connectedPoint?.ownerBlock).toHaveProperty("value", 0);
+      } else if (kind === "worley") {
+        expect(block.getInputByName("jitter")?.connectedPoint?.ownerBlock).toHaveProperty("value", 1);
+      }
+    });
+  }
+
   it("keeps different legacy GLSL expressions distinct when numeric node IDs sanitize alike", async () => {
     const doc = createDefaultMaterialDocument();
     doc.shadingModel = "unlit";
