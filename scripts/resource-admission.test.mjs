@@ -17,17 +17,25 @@ import {
   inheritedLease,
   publish,
   workloadFor,
+  claimInheritedLease,
+  resourceStateDirectory,
 } from "./resource-admission.mjs";
 import { runCommand } from "./process-runner.mjs";
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "test admission "));
   t.after(() => rm(directory, { recursive: true, force: true }));
+  const configPath = join(directory, "machine-default.json");
+  await writeFile(
+    configPath,
+    JSON.stringify({ version: 1, profile: "standard" }),
+  );
   return {
     directory,
-    env: { BL_LOCAL_RESOURCE_CONFIG: "" },
+    env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: configPath },
     pollMs: 5,
     freeMemory: () => 16 * 1024 ** 3,
+    memoryLimit: () => 16 * 1024 ** 3,
   };
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
@@ -131,7 +139,10 @@ test("a transient Windows replacement lock retains the old reservation until ato
   });
   assert.equal(attempts, 3);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
-  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+  assert.deepEqual((await readdir(options.directory)).sort(), [
+    "machine-default.json",
+    "ticket.json",
+  ]);
   let failures = 0;
   await assert.rejects(
     publish(path, previous, async () => {
@@ -142,7 +153,10 @@ test("a transient Windows replacement lock retains the old reservation until ato
   );
   assert.equal(failures, 1);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), next);
-  assert.deepEqual(await readdir(options.directory), ["ticket.json"]);
+  assert.deepEqual((await readdir(options.directory)).sort(), [
+    "machine-default.json",
+    "ticket.json",
+  ]);
 });
 
 test("four independent callers admit three shared workers and preserve FIFO progress", async (t) => {
@@ -191,7 +205,7 @@ test("lightweight work can bypass blocked older work only three times across pro
     try {
       const lease = await acquireResources(
         {workers:1,browsers:0,memoryGiB:0.75},
-        {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3});
+        {directory:process.argv[1],env:${JSON.stringify(options.env)},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3});
       await lease.release();
       process.stdout.write('admitted');
     } catch (error) {
@@ -273,7 +287,7 @@ test("another heavy request cannot bypass an unfit older request", async (t) => 
   }
 });
 
-test("machine low-memory settings serialize heavy phases while lightweight work still fits", async (t) => {
+test("machine low-memory settings serialize roots including lightweight work", async (t) => {
   const options = await fixture(t);
   const config = join(options.directory, "machine.json");
   await writeFile(
@@ -286,7 +300,7 @@ test("machine low-memory settings serialize heavy phases while lightweight work 
       maxBypasses: 3,
     }),
   );
-  options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
+  options.env = { ...options.env, BL_LOCAL_RESOURCE_CONFIG: config };
   const first = await acquireResources(workloadFor("dom", {}), options);
   const abort = new AbortController();
   let reportQueued;
@@ -310,11 +324,13 @@ test("machine low-memory settings serialize heavy phases while lightweight work 
       false,
       "a second heavy phase must wait for the first",
     );
-    const light = await acquireResources(workloadFor("tooling", {}), {
-      ...options,
-      timeoutMs: 3000,
-    });
-    await light.release();
+    await assert.rejects(
+      acquireResources(workloadFor("tooling", {}), {
+        ...options,
+        timeoutMs: 100,
+      }),
+      /deadline/,
+    );
     assert.equal(admitted, false);
     await first.release();
     await (await pending).release();
@@ -329,8 +345,8 @@ test("machine low-memory settings serialize heavy phases while lightweight work 
 for (const scenario of [
   {
     name: "original headroom",
-    initial: { profile: "standard" },
-    updated: { profile: "low-memory" },
+    initial: { profile: "standard", reserveGiB: 5 },
+    updated: { profile: "standard", reserveGiB: 4 },
     freeGiB: 5,
     older: "build",
     first: null,
@@ -343,7 +359,7 @@ for (const scenario of [
     freeGiB: 16,
     older: "browser",
     first: "dom",
-    allowLight: true,
+    allowLight: false,
   },
   {
     name: "original zero-bypass protection",
@@ -362,7 +378,7 @@ for (const scenario of [
       config,
       JSON.stringify({ version: 1, ...scenario.initial }),
     );
-    options.env = { BL_LOCAL_RESOURCE_CONFIG: config };
+    options.env = { ...options.env, BL_LOCAL_RESOURCE_CONFIG: config };
     options.freeMemory = () => scenario.freeGiB * 1024 ** 3;
     const first = scenario.first
       ? await acquireResources(workloadFor(scenario.first, {}), options)
@@ -491,7 +507,7 @@ test("separate processes share one browser budget and release all tickets", asyn
   const script = `import {acquireResources} from ${JSON.stringify(moduleUrl)};
     import {appendFile} from 'node:fs/promises';
     import {setTimeout as delay} from 'node:timers/promises';
-    const lease = await acquireResources({workers:1,browsers:1,memoryGiB:1}, {directory:process.argv[1],env:{BL_LOCAL_RESOURCE_CONFIG:''},pollMs:5,freeMemory:()=>16*1024**3});
+    const lease = await acquireResources({workers:1,browsers:1,memoryGiB:1}, {directory:process.argv[1],env:${JSON.stringify(options.env)},pollMs:5,freeMemory:()=>16*1024**3});
     await appendFile(process.argv[2], JSON.stringify({event:'start',pid:process.pid})+'\\n');
     await delay(30);
     await appendFile(process.argv[2], JSON.stringify({event:'end',pid:process.pid})+'\\n');
@@ -535,4 +551,124 @@ test("nested commands reuse only a live lease with a matching token and sufficie
   assert.equal(await inheritedLease(value, { ...small, browsers: 1 }), false);
   await lease.release();
   assert.equal(await inheritedLease(value, small), false);
+});
+
+test("nested stages reject parallel siblings and resource upgrades without waiting", async (t) => {
+  const options = await fixture(t);
+  const lease = await acquireResources(
+    { workers: 3, browsers: 1, memoryGiB: 3 },
+    options,
+  );
+  const value = JSON.stringify({ ticket: lease.ticket, token: lease.token });
+  const first = await claimInheritedLease(value, small);
+  await assert.rejects(claimInheritedLease(value, small), /Parallel nested/);
+  const inherited = JSON.stringify({
+    ticket: first.ticket,
+    token: first.token,
+    scope: first.scope,
+  });
+  await assert.rejects(
+    claimInheritedLease(inherited, { ...small, memoryGiB: 2 }),
+    /exceeds/,
+  );
+  const child = await claimInheritedLease(inherited, small);
+  await assert.rejects(first.release(), /descendants/);
+  await child.release();
+  await first.release();
+  await (await claimInheritedLease(value, small)).release();
+  await lease.release();
+});
+
+test("native Windows state is shared across shell temporary directories", () => {
+  assert.equal(
+    resourceStateDirectory(
+      { LOCALAPPDATA: "C:/Users/fixture/AppData/Local", TEMP: "C:/one" },
+      "win32",
+    ),
+    resourceStateDirectory(
+      { LOCALAPPDATA: "C:/Users/fixture/AppData/Local", TMP: "D:/two" },
+      "win32",
+    ),
+  );
+});
+
+test("three independent low-memory roots serialize light and heavy work", async (t) => {
+  const options = await fixture(t);
+  await writeFile(
+    options.env.BL_LOCAL_RESOURCE_CONFIG,
+    JSON.stringify({ version: 1, profile: "low-memory" }),
+  );
+  const eventsPath = join(options.directory, "events.jsonl");
+  const moduleUrl = new URL("./resource-admission.mjs", import.meta.url).href;
+  const script = `import {acquireResources, workloadFor} from ${JSON.stringify(moduleUrl)};
+    import {appendFile} from 'node:fs/promises';
+    import {setTimeout as delay} from 'node:timers/promises';
+    const lease = await acquireResources(workloadFor(process.argv[3], {}), {directory:process.argv[1],env:${JSON.stringify(options.env)},pollMs:5,freeMemory:()=>16*1024**3});
+    await appendFile(process.argv[2], 'start\\n');
+    await delay(30);
+    await appendFile(process.argv[2], 'end\\n');
+    await lease.release();`;
+  const results = await Promise.all(
+    ["tooling", "build", "unit"].map((profile) =>
+      runCommand(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          script,
+          options.directory,
+          eventsPath,
+          profile,
+        ],
+        { capture: true },
+      ),
+    ),
+  );
+  for (const result of results) assert.equal(result.code, 0, result.output);
+  assert.equal(
+    await readFile(eventsPath, "utf8"),
+    "start\nend\nstart\nend\nstart\nend\n",
+  );
+});
+
+test("startup reservations block bursts and unknown memory fails closed", async (t) => {
+  const options = await fixture(t);
+  const first = await acquireResources({ ...small, memoryGiB: 2 }, options);
+  await assert.rejects(
+    acquireResources(
+      { ...small, memoryGiB: 2 },
+      { ...options, freeMemory: () => 7 * 1024 ** 3, timeoutMs: 50 },
+    ),
+    /deadline/,
+  );
+  await first.release();
+  for (const free of [0, NaN, undefined])
+    await assert.rejects(
+      acquireResources(small, {
+        ...options,
+        freeMemory: () => free,
+        timeoutMs: 50,
+      }),
+      /deadline/,
+    );
+});
+
+test("abrupt owned launcher death retains uncertain cleanup instead of freeing capacity", async (t) => {
+  const options = await fixture(t);
+  await mkdir(join(options.directory, "queue"));
+  const ticket = join(options.directory, "queue", "000-owned.json");
+  await writeFile(
+    ticket,
+    JSON.stringify({
+      pid: 2147483647,
+      active: true,
+      ownershipVersion: 2,
+      request: small,
+    }),
+  );
+  await assert.rejects(
+    acquireResources(small, options),
+    /Uncertain owned process cleanup/,
+  );
+  assert.equal(JSON.parse(await readFile(ticket, "utf8")).active, true);
 });

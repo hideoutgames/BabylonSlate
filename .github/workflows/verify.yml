@@ -10,6 +10,12 @@ concurrency:
   group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  BL_EXECUTION_POLICY: hosted-ci
+
 jobs:
   # static + unit + 7 e2e shards = 9 jobs/PR. Two ready PRs = 18. After one
   # merges, remaining PR + main Verify + Preview = 19. A 10th Verify job

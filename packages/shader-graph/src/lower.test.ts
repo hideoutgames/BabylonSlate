@@ -122,7 +122,7 @@ describe("material lowering", () => {
     expect(multiply?.resolvedType).toBe("vec3");
   });
 
-  it("inserts an explicit splat when a float feeds a vector pin", () => {
+  it("records an explicit conversion when a float feeds a vector pin", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       {
@@ -164,7 +164,7 @@ describe("material lowering", () => {
       (operation) => operation.nodeType === "math.multiply",
     )!;
     expect(multiply.inputs.b).toMatchObject({
-      convert: { kind: "splat", to: "vec3" },
+      conversions: [{ from: "float", to: "vec3" }],
     });
   });
 
@@ -182,6 +182,58 @@ describe("material lowering", () => {
       type: "vec3",
       value: [0, 0, 0],
     });
+  });
+
+  it.each([true, false])("preserves narrowing through nested function boundaries (wired=%s)", (wired) => {
+    const inner = createDefaultMaterialFunctionDocument("Inner");
+    inner.inputs[0] = { ...inner.inputs[0]!, type: "vec2", defaultValue: [0, 0] };
+    inner.outputs[0]!.type = "vec4";
+    const outer = createDefaultMaterialFunctionDocument("Outer");
+    outer.inputs[0] = { ...outer.inputs[0]!, type: "vec4", defaultValue: [2, 3, 4, 5] };
+    outer.outputs[0]!.type = "vec4";
+    outer.nodes.push({ id: "inner", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "inner" } });
+    outer.edges = [
+      { id: "in", sourceNodeId: "inputs", sourcePinId: "in_value", targetNodeId: "inner", targetPinId: "in_value" },
+      { id: "out", sourceNodeId: "inner", sourcePinId: "out_value", targetNodeId: "outputs", targetPinId: "out_value" },
+    ];
+    const doc = createDefaultMaterialDocument("Round Trip", "postProcess");
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "outer" } });
+    doc.edges = [{ id: "result", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "color" }];
+    if (wired) {
+      doc.nodes.push({ id: "source", type: "const.vec4", position: { x: 0, y: 0 }, properties: { value: [2, 3, 4, 5] } });
+      doc.edges.push({ id: "value", sourceNodeId: "source", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" });
+    }
+    const result = lowerMaterialDocument(doc, { functions: { inner, outer } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.outputs.color).toEqual(wired ? {
+      kind: "operation", operationId: "source", pinId: "out",
+      conversions: [{ from: "vec4", to: "vec2" }, { from: "vec2", to: "vec4" }],
+    } : { kind: "constant", type: "vec4", value: [2, 3, 0, 1] });
+
+    inner.inputs[0]!.type = "vec3";
+    const changed = lowerMaterialDocument(doc, { functions: { inner, outer } });
+    expect(changed.ok).toBe(true);
+    if (changed.ok) expect(changed.plan.hash).not.toBe(result.plan.hash);
+  });
+
+  it("converts declared Custom GLSL inputs independently of its output width", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties: {
+      customVersion: 2,
+      inputs: [{ id: "value", name: "Value", type: "vec2" }],
+      outputs: [{ id: "out", name: "Out", type: "float" }],
+      body: "return Value.x;",
+    } });
+    doc.edges = [
+      { id: "in", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "custom", targetPinId: "value" },
+      { id: "out", sourceNodeId: "custom", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.operations.find((operation) => operation.id === "custom")?.inputs.value).toMatchObject({ conversions: [{ from: "vec3", to: "vec2" }] });
+    expect(result.plan.outputs.baseColor).toMatchObject({ conversions: [{ from: "float", to: "vec3" }] });
   });
 
   it("prefers an authored default:pinId over the catalog default", () => {

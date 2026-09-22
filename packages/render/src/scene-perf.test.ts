@@ -404,12 +404,59 @@ describe("prewarmSceneMaterials", () => {
     next.material = new PBRMaterial("next-material", scene);
     const nextCompile = vi.spyOn(next.material, "forceCompilationAsync");
     const done = prewarmSceneMaterials(scene);
-    const rejected = expect(done).rejects.toThrow("loading deadline");
+    const rejected = expect(done).rejects.toThrow(
+      'Scene shaders did not become ready before the loading deadline. Stalled compiling "default material" for "warm-mesh" after 0 compiled variants.',
+    );
     await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
     await rejected;
     finishCompile();
     await Promise.resolve();
     expect(nextCompile).not.toHaveBeenCalled();
+    scene.dispose();
+    engine.dispose();
+    vi.useRealTimers();
+  });
+
+  it("measures compile stalls per variant so a slow host that keeps progressing stays in budget", async () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const perVariant = SCENE_SHADER_WARM_TIMEOUT_MS / 2;
+    const compiles: string[] = [];
+    for (let index = 0; index < 4; index++) {
+      const mesh = new Mesh(`slow-mesh-${index}`, scene);
+      mesh.material = new PBRMaterial(`slow-material-${index}`, scene);
+      vi.spyOn(mesh.material, "forceCompilationAsync").mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
+      );
+    }
+    let settled: "ready" | "failed" | null = null;
+    const done = prewarmSceneMaterials(scene).then(() => { settled = "ready"; }, () => { settled = "failed"; });
+    await vi.advanceTimersByTimeAsync(perVariant * 4);
+    await done;
+    expect(compiles).toEqual(["slow-mesh-0", "slow-mesh-1", "slow-mesh-2", "slow-mesh-3"]);
+    expect(perVariant * 4).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
+    expect(settled).toBe("ready");
+    scene.dispose();
+    engine.dispose();
+    vi.useRealTimers();
+  });
+
+  it("names the stalled variant after earlier variants completed", async () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const quick = new Mesh("quick-mesh", scene);
+    quick.material = new PBRMaterial("quick-material", scene);
+    vi.spyOn(quick.material, "forceCompilationAsync").mockResolvedValue();
+    const stuck = new Mesh("stuck-mesh", scene);
+    stuck.material = new PBRMaterial("stuck-material", scene);
+    vi.spyOn(stuck.material, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
+    const rejected = expect(prewarmSceneMaterials(scene)).rejects.toThrow(
+      'Stalled compiling "stuck-material" for "stuck-mesh" after 1 compiled variant.',
+    );
+    await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
+    await rejected;
     scene.dispose();
     engine.dispose();
     vi.useRealTimers();

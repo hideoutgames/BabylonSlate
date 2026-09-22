@@ -7,9 +7,11 @@ import {
   initializeCapacitorLifecycle,
 } from "@babylonslate/vfs";
 import App from "./App";
+import { initSessionLiveness } from "./lib/session-liveness";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
+initSessionLiveness();
 
 if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("visualGenerationProof")) {
   void import("./testing/visual-generation-proof").then(({ runVisualGenerationProof }) => Object.assign(window, { __visualGenerationProof: runVisualGenerationProof }));
