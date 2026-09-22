@@ -11,7 +11,8 @@ engine's native CEL adapter with its original hooks and retains StandardMaterial
 coverage semantics. The two-API geometry fixture now includes default CEL and
 CEL alpha-cutout silhouettes. At `1e64c251`, the three changed TypeScript files
 passed scoped lint and the editor typecheck passed. Browser verification and a
-hands-on rerun are pending. [Actual failed scene](../assets/renderer-qualification/2026-09-22-computer-use-cel/native-cel-load-failure.png).
+hands-on rerun were pending at that checkpoint; the later results below supersede
+that pending status. [Actual failed scene](../assets/renderer-qualification/2026-09-22-computer-use-cel/native-cel-load-failure.png).
 
 At `0dc42902`, both geometry API cases (including native CEL coverage) and both
 compiled Scalability Play cases passed. The eight selected area-light/export
@@ -48,6 +49,40 @@ reload. These are effective WARP WebGL2/SwiftShader WebGPU functional results:
 [WebGPU CEL pixels](../assets/renderer-qualification/2026-09-22-settings-repair/webgpu-authored-cel.png).
 The earlier loose-export failures remain historical failures, superseded for this
 path by the repaired five-case run. Manual acceptance and hardware cost remain open.
+
+### Computer Use Route A checkpoint on `6688d680`
+
+The actual editor build loaded in Chrome 153 on Windows with effective WebGL2
+through ANGLE/D3D11 on NVIDIA RTX 2060. DPR was 1.5; the viewport and drawing
+buffer were both 720×272, scale 1, with dynamic resolution disabled. The served
+artifact SHA-256 was `188d13502d7beb9d718b62665d62ea4cb4fb486fc1303565f9fb600ba15d1de1`.
+This is hardware functional evidence, not a timing or physical-A16 result.
+
+Normal inspector, outliner, history and pointer interactions produced these
+**PASS** observations after presented frames:
+
+- Native CEL reopened successfully after the earlier scene-load repair. Disabling
+  the magenta width-4 component revealed the global dark outline after deselection
+  ([global default](../assets/renderer-qualification/2026-09-22-computer-use-cel/global-revealed.png)).
+- A duplicated actor retained independent green width-2 settings. An opaque box
+  hid the strict magenta outline while editor selection survived
+  ([fully hidden](../assets/renderer-qualification/2026-09-22-computer-use-cel/strict-hidden-selection.png)).
+  Enabling Render Through Meshes exposed only the authored contribution
+  ([through-mesh](../assets/renderer-qualification/2026-09-22-computer-use-cel/through-mesh-selection.png)).
+- Removing that component preserved the other consumers
+  ([survivors](../assets/renderer-qualification/2026-09-22-computer-use-cel/component-removed-survivors.png));
+  undo/redo/undo restored its color, width and visibility setting. Separate actor
+  deletion followed by undo/redo/undo restored the neighboring actor.
+- Saving and reopening retained magenta width 4 and green width 2 with strict
+  visibility. Moving the occluder to X=1.4 exposed only the visible magenta edge
+  ([partial occlusion](../assets/renderer-qualification/2026-09-22-computer-use-cel/partial-occlusion.png)).
+  Pointer orbit changed the visible outlines around the opaque blocker
+  ([orbit](../assets/renderer-qualification/2026-09-22-computer-use-cel/orbit-occlusion.png)).
+
+This compact primitive route does not replace the automated shared-instance,
+animation/material/LOD matrix. All-consumers-disabled manual retirement, native
+WebGPU repetition, the remaining texture-preparation and Class Graph routes,
+independent output acceptance and hardware cost remain open. The PR is unmerged.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
