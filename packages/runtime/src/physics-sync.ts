@@ -26,6 +26,7 @@ import {
   parseColliderProperties,
   parseRigidBodyProperties,
   bakeColliderLocal,
+  colliderLocalPose,
   type ColliderShape,
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
@@ -103,10 +104,9 @@ export class PhysicsWorldSync {
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
-  private spriteClipByActor = new Map<
-    string,
+  private spriteClipByActor = new WeakMap<
+    Actor,
     {
-      owner: Actor;
       assetGuid: string;
       clipName: string;
       normalisedTime: number;
@@ -174,6 +174,10 @@ export class PhysicsWorldSync {
     this.sprites = sprites;
     this.spriteAnimations = spriteAnimations;
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      if (this.pixelsPerUnit !== options.pixelsPerUnit) {
+        this.tileInstallation++;
+        this.tilemapCollidersByActor.clear();
+      }
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
   }
@@ -255,11 +259,10 @@ export class PhysicsWorldSync {
     } | null,
   ): void {
     if (!clip) {
-      if (this.spriteClipByActor.get(actor.guid)?.owner === actor)
-        this.spriteClipByActor.delete(actor.guid);
+      this.spriteClipByActor.delete(actor);
       return;
     }
-    this.spriteClipByActor.set(actor.guid, { ...clip, owner: actor });
+    this.spriteClipByActor.set(actor, { ...clip });
   }
 
   dispose(): void {
@@ -273,7 +276,7 @@ export class PhysicsWorldSync {
     this.appliedBodyProperties.clear();
     this.modelContentIdentities.clear();
     this.tilemapCollidersByActor.clear();
-    this.spriteClipByActor.clear();
+    this.spriteClipByActor = new WeakMap();
     this.models.clear();
     this.complexMeshes.clear();
     this.tilemaps.clear();
@@ -299,13 +302,20 @@ export class PhysicsWorldSync {
       if (actor.destroyed || this.actorById.get(actor.guid) !== actor) continue;
       if (!this.actorFilter(actor)) continue;
       const rigid = actor.components.find(
-        (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
+        (c) =>
+          c.classId === "RigidBodyComponent" &&
+          !c.destroyed &&
+          c.owner === actor,
       );
       const tilemap = actor.components.find(
-        (c) => c.classId === "TilemapComponent" && !c.destroyed,
+        (c) =>
+          c.classId === "TilemapComponent" && !c.destroyed && c.owner === actor,
       );
       const blocking = actor.components.find(
-        (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
+        (c) =>
+          c.classId === "BlockingVolumeComponent" &&
+          !c.destroyed &&
+          c.owner === actor,
       );
       const meshPhysics = this.meshPhysicsComponents(actor).length > 0;
       if (!rigid && !tilemap && !blocking && !meshPhysics) continue;
@@ -392,8 +402,7 @@ export class PhysicsWorldSync {
     this.staticPoses.delete(actorId);
     this.appliedBodyProperties.delete(actorId);
     this.characterByActor.delete(actorId);
-    if (this.spriteClipByActor.get(actorId)?.owner === owner)
-      this.spriteClipByActor.delete(actorId);
+    if (owner) this.spriteClipByActor.delete(owner);
     this.preparedByActor.delete(actorId);
     this.tilemapCollidersByActor.delete(actorId);
   }
@@ -416,7 +425,12 @@ export class PhysicsWorldSync {
     for (const [actorId, transform] of bodyPoses) {
       const actor = this.actorById.get(actorId);
       if (!actor || actor.destroyed) continue;
-      const local = actorLocalPhysicsTransform(transform, actor, readbackWorld);
+      const local = actorLocalPhysicsTransform(
+        transform,
+        actor,
+        readbackWorld,
+        this.backend.kind,
+      );
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }
@@ -457,6 +471,7 @@ export class PhysicsWorldSync {
     // also change a parent. Resolve current authored world poses at this boundary.
     this.actors = world.getActors();
     this.indexActors();
+    if (this.actorById.get(actor.guid) !== actor) return;
     this.worldTransforms = physicsWorldTransforms(
       this.actors,
       this.actorById,
@@ -483,6 +498,11 @@ export class PhysicsWorldSync {
   applyComponent(component: ActorComponent): void {
     const owner = component.owner;
     if (!owner || owner.destroyed || component.destroyed) return;
+    if (
+      this.bodyOwnerByActor.get(owner.guid) !== owner ||
+      !owner.components.includes(component)
+    )
+      return;
     if (!this.actorFilter(owner)) return;
     const bodyId = this.bodyByActor.get(owner.guid);
     if (!bodyId) return;
@@ -521,6 +541,9 @@ export class PhysicsWorldSync {
     dt: number,
     offset?: number,
   ): void {
+    if (actor.destroyed || !this.actorFilter(actor)) return;
+    const owner = this.bodyOwnerByActor.get(actor.guid);
+    if (owner && owner !== actor) return;
     if (!this.bodyByActor.has(actor.guid)) {
       this.createForActor(actor);
     }
@@ -541,6 +564,7 @@ export class PhysicsWorldSync {
       moved,
       actor,
       this.worldTransforms,
+      this.backend.kind,
     );
     actor.transform.position.x = localTransform.position.x;
     actor.transform.position.y = localTransform.position.y;
@@ -553,13 +577,18 @@ export class PhysicsWorldSync {
 
   private createForActor(actor: Actor): void {
     const rigid = actor.components.find(
-      (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
+      (c) =>
+        c.classId === "RigidBodyComponent" && !c.destroyed && c.owner === actor,
     );
     const tilemap = actor.components.find(
-      (c) => c.classId === "TilemapComponent" && !c.destroyed,
+      (c) =>
+        c.classId === "TilemapComponent" && !c.destroyed && c.owner === actor,
     );
     const blocking = actor.components.find(
-      (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
+      (c) =>
+        c.classId === "BlockingVolumeComponent" &&
+        !c.destroyed &&
+        c.owner === actor,
     );
     if (
       !rigid &&
@@ -644,13 +673,17 @@ export class PhysicsWorldSync {
 
     const blocking = actor.components.find(
       (component) =>
-        component.classId === "BlockingVolumeComponent" && !component.destroyed,
+        component.classId === "BlockingVolumeComponent" &&
+        !component.destroyed &&
+        component.owner === actor,
     );
     if (blocking)
       this.collectBlockingVolumeCollider(actor, bodyId, blocking, colliders);
     const tilemap = actor.components.find(
       (component) =>
-        component.classId === "TilemapComponent" && !component.destroyed,
+        component.classId === "TilemapComponent" &&
+        !component.destroyed &&
+        component.owner === actor,
     );
     if (tilemap) {
       const assetGuid = componentAssetGuid(tilemap);
@@ -689,8 +722,7 @@ export class PhysicsWorldSync {
   }
 
   private spritePlayback(actor: Actor) {
-    const playback = this.spriteClipByActor.get(actor.guid);
-    return playback?.owner === actor ? playback : undefined;
+    return this.spriteClipByActor.get(actor);
   }
 
   private rigidProps(
@@ -962,7 +994,9 @@ export class PhysicsWorldSync {
   ): void {
     const sprite = actor.components.find(
       (component) =>
-        component.classId === "SpriteComponent" && !component.destroyed,
+        component.classId === "SpriteComponent" &&
+        !component.destroyed &&
+        component.owner === actor,
     );
     if (!sprite) return;
     const spriteGuid =
@@ -1111,6 +1145,7 @@ export function actorLocalPhysicsTransform(
   world: PhysicsTransform,
   actor: Actor,
   transforms: ActorTransformMap,
+  kind: "2d" | "3d" = "3d",
 ): PhysicsTransform {
   const parentId = actorParentGuid(actor);
   const parentWorld = parentId ? transforms.get(parentId) : undefined;
@@ -1127,7 +1162,21 @@ export function actorLocalPhysicsTransform(
       y: divideScale(offset.y, parentWorld.scale.y),
       z: divideScale(offset.z, parentWorld.scale.z),
     },
-    rotation: multiplyQuaternion(inverseRotation, world.rotation),
+    // Invert the same signed-scale decomposition used by physicsWorldTransforms.
+    // A mirrored parent changes the attachment rotation, not only its scale.
+    rotation: colliderLocalPose(
+      kind === "2d" ? "box2d" : "box",
+      {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: multiplyQuaternion(inverseRotation, world.rotation),
+        scale: { x: 1, y: 1, z: 1 },
+      },
+      {
+        x: 1 / parentWorld.scale.x,
+        y: 1 / parentWorld.scale.y,
+        z: kind === "2d" ? 1 : 1 / parentWorld.scale.z,
+      },
+    ).rotation,
   };
 }
 

@@ -267,3 +267,89 @@ it("uses current parent physics poses during indexed child readback", () => {
     sync.dispose();
   }
 });
+
+it.each([
+  { x: -1, y: 1, z: 1 },
+  { x: 1, y: -1, z: 1 },
+  { x: -2, y: 3, z: 1 },
+])(
+  "preserves authored child rotation and collision under a mirrored parent %j",
+  (parentScale) => {
+    const { world, actor, collider, backend, sync } = fixture();
+    const parent = world.createActor({
+      classId: "Actor",
+      guid: "parent",
+      transform: identityTransform(),
+    });
+    parent.transform.scale = parentScale;
+    world.spawnActorNow(parent);
+    actor.setVariable("parentId", parent.guid);
+    actor.transform.rotation = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
+    collider.transform.position.x = 2;
+    try {
+      sync.syncFromWorld(world);
+      for (let tick = 0; tick < 10; tick++) {
+        sync.step(1 / 60, world);
+        const localX = physics.rotateQuatVec(actor.transform.rotation, {
+          x: 1,
+          y: 0,
+          z: 0,
+        });
+        expect(localX.x).toBeCloseTo(0);
+        expect(localX.y).toBeCloseTo(1);
+        const y = 2 * parentScale.y;
+        expect(
+          backend.lineTrace({ x: -5, y, z: 0 }, { x: 5, y, z: 0 }).hit,
+        ).toBe(true);
+        expect(
+          backend.lineTrace({ x: -5, y: -y, z: 0 }, { x: 5, y: -y, z: 0 }).hit,
+        ).toBe(false);
+      }
+    } finally {
+      sync.dispose();
+    }
+  },
+);
+
+it("rejects stale component and pre-sync successor commands before they mutate another incarnation", () => {
+  const { world, actor, backend, sync } = fixture();
+  try {
+    sync.syncFromWorld(world);
+    const update = vi.spyOn(backend, "updateBody");
+    const move = vi.spyOn(backend, "moveCharacter");
+    const teleport = vi.spyOn(backend, "teleportBody");
+    const removed = actor.components[0]!;
+    actor.components.splice(0, 1); // The owner reference may outlive membership.
+    removed.setVariable("mass", 7);
+    sync.applyComponent(removed);
+    expect(update).not.toHaveBeenCalled();
+    world.destroyActorInstance(actor);
+    world.tick();
+    const successor = world.createActor({
+      classId: "Actor",
+      guid: actor.guid,
+      transform: identityTransform(),
+    });
+    const rigid = world.createComponent({
+      classId: "RigidBodyComponent",
+      variables: { motionType: "dynamic", mass: 3 },
+    });
+    successor.attachComponent(rigid);
+    world.spawnActorNow(successor);
+    sync.applyComponent(rigid);
+    sync.moveCharacter(successor, { x: 3, y: 0, z: 0 }, 1 / 60);
+    sync.teleportActor(actor, world);
+    expect(update).not.toHaveBeenCalled();
+    expect(move).not.toHaveBeenCalled();
+    expect(teleport).not.toHaveBeenCalled();
+    sync.syncFromWorld(world);
+    rigid.setVariable("mass", 5);
+    sync.applyComponent(rigid);
+    expect(update).toHaveBeenLastCalledWith(
+      `body:${successor.guid}`,
+      expect.objectContaining({ mass: 5 }),
+    );
+  } finally {
+    sync.dispose();
+  }
+});
