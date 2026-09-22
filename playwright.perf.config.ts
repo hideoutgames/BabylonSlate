@@ -14,7 +14,8 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   workers: 1,
-  reporter: [["list"], ["json", { outputFile: "test-results/perf-route.json" }]],
+  reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
+  metadata: { testRunNonce: process.env.BL_TEST_SERVER_NONCE },
   outputDir: "test-results/perf-route",
   globalSetup: "./e2e/verify-test-server.ts",
   use: {

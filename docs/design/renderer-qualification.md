@@ -169,6 +169,12 @@ For native survivor/geometry qualification, set `BL_RENDER_NATIVE_GPU=1` and
 select the explicit `shared-outline.spec.ts` and `shared-outline-geometry.spec.ts`
 files with the local `perf-gpu` configuration. Default runs and CI retain their
 software adapter configuration; native results must still record effective APIs.
+At `cf363d82`, all six native GPU assertions passed (cost/lifecycle, geometry,
+ownership on both APIs), but the admitted command failed report validation:
+the older performance configuration wrote `perf-route.json` without the current
+invocation nonce while the runner requires `timings.json` and that nonce. This
+is not a successful runner result. The configuration now follows the existing
+report contract without bypassing validation; the same six cases will be rerun.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
