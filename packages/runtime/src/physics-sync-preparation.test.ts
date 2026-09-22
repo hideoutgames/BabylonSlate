@@ -75,6 +75,7 @@ function install(
     models: {
       mesh: {
         materialSlots: [],
+        simpleColliders: [],
         clipNames: [],
         skeletonGuid: null,
         importScale: 1,
