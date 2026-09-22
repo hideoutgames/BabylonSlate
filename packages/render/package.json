@@ -13,6 +13,7 @@
     "./framegraph-logical-buffers": "./src/framegraph-logical-buffers.ts",
     "./clustered-scene-lights": "./src/clustered-scene-lights.ts",
     "./managed-lighting-resources": "./src/managed-lighting-resources.ts",
+    "./managed-render-resources": "./src/managed-render-resources.ts",
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
     "./scene-render-coordinator": "./src/scene-render-coordinator.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
