@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
@@ -11,6 +11,20 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { accountedTextureBytes } from "./texture-bytes";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
+
+// NullEngine reports a configurable synthetic upload size and has no cube IO.
+// Keep native wrappers/refcounts while admitting small valid upload stand-ins.
+function textureEngine() {
+  const engine = new NullEngine({ renderWidth: 64, renderHeight: 64, textureSize: 16,
+    deterministicLockstep: false, lockstepMaxSteps: 4 });
+  vi.spyOn(engine, "createCubeTexture").mockImplementation((url, _scene, _files, noMipmap) => {
+    const internal = engine.createTexture(url, noMipmap ?? false, false, null);
+    internal.isCube = true;
+    return internal;
+  });
+  return engine;
+}
+afterEach(() => vi.restoreAllMocks());
 
 describe("resource cache getTexture", () => {
   it("keeps exact source URL generations leased independently of GPU wrappers", () => {
@@ -43,7 +57,7 @@ describe("resource cache getTexture", () => {
     cache.dispose();
   });
   it("keeps concurrent texture representations alive until their own views release them", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache();
     const sceneView = bindResourceCacheToHandle(cache);
     const materialView = bindResourceCacheToHandle(cache);
@@ -70,7 +84,7 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
   it("reuses one Texture for the same guid + sampling key", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes, {
@@ -91,7 +105,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("rebuilds after releaseGpuTextures keeps the blob URL", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const firstLease = cache.acquireTexture("tex", engine, bytes);
@@ -106,7 +120,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("rebuilds a material texture after the cached instance was disposed", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const firstLease = acquireMaterialTexture(cache, "tex", engine, bytes);
@@ -123,7 +137,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("returns a distinct no-mip wrapper without disposing the mipped Texture", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([9, 9, 9]);
     const aLease = cache.acquireTexture("tex", engine, bytes, { noMipmap: false });
@@ -153,7 +167,7 @@ describe("resource cache getTexture", () => {
       revoked.push(String(url));
       original(url);
     });
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes);
@@ -178,7 +192,7 @@ describe("resource cache getTexture", () => {
       revoked.push(String(url));
       original(url);
     });
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes);
@@ -198,7 +212,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("keeps glTF invertY false on a distinct wrapper from sprite albedo", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const spriteLease = cache.acquireTexture("shared", engine, bytes, {
@@ -229,7 +243,7 @@ describe("resource cache getTexture", () => {
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,
     ]);
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const textureLease = cache.acquireTexture("tex", engine, ktx2);
     const texture = textureLease.resource;
@@ -250,7 +264,7 @@ describe("resource cache getTexture", () => {
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,
     ]);
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const mippedLease = cache.acquireTexture("tex", engine, ktx2);
     const mipped = mippedLease.resource;
@@ -270,7 +284,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("builds a cube texture when isCube is set", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const cubeLease = cache.acquireTexture("env", engine, bytes, { isCube: true });
@@ -281,7 +295,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("builds a six-face cube in px py pz nx ny nz order", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const files = [
@@ -314,7 +328,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const files = [
@@ -337,7 +351,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("keeps a leased cube during unreferenced eviction", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const files = [
@@ -359,7 +373,7 @@ describe("resource cache getTexture", () => {
   });
 
   it("does not dispose a cache cube when a Play PBR skybox material is disposed", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const playScene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const files = [
@@ -410,7 +424,7 @@ describe("resource cache getTexture", () => {
 
 describe("Play texture cache invariant with getTexture", () => {
   it("Play open/close cycle does not grow accounted bytes after flush", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const before = engine.getLoadedTexturesCache().length;
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array(32 * 32 * 4);
@@ -436,7 +450,7 @@ describe("Play texture cache invariant with getTexture", () => {
 
 describe("explicit tap picking", () => {
   it("returns null when nothing is hit", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     expect(pickAtCanvas(scene, 0, 0)).toBeNull();
     scene.dispose();
@@ -444,7 +458,7 @@ describe("explicit tap picking", () => {
   });
 
   it("walks parents to resolve tilemap chunk hits to actor-N slotId", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     const root = { name: "actor-7", parent: null };
     const chunk = { name: "actor-7:layer:0:0", parent: root };
@@ -462,7 +476,7 @@ describe("explicit tap picking", () => {
   });
 
   it("returns the mesh name with null slotId when no actor-* ancestor exists", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const scene = new Scene(engine);
     const mesh = { name: "gizmo-ring", parent: null };
     vi.spyOn(scene, "pick").mockReturnValue({
@@ -482,8 +496,8 @@ describe("explicit tap picking", () => {
 
 describe("resourceCacheForEngine", () => {
   it("returns the same ResourceCache for one Engine and a distinct cache per Engine", () => {
-    const engineA = new NullEngine();
-    const engineB = new NullEngine();
+    const engineA = textureEngine();
+    const engineB = textureEngine();
     const first = resourceCacheForEngine(engineA);
     const second = resourceCacheForEngine(engineA);
     const other = resourceCacheForEngine(engineB);
@@ -496,7 +510,7 @@ describe("resourceCacheForEngine", () => {
   });
 
   it("returns a new ResourceCache after releaseResourceCacheForEngine", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const first = resourceCacheForEngine(engine);
     releaseResourceCacheForEngine(engine);
     const second = resourceCacheForEngine(engine);
@@ -563,7 +577,7 @@ describe("bindResourceCacheToHandle", () => {
   });
 
   it("releases this handle's retains then flushes unreferenced GPU wrappers", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bound = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
@@ -576,7 +590,7 @@ describe("bindResourceCacheToHandle", () => {
   });
 
   it("keeps textures still retained by another handle", () => {
-    const engine = new NullEngine();
+    const engine = textureEngine();
     const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const editor = bindResourceCacheToHandle(inner);
     const play = bindResourceCacheToHandle(inner);
