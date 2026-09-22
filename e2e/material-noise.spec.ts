@@ -24,6 +24,7 @@ function noiseMaterial(kind: NoiseKind) {
     doc.edges.push({ id: `${sourceNodeId}-${sourcePinId}-${targetNodeId}-${targetPinId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
   };
   doc.nodes = doc.nodes.filter((entry) => entry.id === "output");
+  doc.nodes[0]!.properties["default:baseColor"] = [0, 0, 0];
   doc.edges = [];
   node("noise", `noise.${kind}`);
   node("channels", "vector.combine");
@@ -99,6 +100,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await openAssetFromBrowser(page, assetPath);
       if (kind === "perlin") await addMaterialPaletteNode(page, "+", "math.add");
       await compileMaterialPreview(page);
+      await expect.poll(() => page.evaluate(async () => {
+        const host = globalThis as unknown as {
+          __babylonslateViewportTest?: {
+            engineSceneDiagnostics: () => Promise<{ backend: string }>;
+          };
+        };
+        return (await host.__babylonslateViewportTest?.engineSceneDiagnostics())?.backend;
+      })).toBe(backend);
       const canvas = page.getByTestId("material-preview-canvas");
       await expect.poll(async () => Math.min(...await colorRanges(canvas))).toBeGreaterThan(25);
       await canvas.screenshot({ path: testInfo.outputPath(`${kind}-${backend}.png`) });
