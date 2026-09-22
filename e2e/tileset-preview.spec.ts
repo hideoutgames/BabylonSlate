@@ -226,6 +226,10 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
   );
   await openMinimalTestProject(page, files);
   await openMainScene(page);
+  console.log("tilemap-native-diagnostic", await page.evaluate(() => {
+    const host = window as unknown as { __babylonslateViewportTest: { sceneVisuals(): unknown; renderingBaseline(): unknown } };
+    return { visuals: host.__babylonslateViewportTest.sceneVisuals(), rendering: host.__babylonslateViewportTest.renderingBaseline() };
+  }));
   await expectGreenIllumination(page.getByTestId("viewport-canvas"));
   const upload = await page.evaluate(() =>
     (

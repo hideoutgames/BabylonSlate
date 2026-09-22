@@ -52,6 +52,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
   });
   const particleBuffers = new Set<DataBuffer>();
   const frameCpuMs: number[] = [];
+  let lastPixels = { red: 0, blue: 0 };
   const step = async (count = 1) => {
     for (let i = 0; i < count; i += 1) {
       const started = performance.now();
@@ -64,6 +65,8 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
         }
         if (system.indexBuffer) particleBuffers.add(system.indexBuffer);
       }
+      // WebGPU presentation invalidates the canvas texture at the next frame.
+      if (i === count - 1) lastPixels = await pixels();
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
   };
@@ -117,7 +120,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     throw new Error(`Particle preparation did not finish: ${JSON.stringify(diagnostics)}`);
   };
   const captures: Array<{ name: string; red: number; blue: number; systems: number; processed: number[]; configuredSimulationStep: number[] }> = [];
-  const capture = async (name: string) => captures.push({ name, ...await pixels(), systems: scene.particleSystems.length,
+  const capture = async (name: string) => captures.push({ name, ...lastPixels, systems: scene.particleSystems.length,
     processed: scene.particleSystems.map((system) => system.getActiveCount()),
     configuredSimulationStep: scene.particleSystems.map((system) => system.updateSpeed) });
   try {
@@ -137,7 +140,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     if (scene.particleSystems.length !== 2) throw new Error("Paused simulation advanced drain time");
     service.setPaused(false); await step(2); await capture("draining");
     await step(18); await capture("retired");
-    if (scene.particleSystems.length || acquisitions !== releases) throw new Error("Stopped particles retained native systems or leases");
+    if (scene.particleSystems.length || acquisitions !== releases) throw new Error(`Stopped particles retained native systems or leases: ${JSON.stringify({ captures, stats: service.stats(), acquisitions, releases, native: scene.particleSystems.map((system) => ({ ready: system.isReady(), started: system.isStarted(), speed: system.updateSpeed, processed: system.getActiveCount() })) })}`);
     play("blue", true); await ready(scene.particleSystems); await step(5); await capture("restart-blue");
     service.resetSession();
     // Reverse order in a new run still isolates the graph's mutable texture blocks.
