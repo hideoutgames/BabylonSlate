@@ -318,10 +318,14 @@ export function applyAlbedoTexture(
     next.release();
     console.error("Sprite texture replacement failed", error);
   };
-  if (!binding.lease || next.resource.isReady()) {
+  if (!binding.lease) {
     publish();
     void next.ready?.catch(failed);
-  } else if (next.ready) void next.ready.then(publish, failed);
+  } else if (next.ready) {
+    // Native readiness can precede asynchronous byte accounting/admission.
+    // Keep the working lease until the complete successor preparation succeeds.
+    void next.ready.then(publish, failed);
+  } else if (next.resource.isReady()) publish();
 
 }
 

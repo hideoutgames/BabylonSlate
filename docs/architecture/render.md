@@ -280,6 +280,8 @@ An authored sprite Material temporarily overrides the retained automatic sprite 
 
 Fractional sprite animation weights use alpha test plus blending on the owned automatic material; full and hidden weights use cutout mode. Babylon 9.20's explicit alpha-test mode otherwise bypasses visibility-based blend classification. Classification boundaries invalidate strict readiness once per affected material; changes within a fractional fade reuse the material, buffers, leases and readiness result. Authored materials retain their own alpha mode. The existing two-layer source-over composition and sorting remain unchanged; this does not introduce a normalized crossfade shader.
 
+A sprite texture replacement with a working binding waits for the successor lease's complete readiness promise, including asynchronous byte accounting and budget admission. Native `Texture.isReady()` alone cannot publish over or release the predecessor. Failed admission retires only the candidate and preserves the working binding; a same-request failure remains latched until its source changes.
+
 ### Texture ownership verification pickup
 
 Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. The current source checkpoint is `b8a11880eaf9ef3a3d992ee16fe32cf97254406a`. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current 3 GiB headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
@@ -287,6 +289,8 @@ Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. Th
 The rendering integration adds three unexecuted `mesh-assets.test.ts` regressions for static material restoration, animation resumption and a pending upload racing authored assignment. The defect was found by source tracing at `a4fa188c`; no pre-fix execution is claimed. Resume with `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'restores a static sprite|resumes the latest animation texture|does not let a pending sprite upload'`, then the affected snapshot/animation consumer cases and scoped render checks.
 
 The crossfade correction adds the unexecuted native case `blends owned sprite crossfades and invalidates readiness only at classification boundaries` in the same file. Resume it with `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'blends owned sprite crossfades'`, followed by `packages/render/src/anim-apply.test.ts`. The existing `pnpm --silent agent:wait local --script test:e2e '--' e2e/texture-leases.spec.ts --project=desktop-chrome` now reads real red/green blend pixels at two weights on each requested backend; its readiness, pixel thresholds and backend-specific draw behavior remain unverified until that deferred run. Scoped render/editor typechecks and changed-file lint are pending too.
+
+The delayed-admission regression uses a real cache/native-ready texture with a controlled Blob header read and a budget that admits only the retained predecessor. It remains unexecuted: `pnpm --silent agent:wait local --script test '--' packages/render/src/mesh-assets.test.ts -t 'native-ready replacement fails delayed budget admission'`. This is source-reviewed coverage, not an observed budget-test pass.
 
 Recorded evidence:
 

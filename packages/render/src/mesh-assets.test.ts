@@ -236,6 +236,45 @@ describe("applyAlbedoTexture", () => {
     } finally { detach(); f.dispose(); }
   });
 
+  it("preserves the working sprite while a native-ready replacement fails delayed budget admission", async () => {
+    const f = spriteFixture();
+    const source = new Blob([new Uint8Array([5, 6, 7])]);
+    const header = source.slice(0, 64 * 1024);
+    let finishHeader!: (value: ArrayBuffer) => void;
+    const headerReady = new Promise<ArrayBuffer>((resolve) => { finishHeader = resolve; });
+    const read = vi.spyOn(header, "arrayBuffer").mockReturnValue(headerReady);
+    const slice = vi.spyOn(source, "slice").mockReturnValue(header);
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const first = f.acquire.mock.results[0]!.value as ReturnType<ResourceCache["acquireTexture"]>;
+      await first.ready;
+      const working = f.auto.diffuseTexture;
+      const bytes = f.cache.accountedBytes();
+      expect(bytes).toBeGreaterThan(0);
+      f.cache.setByteCeiling(bytes + 1);
+      const assets = { ...f.assets, textureBytes: new Map(f.assets.textureBytes).set("deferred", source) };
+      applyAlbedoTexture(f.mesh, f.scene, "deferred", assets);
+      const next = f.acquire.mock.results[1]!.value as ReturnType<ResourceCache["acquireTexture"]>;
+      expect(next.resource.isReady()).toBe(true);
+      expect(f.auto.diffuseTexture).toBe(working);
+      expect(f.cache.resourceStats().leases).toBe(2);
+
+      finishHeader(new ArrayBuffer(0));
+      await expect(next.ready).rejects.toThrow("byte budget");
+      expect(f.mesh.material).toBe(f.auto);
+      expect(f.auto.diffuseTexture).toBe(working);
+      expect(working?.isReady()).toBe(true);
+      expect(isDisposedGpuTexture(next.resource)).toBe(true);
+      expect(f.cache.resourceStats().leases).toBe(1);
+      expect(report).toHaveBeenCalledOnce();
+      applyAlbedoTexture(f.mesh, f.scene, "deferred", assets);
+      expect(f.acquire).toHaveBeenCalledTimes(2);
+    } finally {
+      finishHeader(new ArrayBuffer(0));
+      read.mockRestore(); slice.mockRestore(); report.mockRestore(); f.dispose();
+    }
+  });
+
   it("keeps the previous texture after upload failure and ignores an obsolete completion", async () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
