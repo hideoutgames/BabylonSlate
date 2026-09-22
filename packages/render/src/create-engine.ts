@@ -1404,6 +1404,7 @@ function initializeEngine(
     };
   };
 
+  let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
