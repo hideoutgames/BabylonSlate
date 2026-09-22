@@ -488,13 +488,25 @@ export class PhysicsWorldSync {
       const mask = parseMeshCollisionMask(properties.mask);
       for (const collision of this.resolvedMeshCollisions(component)) {
         const colliderId = componentColliderPhysicsId(actor.guid, component.guid, collision.shapeId);
-        const composed = composeMeshColliderLocal(
-          component.transform,
-          collision,
-        );
+        // Preserve each scale/rotation boundary: multiplying TRS first can
+        // erase shear and misapply nonuniform scale to rotated source geometry.
+        const imported = bakeColliderLocal(collision.shape as ColliderShape, {
+          position: { x: collision.position[0], y: collision.position[1], z: collision.position[2] },
+          rotation: { x: collision.rotation[0], y: collision.rotation[1], z: collision.rotation[2], w: collision.rotation[3] },
+          scale: { x: collision.scale[0], y: collision.scale[1], z: collision.scale[2] },
+        }, component.transform.scale);
+        const offset = rotateQuatVec(component.transform.rotation, imported.translation);
         const baked = bakeColliderLocal(
-          collision.shape as ColliderShape,
-          composed,
+          imported.shape,
+          {
+            position: {
+              x: component.transform.position.x + offset.x,
+              y: component.transform.position.y + offset.y,
+              z: component.transform.position.z + offset.z,
+            },
+            rotation: multiplyQuat(component.transform.rotation, imported.rotation),
+            scale: { x: 1, y: 1, z: 1 },
+          },
           worldScale(actor, this.worldTransforms),
         );
         colliders.set(colliderId, {
@@ -784,45 +796,4 @@ function toMap<T>(
   return new Map(Object.entries(value));
 }
 
-function composeMeshColliderLocal(
-  meshTransform: {
-    position: { x: number; y: number; z: number };
-    rotation: { x: number; y: number; z: number; w: number };
-    scale: { x: number; y: number; z: number };
-  },
-  collision: {
-    position: [number, number, number];
-    rotation: [number, number, number, number];
-    scale: [number, number, number];
-  },
-): {
-  position: { x: number; y: number; z: number };
-  rotation: { x: number; y: number; z: number; w: number };
-  scale: { x: number; y: number; z: number };
-} {
-  const childPosition = {
-    x: collision.position[0] * meshTransform.scale.x,
-    y: collision.position[1] * meshTransform.scale.y,
-    z: collision.position[2] * meshTransform.scale.z,
-  };
-  const rotated = rotateQuatVec(meshTransform.rotation, childPosition);
-  return {
-    position: {
-      x: meshTransform.position.x + rotated.x,
-      y: meshTransform.position.y + rotated.y,
-      z: meshTransform.position.z + rotated.z,
-    },
-    rotation: multiplyQuat(meshTransform.rotation, {
-      x: collision.rotation[0],
-      y: collision.rotation[1],
-      z: collision.rotation[2],
-      w: collision.rotation[3],
-    }),
-    scale: {
-      x: meshTransform.scale.x * collision.scale[0],
-      y: meshTransform.scale.y * collision.scale[1],
-      z: meshTransform.scale.z * collision.scale[2],
-    },
-  };
-}
 
