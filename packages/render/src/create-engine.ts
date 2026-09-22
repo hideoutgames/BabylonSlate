@@ -2400,6 +2400,11 @@ function initializeEngine(
           if (pendingWorld) {
             applyAssignMesh(scene, binding, pendingWorld);
             pendingOverlayAssign.delete(command.slotId);
+            // Same late-resolution as the direct assignMesh path below: a
+            // deferred `light:*` visual may be the baked source a receiver
+            // could not resolve at bind time.
+            if (pendingWorld.meshKind?.startsWith("light:"))
+              bakedSession.refresh();
           }
         }
       }
@@ -2485,6 +2490,9 @@ function initializeEngine(
         } else {
           applyAssignMesh(scene, binding, command);
         }
+        // A spawned `light:*` visual may be the baked source the receiver
+        // could not resolve at bind; re-check exclusions now that it exists.
+        if (command.meshKind?.startsWith("light:")) bakedSession.refresh();
         pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(

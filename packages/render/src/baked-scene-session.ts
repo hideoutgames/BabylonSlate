@@ -56,6 +56,10 @@ export interface BakedSessionDiagnostics {
     mesh: string;
     material: string | null;
     slateBaked: boolean;
+    /** Realtime light names excluded on this receiver for baked direct terms. */
+    excludedLights: string[];
+    /** Realtime light defines on the compiled effect; null before it exists. */
+    lightDefines: number | null;
   }>;
   /** Bound receiver count and shared atlas upload state. */
   owner: {
@@ -163,6 +167,17 @@ export class BakedSceneSession {
       owner: this.owner.diagnostics(),
       validity: this.owner.validity,
     };
+  }
+
+  /**
+   * Re-check receiver exclusions after the snapshot assigns Play/player light
+   * visuals; `directAndIndirect` sources that had no runtime light at bind
+   * time resolve on this pass instead of staying unexcluded. Ungated: the
+   * assignMesh can land while the session is still `pending`, and `sync` is a
+   * no-op on an empty or released receiver set.
+   */
+  refresh(): void {
+    this.receivers.sync();
   }
 
   /**
