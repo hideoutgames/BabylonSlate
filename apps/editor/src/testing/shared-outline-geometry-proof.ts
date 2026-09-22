@@ -216,7 +216,9 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     source.material = material;
     await pair("before-late-lod", [contribution([source])]);
     const lod = MeshBuilder.CreateBox("Late LOD", { width: 0.4, height: 1.2, depth: 0.2 }, scene); lod.material = material;
-    source.addLODLevel(1, lod);
+    // Babylon's orthographic distance LOD uses camera.minZ, not eye distance.
+    // Cross that real selection boundary so the oracle proves a changed mesh.
+    source.addLODLevel(camera.minZ / 2, lod);
     await pair("late-lod-selected", [contribution([source])]);
     clear();
 
