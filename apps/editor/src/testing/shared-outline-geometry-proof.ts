@@ -87,6 +87,10 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
   const cases = [];
   const capture = async (name: string, coordinator = renderer) => {
     await onProgress?.({ stage: name, state: "preparing" });
+    // Direct fixture edits bypass editor transaction invalidation. Re-probe
+    // readiness without replacing the graph or its live mask programs, so a
+    // native hot-swapped material cannot become a stale silhouette oracle.
+    coordinator.invalidate();
     const prepared = await coordinator.prepare();
     for (let frame = 0; frame < 3; frame++) {
       engine.beginFrame();
