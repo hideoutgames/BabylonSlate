@@ -12,6 +12,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireResources, workloadFor } from "./resource-admission.mjs";
 import { runStage } from "./test-runner.mjs";
+import { readLocalResourceConfig } from "./local-resource-config.mjs";
+const hosted = {
+  BL_EXECUTION_POLICY: "hosted-ci",
+  GITHUB_ACTIONS: "true",
+  RUNNER_ENVIRONMENT: "github-hosted",
+  GITHUB_RUN_ID: "123",
+  GITHUB_REPOSITORY: "fixture/repo",
+  RUNNER_OS: "Linux",
+};
 
 async function fixture(t, config) {
   const directory = await mkdtemp(join(tmpdir(), "local resource config "));
@@ -22,7 +31,7 @@ async function fixture(t, config) {
     path,
     options: {
       directory: join(directory, "admission"),
-      env: { BL_LOCAL_RESOURCE_CONFIG: path },
+      env: { LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: path },
       freeMemory: () => 5 * 1024 ** 3,
       pollMs: 5,
       timeoutMs: 500,
@@ -88,16 +97,23 @@ test("invalid machine settings fail before queueing work", async (t) => {
   }
 });
 
-test("missing user settings preserve conservative defaults and CI ignores machine settings", async (t) => {
+test("missing settings serialize locally and CI=true cannot ignore machine settings", async (t) => {
   const { options } = await fixture(t);
-  await assert.rejects(
-    acquireResources(workloadFor("build", {}), options),
-    /deadline/i,
-  );
+  const defaults = await readLocalResourceConfig(options.env);
+  assert.equal(defaults.maxRoots, 1);
+  assert.equal(defaults.capacity.reserveGiB, 3);
+  await (await acquireResources(workloadFor("build", {}), options)).release();
   const { path } = await fixture(t, { version: 999 });
+  await assert.rejects(
+    acquireResources(workloadFor("build", {}), {
+      ...options,
+      env: { CI: "true", BL_LOCAL_RESOURCE_CONFIG: path },
+    }),
+    /configuration/i,
+  );
   const lease = await acquireResources(workloadFor("build", {}), {
     ...options,
-    env: { CI: "true", BL_LOCAL_RESOURCE_CONFIG: path },
+    env: { ...hosted, CI: "true", BL_LOCAL_RESOURCE_CONFIG: path },
     freeMemory: () => 6 * 1024 ** 3,
   });
   await lease.release();
@@ -128,6 +144,7 @@ test("stage-specific config is validated before launching a child; CI remains in
     signal: AbortSignal.timeout(5000),
     env: {
       CI: "",
+      BL_EXECUTION_POLICY: "local",
       BL_TEST_LEASE: "",
       BL_TEST_PROFILE: "shared",
       BL_LOCAL_RESOURCE_CONFIG: path,
@@ -149,7 +166,7 @@ test("stage-specific config is validated before launching a child; CI remains in
     ["-e", "console.log('ci')"],
     {
       ...options,
-      env: { ...options.env, CI: "true" },
+      env: { ...options.env, ...hosted, CI: "true" },
     },
   );
   assert.equal(result.output.trim(), "ci");

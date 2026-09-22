@@ -34,6 +34,8 @@ async function fixture(t) {
       "source-state.mjs",
       "process-runner.mjs",
       "shared-test-artifacts.mjs",
+      "execution-location.mjs",
+      "worker-arguments.mjs",
     ]) {
       try {
         await cp(join(scripts, script), join(directory, "scripts", script));
@@ -53,7 +55,7 @@ async function fixture(t) {
       join(directory, "scripts/local-resource-config.mjs"),
       `
 export async function readLocalResourceConfig(env = process.env) {
-  return { cacheDirectory: env.CI === 'true' ? null : env.FIXTURE_CACHE || null };
+  return { cacheDirectory: env.FIXTURE_CACHE || null };
 }
 `,
     );
@@ -123,6 +125,7 @@ try {
         env: {
           ...process.env,
           CI: "false",
+          BL_EXECUTION_POLICY: "local",
           FIXTURE_CACHE: cache,
           ...env,
           FIXTURE_OPTIONS: JSON.stringify(options),
@@ -512,10 +515,21 @@ test("concurrent same-key publishers leave complete independently verifiable art
   assert.equal(await compilations(third), 0);
 });
 
-test("CI and unconfigured machines retain worktree-local artifacts", async (t) => {
+test("hosted CI and explicitly disabled shared caches retain worktree-local artifacts", async (t) => {
   const f = await fixture(t);
   for (const [name, env] of [
-    ["ci", { CI: "true" }],
+    [
+      "ci",
+      {
+        CI: "true",
+        BL_EXECUTION_POLICY: "hosted-ci",
+        GITHUB_ACTIONS: "true",
+        RUNNER_ENVIRONMENT: "github-hosted",
+        GITHUB_RUN_ID: "123",
+        GITHUB_REPOSITORY: "fixture/repo",
+        RUNNER_OS: "Linux",
+      },
+    ],
     ["local", { FIXTURE_CACHE: "" }],
   ]) {
     const directory = await f.worktree(name);

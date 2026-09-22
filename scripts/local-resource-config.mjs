@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { hostedExecution } from "./execution-location.mjs";
 
 export const DEFAULT_RESOURCE_CAPACITY = Object.freeze({
   workers: 3,
@@ -16,7 +17,12 @@ function invalid(path, reason) {
 }
 
 export function localResourceConfigPath(env = process.env) {
-  if (env.BL_LOCAL_RESOURCE_CONFIG === "" || env.CI === "true") return null;
+  if (hostedExecution(env)) return null;
+  if (env.BL_LOCAL_RESOURCE_CONFIG === "")
+    throw invalid(
+      "BL_LOCAL_RESOURCE_CONFIG",
+      "an empty override cannot disable the host policy; use an absolute path or unset the variable",
+    );
   if (env.BL_LOCAL_RESOURCE_CONFIG !== undefined) {
     if (!isAbsolute(env.BL_LOCAL_RESOURCE_CONFIG))
       throw invalid(
@@ -49,18 +55,19 @@ export async function readLocalResourceConfig(env = process.env) {
   const path = localResourceConfigPath(env);
   const defaults = {
     path,
-    profile: "standard",
-    capacity: { ...DEFAULT_RESOURCE_CAPACITY },
-    maxHeavy: 3,
-    maxBypasses: 3,
-    cacheDirectory: null,
+    profile: path ? "low-memory" : "hosted-ci",
+    capacity: { ...DEFAULT_RESOURCE_CAPACITY, reserveGiB: path ? 3 : 4 },
+    maxHeavy: path ? 1 : 3,
+    maxRoots: path ? 1 : 3,
+    maxBypasses: path ? 0 : 3,
+    cacheDirectory: path ? defaultCacheDirectory(env) : null,
   };
   if (!path) return defaults;
   let source;
   try {
     source = await readFile(path, "utf8");
   } catch (error) {
-    if (error.code === "ENOENT") return defaults;
+    if (error.code === "ENOENT") return constrainByHost(defaults, env);
     throw invalid(path, `cannot read file (${error.code ?? "I/O error"})`);
   }
   let config;
@@ -112,12 +119,51 @@ export async function readLocalResourceConfig(env = process.env) {
     (typeof cacheDirectory !== "string" || !isAbsolute(cacheDirectory))
   )
     throw invalid(path, "cacheDirectory must be an absolute path or null");
-  return {
+  const result = {
     path,
     profile: config.profile,
-    capacity: { ...DEFAULT_RESOURCE_CAPACITY, reserveGiB },
-    maxHeavy,
-    maxBypasses,
+    capacity: {
+      ...DEFAULT_RESOURCE_CAPACITY,
+      reserveGiB: lowMemory ? Math.max(3, reserveGiB) : reserveGiB,
+    },
+    maxHeavy: lowMemory ? 1 : maxHeavy,
+    maxRoots: lowMemory ? 1 : 3,
+    maxBypasses: lowMemory ? 0 : maxBypasses,
     cacheDirectory: cacheDirectory === null ? null : resolve(cacheDirectory),
   };
+  return constrainByHost(result, env);
+}
+
+async function constrainByHost(result, env) {
+  if (env.BL_LOCAL_RESOURCE_CONFIG !== undefined) {
+    const hostEnv = { ...env };
+    delete hostEnv.BL_LOCAL_RESOURCE_CONFIG;
+    const hostPath = localResourceConfigPath(hostEnv);
+    if (
+      hostPath &&
+      resolve(hostPath).toLowerCase() !== resolve(result.path).toLowerCase()
+    ) {
+      let exists = true;
+      try {
+        await readFile(hostPath, "utf8");
+      } catch (error) {
+        if (error.code === "ENOENT") exists = false;
+        else throw invalid(hostPath, "cannot establish the host policy");
+      }
+      if (exists) {
+        const host = await readLocalResourceConfig(hostEnv);
+        result.hostPath = hostPath;
+        result.profile =
+          host.profile === "low-memory" ? "low-memory" : result.profile;
+        result.capacity.reserveGiB = Math.max(
+          host.capacity.reserveGiB,
+          result.capacity.reserveGiB,
+        );
+        result.maxRoots = Math.min(host.maxRoots, result.maxRoots);
+        result.maxHeavy = Math.min(host.maxHeavy, result.maxHeavy);
+        result.maxBypasses = Math.min(host.maxBypasses, result.maxBypasses);
+      }
+    }
+  }
+  return result;
 }

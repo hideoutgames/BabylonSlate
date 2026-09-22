@@ -1,8 +1,8 @@
 import {
   acquireResources,
-  inheritedLease,
-  workloadFor,
+  claimInheritedLease,
 } from "./resource-admission.mjs";
+import { resolveExecutionPlan, workerArguments } from "./execution-plan.mjs";
 import {
   pnpmCommand,
   repoRoot,
@@ -14,43 +14,47 @@ import { cachedVerificationPhase } from "./verification-cache.mjs";
 export async function runStage(profile, command, args, options = {}) {
   const signal = options.signal;
   const environment = { ...process.env, ...options.env };
-  const request = workloadFor(profile, environment);
-  const inherited = await inheritedLease(environment.BL_TEST_LEASE, request);
-  const ci = environment.CI === "true";
+  const plan = await resolveExecutionPlan(profile, environment);
+  const request = plan.request;
+  const commandArgs = typeof args === "function" ? args(plan) : args;
+  const inherited = plan.hosted
+    ? null
+    : await claimInheritedLease(environment.BL_TEST_LEASE, request);
   const lease =
-    ci || inherited
-      ? null
+    plan.hosted || inherited
+      ? inherited
       : await acquireResources(request, {
           signal,
           env: environment,
-          onQueued: () =>
+          config: plan.config,
+          owned: true,
+          onQueued: (waiting) =>
             process.stdout.write(
-              JSON.stringify({ event: "queued", profile }) + "\n",
+              JSON.stringify({ event: "queued", profile, ...waiting }) + "\n",
             ),
         });
   const env = {
     ...environment,
-    VITEST_MAX_WORKERS: ci ? "2" : String(request.workers),
-    BL_TEST_BROWSER_WORKERS: ci
-      ? "1"
-      : environment.BL_TEST_PROFILE === "fast"
-        ? "2"
-        : "1",
+    VITEST_MAX_WORKERS: String(plan.workers),
+    BL_TEST_BROWSER_WORKERS: String(plan.browserWorkers),
+    BL_TEST_RETRIES: String(plan.retries),
     ...(lease
       ? {
           BL_TEST_LEASE: JSON.stringify({
             ticket: lease.ticket,
             token: lease.token,
+            scope: lease.scope ?? lease.token,
           }),
         }
       : {}),
   };
+  for (const message of plan.messages) process.stdout.write(message + "\n");
   process.stdout.write(
     JSON.stringify({ event: "stage", profile, queueMs: lease?.queueMs ?? 0 }) +
       "\n",
   );
   try {
-    const result = await runCommand(command, args, {
+    const result = await runCommand(command, commandArgs, {
       ...options,
       env,
       onSpawn: (pid) => lease?.child(pid),
@@ -60,6 +64,8 @@ export async function runStage(profile, command, args, options = {}) {
         event: "stage-result",
         profile,
         exitCode: result.code,
+        nativeExitCode: result.nativeExitCode,
+        signal: result.signal,
         executionMs: result.elapsedMs,
         queueMs: lease?.queueMs ?? 0,
       }) + "\n",
@@ -81,24 +87,15 @@ export async function runPnpm(profile, args, options) {
 }
 
 async function vitest(args, options = {}) {
-  const environment = { ...process.env, ...options.env };
   return runStage(
     options.profile ?? "dom",
     process.execPath,
-    [
+    (plan) => [
       toolCli("vitest"),
       "run",
       "--config",
       "vitest.workspace.ts",
-      ...args,
-      "--maxWorkers",
-      environment.CI === "true"
-        ? "2"
-        : String(
-            workloadFor(options.profile ?? "dom", {
-              ...environment,
-            }).workers,
-          ),
+      ...workerArguments(args, plan, "vitest"),
     ],
     options,
   );
@@ -131,7 +128,8 @@ export async function editorTests(options = {}) {
     profile: "unit",
     env: { VITEST_COVERAGE: "0" },
   });
-  const listed = await runCommand(
+  const listed = await runStage(
+    "dom",
     process.execPath,
     [
       toolCli("vitest"),
@@ -147,7 +145,7 @@ export async function editorTests(options = {}) {
     {
       signal: options.signal,
       capture: true,
-      env: { ...process.env, VITEST_COVERAGE: "0" },
+      env: { ...options.env, VITEST_COVERAGE: "0" },
     },
   );
   if (listed.code) throw new Error(listed.output);
@@ -217,12 +215,11 @@ export async function runTests(mode, args, options = {}) {
     return runStage(
       "dom",
       process.execPath,
-      [
+      (plan) => [
         toolCli("vitest"),
         "--config",
         "vitest.workspace.ts",
-        ...args,
-        `--maxWorkers=${process.env.CI === "true" ? 2 : workloadFor("dom").workers}`,
+        ...workerArguments(args, plan, "vitest"),
       ],
       options,
     );

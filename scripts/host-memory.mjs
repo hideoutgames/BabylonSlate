@@ -12,21 +12,49 @@ export function positiveReading(value) {
 export async function observeHostMemory(options = {}) {
   const errors = [];
   const observe = (name, read) => {
-    try { return positiveReading(read?.()); }
-    catch { errors.push(`${name}: observation failed`); return null; }
+    try {
+      return positiveReading(read?.());
+    } catch {
+      errors.push(`${name}: observation failed`);
+      return null;
+    }
   };
   const totalBytes = observe("total memory", options.totalmem ?? totalmem);
-  const availableBytes = observe("available memory", options.availableMemory ?? (() => process.availableMemory?.() ?? freemem()));
-  const constrainedBytes = observe("effective constraint", options.constrainedMemory ?? (() => process.constrainedMemory?.()));
+  const availableBytes = observe(
+    "available memory",
+    options.availableMemory ?? (() => process.availableMemory?.() ?? freemem()),
+  );
+  const constrainedBytes = observe(
+    "effective constraint",
+    options.constrainedMemory ?? (() => process.constrainedMemory?.()),
+  );
   let windows = {};
   if ((options.platform ?? process.platform) === "win32") {
     try {
-      windows = await (options.windowsProbe ?? (async () => {
-        const { stdout } = await execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", fileURLToPath(new URL("./windows-memory.ps1", import.meta.url))], { windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 });
-        return JSON.parse(stdout.replace(/^\uFEFF/, ""));
-      }))();
-      for (const key of ["totalBytes", "availableBytes", "systemCommitLimitBytes", "systemCommitAvailableBytes"]) {
-        if (!Number.isFinite(windows[key]) || windows[key] < 0) throw new Error("invalid reading");
+      windows = await (
+        options.windowsProbe ??
+        (async () => {
+          const { stdout } = await execute(
+            "powershell.exe",
+            [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              fileURLToPath(new URL("./windows-memory.ps1", import.meta.url)),
+            ],
+            { windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 },
+          );
+          return JSON.parse(stdout.replace(/^\uFEFF/, ""));
+        })
+      )();
+      for (const key of [
+        "totalBytes",
+        "availableBytes",
+        "systemCommitLimitBytes",
+        "systemCommitAvailableBytes",
+      ]) {
+        if (!Number.isFinite(windows[key]) || windows[key] < 0)
+          throw new Error("invalid reading");
       }
     } catch {
       windows = {};
@@ -34,13 +62,18 @@ export async function observeHostMemory(options = {}) {
     }
   }
   const total = positiveReading(windows.totalBytes) ?? totalBytes;
-  const available = Number.isFinite(windows.availableBytes) ? Math.min(windows.availableBytes, availableBytes ?? Infinity) : availableBytes;
+  const available = Number.isFinite(windows.availableBytes)
+    ? Math.min(windows.availableBytes, availableBytes ?? Infinity)
+    : availableBytes;
   if (available === null) errors.push("Available memory is unknown");
   return {
     totalBytes: total,
     availableBytes: available,
     constrainedBytes,
-    effectiveLimitBytes: total === null ? constrainedBytes : Math.min(total, constrainedBytes ?? total),
+    effectiveLimitBytes:
+      total === null
+        ? constrainedBytes
+        : Math.min(total, constrainedBytes ?? total),
     systemCommitLimitBytes: windows.systemCommitLimitBytes ?? null,
     systemCommitAvailableBytes: windows.systemCommitAvailableBytes ?? null,
     source: windows.source ?? "Node process/os APIs; commit unavailable",
