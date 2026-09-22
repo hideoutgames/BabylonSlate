@@ -353,14 +353,14 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("tells Babylon to use the KTX2 loader for packed ktx2 bytes", () => {
+  it.each(["bytes", "blob"] as const)("uses explicit KTX2 loader hints with an intact %s source URL", (source) => {
     const ktx2 = new Uint8Array([
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,
     ]);
     const engine = textureEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const textureLease = cache.acquireTexture("tex", engine, ktx2);
+    const textureLease = cache.acquireTexture("tex", engine, source === "blob" ? new Blob([ktx2], { type: "image/ktx2" }) : ktx2);
     const texture = textureLease.resource;
     const loaderHints = texture as unknown as {
       mimeType?: string;
