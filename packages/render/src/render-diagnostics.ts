@@ -81,7 +81,11 @@ export function createRenderDiagnostics(
 ): () => RenderDiagnostics {
   const engine = scene.getEngine();
   let instrument = instruments.get(engine);
-  const supported = !!engine.getCaps().timerQuery;
+  // Babylon 9.20's whole-frame WebGPU path uses the removed encoder-level
+  // writeTimestamp API and records zero when it is absent. A timestamp-query
+  // capability alone therefore does not establish a measured frame duration.
+  // Per-pass WebGPU timestamp attribution is not implemented here.
+  const supported = !engine.isWebGPU && !!engine.getCaps().timerQuery;
   if (!instrument && supported) {
     instrument = new EngineInstrumentation(engine);
     instrument.captureGPUFrameTime = true;

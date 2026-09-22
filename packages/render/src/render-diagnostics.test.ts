@@ -6,7 +6,7 @@ import {
   UniversalCamera,
   Vector3,
 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readEngineDrawCalls } from "./draw-calls";
 import { MANAGED_RENDER_BYTE_LIMIT } from "./managed-render-resources";
 import { createRenderDiagnostics } from "./render-diagnostics";
@@ -19,6 +19,23 @@ afterEach(() => {
 });
 
 describe("render diagnostics qualification fields", () => {
+  it("does not report unsupported WebGPU whole-frame timestamps as zero GPU cost", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    Object.defineProperty(engine, "isWebGPU", { value: true });
+    const caps = engine.getCaps();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...caps, timerQuery: {} as NonNullable<typeof caps.timerQuery> });
+    const capture = vi.spyOn(engine, "captureGPUFrameTime");
+
+    const diagnostics = createRenderDiagnostics(scene, () => 1)();
+
+    expect(diagnostics.adapter.api).toBe("webgpu");
+    expect(diagnostics.gpuMs).toBeNull();
+    expect(diagnostics.gpuStatus).toBe("unsupported");
+    expect(capture).not.toHaveBeenCalled();
+  });
+
   it("reports adapter, draw calls, resource counts, GPU reservations and scaling level", () => {
     const engine = new NullEngine();
     engines.push(engine);

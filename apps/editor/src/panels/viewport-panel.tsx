@@ -1218,6 +1218,44 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [commitGizmoTransform, ensureSharedEngine]);
 
+  useEffect(() => {
+    // Explicitly opt in for Computer Use's read-only DOM inspection. Ordinary
+    // editor sessions and performance fixtures do not serialize diagnostics.
+    if (import.meta.env.VITE_TEST_MODE !== "true" || !isTestModeEnabled() ||
+      new URLSearchParams(location.search).get("renderDiagnostics") !== "1") return;
+    const panel = panelRef.current;
+    const canvas = canvasRef.current;
+    const handle = engineRef.current;
+    if (!panel || !canvas || !handle || !sceneReady || sceneLoad.open ||
+      requestedRenderSettingsKey !== renderSettingsKey) return;
+    let lastFrame = -1;
+    let lastAt = -Infinity;
+    const publish = () => {
+      const frame = handle.scheduler.stats().renderedFrames;
+      const now = performance.now();
+      if (engineRef.current !== handle || handle.scene.isDisposed ||
+        frame <= 0 || frame === lastFrame || now - lastAt < 250) return;
+      const rect = canvas.getBoundingClientRect();
+      panel.dataset.renderDiagnostics = JSON.stringify({
+        frame, capturedAt: new Date().toISOString(),
+        userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio,
+        canvas: { width: canvas.width, height: canvas.height, cssWidth: rect.width, cssHeight: rect.height },
+        requested: JSON.parse(requestedRenderSettingsKey),
+        render: handle.renderDiagnostics(),
+      });
+      lastFrame = frame;
+      lastAt = now;
+    };
+    // sceneReady follows this view's presented first frame, not a sibling's
+    // shared-Engine notification. Later captures require its own frame count.
+    publish();
+    const observer = handle.engine.onEndFrameObservable.add(publish);
+    return () => {
+      handle.engine.onEndFrameObservable.remove(observer);
+      delete panel.dataset.renderDiagnostics;
+    };
+  }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
+
   return (
     <div
       ref={panelRef}
