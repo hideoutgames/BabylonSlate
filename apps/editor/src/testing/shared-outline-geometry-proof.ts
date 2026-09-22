@@ -259,6 +259,9 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     morphMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
     morphed.material = morphMaterial; morphed.hasVertexAlpha = true;
     target.setColors(new Float32Array(morphed.getTotalVertices() * 4));
+    // Replacing existing target data does not notify the native manager of a
+    // layout change; publish the changed numeric data to its texture explicitly.
+    manager.synchronize();
     await pair("color-morph-zero-alpha", [contribution([morphed])]);
     clear();
 
