@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PlaceActorsDialog } from "./place-actors-dialog";
 
@@ -8,7 +8,7 @@ import { PlaceActorsDialog } from "./place-actors-dialog";
  * goes through the dialog's own `onOpenChange`. Reopening must still start
  * from an empty catalog.
  */
-function Harness() {
+function Harness({ onSelect }: { onSelect?: () => void }) {
   const [open, setOpen] = useState(true);
   return (
     <>
@@ -18,7 +18,10 @@ function Harness() {
       <PlaceActorsDialog
         open={open}
         onOpenChange={setOpen}
-        onSelect={() => setOpen(false)}
+        onSelect={() => {
+          onSelect?.();
+          setOpen(false);
+        }}
         projectItems={[]}
       />
     </>
@@ -36,15 +39,16 @@ afterEach(() => {
 
 describe("PlaceActorsDialog", () => {
   it("activates a searched actor with the keyboard and ignores composing keys", () => {
-    render(<Harness />);
+    const onSelect = vi.fn();
+    render(<Harness onSelect={onSelect} />);
     fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
       target: { value: "sphere" },
     });
     const row = screen.getByRole("button", { name: /sphere shapes/i });
     fireEvent.keyDown(row, { key: "Enter", isComposing: true });
-    expect(screen.getByTestId("place-actors-catalog")).toBeTruthy();
+    expect(onSelect).not.toHaveBeenCalled();
     fireEvent.keyDown(row, { key: "Enter" });
-    expect(screen.queryByTestId("place-actors-catalog")).toBeNull();
+    expect(onSelect).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId("reopen"));
     expect(searchValue()).toBe("");
   });
