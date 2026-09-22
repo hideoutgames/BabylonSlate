@@ -22,6 +22,12 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  await info.attach("scene-materials", { body: JSON.stringify(await page.evaluate(() =>
+    (window as unknown as { __babylonslateViewportTest?: { sceneVisuals(): unknown } }).__babylonslateViewportTest?.sceneVisuals() ?? [])), contentType: "application/json" });
+});
+
 test("Mannequin illumination stays stable when directional shadows are enabled", async ({ page }, testInfo) => {
   await openTestProject(page);
   const modelGuid = await guidForPath(page, "assets/Mannequin/mannequin.babasset");
