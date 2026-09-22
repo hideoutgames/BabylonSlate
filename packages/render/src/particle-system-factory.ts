@@ -276,7 +276,6 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   // Existing standalone factory consumers may leave preparation to scene readiness.
   // The returned promise still rejects for an owning service to diagnose and retire.
   void ready.catch(() => {});
-  let timer: ReturnType<typeof setTimeout> | undefined;
   const cancel = () => {
     if (pendingParticleMaterials.get(system) !== cancel) return;
     pendingParticleMaterials.delete(system);
@@ -297,7 +296,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     reject(error);
     cancel();
   };
-  timer = setTimeout(() => fail(new Error("Particle material preparation timed out.")), SCENE_SHADER_WARM_TIMEOUT_MS);
+  const timer = setTimeout(() => fail(new Error("Particle material preparation timed out.")), SCENE_SHADER_WARM_TIMEOUT_MS);
   // Babylon's first NodeMaterial build can finish asynchronously. Creating the
   // particle effect before then registers no fragment source and fetches a .fx URL.
   void prewarmMaterial(material, null).then(() => {

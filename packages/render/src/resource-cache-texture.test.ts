@@ -746,7 +746,7 @@ describe("bindResourceCacheToHandle", () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const textureLease = editor.cache.acquireTexture("tex-shared", engine, bytes);
     const texture = textureLease.resource;
-    play.cache.acquireTexture("tex-shared", engine, bytes).resource;
+    play.cache.acquireTexture("tex-shared", engine, bytes);
     play.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(false);
     editor.dispose();
