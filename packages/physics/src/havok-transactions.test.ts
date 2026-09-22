@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DistanceConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint";
 import { PhysicsShapeContainer } from "@babylonjs/core/Physics/v2/physicsShape";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
-import {
-  PhysicsActivationControl,
-  PhysicsPrestepType,
-} from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
+import { PhysicsPrestepType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
 import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
@@ -55,7 +53,9 @@ const trace = (backend: HavokPhysicsBackend, x = 0, z = 0) =>
 const native = (backend: HavokPhysicsBackend, id = "body") =>
   backend.scene.getTransformNodeByName(id)!.physicsBody!;
 const liveShapes = (backend: HavokPhysicsBackend) =>
-  (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp.HP_GetStatistics()[1][1];
+  (
+    backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings }
+  )._hknp.HP_GetStatistics()[1][1];
 const tetrahedron = [
   { x: 0, y: 0, z: 0 },
   { x: 2, y: 0, z: 0 },
@@ -116,7 +116,8 @@ describe("Havok attachment transactions", () => {
       body(backend, "body", "dynamic");
       backend.createCollider(box());
       const physicsBody = native(backend);
-      const stage = (label: string) => console.info("native mutation stage", label);
+      const stage = (label: string) =>
+        console.info("native mutation stage", label);
       stage("body and box created");
       const oldInertia = physicsBody.getMassProperties().inertia!.clone();
       physicsBody.setLinearVelocity(new Vector3(3, -2, 1));
@@ -260,6 +261,18 @@ describe("Havok attachment transactions", () => {
       expect(liveShapes(backend)).toBe(baseline);
       expect(trace(backend).hit).toBe(true);
       expect(trace(backend, 3).hit).toBe(false);
+      const havok = backend.plugin._hknp as HavokPhysicsWithBindings;
+      const nativeAttach = vi
+        .spyOn(havok, "HP_Body_SetShape")
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+      expect(() => backend.createCollider(box("rejected", 6))).toThrow(
+        "native shape attachment failed",
+      );
+      nativeAttach.mockRestore();
+      expect(native(backend).shape).toBe(old);
+      expect(liveShapes(backend)).toBe(baseline);
+      expect(trace(backend).hit).toBe(true);
+      expect(trace(backend, 6).hit).toBe(false);
       const cast = vi
         .spyOn(backend.plugin, "shapeCast")
         .mockImplementationOnce(() => {
@@ -366,6 +379,11 @@ describe("Havok explicit native motion", () => {
           bodyId: "body",
           offset: 0.01,
         });
+        backend.teleportBody("body", pose(i + 1));
+        expect(
+          backend.moveCharacter("controller", { x: 0, y: 0, z: 0 }, 1 / 60)!
+            .position.x,
+        ).toBeCloseTo(i + 1);
         backend.destroyCharacterController("controller");
         expect(liveShapes(backend)).toBe(baseline);
         expect(backend.plugin.numBodies).toBe(1);
@@ -378,7 +396,8 @@ describe("Havok explicit native motion", () => {
   it("ends retired trigger-pair generations without permanent or duplicate stale overlaps", async () => {
     const backend = await create();
     try {
-      const stage = (label: string) => console.info("trigger mutation stage", label);
+      const stage = (label: string) =>
+        console.info("trigger mutation stage", label);
       body(backend);
       stage("body created");
       const trigger = (id: string, x: number) => ({
@@ -452,20 +471,14 @@ describe("Havok explicit native motion", () => {
         ...pose(8),
         rotation: { x: 0, y: 0, z: 0, w: 3 },
       });
-      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
-      const handle = (physicsBody as unknown as { _pluginData: { hpBodyId: [bigint] } })._pluginData.hpBodyId;
+      const havok = (
+        backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings }
+      )._hknp;
+      const handle = (
+        physicsBody as unknown as { _pluginData: { hpBodyId: [bigint] } }
+      )._pluginData.hpBodyId;
       expect(havok.HP_Body_GetQTransform(handle)[1][0]).toEqual([8, 0, 0]);
-      const immediateHit = trace(backend, 8).hit;
-      physicsBody.shape = physicsBody.shape;
-      const shapeRefreshHit = trace(backend, 8).hit;
-      havok.HP_Body_SetActivationState(handle, havok.ActivationState.ACTIVE);
-      const wakeHit = trace(backend, 8).hit;
-      const region = (physicsBody as unknown as { _pluginData: { worldRegion: { world: [bigint] } } })._pluginData.worldRegion;
-      const removed = havok.HP_World_RemoveBody(region.world, handle);
-      const added = havok.HP_World_AddBody(region.world, handle, false);
-      const reinsertHit = trace(backend, 8).hit;
-      console.info("native teleport evidence", { pose: havok.HP_Body_GetQTransform(handle)[1], immediateHit, shapeRefreshHit, wakeHit, reinsertHit, removed, added });
-      expect(immediateHit).toBe(true);
+      expect(trace(backend, 8).hit).toBe(true);
       expect(trace(backend).hit).toBe(false);
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
       expect(physicsBody.getLinearVelocity().asArray()).toEqual(linear);
@@ -473,9 +486,9 @@ describe("Havok explicit native motion", () => {
       backend.step(1 / 60);
       expect(backend.getBodyTransform("body")!.position.x).toBeGreaterThan(8);
       expect(backend.getBodyTransform("body")!.position.y).toBeLessThan(0);
-      backend.plugin.setActivationControl(
-        physicsBody,
-        PhysicsActivationControl.ALWAYS_INACTIVE,
+      havok.HP_Body_SetActivationState(handle, havok.ActivationState.INACTIVE);
+      expect(havok.HP_Body_GetActivationState(handle)[1]).toBe(
+        havok.ActivationState.INACTIVE,
       );
       backend.teleportBody("body", pose(12), { velocity: "reset" });
       expect(trace(backend, 12).hit).toBe(true);
@@ -494,7 +507,63 @@ describe("Havok explicit native motion", () => {
       );
       transform.mockRestore();
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
+      const failedAdd = vi
+        .spyOn(havok, "HP_World_AddBody")
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+      expect(() => backend.teleportBody("body", pose(30))).toThrow(
+        "query membership insertion failed",
+      );
+      failedAdd.mockRestore();
+      expect(trace(backend, 12).hit).toBe(true);
+      expect(trace(backend, 30).hit).toBe(false);
+      expect(native(backend)).toBe(physicsBody);
+      const failedPose = vi
+        .spyOn(havok, "HP_Body_SetQTransform")
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+      expect(() => backend.teleportBody("body", pose(30))).toThrow(
+        "native body teleport failed",
+      );
+      failedPose.mockRestore();
+      expect(trace(backend, 12).hit).toBe(true);
+      expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
     } finally {
+      backend.dispose();
+    }
+  });
+
+  it("keeps constraints and body policy on the same native handle across immediate teleports", async () => {
+    const backend = await create();
+    let constraint: DistanceConstraint | undefined;
+    try {
+      body(backend, "anchor");
+      body(backend, "body", "dynamic", pose(2));
+      backend.createCollider(box());
+      const physicsBody = native(backend);
+      backend.updateBody("body", {
+        linearDamping: 0.2,
+        angularDamping: 0.3,
+        gravityScale: 0.4,
+        mass: 3,
+      });
+      const mass = physicsBody.getMassProperties();
+      const handle = physicsBody._pluginData.hpBodyId;
+      constraint = new DistanceConstraint(2, backend.scene);
+      native(backend, "anchor").addConstraint(physicsBody, constraint);
+      backend.step(1 / 60);
+      backend.teleportBody("body", pose(8));
+      expect(trace(backend, 8).actorId).toBe("body");
+      expect(physicsBody._pluginData.hpBodyId).toBe(handle);
+      expect(physicsBody.getMassProperties()).toEqual(mass);
+      expect(physicsBody.getLinearDamping()).toBeCloseTo(0.2);
+      expect(physicsBody.getAngularDamping()).toBeCloseTo(0.3);
+      expect(physicsBody.getGravityFactor()).toBeCloseTo(0.4);
+      expect(constraint.getBodiesUsingConstraint()).toHaveLength(1);
+      for (let i = 0; i < 90; i++) backend.step(1 / 60);
+      expect(
+        Math.abs(backend.getBodyTransform("body")!.position.x),
+      ).toBeLessThan(2.1);
+    } finally {
+      constraint?.dispose();
       backend.dispose();
     }
   });

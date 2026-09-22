@@ -758,7 +758,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setSensor(desc.isTrigger)
       .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
       .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
-    segment.setTranslation(desc.translation?.x ?? 0, desc.translation?.y ?? 0)
+    segment
+      .setTranslation(desc.translation?.x ?? 0, desc.translation?.y ?? 0)
       .setRotation(quatToPlanarAngle(desc.rotation ?? identityRotation()));
     return this.world.createCollider(segment, body);
   }
@@ -774,17 +775,34 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private retireColliderContacts(colliderId: string): void {
     for (let i = this.pendingContacts.length - 1; i >= 0; i--) {
       const event = this.pendingContacts[i]!;
-      if (event.colliderAId === colliderId || event.colliderBId === colliderId) this.pendingContacts.splice(i, 1);
+      if (
+        event.kind !== "overlapEnd" &&
+        (event.colliderAId === colliderId || event.colliderBId === colliderId)
+      )
+        this.pendingContacts.splice(i, 1);
     }
     for (const key of this.blockingKeys) {
       const pair = parseContactKey(key);
-      if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId)) this.blockingKeys.delete(key);
+      if (
+        pair &&
+        (pair.colliderAId === colliderId || pair.colliderBId === colliderId)
+      )
+        this.blockingKeys.delete(key);
     }
     for (const key of this.triggerKeys) {
       const pair = parseContactKey(key);
-      if (!pair || (pair.colliderAId !== colliderId && pair.colliderBId !== colliderId)) continue;
+      if (
+        !pair ||
+        (pair.colliderAId !== colliderId && pair.colliderBId !== colliderId)
+      )
+        continue;
       this.triggerKeys.delete(key);
-      this.pendingContacts.push({ kind: "overlapEnd", ...pair, location: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: 1, z: 0 } });
+      this.pendingContacts.push({
+        kind: "overlapEnd",
+        ...pair,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
     }
   }
 

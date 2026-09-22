@@ -1076,7 +1076,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   private retireTriggerPairs(actorId: string): void {
     this.pendingContacts = this.pendingContacts.filter(
-      (event) => event.actorAId !== actorId && event.actorBId !== actorId,
+      (event) =>
+        event.kind === "overlapEnd" ||
+        (event.actorAId !== actorId && event.actorBId !== actorId),
     );
     for (const [key, pair] of this.activeTriggerPairs) {
       if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
