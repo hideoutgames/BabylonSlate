@@ -217,6 +217,8 @@ export function measureBitmapGlyph(ch: string, style: RichTextStyle, stack = DEF
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.font = cssFontForText2D(style, stack);
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
       layout = canvasGlyphSize(ctx, ch, style);
     }
   }
@@ -309,18 +311,7 @@ function tryCanvasRasterize(
   ctx.font = font;
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
-  const measured = ctx.measureText(ch);
-  const pad = Math.max(2, Math.ceil(style.outline) + 1);
-  const ascent =
-    measured.actualBoundingBoxAscent > 0
-      ? measured.actualBoundingBoxAscent
-      : style.size * 0.8;
-  const descent =
-    measured.actualBoundingBoxDescent > 0
-      ? measured.actualBoundingBoxDescent
-      : style.size * 0.25;
-  const width = Math.max(1, Math.ceil((measured.width || style.size * 0.5) + pad * 2));
-  const height = Math.max(1, Math.ceil(ascent + descent + pad * 2));
+  const { width, height, pad } = canvasGlyphSize(ctx, ch, style);
   checkedCellBytes(width, height, limits);
   if (width > expected.width || height > expected.height) {
     throw new BitmapAllocationLimitError("font metrics changed after allocation preflight.");

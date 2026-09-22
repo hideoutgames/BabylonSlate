@@ -39,6 +39,7 @@ describe("rasterizeBitmapGlyph", () => {
     getImageData: (w: number, h: number) => Uint8ClampedArray,
     run: () => void,
     width: () => number = () => 16,
+    baselineSensitive = false,
   ): void {
     const previous = (globalThis as { document?: unknown }).document;
     (globalThis as { document: unknown }).document = {
@@ -48,18 +49,18 @@ describe("rasterizeBitmapGlyph", () => {
         getContext() {
           return {
             font: "",
-            textBaseline: "top",
+            textBaseline: "alphabetic",
             textAlign: "left",
             fillStyle: "",
             strokeStyle: "",
             lineJoin: "",
             miterLimit: 0,
             lineWidth: 0,
-            measureText: () => ({
+            measureText() { return {
               width: width(),
-              actualBoundingBoxAscent: 16,
-              actualBoundingBoxDescent: 4,
-            }),
+              actualBoundingBoxAscent: baselineSensitive && this.textBaseline === "top" ? -4 : 16,
+              actualBoundingBoxDescent: baselineSensitive && this.textBaseline === "top" ? 28 : 4,
+            }; },
             clearRect() {},
             fillText() {},
             strokeText() {},
@@ -80,6 +81,15 @@ describe("rasterizeBitmapGlyph", () => {
       }
     }
   }
+
+  it("uses the raster baseline during preflight so stable native metrics remain admissible", () => {
+    let readbacks = 0;
+    withMockCanvas((w, h) => { readbacks += 1; return new Uint8ClampedArray(w * h * 4); }, () => {
+      const glyph = rasterizeBitmapGlyph("A", STYLE);
+      expect(opaqueCount(glyph.pixels)).toBeGreaterThan(0);
+      expect(readbacks).toBe(1);
+    }, () => 16, true);
+  });
 
   it("rejects changed canvas metrics before allocating glyph pixels", () => {
     let measurements = 0;
