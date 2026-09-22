@@ -7,7 +7,7 @@ import { ParticleService } from "./particle-service";
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
 
-function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null, upload?: Promise<void>) {
+function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null, upload?: Promise<void> | (() => Promise<void> | undefined)) {
   const host = createTestEngine();
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, host.scene);
   let ready = !pending;
@@ -16,7 +16,7 @@ function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null,
   const release = vi.fn();
   const diagnostics: Array<{ code: string }> = [];
   const service = new ParticleService({ scene: host.scene, gpuSupported: false, sceneForSlot,
-    acquireTexture: () => ({ key: "texture:1", resource: texture, release, ready: upload }),
+    acquireTexture: () => ({ key: "texture:1", resource: texture, release, ready: typeof upload === "function" ? upload() : upload }),
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
   });
   service.setLibrary({
@@ -69,6 +69,34 @@ describe("particle incarnation and playback ownership", () => {
     expect(start).toHaveBeenCalledTimes(1);
     expect(reset).not.toHaveBeenCalled();
     expect(f.release).not.toHaveBeenCalled();
+  });
+
+  it("keeps a synchronous start observer's Stop as the desired state", () => {
+    const f = fixture(true);
+    f.assign();
+    f.scene.particleSystems[0]!.onStartedObservable.addOnce(() => {
+      expect(f.service.stats().playing).toBe(1);
+      f.play(false);
+    });
+    f.complete();
+    expect(f.service.stats().playing).toBe(0);
+  });
+
+  it("ignores an old upload rejection after a same-key successor starts", async () => {
+    let reject!: (error: unknown) => void;
+    const firstUpload = new Promise<void>((_resolve, fail) => { reject = fail; });
+    let acquisitions = 0;
+    const f = fixture(true, undefined, () => ++acquisitions === 1 ? firstUpload : undefined);
+    f.assign();
+    f.complete();
+    f.assign();
+    const successor = f.scene.particleSystems[0]!;
+    expect(successor.isStarted()).toBe(true);
+    reject(new Error("late old generation failure"));
+    await Promise.resolve();
+    expect(f.scene.particleSystems).toEqual([successor]);
+    expect(f.diagnostics).toEqual([]);
+    expect(f.release).toHaveBeenCalledTimes(1);
   });
 
   it("keeps an unavailable SceneLayer assignment pending in its intended owner", () => {
