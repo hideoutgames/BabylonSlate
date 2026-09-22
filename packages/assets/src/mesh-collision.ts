@@ -134,7 +134,10 @@ function latLongSphere(
     for (let x = 0; x < segments; x++) {
       const a = y * cols + x;
       const b = a + cols;
-      indices.push(a, b, a + 1, a + 1, b, b + 1);
+      // Pole vertices coincide. Omit their zero-area faces so the generated
+      // collision surface satisfies the native geometry validation contract.
+      if (y > 0) indices.push(a, b, a + 1);
+      if (y < rings - 1) indices.push(a + 1, b, b + 1);
     }
   }
   return { vertices, indices };

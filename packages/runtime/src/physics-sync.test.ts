@@ -507,7 +507,7 @@ describe("PhysicsWorldSync sprite collision", () => {
       spriteAnimations: new Map([["walk-anim", animation]]),
       pixelsPerUnit: 100,
     });
-    sync.setActorSpriteClip("hero", {
+    sync.setActorSpriteClip(world.findActor("hero")!, {
       assetGuid: "walk-anim",
       clipName: "",
       normalisedTime: 0,
@@ -568,7 +568,7 @@ describe("PhysicsWorldSync sprite collision", () => {
       sprites: new Map([["hero-sprite", sprite]]),
       spriteAnimations: new Map([["walk-anim", animation]]),
     });
-    sync.setActorSpriteClip("hero", {
+    sync.setActorSpriteClip(world.findActor("hero")!, {
       assetGuid: "walk-anim",
       clipName: "",
       normalisedTime: 0,
@@ -638,7 +638,7 @@ describe("PhysicsWorldSync sprite collision", () => {
       spriteAnimations: new Map([["walk-anim", sized]]),
       pixelsPerUnit: 100,
     });
-    sync.setActorSpriteClip("hero", {
+    sync.setActorSpriteClip(world.findActor("hero")!, {
       assetGuid: "walk-anim",
       clipName: "",
       normalisedTime: 0,
@@ -709,7 +709,7 @@ describe("PhysicsWorldSync sprite collision", () => {
       spriteAnimations: new Map([["walk-anim", animation]]),
       pixelsPerUnit: 100,
     });
-    sync.setActorSpriteClip("hero", {
+    sync.setActorSpriteClip(world.findActor("hero")!, {
       assetGuid: "walk-anim",
       clipName: "",
       normalisedTime: 0,
@@ -719,7 +719,7 @@ describe("PhysicsWorldSync sprite collision", () => {
       backend.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
     ).toEqual([]);
 
-    sync.setActorSpriteClip("hero", null);
+    sync.setActorSpriteClip(world.findActor("hero")!, null);
     sync.syncFromWorld(world);
     expect(
       backend.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,

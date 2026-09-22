@@ -17,6 +17,116 @@ function identity() {
   };
 }
 
+it("keeps Rapier teleport/target rotation consistent in direct and batched readback", async () => {
+  const backend = await createPhysicsBackend({
+    kind: "2d",
+    gravity: { x: 0, y: 0, z: 0 },
+    allowSoftwareFallback: false,
+  });
+  try {
+    const quarterTurn = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
+    backend.createBody({
+      id: "planar",
+      actorId: "planar",
+      motionType: "kinematic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: quarterTurn },
+    });
+    expect(backend.getBodyTransform("planar")!.rotation.z).toBeCloseTo(
+      Math.SQRT1_2,
+    );
+    backend.createCollider({
+      id: "planar-shape",
+      bodyId: "planar",
+      shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+      friction: 0,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    backend.step(1 / 60);
+    backend.teleportBody("planar", {
+      position: { x: 2, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 2 },
+    });
+    expect(
+      backend.lineTrace({ x: 2, y: 2, z: 0 }, { x: 2, y: -2, z: 0 }).actorId,
+    ).toBe("planar");
+    expect(
+      backend.lineTrace({ x: 0, y: 2, z: 0 }, { x: 0, y: -2, z: 0 }).hit,
+    ).toBe(false);
+    expect(backend.readTransforms().get("planar")!.rotation.w).toBeCloseTo(1);
+    backend.setBodyTargetTransform("planar", {
+      position: { x: 4, y: 1, z: 0 },
+      rotation: quarterTurn,
+    });
+    backend.step(1 / 60);
+    expect(backend.getBodyTransform("planar")!.position.x).toBeCloseTo(4);
+    expect(backend.readTransforms().get("planar")!.rotation.z).toBeCloseTo(
+      Math.SQRT1_2,
+    );
+  } finally {
+    backend.dispose();
+  }
+});
+
+it("retires Rapier trigger pairs when both colliders are removed before polling and permits reuse", async () => {
+  const backend = await createPhysicsBackend({
+    kind: "2d",
+    gravity: { x: 0, y: 0, z: 0 },
+    allowSoftwareFallback: false,
+  });
+  const collider = (id: string) => ({
+    id,
+    bodyId: id,
+    shape: { kind: "box2d" as const, halfExtents: { x: 0.5, y: 0.5 } },
+    isTrigger: id === "trigger",
+    layer: 1,
+    mask: 0xffffffff,
+    friction: 0,
+    restitution: 0,
+  });
+  try {
+    for (const id of ["trigger", "visitor"]) {
+      backend.createBody({
+        id,
+        actorId: id,
+        motionType: id === "trigger" ? "static" : "dynamic",
+        mass: 1,
+        linearDamping: 0,
+        angularDamping: 0,
+        gravityScale: 0,
+        transform: identity(),
+      });
+      backend.createCollider(collider(id));
+    }
+    backend.step(1 / 60);
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual([
+      "overlapBegin",
+    ]);
+    backend.destroyCollider("trigger");
+    backend.destroyCollider("visitor");
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual([
+      "overlapEnd",
+    ]);
+    expect(
+      backend.lineTrace({ x: 0, y: 7, z: 0 }, { x: 0, y: 3, z: 0 }).hit,
+    ).toBe(false);
+    for (const id of ["trigger", "visitor"])
+      backend.createCollider(collider(id));
+    backend.step(1 / 60);
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual([
+      "overlapBegin",
+    ]);
+  } finally {
+    backend.dispose();
+  }
+});
+
 async function runFallScenario(backend: PhysicsBackend): Promise<number> {
   backend.createBody({
     id: "dynamic",
@@ -89,9 +199,9 @@ describe("@babylonslate/physics", () => {
     expect(parseColliderProperties({}, "3d").shape.kind).toBe("box");
     expect(parseColliderProperties({}, "2d").shape.kind).toBe("box2d");
     expect(parseColliderProperties({}, "3d").renderInGame).toBe(false);
-    expect(parseColliderProperties({ renderInGame: true }, "3d").renderInGame).toBe(
-      true,
-    );
+    expect(
+      parseColliderProperties({ renderInGame: true }, "3d").renderInGame,
+    ).toBe(true);
   });
 
   it("software 3d: dynamic body falls and lineTrace hits ground", async () => {
@@ -104,41 +214,51 @@ describe("@babylonslate/physics", () => {
     expect(y).toBeLessThan(5);
     expect(y).toBeGreaterThanOrEqual(0.9);
 
-    const hit = backend.lineTrace(
-      { x: 0, y: 10, z: 0 },
-      { x: 0, y: -1, z: 0 },
-    );
+    const hit = backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 });
     expect(hit.hit).toBe(true);
     expect(hit.actorId).toBeTruthy();
     backend.dispose();
   });
 
-  it.each(["software", "rapier"] as const)("%s: partial velocity updates preserve gravity and reject non-dynamic motion", async (kind) => {
-    const backend = kind === "software"
-      ? createSoftwarePhysicsBackend("3d", { x: 0, y: -9.81, z: 0 })
-      : await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: -9.81, z: 0 } });
-    try {
-      backend.createBody({
-        id: "moving", actorId: "actor", motionType: "dynamic", mass: 1,
-        linearDamping: 0, angularDamping: 0, gravityScale: 1, transform: identity(),
-      });
-      for (let i = 0; i < 15; i += 1) backend.step(1 / 60);
-      const before = backend.getBodyTransform("moving")!.position;
-      for (let i = 0; i < 15; i += 1) {
-        backend.setBodyLinearVelocity("moving", { x: 2 });
+  it.each(["software", "rapier"] as const)(
+    "%s: partial velocity updates preserve gravity and reject non-dynamic motion",
+    async (kind) => {
+      const backend =
+        kind === "software"
+          ? createSoftwarePhysicsBackend("3d", { x: 0, y: -9.81, z: 0 })
+          : await createPhysicsBackend({
+              kind: "2d",
+              gravity: { x: 0, y: -9.81, z: 0 },
+            });
+      try {
+        backend.createBody({
+          id: "moving",
+          actorId: "actor",
+          motionType: "dynamic",
+          mass: 1,
+          linearDamping: 0,
+          angularDamping: 0,
+          gravityScale: 1,
+          transform: identity(),
+        });
+        for (let i = 0; i < 15; i += 1) backend.step(1 / 60);
+        const before = backend.getBodyTransform("moving")!.position;
+        for (let i = 0; i < 15; i += 1) {
+          backend.setBodyLinearVelocity("moving", { x: 2 });
+          backend.step(1 / 60);
+        }
+        const after = backend.getBodyTransform("moving")!.position;
+        expect(after.x - before.x).toBeCloseTo(0.5, 2);
+        expect(after.y).toBeLessThan(before.y - 0.7);
+        backend.setBodyMotionType("moving", "static");
+        backend.setBodyLinearVelocity("moving", { x: 100 });
         backend.step(1 / 60);
+        expect(backend.getBodyTransform("moving")!.position).toEqual(after);
+      } finally {
+        backend.dispose();
       }
-      const after = backend.getBodyTransform("moving")!.position;
-      expect(after.x - before.x).toBeCloseTo(0.5, 2);
-      expect(after.y).toBeLessThan(before.y - 0.7);
-      backend.setBodyMotionType("moving", "static");
-      backend.setBodyLinearVelocity("moving", { x: 100 });
-      backend.step(1 / 60);
-      expect(backend.getBodyTransform("moving")!.position).toEqual(after);
-    } finally {
-      backend.dispose();
-    }
-  });
+    },
+  );
 
   it("software 2d: sphere overlap and character controller move", () => {
     const backend = createSoftwarePhysicsBackend("2d", {
@@ -216,7 +336,9 @@ describe("@babylonslate/physics", () => {
       offset: 0.01,
     });
     backend.destroyBody("player");
-    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(
+      backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60),
+    ).toBeNull();
     expect(backend.sphereOverlap({ x: 0, y: 1, z: 0 }, 1).bodyIds).toEqual([]);
     expect(backend.getBodyTransform("player")).toBeNull();
     backend.dispose();
@@ -247,7 +369,9 @@ describe("@babylonslate/physics", () => {
       offset: 0.01,
     });
     backend.destroyCharacterController("cc");
-    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(
+      backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60),
+    ).toBeNull();
     expect(backend.getBodyTransform("player")?.position.x).toBe(0);
     backend.dispose();
   });
@@ -285,9 +409,13 @@ describe("@babylonslate/physics", () => {
       bodyId: "player",
       offset: 0.01,
     });
-    expect(backend.moveCharacter("cc", { x: 0.5, y: 0, z: 0 }, 1 / 60)).not.toBeNull();
+    expect(
+      backend.moveCharacter("cc", { x: 0.5, y: 0, z: 0 }, 1 / 60),
+    ).not.toBeNull();
     backend.destroyBody("player");
-    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(
+      backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60),
+    ).toBeNull();
     expect(backend.getBodyTransform("player")).toBeNull();
     backend.dispose();
   });
@@ -342,18 +470,9 @@ describe("@babylonslate/physics", () => {
       layer: 1,
       mask: 0xffffffff,
     });
-    const left = backend.lineTrace(
-      { x: -1, y: 1, z: 0 },
-      { x: 1, y: 1, z: 0 },
-    );
-    const right = backend.lineTrace(
-      { x: 3, y: 1, z: 0 },
-      { x: 1, y: 1, z: 0 },
-    );
-    const top = backend.lineTrace(
-      { x: 1, y: 3, z: 0 },
-      { x: 1, y: 1, z: 0 },
-    );
+    const left = backend.lineTrace({ x: -1, y: 1, z: 0 }, { x: 1, y: 1, z: 0 });
+    const right = backend.lineTrace({ x: 3, y: 1, z: 0 }, { x: 1, y: 1, z: 0 });
+    const top = backend.lineTrace({ x: 1, y: 3, z: 0 }, { x: 1, y: 1, z: 0 });
     const bottom = backend.lineTrace(
       { x: 1, y: -1, z: 0 },
       { x: 1, y: 1, z: 0 },
@@ -381,16 +500,12 @@ describe("@babylonslate/physics", () => {
 
   it("parses extended collider shapes for both worlds", () => {
     expect(
-      parseColliderProperties(
-        { shape: { kind: "sphere", radius: 2 } },
-        "3d",
-      ).shape,
+      parseColliderProperties({ shape: { kind: "sphere", radius: 2 } }, "3d")
+        .shape,
     ).toEqual({ kind: "sphere", radius: 2 });
     expect(
-      parseColliderProperties(
-        { shape: { kind: "circle", radius: 1 } },
-        "2d",
-      ).shape,
+      parseColliderProperties({ shape: { kind: "circle", radius: 1 } }, "2d")
+        .shape,
     ).toEqual({ kind: "circle", radius: 1 });
     expect(
       parseColliderProperties(
@@ -419,7 +534,7 @@ describe("@babylonslate/physics", () => {
         "2d",
       ).shape,
     ).toEqual({ kind: "capsule2d", radius: 0.4, halfHeight: 1.2 });
-    expect(
+    expect(() =>
       parseColliderProperties(
         {
           shape: {
@@ -428,15 +543,8 @@ describe("@babylonslate/physics", () => {
           },
         },
         "2d",
-      ).shape,
-    ).toEqual({
-      kind: "polygon",
-      points: [
-        { x: 0, y: 0 },
-        { x: 1, y: 0 },
-        { x: 0, y: 0 },
-      ],
-    });
+      ),
+    ).toThrow("Invalid collider point");
     expect(
       parseColliderProperties(
         { shape: { kind: "capsule", radius: 0.3, halfHeight: 0.8 } },
@@ -449,13 +557,13 @@ describe("@babylonslate/physics", () => {
         "3d",
       ).shape,
     ).toEqual({ kind: "cylinder", radius: 0.4, height: 2 });
-    expect(
+    expect(() =>
       parseColliderProperties(
         { shape: { kind: "convex", points: "nope" } },
         "3d",
-      ).shape,
-    ).toEqual({ kind: "convex", points: [] });
-    expect(
+      ),
+    ).toThrow();
+    expect(() =>
       parseColliderProperties(
         {
           shape: {
@@ -465,21 +573,19 @@ describe("@babylonslate/physics", () => {
           },
         },
         "3d",
-      ).shape,
-    ).toEqual({
-      kind: "mesh",
-      vertices: [{ x: 1, y: 2, z: 3 }],
-      indices: [0, 0, 2],
-    });
+      ),
+    ).toThrow("finite numbers");
+    expect(() =>
+      parseColliderProperties({ shape: { kind: "unknown" } }, "3d"),
+    ).toThrow("Unsupported");
+    expect(() =>
+      parseColliderProperties({ shape: { kind: "unknown" } }, "2d"),
+    ).toThrow("Unsupported");
+    expect(() =>
+      parseColliderProperties({ shape: { kind: "sphere", radius: NaN } }, "3d"),
+    ).toThrow("finite numbers");
     expect(
-      parseColliderProperties({ shape: { kind: "unknown" } }, "3d").shape.kind,
-    ).toBe("box");
-    expect(
-      parseColliderProperties({ shape: { kind: "unknown" } }, "2d").shape.kind,
-    ).toBe("box2d");
-    expect(
-      parseRigidBodyProperties({ motionType: "kinematic", mass: 2 })
-        .motionType,
+      parseRigidBodyProperties({ motionType: "kinematic", mass: 2 }).motionType,
     ).toBe("kinematic");
   });
 
@@ -652,7 +758,9 @@ describe("@babylonslate/physics", () => {
     expect(backend.sphereOverlap({ x: 3, y: 0, z: 0 }, 0.2).bodyIds).toContain(
       "body",
     );
-    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).bodyIds).toEqual([]);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).bodyIds).toEqual(
+      [],
+    );
     backend.dispose();
   });
 
@@ -687,10 +795,12 @@ describe("@babylonslate/physics", () => {
       mask: 0xffffffff,
       rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
     });
-    expect(backend.sphereOverlap({ x: 1.5, y: 0, z: 0 }, 0.2).bodyIds).toContain(
-      "body",
+    expect(
+      backend.sphereOverlap({ x: 1.5, y: 0, z: 0 }, 0.2).bodyIds,
+    ).toContain("body");
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 1.5 }, 0.2).bodyIds).toEqual(
+      [],
     );
-    expect(backend.sphereOverlap({ x: 0, y: 0, z: 1.5 }, 0.2).bodyIds).toEqual([]);
     backend.dispose();
   });
 
@@ -753,10 +863,10 @@ describe("@babylonslate/physics", () => {
       ]),
     );
     expect(begun.some((event) => event.kind === "hit")).toBe(false);
-    expect(backend.pollContacts().some((event) => event.kind === "overlapBegin")).toBe(
-      false,
-    );
-    backend.setBodyTransform("b", {
+    expect(
+      backend.pollContacts().some((event) => event.kind === "overlapBegin"),
+    ).toBe(false);
+    backend.teleportBody("b", {
       position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     });
@@ -818,7 +928,7 @@ describe("@babylonslate/physics", () => {
       ]),
     );
     expect(begun.some((event) => event.kind === "hit")).toBe(false);
-    triggerBackend.setBodyTransform("b", {
+    triggerBackend.teleportBody("b", {
       position: { x: 10, y: 0, z: 0 },
       rotation: identityRotation(),
     });
