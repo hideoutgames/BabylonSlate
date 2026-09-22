@@ -216,6 +216,7 @@ it("waits for successor admission even when native pixels are ready, retaining t
     ...assets, textureBytes: new Map([["rejected", nextBytes]]),
   });
   expect(a.environmentTexture).toBe(working);
+  expect(isEnvironmentLightingReady(a)).toBe(false);
   rejectAdmission(new Error("Controlled successor budget rejection"));
   await expect(rejected).rejects.toThrow("successor budget rejection");
   cache.flushUnreferenced();
@@ -234,8 +235,10 @@ it("waits for successor admission even when native pixels are ready, retaining t
     ...assets, textureBytes: new Map([["admitted", nextBytes]]),
   });
   expect(a.environmentTexture).toBe(working);
+  expect(isEnvironmentLightingReady(a)).toBe(false);
   admit();
   await admitted;
+  expect(isEnvironmentLightingReady(a)).toBe(true);
   expect(a.environmentTexture).not.toBe(working);
   expect(a.environmentTexture?.isReady()).toBe(true);
   expect(working.getInternalTexture()).toBeNull();

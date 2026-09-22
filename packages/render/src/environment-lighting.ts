@@ -136,15 +136,17 @@ class EnvironmentLighting {
       // the working environment until the complete owned preparation succeeds.
       else if (this.source && lease.ready) {
         this.pendingLease = lease;
+        changed = true;
         void lease.ready.then(() => {
           if (this.pendingLease !== lease || this.disposed || this.scene.isDisposed) { lease.release(); return; }
           this.pendingLease = undefined;
           try { this.publish(lease); this.sync(); this.invalidateMaterials(); }
-          catch (error) { lease.release(); console.error("Environment texture replacement failed", error); }
+          catch (error) { lease.release(); markSceneReadinessDirty(this.scene); console.error("Environment texture replacement failed", error); }
         }, (error) => {
           if (this.pendingLease !== lease) return;
           this.pendingLease = undefined;
           lease.release();
+          markSceneReadinessDirty(this.scene);
           console.error("Environment texture replacement failed", error);
         });
       } else {
@@ -176,6 +178,7 @@ class EnvironmentLighting {
       ));
     }
     if (this.preparationError) throw this.preparationError;
+    if (this.pendingLease) return false;
     return (
       !this.view ||
       (this.view.isReady() &&
