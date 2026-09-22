@@ -175,15 +175,20 @@ function liveTexture(
 ): BaseTexture | undefined {
   const texture = entry.textures.get(key);
   if (!texture) return undefined;
+  if ((texture instanceof Texture || texture instanceof CubeTexture) && texture.loadingError) {
+    texture.dispose();
+    entry.textures.delete(key);
+    return undefined;
+  }
   if (!isDisposedGpuTexture(texture)) return texture;
   entry.textures.delete(key);
   return undefined;
 }
 
 function anyLiveTexture(entry: CacheEntry): BaseTexture | undefined {
-  for (const [key, texture] of entry.textures) {
-    if (!isDisposedGpuTexture(texture)) return texture;
-    entry.textures.delete(key);
+  for (const key of entry.textures.keys()) {
+    const texture = liveTexture(entry, key);
+    if (texture) return texture;
   }
   return undefined;
 }

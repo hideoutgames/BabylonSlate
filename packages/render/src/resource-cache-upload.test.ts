@@ -40,6 +40,28 @@ it("reclaims provisional URLs and ownership when native texture construction thr
   expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
 });
 
+it("retries a failed upload under the same source identity before eviction", async () => {
+  const { cache, engine } = host();
+  const create = NullEngine.prototype.createTexture.bind(engine);
+  let fail!: NonNullable<Parameters<typeof engine.createTexture>[6]>;
+  vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+    fail = args[6]!; args[5] = null;
+    const internal = create(...args); internal.isReady = false; return internal;
+  });
+  const bytes = ktx2();
+  const failed = cache.acquireTexture("retry", engine, bytes);
+  fail("controlled failure", undefined);
+  await expect(failed.ready).rejects.toThrow("controlled failure");
+  failed.release();
+  const retry = cache.acquireTexture("retry", engine, bytes);
+  expect(retry.resource).not.toBe(failed.resource);
+  expect(failed.resource.getInternalTexture()).toBeNull();
+  uploaded(retry.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  await retry.ready;
+  retry.release(); cache.flushUnreferenced();
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
 it("rejects an over-budget successor without retiring the working upload", () => {
   const { cache, engine } = host();
   cache.setByteCeiling(200);
