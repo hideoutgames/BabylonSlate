@@ -5,9 +5,10 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { PROJECT_FILE } from "../packages/core/src/project";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
-import { openAssetFromBrowser } from "./open-test-project";
+import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { addMaterialPaletteNode, compileMaterialPreview } from "./material-graph";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import type { EngineSceneDiagnostics } from "../apps/editor/src/testing/webgpu-previews-proof";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -97,17 +98,22 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         version: MATERIAL_PAYLOAD_VERSION, payload: noiseMaterial(kind) as unknown as Record<string, unknown>,
       }));
       await openMinimalTestProject(page, files);
+      // The viewport installs diagnostics for the Engine shared by previews.
+      await openMainScene(page);
       await openAssetFromBrowser(page, assetPath);
       if (kind === "perlin") await addMaterialPaletteNode(page, "+", "math.add");
       await compileMaterialPreview(page);
       await expect.poll(() => page.evaluate(async () => {
         const host = globalThis as unknown as {
           __babylonslateViewportTest?: {
-            engineSceneDiagnostics: () => Promise<{ backend: string }>;
+            engineSceneDiagnostics: () => Promise<EngineSceneDiagnostics | null>;
           };
         };
-        return (await host.__babylonslateViewportTest?.engineSceneDiagnostics())?.backend;
-      })).toBe(backend);
+        return host.__babylonslateViewportTest?.engineSceneDiagnostics();
+      })).toMatchObject({
+        backend,
+        scenes: expect.arrayContaining([expect.objectContaining({ kind: "preview" })]),
+      });
       const canvas = page.getByTestId("material-preview-canvas");
       await expect.poll(async () => Math.min(...await colorRanges(canvas))).toBeGreaterThan(25);
       await canvas.screenshot({ path: testInfo.outputPath(`${kind}-${backend}.png`) });
