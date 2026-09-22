@@ -15,6 +15,7 @@ import { createSpriteQuad } from "./sprite-quad";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { constructionMaterialOf } from "./visual-meshes";
+import { onSceneReadinessDirty } from "./scene-perf";
 
 describe("meshAssetFingerprint", () => {
   it("detects same-size texture replacements while retaining equal-content snapshot keys", () => {
@@ -181,6 +182,58 @@ describe("applyAlbedoTexture", () => {
       expect(f.auto.diffuseTexture).toBe(next.resource);
       expect(f.cache.resourceStats().leases).toBe(1);
     } finally { create.mockRestore(); f.dispose(); }
+  });
+
+  it("blends owned sprite crossfades and invalidates readiness only at classification boundaries", () => {
+    const f = spriteFixture();
+    let invalidations = 0;
+    const detach = onSceneReadinessDirty(f.scene, () => invalidations++);
+    try {
+      const overlay = createSpriteQuad(f.scene, "overlay", f.sprite.frames[0]!);
+      applyAlbedoTexture(overlay, f.scene, "atlas", f.assets);
+      const secondary = overlay.material as StandardMaterial;
+      const materials = f.scene.materials.length;
+      const acquisitions = f.acquire.mock.calls.length;
+      const fade = (weight: number) => applyAnimStateToScene({
+        animationGroups: [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
+      }, {
+        type: "animState", slotId: 1, stateId: "idle", normalisedTime: 0, blendWeights: {},
+        layers: [
+          { stateId: "idle", clipAssetGuid: "sprite", clipName: "Idle", clipKind: "sprite", normalisedTime: 0, weight },
+          { stateId: "next", clipAssetGuid: "sprite", clipName: "Idle", clipKind: "sprite", normalisedTime: 0, weight: 1 - weight },
+        ],
+      });
+      expect(f.auto.needAlphaBlendingForMesh(f.mesh)).toBe(false);
+      fade(0.4);
+      expect(f.auto.needAlphaBlendingForMesh(f.mesh)).toBe(true);
+      expect(secondary.needAlphaBlendingForMesh(overlay)).toBe(true);
+      expect(f.auto.needAlphaTestingForMesh(f.mesh)).toBe(true);
+      expect(secondary.needAlphaTestingForMesh(overlay)).toBe(true);
+      expect(invalidations).toBe(2);
+      invalidations = 0;
+      for (let i = 0; i < 100; i++) fade(i % 2 ? 0.2 : 0.4);
+      expect(invalidations).toBe(0);
+      expect(f.scene.materials).toHaveLength(materials);
+      expect(f.mesh.material).toBe(f.auto);
+      expect(overlay.material).toBe(secondary);
+      expect(f.acquire).toHaveBeenCalledTimes(acquisitions);
+
+      f.authored.transparencyMode = Material.MATERIAL_OPAQUE;
+      f.assign("authored");
+      fade(0.3);
+      expect(f.mesh.material).toBe(f.authored);
+      expect(f.authored.needAlphaBlendingForMesh(f.mesh)).toBe(false);
+      expect(f.authored.transparencyMode).toBe(Material.MATERIAL_OPAQUE);
+      expect(invalidations).toBe(0);
+      f.assign(null);
+      expect(f.mesh.material).toBe(f.auto);
+      fade(1);
+      expect(f.auto.needAlphaBlendingForMesh(f.mesh)).toBe(false);
+      expect(secondary.needAlphaBlendingForMesh(overlay)).toBe(false);
+      expect(f.auto.needAlphaTestingForMesh(f.mesh)).toBe(true);
+      expect(overlay.visibility).toBe(0);
+      expect(invalidations).toBe(2);
+    } finally { detach(); f.dispose(); }
   });
 
   it("keeps the previous texture after upload failure and ignores an obsolete completion", async () => {

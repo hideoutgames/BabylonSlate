@@ -20,6 +20,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const frame = { name: "solid", u: 0, v: 0, uSize: 1, vSize: 1, durationMs: 100, pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 };
   const sources = installTextureBytes(new Map([
     ["solid", encodePngRgba(1, 1, new Uint8Array([255, 0, 0, 255]))],
+    ["green", encodePngRgba(1, 1, new Uint8Array([0, 255, 0, 255]))],
     ["atlas", encodePngRgba(2, 1, new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]))],
   ]))!;
   const assets = { resourceCache: owner.cache, textureBytes: sources };
@@ -53,8 +54,10 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     scene.clearColor = new Color4(0, 0, 0, 1);
     apply();
     applyAlbedoTexture(sibling, scene, "solid", { resourceCache: siblingOwner.cache, textureBytes: sources });
-    const atlas = cache.acquireTexture("atlas", engine, sources.get("atlas")!, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
-    await atlas.ready; atlas.release();
+    for (const guid of ["atlas", "green"]) {
+      const prepared = cache.acquireTexture(guid, engine, sources.get(guid)!, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
+      await prepared.ready; prepared.release();
+    }
     await scene.whenReadyAsync();
     apply(); await pixels();
     const material = mesh.material;
@@ -89,8 +92,9 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     const green = await pixels();
     const atlasChange = { ...operations };
     const overlay = createSpriteQuad(scene, "crossfade", frame);
+    overlay.alphaIndex = mesh.alphaIndex + 1;
     const otherAnimation = createDefaultSpriteAnimationPayload();
-    otherAnimation.frames[0] = { ...otherAnimation.frames[0]!, textureGuid: "atlas", width: 100, height: 100 };
+    otherAnimation.frames[0] = { ...otherAnimation.frames[0]!, textureGuid: "green", width: 100, height: 100 };
     const slot = { mesh, overlayMesh: overlay, payload: createDefaultSpritePayload(),
       spriteAnimations: new Map([["primary", animation], ["secondary", otherAnimation]]),
       applyTexture: (target: typeof mesh, guid: string | null | undefined) => applyAlbedoTexture(target, target.getScene(), guid, assets) };
@@ -101,8 +105,12 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
       ],
     });
     fade(0.4);
+    await scene.whenReadyAsync();
+    const primary04 = await pixels();
     reset(); fade(0.2);
     const crossfade = { ...operations };
+    const primary02 = await pixels();
+    const crossfadePixels = { primary04, primary02 };
     const crossfadeWeights = [mesh.visibility, overlay.visibility];
     const independentAtlases = (mesh.material as StandardMaterial).diffuseTexture !== (overlay.material as StandardMaterial).diffuseTexture;
     const authored = new StandardMaterial("authored", scene);
@@ -115,7 +123,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
     const siblingSurvives = siblingTexture?.isReady() === true;
     layer.dispose(); siblingOwner.dispose(); cache.flushUnreferenced();
-    return { requestedBackend: backend, backend: engine instanceof Engine ? engine.webGLVersion === 2 ? "webgl2" : "webgl1" : "webgpu", driver: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, crossfade, crossfadeWeights, independentAtlases, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
+    return { requestedBackend: backend, backend: engine instanceof Engine ? engine.webGLVersion === 2 ? "webgl2" : "webgl1" : "webgpu", driver: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, crossfade, crossfadeWeights, crossfadePixels, independentAtlases, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
   } finally {
     scene.dispose(); layer.dispose(); owner.dispose(); siblingOwner.dispose(); cache.dispose(); engine.dispose(); canvas.remove();
   }
