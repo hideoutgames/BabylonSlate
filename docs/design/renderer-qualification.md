@@ -107,6 +107,51 @@ default-material geometry, actual ObjectRenderer identities and disposal after
 preparation before the first draw. These additions remain unverified until their
 recorded run; successful stock-bug reproduction remains separate evidence.
 
+### Shared production slice — 22 September 2026
+
+At `90267c2bd41846e6924d54cf367fff51dd4b0057`, both selected cases in
+`e2e/shared-outline.spec.ts` passed through the admitted shared runner with one
+worker (12.5 seconds). Each case captured 43 presented states using the actual
+Scene render coordinator. Windows 10.0.19045 / Chromium used WARP WebGL2 and
+effective SwiftShader WebGPU, at 240×120 pixels, scale 1 and DPR 1 (three resize
+cycles also used 320×160). These are software-adapter functional results; they
+do not establish hardware cost, Computer Use acceptance or A16 headroom.
+
+The production assertions require surviving pixels after removal of each
+consumer, reversed membership/consumer order, overlapping consumers on one
+instance, component/selection precedence, strict full/partial/close occlusion,
+intentional through-mesh visibility, default-material meshes and exact IDs
+2048/2049/65535. Identical requests and color/width edits retain ObjectRenderers,
+textures and instance-upload counts. Forty-eight styles retain the same bounded
+pass count. All disabled states return accounted targets/buffers to zero after
+retirement, including a separate prepared-but-never-drawn scene. No page errors,
+console errors or GPU/shader validation diagnostics were recorded.
+
+Portable diagnostics include every measured state:
+[WebGL2](../assets/renderer-qualification/2026-09-22-shared-outline/webgl2.json)
+and [WebGPU](../assets/renderer-qualification/2026-09-22-shared-outline/webgpu.json).
+The initial three-consumer captures
+([WebGL2](../assets/renderer-qualification/2026-09-22-shared-outline/webgl2-three-disjoint-instances.png),
+[WebGPU](../assets/renderer-qualification/2026-09-22-shared-outline/webgpu-three-disjoint-instances.png))
+and strict/through overlap captures
+([WebGL2](../assets/renderer-qualification/2026-09-22-shared-outline/webgl2-through-component-keeps-global-strict.png),
+[WebGPU](../assets/renderer-qualification/2026-09-22-shared-outline/webgpu-through-component-keeps-global-strict.png))
+were visually inspected and agree across APIs. Additional removal, overlap,
+close-occluder, high-ID and disabled captures are retained beside those files.
+
+Four selected ownership/coordinator unit cases passed at `c512b76d`; the render
+package typecheck passed at `49c45f10`; the twelve changed TypeScript files passed
+lint at `96fc594c`. The later package-export repair changed no production logic;
+the successful browser build checked the editor/player consumers. An earlier
+build failed on that missing export, and an earlier lint run failed on an unused
+image binding; neither is counted as passing. The user authorized reducing the
+machine-wide host reserve to 1 GiB while retaining shared mode, one heavy phase,
+fair admission and source/environment/toolchain validation. Checks were serialized.
+
+This satisfies the initial regular-mesh/instance vertical-slice gate only.
+Generalized submaterial/animation/alpha coverage, authored products, runtime
+and export integration, hands-on routes and measured desktop cost remain open.
+
 `e2e/native-outline-qualification.spec.ts` runs the stock `FrameGraphSelectionOutlineLayerTask` with disjoint CEL/component instances sharing one source and a third selection consumer. It captures the native output before and after clearing the component consumer, plus the surviving selection-buffer state. The fixture deliberately isolates ownership with depth occlusion disabled; it does **not** qualify global CEL visibility. A passing harness means the evidence was captured and the pinned limitation reproduced, **not** that outlines satisfy release acceptance. Run just this file with the shared browser runner; the JSON attachment lists blockers and actual API, mask type, dimensions and browser. Screenshots come from the actual presented canvas.
 
 Physical iPad A16 testing is **deferred by the user for this delivery (21 September 2026)**. No physical-device baseline, equal-quality before/after timings, sustained thermal behavior or device mask-format qualification has been measured. Desktop WebGL/WebGPU captures are functional evidence only. Do not enable a costly default based on these runs or substitute an alternate outline renderer without the requested product approval.
