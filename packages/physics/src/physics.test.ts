@@ -534,24 +534,7 @@ describe("@babylonslate/physics", () => {
         "2d",
       ).shape,
     ).toEqual({ kind: "capsule2d", radius: 0.4, halfHeight: 1.2 });
-    expect(
-      parseColliderProperties(
-        {
-          shape: {
-            kind: "polygon",
-            points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, "bad"],
-          },
-        },
-        "2d",
-      ).shape,
-    ).toEqual({
-      kind: "polygon",
-      points: [
-        { x: 0, y: 0 },
-        { x: 1, y: 0 },
-        { x: 0, y: 0 },
-      ],
-    });
+    expect(() => parseColliderProperties({ shape: { kind: "polygon", points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, "bad"] } }, "2d")).toThrow("Invalid collider point");
     expect(
       parseColliderProperties(
         { shape: { kind: "capsule", radius: 0.3, halfHeight: 0.8 } },
@@ -564,34 +547,11 @@ describe("@babylonslate/physics", () => {
         "3d",
       ).shape,
     ).toEqual({ kind: "cylinder", radius: 0.4, height: 2 });
-    expect(
-      parseColliderProperties(
-        { shape: { kind: "convex", points: "nope" } },
-        "3d",
-      ).shape,
-    ).toEqual({ kind: "convex", points: [] });
-    expect(
-      parseColliderProperties(
-        {
-          shape: {
-            kind: "mesh",
-            vertices: [{ x: 1, y: 2, z: 3 }],
-            indices: [0, "x", 2],
-          },
-        },
-        "3d",
-      ).shape,
-    ).toEqual({
-      kind: "mesh",
-      vertices: [{ x: 1, y: 2, z: 3 }],
-      indices: [0, 0, 2],
-    });
-    expect(
-      parseColliderProperties({ shape: { kind: "unknown" } }, "3d").shape.kind,
-    ).toBe("box");
-    expect(
-      parseColliderProperties({ shape: { kind: "unknown" } }, "2d").shape.kind,
-    ).toBe("box2d");
+    expect(() => parseColliderProperties({ shape: { kind: "convex", points: "nope" } }, "3d")).toThrow();
+    expect(() => parseColliderProperties({ shape: { kind: "mesh", vertices: [{ x: 1, y: 2, z: 3 }], indices: [0, "x", 2] } }, "3d")).toThrow("finite numbers");
+    expect(() => parseColliderProperties({ shape: { kind: "unknown" } }, "3d")).toThrow("Unsupported");
+    expect(() => parseColliderProperties({ shape: { kind: "unknown" } }, "2d")).toThrow("Unsupported");
+    expect(() => parseColliderProperties({ shape: { kind: "sphere", radius: NaN } }, "3d")).toThrow("finite numbers");
     expect(
       parseRigidBodyProperties({ motionType: "kinematic", mass: 2 }).motionType,
     ).toBe("kinematic");
