@@ -197,6 +197,16 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("negative-nonuniform-scale", [contribution([clipped])]);
     clear();
 
+    const opacityPlane = MeshBuilder.CreatePlane("Opacity UV Receiver", { size: 1.2 }, scene);
+    const opacityMaterial = material.clone("Opacity UV Material");
+    opacityMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    const opacityMap = RawTexture.CreateRGBATexture(new Uint8Array([255,255,255,0, 255,255,255,255]), 2, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    opacityMaterial.opacityTexture = opacityMap; opacityPlane.material = opacityMaterial;
+    await pair("opacity-texture-coverage", [contribution([opacityPlane])]);
+    opacityMap.uOffset = 0.5;
+    await pair("opacity-texture-transform", [contribution([opacityPlane])]);
+    clear();
+
     const thinGroups = [-1.4, 1.4].map((x, index) => {
       const mesh = MeshBuilder.CreateBox(`Thin Actor ${index}`, { size: 0.5 }, scene); mesh.material = material;
       const matrices = new Float32Array(32);
@@ -205,6 +215,14 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     });
     const thin = thinGroups.map((mesh, index) => ({ ...contribution([mesh], index ? [0, 0, 1] : [1, 0, 0]), targets: [{ key: `thin-${index}`, meshes: [mesh] }] }));
     await pair("two-thin-actor-groups", thin);
+    const thinColors = new Float32Array([1,1,1,0, 1,1,1,1]);
+    const thinMaterial = material.clone("Thin Alpha Material");
+    thinMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    thinGroups[1]!.material = thinMaterial;
+    thinGroups[1]!.thinInstanceSetBuffer("color", thinColors, 4, false);
+    await pair("thin-instance-alpha", thin);
+    thinColors[3] = 1; thinGroups[1]!.thinInstanceBufferUpdated("color");
+    await pair("thin-instance-alpha-restored", thin);
     // Remove one consumer while the second remains; no redraw setup can mask cross-owner cleanup.
     view.removeContribution("proof-0");
     await capture("thin-first-consumer-removed");
@@ -233,6 +251,11 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("morph-rest", [contribution([morphed])]);
     target.influence = 1;
     await pair("position-and-color-morph", [contribution([morphed])]);
+    const morphMaterial = material.clone("Morph Alpha Material");
+    morphMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    morphed.material = morphMaterial; morphed.hasVertexAlpha = true;
+    target.setColors(new Float32Array(morphed.getTotalVertices() * 4));
+    await pair("color-morph-zero-alpha", [contribution([morphed])]);
     clear();
 
     const skinned = MeshBuilder.CreatePlane("Skinned Receiver", { size: 0.8 }, scene); skinned.material = material;

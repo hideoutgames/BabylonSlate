@@ -81,8 +81,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     expect(at("live-material-clip-plane").native.count).toBeLessThan(at("clip-unrestricted").native.count * 0.6);
     expect(at("negative-nonuniform-scale").native.count).toBeGreaterThan(0);
+    expect(at("opacity-texture-transform").native.centroid![0]).not.toBe(at("opacity-texture-coverage").native.centroid![0]);
     const thin = at("two-thin-actor-groups");
     expect(thin.rendered.red).toBeGreaterThan(0); expect(thin.rendered.blue).toBeGreaterThan(0);
+    expect(at("thin-instance-alpha").rendered.blue).toBeLessThan(thin.rendered.blue * 0.6);
+    expect(at("thin-instance-alpha-restored").rendered.blue).toBe(thin.rendered.blue);
     for (const name of ["thin-first-consumer-removed", "thin-first-actor-disposed"]) {
       const capture = report.captures.find((entry) => entry.name === name)!;
       expect(capture.red, name).toBe(0);
@@ -90,6 +93,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     expect(at("late-lod-selected").native.count).toBeLessThan(at("before-late-lod").native.count * 0.5);
     expect(at("position-and-color-morph").native.centroid![0]).toBeGreaterThan(at("morph-rest").native.centroid![0]! + 30);
+    expect(at("color-morph-zero-alpha").native.count).toBe(0);
+    expect(at("color-morph-zero-alpha").rendered.count).toBe(0);
     expect(at("skeleton-pose").native.centroid![0]).toBeLessThan(at("skeleton-rest").native.centroid![0]! - 30);
     expect(at("authored-wpo").native.centroid![0]).toBeGreaterThan(150);
     expect(at("authored-wpo-parameter-edit").native.centroid![0]).toBeLessThan(95);
