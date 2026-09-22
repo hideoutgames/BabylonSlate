@@ -74,6 +74,9 @@ function fixture() {
 function prepareShadowLayers(generator: ShadowGenerator): void {
   const scene = generator.getLight().getScene();
   scene.incrementRenderId();
+  // Scene._renderForCamera prepares the receiver's projection before RTTs.
+  // Native CSM consumes that cached matrix during its before-bind callback.
+  scene.updateTransformMatrix(true);
   const map = generator.getShadowMap()!;
   map.render();
 }
@@ -275,6 +278,11 @@ describe("shared shadow lifecycle", () => {
     expect(generator.bias).toBeCloseTo(0.001953125, 8);
 
     engine.getCaps().maxTextureSize = 4096;
+    controller.sync();
+    // Admission keeps an existing allocation stable until a request change or
+    // context recovery; expanding a capability limit alone must not cause churn.
+    expect(controller.generator(light)).toBe(generator);
+    engine.onContextRestoredObservable.notifyObservers(engine);
     controller.sync();
     const recovered = controller.generator(light)!;
     expect(recovered).not.toBe(generator);
