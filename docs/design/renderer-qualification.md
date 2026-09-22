@@ -12,9 +12,30 @@ At `e36439b1`, the same two explicit files passed all 18 cases. Added cases cove
 
 ## Engine follow-up: deferred local verification
 
+### Latest repair checkpoint (2026-09-22)
+
+This checkpoint supersedes pending statuses below only for the named checks. PR #663 remains open; required CI is not yet passing. The physical A16 run is waived, and unaffordable local selections are deferred with the user's authorization.
+
+- Hosted run `35732503977` at `111aa332` passed all **5,707 package assertions in 618 files**, without the previous unhandled NullEngine skybox readback. Its editor phase passed 1,248 assertions and failed one inspector fixture on unfinished collider geometry. `4c88dfbc`/`a58b8216` preserve editable authoring descriptors while keeping native validation strict. The static job found a diagnostic-only unsupported texture field, corrected in `3ccea4ce`. Neither job is recorded as passing.
+- At `ec3f2f3b`, the scoped render and runtime typechecks passed, and the selected cache/upload/environment files passed **59/59**. Subsequent scoped lint repairs passed for the particle factory/cache test and cache/skybox files. `skybox.test.ts` passed **7/7** at `3809c797`; the corrected editor material-byte fixture passed **12/12** at `5cf24e55`.
+- The two desktop KTX2/environment and Play material-assignment cases passed at `3809c797`. At `2a4c9d88`, both WebGL2 CPU/GPU particle cases and both Spawn Actor Play/Preview Build cases passed; the two WebGPU particle cases failed. At `1937a582`, CPU WebGPU particles and WebGPU model/rich-text generation cycles passed, while GPU WebGPU particles and the encoded tilemap case still failed. Failed mixed batches are not passes.
+- Native WGSL particle effect replacement was missing its shader-language argument. The isolated Babylon patch now preserves that argument (`0819c853`), with lockfile identity `913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa` at `876614a4`. The admitted installation succeeded; Babylon remains 9.20.0 and Havok 1.3.14. The Havok and earlier WebGPU attribute patch hunks remain unchanged.
+- Main through `20720743` is integrated at `99860d6d`, retaining late baked-light exclusions without restoring historical texture pinning. The changed native particle shader still requires browser verification. Existing physics evidence remains applicable because these native patch changes only affect NodeMaterial particle shaders.
+
+The GPU WebGPU retry at `876614a4` timed out after ten minutes **in admission**, before executing. A later four-case browser selection was cancelled while still queued; only its owned process tree was stopped and verified absent. The two-file inspector/physics selection at `a58b8216` timed out after two minutes in admission. Another owner's acceptance server held the shared root slot throughout; no other owner's processes, reservations or host configuration were changed. The initial attempt to pass a file filter to `test:editor-unit` was rejected by the runner; the corrected selection uses `test`.
+
+Pickup selections (keep `BL_TEST_PROFILE=shared` and the shared host configuration):
+
+```powershell
+pnpm --silent agent:wait local --script test -- apps/editor/src/lib/component-property-rows.test.ts packages/physics/src/physics.test.ts
+pnpm --silent agent:wait local --script test:e2e -- e2e/particle-lifecycle.spec.ts e2e/tileset-preview.spec.ts e2e/post-process-owner-overrides.spec.ts e2e/cel-render-mode.spec.ts --project=desktop-chrome -g 'webgpu with GPU|encoded Tilemap|saved duplicate|Mannequin illumination'
+```
+
+Current-head scoped editor/render typechecking and changed-file lint remain pending after the latest diagnostic and inspector edits. Hosted verification remains mandatory before merge; later CI results must be recorded separately from these unexecuted local selections. Isolated before/after physics timing and sustained representative Play measurements remain follow-up items, not performance claims.
+
 ### CI integration repairs (2026-09-22)
 
-The first hosted run exposed preview bounds visiting transform nodes, software queries dropping body rotation, and the shared authored box needing its existing SceneLayer 2D projection. These are corrected with the existing failing consumer regressions. Fixture updates await transactional publication/retirement, use nondegenerate authored scales, and control only absent NullEngine cube/raw upload boundaries. NullEngine deliberately retains released internal-cache slots; its lifetime assertions count nonzero native references, while browser fixtures still count actual GPU resources. The Make Transform node's unauthored scale default is a separate source finding; physics continues rejecting explicitly degenerate scale.
+The first hosted run exposed preview bounds visiting transform nodes, software queries dropping body rotation, and the shared authored box needing its existing SceneLayer 2D projection. These are corrected with the existing failing consumer regressions. Fixture updates await transactional publication/retirement, use nondegenerate authored scales, and control only absent NullEngine cube/raw upload boundaries. NullEngine deliberately retains released internal-cache slots; its lifetime assertions count nonzero native references, while browser fixtures still count actual GPU resources. The Make Transform node's unauthored scale now defaults to unit scale; explicit degenerate scale remains rejected by physics.
 
 ### Targeted repair evidence (2026-09-22)
 
