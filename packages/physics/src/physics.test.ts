@@ -24,7 +24,11 @@ it("keeps Rapier teleport/target rotation consistent in direct and batched readb
     backend.createBody({ id: "planar", actorId: "planar", motionType: "kinematic", mass: 1, linearDamping: 0, angularDamping: 0, gravityScale: 0,
       transform: { position: { x: 0, y: 0, z: 0 }, rotation: quarterTurn } });
     expect(backend.getBodyTransform("planar")!.rotation.z).toBeCloseTo(Math.SQRT1_2);
+    backend.createCollider({ id: "planar-shape", bodyId: "planar", shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    backend.step(1 / 60);
     backend.teleportBody("planar", { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 2 } });
+    expect(backend.lineTrace({ x: 2, y: 2, z: 0 }, { x: 2, y: -2, z: 0 }).actorId).toBe("planar");
+    expect(backend.lineTrace({ x: 0, y: 2, z: 0 }, { x: 0, y: -2, z: 0 }).hit).toBe(false);
     expect(backend.readTransforms().get("planar")!.rotation.w).toBeCloseTo(1);
     backend.setBodyTargetTransform("planar", { position: { x: 4, y: 1, z: 0 }, rotation: quarterTurn });
     backend.step(1 / 60);
