@@ -148,6 +148,46 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("uv2-only-index-one", [contribution([grouped])]);
     clear();
 
+    // Strict gameplay and intentional through-mesh consumers share the world,
+    // but only the latter may survive positive occluder coverage.
+    const strictTarget = MeshBuilder.CreatePlane("Strict Target", { size: 0.8 }, scene);
+    strictTarget.position.x = -0.9; strictTarget.material = material;
+    const throughTarget = MeshBuilder.CreatePlane("Through Target", { size: 0.8 }, scene);
+    throughTarget.position.x = 0.9; throughTarget.material = material;
+    const wall = MeshBuilder.CreatePlane("Coverage Occluder", { width: 3.2, height: 1.4 }, scene);
+    wall.position.z = -0.5;
+    const wallMaterial = material.clone("Occluder Coverage"); wall.material = wallMaterial;
+    const wallAlpha = RawTexture.CreateRGBATexture(new Uint8Array([255,255,255,0]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    wallAlpha.hasAlpha = true;
+    wallMaterial.diffuseTexture = wallAlpha; wallMaterial.useAlphaFromDiffuseTexture = true;
+    wallMaterial.transparencyMode = Material.MATERIAL_ALPHATEST;
+    view.setContribution("proof-0", { ...contribution([strictTarget]), kind: "global",
+      targets: [{ key: "strict-behind-wall", meshes: [strictTarget] }] });
+    view.setContribution("proof-1", { ...contribution([throughTarget], [0,0,1]), throughMeshes: true,
+      targets: [{ key: "through-behind-wall", meshes: [throughTarget] }] });
+    await capture("cutout-occluder-open");
+    wallAlpha.update(new Uint8Array([255,255,255,255]));
+    await capture("cutout-occluder-closed");
+    wallMaterial.diffuseTexture = null;
+    wallMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    wallMaterial.alpha = 0;
+    await capture("transparent-occluder-zero");
+    wallMaterial.alpha = 0.5;
+    await capture("transparent-occluder-positive");
+    wallMaterial.opacityTexture = wallAlpha;
+    wallAlpha.update(new Uint8Array([255,255,255,0]));
+    await capture("opacity-occluder-open");
+    wallAlpha.update(new Uint8Array([255,255,255,255]));
+    await capture("opacity-occluder-closed");
+    wallMaterial.opacityTexture = null;
+    const colors = new Float32Array(wall.getTotalVertices() * 4).fill(1);
+    for (let index = 3; index < colors.length; index += 4) colors[index] = 0;
+    wall.setVerticesData(VertexBuffer.ColorKind, colors, true); wall.hasVertexAlpha = true;
+    await capture("vertex-alpha-occluder-open");
+    colors.fill(1); wall.updateVerticesData(VertexBuffer.ColorKind, colors);
+    await capture("vertex-alpha-occluder-closed");
+    clear();
+
     const clipped = MeshBuilder.CreatePlane("Clipped Surface", { size: 1.2 }, scene);
     const clipMaterial = material.clone("Clip Material"); clipped.material = clipMaterial;
     await pair("clip-unrestricted", [contribution([clipped])]);

@@ -66,6 +66,19 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(at("live-alpha-cutoff").native.count).toBeLessThan(submeshes.native.count);
     expect(at("live-uv-transform").native.centroid![0]).not.toBe(at("live-alpha-cutoff").native.centroid![0]);
     expect(at("uv2-only-index-zero").native.count).toBeLessThan(at("uv2-only-index-one").native.count);
+    for (const [open, closed] of [
+      ["cutout-occluder-open", "cutout-occluder-closed"],
+      ["transparent-occluder-zero", "transparent-occluder-positive"],
+      ["opacity-occluder-open", "opacity-occluder-closed"],
+      ["vertex-alpha-occluder-open", "vertex-alpha-occluder-closed"],
+    ]) {
+      const visible = report.captures.find((entry) => entry.name === open)!;
+      const hidden = report.captures.find((entry) => entry.name === closed)!;
+      expect(visible.red, open).toBeGreaterThan(0);
+      expect(hidden.red, closed).toBe(0);
+      expect(visible.blue, open).toBeGreaterThan(0);
+      expect(hidden.blue, closed).toBe(visible.blue);
+    }
     expect(at("live-material-clip-plane").native.count).toBeLessThan(at("clip-unrestricted").native.count * 0.6);
     expect(at("negative-nonuniform-scale").native.count).toBeGreaterThan(0);
     const thin = at("two-thin-actor-groups");

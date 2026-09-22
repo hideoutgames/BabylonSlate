@@ -918,8 +918,9 @@ The **Scalability** category supplies Get Effective Scalability, Set Scalability
 Use the changed event to react to renderer confirmation or failure. An immediate `rebuildPending` result only accepts the request; it is not evidence of presentation. Console quality, framecap and renderpath commands use the same session service. Existing Render/Set Render Resolution graphs remain compatible and enter that service too. Changes survive scene transitions and reset with the Play/player session; they never write project defaults. Class Graphs for Actor, ActorComponent and GameInstance expose the event. Backend creation remains a host startup operation; no ordinary live backend-switch node is advertised.
 
 The generic lighting budget also admits rectangular lights and reports effective
-limits. Outline controls await the outline implementation. These nodes do not
-certify A16 performance.
+limits. **Set CEL Outlines** joins the same service; its enable/color/width
+appear in effective readback and changed events. These nodes do not certify
+rendered acceptance or A16 performance.
 
 Settings transactions retain the previous FrameGraph resource owners until the replacement has presented. Intermediate candidates from superseded requests are released rather than added to that retained set. Disposal releases retained owners, and a failed restoration remains unpresentable until a new explicit request instead of retrying allocation every frame. This retention covers the graph-owned targets/tasks; managed lighting allocations retain their separate owner policy.
 
@@ -1116,7 +1117,8 @@ These properties do not meet independent styles and strict CEL visibility.
   sequences skip uploads; changed spans alone update an existing buffer.
 - **Representation:** background is ID zero; actor IDs 1–65,535 are encoded into
   RGB bytes in nearest-sampled RGBA8 masks, without blending, mipmaps or MSAA.
-  No float/half render-target fallback can merge identities. Nearest RGBA32F
+  Each group uses a D32F depth target. No float/half identity render-target
+  fallback can merge identities. Nearest RGBA32F
   style tables retain RGB and output-pixel width (0.25–8); float textures are
   sampled, not rendered to. Capacity or resource admission failure rejects the
   new transaction with a diagnostic while preserving valid prior contributions.

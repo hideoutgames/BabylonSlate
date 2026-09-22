@@ -150,7 +150,8 @@ export class SharedOutlineMaskRenderer {
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
         samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture"],
-        defines: joined, fallbacks, indexParameters: { maxSimultaneousMorphTargets: morphs },
+        defines: joined, fallbacks, onCompiled: null, onError: null,
+        indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
       }, this.view.scene.getEngine()), joined);
     }
