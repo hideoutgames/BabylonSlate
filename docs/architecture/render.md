@@ -276,6 +276,49 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 Per-Scene GLB containers (`glb-anim.ts`) account GPU vertex+index bytes (`accountedGeometryBytesForScene`). The HUD shows `geo` and **Geo High** when that exceeds `GEOMETRY_BYTE_CEILING` (512 MB). Geometry is **not** LRU-evicted and has **no** Engine Setting.
 
+### Texture ownership verification pickup
+
+Delivery D remains unmerged on `agent/engine-texture-leases-d`; no PR exists. The current source checkpoint is `b8a11880eaf9ef3a3d992ee16fe32cf97254406a`. Local verification is deferred at the user's request because shared admission cannot currently afford it. Keep `BL_TEST_PROFILE=shared`, the machine's current 3 GiB headroom, and one admitted helper at a time. Do not count queued, cancelled or deferred checks as passing.
+
+Recorded evidence:
+
+- At `e944b3dd`, the focused pre-fix `mesh-assets.test.ts` baseline had four passes and the intended stable-sprite failure: 10,000 repeated selections changed the native material ID from 4 to 10005. This establishes material churn, not shader compilation or GPU timing.
+- Render owner typechecking passed at `0e675860` in 14.25 seconds. Subsequent source changes have **not** been typechecked.
+- At `2156ac8a`, the seven-file texture/sprite batch had 68 passes and seven failures. Complete passing files were `installed-asset`, `resource-cache-upload`, `anim-apply`, `texture-quality` and `pixel-perfect`. The failures were six old-fixture synthetic upload budget assumptions and one failed fake cube URL reuse assumption; fixture corrections at `95761395` remain unverified.
+- Later cache changes add immediate and delayed six-face cube admission, rollback, and budget validation before lease readiness. The environment owner now releases a failed initial binding while keeping its readiness diagnostic and suppressing unchanged-frame retries. These changes invalidate reuse of the earlier cache/consumer passes as current-head certification.
+
+Resume with these explicit file groups from the worktree root. The first command includes both repaired fixtures and the owners whose publication depends on lease readiness:
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+pnpm --silent agent:wait local --script test '--' packages/render/src/resource-cache-texture.test.ts packages/render/src/resource-cache-upload.test.ts packages/render/src/mesh-assets.test.ts packages/render/src/material-library.test.ts packages/render/src/material-compiler.test.ts packages/render/src/environment-lighting.test.ts packages/render/src/environment-texture.test.ts packages/render/src/skybox.test.ts
+pnpm --silent agent:wait local --script test '--' packages/render/src/anim-apply.test.ts packages/render/src/texture-quality.test.ts packages/render/src/pixel-perfect.test.ts packages/render/src/render-core.test.ts packages/render/src/render-extra.test.ts packages/render/src/create-engine.play.test.ts
+pnpm --silent agent:wait local --script test:editor-unit '--' apps/editor/src/context/material-editing-context.test.tsx
+```
+
+Run the changed owner typechecks separately through admission, rather than the workspace typecheck. This is the same wrapper used for the recorded render pass; set the owner to `packages/assets`, `packages/render`, then `apps/editor`, running one at a time:
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+$env:npm_execpath=Join-Path $env:APPDATA 'npm/node_modules/pnpm/bin/pnpm.cjs'
+$env:BL_TEXTURE_TYPECHECK_OWNER='packages/render'
+@'
+import { runStage } from './scripts/test-runner.mjs';
+await runStage('typecheck', process.execPath,
+  ['../../scripts/agent-wait.mjs', 'local', '--script', 'typecheck'],
+  { cwd: process.env.BL_TEXTURE_TYPECHECK_OWNER });
+'@ | node --input-type=module
+```
+
+The real browser proof is **unrun**, including both effective backends. It checks 10,000 stable selections, native buffer/material/texture-acquisition counts, atlas pixels, size/pivot changes, crossfade weights, authored materials, SceneLayer ownership and resource return after disposal:
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+pnpm --silent agent:wait local --script test:e2e '--' e2e/texture-leases.spec.ts --project=desktop-chrome
+```
+
+Its attachment records requested/effective backend, driver information and stable-selection batch p50/p95/p99. There is no valid before/after CPU comparison or hardware performance result yet. Software WebGPU, when available, establishes that backend's local correctness only. Physical A16 verification was waived by the user. Scoped lint and the required PR CI/merge gates also remain outstanding; no full local suite or workspace preflight is requested.
+
 ## Simultaneous lights
 
 `scene-lighting.ts` bounds conventional light slots before native PBR/Standard/CEL and surface NodeMaterial shaders compile, independently of shadow allocation. The pinned Babylon adapter queries WebGL2 vertex/fragment uniform-block limits, binding count, and combined stage limits, reserving three slots for Material/Scene/Mesh. Every light declares a block in both shader stages, including unshadowed points. Missing queries use WebGL2 minima; context restoration re-queries. The non-UBO fallback retains four conventional lights. Small scenes keep Babylon's four-slot variant when the device budget permits. Unlit surfaces and overlay materials retain their own behavior.
