@@ -5,6 +5,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import { PhysicsPrestepType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
 import { HavokPhysicsBackend } from "./havok-backend";
+import { bakeColliderLocal } from "./collider-bake";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -164,16 +165,27 @@ describe("Havok attachment transactions", () => {
     }
   });
 
-  it.each([false, true])(
-    "applies asymmetric hull and triangle local pose exactly once (compound=%s)",
-    async (compound) => {
+  it.each([
+    { compound: false, mirrored: false },
+    { compound: true, mirrored: false },
+    { compound: false, mirrored: true },
+    { compound: true, mirrored: true },
+  ])(
+    "applies asymmetric scaled hull/triangle local pose once (compound=$compound, mirrored=$mirrored)",
+    async ({ compound, mirrored }) => {
       const backend = await create();
       try {
         body(backend);
         const rotation = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+        const scale = { x: mirrored ? -2 : 2, y: 1, z: 1 };
+        const local = { ...pose(), scale };
         const hull: ColliderDesc = {
           ...box("hull"),
-          shape: { kind: "convex", points: tetrahedron },
+          shape: bakeColliderLocal(
+            { kind: "convex", points: tetrahedron },
+            local,
+            { x: 1, y: 1, z: 1 },
+          ).shape,
           translation: { x: 4, y: 0, z: 0 },
           rotation,
         };
@@ -181,29 +193,33 @@ describe("Havok attachment transactions", () => {
           upsert: [hull, ...(compound ? [box("other", -4)] : [])],
           remove: [],
         });
-        expect(trace(backend, 4.1, -0.7).hit).toBe(true);
+        expect(trace(backend, 4.1, mirrored ? 2.8 : -2.8).hit).toBe(true);
         expect(trace(backend, 4.7, 0.1).hit).toBe(false);
         expect(trace(backend, 0.1, 0.1).hit).toBe(false);
         const triangle: ColliderDesc = {
           ...hull,
           id: "triangle",
-          shape: {
-            kind: "mesh",
-            vertices: [
-              { x: 0, y: 0, z: 0 },
-              { x: 2, y: 0, z: 0 },
-              { x: 0, y: 0, z: 1 },
-            ],
-            indices: [0, 1, 2],
-          },
+          shape: bakeColliderLocal(
+            {
+              kind: "mesh",
+              vertices: [
+                { x: 0, y: 0, z: 0 },
+                { x: 2, y: 0, z: 0 },
+                { x: 0, y: 0, z: 1 },
+              ],
+              indices: [0, 1, 2],
+            },
+            local,
+            { x: 1, y: 1, z: 1 },
+          ).shape,
           translation: { x: 8, y: 0, z: 0 },
         };
         backend.applyColliderChanges("body", {
           upsert: [triangle],
           remove: ["hull"],
         });
-        expect(trace(backend, 8.2, -0.7).hit).toBe(true);
-        expect(trace(backend, 8.7, 0.2).hit).toBe(false);
+        expect(trace(backend, 8.2, mirrored ? 2.8 : -2.8).hit).toBe(true);
+        expect(trace(backend, 8.7, mirrored ? -0.2 : 0.2).hit).toBe(false);
         expect(trace(backend, 4.1, -0.7).hit).toBe(false);
         expect(backend.scene.meshes).toHaveLength(0);
         expect(backend.scene.geometries).toHaveLength(0);

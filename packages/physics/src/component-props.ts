@@ -57,14 +57,15 @@ export function parseColliderProperties(
   };
 }
 
-function parseShape(
-  value: unknown,
-  worldKind: "3d" | "2d",
-): ColliderShape {
+function parseShape(value: unknown, worldKind: "3d" | "2d"): ColliderShape {
   const source = (value ?? {}) as Record<string, unknown>;
   const kind = typeof source.kind === "string" ? source.kind : null;
-  const supported = worldKind === "2d" ? ["box2d", "circle", "capsule2d", "polygon", "chain"] : ["box", "sphere", "capsule", "cylinder", "convex", "mesh"];
-  if (source.kind != null && !supported.includes(String(source.kind))) throw new Error("Unsupported collider shape");
+  const supported =
+    worldKind === "2d"
+      ? ["box2d", "circle", "capsule2d", "polygon", "chain"]
+      : ["box", "sphere", "capsule", "cylinder", "convex", "mesh"];
+  if (source.kind != null && !supported.includes(String(source.kind)))
+    throw new Error("Unsupported collider shape");
   if (worldKind === "2d") {
     switch (kind) {
       case "circle":
@@ -91,8 +92,14 @@ function parseShape(
         return {
           kind: "box2d",
           halfExtents: {
-            x: shapeNumber((source.halfExtents as { x?: number } | undefined)?.x, 0.5),
-            y: shapeNumber((source.halfExtents as { y?: number } | undefined)?.y, 0.5),
+            x: shapeNumber(
+              (source.halfExtents as { x?: number } | undefined)?.x,
+              0.5,
+            ),
+            y: shapeNumber(
+              (source.halfExtents as { y?: number } | undefined)?.y,
+              0.5,
+            ),
           },
         };
     }
@@ -128,17 +135,24 @@ function parseShape(
       return {
         kind: "box",
         halfExtents: {
-          x: shapeNumber((source.halfExtents as { x?: number } | undefined)?.x, 0.5),
-          y: shapeNumber((source.halfExtents as { y?: number } | undefined)?.y, 0.5),
-          z: shapeNumber((source.halfExtents as { z?: number } | undefined)?.z, 0.5),
+          x: shapeNumber(
+            (source.halfExtents as { x?: number } | undefined)?.x,
+            0.5,
+          ),
+          y: shapeNumber(
+            (source.halfExtents as { y?: number } | undefined)?.y,
+            0.5,
+          ),
+          z: shapeNumber(
+            (source.halfExtents as { z?: number } | undefined)?.z,
+            0.5,
+          ),
         },
       };
   }
 }
 
-function parsePoints2(
-  value: unknown,
-): Array<{ x: number; y: number }> {
+function parsePoints2(value: unknown): Array<{ x: number; y: number }> {
   if (!Array.isArray(value)) return [];
   return value.map((p) => {
     if (!p || typeof p !== "object") throw new Error("Invalid collider point");
@@ -166,9 +180,9 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-
 function shapeNumber(value: unknown, fallback: number): number {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("Collider geometry values must be finite numbers");
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error("Collider geometry values must be finite numbers");
   return value;
 }
