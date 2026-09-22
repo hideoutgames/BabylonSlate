@@ -301,7 +301,7 @@ describe("cooperative editor realization", () => {
     expect(onAfterApply).toHaveBeenCalledOnce();
   });
 
-  it.each(["before", "after"] as const)("lets a replacement %s model completion reuse the container without cancelled adoption", async (replace) => {
+  it.each(["before", "after"] as const)("retires a cancelled request %s completion without adopting it over the replacement", async (replace) => {
     const { sync, scene, onAfterApply } = fixture();
     sync.apply(document(1));
     const previousRoot = sync.meshForActor("actor-0");
@@ -345,8 +345,9 @@ describe("cooperative editor realization", () => {
     const adopted = sync.meshForActor("actor-0")!;
     expect(adopted).not.toBe(root);
     expect(root.isDisposed()).toBe(true);
-    expect(instantiate).toHaveBeenCalledOnce();
-    expect(modelLoads.glbContainerLoadCount(scene)).toBe(1);
+    // An unowned in-flight generation retires; a completed cached generation can be reused.
+    expect(instantiate).toHaveBeenCalledTimes(replace === "before" ? 0 : 1);
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(replace === "before" ? 2 : 1);
     expect(visualMeshes(adopted).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
   });
 
@@ -401,7 +402,8 @@ describe("cooperative editor realization", () => {
     await readiness;
     expect(ready).toBe(true);
     expect(visualMeshes(sync.meshForActor("actor-0")!).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
-    expect(modelLoads.glbContainerLoadCount(scene)).toBe(2);
+    // The superseded retarget upload had no remaining owner and was retired.
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(3);
   });
 
   it("restores a static actor matrix when its model lands during the final freeze phase", async () => {

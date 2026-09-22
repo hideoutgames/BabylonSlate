@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, PBRMaterial, Scene, StandardMaterial, TransformNode } from "@babylonjs/core";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
@@ -23,11 +24,7 @@ function fixture(host: Host, kind: Kind) {
     deterministicLockstep: false, lockstepMaxSteps: 1 });
   const scene = new Scene(engine);
   // Retain real Babylon wrappers/materials and cache leases; NullEngine has no cube IO.
-  vi.spyOn(engine, "createCubeTexture").mockImplementation((url, _scene, _files, noMipmap) => {
-    const internal = engine.createTexture(url, noMipmap ?? false, false, null);
-    internal.isCube = true;
-    return internal;
-  });
+  mockCubeTextureIO(engine);
   const cache = new ResourceCache();
   const gates = Array.from({ length: 4 }, deferred);
   gates[0]!.resolve();
