@@ -149,6 +149,10 @@ targets. This removes implicit texture derivatives from the bounded branch/loop
 sampling without changing filtering or identity/depth precision. The native
 WebGL2 cost case and survivor-pixel cases must pass before this is accepted as
 the driver-path repair; the original readiness deadline is unchanged.
+The `b3956b34` native WebGL2 rerun still timed out at the same step, so explicit
+LOD alone is not a demonstrated repair. A preparation-only diagnostic probe now
+retains each pending task and outline subpass readiness before retirement removes
+the failed graph. It does not draw or run inside measured steady-state samples.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions

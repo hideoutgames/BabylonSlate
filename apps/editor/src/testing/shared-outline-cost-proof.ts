@@ -3,6 +3,7 @@ import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericL
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
+import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 
 function distribution(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -53,8 +54,19 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
     } finally { engine.endFrame(); }
     cpuMs = performance.now() - start;
   };
+  let lastReadiness: unknown;
   const warm = async () => {
-    await renderer.prepare();
+    // Capture the pending native task before failed preparation retires it.
+    const probe = setInterval(() => {
+      const graph = (renderer as unknown as { graph: { graph: FrameGraph | null } }).graph.graph;
+      lastReadiness = graph?.tasks.map(task => {
+        const outline = task as unknown as { compose?: { isReady(): boolean; effect?: Effect }; masks?: { group: string; objects: { isReady(): boolean } }[] };
+        return { name: task.name, ready: task.isReady(), compose: outline.compose && {
+          ready: outline.compose.isReady(), error: outline.compose.effect?.getCompilationError(),
+        }, masks: outline.masks?.map(mask => ({ group: mask.group, ready: mask.objects.isReady() })) };
+      });
+    }, 250);
+    try { await renderer.prepare(); } finally { clearInterval(probe); }
     for (let frame = 0; frame < 15; frame++) { await nextFrame(); draw(); }
   };
   const measurements = [];
@@ -132,7 +144,7 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
         interaction: "Synthetic membership/resize only; hands-on gizmo and Play/scene transitions require separate acceptance" },
       measurements, lifecycle };
   } catch (error) {
-    publish("failed", { error: String(error), measurements, lifecycle,
+    publish("failed", { error: String(error), measurements, lifecycle, lastReadiness,
       adapter: engine.getInfo(), tasks: renderer.taskNames(), owner: owner.diagnostics(),
       view: view.diagnostics(), reservations: managedRenderReservations(engine),
       // Read-only native compilation diagnostics for a failed hardware run.
