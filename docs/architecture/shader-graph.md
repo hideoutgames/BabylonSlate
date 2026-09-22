@@ -45,7 +45,8 @@ Material Function inlining.
 
 Add Node searches operator aliases and formulas as well as names/categories:
 `+`, `−`, `×`, `÷`, `%`, `^`, `**`, `√`, comparisons and expressions such as
-`a + b`, `sqrt(x)`, `pow(a,b)` and `lerp(a,b,t)`. Formula whitespace and case do
+`a + b`, `sqrt(x)`, `pow(a,b)` and `lerp(a,b,t)`. Dot/Cross accept `·` / `×`,
+and Select accepts `?:` or `condition ? a : b`. Formula whitespace and case do
 not matter; symbol-only searches match explicit aliases. Search retains category
 and Context Sensitive filtering. `PerlinNoise` and `simplex` find Perlin Noise.
 Aliases are catalog metadata and are not stored in authored graph properties.

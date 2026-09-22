@@ -215,8 +215,9 @@ Each node: `{ id, title, category, searchAliases?, pins, codegen(ctx) }`. Physic
 **Add Node search** accepts names, categories, operator symbols and formulas.
 For example, `+` finds Float, Int and Vector addition; `×` finds multiplication,
 `<=` / `≤` finds Less Or Equal, `&&` finds Boolean And, and `sqrt(x)` finds Square
-Root. Power accepts `^`, `**` and `pow`; dot/cross and interpolation accept their
-function notation. Formula whitespace/case is ignored. Symbol-only queries
+Root. Power accepts `^`, `**` and `pow`; dot/cross accept `·` / `×` and their
+function notation, interpolation accepts `lerp(a,b,t)`, and Boolean-indexed
+Select accepts `?:` or `condition ? a : b`. Formula whitespace/case is ignored. Symbol-only queries
 match explicitly declared aliases so `*` and `**` remain distinct. The shared
 palette retains Context Sensitive pin filtering/ranking and Title Case category
 labels. Definitions own `searchAliases`; palette conversion carries them without

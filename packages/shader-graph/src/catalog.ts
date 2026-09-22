@@ -483,7 +483,7 @@ const NOISE_NODES: MaterialNodeDefinition[] = [
 const VECTOR_NODES: MaterialNodeDefinition[] = [
   {
     type: "vector.dot",
-    searchAliases: ["dot","dot(a,b)","a · b"],
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Product",
     category: "Vector",
     cost: 1,
@@ -495,7 +495,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "vector.cross",
-    searchAliases: ["cross","cross(a,b)","a × b"],
+    searchAliases: ["×","cross","cross(a,b)","a × b"],
     title: "Cross Product",
     category: "Vector",
     cost: 2,

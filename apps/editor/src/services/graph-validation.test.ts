@@ -1034,6 +1034,8 @@ describe("scriptPaletteNodes", () => {
       ["math.notEquals", "!="], ["boolean.and", "&&"],
       ["math.power", "**"], ["math.sqrt", "sqrt(x)"],
       ["vector.dot3", "dot(a,b)"], ["color.multiply", "*"], ["quat.multiply", "*"],
+      ["vector.dot2", "·"], ["vector.dot3", "·"], ["vector.dot4", "·"], ["vector.cross3", "×"],
+      ["select.bool", "?:"], ["select.float", "?:"], ["select.vec3", "condition ? a : b"],
     ]) {
       expect(nodes.find((node) => node.id === id)?.searchAliases, id).toContain(alias);
     }

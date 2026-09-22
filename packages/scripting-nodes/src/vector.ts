@@ -232,7 +232,7 @@ export const vectorNodes: NodeDefinition[] = [
   binaryVec("vector.div3", "Divide Vector3", VEC3, "/", AXES3),
   {
     id: "vector.dot3",
-    searchAliases: ["dot","dot(a,b)","a · b"],
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector3",
     category: "vector",
     pure: true,
@@ -247,7 +247,7 @@ export const vectorNodes: NodeDefinition[] = [
   },
   {
     id: "vector.cross3",
-    searchAliases: ["cross","cross(a,b)","a × b"],
+    searchAliases: ["×","cross","cross(a,b)","a × b"],
     title: "Cross Vector3",
     category: "vector",
     pure: true,
@@ -344,7 +344,7 @@ export const vectorNodes: NodeDefinition[] = [
   scaleVec("vector.scale2", "Scale Vector2", VEC2, AXES2),
   {
     id: "vector.dot2",
-    searchAliases: ["dot","dot(a,b)","a · b"],
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector2",
     category: "vector",
     pure: true,
@@ -436,7 +436,7 @@ export const vectorNodes: NodeDefinition[] = [
   scaleVec("vector.scale4", "Scale Vector4", VEC4, AXES4),
   {
     id: "vector.dot4",
-    searchAliases: ["dot","dot(a,b)","a · b"],
+    searchAliases: ["·","dot","dot(a,b)","a · b"],
     title: "Dot Vector4",
     category: "vector",
     pure: true,
