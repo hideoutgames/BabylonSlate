@@ -204,9 +204,13 @@ export function shadowRegions(
     const ratio = shadowed[offset + 1]! / before;
     if (sample.expected === "lit") {
       value.lit++;
-      if (ratio < 0.85) value.falseDark++;
+      // Known lit points should match the shadow-off reference. A 3% intensity
+      // allowance covers small quantization/presentation differences while
+      // detecting the visible low-contrast teeth that a contact cutoff misses.
+      if (ratio < 0.97) value.falseDark++;
     } else {
       value.contact++;
+      // Retained contacts require a separate, stronger shadow signal.
       if (ratio < 0.85) value.retainedContact++;
     }
   }

@@ -22,6 +22,7 @@ import {
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
+import { installSingleMapPcfSlopeProbe } from "./shadow-slope-probe";
 
 import {
   SHADOW_BOXES,
@@ -120,6 +121,7 @@ export async function runShadowSelfShadowingProof(
       effective: ReturnType<typeof captureShadowDiagnostics>;
       assertions: boolean;
       regions: ReturnType<typeof shadowRegions>;
+      rasterProbe?: ReturnType<typeof installSingleMapPcfSlopeProbe>["evidence"];
     }[] = [];
     const render = async () => {
       const ready = await graph.prepare(camera);
@@ -222,6 +224,22 @@ export async function runShadowSelfShadowingProof(
         regions: shadowRegions(reference, pixels, points, SIZE),
       });
     };
+    const slopeSweep = async (pose: string) => {
+      settings(false);
+      await graph.prepare(camera);
+      for (const factor of [0.5, 0.75, 1, 1.25]) {
+        const generator = light.getShadowGenerator()!;
+        const probe = installSingleMapPcfSlopeProbe(generator, factor);
+        try {
+          await capture(`${pose}-raster-slope-${factor}`);
+        } finally {
+          probe.dispose();
+        }
+        captures[captures.length - 1]!.rasterProbe = probe.evidence;
+      }
+      await capture(`${pose}-raster-rollback`);
+      settings(true);
+    };
     settings(false);
     await referencePose("baseline");
     await capture("authored-manual");
@@ -255,6 +273,7 @@ export async function runShadowSelfShadowingProof(
       await capture("diagnostic-distance-16-authored-manual");
       settings(true, authored.depthBias, authored.normalBias, 16);
       await capture("diagnostic-distance-16-automatic");
+      await slopeSweep("baseline");
       settings(true);
       // Deliberately separate geometry experiment: retain the principal pose
       // above unchanged, then introduce a thin contact resting on the floor.
@@ -305,6 +324,7 @@ export async function runShadowSelfShadowingProof(
         settings(false, bias);
         await capture(`thin-manual-depth-${name}-texel`);
       }
+      await slopeSweep("thin-contact");
       settings(true);
       // Unlike the previous near-camera-aligned angle, this independent view
       // contains 25 body-ground and 46 thin-ground occlusion samples at this
@@ -312,6 +332,16 @@ export async function runShadowSelfShadowingProof(
       light.direction = new Vector3(1, -1, 0.4).normalize();
       await referencePose("second-light-angle");
       await capture("automatic-second-light-angle", true);
+      // Repeat the independent depth sweep against this pose's own reference
+      // and near-contact edge mask; a correction must survive both light angles.
+      for (const [name, bias] of depthSweep) {
+        settings(false, bias);
+        await capture(`second-angle-manual-depth-${name}-texel`);
+      }
+      settings(false, 0.001953125, 0);
+      await capture("second-angle-manual-one-texel-zero-normal");
+      await slopeSweep("second-angle");
+      settings(true);
     } else if (configuration === "cascades") {
       // Dolly through the first split while retaining the same target and
       // projection settings. Capture each view's own independent reference.

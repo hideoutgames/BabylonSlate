@@ -66,6 +66,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
                 effective: capture.effective,
                 assertions: capture.assertions,
                 regions: capture.regions,
+                rasterProbe: capture.rasterProbe,
               })),
             },
             null,
@@ -114,7 +115,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
           // The oracle classifies world-space points by independent ray/AABB
           // occlusion. Each pose compares frozen direct lighting in known lit
           // interiors and nearby contacts, never whole-image difference alone.
-          for (const name of ["head", "torso", "left-arm", "ground"]) {
+          for (const name of ["head", "torso", "left-arm", "right-arm", "left-leg", "right-leg", "ground"]) {
             const region = capture.regions[name]!;
             expect(
               region.lit,

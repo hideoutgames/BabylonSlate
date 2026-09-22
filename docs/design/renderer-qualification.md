@@ -234,8 +234,17 @@ checks both casting and receiving. Its second light angle was changed to retain
 analytically visible ground contacts. A separate ground-pixel strip near the
 thin slab's contact edge supplements the interior mask: the interior mask alone
 could tolerate a detached shadow. The edge strip's analytic negative control
-rejects a 0.4-world-unit caster lift at both angles; GPU validation is still
-pending. Production geometry and projection fitting remain unchanged.
+rejects a 0.4-world-unit caster lift at both angles. At `e9313484`, the real
+WebGL2 sweep retains 25/25 edge pixels at one world texel, but only 19/25 at
+1.25 texels and 12/25 at 1.5 and two texels. Visual inspection still finds
+low-contrast teeth at one and two texels. The lit-region cutoff is therefore
+tightened from 85% to 97% of the direct-light reference; the contact cutoff
+remains 85%. This strengthens the oracle instead of accepting a numerically
+passing but visibly broken result. A test-only raster-slope probe now isolates
+slope correction at fixed authored offsets and records actual caster draws and
+state restoration. It does not change production rendering and excludes clamped
+cascades, whose fragment-written depth cannot use this raster correction.
+Production geometry and projection fitting remain unchanged.
 
 Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
 retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
@@ -261,6 +270,7 @@ failed result rather than being relabeled.
 | Selected `shadow-self-shadowing.spec.ts`, desktop Chrome, `webgl2 low pbr` | `d1469bf8` | Failed the real pixel assertion; images and effective state retained locally |
 | Same selected browser case with extended depth/distance diagnostics and registered thin caster | `65faac7d` | Build passed; browser never started before the 900-second admission timeout |
 | ESLint on the three updated synthetic fixture/spec files and controller test | `8d69b890` | Never started before the 180-second shared-admission timeout; latest fixture static verification remains pending |
+| Selected WebGL2/Low/PBR browser, extended sweeps and registered thin caster | `e9313484` | Build passed; pixel test failed. Contact-edge data rejects the larger constants; no fixed image. |
 
 Focused unit commands used `pnpm --silent agent:wait local --script test --`
 with only the named files. Browser commands used
