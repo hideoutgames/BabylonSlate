@@ -13,9 +13,11 @@ function documentFor(kind: "gain" | "depth" | "normal" | "mask" | "environment")
   if (kind === "gain") {
     doc.nodes.push(
       { id: "gain", type: "param.float", properties: { name: "Gain", value: [0.5] }, position: { x: 0, y: 0 } },
+      { id: "gainChannels", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
       { id: "multiply", type: "math.multiply", properties: {}, position: { x: 0, y: 0 } },
     );
-    connect("gain", "out", "multiply", "b"); connect("sceneColor", "color", "multiply", "a");
+    for (const channel of ["x", "y", "z", "w"]) connect("gain", "out", "gainChannels", channel);
+    connect("gainChannels", "xyzw", "multiply", "b"); connect("sceneColor", "color", "multiply", "a");
     connect("multiply", "out", "output", "color");
   } else if (kind === "mask") {
     doc.nodes.push(

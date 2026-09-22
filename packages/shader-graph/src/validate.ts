@@ -32,7 +32,6 @@ import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
-  componentCount,
   typesAreAssignable,
   type MaterialValueType,
 } from "./types";
@@ -472,7 +471,7 @@ function validateGraph(
         code: "material.genericConflict",
         message: `"${
           definitions.get(nodeId)?.title ?? nodeId
-        }" received values of different widths; insert a Combine or Split node`,
+        }" requires numeric inputs`,
         severity: "error",
         nodeId,
       });
@@ -482,14 +481,6 @@ function validateGraph(
       const source = nodesById.get(edge.sourceNodeId);
       const target = nodesById.get(edge.targetNodeId);
       if (!source || !target) continue;
-      if (source.type === "vector.split") {
-        const inputType = resolver.inputType(source.id, "value");
-        const axis = ["x", "y", "z", "w"].indexOf(edge.sourcePinId);
-        if (inputType && axis >= componentCount(inputType)) {
-          diagnostics.push({ code: "material.invalidComponent", message: `${materialTypeLabel(inputType)} has no ${edge.sourcePinId.toUpperCase()} component`, severity: "error", nodeId: source.id, pinId: edge.sourcePinId, edgeId: edge.id });
-          continue;
-        }
-      }
       const sourceDefinition = definitions.get(source.id);
       const targetDefinition = definitions.get(target.id);
       if (!sourceDefinition || !targetDefinition) continue;

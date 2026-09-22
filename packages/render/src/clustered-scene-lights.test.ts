@@ -65,6 +65,7 @@ function fixture(engine = new NullEngine()) {
     });
     vi.spyOn(capabilities, "clusteredLightCapabilities").mockReturnValue({
       supported: true,
+      backend: "webgl2",
       batchSize: 23,
       maxTextureSize: 4096,
     });
@@ -456,6 +457,25 @@ describe("explicit clustered light ownership", () => {
           texture.name === "TileMaskTexture",
       ),
     ).toBe(false);
+  });
+
+  it("marks frozen materials dirty when admission or release reorders the light set", () => {
+    const { scene, mesh, lights } = fixture();
+    const frozen = mesh.material!;
+    frozen.freeze();
+    const unfrozen = new StandardMaterial("unfrozen", scene);
+    MeshBuilder.CreateBox("other", {}, scene).material = unfrozen;
+    const frozenSpy = vi.spyOn(frozen, "markDirty");
+    const unfrozenSpy = vi.spyOn(unfrozen, "markDirty");
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(owner.status().clustered).toBe(48);
+    expect(frozenSpy).toHaveBeenCalledWith(true);
+    expect(unfrozenSpy).not.toHaveBeenCalledWith(true);
+    frozenSpy.mockClear();
+    unfrozenSpy.mockClear();
+    owner.dispose();
+    expect(frozenSpy).toHaveBeenCalledWith(true);
+    expect(unfrozenSpy).not.toHaveBeenCalledWith(true);
   });
 
   it("shares one quality allowance across clustered children and admitted shadows while preserving sun and authored state", () => {

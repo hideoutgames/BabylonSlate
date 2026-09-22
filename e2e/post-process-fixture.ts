@@ -29,6 +29,7 @@ export function numericTexturePostProcess(): MaterialDocument {
   doc.nodes.push(
     node("mask", "param.texture", { name: "Mask", textureGuid: guid(21) }),
     node("gain", "param.float", { name: "Gain", value: [1] }),
+    node("gainChannels", "vector.combine"),
     node("sample", "texture.sample", { colorSpace: "data" }), node("tint", "math.multiply"),
     node("multiply", "math.multiply"), node("split", "vector.split"), node("opaque", "vector.combine"),
   );
@@ -38,7 +39,8 @@ export function numericTexturePostProcess(): MaterialDocument {
   connect(doc, "sceneColor", "color", "tint", "a");
   connect(doc, "sample", "rgba", "tint", "b");
   connect(doc, "tint", "out", "multiply", "a");
-  connect(doc, "gain", "out", "multiply", "b");
+  for (const channel of ["x", "y", "z"]) connect(doc, "gain", "out", "gainChannels", channel);
+  connect(doc, "gainChannels", "xyzw", "multiply", "b");
   connect(doc, "multiply", "out", "split", "value");
   for (const channel of ["x", "y", "z"]) connect(doc, "split", channel, "opaque", channel);
   connect(doc, "opaque", "xyzw", "output", "color");

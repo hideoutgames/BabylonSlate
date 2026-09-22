@@ -72,6 +72,10 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, `draco/`, `meshopt/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
 
+## WebContent termination (iOS)
+
+Capacitor 8.5.0 handles `webViewWebContentProcessDidTerminate` natively — `WebViewDelegationHandler` resets the bridge and reloads the WebView, unbounded, and there is no app-level hook without replacing the private delegate, which we do not do. The reload restarts the editor at Home, so the durable signal is web-side: the `babylonslate.session-liveness` record (`apps/editor/src/lib/session-liveness.ts`) is left `alive` when the page dies without `pagehide`, and the next start surfaces a dismissible Home notice naming the project that was open. In-memory edits never journaled are lost; Play and bakes are never restarted automatically.
+
 ## Templates folder
 
 `createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location. Create Project still offers built-in **Empty** and **2D** cards; the Homepage copy does not advertise Engine Settings templates on web. Other hosts show a card per directory or `.zip` / legacy `.babproject` entry that has a `project.json` manifest. Entries without a manifest are skipped rather than failing the Homepage.

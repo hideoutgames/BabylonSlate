@@ -2,12 +2,18 @@ import { Constants, type BaseTexture } from "@babylonjs/core";
 import type { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 import type { ManagedLightingResource } from "./managed-lighting-resources";
 
-/** Pinned 9.20 WebGL2: one R32F tile mask and one RGBA32F five-texel light row. */
+/**
+ * Pinned 9.20 footprint. WebGL2: one R32F tile mask plus one RGBA32F
+ * five-texel light row per batch. WebGPU: one u32-per-light-word storage mask
+ * plus the same light rows, and the one 64x64 R8 dummy RTT counted once.
+ */
 export function clusteredTextureAllocationBytes(
   batchSize: number,
   batches: number,
+  backend: "webgl2" | "webgpu" = "webgl2",
 ): number {
-  return batches * (64 * 64 * 4 + 5 * batchSize * 16);
+  const bytes = batches * (64 * 64 * 4 + 5 * batchSize * 16);
+  return backend === "webgpu" ? bytes + 64 * 64 : bytes;
 }
 
 /** Actual uncompressed storage, including complete mip chains and MSAA resolve storage. */
@@ -71,6 +77,7 @@ export function clusteredTextureResources(
   const fields = container as unknown as {
     _lightDataTexture?: BaseTexture;
     _tileMaskTexture?: BaseTexture;
+    _tileMaskBuffer?: { getBuffer(): { capacity: number } };
   };
   if (
     !fields._lightDataTexture ||
@@ -79,7 +86,15 @@ export function clusteredTextureResources(
     container.verticalTiles !== 64
   )
     throw new Error("Unqualified clustered texture allocation layout.");
-  const data = managedTextureResource(fields._lightDataTexture);
-  const mask = managedTextureResource(fields._tileMaskTexture);
-  return [data, mask];
+  const resources = [
+    managedTextureResource(fields._lightDataTexture),
+    managedTextureResource(fields._tileMaskTexture),
+  ];
+  if (fields._tileMaskBuffer) {
+    // WebGPU keeps the exact u32 mask in a storage buffer; the 64x64 R8
+    // texture above is only the dummy RTT driving include expansion.
+    const buffer = fields._tileMaskBuffer.getBuffer();
+    resources.push({ handle: buffer, bytes: buffer.capacity });
+  }
+  return resources;
 }

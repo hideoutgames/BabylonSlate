@@ -94,7 +94,7 @@ describe("material node catalog", () => {
     }
   });
 
-  it("types arithmetic generically so a float splats into a vector", () => {
+  it("types arithmetic generically for mixed numeric inputs", () => {
     const add = materialNodeDefinition("math.add");
     expect(add?.inputs.map((pin) => pin.type.kind)).toEqual([
       "generic",

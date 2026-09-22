@@ -28,7 +28,7 @@ export interface NodePaletteProps {
   filterPin?: SerializedPin | null;
   /** Pins on the node the dragged pin belongs to (sibling overlap ranking). */
   sourcePins?: SerializedPin[];
-  /** Host connection rule (material Float splat). Defaults to exact kinds. */
+  /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
 }
 

@@ -42,16 +42,23 @@ describe("material noise graphs", () => {
     });
   });
 
-  it("rejects a UV vector wired directly into a three-dimensional noise coordinate", () => {
+  it("widens a UV vector wired directly into a three-dimensional noise coordinate", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
       { id: "noise", type: "noise.perlin", position: { x: 0, y: 0 }, properties: {} },
     );
-    doc.edges.push({ id: "bad-width", sourceNodeId: "uv", sourcePinId: "uv", targetNodeId: "noise", targetPinId: "coordinates" });
-    expect(validateMaterialDocument(doc)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "material.typeMismatch", edgeId: "bad-width" }),
-    ]));
+    doc.edges.push(
+      { id: "coordinates", sourceNodeId: "uv", sourcePinId: "uv", targetNodeId: "noise", targetPinId: "coordinates" },
+      { id: "noise-output", sourceNodeId: "noise", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
+    );
+    expect(validateMaterialDocument(doc)).toEqual([]);
+    const lowered = lowerMaterialDocument(doc);
+    expect(lowered.ok).toBe(true);
+    if (!lowered.ok) return;
+    expect(lowered.plan.operations.find((operation) => operation.id === "noise")?.inputs.coordinates).toEqual({
+      kind: "operation", operationId: "uv", pinId: "uv", conversions: [{ from: "vec2", to: "vec3" }],
+    });
   });
 
   it("inlines noise functions with their typed coordinate input and output", () => {

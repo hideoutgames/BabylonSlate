@@ -17,14 +17,18 @@ function gainDocument(gain: number) {
   const document = createDefaultMaterialDocument("Lifetime", "postProcess");
   document.nodes.push(
     { id: "gain", type: "const.float", properties: { value: [gain] }, position: { x: 0, y: 0 } },
+    { id: "gainChannels", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
     { id: "multiply", type: "math.multiply", properties: {}, position: { x: 0, y: 0 } },
   );
   document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
   document.edges.push(
     { id: "source-mul", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "multiply", targetPinId: "a" },
-    { id: "gain-mul", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "multiply", targetPinId: "b" },
+    { id: "gain-mul", sourceNodeId: "gainChannels", sourcePinId: "xyzw", targetNodeId: "multiply", targetPinId: "b" },
     { id: "mul-output", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
   );
+  for (const channel of ["x", "y", "z", "w"]) document.edges.push({
+    id: `gain-${channel}`, sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "gainChannels", targetPinId: channel,
+  });
   return document;
 }
 

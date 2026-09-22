@@ -6,6 +6,8 @@ import {
 } from "@babylonjs/core";
 import type { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 import { lightProxyVertexShader } from "@babylonjs/core/Shaders/lightProxy.vertex";
+import { lightProxyVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/lightProxy.vertex";
+import "@babylonjs/core/ShadersWGSL/lightProxy.fragment";
 import { checkedShader } from "./checked-shader";
 
 ShaderStore.ShadersStore.slateClusterProxyVertexShader = checkedShader(
@@ -19,6 +21,21 @@ ShaderStore.ShadersStore.slateClusterProxyVertexShader = checkedShader(
   .replace(
     "vec2 halfTileRes=tileMaskResolution.xy/2.0;",
     "if (slateClusterUnbounded>0.5) { projPosition=position.xy; }\nvec2 halfTileRes=tileMaskResolution.xy/2.0;",
+  ).value;
+
+// The container lazily imports its WGSL proxy modules; static registration
+// avoids a served-HTML fallback when that resolution misses the bundler graph.
+ShaderStore.ShadersStoreWGSL.slateClusterProxyVertexShader = checkedShader(
+  lightProxyVertexShaderWGSL.shader,
+  "cluster camera bounds WGSL",
+)
+  .replace(
+    "uniform tileMaskResolution: vec3f;",
+    "uniform slateClusterUnbounded: f32;uniform tileMaskResolution: vec3f;",
+  )
+  .replace(
+    "let halfTileRes=uniforms.tileMaskResolution.xy/2.0;",
+    "if uniforms.slateClusterUnbounded>0.5 { projPosition=vertexInputs.position.xy; }\nlet halfTileRes=uniforms.tileMaskResolution.xy/2.0;",
   ).value;
 
 type PinnedBounds = {

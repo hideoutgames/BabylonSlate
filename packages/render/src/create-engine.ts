@@ -211,7 +211,7 @@ import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
   isSceneFrameReady,
-  isSceneTextureWorkReady,
+  pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
@@ -2805,12 +2805,24 @@ function initializeEngine(
     },
     whenMaterialTexturesReady: async (owner) => {
       const scope = loadingScope(owner);
-      const started = Date.now();
-      while (!sceneNodeMaterialsSampleReady(scope.target)) {
+      // Measure stalls of the pending set, not total load time: a slow host
+      // that keeps finishing uploads stays in budget; a hung upload fails.
+      let lastProgress = Date.now();
+      let previous: string | null = null;
+      for (;;) {
+        const pending = pendingSceneTextureWork(scope.target);
+        if (pending.length === 0) break;
         scope.assert();
-        if (Date.now() - started >= SCENE_SHADER_WARM_TIMEOUT_MS) {
-          throw new Error("Material textures did not become ready before the loading deadline.");
+        const key = pending.join("\n");
+        const now = Date.now();
+        if (key !== previous) {
+          lastProgress = now;
+        } else if (now - lastProgress >= SCENE_SHADER_WARM_TIMEOUT_MS) {
+          throw new Error(
+            `Material textures did not become ready before the loading deadline. Still waiting for ${pending.length}: ${pending.slice(0, 8).join(", ")}${pending.length > 8 ? ", …" : ""}.`,
+          );
         }
+        previous = key;
         await new Promise((resolve) => setTimeout(resolve, 16));
       }
       scope.assert();
@@ -2886,15 +2898,21 @@ function materialTextureGuidMap(
   return out;
 }
 
-function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
+/** Texture work the first frame still waits on, named for loading diagnostics. */
+function pendingSceneTextureWork(scene: Scene): string[] {
   // Native RGBD environment/BRDF decoding outlives the texture load event and
   // can render asynchronously even when no current material samples the map.
-  if (!isEnvironmentLightingReady(scene) || !isSceneTextureWorkReady(scene)) return false;
+  const pending = pendingSceneTextures(scene);
+  if (!isEnvironmentLightingReady(scene)) pending.push("environment lighting");
   for (const material of scene.materials) {
-    if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) return false;
-    if (material.getActiveTextures().some((texture) => !texture.isReady())) return false;
+    if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material)) {
+      pending.push(`material "${material.name}" samples`);
+    }
+    for (const texture of material.getActiveTextures()) {
+      if (!texture.isReady()) pending.push(`material "${material.name}" texture "${texture.name}"`);
+    }
   }
-  return true;
+  return pending;
 }
 
 function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {

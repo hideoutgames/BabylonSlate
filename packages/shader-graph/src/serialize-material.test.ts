@@ -13,6 +13,22 @@ import {
 } from "./serialize-material";
 
 describe("material graph serialization", () => {
+  it("shows the widest connected numeric type on generic pins", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "pair", type: "const.vec2", position: { x: 0, y: 0 }, properties: {} },
+      { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      { id: "a", sourceNodeId: "pair", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+      { id: "b", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "add", targetPinId: "b" },
+    );
+    const node = hydrateMaterialGraphForEditor(materialGraphToSerialized(doc)).nodes.find((entry) => entry.id === "add")!;
+    expect(node.data.__pins).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "a", type: { kind: "vec3" }, typeLabel: "V3" }),
+      expect.objectContaining({ id: "out", type: { kind: "vec3" }, typeLabel: "V3" }),
+    ]));
+  });
   it("uses seconds for new Time nodes without changing copied legacy nodes", () => {
     expect(materialPaletteNodes("surface").find((node) => node.id === "input.time")?.defaultData).toMatchObject({ timeMode: "seconds" });
     const doc = createDefaultMaterialDocument();
@@ -174,7 +190,7 @@ describe("material graph serialization", () => {
     );
   });
 
-  it("lets a Float splat into a vector pin on the canvas", () => {
+  it("lets a Float widen into a vector pin on the canvas", () => {
     const float = {
       id: "out",
       name: "Out",
@@ -192,7 +208,7 @@ describe("material graph serialization", () => {
     expect(materialPinsAreCompatible(float, vec3)).toBe(true);
   });
 
-  it("refuses to truncate a vector on the canvas", () => {
+  it("allows truncation to a narrower vector on the canvas", () => {
     const vec4 = {
       id: "out",
       name: "Out",
@@ -207,7 +223,7 @@ describe("material graph serialization", () => {
       direction: "in" as const,
       type: { kind: "vec3" },
     };
-    expect(materialPinsAreCompatible(vec4, vec3)).toBe(false);
+    expect(materialPinsAreCompatible(vec4, vec3)).toBe(true);
   });
 
   it("lets a generic pin accept any numeric value", () => {

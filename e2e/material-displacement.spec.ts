@@ -39,6 +39,12 @@ for (const mode of ["pbr", "cel"]) {
         properties: {},
       },
       {
+        id: "amplitude",
+        type: "vector.combine",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
         id: "normal",
         type: "input.vertexNormalWS",
         position: { x: -250, y: 250 },
@@ -61,8 +67,8 @@ for (const mode of ["pbr", "cel"]) {
       },
       {
         id: "sine-multiply",
-        sourceNodeId: "sine",
-        sourcePinId: "out",
+        sourceNodeId: "amplitude",
+        sourcePinId: "xyz",
         targetNodeId: "multiply",
         targetPinId: "a",
       },
@@ -74,6 +80,9 @@ for (const mode of ["pbr", "cel"]) {
         targetPinId: "b",
       },
     );
+    for (const channel of ["x", "y", "z"]) doc.edges.push({
+      id: `sine-${channel}`, sourceNodeId: "sine", sourcePinId: "out", targetNodeId: "amplitude", targetPinId: channel,
+    });
     const files = await minimalProjectFiles();
     const project = JSON.parse(
       new TextDecoder().decode(files.get(PROJECT_FILE)!),
