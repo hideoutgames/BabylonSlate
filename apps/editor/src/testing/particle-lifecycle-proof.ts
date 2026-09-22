@@ -120,6 +120,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     throw new Error(`Particle preparation did not finish: ${JSON.stringify(diagnostics)}`);
   };
   const captures: Array<{ name: string; red: number; blue: number; systems: number; processed: number[]; configuredSimulationStep: number[] }> = [];
+  const gpuSamples: unknown[] = [];
   const capture = async (name: string) => captures.push({ name, ...lastPixels, systems: scene.particleSystems.length,
     processed: scene.particleSystems.map((system) => system.getActiveCount()),
     configuredSimulationStep: scene.particleSystems.map((system) => system.updateSpeed) });
@@ -129,6 +130,21 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     const natives = [assign("red"), assign("blue")];
     for (const system of natives) system.minLifeTime = system.maxLifeTime = 0.8;
     await ready(natives); await step(8); await capture("two-textures");
+    // Readback belongs only in this controlled correctness fixture. Capture
+    // native positions separately from processed counts and visible pixels.
+    if (backend === "webgpu" && gpu) for (const system of natives) {
+      const native = system as unknown as { _attributesStrideSize: number; _platform: {
+        _bufferComputeShader: Array<{ read(): Promise<ArrayBufferView> }>;
+      } };
+      const buffers = [];
+      for (const buffer of native._platform._bufferComputeShader) {
+        const data = await buffer.read();
+        const floats = new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4);
+        buffers.push(Array.from({ length: Math.min(system.getActiveCount(), 8) }, (_, index) =>
+          Array.from(floats.subarray(index * native._attributesStrideSize, index * native._attributesStrideSize + 8))));
+      }
+      gpuSamples.push({ name: system.name, buffers, emitter: (system.emitter as { getWorldMatrix(): { asArray(): ArrayLike<number> } }).getWorldMatrix().asArray() });
+    }
     const stable = { acquisitions, releases, materials: scene.materials.length, systems: scene.particleSystems.length };
     for (let i = 0; i < 1000; i += 1) { play("red", true); play("blue", true); }
     if (acquisitions !== stable.acquisitions || releases !== stable.releases || scene.materials.length !== stable.materials || resets !== 0)
@@ -224,7 +240,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     return { requestedBackend: backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`,
       simulation: gpu ? "gpu" : "cpu", driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(), userAgent: navigator.userAgent,
       resolution: { width: 64, height: 64 },
-      captures, sceneIsolation, diagnostics, resets, disposalResets, acquisitions, releases, baseline, final,
+      captures, gpuSamples, sceneIsolation, diagnostics, resets, disposalResets, acquisitions, releases, baseline, final,
       nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
   } finally { service.dispose(); materials.dispose(); scene.dispose(); otherEngine.dispose(); engine.dispose(); canvas.remove(); }
