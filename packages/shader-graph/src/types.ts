@@ -56,15 +56,14 @@ export interface MaterialConversion {
   to: MaterialNumericType;
 }
 
-/** Preserve leading channels, discard excess channels, and fill missing XYZW with 0001. */
+/** Preserve leading channels, discard excess channels, and fill missing channels with 1. */
 export function convertMaterialValue(
   value: readonly number[],
   conversion: MaterialConversion,
 ): number[] {
   const sourceWidth = componentCount(conversion.from);
   return Array.from({ length: componentCount(conversion.to) }, (_, index) => {
-    const fallback = index === 3 ? 1 : 0;
-    return index < sourceWidth ? (value[index] ?? fallback) : fallback;
+    return index < sourceWidth ? (value[index] ?? 1) : 1;
   });
 }
 

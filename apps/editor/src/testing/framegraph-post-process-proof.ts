@@ -322,7 +322,7 @@ export async function runFrameGraphPostProcessProof(
   try {
     if (scenario === "numeric") {
       const types: MaterialNumericType[] = ["float", "vec2", "vec3", "vec4"];
-      const values = { float: [32 / 255], vec2: [32 / 255, 96 / 255], vec3: [32 / 255, 96 / 255, 160 / 255], vec4: [32 / 255, 96 / 255, 160 / 255, 0] };
+      const values = { float: [32 / 255], vec2: [32 / 255, 96 / 255], vec3: [32 / 255, 96 / 255, 160 / 255], vec4: [32 / 255, 0, 160 / 255, 0] };
       for (const target of types) {
         const fn = createDefaultMaterialFunctionDocument(target);
         fn.inputs[0] = { ...fn.inputs[0]!, type: target, defaultValue: values[target] };
@@ -349,7 +349,8 @@ export async function runFrameGraphPostProcessProof(
       }
       for (const order of ["a", "b"]) {
         const doc = createDefaultMaterialDocument("Mixed Add", "postProcess");
-        doc.nodes.push(node("pair", "const.vec2", { value: values.vec2 }), node("triple", "const.vec3", { value: [16 / 255, 8 / 255, 64 / 255] }), node("add", "math.add"));
+        // Negative Z keeps the padded sum below one so clamping cannot hide it.
+        doc.nodes.push(node("pair", "const.vec2", { value: values.vec2 }), node("triple", "const.vec3", { value: [16 / 255, 8 / 255, -64 / 255] }), node("add", "math.add"));
         doc.edges = [];
         connect(doc, "pair", "out", "add", order);
         connect(doc, "triple", "out", "add", order === "a" ? "b" : "a");
@@ -359,9 +360,12 @@ export async function runFrameGraphPostProcessProof(
       }
       const mathCases: Array<{ name: string; type: string; inputs: Record<string, number[]> }> = [
         { name: "step", type: "math.step", inputs: { edge: [0.5, 0.5], value: [0.75] } },
-        { name: "atan2", type: "math.atan2", inputs: { y: [0.5], x: [0.5, 0.5] } },
-        { name: "smoothstep", type: "math.smoothstep", inputs: { edgeA: [0.25], edgeB: [1, 1, 1], value: [0.625, 0.5, 1] } },
-        { name: "remap", type: "math.remap", inputs: { value: [0.5, 0.25, 0.75], fromMin: [0.25], fromMax: [1, 1, 1], toMin: [0], toMax: [1, 1, 1] } },
+        { name: "atan2", type: "math.atan2", inputs: { y: [0.5], x: [0.5, 2] } },
+        // Padded lower bounds are one; keep each source range nondegenerate.
+        { name: "smoothstep", type: "math.smoothstep", inputs: { edgeA: [0.25], edgeB: [1, 2, 3], value: [0.625, 1.5, 2.5] } },
+        { name: "remap", type: "math.remap", inputs: { value: [0.5, 1.25, 2.5], fromMin: [0.25], fromMax: [1, 2, 3], toMin: [0], toMax: [1, 0, 0] } },
+        { name: "multiply-float-left", type: "math.multiply", inputs: { a: [2], b: [0.125, 0.5, 0.75] } },
+        { name: "multiply-float-right", type: "math.multiply", inputs: { a: [0.125, 0.5, 0.75], b: [2] } },
         { name: "reflect-vec4", type: "vector.reflect", inputs: { incident: [0.2, 0.3, 0.4, -0.5], normal: [0, 0, 0, 1] } },
         { name: "reflect-vec2", type: "vector.reflect", inputs: { incident: [0.25, -0.5], normal: [0, 1] } },
         { name: "reflect-float", type: "vector.reflect", inputs: { incident: [-0.25], normal: [1] } },

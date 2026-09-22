@@ -307,8 +307,10 @@ export function compileMaterialPlan(
         const merge = new VectorMergerBlock(blockName);
         created.push(merge);
         point.connectTo(conversion.from === "float" ? merge.x : conversion.from === "vec2" ? merge.xyIn : merge.xyzIn);
-        if (conversion.to === "vec4") {
-          constantPoint("float", [1], `${blockName}_w`, false).connectTo(merge.w);
+        const padding = constantPoint("float", [1], `${blockName}_padding`, false);
+        const channels = [merge.x, merge.y, merge.z, merge.w];
+        for (const channel of channels.slice(componentCount(conversion.from), componentCount(conversion.to))) {
+          padding.connectTo(channel);
         }
         point = conversion.to === "vec2" ? merge.xyOut : conversion.to === "vec3" ? merge.xyzOut : merge.xyzw;
       } else {
