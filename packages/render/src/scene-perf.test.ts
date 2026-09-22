@@ -343,6 +343,7 @@ describe("prewarmSceneMaterials", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    engine.currentRenderPassId = scene.activeCamera.renderPassId;
     const mesh = MeshBuilder.CreateBox("morphed", {}, scene);
     const material = new MaterialType("receiver", scene); mesh.material = material;
     const manager = new MorphTargetManager(scene); mesh.morphTargetManager = manager;
