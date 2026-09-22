@@ -194,7 +194,7 @@ export class MaterialLibrary {
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
-    const textures = materialTextureBindings(this.options.acquireTexture);
+    const textures = materialTextureBindings(this.options.acquireTexture, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
     try { compiled = compileMaterialPlan(lowered.plan, {
       scene,

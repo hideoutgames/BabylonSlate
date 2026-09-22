@@ -188,13 +188,17 @@ class EnvironmentLighting {
         throw new Error("Environment view did not share its uploaded cube.");
       }
     } catch (error) { lease.release(); throw error; }
+    let irradiance: ReturnType<typeof ownEnvironmentIrradiance>;
+    try {
+      irradiance = ownEnvironmentIrradiance(view, source, this.cache!, () => {
+        if (!this.disposed && this.view === view) this.irradianceChanged = true;
+      });
+    } catch (error) { view.dispose(); lease.release(); throw error; }
     this.clear();
     this.source = source;
     this.sourceLease = lease;
     this.view = view;
-    this.irradiance = ownEnvironmentIrradiance(view, source, this.cache!, () => {
-      if (!this.disposed && this.view === view) this.irradianceChanged = true;
-    });
+    this.irradiance = irradiance;
     this.scene.environmentTexture = view;
   }
 

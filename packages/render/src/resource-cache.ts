@@ -843,19 +843,21 @@ export function acquireMaterialTexture(
 }
 
 /** One material generation owns its sampled textures; compiler callbacks only borrow. */
-export function materialTextureBindings(acquire: ((guid: string) => ResourceLease<Texture> | null) | undefined) {
+export function materialTextureBindings(acquire: ((guid: string) => ResourceLease<Texture> | null) | undefined, identity?: (guid: string) => string | undefined) {
   const leases = new Map<string, ResourceLease<Texture>>();
+  const bindingKey = (guid: string) => `${guid}\0${identity?.(guid) ?? ""}`;
   return {
     resolve(guid: string): Texture | null {
-      const current = leases.get(guid);
+      const key = bindingKey(guid);
+      const current = leases.get(key);
       if (current && !isDisposedGpuTexture(current.resource)) return current.resource;
       const next = acquire?.(guid);
       if (!next) return null;
-      leases.set(guid, next);
+      leases.set(key, next);
       current?.release();
       return next.resource;
     },
-    ready(guid: string) { return leases.get(guid)?.ready; },
+    ready(guid: string) { return leases.get(bindingKey(guid))?.ready; },
     prune(textures: readonly BaseTexture[]) {
       const used = new Set(textures);
       for (const [guid, lease] of leases) if (!used.has(lease.resource)) { leases.delete(guid); lease.release(); }
