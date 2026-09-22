@@ -30,7 +30,7 @@ function checked(
     throw new Error(`Havok ${operation} failed`);
 }
 
-function refreshQueryMembership(plugin: HavokPlugin, body: PhysicsBody): void {
+function removeWorldMembership(plugin: HavokPlugin, body: PhysicsBody): void {
   const havok = plugin._hknp as HavokPhysicsWithBindings;
   const data = body._pluginData as NativeBodyData;
   if (!detachedBodies.has(body)) {
@@ -41,6 +41,11 @@ function refreshQueryMembership(plugin: HavokPlugin, body: PhysicsBody): void {
     );
     detachedBodies.add(body);
   }
+}
+
+function restoreWorldMembership(plugin: HavokPlugin, body: PhysicsBody): void {
+  const havok = plugin._hknp as HavokPhysicsWithBindings;
+  const data = body._pluginData as NativeBodyData;
   checked(
     havok,
     havok.HP_World_AddBody(data.worldRegion.world, data.hpBodyId, false),
@@ -58,11 +63,17 @@ export function attachHavokShape(
   body: PhysicsBody,
   shape: PhysicsShape | null,
 ): void {
+  // Retire native contact pairs while their original shape is still attached.
+  // Havok 1.3.14 can hang on the next native step when an overlapping compound
+  // is replaced in-world and its old container is released. The body handle,
+  // Babylon lookup and callbacks remain owned throughout this topology change.
+  removeWorldMembership(plugin, body);
   if (shape) body.shape = shape;
   else {
     plugin.setShape(body, null);
     body.shape = null;
   }
+  restoreWorldMembership(plugin, body);
 }
 
 /** Worker NullEngine teleports must not depend on a later render/prestep callback. */
@@ -75,7 +86,8 @@ export function teleportHavokBody(
   try {
     body.setPrestepType(PhysicsPrestepType.TELEPORT);
     plugin.setPhysicsBodyTransformation(body, body.transformNode);
-    refreshQueryMembership(plugin, body);
+    removeWorldMembership(plugin, body);
+    restoreWorldMembership(plugin, body);
   } finally {
     body.setPrestepType(previous);
   }

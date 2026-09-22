@@ -185,6 +185,8 @@ The invalidation fixtures cover ordinary shape ownership/replacement, local pose
 
 ## Native lifecycle verification pickup
 
+The pinned worker adapter removes a body's native world membership before changing an attachment, while the original shape is still valid, then reinserts the same body handle. This retires the previous native contact pairs before old compound resources are released; Babylon body identity, reverse lookups and callbacks remain intact. A failed insertion stays tracked for the transaction's rollback. This boundary also refreshes immediate query membership for teleports. The trigger replacement regression reproduced a hang inside `HP_World_Step` after in-world compound replacement; the membership correction requires the native lifecycle/constraint/controller acceptance cases below.
+
 Local checks were deferred at the user's request on 2026-09-22. Branch `agent/engine-physics-lifecycle-b`, implementation checkpoint `7177dda9`, is **unverified and unmerged**; no PR exists. Keep `BL_TEST_PROFILE=shared` and the machine-wide resource configuration unchanged when resuming. The physical A16 check was waived; local native/browser evidence is still required.
 
 - Baseline `2bbb3ef8`: three real packaged-Havok lifecycle regressions failed (native removal, shape ownership, query helpers). Later null-detachment/resource tests ran, but the native transaction delivery has not passed as a whole.
