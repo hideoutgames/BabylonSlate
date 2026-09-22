@@ -279,7 +279,16 @@ export class MaterialLibrary {
       return Promise.all([...pendingParameters.values()].map((request) => request.ready))
         .then((results) => [...results.flat(), ...failures]);
     };
-    const pruneTextures = () => textures.prune([...compiled.material.getActiveTextures(), ...[...pendingParameters.values()].map((entry) => entry.texture)]);
+    let preparingTextures = true;
+    const pruneTextures = () => {
+      // Initial overrides can replace a sample before the compiler's captured
+      // texture preparations settle. Those preparations still own their input.
+      if (preparingTextures) return;
+      textures.prune([
+        ...compiled.material.getAllTextureBlocks().flatMap((block) => block.texture ? [block.texture] : []),
+        ...[...pendingParameters.values()].map((entry) => entry.texture),
+      ]);
+    };
     const cancelParameter = (name: string) => { pendingParameters.get(name)?.cancel(); pendingParameters.delete(name); };
     const setParameter = (name: string, value: MaterialParameterValue) => {
       const previous = compiled.getParameter(name);
@@ -401,6 +410,8 @@ export class MaterialLibrary {
           for (const error of errors) this.options.onTextureError?.(error);
           return;
         }
+        preparingTextures = false;
+        pruneTextures();
         publish();
         this.options.onMaterialReady?.(scene, assetGuid);
       });

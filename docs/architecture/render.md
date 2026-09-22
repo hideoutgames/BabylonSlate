@@ -982,4 +982,6 @@ Also pending: admitted, scoped `@babylonslate/render` and editor typechecks and 
 
 Environment replacement keeps the prior usable cube while the successor lease prepares. Strict scene readiness includes that pending admission, and both publication and rejection invalidate the readiness cache. A failed successor returns readiness to the retained working environment.
 
+Material generations retain their compile-time texture leases until preparation settles, including when initial component overrides replace a sampler. After publication, pruning follows attached texture blocks and pending replacements, so asynchronous native graph rebuilds cannot prematurely release an upload.
+
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
