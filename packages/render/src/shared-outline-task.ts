@@ -98,6 +98,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         objects.renderParticles = false; objects.renderSprites = false;
         objects.enableBoundingBoxRendering = false; objects.enableOutlineRendering = false;
         objects.depthTest = true; objects.depthWrite = true;
+        this.view.owner.registerRenderPass(objects.objectRenderer.renderPassId);
         this.masks.push({ group, mask, depth, clear, objects, materials: new Map() });
       }
     }

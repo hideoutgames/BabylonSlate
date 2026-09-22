@@ -57,6 +57,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(edited.graphs).toEqual(original.graphs);
     expect(edited.textures).toEqual(original.textures);
     expect(edited.owner).toEqual(original.owner);
+    const beforeResize = at("all-visibility-groups");
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(at(`resize-${cycle}-larger`).drawingBuffer).toEqual({ width: 320, height: 160 });
+      const restored = at(`resize-${cycle}-restored`);
+      expect(restored.drawingBuffer).toEqual({ width: 240, height: 120 });
+      expect(restored.lanes).toEqual(beforeResize.lanes);
+      expect(restored.reservations).toEqual(beforeResize.reservations);
+      expect(restored.owner.instanceBufferBytes).toBe(beforeResize.owner.instanceBufferBytes);
+    }
     expect(at("membership-order-reversed").lanes).toEqual(at("overlap-with-global").lanes);
     expect(at("same-instance-selection-wins").lanes[1]!.green).toBeGreaterThan(0);
     expect(at("same-instance-selection-wins").lanes[1]!.blue).toBe(0);

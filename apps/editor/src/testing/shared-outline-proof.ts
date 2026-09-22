@@ -66,26 +66,29 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
       if (frame < 2) await waitFrame();
     }
     // Presented canvas copy handles WebGPU swapchain channel/row order.
-    const copy = document.createElement("canvas"); copy.width = width; copy.height = height;
+    const captureWidth = canvas.width, captureHeight = canvas.height;
+    const copy = document.createElement("canvas"); copy.width = captureWidth; copy.height = captureHeight;
     const context = copy.getContext("2d")!;
     context.drawImage(canvas, 0, 0);
-    const pixels = context.getImageData(0, 0, width, height).data;
+    const pixels = context.getImageData(0, 0, captureWidth, captureHeight).data;
     const lanes = Array.from({ length: 3 }, () => ({ red: 0, green: 0, blue: 0 }));
     let coveredPartialRed = 0;
-    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      const offset = (y * width + x) * 4;
+    for (let y = 0; y < captureHeight; y++) for (let x = 0; x < captureWidth; x++) {
+      const offset = (y * captureWidth + x) * 4;
       const r = pixels[offset]!, g = pixels[offset + 1]!, b = pixels[offset + 2]!;
-      const lane = lanes[Math.min(2, Math.floor(x / 80))]!;
+      const lane = lanes[Math.min(2, Math.floor(x / (captureWidth / 3)))]!;
       if (r > 200 && g < 40 && b < 40) {
         lane.red++;
         // Right half of the middle receiver, well inside the nearer occluder.
-        if (x >= 127 && x <= 138 && y >= 40 && y <= 80) coveredPartialRed++;
+        if (x >= 127 / width * captureWidth && x <= 138 / width * captureWidth &&
+          y >= 40 / height * captureHeight && y <= 80 / height * captureHeight) coveredPartialRed++;
       }
       if (g > 200 && r < 40 && b < 40) lane.green++;
       if (b > 200 && r < 40 && g < 40) lane.blue++;
     }
     const snapshot = {
       name, image: copy.toDataURL("image/png"), lanes, coveredPartialRed,
+      drawingBuffer: { width: captureWidth, height: captureHeight },
       draws: readEngineDrawCalls(engine), tasks: renderer.taskNames(),
       outline: renderer.sharedOutlineDiagnostics(),
       graphs: scene.frameGraphs.map(objectId),
@@ -115,6 +118,12 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu") {
     await capture("live-component-style-restored");
     mount("component", { ...contributions.component!, throughMeshes: true });
     await capture("all-visibility-groups");
+    for (let cycle = 0; cycle < 3; cycle++) {
+      engine.setSize(320, 160);
+      await capture(`resize-${cycle}-larger`);
+      engine.setSize(width, height);
+      await capture(`resize-${cycle}-restored`);
+    }
     mount("component");
     const siblingView = owner.createView("unpresented-sibling-view");
     siblingView.setContribution("selection", { ...contributions.selection!, targets: [targets[0]!] });

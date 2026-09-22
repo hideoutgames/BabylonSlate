@@ -46,6 +46,7 @@ export class SharedOutlineOwner {
   private readonly identities = new Map<string, number>();
   private readonly meshIdentity = new Map<AbstractMesh, number>();
   private readonly sources = new Map<Mesh, SourceRecord>();
+  private readonly renderPasses = new Set<number>();
   private readonly releases = new Set<Promise<void>>();
   private uploads = 0;
   private bufferBytes = 0;
@@ -137,7 +138,8 @@ export class SharedOutlineOwner {
       delete source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE];
       try { original.call(source, visibleInstances, renderSelf); }
       finally { source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = value; }
-      this.updateInstanceBuffer(source, record, visibleInstances, renderSelf);
+      if (this.renderPasses.has(this.scene.getEngine().currentRenderPassId))
+        this.updateInstanceBuffer(source, record, visibleInstances, renderSelf);
     };
     source._processInstancedBuffers = record.wrapper;
     this.sources.set(source, record);
@@ -145,7 +147,7 @@ export class SharedOutlineOwner {
   private updateInstanceBuffer(source: Mesh, record: SourceRecord,
     instances: InstancedMesh[] | null, renderSelf: boolean): void {
     const engine = this.scene.getEngine();
-    const pass = engine.isWebGPU ? engine.currentRenderPassId : 0;
+    const pass = engine.currentRenderPassId;
     const length = (instances?.length ?? 0) + Number(renderSelf);
     let state = record.buffers.get(pass);
     const capacity = 2 ** Math.ceil(Math.log2(Math.max(32, length)));
@@ -185,7 +187,12 @@ export class SharedOutlineOwner {
       storage.renderPasses ??= {};
       storage.renderPasses[pass] ??= {};
       storage.renderPasses[pass][SHARED_OUTLINE_ATTRIBUTE] = state.buffer;
-    } else storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] = state.buffer;
+    } else if (storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] !== state.buffer) {
+      storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] = state.buffer;
+      // WebGL VAOs capture the buffer handle, not just its layout. A pass may
+      // retain its own unchanged data while another pass renders a different list.
+      source._invalidateInstanceVertexArrayObject();
+    }
     if (replacement) { source._invalidateInstanceVertexArrayObject(); source.resetDrawCache(); }
   }
   private retireBuffer(record: BufferRecord): void {
@@ -213,14 +220,16 @@ export class SharedOutlineOwner {
     void release.then(() => this.releases.delete(release), () => {});
   }
   /** Graph replacement must not leave source-owned buffers for dead pass IDs. */
+  registerRenderPass(pass: number): void { this.renderPasses.add(pass); }
   retireRenderPass(pass: number): void {
-    if (!this.scene.getEngine().isWebGPU) return;
+    this.renderPasses.delete(pass);
     for (const [source, record] of this.sources) {
       const buffer = record.buffers.get(pass);
       if (!buffer) continue;
       this.retireBuffer(buffer); record.buffers.delete(pass);
       const storage = source._userInstancedBuffersStorage;
       if (storage?.renderPasses?.[pass]) delete storage.renderPasses[pass][SHARED_OUTLINE_ATTRIBUTE];
+      if (storage?.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] === buffer.buffer) delete storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE];
       source._invalidateInstanceVertexArrayObject(); source.resetDrawCache();
     }
   }
