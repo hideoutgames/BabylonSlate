@@ -30,6 +30,7 @@ import {
   SHADOW_CAMERA_FOV,
   SHADOW_LIGHT_DIRECTION,
   shadowSurfaceSamples,
+  shadowThinContactEdgeSamples,
   shadowRegions,
   type ShadowTriple,
   type ShadowBox,
@@ -190,6 +191,17 @@ export async function runShadowSelfShadowingProof(
         SIZE,
         camera.viewport,
         boxes,
+      );
+      points.push(
+        ...shadowThinContactEdgeSamples(
+          camera.position.asArray() as ShadowTriple,
+          Array.from(scene.getTransformMatrix().asArray()),
+          light.direction.negate().asArray() as ShadowTriple,
+          SIZE,
+          SIZE,
+          camera.viewport,
+          boxes,
+        ),
       );
       captures.push({
         name: `${name}-shadow-contribution-off`,

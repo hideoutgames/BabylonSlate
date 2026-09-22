@@ -172,6 +172,11 @@ These single-run timing distributions were collected while other development pro
 
 ## Triangular-shadow investigation — 22 September 2026
 
+**Not ready to merge:** the automatic-bias coverage gap is implemented, but the
+first synthetic browser regression still fails. The half-texel depth correction
+is a candidate policy, not the smallest visually validated correction. Do not
+report the triangular-shadow bug as fixed.
+
 Implementation base: `93638dde6993a8307254d70e96dbad9be42a9432`, Babylon
 `9.20.0`. Rendering PR #651 was rechecked at
 `6cc7cce3f552d40c15fd807eaadd9cc5b388a587` and its owner was notified of the
@@ -192,6 +197,26 @@ settings, or physical A16 capture was available. The added box character is a
 No controlled experiment has yet established the cause of the original image.
 No projection-fitting or geometry/shader change is justified by current evidence.
 
+The synthetic case **does** reproduce sawtooth shadow-map acne. At `d1469bf8`,
+turning off shadow contribution while retaining direct light removes the pattern.
+Independent depth sweeps reduce it; normal-offset sweeps from zero to 0.01 do
+not remove it. Windows Chromium executed actual WebGL2 on ANGLE / Microsoft
+Basic Render Driver (D3D11), 384×384 pixels, DPR 1, forward PBR, one 1024²
+directional PCF map, distance 80 and a 160-world-unit orthographic span/depth.
+This is desktop software-rendering evidence, not A16 evidence.
+
+| Synthetic capture | Native depth bias | False-dark head samples | False-dark torso samples |
+| --- | --- | --- | --- |
+| Authored manual (same values as the old single-map automatic path) | 0.0001 | 198 / 356 | 41 / 67 |
+| Candidate automatic, half-world-texel depth correction | 0.0009765625 | 65 / 356 | 14 / 67 |
+| Diagnostic three-quarter-world-texel correction | 0.00146484375 | 23 / 356 | 7 / 67 |
+
+The assertion requires less than 5% false-dark samples in each selected region.
+All three captures fail; none is a fixed image. Native PCF Low uses one linear
+comparison fetch, not point sampling. Its underlying texel support and surface
+depth gradients explain why a constant half-texel correction is insufficient.
+Increasing it without preserved contact-edge evidence is not an accepted fix.
+
 The synthetic browser specifications are
 `e2e/shadow-self-shadowing.spec.ts` (Low, forced cascade fallback, cascades,
 PBR/CEL and explicitly checked WebGL2/WebGPU) and
@@ -202,6 +227,15 @@ captures. The isolated fixture additionally captures independent depth/normal
 sweeps, a thin contact, another light angle and cascade camera motion. These
 assertions require both lit surfaces and retained occlusion; their presence is
 not a passing pixel result.
+
+The first thin-slab capture was invalid: Babylon's deferred mesh-added event had
+not registered its shadow participation. The fixture now awaits that event and
+checks both casting and receiving. Its second light angle was changed to retain
+analytically visible ground contacts. A separate ground-pixel strip near the
+thin slab's contact edge supplements the interior mask: the interior mask alone
+could tolerate a detached shadow. The edge strip's analytic negative control
+rejects a 0.4-world-unit caster lift at both angles; GPU validation is still
+pending. Production geometry and projection fitting remain unchanged.
 
 Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
 retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
@@ -214,7 +248,32 @@ executed seven files: shadow bias, controller, managed FrameGraph shadows,
 diagnostics, refresh, player backend and player boot. It reported 74 passed and
 5 failed. Failures identified incomplete NullEngine array metadata, a settings
 replacement in test setup, Float32 extent precision, and signed-zero JSON
-comparison. Repairs require a fresh affected-file result; this run is not a pass.
+comparison. Affected files were rerun after repair; the first run remains a
+failed result rather than being relabeled.
+
+| Check scope | Revision | Result |
+| --- | --- | --- |
+| `shadow-bias.test.ts`, `shadow-map-refresh.test.ts`, player `player-backend.test.ts` and `boot.test.ts` | `06de91a1` | 43 passed; unaffected results retained |
+| `framegraph-managed-shadows.test.ts`, `shadow-diagnostics.test.ts` | `469256c8` | 15 passed; unaffected results retained |
+| `shadow-controller.test.ts` | `d1469bf8` | 21 passed |
+| ESLint on changed TypeScript files | `469256c8` | Passed with two existing React-hook warnings; subsequent fixture edits require their own scoped check |
+| Render, player and editor package typechecks, serialized through shared admission | `d1469bf8` | Passed; subsequent editor fixture edits are not covered by this result |
+| Selected `shadow-self-shadowing.spec.ts`, desktop Chrome, `webgl2 low pbr` | `d1469bf8` | Failed the real pixel assertion; images and effective state retained locally |
+| Same selected browser case with extended depth/distance diagnostics and registered thin caster | `65faac7d` | Build passed; browser never started before the 900-second admission timeout |
+
+Focused unit commands used `pnpm --silent agent:wait local --script test --`
+with only the named files. Browser commands used
+`pnpm --silent agent:wait local --script test:e2e -- e2e/shadow-self-shadowing.spec.ts --project=desktop-chrome --grep 'webgl2 low pbr'`.
+All checks kept `BL_TEST_PROFILE=shared`, one worker and the machine-wide
+resource policy. No full suite or coverage sweep ran. At the timeout another
+workload held the shared browser lease and available memory was below the
+browser-plus-headroom requirement. No other workload was stopped or bypassed.
+
+Remaining local work: run the extended sweeps and contact-edge oracle, select
+and validate the correction, prove failure with the restored original policy
+using the same final fixture, then run the bounded backend/cascade/host matrix.
+There is no baseline-fail/fixed-pass evidence pair or passing cross-host result
+yet. No PR has been opened because selected verification is not passing.
 
 **BLOCKED qualification:** original-image acceptance and native A16 visual,
 motion, thermal, frame-time and repeated-open/play/close resource measurements.

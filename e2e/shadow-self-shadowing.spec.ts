@@ -128,7 +128,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
           const contacts =
             capture.name.includes("thin-contact") ||
             capture.name.includes("second-light-angle")
-              ? ["torso", "ground", "thin-contact-ground"]
+              ? ["torso", "ground", "thin-contact-ground", "thin-contact-edge"]
               : ["torso", "ground"];
           for (const name of contacts) {
             const region = capture.regions[name]!;
@@ -136,6 +136,11 @@ for (const backend of ["webgl2", "webgpu"] as const)
               region.contact,
               `${capture.name} ${name} known occlusion population`,
             ).toBeGreaterThan(5);
+            if (name === "thin-contact-edge")
+              expect(
+                region.contact,
+                `${capture.name} distinct visible contact-edge pixels`,
+              ).toBeGreaterThanOrEqual(10);
             expect(
               region.retainedContact / region.contact,
               `${capture.name} ${name} preserved contact coverage`,

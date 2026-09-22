@@ -212,3 +212,122 @@ export function shadowRegions(
   }
   return result;
 }
+
+/**
+ * Additional thin-contact edge oracle, independent of the eroded interior
+ * mask. Test-only: pixel centers on y=0 within two authored slab thicknesses of
+ * its footprint, excluding the raster silhouette and all camera-hidden ground.
+ * This distance is a bound for this fixture, not a renderer bias policy.
+ * Analytic negative control at the fixed 384px camera: lifting only the slab
+ * caster by 0.4 world units leaves none of these 25 / 36 pixels occluded at the
+ * two authored light angles. The existing interior mask permits that gap.
+ * These are mask-sensitivity counts, not measured GPU correctness results.
+ */
+export function shadowThinContactEdgeSamples(
+  camera: ShadowTriple,
+  viewProjection: readonly number[],
+  toLight: ShadowTriple,
+  width: number,
+  height: number,
+  viewport = { x: 0, y: 0, width: 1, height: 1 },
+  boxes: readonly ShadowBox[] = SHADOW_BOXES,
+): ShadowSurfaceSample[] {
+  const thin = boxes.find((box) => box.name === "thin-slab");
+  if (!thin || Math.abs(thin.center[1] - thin.size[1] / 2) > 1e-6) return [];
+  if (width > 512 || height > 512)
+    throw new Error("Bounded fixture resolution exceeded");
+  const band = 2 * thin.size[0];
+  const m = viewProjection;
+  const groundAt = (x: number, y: number): ShadowTriple | null => {
+    const u = (((x + 0.5) / width - viewport.x) / viewport.width) * 2 - 1;
+    const v = 1 - (((y + 0.5) / height - viewport.y) / viewport.height) * 2;
+    // Solve projected x/y at y=0; no engine geometry or shadow-map sampling.
+    const a = m[0]! - u * m[3]!;
+    const b = m[8]! - u * m[11]!;
+    const c = m[1]! - v * m[3]!;
+    const d = m[9]! - v * m[11]!;
+    const e = u * m[15]! - m[12]!;
+    const f = v * m[15]! - m[13]!;
+    const determinant = a * d - b * c;
+    if (Math.abs(determinant) < 1e-10) return null;
+    const point: ShadowTriple = [
+      (e * d - b * f) / determinant,
+      0,
+      (a * f - e * c) / determinant,
+    ];
+    const w = point[0] * m[3]! + point[2] * m[11]! + m[15]!;
+    return w > 0 && point.every(Number.isFinite) ? point : null;
+  };
+  const visibleGround = (point: ShadowTriple | null) => {
+    if (!point) return false;
+    const direction = subtract(camera, point);
+    return !blocker(
+      point,
+      shadowNormalize(direction),
+      Math.sqrt(dot(direction, direction)),
+      boxes,
+      "ground",
+    );
+  };
+  const bounds: { x: number; y: number }[] = [];
+  for (const sideX of [-1, 1])
+    for (const sideZ of [-1, 1]) {
+      const x = thin.center[0] + sideX * (thin.size[0] / 2 + band);
+      const z = thin.center[2] + sideZ * (thin.size[2] / 2 + band);
+      const w = x * m[3]! + z * m[11]! + m[15]!;
+      if (!(w > 0)) return [];
+      bounds.push({
+        x:
+          (viewport.x +
+            ((1 + (x * m[0]! + z * m[8]! + m[12]!) / w) * viewport.width) / 2) *
+          width,
+        y:
+          (viewport.y +
+            ((1 - (x * m[1]! + z * m[9]! + m[13]!) / w) * viewport.height) /
+              2) *
+          height,
+      });
+    }
+  const minX = Math.max(1, Math.floor(Math.min(...bounds.map((p) => p.x))) - 1);
+  const maxX = Math.min(
+    width - 2,
+    Math.ceil(Math.max(...bounds.map((p) => p.x))) + 1,
+  );
+  const minY = Math.max(1, Math.floor(Math.min(...bounds.map((p) => p.y))) - 1);
+  const maxY = Math.min(
+    height - 2,
+    Math.ceil(Math.max(...bounds.map((p) => p.y))) + 1,
+  );
+  const result: ShadowSurfaceSample[] = [];
+  for (let y = minY; y <= maxY; y++)
+    for (let x = minX; x <= maxX; x++) {
+      const point = groundAt(x, y);
+      if (!point) continue;
+      const dx = Math.max(
+        0,
+        Math.abs(point[0] - thin.center[0]) - thin.size[0] / 2,
+      );
+      const dz = Math.max(
+        0,
+        Math.abs(point[2] - thin.center[2]) - thin.size[2] / 2,
+      );
+      const distance = Math.hypot(dx, dz);
+      if (!(distance > 0 && distance <= band) || !visibleGround(point))
+        continue;
+      if (
+        blocker(point, toLight, Infinity, boxes, "ground")?.name !== thin.name
+      )
+        continue;
+      if (
+        [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ].some(([u, v]) => !visibleGround(groundAt(x + u!, y + v!)))
+      )
+        continue;
+      result.push({ region: "thin-contact-edge", expected: "contact", x, y });
+    }
+  return result;
+}
