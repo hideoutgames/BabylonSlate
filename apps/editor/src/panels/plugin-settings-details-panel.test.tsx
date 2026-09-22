@@ -82,14 +82,9 @@ describe("Plugin Settings Details", () => {
       expect(screen.getByDisplayValue("Base Tools")).toBeTruthy(),
     );
     expect(harness.content.pluginDependencies).toEqual([
-      { guid: "base", versionRange: "^2.3.0" },
+      { guid: "base", version: "2.3.0" },
     ]);
-    fireEvent.change(screen.getByLabelText("Version Range"), {
-      target: { value: ">=2.3.0 <3.0.0" },
-    });
-    expect(harness.content.pluginDependencies[0]!.versionRange).toBe(
-      ">=2.3.0 <3.0.0",
-    );
+    expect(screen.queryByLabelText("Version Range")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add Dependency" }));
     expect(await screen.findByText("No Other Plugins Available")).toBeTruthy();
@@ -105,21 +100,19 @@ describe("Plugin Settings Details", () => {
     expect(screen.queryByDisplayValue("Base Tools")).toBeNull();
   });
 
-  it("previews and selects an icon while preserving the read-only imported engine range", async () => {
-    harness.content.engineVersionRange = ">=0.0.0 <2.0.0";
+  it("preserves imported compatibility while editing identity without version-range fields", async () => {
+    harness.content.engineVersion = "0.0.0";
     render(<PluginSettingsDetailsPanel {...({} as IDockviewPanelProps)} />);
-    const engineRange = screen.getByLabelText(
-      "Engine Version Range",
-    ) as HTMLInputElement;
-    expect(engineRange.readOnly).toBe(true);
-    expect(engineRange.value).toBe(">=0.0.0 <2.0.0");
+    expect(screen.queryByLabelText("Engine Version Range")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Version"), { target: { value: "2.7" } });
+    expect(harness.content.version).toBe("2.7");
 
     fireEvent.click(screen.getByTestId("plugin-settings-icon"));
     const choice = await screen.findByTestId("search-item-Camera");
     expect(choice.querySelector("svg")).toBeTruthy();
     fireEvent.click(choice);
     expect(harness.content.iconKey).toBe("Camera");
-    expect(harness.content.engineVersionRange).toBe(">=0.0.0 <2.0.0");
+    expect(harness.content.engineVersion).toBe("0.0.0");
     expect(screen.getByTestId("plugin-settings-icon").textContent).toBe(
       "Camera",
     );
@@ -131,7 +124,7 @@ describe("Plugin Settings Details", () => {
 
   it("retains missing dependencies for removal and disables changes for engine plugins", () => {
     harness.content.pluginDependencies = [
-      { guid: "missing", versionRange: "^1.0.0" },
+      { guid: "missing", version: "1.0.0" },
     ];
     harness.plugins[0]!.source = "engine";
     render(<PluginSettingsDetailsPanel {...({} as IDockviewPanelProps)} />);

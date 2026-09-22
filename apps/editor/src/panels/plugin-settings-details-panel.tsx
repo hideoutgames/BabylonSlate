@@ -172,21 +172,6 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
           />
         </Field>
         <PropertyGrid rows={maturityRows} />
-        <Field>
-          <FieldLabel htmlFor="plugin-settings-engine-range">
-            Engine Version Range
-          </FieldLabel>
-          <Input
-            id="plugin-settings-engine-range"
-            value={settings.engineVersionRange}
-            readOnly
-            data-testid="plugin-settings-engine-range"
-          />
-          <FieldDescription>
-            Set automatically when the plugin is created. Imported plugins keep
-            their declared compatibility.
-          </FieldDescription>
-        </Field>
         <div className="flex flex-col gap-2">
           <div className="text-sm font-medium">Editor Utility Objects</div>
           {settings.editorUtilityObjects.map((classId) => (
@@ -229,25 +214,6 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
                     {dependency ? dep.guid : "Missing Plugin"}
                   </FieldDescription>
                 </Field>
-                <Field>
-                  <FieldLabel htmlFor={`plugin-dependency-version-${index}`}>
-                    Version Range
-                  </FieldLabel>
-                  <Input
-                    id={`plugin-dependency-version-${index}`}
-                    value={dep.versionRange}
-                    disabled={readOnly}
-                    onChange={(event) => {
-                      const next = settings.pluginDependencies.map(
-                        (entry, i) =>
-                          i === index
-                            ? { ...entry, versionRange: event.target.value }
-                            : entry,
-                      );
-                      commit({ pluginDependencies: next });
-                    }}
-                  />
-                </Field>
                 <Button
                   type="button"
                   variant="outline"
@@ -289,7 +255,7 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
               commit({
                 pluginDependencies: [
                   ...settings.pluginDependencies,
-                  { guid, versionRange: `^${plugin.settings.version}` },
+                  { guid, version: plugin.settings.version },
                 ],
               });
             }}

@@ -21,6 +21,7 @@ import {
 import {
   defaultExportPreset,
   type ExportPreset,
+  type PluginEnableOverride,
   type RenderProjectSettings,
   isErr,
   isOk,
@@ -77,7 +78,7 @@ export type CollectExportGameParams = {
   reverbDampingScale?: number;
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
-  projectPluginOverrides: Record<string, { enabled: boolean }>;
+  projectPluginOverrides: Record<string, PluginEnableOverride>;
   preset?: ExportPreset;
   parentOf: (classId: string) => string | null | undefined;
   sceneByGuid: (guid: string) => SerializedScene | null;
@@ -108,7 +109,7 @@ export type CollectExportGameParams = {
 
 export function resolveExportPluginGraph(
   plugins: readonly ExportPluginDescriptor[],
-  projectOverrides: Record<string, { enabled: boolean }>,
+  projectOverrides: Record<string, PluginEnableOverride>,
   preset: ExportPreset,
 ): ReturnType<typeof resolvePluginGraph> {
   const enabled = plugins.filter((plugin) =>
@@ -118,7 +119,13 @@ export function resolveExportPluginGraph(
       preset.pluginOverrides[plugin.pluginGuid]?.enabled,
     ),
   );
-  const graph = resolvePluginGraph(enabled);
+  const graph = resolvePluginGraph(enabled, undefined, Object.fromEntries(
+    enabled.map((plugin) => [plugin.pluginGuid, {
+      ...projectOverrides[plugin.pluginGuid],
+      ...preset.pluginOverrides[plugin.pluginGuid],
+      enabled: true,
+    }]),
+  ));
   const name = (guid: string | undefined) =>
     plugins.find((plugin) => plugin.pluginGuid === guid)?.settings
       .displayName ??
@@ -135,10 +142,10 @@ export function resolveExportPluginGraph(
           message = `Enable or install "${dependency}", required by "${plugin}", or disable "${plugin}" in the export preset.`;
           break;
         case "plugin.unsatisfiable":
-          message = `"${plugin}" requires "${dependency}" ${diagnostic.versionRange} (installed ${diagnostic.foundVersion}).`;
+          message = `"${plugin}" recorded "${dependency}" ${diagnostic.recordedVersion} (installed ${diagnostic.foundVersion}). Enable it in Project Settings to review compatibility.`;
           break;
         case "plugin.engine_unsatisfiable":
-          message = `"${plugin}" requires engine ${diagnostic.versionRange} (current ${diagnostic.foundVersion}).`;
+          message = `"${plugin}" was created with engine ${diagnostic.recordedVersion} (current ${diagnostic.foundVersion}). Enable it in Project Settings to review compatibility.`;
           break;
         case "plugin.dependency_blocked":
           message = `"${plugin}" depends on "${dependency}". Resolve its plugin errors or disable "${plugin}" in the export preset.`;

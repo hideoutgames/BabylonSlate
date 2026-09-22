@@ -5,6 +5,7 @@ import type { DockviewApi } from "dockview-react";
 import { normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import type {
   DocumentKind,
+  PluginEnableOverride,
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
@@ -12,6 +13,7 @@ import type {
 } from "@babylonslate/core";
 import {
   isInputAssetType,
+  ENGINE_VERSION,
   normalizeInputAssetPayload,
   assetTypeForDocumentKind,
   assetTypeForDocumentSave,
@@ -46,6 +48,9 @@ import {
   createVfsBlobStore,
   createWorkerEncodeFn,
   decodeAssetDocument,
+  encodePluginSettingsDocument,
+  normalizePluginSettings,
+  stableStringify,
   decodeBabasset,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -252,7 +257,7 @@ export class ProjectService {
   private enginePluginStorage: ProjectStorage | null = null;
   private pluginDescriptors: PluginDescriptor[] = [];
   private pluginDiagnostics: PluginDiagnostic[] = [];
-  private pluginOverrides: Record<string, { enabled: boolean }> = {};
+  private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   private readonly registryListeners = new Set<() => void>();
@@ -462,12 +467,14 @@ export class ProjectService {
   /** Export presets scan their selected plugin roots without changing editor mounts. */
   async listExportAssets(
     enabledPluginGuids: ReadonlySet<string>,
+    overrides: Record<string, PluginEnableOverride> = this.pluginOverrides,
   ): Promise<IndexedAsset[]> {
     const exportRegistry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
     });
     await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
       enabledGuids: enabledPluginGuids,
+      overrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -493,7 +500,7 @@ export class ProjectService {
   }
 
   setPluginOverrides(
-    overrides: Record<string, { enabled: boolean }>,
+    overrides: Record<string, PluginEnableOverride>,
   ): void {
     this.pluginOverrides = overrides;
   }
@@ -963,6 +970,7 @@ export class ProjectService {
     }
     await mountEnabledPlugins(registry, this.pluginDescriptors, {
       enabledGuids,
+      overrides: this.pluginOverrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -970,6 +978,8 @@ export class ProjectService {
     });
     const { diagnostics } = resolvePluginGraph(
       this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
+      undefined,
+      this.pluginOverrides,
     );
     this.pluginDiagnostics = diagnostics;
     const discoveredGuids = new Set(
@@ -983,7 +993,7 @@ export class ProjectService {
   }
 
   async applyPluginOverrides(
-    overrides: Record<string, { enabled: boolean }>,
+    overrides: Record<string, PluginEnableOverride>,
   ): Promise<void> {
     this.pluginOverrides = overrides;
     await this.syncPlugins();
@@ -1515,6 +1525,29 @@ export class ProjectService {
         : isAssetDocumentKind(kind)
           ? assetTypeForDocumentSave(kind, existing?.type)
           : "Class";
+    const ownerPlugin = this.pluginForPath(path);
+    let pluginContentChanged = false;
+    if (ownerPlugin && type !== "PluginSettings") {
+      const previous = existing
+        ? await decodeAssetDocument(await storage.readBinary(path), { blobs })
+        : null;
+      pluginContentChanged = !previous || stableStringify(previous.payload) !== stableStringify(content);
+    }
+    if (type === "PluginSettings" && ownerPlugin) {
+      // A settings tab may predate a content save that refreshed this stamp.
+      const settings = normalizePluginSettings(content, { pluginGuid: ownerPlugin.pluginGuid });
+      const authorVersionChanged = settings.version !== ownerPlugin.settings.version;
+      content = {
+        ...settings,
+        engineVersion: authorVersionChanged ? ENGINE_VERSION : ownerPlugin.settings.engineVersion,
+        pluginDependencies: settings.pluginDependencies.map((dependency) => ({
+          ...dependency,
+          version: authorVersionChanged
+            ? this.pluginDescriptors.find((entry) => entry.pluginGuid === dependency.guid)?.settings.version ?? dependency.version
+            : ownerPlugin.settings.pluginDependencies.find((entry) => entry.guid === dependency.guid)?.version ?? dependency.version,
+        })),
+      };
+    }
     if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
     const version = this.migrations.currentVersion(type);
     const parentClass =
@@ -1570,7 +1603,19 @@ export class ProjectService {
       );
     }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
-    if (type === "PluginSettings") {
+    if (pluginContentChanged && ownerPlugin) {
+      const document = await decodeAssetDocument(await storage.readBinary(ownerPlugin.settingsPath));
+      const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
+      await storage.writeBinary(ownerPlugin.settingsPath, await encodePluginSettingsDocument({
+        ...settings,
+        engineVersion: ENGINE_VERSION,
+        pluginDependencies: settings.pluginDependencies.map((dependency) => ({
+          ...dependency,
+          version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
+        })),
+      }));
+    }
+    if (type === "PluginSettings" || pluginContentChanged) {
       await this.syncPlugins();
       this.emitRegistryChange();
     }
