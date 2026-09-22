@@ -146,11 +146,6 @@ function samplingKey(options: TextureSamplingOptions = {}): string {
   return `${uploadSamplingKey(options)}:${options.hasAlpha ? 1 : 0}:${options.anisotropicFilteringLevel ?? 4}`;
 }
 
-/** KTX2 still needs `#.ktx2`. Never add `#nomip` / `#ninv` — that breaks blob upload. */
-function ktx2LoaderUrl(blobUrl: string, bytes: Uint8Array | Blob): string {
-  return ktx2LoaderHints(bytes).forcedExtension ? `${blobUrl}#.ktx2` : blobUrl;
-}
-
 function revokeBlobUrl(url: string): void {
   if (!url.startsWith("blob:") || typeof URL === "undefined") return;
   try {
@@ -499,7 +494,6 @@ export class ResourceCache {
     const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
-    const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
     const preparation = this.preparing(entry);
     let texture: Texture | CubeTexture;
     try {
@@ -512,7 +506,7 @@ export class ResourceCache {
           createPolynomials: !!environment,
           onLoad: preparation.onLoad, onError: preparation.onError,
         })
-      : new Texture(loaderUrl, engine, {
+      : new Texture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false,
           samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,

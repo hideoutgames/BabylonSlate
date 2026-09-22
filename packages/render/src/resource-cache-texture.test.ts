@@ -369,12 +369,12 @@ describe("resource cache getTexture", () => {
     };
     expect(loaderHints.mimeType ?? loaderHints._mimeType).toBe("image/ktx2");
     expect(loaderHints._forcedExtension).toBe(".ktx2");
-    expect(texture.name || texture.url).toMatch(/#\.ktx2$/);
+    expect(texture.name || texture.url).not.toContain("#");
     cache.dispose();
     engine.dispose();
   });
 
-  it("loads a no-mip KTX2 wrapper from a second blob URL with only #.ktx2", () => {
+  it("loads a no-mip KTX2 wrapper from a distinct unmodified blob URL", () => {
     const ktx2 = new Uint8Array([
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,
@@ -390,7 +390,7 @@ describe("resource cache getTexture", () => {
     const pixelArt = pixelArtLease.resource as Texture;
     expect(pixelArt).not.toBe(mipped);
     const pixelArtUrl = pixelArt.url ?? "";
-    expect(pixelArtUrl).toMatch(/#\.ktx2$/);
+    expect(pixelArtUrl).not.toContain("#");
     expect(pixelArtUrl).not.toContain("#nomip");
     expect(pixelArtUrl.split("#")[0]).not.toBe((mipped.url ?? "").split("#")[0]);
     expect(isDisposedGpuTexture(mipped)).toBe(false);
