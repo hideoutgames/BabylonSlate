@@ -386,7 +386,13 @@ describe("baked receiver materials", () => {
     const variant = mesh.material as PBRMaterial;
     await variant.forceCompilationAsync(mesh);
     expect(receivers.diagnostics()).toEqual([
-      { mesh: "diag", material: variant.name, slateBaked: true },
+      {
+        mesh: "diag",
+        material: variant.name,
+        slateBaked: true,
+        excludedLights: [],
+        lightDefines: null,
+      },
     ]);
     // Once the receiver has rendered, the compiled effect's define string is
     // ground truth; NullEngine never attaches one, so stub both cases.
@@ -395,9 +401,90 @@ describe("baked receiver materials", () => {
       defines: "#define LIGHTING\n#define SLATE_BAKED\n",
     } as unknown as Effect);
     expect(receivers.diagnostics()[0]!.slateBaked).toBe(true);
+    expect(receivers.diagnostics()[0]!.lightDefines).toBe(0);
     effect.mockReturnValue({
-      defines: "#define LIGHTING\n",
+      defines: "#define LIGHTING\n#define POINTLIGHT0\n#define DIRLIGHT1\n",
     } as unknown as Effect);
     expect(receivers.diagnostics()[0]!.slateBaked).toBe(false);
+    expect(receivers.diagnostics()[0]!.lightDefines).toBe(2);
+  });
+
+  it("reports excluded light names for directAndIndirect terms and none for indirectOnly", () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    const direct = new PointLight("direct-lamp", Vector3.Zero(), scene);
+    const indirect = new PointLight("indirect-lamp", Vector3.Zero(), scene);
+    const all = new Map<string, BakedLightingSource>(sources);
+    all.set("fill", {
+      id: "fill",
+      kind: "light",
+      actorId: "fill",
+      componentId: "light",
+      mobility: "stationary",
+      inputHash: "h",
+    });
+    const baked = MeshBuilder.CreateBox("direct-mesh", {}, scene);
+    baked.material = new PBRMaterial("direct-pbr", scene);
+    receivers.apply(
+      baked,
+      bindingFor(
+        scene,
+        contributions([
+          { sourceId: "sun", term: "directAndIndirect" },
+          { sourceId: "fill", term: "indirectOnly" },
+        ]),
+      ),
+      all,
+      (source) => (source.actorId === "lamp" ? direct : indirect),
+    );
+    expect(receivers.diagnostics()[0]).toMatchObject({
+      excludedLights: ["direct-lamp"],
+      lightDefines: null,
+    });
+    const indirectMesh = MeshBuilder.CreateBox("indirect-mesh", {}, scene);
+    indirectMesh.material = new PBRMaterial("indirect-pbr", scene);
+    receivers.apply(
+      indirectMesh,
+      bindingFor(
+        scene,
+        contributions([{ sourceId: "fill", term: "indirectOnly" }]),
+      ),
+      all,
+      () => indirect,
+    );
+    expect(receivers.diagnostics()[1]).toMatchObject({
+      excludedLights: [],
+      lightDefines: null,
+    });
+    receivers.release();
+  });
+
+  it("excludes a light that only resolves on a later sync and restores it on release", () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    const mesh = MeshBuilder.CreateBox("late-light", {}, scene);
+    mesh.material = new PBRMaterial("pbr", scene);
+    const binding = bindingFor(
+      scene,
+      contributions([{ sourceId: "sun", term: "directAndIndirect" }]),
+    );
+    // Play/player light visuals spawn after the bake applies: the resolver
+    // misses at wrap() and succeeds on a later sync.
+    let light: PointLight | null = null;
+    receivers.apply(mesh, binding, sources, () => light);
+    expect(receivers.diagnostics()[0]!.excludedLights).toEqual([]);
+    light = new PointLight("late-lamp", Vector3.Zero(), scene);
+    receivers.sync();
+    expect(light.excludedMeshes).toContain(mesh);
+    expect(receivers.diagnostics()[0]!.excludedLights).toEqual(["late-lamp"]);
+    // Idempotent: a second sync does not double-push.
+    receivers.sync();
+    expect(light.excludedMeshes.filter((entry) => entry === mesh)).toHaveLength(
+      1,
+    );
+    expect(receivers.diagnostics()[0]!.excludedLights).toEqual(["late-lamp"]);
+    receivers.release();
+    expect(light.excludedMeshes).not.toContain(mesh);
+    expect(mesh.material!.name).toBe("pbr");
   });
 });

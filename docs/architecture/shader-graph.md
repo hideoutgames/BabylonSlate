@@ -7,8 +7,8 @@ math/vector operations (muted). Palette markers use the same roles.
 **VectorMask** selects R/G/B/A in Details (R by default). At least one channel
 must remain selected. The output is Float, V2, V3, or V4/Color according to the
 selected count, in RGBA order; the title displays the selection. Numeric inputs
-are padded to V4 before selecting channels: missing G/B are `0` and missing A
-is `1`. A disconnected input retains its zero V4 default.
+are padded to V4 before selecting channels: every missing channel is `1`.
+A disconnected input retains its zero V4 default.
 
 One authored asset type covers what used to be split between an empty imported
 `Material` stub and an authored `Shader` graph. A **Material** is a node graph
@@ -105,12 +105,12 @@ catalog stays inside the portable block set.
 
 Every numeric output can connect to every numeric input. Conversions preserve
 leading channels, discard trailing channels when narrowing, and fill missing
-Y/Z with `0` and W with `1`. Supplied W values, including `0`, are preserved.
+channels with `1`. Supplied values, including zeros and alpha `0`, are preserved.
 
 | Source | Float | V2 | V3 | V4 / RGBA |
 | --- | --- | --- | --- | --- |
-| Float `x` | `x` | `(x,0)` | `(x,0,0)` | `(x,0,0,1)` |
-| V2 `(x,y)` | `x` | `(x,y)` | `(x,y,0)` | `(x,y,0,1)` |
+| Float `x` | `x` | `(x,1)` | `(x,1,1)` | `(x,1,1,1)` |
+| V2 `(x,y)` | `x` | `(x,y)` | `(x,y,1)` | `(x,y,1,1)` |
 | V3 `(x,y,z)` | `x` | `(x,y)` | `(x,y,z)` | `(x,y,z,1)` |
 | V4 `(x,y,z,w)` | `x` | `(x,y)` | `(x,y,z)` | `(x,y,z,w)` |
 
@@ -121,6 +121,14 @@ connection order, and convert each operand to that width. Declared function
 and Custom GLSL pins retain their explicit types. Disconnected inputs retain
 their authored/catalog defaults. To repeat a scalar across channels (for
 example, a uniform RGB gain), wire it to each desired **Combine** input.
+
+Padding with one preserves unmatched channels during multiplication:
+Float `2` × V3 `(1,1,1)` produces `(2,1,1)`. Addition introduces offsets:
+Float `0` + V3 `(2,3,4)` produces `(2,4,5)`. Float `0` into RGB becomes
+cyan `(0,1,1)`; into World Position Offset it becomes `(0,1,1)`. Use explicit
+vectors or Combine when those channels must be zero or repeat the scalar.
+Mixed-width Smoothstep or Remap bounds can become equal in padded channels;
+author distinct bounds to avoid undefined results or division by zero.
 
 Step, Smoothstep, Atan2 and Remap evaluate each resolved channel separately,
 including connected bounds. Reflect preserves the resolved width. For scalar
@@ -187,7 +195,7 @@ operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
 
 Conversions compose across every function boundary: V4 `(2,3,4,5)` through a
-V2 input and V4 output becomes `(2,3,0,1)`, never the original V4. The full
+V2 input and V4 output becomes `(2,3,1,1)`, never the original V4. The full
 conversion sequence participates in the plan hash. Render realizes conversions
 with Babylon splitter/merger blocks; CPU material baking evaluates the same
 channel rule. These adapters are compiled data, not extra authored graph nodes.
@@ -300,7 +308,7 @@ orientation and irradiance preparation.
 
 Clamp supports connected scalar/vector bounds; comparisons return component-wise
 numeric masks. Refract uses Vector 3 directions and scalar Eta. Split pads its
-numeric input to V4, so missing Y/Z return `0` and missing W returns `1`. World Tangent
+numeric input to V4, so every missing channel returns `1`. World Tangent
 is transformed as a direction by the mesh world matrix.
 
 `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and

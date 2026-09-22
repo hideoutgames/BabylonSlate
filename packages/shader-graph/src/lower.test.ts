@@ -209,7 +209,7 @@ describe("material lowering", () => {
     expect(result.plan.outputs.color).toEqual(wired ? {
       kind: "operation", operationId: "source", pinId: "out",
       conversions: [{ from: "vec4", to: "vec2" }, { from: "vec2", to: "vec4" }],
-    } : { kind: "constant", type: "vec4", value: [2, 3, 0, 1] });
+    } : { kind: "constant", type: "vec4", value: [2, 3, 1, 1] });
 
     inner.inputs[0]!.type = "vec3";
     const changed = lowerMaterialDocument(doc, { functions: { inner, outer } });

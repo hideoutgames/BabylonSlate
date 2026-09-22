@@ -14,8 +14,8 @@ function material() {
 
 describe("bake diffuse material closure", () => {
   it.each([
-    ["const.float", [0.2], [0.2, 0, 0]],
-    ["const.vec2", [0.2, 0.4], [0.2, 0.4, 0]],
+    ["const.float", [0.2], [0.2, 1, 1]],
+    ["const.vec2", [0.2, 0.4], [0.2, 0.4, 1]],
     ["const.vec4", [0.2, 0.4, 0.6, 0], [0.2, 0.4, 0.6]],
   ] as const)("bakes %s into RGB using numeric input conversion", (type, value, expected) => {
     const doc = material();
@@ -39,7 +39,7 @@ describe("bake diffuse material closure", () => {
       { id: "in", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" },
       { id: "out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "baseColor" },
     ];
-    expect(resolveBakeDiffuseClosure(doc, { functions: { resize: fn } }).albedo).toEqual([0.2, 0.4, 0]);
+    expect(resolveBakeDiffuseClosure(doc, { functions: { resize: fn } }).albedo).toEqual([0.2, 0.4, 1]);
   });
 
   it("uses constant authored albedo once and includes resolved function content in provenance", () => {
