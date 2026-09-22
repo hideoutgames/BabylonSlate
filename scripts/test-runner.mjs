@@ -54,6 +54,20 @@ export async function runStage(profile, command, args, options = {}) {
       "\n",
   );
   try {
+    // A host owner may tighten policy while this immutable plan is queued.
+    // Admission already combines current reservations, but must not launch the
+    // old CLI worker settings under a newly stricter host policy.
+    const current = await resolveExecutionPlan(profile, environment);
+    if (
+      current.workers < plan.workers ||
+      current.browserWorkers < plan.browserWorkers ||
+      current.workspaceConcurrency < plan.workspaceConcurrency ||
+      current.config.maxRoots < plan.config.maxRoots ||
+      current.config.capacity.reserveGiB > plan.config.capacity.reserveGiB
+    )
+      throw new Error(
+        "Host resource policy became more restrictive while waiting; no command started. Start a new invocation to resolve the updated policy.",
+      );
     const result = await runCommand(command, commandArgs, {
       ...options,
       env,
