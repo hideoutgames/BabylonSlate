@@ -26,7 +26,7 @@ export function materialViewportTestSnapshot(
       material: material ? { ready: material.isReady(visual), backFaceCulling: material.backFaceCulling,
         alpha: material.alpha, textures: material.getActiveTextures().map(texture => ({
           name: texture.name, ready: texture.isReady(), size: texture.getSize(), alpha: texture.hasAlpha,
-          references: texture.getInternalTexture()?.references, disposed: !texture.getInternalTexture(),
+          disposed: !texture.getInternalTexture(),
         })) } : null,
     },
     materialUniqueId: material?.uniqueId ?? null,
