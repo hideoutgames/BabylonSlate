@@ -2669,7 +2669,7 @@ class InProcessRuntime implements RuntimeDriver {
       const local = actorLocalPhysicsTransform({
         position: world,
         rotation: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
-      }, actor, worldTransforms);
+      }, actor, worldTransforms, this.physicsWorldKind);
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }

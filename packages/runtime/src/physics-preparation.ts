@@ -172,6 +172,7 @@ export function physicsWorldTransforms(
       actor.components.some(
         (component) =>
           !component.destroyed &&
+          component.owner === actor &&
           [
             "RigidBodyComponent",
             "ColliderComponent",
