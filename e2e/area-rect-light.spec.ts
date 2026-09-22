@@ -3,7 +3,8 @@ import type { runAreaRectLightProof } from "../apps/editor/src/testing/area-rect
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { renderingEvidence } from "./rendering-evidence";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`rectangular area emitters reach native and graph receivers through FrameGraph on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

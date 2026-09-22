@@ -174,7 +174,44 @@ ownership on both APIs), but the admitted command failed report validation:
 the older performance configuration wrote `perf-route.json` without the current
 invocation nonce while the runner requires `timings.json` and that nonce. This
 is not a successful runner result. The configuration now follows the existing
-report contract without bypassing validation; the same six cases will be rerun.
+report contract without bypassing validation. At `f39b1803`, the same six cases
+passed with successful admitted-runner validation on effective NVIDIA RTX 2060
+D3D11 WebGL2 and NVIDIA Turing WebGPU. Reports:
+[ownership WebGL2](../assets/renderer-qualification/2026-09-22-native-outline/ownership-webgl2.json),
+[ownership WebGPU](../assets/renderer-qualification/2026-09-22-native-outline/ownership-webgpu.json),
+[geometry WebGL2](../assets/renderer-qualification/2026-09-22-native-outline/geometry-webgl2.json),
+[geometry WebGPU](../assets/renderer-qualification/2026-09-22-native-outline/geometry-webgpu.json).
+This supersedes the software-only ownership/geometry qualification below;
+Computer Use and export acceptance remain separate requirements.
+
+Hardware cost reports retain every mode, cadence distribution, geometry estimate,
+allocation count and eight retirement cycles:
+[WebGL2](../assets/renderer-qualification/2026-09-22-native-outline/cost-webgl2.json),
+[WebGPU](../assets/renderer-qualification/2026-09-22-native-outline/cost-webgpu.json).
+Fixed output was 640 by 360, scale 1, dynamic resolution off, 15 warmup and 60
+measured frames per mode. At 12/192 regular instances, all consumers used four
+additional drawing passes (seven graph records), five total draw calls and
+5,530,752/5,543,552 accounted bytes. Disabling all consumers retired these bytes,
+instance buffers and outline passes to zero in every recorded cycle. Unchanged
+samples did not upload style or instance buffers. Submitted triangle upper bounds
+for all consumers were 626/9,266; these are conservative estimates, not GPU counters.
+
+| API / instances | Off CPU median / p95 ms | All CPU median / p95 ms | Off / all direct GPU median ms |
+| --- | --- | --- | --- |
+| WebGL2 / 12 | 0.935 / 2.340 | 1.530 / 2.620 | 0.024 / 0.704 |
+| WebGL2 / 192 | 1.910 / 2.940 | 1.550 / 5.010 | 0.063 / 0.797 |
+| WebGPU / 12 | 0.810 / 1.530 | 1.310 / 3.590 | Unsupported |
+| WebGPU / 192 | 1.135 / 1.335 | 1.660 / 1.955 | Unsupported |
+
+Single-run CPU distributions include host noise and do not establish a CPU gain;
+WebGL2 whole-engine asynchronous GPU queries demonstrate a real added GPU cost.
+Near-60-Hz cadence is not headroom. These compact instanced scenes do not qualify
+ordinary editor gizmo stalls or Play/scene-transition lifetime by themselves.
+Physical A16 timing, thermal behavior and input latency remain deferred.
+
+The local native-GPU route now also admits explicit settings, Scalability,
+area-light export/receiver and shadow fixture files. Their default and CI paths
+continue using the software-adapter arguments; native results are pending.
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions

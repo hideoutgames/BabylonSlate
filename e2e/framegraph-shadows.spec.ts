@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import type { runFrameGraphShadowProof } from "../apps/editor/src/testing/framegraph-shadow-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 const configurations = [
   ...(["webgl2", "webgpu"] as const).flatMap((backend) =>

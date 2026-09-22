@@ -11,7 +11,8 @@ import { scalabilityGraphDefinitions } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 type PlayTest = {
   rendering(): ReturnType<EngineHandle["renderDiagnostics"]> | null;

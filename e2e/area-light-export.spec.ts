@@ -9,7 +9,8 @@ import { serveExportFiles } from "./export-static-server";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { renderingEvidence } from "./rendering-evidence";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`prepared rectangular emission survives standalone export and scene lifecycle on ${backend}`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);

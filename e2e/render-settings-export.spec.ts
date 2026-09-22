@@ -9,7 +9,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 import { scalabilityGraphScripts } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 const command = (page: Page, line: string) => page.evaluate((line) =>
   (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.executeConsoleCommand(line), line);
