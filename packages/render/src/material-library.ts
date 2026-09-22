@@ -1,3 +1,4 @@
+import { materialTextureBindings, type ResourceLease } from "./resource-cache";
 import type { Mesh, NodeMaterial, Scene, Texture } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import {
@@ -78,6 +79,7 @@ function documentForPlan(
 
 export interface MaterialLibraryOptions {
   particlePreview?: boolean;
+  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
   resolveTexture?: (guid: string) => Texture | null;
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
@@ -186,25 +188,35 @@ export class MaterialLibrary {
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
+    const textures = materialTextureBindings(this.options.acquireTexture);
     const compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       particlePreview: this.options.particlePreview,
       logicalSceneBuffers: options?.logicalSceneBuffers,
-      resolveTexture: this.options.resolveTexture,
+      resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
     });
     if (materialCompileFailed(compiled)) {
+      textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };
     }
     const candidate: CacheEntry = {
       material: compiled.material,
       hash: lowered.plan.hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
-      dispose: compiled.dispose,
-      setParameter: compiled.setParameter,
+      dispose: () => { compiled.dispose(); textures.dispose(); },
+      setParameter: (name, value) => {
+        const accepted = compiled.setParameter(name, value);
+        textures.prune(compiled.material.getActiveTextures());
+        return accepted;
+      },
       getParameter: compiled.getParameter,
-      resetParameter: compiled.resetParameter,
+      resetParameter: (name) => {
+        const accepted = compiled.resetParameter(name);
+        textures.prune(compiled.material.getActiveTextures());
+        return accepted;
+      },
       instanceKey: options?.instanceKey,
       ready: compiled.ready,
     };

@@ -256,13 +256,13 @@ describe("resource cache retain/release", () => {
   it("accounts and retains bytes", () => {
     const cache = new ResourceCache({ byteCeiling: 1000 });
     cache.account("x", 100);
-    cache.retain("x");
-    cache.release("x");
+    const lease = cache.acquireExisting("x");
+    lease.release();
     expect(cache.accountedBytes()).toBe(100);
     cache.flushUnreferenced();
     // still referenced once
     expect(cache.accountedBytes()).toBe(100);
-    cache.release("x");
+    cache.releaseAccounting("x");
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
     cache.dispose();

@@ -113,10 +113,10 @@ import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import {
   bindResourceCacheToHandle,
-  getMaterialTexture,
+  acquireMaterialTexture,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
-  type ResourceCache,
+  type TextureResources,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
@@ -160,7 +160,7 @@ import {
   playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
-import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import {
@@ -232,7 +232,7 @@ export interface EngineHandle {
   engine: AbstractEngine;
   scene: Scene;
   scheduler: RenderScheduler;
-  resourceCache: ResourceCache;
+  resourceCache: TextureResources;
   scaling: HardwareScalingController;
   dispose: () => void;
   /**
@@ -1003,7 +1003,7 @@ function initializeEngine(
   binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
-  binding.textureBytes = options.textureBytes;
+  binding.textureBytes = installTextureBytes(options.textureBytes);
   binding.texturePixelSizes = options.texturePixelSizes;
   resourceCache.setClientTextures(
     scene.uid,
@@ -1066,10 +1066,10 @@ function initializeEngine(
   };
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
-    resolveTexture: (guid) => {
+    acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return getMaterialTexture(resourceCache, guid, engine, bytes);
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
@@ -1104,10 +1104,10 @@ function initializeEngine(
   const particleService = options.playMode
     ? new ParticleService({
         scene,
-        resolveTexture: (guid) => {
+        acquireTexture: (guid) => {
           const bytes = binding.textureBytes?.get(guid);
           if (!bytes) return null;
-          return getMaterialTexture(resourceCache, guid, engine, bytes);
+          return acquireMaterialTexture(resourceCache, guid, engine, bytes);
         },
         resolveMaterial: (guid) => {
           const live = binding.resolveMaterial?.(guid);
@@ -1425,7 +1425,7 @@ function initializeEngine(
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
-      binding.textureBytes = assets.textureBytes;
+      binding.textureBytes = installTextureBytes(assets.textureBytes);
       binding.texturePixelSizes = assets.texturePixelSizes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
@@ -1449,7 +1449,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, textureBytes: binding.textureBytes, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -2500,7 +2500,7 @@ function initializeEngine(
               spriteAnimations:
                 binding.spriteAnimations ?? options.spriteAnimations,
               applyTexture: (mesh, guid) =>
-                applyAlbedoTexture(mesh, scene, guid, binding),
+                applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
             }),
             pending,
           );
@@ -2574,7 +2574,7 @@ function initializeEngine(
             spriteAnimations:
               binding.spriteAnimations ?? options.spriteAnimations,
             applyTexture: (mesh, guid) =>
-              applyAlbedoTexture(mesh, scene, guid, binding),
+              applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
             onMissingClip: (info) => {
               const groups = binding.slotAnimationGroups?.get(info.slotId);
               if (

@@ -9,7 +9,7 @@ import {
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
-  getMaterialTexture,
+  acquireMaterialTexture,
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
@@ -151,10 +151,10 @@ export function ParticlePreviewCanvas({
         host = createParticlePreviewScene(engine, { skybox: showSkybox });
         presenter = createMaterialPreviewPresenter(host, canvas);
         cache = resourceCacheForEngine(engine);
-        const resolveTexture = (guid: string) => {
+        const acquireTexture = (guid: string) => {
           const data = bytes.get(guid);
           if (!data || !cache) return null;
-          return getMaterialTexture(cache, guid, engine, data);
+          return acquireMaterialTexture(cache, guid, engine, data);
         };
         const extraGuids = particleMaterialGuidsFromLibrary(nextLibrary);
         const libraryDocs = collectPlayMaterialLibrary
@@ -168,11 +168,11 @@ export function ParticlePreviewCanvas({
           scene: host.scene,
           documents: libraryDocs.documents,
           functions: libraryDocs.functions,
-          resolveTexture,
+          acquireTexture,
         });
         service = new ParticleService({
           scene: host.scene,
-          resolveTexture,
+          acquireTexture,
           resolveMaterial: materials.resolve,
           onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
         });

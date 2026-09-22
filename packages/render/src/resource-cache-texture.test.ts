@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
-  getMaterialTexture,
+  acquireMaterialTexture,
   ResourceCache,
   resourceCacheForEngine,
   releaseResourceCacheForEngine,
@@ -20,7 +20,7 @@ describe("resource cache getTexture", () => {
     cache.setClientBudget(high, 1000);
     cache.setClientBudget(low, 100);
     cache.account("resident", 500);
-    cache.release("resident");
+    cache.releaseAccounting("resident");
     cache.setClientBudget(low, 200);
     expect(cache.accountedBytes()).toBe(500);
     cache.setClientBudget(high, null);
@@ -34,17 +34,21 @@ describe("resource cache getTexture", () => {
     const materialView = bindResourceCacheToHandle(cache);
     const original = new Uint8Array([1, 2, 3]);
     const reduced = new Uint8Array([1, 2, 4]);
-    const first = sceneView.cache.getTexture("shared", engine, reduced);
-    const second = materialView.cache.getTexture("shared", engine, original);
+    const firstLease = sceneView.cache.acquireTexture("shared", engine, reduced);
+    const first = firstLease.resource;
+    const secondLease = materialView.cache.acquireTexture("shared", engine, original);
+    const second = secondLease.resource;
     const disposeFirst = vi.spyOn(first, "dispose");
     const disposeSecond = vi.spyOn(second, "dispose");
-    expect(cache.getTexture("shared", engine, reduced)).toBe(first);
-    cache.release(first);
+    const readLease = cache.acquireTexture("shared", engine, reduced);
+    expect(readLease.resource).toBe(first);
+    readLease.release();
     materialView.releaseHandleRetains();
     expect(disposeSecond).toHaveBeenCalledOnce();
     expect(disposeFirst).not.toHaveBeenCalled();
-    expect(cache.getTexture("shared", engine, reduced)).toBe(first);
-    cache.release(first);
+    const rereadLease = cache.acquireTexture("shared", engine, reduced);
+    expect(rereadLease.resource).toBe(first);
+    rereadLease.release();
     sceneView.releaseHandleRetains();
     expect(disposeFirst).toHaveBeenCalledOnce();
     cache.dispose();
@@ -54,15 +58,17 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const a = cache.getTexture("tex", engine, bytes, {
+    const aLease = cache.acquireTexture("tex", engine, bytes, {
       samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
     });
-    const b = cache.getTexture("tex", engine, bytes, {
+    const a = aLease.resource;
+    const bLease = cache.acquireTexture("tex", engine, bytes, {
       samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
     });
+    const b = bLease.resource;
     expect(a).toBe(b);
-    cache.release("tex");
-    cache.release("tex");
+    aLease.release();
+    bLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
     cache.dispose();
@@ -73,9 +79,11 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const first = cache.getTexture("tex", engine, bytes);
+    const firstLease = cache.acquireTexture("tex", engine, bytes);
+    const first = firstLease.resource;
     cache.releaseGpuTextures();
-    const second = cache.getTexture("tex", engine, bytes);
+    const secondLease = cache.acquireTexture("tex", engine, bytes);
+    const second = secondLease.resource;
     expect(second).not.toBe(first);
     expect(second.getInternalTexture()).not.toBeNull();
     cache.dispose();
@@ -86,10 +94,12 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const first = getMaterialTexture(cache, "tex", engine, bytes);
+    const firstLease = acquireMaterialTexture(cache, "tex", engine, bytes);
+    const first = firstLease?.resource;
     expect(first).not.toBeNull();
     first!.dispose();
-    const second = getMaterialTexture(cache, "tex", engine, bytes);
+    const secondLease = acquireMaterialTexture(cache, "tex", engine, bytes);
+    const second = secondLease?.resource;
     expect(second).not.toBeNull();
     expect(second).not.toBe(first);
     expect(second!.getInternalTexture()).not.toBeNull();
@@ -101,8 +111,10 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([9, 9, 9]);
-    const a = cache.getTexture("tex", engine, bytes, { noMipmap: false });
-    const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
+    const aLease = cache.acquireTexture("tex", engine, bytes, { noMipmap: false });
+    const a = aLease.resource;
+    const bLease = cache.acquireTexture("tex", engine, bytes, { noMipmap: true });
+    const b = bLease.resource;
     expect(b).not.toBe(a);
     expect(isDisposedGpuTexture(a)).toBe(false);
     expect(a.getInternalTexture()).not.toBeNull();
@@ -112,7 +124,8 @@ describe("resource cache getTexture", () => {
     expect(nomipUrl).not.toContain("#nomip");
     expect(nomipUrl).not.toContain("#ninv");
     expect(nomipUrl).not.toBe((a as Texture).url);
-    const again = cache.getTexture("tex", engine, bytes, { noMipmap: true });
+    const againLease = cache.acquireTexture("tex", engine, bytes, { noMipmap: true });
+    const again = againLease.resource;
     expect(again).toBe(b);
     cache.dispose();
     engine.dispose();
@@ -128,10 +141,12 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const a = cache.getTexture("tex", engine, bytes);
-    const b = cache.getTexture("tex", engine, bytes, {
+    const aLease = cache.acquireTexture("tex", engine, bytes);
+    const a = aLease.resource;
+    const bLease = cache.acquireTexture("tex", engine, bytes, {
       noMipmap: true,
-    }) as Texture;
+    });
+    const b = bLease.resource as Texture;
     const extra = (b.url ?? "").split("#")[0] ?? "";
     expect(extra.startsWith("blob:")).toBe(true);
     expect(extra).not.toBe(((a as Texture).url ?? "").split("#")[0]);
@@ -151,13 +166,15 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const a = cache.getTexture("tex", engine, bytes);
-    const b = cache.getTexture("tex", engine, bytes, {
+    const aLease = cache.acquireTexture("tex", engine, bytes);
+    const a = aLease.resource;
+    const bLease = cache.acquireTexture("tex", engine, bytes, {
       noMipmap: true,
-    }) as Texture;
+    });
+    const b = bLease.resource as Texture;
     const extra = (b.url ?? "").split("#")[0] ?? "";
-    cache.release("tex");
-    cache.release("tex");
+    aLease.release();
+    bLease.release();
     cache.flushUnreferenced();
     expect(revoked).toContain(extra);
     expect(revoked).toContain(((a as Texture).url ?? "").split("#")[0]);
@@ -169,11 +186,13 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const sprite = cache.getTexture("shared", engine, bytes, {
+    const spriteLease = cache.acquireTexture("shared", engine, bytes, {
       noMipmap: true,
       samplingMode: Texture.NEAREST_SAMPLINGMODE,
     });
-    const material = getMaterialTexture(cache, "shared", engine, bytes);
+    const sprite = spriteLease.resource;
+    const materialLease = acquireMaterialTexture(cache, "shared", engine, bytes);
+    const material = materialLease?.resource;
     expect(sprite).toBeInstanceOf(Texture);
     expect((sprite as Texture).invertY).toBe(true);
     const spriteUrl = (sprite as Texture).url ?? "";
@@ -197,7 +216,8 @@ describe("resource cache getTexture", () => {
     ]);
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const texture = cache.getTexture("tex", engine, ktx2);
+    const textureLease = cache.acquireTexture("tex", engine, ktx2);
+    const texture = textureLease.resource;
     const loaderHints = texture as unknown as {
       mimeType?: string;
       _mimeType?: string;
@@ -217,11 +237,13 @@ describe("resource cache getTexture", () => {
     ]);
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const mipped = cache.getTexture("tex", engine, ktx2);
-    const pixelArt = cache.getTexture("tex", engine, ktx2, {
+    const mippedLease = cache.acquireTexture("tex", engine, ktx2);
+    const mipped = mippedLease.resource;
+    const pixelArtLease = cache.acquireTexture("tex", engine, ktx2, {
       noMipmap: true,
       samplingMode: Texture.NEAREST_SAMPLINGMODE,
-    }) as Texture;
+    });
+    const pixelArt = pixelArtLease.resource as Texture;
     expect(pixelArt).not.toBe(mipped);
     const pixelArtUrl = pixelArt.url ?? "";
     expect(pixelArtUrl).toMatch(/#\.ktx2$/);
@@ -236,7 +258,8 @@ describe("resource cache getTexture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const cube = cache.getTexture("env", engine, bytes, { isCube: true });
+    const cubeLease = cache.acquireTexture("env", engine, bytes, { isCube: true });
+    const cube = cubeLease.resource;
     expect(cube.isCube).toBe(true);
     cache.dispose();
     engine.dispose();
@@ -254,17 +277,20 @@ describe("resource cache getTexture", () => {
       "blob:ny",
       "blob:nz",
     ];
-    const cube = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    const cubeLease = cache.acquireCubeTextureFromImages("sky-faces", scene, files);
+    const cube = cubeLease.resource;
     expect(cube.isCube).toBe(true);
     expect(cube._files).toEqual(files);
-    const again = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    const againLease = cache.acquireCubeTextureFromImages("sky-faces", scene, files);
+    const again = againLease.resource;
     expect(again).toBe(cube);
-    const nearest = cache.getCubeTextureFromImages(
+    const nearestLease = cache.acquireCubeTextureFromImages(
       "sky-faces",
       scene,
       files,
       true,
     );
+    const nearest = nearestLease.resource;
     expect(nearest).not.toBe(cube);
     expect(isDisposedGpuTexture(cube)).toBe(false);
     cache.dispose();
@@ -284,7 +310,8 @@ describe("resource cache getTexture", () => {
       "blob:ny",
       "blob:nz",
     ];
-    const cube = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    const cubeLease = cache.acquireCubeTextureFromImages("sky-faces", scene, files);
+    const cube = cubeLease.resource;
     expect(scene.textures.includes(cube)).toBe(false);
     expect(cube.getInternalTexture()).not.toBeNull();
     scene.dispose();
@@ -306,7 +333,8 @@ describe("resource cache getTexture", () => {
       "blob:ny",
       "blob:nz",
     ];
-    const cube = cache.getCubeTextureFromImages("engine-default-skybox", scene, files);
+    const cubeLease = cache.acquireCubeTextureFromImages("engine-default-skybox", scene, files);
+    const cube = cubeLease.resource;
     cache.setClientTextures("viewport", ["tex-albedo"]);
     cache.setClientTextures("play", ["tex-albedo"]);
     cache.flushUnreferenced();
@@ -329,7 +357,8 @@ describe("resource cache getTexture", () => {
       "blob:ny",
       "blob:nz",
     ];
-    const cube = cache.getCubeTextureFromImages("engine-default-skybox", playScene, files);
+    const cubeLease = cache.acquireCubeTextureFromImages("engine-default-skybox", playScene, files);
+    const cube = cubeLease.resource;
     const material = new PBRMaterial("play-skybox", playScene);
     material.reflectionTexture = cube;
     playScene.dispose();
@@ -346,7 +375,7 @@ describe("resource cache getTexture", () => {
       onEvict: (id, reason) => reasons.push({ id, reason }),
     });
     cache.account("gone", 80);
-    cache.release("gone");
+    cache.releaseAccounting("gone");
     cache.flushUnreferenced();
     expect(reasons.some((r) => r.id === "gone" && r.reason === "flush")).toBe(
       true,
@@ -357,9 +386,9 @@ describe("resource cache getTexture", () => {
   it("trims unreferenced entries toward 80% of the ceiling", () => {
     const cache = new ResourceCache({ byteCeiling: 1000 });
     cache.account("old", 600);
-    cache.release("old");
+    cache.releaseAccounting("old");
     cache.account("kept", 600);
-    cache.release("kept");
+    cache.releaseAccounting("kept");
     expect(cache.accountedBytes()).toBeLessThanOrEqual(800);
     expect(cache.accountedBytes()).toBe(600);
     cache.dispose();
@@ -373,17 +402,17 @@ describe("Play texture cache invariant with getTexture", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array(32 * 32 * 4);
     // Editor retain
-    cache.getTexture("shared", engine, bytes);
+    const editorLease = cache.acquireTexture("shared", engine, bytes);
     cache.account("shared", accountedTextureBytes(32, 32, "rgba8", true));
     // Play retain (same guid + sampling → same Texture)
-    cache.getTexture("shared", engine, bytes);
+    const playLease = cache.acquireTexture("shared", engine, bytes);
     // Play release
-    cache.release("shared");
+    playLease.release();
     // Editor still holds one ref — flush must keep entry
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBeGreaterThan(0);
     // Editor release + flush
-    cache.release("shared");
+    editorLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
     expect(engine.getLoadedTexturesCache().length).toBeLessThanOrEqual(before + 1);
@@ -491,12 +520,12 @@ describe("bindResourceCacheToHandle", () => {
       client.cache.setBudgetEnabled(client === capped);
     }
     inner.account("resident", 500);
-    inner.release("resident");
+    inner.releaseAccounting("resident");
     capped.cache.setBudgetEnabled(true);
     expect(inner.accountedBytes()).toBe(500);
     uncapped.releaseHandleRetains();
     inner.account("after-detach", 500);
-    inner.release("after-detach");
+    inner.releaseAccounting("after-detach");
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(0);
     capped.releaseHandleRetains();
@@ -509,12 +538,12 @@ describe("bindResourceCacheToHandle", () => {
     bound.cache.setByteCeiling(100);
     bound.cache.setBudgetEnabled(!enabled);
     inner.account("while-attached", 500);
-    inner.release("while-attached");
+    inner.releaseAccounting("while-attached");
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(enabled ? 500 : 0);
     bound.releaseHandleRetains();
     inner.account("after-detach", 500);
-    inner.release("after-detach");
+    inner.releaseAccounting("after-detach");
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(enabled ? 0 : 500);
     inner.dispose();
@@ -525,7 +554,8 @@ describe("bindResourceCacheToHandle", () => {
     const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bound = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const texture = bound.cache.getTexture("tex-scene", engine, bytes);
+    const textureLease = bound.cache.acquireTexture("tex-scene", engine, bytes);
+    const texture = textureLease.resource;
     bound.releaseHandleRetains();
     expect(isDisposedGpuTexture(texture)).toBe(true);
     inner.dispose();
@@ -538,8 +568,9 @@ describe("bindResourceCacheToHandle", () => {
     const editor = bindResourceCacheToHandle(inner);
     const play = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const texture = editor.cache.getTexture("tex-shared", engine, bytes);
-    play.cache.getTexture("tex-shared", engine, bytes);
+    const textureLease = editor.cache.acquireTexture("tex-shared", engine, bytes);
+    const texture = textureLease.resource;
+    play.cache.acquireTexture("tex-shared", engine, bytes).resource;
     play.releaseHandleRetains();
     expect(isDisposedGpuTexture(texture)).toBe(false);
     editor.releaseHandleRetains();

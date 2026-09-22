@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { CubeTexture, NullEngine, Scene, type Texture } from "@babylonjs/core";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { validMaterialParameterValue } from "./material-parameters";
 
 const disposers: Array<() => void> = [];
@@ -33,24 +33,26 @@ it("loads DDS through the prefiltered Blob route and preserves shared Engine own
     engine.dispose();
   });
   const bytes = buildFloatDdsCubeFixture();
-  const cube = cache.getTexture("environment", engine, bytes, {
+  const cubeLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const cube = cubeLease.resource as CubeTexture;
   expect(cube.forcedExtension).toBe(".dds");
   expect(cube.gammaSpace).toBe(false);
   expect(cube.isCube).toBe(true);
   expect(cube.getScene()).toBeNull();
   scene.environmentTexture = cube;
-  expect(cache.getTexture("environment", engine, bytes, { isCube: true })).toBe(
+  expect(cache.acquireTexture("environment", engine, bytes, { isCube: true }).resource).toBe(
     cube,
   );
   scene.dispose();
   expect(cube.getInternalTexture()).not.toBeNull();
   cache.releaseGpuTextures();
   expect(cube.getInternalTexture()).toBeNull();
-  const recreated = cache.getTexture("environment", engine, bytes, {
+  const recreatedLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const recreated = recreatedLease.resource as CubeTexture;
   expect(recreated).not.toBe(cube);
   expect(recreated.forcedExtension).toBe(".dds");
   expect(recreated.gammaSpace).toBe(false);
@@ -66,20 +68,22 @@ it("rejects cubes at 2D material and dynamic parameter admission without allocat
   const bytes = buildFloatDdsCubeFixture();
   const before = engine.getLoadedTexturesCache().length;
   expect(() =>
-    cache.getTexture("unknown-blob", engine, new Blob([bytes]), {
+    cache.acquireTexture("unknown-blob", engine, new Blob([bytes]), {
       isCube: true,
-    }),
+    }).resource,
   ).toThrow(/MIME/);
-  expect(getMaterialTexture(cache, "environment", engine, bytes)).toBeNull();
+  expect(acquireMaterialTexture(cache, "environment", engine, bytes)?.resource).toBeNull();
   expect(engine.getLoadedTexturesCache()).toHaveLength(before);
-  expect(() => cache.getTexture("environment", engine, bytes)).toThrow(/2D/);
-  const cube = cache.getTexture("environment", engine, bytes, { isCube: true });
-  const blobCube = cache.getTexture(
+  expect(() => cache.acquireTexture("environment", engine, bytes).resource).toThrow(/2D/);
+  const cubeLease = cache.acquireTexture("environment", engine, bytes, { isCube: true });
+    const cube = cubeLease.resource;
+  const blobCubeLease = cache.acquireTexture(
     "typed-blob",
     engine,
     new Blob([bytes], { type: "image/vnd-ms.dds" }),
     { isCube: true },
-  ) as CubeTexture;
+  );
+    const blobCube = blobCubeLease.resource as CubeTexture;
   expect(blobCube.forcedExtension).toBe(".dds");
   expect(blobCube.gammaSpace).toBe(false);
   expect(

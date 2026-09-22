@@ -1,3 +1,4 @@
+import type { ResourceLease } from "./resource-cache";
 import {
   NodeMaterialModes,
   type AbstractEngine,
@@ -44,12 +45,14 @@ export function createParticleMaterialResolver(options: {
   documents: ReadonlyMap<string, MaterialDocument>;
   functions?: ReadonlyMap<string, MaterialFunctionDocument>;
   resolveTexture?: (guid: string) => Texture | null;
+  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
 }): {
   resolve: (guid: string) => NodeMaterial | null;
   dispose: () => void;
 } {
   const library = new MaterialLibrary({
     resolveTexture: options.resolveTexture,
+    acquireTexture: options.acquireTexture,
     functions: () =>
       Object.fromEntries(options.functions ?? new Map()),
   });

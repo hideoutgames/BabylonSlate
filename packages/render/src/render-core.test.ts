@@ -25,12 +25,14 @@ describe("resource cache", () => {
   it("reuses stable blob URLs per asset guid", () => {
     const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3]);
-    const a = cache.blobUrlFor("guid-1", bytes);
-    const b = cache.blobUrlFor("guid-1", bytes);
+    const aLease = cache.acquireBlobUrl("guid-1", bytes);
+    const a = aLease.resource;
+    const bLease = cache.acquireBlobUrl("guid-1", bytes);
+    const b = bLease.resource;
     expect(a).toBe(b);
     cache.account("guid-1", accountedTextureBytes(64, 64, "rgba8", true));
-    cache.release("guid-1");
-    cache.release("guid-1");
+    aLease.release();
+    bLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
     cache.dispose();
@@ -38,8 +40,10 @@ describe("resource cache", () => {
 
   it("replaces the blob URL when texture bytes change", () => {
     const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
-    const a = cache.blobUrlFor("guid-1", new Uint8Array([1, 2, 3]));
-    const b = cache.blobUrlFor("guid-1", new Uint8Array([9, 9, 9]));
+    const aLease = cache.acquireBlobUrl("guid-1", new Uint8Array([1, 2, 3]));
+    const a = aLease.resource;
+    const bLease = cache.acquireBlobUrl("guid-1", new Uint8Array([9, 9, 9]));
+    const b = bLease.resource;
     expect(a).not.toBe(b);
     cache.dispose();
   });
@@ -52,7 +56,7 @@ describe("resource cache", () => {
     });
     cache.account("a", 80);
     cache.account("b", 80);
-    cache.release("a");
+    cache.releaseAccounting("a");
     cache.evictToCeiling();
     expect(evictions).toContain("a");
     expect(cache.accountedBytes()).toBe(80);
@@ -68,8 +72,8 @@ describe("resource cache", () => {
     cache.account("a", 50);
     cache.account("b", 50);
     cache.account("c", 50);
-    cache.release("a");
-    cache.release("b");
+    cache.releaseAccounting("a");
+    cache.releaseAccounting("b");
     cache.evictToCeiling();
     expect(cache.accountedBytes()).toBeLessThanOrEqual(80);
     expect(evictions).toContain("a");
@@ -84,7 +88,7 @@ describe("resource cache", () => {
     });
     cache.setBudgetEnabled(false);
     cache.account("a", 80);
-    cache.release("a");
+    cache.releaseAccounting("a");
     cache.evictToCeiling();
     expect(evictions).toEqual([]);
     expect(cache.accountedBytes()).toBe(80);

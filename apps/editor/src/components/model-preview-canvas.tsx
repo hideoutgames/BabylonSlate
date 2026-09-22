@@ -20,7 +20,7 @@ import {
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   setSceneRenderSettings,
-  getMaterialTexture,
+  acquireMaterialTexture,
   installPreviewEnvironment,
   isColliderVisualMesh,
   loadModelPreviewSource,
@@ -314,14 +314,12 @@ export function ModelPreviewCanvas({
       );
       if (cancelled || hostRef.current !== host) return;
       const lease = bindResourceCacheToHandle(resourceCacheForEngine(engine));
-      const textures = new Map<string, ReturnType<typeof getMaterialTexture>>();
       const library = new MaterialLibrary({
         functions: () => Object.fromEntries(materials.functions),
-        resolveTexture: (guid) => {
+        acquireTexture: (guid) => {
           const data = textureBytes.get(guid);
           if (!data) return null;
-          if (!textures.has(guid)) textures.set(guid, getMaterialTexture(lease.cache, guid, engine, data));
-          return textures.get(guid) ?? null;
+          return acquireMaterialTexture(lease.cache, guid, engine, data);
         },
       });
       releaseCandidate = () => { library.dispose(); lease.releaseHandleRetains(); };

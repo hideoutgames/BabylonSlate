@@ -67,9 +67,10 @@ function fixture(suppliedIrradiance = true) {
 
 it("isolates reflection matrices and intensity while sharing uploaded radiance and irradiance through either scene's disposal", () => {
   const { engine, cache, upload, a, b, bytes, assets } = fixture();
-  const source = cache.getTexture("environment", engine, bytes, {
+  const sourceLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const source = sourceLease.resource as CubeTexture;
   const irradiance = new BaseTexture(
     engine,
     engine.createTexture("irradiance", false, false, null),
@@ -325,9 +326,10 @@ it("binds, removes and swaps a late Scene environment on a frozen PBR graph with
 
 it("shares bounded irradiance readback, survives one view closing, and retains a constant linear environment", async () => {
   const { engine, cache, a, b, bytes, assets } = fixture(false);
-  const source = cache.getTexture("environment", engine, bytes, {
+  const sourceLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const source = sourceLease.resource as CubeTexture;
   const internal = source.getInternalTexture()!;
   internal.width = internal.height = 64;
   Object.assign(engine.getCaps(), {
@@ -379,9 +381,10 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
 
 it("keeps all pending face reads alive after rejection and ignores obsolete work after a scene swaps environments", async () => {
   const { engine, cache, upload, a, bytes, assets } = fixture(false);
-  const source = cache.getTexture("environment", engine, bytes, {
+  const sourceLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const source = sourceLease.resource as CubeTexture;
   source.getInternalTexture()!.width = source.getInternalTexture()!.height = 2;
   const finish: Array<(pixels: Float32Array) => void> = [];
   vi.spyOn(source, "readPixels").mockImplementation((face) =>
@@ -418,9 +421,10 @@ it("decodes RGBD fallback radiance and exposes readback failures to the owning s
   const { engine, cache, a, b, bytes, assets } = fixture(false);
   // NullEngineOptions omits this native Engine constructor option.
   Object.defineProperty(engine, "useExactSrgbConversions", { value: true });
-  const source = cache.getTexture("environment", engine, bytes, {
+  const sourceLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const source = sourceLease.resource as CubeTexture;
   source.getInternalTexture()!.width = source.getInternalTexture()!.height = 2;
   source.isRGBD = true;
   const pixels = new Uint8Array(16);
@@ -433,9 +437,10 @@ it("decodes RGBD fallback radiance and exposes readback failures to the owning s
     ((128 / 255 + 0.055) / 1.055) ** 2.4 / (64 / 255),
     2,
   );
-  const broken = cache.getTexture("broken", engine, bytes, {
+  const brokenLease = cache.acquireTexture("broken", engine, bytes, {
     isCube: true,
-  }) as CubeTexture;
+  });
+    const broken = brokenLease.resource as CubeTexture;
   vi.spyOn(broken, "readPixels").mockRejectedValue(
     new Error("GPU read failed"),
   );

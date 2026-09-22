@@ -8,7 +8,7 @@ import {
   Texture,
 } from "@babylonjs/core";
 import { applyAlbedoTexture, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 
 describe("meshAssetFingerprint", () => {
@@ -90,7 +90,8 @@ describe("applyAlbedoTexture", () => {
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const albedo = getMaterialTexture(cache, "tex-1", engine, bytes);
+    const albedoLease = acquireMaterialTexture(cache, "tex-1", engine, bytes);
+    const albedo = albedoLease?.resource;
     expect(albedo).not.toBeNull();
     const mesh = MeshBuilder.CreatePlane("overlay", { size: 1 }, scene);
     applyAlbedoTexture(mesh, scene, "tex-1", {

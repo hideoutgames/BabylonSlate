@@ -16,7 +16,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   setSceneRenderSettings,
-  getMaterialTexture,
+  acquireMaterialTexture,
   installPreviewEnvironment,
   materialUnavailable,
   resourceCacheForEngine,
@@ -114,7 +114,6 @@ export function MaterialEditingProvider({
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
   const textureBytesRef = useRef(new Map<string, Uint8Array>());
-  const retainedTexturesRef = useRef(new Map<string, { bytes: Uint8Array; texture: Texture; engine: AbstractEngine }>());
   const engineRef = useRef<AbstractEngine | null>(null);
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
@@ -205,22 +204,10 @@ export function MaterialEditingProvider({
     libraryRef.current = new MaterialLibrary({
       particlePreview: true,
       functions: () => functionsRef.current,
-      resolveTexture: (guid) => {
+      acquireTexture: (guid) => {
         const bytes = textureBytesRef.current.get(guid);
         const engine = engineRef.current;
-        if (!bytes || !engine) return null;
-        const previous = retainedTexturesRef.current.get(guid);
-        if (previous?.bytes === bytes && previous.engine === engine) return previous.texture;
-        const texture = getMaterialTexture(
-          resourceCacheForEngine(engine),
-          guid,
-          engine,
-          bytes,
-        );
-        if (previous) resourceCacheForEngine(previous.engine).release(previous.texture);
-        if (texture) retainedTexturesRef.current.set(guid, { bytes, engine, texture });
-        else retainedTexturesRef.current.delete(guid);
-        return texture;
+        return bytes && engine ? acquireMaterialTexture(resourceCacheForEngine(engine), guid, engine, bytes) : null;
       },
     });
   }, []);
@@ -385,8 +372,6 @@ export function MaterialEditingProvider({
     const restored = sharedEngine?.onContextRestoredObservable;
     if (!restored?.add) return;
     const observer = restored.add(() => {
-      for (const entry of retainedTexturesRef.current.values()) resourceCacheForEngine(entry.engine).release(entry.texture);
-      retainedTexturesRef.current.clear();
       libraryRef.current?.invalidate();
       if (!compileKey) return;
       dispatch({ type: "edit", cost: costClassRef.current });
@@ -482,15 +467,12 @@ export function MaterialEditingProvider({
   ]);
 
   useEffect(() => {
-    const retainedTextures = retainedTexturesRef.current;
     return () => {
       if (renderCooldownTimerRef.current !== null) {
         window.clearTimeout(renderCooldownTimerRef.current);
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
-      for (const entry of retainedTextures.values()) resourceCacheForEngine(entry.engine).release(entry.texture);
-      retainedTextures.clear();
     };
   }, []);
 

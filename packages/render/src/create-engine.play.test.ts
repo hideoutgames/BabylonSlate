@@ -310,7 +310,8 @@ describe("Play createEngine view", () => {
     const observers = [engine.onEndFrameObservable, engine.onContextLostObservable, engine.onContextRestoredObservable];
     const observerCounts = observers.map((observable) => observable.observers.length);
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const retained = sibling.resourceCache.getTexture("sibling-texture", engine, bytes);
+    const retainedLease = sibling.resourceCache.acquireTexture("sibling-texture", engine, bytes);
+    const retained = retainedLease.resource;
     const cache = resourceCacheForEngine(engine);
     sibling.setTextureBudget(100, true);
     hidden.setTextureBudget(100, true);
@@ -346,7 +347,7 @@ describe("Play createEngine view", () => {
     expect([...failedCanvas.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
     await vi.waitFor(() => expect(observers.map((observable) => observable.observers.length)).toEqual(observerCounts));
     expect(resourceCacheForEngine(engine)).toBe(cache);
-    expect(sibling.resourceCache.getTexture("sibling-texture", engine, bytes)).toBe(retained);
+    expect(sibling.resourceCache.acquireTexture("sibling-texture", engine, bytes).resource).toBe(retained);
     expect(isDisposedGpuTexture(retained)).toBe(false);
     const retainedBytes = cache.accountedBytes();
     // Accounting only: no GPU or CPU allocation. A failed view's disabled
@@ -2949,11 +2950,13 @@ describe("Play createEngine view", () => {
     editor.setMeshAssets({
       textureBytes: new Map([["tex-shared", bytes]]),
     });
-    const first = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    const firstLease = editor.resourceCache.acquireTexture("tex-shared", engine, bytes);
+    const first = firstLease.resource;
     const disposeCache = vi.spyOn(ResourceCache.prototype, "dispose");
     play.dispose();
     expect(disposeCache).not.toHaveBeenCalled();
-    const second = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    const secondLease = editor.resourceCache.acquireTexture("tex-shared", engine, bytes);
+    const second = secondLease.resource;
     expect(second).toBe(first);
     expect(isDisposedGpuTexture(first)).toBe(false);
   });

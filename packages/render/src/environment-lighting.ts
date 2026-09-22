@@ -3,7 +3,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-perf";
-import type { ResourceCache } from "./resource-cache";
+import type { TextureResources, ResourceLease } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 
 const controllers = new WeakMap<Scene, EnvironmentLighting>();
@@ -55,9 +55,9 @@ class EnvironmentLighting {
   readonly samples = new Set<object>();
   private guid: string | null = null;
   private bytes: Uint8Array | Blob | undefined;
-  private cache: ResourceCache | undefined;
+  private cache: TextureResources | undefined;
   private source: CubeTexture | null = null;
-  private sourceCache: ResourceCache | undefined;
+  private sourceLease: ResourceLease<CubeTexture> | undefined;
   private view: CubeTexture | null = null;
   private irradiance: ReturnType<typeof ownEnvironmentIrradiance> | null = null;
   private irradianceChanged = false;
@@ -82,7 +82,7 @@ class EnvironmentLighting {
   configure(
     guid: string | null,
     bytes: Uint8Array | Blob | undefined,
-    cache: ResourceCache | undefined,
+    cache: TextureResources | undefined,
   ): void {
     this.requestChanged ||=
       this.guid !== guid || this.bytes !== bytes || this.cache !== cache;
@@ -116,20 +116,21 @@ class EnvironmentLighting {
       isDisposedGpuTexture(this.source) ||
       isDisposedGpuTexture(this.view)
     ) {
-      const source = this.cache.getTexture(
+      const lease = this.cache.acquireTexture(
         this.guid,
         this.scene.getEngine(),
         this.bytes,
         { isCube: true },
-      ) as CubeTexture;
+      ) as ResourceLease<CubeTexture>;
+      const source = lease.resource;
       if (
         source === this.source &&
-        this.sourceCache === this.cache &&
+
         this.view &&
         !isDisposedGpuTexture(this.view)
       ) {
         // Re-collected identical bytes may have a new Uint8Array identity.
-        this.cache.release(source);
+        lease.release();
       } else {
         let view: CubeTexture;
         try {
@@ -143,12 +144,12 @@ class EnvironmentLighting {
             );
           }
         } catch (error) {
-          this.cache.release(source);
+          lease.release();
           throw error;
         }
         this.clear();
         this.source = source;
-        this.sourceCache = this.cache;
+        this.sourceLease = lease;
         this.view = view;
         this.irradiance = ownEnvironmentIrradiance(
           view,
@@ -202,9 +203,9 @@ class EnvironmentLighting {
       this.scene.environmentTexture = null;
     this.view?.dispose();
     this.view = null;
-    if (this.source) this.sourceCache?.release(this.source);
+    this.sourceLease?.release();
     this.source = null;
-    this.sourceCache = undefined;
+    this.sourceLease = undefined;
   }
 
   private invalidateMaterials(): void {

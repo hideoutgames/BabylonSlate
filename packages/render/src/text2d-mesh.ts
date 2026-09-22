@@ -313,9 +313,9 @@ function msdfAtlasTexture(
   fontGuid: string,
   png: Uint8Array,
   assets?: Text2DAssetContext,
-): BaseTexture | null {
+): import("./resource-cache").ResourceLease<BaseTexture> | null {
   if (!assets?.resourceCache) return null;
-  return assets.resourceCache.getTexture(
+  return assets.resourceCache.acquireTexture(
     `font-msdf-png:${fontGuid}`,
     scene.getEngine(),
     png,
@@ -490,10 +490,12 @@ export function createText2DMesh(
     text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
   };
 
-  const atlasTexture =
+  const atlasLease =
     renderer === "msdf" && fontGuid && png
       ? msdfAtlasTexture(scene, fontGuid, png, assets)
       : null;
+  const atlasTexture = atlasLease?.resource ?? null;
+  parent.onDisposeObservable.addOnce(() => atlasLease?.release());
 
   const packedCells: ReturnType<typeof rasterizeBitmapGlyph>[] = [];
   const bitmapKeys = new Set<string>();

@@ -68,13 +68,15 @@ function uploaded(
 it("reserves RGBA then independently accounts compressed and fallback sampling variants", () => {
   const { cache, engine } = host();
   const bytes = ktx2();
-  const compressed = cache.getTexture("atlas", engine, bytes);
+  const compressedLease = cache.acquireTexture("atlas", engine, bytes);
+    const compressed = compressedLease.resource;
   expect(cache.accountedBytes()).toBe(172);
-  expect(cache.getTexture("atlas", engine, bytes)).toBe(compressed);
+  expect(cache.acquireTexture("atlas", engine, bytes).resource).toBe(compressed);
   expect(cache.accountedBytes()).toBe(172);
   uploaded(compressed, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   expect(cache.accountedBytes()).toBe(80);
-  const fallback = cache.getTexture("atlas", engine, bytes, { noMipmap: true });
+  const fallbackLease = cache.acquireTexture("atlas", engine, bytes, { noMipmap: true });
+    const fallback = fallbackLease.resource;
   expect(cache.accountedBytes()).toBe(252);
   // Babylon uploads every KTX2 mip even for this no-mip sampling request, and
   // its RGBA uploader leaves dimensions at the final 1x1 mip.
@@ -91,7 +93,8 @@ it("reserves RGBA then independently accounts compressed and fallback sampling v
 
 it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
   const { cache, engine } = host();
-  const partial = cache.getTexture("partial", engine, ktx2(8, 4, 2));
+  const partialLease = cache.acquireTexture("partial", engine, ktx2(8, 4, 2));
+    const partial = partialLease.resource;
   expect(cache.accountedBytes()).toBe(160);
   uploaded(partial, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_BPTC_UNORM);
   expect(cache.accountedBytes()).toBe(48);
@@ -100,7 +103,8 @@ it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
   const header = new DataView(png.buffer);
   header.setUint32(16, 8);
   header.setUint32(20, 4);
-  const raster = cache.getTexture("raster", engine, png);
+  const rasterLease = cache.acquireTexture("raster", engine, png);
+    const raster = rasterLease.resource;
   expect(cache.accountedBytes()).toBe(220);
   uploaded(raster, Constants.TEXTUREFORMAT_RGBA, 4, 2, false);
   expect(cache.accountedBytes()).toBe(80);
@@ -109,11 +113,13 @@ it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
 it("clears observer accounting on context release and ignores retired upload notifications", () => {
   const { cache, engine } = host();
   const bytes = ktx2();
-  const old = cache.getTexture("atlas", engine, bytes);
+  const oldLease = cache.acquireTexture("atlas", engine, bytes);
+    const old = oldLease.resource;
   cache.releaseGpuTextures();
   expect(cache.accountedBytes()).toBe(0);
   expect(old.onLoadObservable.hasObservers()).toBe(false);
-  const replacement = cache.getTexture("atlas", engine, bytes);
+  const replacementLease = cache.acquireTexture("atlas", engine, bytes);
+    const replacement = replacementLease.resource;
   uploaded(replacement, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   old.onLoadObservable.notifyObservers(old as never);
   expect(cache.accountedBytes()).toBe(80);
@@ -134,10 +140,12 @@ it("reads Blob KTX2 headers without a late header reviving a disposed generation
       }),
   );
   const slice = vi.spyOn(bytes, "slice").mockReturnValue(header);
-  const old = cache.getTexture("atlas", engine, bytes);
+  const oldLease = cache.acquireTexture("atlas", engine, bytes);
+    const old = oldLease.resource;
   cache.releaseGpuTextures();
   slice.mockRestore();
-  const replacement = cache.getTexture("atlas", engine, bytes);
+  const replacementLease = cache.acquireTexture("atlas", engine, bytes);
+    const replacement = replacementLease.resource;
   uploaded(replacement, Constants.TEXTUREFORMAT_RGBA, 1, 1);
   await vi.waitFor(() => expect(cache.accountedBytes()).toBe(172));
   complete(ktx2(64, 64).buffer);
@@ -149,15 +157,16 @@ it("reads Blob KTX2 headers without a late header reviving a disposed generation
 it("counts real six-face cube allocation and releases it after the final lease", () => {
   const { cache, engine } = host();
   const scene = new Scene(engine);
-  const cube = cache.getCubeTextureFromImages(
+  const cubeLease = cache.acquireCubeTextureFromImages(
     "sky",
     scene,
     ["px", "py", "pz", "nx", "ny", "nz"],
     true,
   );
+    const cube = cubeLease.resource;
   uploaded(cube, Constants.TEXTUREFORMAT_RGB, 8, 8, false);
   expect(cache.accountedBytes()).toBe(1152);
-  cache.release(cube);
+  cubeLease.release();
   cache.flushUnreferenced();
   expect(cache.accountedBytes()).toBe(0);
   expect(cube.onLoadObservable.hasObservers()).toBe(false);
