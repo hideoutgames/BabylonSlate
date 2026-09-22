@@ -657,6 +657,8 @@ Alpha interpretation and anisotropy belong to immutable wrapper variants. Compat
 variants share the native upload and its byte accounting. A NodeMaterial texture
 block owns a changed scene-quality variant until reassignment or disposal; repeated
 binds read that lease without acquiring again or changing another view's sampler.
+Environment replacement also retains its displayed cube until a successor upload
+is ready; a failed upload releases only that pending ownership and reports the error.
 
 Model previews stage material replacements, warm them against their actual meshes,
 and retain the displayed generation until a replacement succeeds. The Model canvas marks material preparation as busy so assistive technology and preview checks can distinguish it from a settled pose. Closing or

@@ -172,6 +172,32 @@ it("reuses the view across repeated asset collection and balances every source l
   expect(a.environmentTexture).not.toBe(view);
 });
 
+it("retains a usable environment during a failed successor upload and releases its provisional lease", async () => {
+  const { engine, cache, upload, a, assets } = fixture();
+  applyEnvironmentLighting(a, "environment", assets);
+  const working = a.environmentTexture;
+  let fail!: (message?: string, exception?: unknown) => void;
+  upload.mockImplementationOnce((url, _scene, _scale, _offset, _load, onError) => {
+    fail = onError!;
+    const internal = engine.createTexture(url, false, false, null);
+    internal.isCube = true; internal.isReady = false;
+    return internal;
+  });
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  applyEnvironmentLighting(a, "next", {
+    ...assets, textureBytes: new Map([["next", buildFloatDdsCubeFixture({ color: [1, 0, 0, 1] })]]),
+  });
+  expect(a.environmentTexture).toBe(working);
+  fail("controlled upload failure");
+  await Promise.resolve();
+  cache.flushUnreferenced();
+  expect(a.environmentTexture).toBe(working);
+  expect(working?.isReady()).toBe(true);
+  expect(isEnvironmentLightingReady(a)).toBe(true);
+  expect(error).toHaveBeenCalledOnce();
+  expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1, pending: 0 });
+});
+
 it("blocks pending uploads and exposes the current source failure without letting a stale upload poison its replacement", () => {
   const { engine, upload, a, assets } = fixture();
   let fail: ((message?: string, exception?: unknown) => void) | undefined;
