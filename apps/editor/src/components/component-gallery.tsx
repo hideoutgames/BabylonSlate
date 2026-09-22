@@ -15,6 +15,7 @@ import {
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
+  CatalogResultRow,
   ClassPicker,
   SceneComponentPicker,
   ContextMenuOverlay,
@@ -862,6 +863,7 @@ function GalleryComposites() {
         </Button>
       </div>
       <GalleryNestedMenus />
+      <GalleryCatalogRows />
       <GalleryDisclosure />
       <div className="rounded-lg border border-border p-3">
         <NamedListEditor
@@ -972,6 +974,31 @@ function GalleryComposites() {
       />
     </div>
     </AssetOpenProvider>
+  );
+}
+
+function GalleryCatalogRows() {
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <section className="flex flex-col gap-2" data-testid="gallery-catalog-rows">
+      <h2 className="text-lg font-medium">Catalog Results</h2>
+      <div role="group" aria-label="Catalog Results">
+        {[
+          { title: "Mesh", description: "Rendering", classId: "MeshComponent" },
+          { title: "Camera", description: "Camera", classId: "CameraComponent" },
+        ].map((item, index) => (
+          <CatalogResultRow
+            key={item.classId}
+            title={item.title}
+            description={item.description}
+            leading={<TypeVisualIcon visual={resolveTypeVisual({ classId: item.classId })} />}
+            active={selected === item.classId}
+            striped={index % 2 === 1}
+            onSelect={() => setSelected(item.classId)}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 

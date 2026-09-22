@@ -35,6 +35,20 @@ afterEach(() => {
 });
 
 describe("PlaceActorsDialog", () => {
+  it("activates a searched actor with the keyboard and ignores composing keys", () => {
+    render(<Harness />);
+    fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
+      target: { value: "sphere" },
+    });
+    const row = screen.getByRole("button", { name: "Sphere Shapes" });
+    fireEvent.keyDown(row, { key: "Enter", isComposing: true });
+    expect(screen.getByTestId("place-actors-catalog")).toBeTruthy();
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(screen.queryByTestId("place-actors-catalog")).toBeNull();
+    fireEvent.click(screen.getByTestId("reopen"));
+    expect(searchValue()).toBe("");
+  });
+
   it("clears the search after the Outliner closes it on select", () => {
     render(<Harness />);
     fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
