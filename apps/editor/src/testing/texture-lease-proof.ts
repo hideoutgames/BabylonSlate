@@ -41,7 +41,9 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const reset = () => Object.assign(operations, { acquisitions: 0, materials: 0, buffers: 0, updates: 0 });
   const pixels = async () => {
     engine.beginFrame(); scene.render(); engine.endFrame();
-    return Array.from(new Uint8Array((await engine.readPixels(32, 32, 1, 1)).buffer));
+    const copy = document.createElement("canvas"); copy.width = copy.height = 64;
+    const context = copy.getContext("2d")!; context.drawImage(canvas, 0, 0);
+    return Array.from(context.getImageData(32, 32, 1, 1).data);
   };
   try {
     const camera = new FreeCamera("camera", new Vector3(0, 0, -2), scene);
@@ -58,7 +60,14 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     const positionBuffer = mesh.getVertexBuffer(VertexBuffer.PositionKind);
     reset();
     const before = performance.now();
-    for (let i = 0; i < 10_000; i++) apply();
+    const batches: number[] = [];
+    for (let batch = 0; batch < 100; batch++) {
+      const started = performance.now();
+      for (let i = 0; i < 100; i++) apply();
+      batches.push(performance.now() - started);
+    }
+    batches.sort((a, b) => a - b);
+    const stableBatchMs = { p50: batches[49], p95: batches[94], p99: batches[98] };
     const stableMs = performance.now() - before;
     const stable = { ...operations };
     const stableResources = mesh.material === material && mesh.getVertexBuffer(VertexBuffer.UVKind) === uvBuffer && mesh.getVertexBuffer(VertexBuffer.PositionKind) === positionBuffer;
@@ -87,7 +96,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
     const siblingTexture = (sibling.material as StandardMaterial).diffuseTexture;
     const siblingSurvives = siblingTexture?.isReady() === true;
     layer.dispose(); siblingOwner.releaseHandleRetains(); cache.flushUnreferenced();
-    return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableResources, dimensions, atlasChange, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
+    return { backend: engine.isWebGPU ? "webgpu" : "webgl2", stable, stableMs, stableBatchMs, stableResources, dimensions, atlasChange, red, green, preservesAuthored, layerMaterialScene, siblingSurvives, retired: cache.resourceStats() };
   } finally {
     scene.dispose(); layer.dispose(); owner.releaseHandleRetains(); siblingOwner.releaseHandleRetains(); cache.dispose(); engine.dispose(); canvas.remove();
   }

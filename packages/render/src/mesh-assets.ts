@@ -213,15 +213,9 @@ export function applyAlbedoTexture(
     binding.pending?.release(); binding.pending = undefined;
     binding.lease?.release(); binding.lease = undefined;
     if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
-    binding.source = undefined; binding.guid = undefined;
+    binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
     return;
   }
-  const source = assets?.textureBytes?.get(textureGuid);
-  if (!source || !assets?.resourceCache) return;
-  const identity = binding.source === source ? binding.identity : snapshotByteFingerprint(source);
-  if (binding.identity === identity && binding.guid === textureGuid &&
-    ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
-  if (binding.failed === `${textureGuid}:${identity}`) return;
   // An authored material owns its own texture contract. Sprite animation must not replace it.
   if (mesh.material && mesh.material !== binding.material && binding.material) {
     binding.authored = true;
@@ -230,6 +224,12 @@ export function applyAlbedoTexture(
     binding.material.dispose(false, false); binding.material = null;
   }
   if (binding.authored) return;
+  const source = assets?.textureBytes?.get(textureGuid);
+  if (!source || !assets?.resourceCache) return;
+  const identity = binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  if (binding.identity === identity && binding.guid === textureGuid &&
+    ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
+  if (binding.failed === `${textureGuid}:${identity}`) return;
   let next: ResourceLease<Texture | CubeTexture>;
   try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
   catch (error) { binding.failed = `${textureGuid}:${identity}`; console.error("Sprite texture replacement failed", error); return; }
