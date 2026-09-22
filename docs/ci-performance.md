@@ -10,11 +10,11 @@ The default local policy is one admitted root and one test worker with at least 
 
 The initial cohort contains **25 existing completed PR/main Verify runs** created between 20 September 16:11:46 UTC and 22 September 01:19:40 UTC. No runs were triggered to create it. Of these, **21 succeeded and four failed**. Job pages were complete and attempts were included.
 
-| Measure | Observation |
-| --- | ---: |
-| Median workflow creation to final job completion, 21 successful runs | 22.22 min |
-| Median aggregate execution across all jobs, same successful runs | 114.00 runner-min |
-| Median job creation to runner start, 189 successful-run jobs | 3 s |
+| Measure                                                                |       Observation |
+| ---------------------------------------------------------------------- | ----------------: |
+| Median workflow creation to final job completion, 21 successful runs   |         22.22 min |
+| Median aggregate execution across all jobs, same successful runs       | 114.00 runner-min |
+| Median job creation to runner start, 189 successful-run jobs           |               3 s |
 | Measured execution in seven cancelled runs inside the same date window | 159.67 runner-min |
 
 Workflow latency and aggregate runner work measure different things and must not be added. Job creation-to-start excludes dependency waiting before a dependent job is created. Four cancellation records had completion before start; those invalid durations were excluded, making cancellation work a measured subtotal. Cache temperatures, complete test counts, retry costs and timing-weight fallback coverage have not been established for this cohort. Mixed commits and a small sample do not establish a stable p95 or a speed improvement.
@@ -30,6 +30,19 @@ Failed-run classification:
 The safety rollout's [control run 35715335490](https://github.com/hideoutgames/BabylonSlate/actions/runs/35715335490) completed all nine required jobs on PR head `0836e1d74cff20005de85ee70162cef9a83a8432`, testing merge commit `c211137e2d3506748a7966b03e59f385f5afb24d`. Creation-to-last-job latency was **21.65 minutes**, with **116.45 aggregate runner-minutes**. Static took 4m13s, including an 11s browser build and 4s upload; the slowest shard took 17m00s. The seven reports contained 375 unique test identities: 369 expected outcomes, six skips, zero flaky/unexpected outcomes and no retry attempts. This is one control, not a stable distribution.
 
 Of those reported identities, **206/375 (54.9%)** used the existing conservative timing fallback. The largest first-attempt file/project sums were desktop `p9-content` (273.602s), `framegraph-shadows` (269.072s), `p4-play` (267.224s), and `editor-density` (249.819s). These are summed test durations, not job durations. Weights are unchanged in this startup pilot; a later refresh requires multiple compatible trusted runs. Concurrent merges can change application source or test inventory, so compare actual checked-out merge commits before attributing a timing difference to this pilot.
+
+The first pilot [35718887203](https://github.com/hideoutgames/BabylonSlate/actions/runs/35718887203), testing merge `fffdad64eca59af6d67f78fbe47c11224b9063d2`, ran alongside main control [35718769988](https://github.com/hideoutgames/BabylonSlate/actions/runs/35718769988) at `556c4e349d6c32d37bb70fcfbef7fa27954a0fa0`. Application/package code, browser tests, lockfile and Vitest configuration matched exactly. Both used Node 22.23.2 and Ubuntu image `20260907.300.1`, with warm dependency caches. The pilot's sampled shard 2 also restored the browser cache and compiled player/editor in 3.70s/5.14s; those are compiler timings, not full job overhead or cold dependency-cache evidence.
+
+| First comparison                            |      Main control |             Pilot |
+| ------------------------------------------- | ----------------: | ----------------: |
+| Workflow creation to final job completion   |         21.93 min |         19.42 min |
+| Aggregate job execution                     | 113.60 runner-min | 118.20 runner-min |
+| Browser identities across all seven reports |               378 |               378 |
+| Expected / flaky / skipped outcomes         |       369 / 3 / 6 |       371 / 1 / 6 |
+| Retry attempts / unexpected outcomes        |             3 / 0 |             1 / 0 |
+| Required Verify outcome                     |           success |       **failure** |
+
+All seven pilot browser shards passed and their exact reported identity union matched the control, but unit validation failed because an older docs workflow contract still required `needs: static` and shared artifact transport. That contract is updated to preserve bounded failure diagnostics; the tooling contract covers independent startup and all required gates. The failed run remains failure evidence, not acceptance. The observed 2.52-minute (11.5%) latency reduction and 4.60 additional runner-minutes are one comparison with differing retries and an interrupted unit gate, not a successful-run median or proof of the 15% target. Main Verify, Preview and another PR's Verify overlapped the pilot. Further successful live runs must establish reliability and cold-cache behavior.
 
 Verify starts `static`, `unit`, and `e2e (1)` through `e2e (7)` independently on separate standard Ubuntu machines. Each shard builds player then editor sequentially before running its unchanged timing-weighted partition with one Playwright worker. The CI-only `BL_TEST_BUILD_MODE=ci-bundle` contract does not assert that typechecking passed: the required `static` job still owns tooling, distribution contracts, workspace typechecking, lint and docs. A static failure therefore prevents merge even if browsers pass.
 
@@ -49,30 +62,30 @@ If the pilot increases latency, flakiness or contention without sufficient benef
 
 ## Sample runs
 
-| Run | Outcome | Wall minutes | Runner minutes |
-| --- | --- | ---: | ---: |
-| [35675338666](https://github.com/hideoutgames/BabylonSlate/actions/runs/35675338666) | success | 22.22 | 114.00 |
-| [35666534414](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666534414) | success | 21.57 | 106.63 |
-| [35666376532](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666376532) | success | 21.58 | 114.83 |
-| [35666342933](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666342933) | failure | 21.95 | 94.40 |
-| [35647859114](https://github.com/hideoutgames/BabylonSlate/actions/runs/35647859114) | success | 19.97 | 111.47 |
-| [35646578116](https://github.com/hideoutgames/BabylonSlate/actions/runs/35646578116) | success | 22.60 | 113.67 |
-| [35640730123](https://github.com/hideoutgames/BabylonSlate/actions/runs/35640730123) | success | 24.07 | 119.02 |
-| [35638491864](https://github.com/hideoutgames/BabylonSlate/actions/runs/35638491864) | success | 19.83 | 108.42 |
-| [35637694505](https://github.com/hideoutgames/BabylonSlate/actions/runs/35637694505) | success | 22.33 | 114.00 |
-| [35635678072](https://github.com/hideoutgames/BabylonSlate/actions/runs/35635678072) | success | 23.02 | 117.13 |
-| [35635195240](https://github.com/hideoutgames/BabylonSlate/actions/runs/35635195240) | success | 21.87 | 115.20 |
-| [35633809373](https://github.com/hideoutgames/BabylonSlate/actions/runs/35633809373) | failure | 22.88 | 115.95 |
-| [35630959305](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630959305) | success | 23.67 | 117.38 |
-| [35630555202](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630555202) | failure | 21.87 | 102.63 |
-| [35630520831](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630520831) | success | 22.42 | 115.48 |
-| [35626820043](https://github.com/hideoutgames/BabylonSlate/actions/runs/35626820043) | success | 21.75 | 110.60 |
-| [35623689287](https://github.com/hideoutgames/BabylonSlate/actions/runs/35623689287) | success | 21.48 | 111.78 |
-| [35552333404](https://github.com/hideoutgames/BabylonSlate/actions/runs/35552333404) | success | 22.12 | 116.97 |
-| [35549811711](https://github.com/hideoutgames/BabylonSlate/actions/runs/35549811711) | success | 22.42 | 112.80 |
-| [35527729154](https://github.com/hideoutgames/BabylonSlate/actions/runs/35527729154) | success | 23.53 | 124.28 |
-| [35526426079](https://github.com/hideoutgames/BabylonSlate/actions/runs/35526426079) | success | 21.28 | 114.67 |
-| [35525490687](https://github.com/hideoutgames/BabylonSlate/actions/runs/35525490687) | success | 23.15 | 105.45 |
-| [35524923915](https://github.com/hideoutgames/BabylonSlate/actions/runs/35524923915) | success | 22.07 | 109.00 |
-| [35524048233](https://github.com/hideoutgames/BabylonSlate/actions/runs/35524048233) | success | 23.05 | 112.35 |
-| [35521943717](https://github.com/hideoutgames/BabylonSlate/actions/runs/35521943717) | failure | 22.82 | 118.22 |
+| Run                                                                                  | Outcome | Wall minutes | Runner minutes |
+| ------------------------------------------------------------------------------------ | ------- | -----------: | -------------: |
+| [35675338666](https://github.com/hideoutgames/BabylonSlate/actions/runs/35675338666) | success |        22.22 |         114.00 |
+| [35666534414](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666534414) | success |        21.57 |         106.63 |
+| [35666376532](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666376532) | success |        21.58 |         114.83 |
+| [35666342933](https://github.com/hideoutgames/BabylonSlate/actions/runs/35666342933) | failure |        21.95 |          94.40 |
+| [35647859114](https://github.com/hideoutgames/BabylonSlate/actions/runs/35647859114) | success |        19.97 |         111.47 |
+| [35646578116](https://github.com/hideoutgames/BabylonSlate/actions/runs/35646578116) | success |        22.60 |         113.67 |
+| [35640730123](https://github.com/hideoutgames/BabylonSlate/actions/runs/35640730123) | success |        24.07 |         119.02 |
+| [35638491864](https://github.com/hideoutgames/BabylonSlate/actions/runs/35638491864) | success |        19.83 |         108.42 |
+| [35637694505](https://github.com/hideoutgames/BabylonSlate/actions/runs/35637694505) | success |        22.33 |         114.00 |
+| [35635678072](https://github.com/hideoutgames/BabylonSlate/actions/runs/35635678072) | success |        23.02 |         117.13 |
+| [35635195240](https://github.com/hideoutgames/BabylonSlate/actions/runs/35635195240) | success |        21.87 |         115.20 |
+| [35633809373](https://github.com/hideoutgames/BabylonSlate/actions/runs/35633809373) | failure |        22.88 |         115.95 |
+| [35630959305](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630959305) | success |        23.67 |         117.38 |
+| [35630555202](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630555202) | failure |        21.87 |         102.63 |
+| [35630520831](https://github.com/hideoutgames/BabylonSlate/actions/runs/35630520831) | success |        22.42 |         115.48 |
+| [35626820043](https://github.com/hideoutgames/BabylonSlate/actions/runs/35626820043) | success |        21.75 |         110.60 |
+| [35623689287](https://github.com/hideoutgames/BabylonSlate/actions/runs/35623689287) | success |        21.48 |         111.78 |
+| [35552333404](https://github.com/hideoutgames/BabylonSlate/actions/runs/35552333404) | success |        22.12 |         116.97 |
+| [35549811711](https://github.com/hideoutgames/BabylonSlate/actions/runs/35549811711) | success |        22.42 |         112.80 |
+| [35527729154](https://github.com/hideoutgames/BabylonSlate/actions/runs/35527729154) | success |        23.53 |         124.28 |
+| [35526426079](https://github.com/hideoutgames/BabylonSlate/actions/runs/35526426079) | success |        21.28 |         114.67 |
+| [35525490687](https://github.com/hideoutgames/BabylonSlate/actions/runs/35525490687) | success |        23.15 |         105.45 |
+| [35524923915](https://github.com/hideoutgames/BabylonSlate/actions/runs/35524923915) | success |        22.07 |         109.00 |
+| [35524048233](https://github.com/hideoutgames/BabylonSlate/actions/runs/35524048233) | success |        23.05 |         112.35 |
+| [35521943717](https://github.com/hideoutgames/BabylonSlate/actions/runs/35521943717) | failure |        22.82 |         118.22 |
