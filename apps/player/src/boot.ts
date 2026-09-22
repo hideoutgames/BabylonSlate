@@ -513,6 +513,9 @@ function initializePlayer(
       runtime?.notifySceneLayerReady(layerId, layerLoadId);
     },
     onFailed: (_scene, error) => {
+      // Standalone hosts have no parent preview channel. Keep the underlying
+      // exception visible as well as the structured lifecycle diagnostic.
+      console.error("[player] Scene loading failed.", error);
       diagnostics.push({
         message: `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`,
         severity: "error",
