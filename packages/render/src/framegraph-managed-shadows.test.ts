@@ -220,7 +220,13 @@ it.each(["point", "spot"] as const)(
     expect(render()).toBe(count);
     expect(render()).toBe(0);
     updateSceneRenderingSettings(scene, {
-      shadows: { autoBias: true, depthBias: 0.002, normalBias: 0.015 },
+      ...sceneRenderingSettings(scene).project,
+      shadows: {
+        ...sceneRenderingSettings(scene).shadows,
+        autoBias: true,
+        depthBias: 0.002,
+        normalBias: 0.015,
+      },
     });
     expect(render()).toBe(count);
     expect(generator.bias).toBe(0.002);

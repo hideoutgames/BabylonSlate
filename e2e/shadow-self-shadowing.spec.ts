@@ -61,9 +61,12 @@ for (const backend of ["webgl2", "webgpu"] as const)
               qualification:
                 "software backend functional pixels; not A16 performance or original asset proof",
               ...result,
-              captures: result.captures.map(
-                ({ png: _png, ...capture }) => capture,
-              ),
+              captures: result.captures.map((capture) => ({
+                name: capture.name,
+                effective: capture.effective,
+                assertions: capture.assertions,
+                regions: capture.regions,
+              })),
             },
             null,
             2,

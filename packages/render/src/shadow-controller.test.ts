@@ -82,6 +82,17 @@ function enableHeadlessCascades(scene: Scene): void {
   const engine = scene.getEngine();
   engine._features.supportCSM = true;
   engine._features.supportShadowSamplers = true;
+  // NullEngine ignores size.layers for the color attachment. Native RTT uses
+  // this texture's array metadata to select the real per-cascade render loop.
+  const createTarget = engine.createRenderTargetTexture.bind(engine);
+  vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+    const target = createTarget(size, options);
+    if (typeof size !== "number" && size.layers && target.texture) {
+      target.texture.depth = target.texture.baseDepth = size.layers;
+      target.texture.is2DArray = true;
+    }
+    return target;
+  });
   vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
     const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
     const dimensions = typeof size === "number" ? { width: size, height: size } : size;
@@ -246,15 +257,18 @@ describe("shared shadow lifecycle", () => {
     expect(generator.getShadowMap()!.getSize().width).toBe(256);
     expect(generator.usePoissonSampling).toBe(true);
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.625, 8);
+    // Reciprocal extents come from Babylon's Float32 projection matrices.
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.625, 7);
     expect(generator.bias).toBeCloseTo(0.0078125, 8);
     expect(generator.normalBias).toBe(0.005);
     expect(sceneRenderingSettings(scene).shadows.mapSize).toBe(1024);
 
-    updateSceneRenderingSettings(scene, { shadows: { distance: 160 } });
+    updateSceneRenderingSettings(scene, {
+      shadows: { ...sceneRenderingSettings(scene).shadows, distance: 160 },
+    });
     controller.sync();
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(1.25, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(1.25, 7);
     // Poisson uses its effective radius, not requested PCF quality.
     generator.blurScale = 0.5;
     prepareShadowLayers(generator);
@@ -266,7 +280,7 @@ describe("shared shadow lifecycle", () => {
     expect(recovered).not.toBe(generator);
     expect(recovered.getShadowMap()!.getSize().width).toBe(1024);
     prepareShadowLayers(recovered);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.3125, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.3125, 7);
     expect(recovered.bias).toBeCloseTo(0.001953125, 8);
   });
 
@@ -280,7 +294,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     const generator = controller.generator(light)!;
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(20 / 512, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(20 / 512, 7);
     const replacement = new UniversalCamera("orthographic", new Vector3(4, 3, -8), scene);
     replacement.mode = 1;
     replacement.orthoLeft = -40;
@@ -291,7 +305,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     prepareShadowLayers(generator);
     expect(controller.generator(light)).toBe(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(80 / 512, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(80 / 512, 7);
   });
 
   it("derives each cascade from its current extents and restores exact manual bias", () => {
@@ -310,6 +324,8 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     const generator = controller.generator(light) as CascadedShadowGenerator;
     expect(generator).toBeInstanceOf(CascadedShadowGenerator);
+    expect(generator.getShadowMap()!.is2DArray).toBe(true);
+    expect(generator.getShadowMap()!.getRenderLayers()).toBe(2);
     prepareShadowLayers(generator);
     const effective = controller.effectiveBias(light).map((value) => ({ ...value }));
     expect(effective).toHaveLength(2);
@@ -318,16 +334,23 @@ describe("shared shadow lifecycle", () => {
       const min = generator.getCascadeMinExtents(layer)!;
       const max = generator.getCascadeMaxExtents(layer)!;
       const texel = Math.max(max.x - min.x, max.y - min.y) / 1024;
-      expect(effective[layer].worldTexelSize).toBeCloseTo(texel, 8);
+      expect(effective[layer].worldTexelSize).toBeCloseTo(texel, 7);
       expect(effective[layer].depthBias).toBeCloseTo(Math.min(0.05, (texel / 2) / (max.z - min.z) / 1.5), 8);
       expect(effective[layer].normalBias).toBe(0.001);
     }
     scene.activeCamera!.position.x += 6;
     scene.activeCamera!.getViewMatrix(true);
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(effective[0].worldTexelSize, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(effective[0].worldTexelSize, 7);
 
-    updateSceneRenderingSettings(scene, { shadows: { autoBias: false, depthBias: 0.002, normalBias: 0.025 } });
+    updateSceneRenderingSettings(scene, {
+      shadows: {
+        ...sceneRenderingSettings(scene).shadows,
+        autoBias: false,
+        depthBias: 0.002,
+        normalBias: 0.025,
+      },
+    });
     controller.sync();
     prepareShadowLayers(generator);
     expect(generator.bias).toBe(0.002);

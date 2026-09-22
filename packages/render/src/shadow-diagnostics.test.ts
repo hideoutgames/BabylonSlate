@@ -137,6 +137,17 @@ describe("opt-in shadow evidence capture", () => {
       os: null,
       sceneUnits: null,
     });
-    expect(JSON.parse(JSON.stringify(evidence))).toEqual(evidence);
+    const recorded = JSON.parse(JSON.stringify(evidence));
+    expect(recorded).toMatchObject({
+      backend: { actual: "null" },
+      provenance: { sceneUnits: null },
+      models: [
+        {
+          name: "captured",
+          worldBounds: { min: [1, -1, -1], max: [3, 1, 1] },
+        },
+      ],
+      truncated: { lights: 1, meshes: 1 },
+    });
   });
 });

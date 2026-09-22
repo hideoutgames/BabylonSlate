@@ -199,6 +199,18 @@ async function settings(
     { kind: host, value: render },
   );
 }
+async function freshFrames(canvas: Locator, host: Host) {
+  // Take the boundary after the requested settings/draw state was observed.
+  // A counter captured before earlier screenshots and settings edits can
+  // already be satisfied while the old image is still being presented.
+  const before = (await diagnostics(canvas, host))!.provenance.renderId;
+  await expect
+    .poll(
+      async () => (await diagnostics(canvas, host))?.provenance.renderId ?? 0,
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(before + 2);
+}
 async function pixels(canvas: Locator) {
   // Screenshot observes the presented canvas even when WebGL has discarded its
   // default framebuffer. Decode that exact image for both the oracle and evidence.
@@ -313,6 +325,7 @@ for (const mode of ["pbr", "cel"] as const) {
             { timeout: 30_000 },
           )
           .toBe("directional-auto");
+        await freshFrames(canvas, host);
         const automatic = (await diagnostics(canvas, host))!;
         await testInfo.attach(`${host}-automatic-settings`, {
           body: JSON.stringify(automatic),
@@ -353,6 +366,7 @@ for (const mode of ["pbr", "cel"] as const) {
                 ?.depthBias,
           )
           .toBe(0.00037);
+        await freshFrames(canvas, host);
         const manualState = (await diagnostics(canvas, host))!;
         expect(sun(manualState)!.generator!.map!.id, host).toBe(
           allocation.map!.id,
@@ -369,6 +383,7 @@ for (const mode of ["pbr", "cel"] as const) {
                 ?.mode,
           )
           .toBe("directional-auto");
+        await freshFrames(canvas, host);
         expect(
           sun((await diagnostics(canvas, host))!)!.generator!.map!.id,
           host,
@@ -380,21 +395,7 @@ for (const mode of ["pbr", "cel"] as const) {
         await expect
           .poll(async () => sun(await diagnostics(canvas, host))?.generator)
           .toBeNull();
-        await expect
-          .poll(
-            async () =>
-              (await diagnostics(canvas, host))?.provenance.renderId ?? 0,
-          )
-          .toBeGreaterThan(automatic.provenance.renderId + 3);
-        const reference = await pixels(canvas);
-        await testInfo.attach(`${host}-shadow-contribution-off`, {
-          body: reference.png,
-          contentType: "image/png",
-        });
-        expect([reference.width, reference.height], host).toEqual([
-          shadowed.width,
-          shadowed.height,
-        ]);
+        await freshFrames(canvas, host);
         const points = shadowSurfaceSamples(
           automatic.camera!.position as ShadowTriple,
           automatic.camera!.viewProjection as number[],
@@ -405,6 +406,40 @@ for (const mode of ["pbr", "cel"] as const) {
           shadowed.height,
           automatic.viewport.cameraViewport!,
         );
+        let reference = await pixels(canvas);
+        // Scene frames alone do not prove that the replacement receiver
+        // shader and any asynchronous canvas copy have presented. Require the
+        // shadow-off image to brighten known occlusions before using it as an
+        // oracle. The stricter quality assertions below remain independent.
+        await expect
+          .poll(
+            async () => {
+              reference = await pixels(canvas);
+              if (
+                reference.width !== shadowed.width ||
+                reference.height !== shadowed.height
+              )
+                return false;
+              const visible = shadowRegions(
+                reference.pixels,
+                shadowed.pixels,
+                points,
+                shadowed.width,
+              );
+              return ["torso", "ground"].every(
+                (name) => (visible[name]?.retainedContact ?? 0) > 5,
+              );
+            },
+            {
+              timeout: 30_000,
+              message: `${host} must present the shadow-off receiver shader`,
+            },
+          )
+          .toBe(true);
+        await testInfo.attach(`${host}-shadow-contribution-off`, {
+          body: reference.png,
+          contentType: "image/png",
+        });
         const regions = shadowRegions(
           reference.pixels,
           shadowed.pixels,
@@ -445,6 +480,7 @@ for (const mode of ["pbr", "cel"] as const) {
                 ?.mode,
           )
           .toBe("directional-auto");
+        await freshFrames(canvas, host);
       };
       await verify(page.getByTestId("viewport-canvas"), "editor");
       await page.reload();

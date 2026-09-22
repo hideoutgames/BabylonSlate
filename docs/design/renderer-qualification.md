@@ -143,6 +143,9 @@ A window that misses the pacing budget is a measurement to explain, not a spec f
 
 ## Engine ownership follow-up baseline
 
+The device waiver below applies only to the engine-ownership follow-up, not to
+the separate triangular-shadow qualification recorded at the end of this page.
+
 - Implementation starts at `bf109267b4adf42fe118847f29af1888a8ad1f5e`, after reviewed `ce1162f25cbac930be4789789de6269856e1eb58`. The intervening test-mode and WebGL2-fallback PRs do not change snapshot/physics ownership. Retain the merged #648 vertex-stream patch and existing renderer selection.
 - Installed dependencies: Babylon `9.20.0`, Havok `1.3.14`. Packaged and vendored Havok WASM SHA-256: `026917766f534c156286f07975850978dabf17c42e742bbfaaebbcb2215e4e11`. Babylon patch file SHA-256: `2b1f1007a95b4543415a9f67ae023c662b1852b4140a34e710ff68a947bb06f9`; lockfile patch identity: `613782859a2d2336c9cc03314b9e992b211e6607c435e03848d9aa127f314375`.
 - Deliveries: A snapshot preparation; B native physics ownership and explicit transforms; C change-driven physics preparation; D installed asset identity, texture leases and stable sprites; E transactional models/text; F particle preparation/playback. Each delivery records targeted evidence separately. No batching, second renderer or general resource framework.
@@ -166,3 +169,56 @@ These single-run timing distributions were collected while other development pro
 - Render-package `tsc --noEmit` and ESLint for the two changed TypeScript files passed through shared resource admission. Documentation-only evidence updates reuse those unchanged-source results.
 - The warmed measurement case was rerun with `--disableConsoleIntercept` to retain successful timing output; six unrelated cases in that measurement-only invocation were filtered out, not counted as new passes.
 - Browser: `pnpm --silent agent:wait local --script test:e2e -- e2e/scene-layer-rendering.spec.ts --project=desktop-chrome` passed both Play and exported Preview Build pixel cases at `2c1f29ae28c795acffe40cf4a78dbee94d3f5879`, with one browser worker. The earlier queued attempt was cancelled and is not counted. This fixture uses project-default rendering settings and does not independently qualify WebGPU or capture an adapter identity; dedicated WebGPU and sustained-device performance are not claimed.
+
+## Triangular-shadow investigation — 22 September 2026
+
+Implementation base: `93638dde6993a8307254d70e96dbad9be42a9432`, Babylon
+`9.20.0`. Rendering PR #651 was rechecked at
+`6cc7cce3f552d40c15fd807eaadd9cc5b388a587` and its owner was notified of the
+controller overlap. Its sampler-budget and binding changes were not copied.
+
+The confirmed code defect is narrower than the reported image: automatic bias
+ran only inside the cascade callback. Single-map directional shadows, including
+Low and capability fallback, retained authored constants. The implementation now
+derives directional depth correction from the current native projection and
+admitted dimensions after native per-layer preparation and before caster
+uniform binding. It retains authored depth as a floor and authored world-space
+normal offset unchanged. Local spot/point adaptation is explicitly unsupported;
+their authored offsets remain exact. See [the bias contract](../architecture/render.md).
+
+No original `TestProject222` asset, screenshot-producing build, effective
+settings, or physical A16 capture was available. The added box character is a
+**synthetic reproduction**, not a replacement for original-asset acceptance.
+No controlled experiment has yet established the cause of the original image.
+No projection-fitting or geometry/shader change is justified by current evidence.
+
+The synthetic browser specifications are
+`e2e/shadow-self-shadowing.spec.ts` (Low, forced cascade fallback, cascades,
+PBR/CEL and explicitly checked WebGL2/WebGPU) and
+`e2e/shadow-self-shadowing-hosts.spec.ts` (editor, Play and packed player,
+authored-settings round trip and updates). They attach regional visibility
+results, direct-light-only reference images, shadowed images and effective-state
+captures. The isolated fixture additionally captures independent depth/normal
+sweeps, a thin contact, another light angle and cascade camera motion. These
+assertions require both lit surfaces and retained occlusion; their presence is
+not a passing pixel result.
+
+Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
+retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
+cancelled while awaiting shared resource admission, before any build or browser
+execution. It produced no baseline image or test result. A red/green browser
+comparison remains required using the same final fixture/oracle on both policies.
+
+At `06de91a184ede3274c64fb4c964dc1323374dd4e`, the first focused unit run
+executed seven files: shadow bias, controller, managed FrameGraph shadows,
+diagnostics, refresh, player backend and player boot. It reported 74 passed and
+5 failed. Failures identified incomplete NullEngine array metadata, a settings
+replacement in test setup, Float32 extent precision, and signed-zero JSON
+comparison. Repairs require a fresh affected-file result; this run is not a pass.
+
+**BLOCKED qualification:** original-image acceptance and native A16 visual,
+motion, thermal, frame-time and repeated-open/play/close resource measurements.
+Desktop software pixels and NullEngine contracts cannot satisfy those gates.
+No measured speedup, GPU-memory result, or claim of meeting the 5% performance
+review threshold is made. The implementation requests no larger maps, additional
+cascades, extra scene passes, reduced coverage or production readbacks.
