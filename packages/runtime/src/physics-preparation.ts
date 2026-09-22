@@ -1,3 +1,6 @@
+import type { Actor } from "@babylonslate/object-model";
+import type { Transform } from "@babylonslate/core";
+import { actorParentGuid } from "./actor-world-transform";
 import {
   colliderLocalPose,
   multiplyQuat,
@@ -47,4 +50,37 @@ export class PreparedColliderGeometry {
     }, actorScale);
     return { shape: this.scaled(1, shape, second.scale), translation: second.translation, rotation: second.rotation };
   }
+}
+
+
+/** Resolve only physics participants and their ancestors, retaining the ordered
+ * World list for iteration. A parent without physics still contributes scale. */
+export function physicsWorldTransforms(actors: readonly Actor[], byGuid: ReadonlyMap<string, Actor>, kind: "2d" | "3d", eligible: (actor: Actor) => boolean): Map<string, Transform> {
+  const resolved = new Map<string, Transform>();
+  const resolving = new Set<Actor>();
+  const resolve = (actor: Actor): Transform => {
+    const old = resolved.get(actor.guid);
+    if (old) return old;
+    if (resolving.has(actor)) throw new Error("Physics hierarchy contains a parent cycle");
+    resolving.add(actor);
+    const parentId = actorParentGuid(actor);
+    const parent = parentId ? byGuid.get(parentId) : undefined;
+    let transform = { position: { ...actor.transform.position }, rotation: { ...actor.transform.rotation }, scale: { ...actor.transform.scale } };
+    if (parent && !parent.destroyed) {
+      const ancestor = resolve(parent);
+      const local = colliderLocalPose(kind === "2d" ? "box2d" : "box", actor.transform, ancestor.scale);
+      const translation = rotateQuatVec(ancestor.rotation, local.translation);
+      transform = {
+        position: { x: ancestor.position.x + translation.x, y: ancestor.position.y + translation.y, z: ancestor.position.z + translation.z },
+        rotation: multiplyQuat(ancestor.rotation, local.rotation), scale: local.scale,
+      };
+    }
+    resolving.delete(actor);
+    resolved.set(actor.guid, transform);
+    return transform;
+  };
+  for (const actor of actors) {
+    if (!actor.destroyed && eligible(actor) && actor.components.some(component => !component.destroyed && ["RigidBodyComponent", "ColliderComponent", "MeshComponent", "BlockingVolumeComponent", "TilemapComponent"].includes(component.classId))) resolve(actor);
+  }
+  return resolved;
 }

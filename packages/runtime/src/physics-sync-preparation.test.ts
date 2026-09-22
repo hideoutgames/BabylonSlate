@@ -53,22 +53,23 @@ describe("physics preparation work", () => {
     const geometry = triangles(triangleCount);
     const resolve = vi.spyOn(assets, "resolveMeshCollisions");
     const bake = vi.spyOn(physics, "bakeColliderLocal");
+    const scaled = vi.spyOn(physics, "scaleColliderShape");
     const commit = vi.spyOn(backend, "applyColliderChanges");
     const serialize = vi.spyOn(JSON, "stringify");
     try {
       install(sync, geometry);
       sync.syncFromWorld(world);
       for (const actor of actors) sync.addImpulse(actor.guid, { x: 1, y: 0, z: 0 });
-      resolve.mockClear(); bake.mockClear(); commit.mockClear(); serialize.mockClear();
+      resolve.mockClear(); bake.mockClear(); scaled.mockClear(); commit.mockClear(); serialize.mockClear();
       for (let tick = 0; tick < 20; tick++) sync.step(1 / 60, world);
       const geometrySerializations = serialize.mock.calls.filter(([value]) => {
         const kind = (value as { shape?: { kind?: string } } | null)?.shape?.kind;
         return kind === "mesh" || kind === "convex";
       }).length;
-      const counts = { triangleCount, resolves: resolve.mock.calls.length, bakes: bake.mock.calls.length, geometrySerializations, commits: commit.mock.calls.length };
+      const counts = { triangleCount, resolves: resolve.mock.calls.length, bakes: bake.mock.calls.length, scaledShapes: scaled.mock.calls.length, geometrySerializations, commits: commit.mock.calls.length };
       console.info("physics unchanged geometry operations", counts);
       expect(actors[0]!.transform.position.x).toBeGreaterThan(0);
-      expect(counts).toEqual({ triangleCount, resolves: 0, bakes: 0, geometrySerializations: 0, commits: 0 });
+      expect(counts).toEqual({ triangleCount, resolves: 0, bakes: 0, scaledShapes: 0, geometrySerializations: 0, commits: 0 });
     } finally { sync.dispose(); }
   });
 

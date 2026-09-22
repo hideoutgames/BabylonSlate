@@ -154,3 +154,29 @@ Harness scenarios run on each backend where shapes overlap. Within-backend repro
 | Full 5 Hz debugger stats HUD | P8 (`p8-console-hud`); P7 exposes `physicsMs` + Play overlay readout |
 | `planck.js` fallback | Not used; software AABB is the wasm-failure path |
 | Separate physics worker | Not planned for v1 |
+
+
+## Change-driven preparation and verification pickup
+
+`PhysicsWorldSync` holds prepared state for the actual actor/component incarnation. It checks fixed-size authoring descriptors and TRS values before resolving model collision or scaling geometry; changed local poses and tuning reuse owned prepared geometry. Body readback uses one actor-ID index while World retains spawn ordering. A nonphysics parent still affects dependent effective scale, and unsupported hierarchy shear fails before replacing native geometry. Static poses are submitted only when changed; kinematic targets retain their native motion contract.
+
+Model collision installation compares exact collision descriptors once at `setModelContent`, copies mutable input into owned current sources, and retains unchanged source identities. The comparison includes simple collider content, import scale, and cooked complex geometry; it is not in the simulation loop. Source maps retain only the current installed generations. Geometry arrays assigned to ColliderComponent are copied/frozen at construction, `setVariable`, and direct `variables.set`, so edits replace the owned shape instead of mutating an old generation. Pose/tuning commands can reuse `prepareColliderShape` geometry without revalidating or copying vertices at each native transaction.
+
+Local verification is deferred by user request (2026-09-22). No preparation speedup or operation counts are yet claimed. The runnable pre-implementation fixture is frozen at `de96b6d3`, branch `agent/engine-physics-dirty-c`, worktree `engine-physics-dirty-c`. Production is separate on `agent/engine-physics-dirty-c-impl`, worktree `engine-physics-dirty-c-impl` (initial cache checkpoint `3f448f1b`, followed by mutation/parent-scale refinements). Both are **unverified and unmerged**, with no PR. The native lifecycle release gates must pass before this delivery ships.
+
+When checks resume, install frozen dependencies normally in each C worktree and keep machine admission/shared profile. Run the baseline before production to capture actual resolve/bake/serialization and actor lookup counts; expected failures are not observed failures until that run completes:
+
+```powershell
+$env:BL_TEST_PROFILE='shared'
+pnpm --silent agent:wait local --script test '--' packages/runtime/src/physics-sync-preparation.test.ts
+```
+
+The baseline file has five cases: 4 versus 2,048 triangles over 20 moving-body ticks, and 128/512/2,048 body readbacks. The implementation adds a scaled-geometry counter so moving the old work into a different helper cannot satisfy the contract. After recording baseline results, run explicit production cases:
+
+```powershell
+pnpm --silent agent:wait local --script test '--' packages/runtime/src/physics-sync-preparation.test.ts packages/runtime/src/physics-sync-invalidation.test.ts
+pnpm --silent agent:wait local --script test '--' packages/runtime/src/physics-sync-transactions.test.ts packages/runtime/src/physics-sync.test.ts packages/runtime/src/tilemap-physics.test.ts packages/runtime/src/physics-duplicate-identities.test.ts
+pnpm --silent agent:wait local --script test '--' packages/physics/src/collider-validation.test.ts packages/physics/src/physics.test.ts packages/object-model/src/world.test.ts packages/object-model/src/instantiate-scene.test.ts
+```
+
+The invalidation fixtures cover ordinary shape ownership/replacement, local pose, filter/material tuning, effective scale, nonphysics parents and shear failure, same-GUID component/actor replacement, eligibility changes, and same/changed installed model generations. Still pending: all listed tests; real-Havok unchanged-content construction/resource counts; preparation/simulation/readback timing distributions; scoped physics/runtime/object-model typechecks and changed-file lint; independent review; relevant browser/player integration; and required PR CI/merge. No broad local suite is requested. Keep existing native trigger/teleport failures visible until their corrected cases pass.

@@ -29,11 +29,10 @@ import {
   type ColliderShape,
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import { PreparedColliderGeometry, sameDescriptor, transformDescriptor } from "./physics-preparation";
+import { PreparedColliderGeometry, sameDescriptor, transformDescriptor, physicsWorldTransforms } from "./physics-preparation";
 import { componentColliderPhysicsId } from "./physics-collider-id";
 import {
   actorParentGuid,
-  actorWorldTransforms,
   inverseQuaternion,
   multiplyQuaternion,
   rotateVector,
@@ -57,7 +56,8 @@ export class PhysicsWorldSync {
   private readonly ordinaryByComponent = new WeakMap<ActorComponent, { shapeSource: unknown; shape: ColliderShape }>();
   private readonly meshSources = new WeakMap<ActorComponent, { descriptor: readonly unknown[]; collisions: ReturnType<typeof resolveMeshCollisions> }>();
   private readonly rigidProperties = new WeakMap<ActorComponent, { descriptor: readonly unknown[]; value: ReturnType<typeof parseRigidBodyProperties> }>();
-  private modelInstallation = 0;
+  private readonly modelContentIdentities = new Map<string, string>();
+  private readonly staticPoses = new Map<string, readonly unknown[]>();
   private spriteInstallation = 0;
   private tileInstallation = 0;
   private actors: readonly Actor[] = [];
@@ -141,11 +141,25 @@ export class PhysicsWorldSync {
           >
         >;
   }): void {
-    this.modelInstallation++;
-    this.models = ownedContentMap(options.models);
-    this.complexMeshes = options.complexMeshes
-      ? ownedContentMap(options.complexMeshes)
-      : new Map();
+    const models = toMap(options.models);
+    const meshes = options.complexMeshes ? toMap(options.complexMeshes) : new Map<string, { vertices: Vec3[]; indices: number[] }>();
+    const nextModels = new Map<string, ModelPayload>();
+    const nextMeshes = new Map<string, { vertices: Vec3[]; indices: number[] }>();
+    const live = new Set([...models.keys(), ...meshes.keys()]);
+    for (const guid of live) {
+      const model = models.get(guid), mesh = meshes.get(guid);
+      // This full-content comparison belongs to installation, never a tick.
+      // Exact collision content gives each retained immutable source its identity;
+      // unrelated material metadata cannot invalidate prepared physics geometry.
+      const identity = JSON.stringify([model?.simpleColliders, model?.importScale, mesh]);
+      const unchanged = this.modelContentIdentities.get(guid) === identity;
+      if (model) nextModels.set(guid, unchanged && this.models.has(guid) ? this.models.get(guid)! : structuredClone(model));
+      if (mesh) nextMeshes.set(guid, unchanged && this.complexMeshes.has(guid) ? this.complexMeshes.get(guid)! : structuredClone(mesh));
+      this.modelContentIdentities.set(guid, identity);
+    }
+    for (const guid of this.modelContentIdentities.keys()) if (!live.has(guid)) this.modelContentIdentities.delete(guid);
+    this.models = nextModels;
+    this.complexMeshes = nextMeshes;
   }
 
   setActorSpriteClip(
@@ -170,6 +184,8 @@ export class PhysicsWorldSync {
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
     this.actorById.clear();
+    this.staticPoses.clear();
+    this.modelContentIdentities.clear();
     this.tilemapCollidersByActor.clear();
   }
 
@@ -177,7 +193,7 @@ export class PhysicsWorldSync {
   syncFromWorld(world: World): void {
     this.actors = world.getActors();
     this.indexActors();
-    this.worldTransforms = actorWorldTransforms(this.actors, this.actorById);
+    this.worldTransforms = physicsWorldTransforms(this.actors, this.actorById, this.backend.kind, this.actorFilter);
     const live = new Set<string>();
     for (const actor of this.actors) {
       if (actor.destroyed) continue;
@@ -207,16 +223,10 @@ export class PhysicsWorldSync {
               actorWorldPhysicsTransform(actor, this.worldTransforms),
             );
           } else if (props.motionType === "static") {
-            this.backend.teleportBody(
-              bodyId,
-              actorWorldPhysicsTransform(actor, this.worldTransforms),
-            );
+            this.syncStaticPose(actor, bodyId);
           }
         } else {
-          this.backend.teleportBody(
-            bodyId,
-            actorWorldPhysicsTransform(actor, this.worldTransforms),
-          );
+          this.syncStaticPose(actor, bodyId);
         }
         this.applyActorColliders(actor, bodyId);
       }
@@ -224,6 +234,14 @@ export class PhysicsWorldSync {
     for (const actorId of this.bodyByActor.keys()) {
       if (!live.has(actorId)) this.retireActor(actorId);
     }
+  }
+
+  private syncStaticPose(actor: Actor, bodyId: string): void {
+    const pose = actorWorldPhysicsTransform(actor, this.worldTransforms);
+    const descriptor = [pose.position.x, pose.position.y, pose.position.z, pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w];
+    if (sameDescriptor(this.staticPoses.get(actor.guid), descriptor)) return;
+    this.backend.teleportBody(bodyId, pose);
+    this.staticPoses.set(actor.guid, descriptor);
   }
 
   private indexActors(): void {
@@ -236,6 +254,7 @@ export class PhysicsWorldSync {
     if (bodyId) this.backend.destroyBody(bodyId);
     this.bodyByActor.delete(actorId);
     this.bodyOwnerByActor.delete(actorId);
+    this.staticPoses.delete(actorId);
     this.characterByActor.delete(actorId);
     this.spriteClipByActor.delete(actorId);
     this.preparedByActor.delete(actorId);
@@ -291,7 +310,7 @@ export class PhysicsWorldSync {
     // also change a parent. Resolve current authored world poses at this boundary.
     this.actors = world.getActors();
     this.indexActors();
-    this.worldTransforms = actorWorldTransforms(this.actors, this.actorById);
+    this.worldTransforms = physicsWorldTransforms(this.actors, this.actorById, this.backend.kind, this.actorFilter);
     if (this.bodyOwnerByActor.has(actor.guid) && this.bodyOwnerByActor.get(actor.guid) !== actor) this.retireActor(actor.guid);
     if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor);
     const bodyId = this.bodyByActor.get(actor.guid);
@@ -309,6 +328,7 @@ export class PhysicsWorldSync {
     if (!bodyId) return;
     if (component.classId === "RigidBodyComponent") {
       const props = this.rigidProps(component);
+      this.staticPoses.delete(owner.guid);
       this.backend.updateBody(bodyId, {
         motionType: props.motionType,
         mass: props.mass,
@@ -319,7 +339,8 @@ export class PhysicsWorldSync {
       return;
     }
     if (["MeshComponent", "ColliderComponent", "SpriteComponent", "TilemapComponent", "BlockingVolumeComponent"].includes(component.classId)) {
-      this.worldTransforms = actorWorldTransforms(this.actors);
+      this.indexActors();
+      this.worldTransforms = physicsWorldTransforms(this.actors, this.actorById, this.backend.kind, this.actorFilter);
       this.applyActorColliders(owner, bodyId);
     }
   }
@@ -493,7 +514,7 @@ export class PhysicsWorldSync {
       descriptor.push(component, component.destroyed, component.parentId, componentAssetGuid(component), ...transformDescriptor(component.transform));
       if (component.destroyed) continue;
       for (const name of ["shape", "friction", "restitution", "isTrigger", "layer", "mask", "collisionMode", "meshKind"]) descriptor.push(component.getVariable(name));
-      if (component.classId === "MeshComponent" && componentAssetGuid(component)) descriptor.push(this.modelInstallation);
+      if (component.classId === "MeshComponent" && componentAssetGuid(component)) descriptor.push(this.models.get(componentAssetGuid(component)!), this.complexMeshes.get(componentAssetGuid(component)!));
       if (component.classId === "TilemapComponent") descriptor.push(this.tileInstallation);
       if (component.classId === "SpriteComponent") {
         const playback = this.spriteClipByActor.get(actor.guid);
@@ -516,7 +537,7 @@ export class PhysicsWorldSync {
 
   private resolvedMeshCollisions(component: ActorComponent): ReturnType<typeof resolveMeshCollisions> {
     const assetGuid = componentAssetGuid(component);
-    const descriptor = [assetGuid, component.getVariable("collisionMode"), component.getVariable("meshKind"), assetGuid ? this.modelInstallation : 0];
+    const descriptor = [assetGuid, component.getVariable("collisionMode"), component.getVariable("meshKind"), assetGuid ? this.models.get(assetGuid) : null, assetGuid ? this.complexMeshes.get(assetGuid) : null];
     const previous = this.meshSources.get(component);
     if (previous && sameDescriptor(previous.descriptor, descriptor)) return previous.collisions;
     const collisions = resolveMeshCollisions({ assetGuid, collisionMode: descriptor[1], meshKind: descriptor[2] }, {

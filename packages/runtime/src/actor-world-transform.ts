@@ -30,8 +30,8 @@ export function actorWorldTransform(
 /** Compose every actor's local hierarchy into world space once per tick. */
 export function actorWorldTransforms(
   actors: readonly Actor[],
-  byGuid: ReadonlyMap<string, Actor> = new Map(actors.map((actor) => [actor.guid, actor])),
 ): Map<string, Transform> {
+  const byGuid = new Map(actors.map((actor) => [actor.guid, actor]));
   const resolved = new Map<string, Transform>();
   const resolving = new Set<string>();
 

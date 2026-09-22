@@ -110,7 +110,10 @@ export function colliderLocalPose(
   // Decompose S_parent * R_local into an orthonormal attachment and the
   // canonical geometry scale. A quarter-turn permutes nonuniform scale axes.
   // Put any reflection on X so the attachment remains a proper rotation.
-  const lengths = axes.map((axis) => Math.hypot(axis.x, axis.y, axis.z));
+  const uniformXY = Math.abs(parentScale.x) === Math.abs(parentScale.y);
+  const uniform = uniformXY && (is2d || Math.abs(parentScale.x) === Math.abs(parentScale.z));
+  const lengths = axes.map((axis, index) => uniform && (!is2d || index < 2)
+    ? Math.abs(parentScale.x) : Math.hypot(axis.x, axis.y, axis.z));
   lengths[0] =
     lengths[0]! * Math.sign(parentScale.x * parentScale.y * parentScale.z);
   const basis = axes.map((axis, index) => ({
