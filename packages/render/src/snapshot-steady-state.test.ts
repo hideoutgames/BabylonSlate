@@ -1,5 +1,5 @@
-import { FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
-import { SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
+import { FreeCamera, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -207,5 +207,33 @@ describe("snapshot synchronization native work", () => {
     } finally {
       await renderer.retire();
     }
+  });
+
+  it("reconciles both SceneLayer migration directions using the actual material owner", () => {
+    const { scene, engine, binding, snapshot } = fixture(1);
+    const layer = new Scene(engine);
+    const worldMaterial = new StandardMaterial("world", scene);
+    const layerMaterial = new StandardMaterial("layer", layer);
+    binding.materialAssetGuids.set(0, "surface");
+    binding.resolveMaterial = (_guid, options) => options?.scene === layer ? layerMaterial : worldMaterial;
+    applySnapshotToScene(scene, binding, snapshot);
+    const original = binding.meshes.get(0)!;
+    expect(original.material).toBe(worldMaterial);
+
+    binding.sceneForSlot = () => layer;
+    snapshot.actors[0]!.flags |= SNAPSHOT_FLAG_OVERLAY;
+    applySnapshotToScene(scene, binding, snapshot);
+    const overlay = binding.meshes.get(0)!;
+    expect(original.isDisposed()).toBe(true);
+    expect(overlay.getScene()).toBe(layer);
+    expect(overlay.material).toBe(layerMaterial);
+
+    binding.sceneForSlot = () => null;
+    snapshot.actors[0]!.flags = SNAPSHOT_FLAG_VISIBLE;
+    applySnapshotToScene(scene, binding, snapshot);
+    expect(overlay.isDisposed()).toBe(true);
+    expect(binding.meshes.get(0)!.getScene()).toBe(scene);
+    expect(binding.meshes.get(0)!.material).toBe(worldMaterial);
+    expect(layer.meshes).toHaveLength(0);
   });
 });
