@@ -65,9 +65,21 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
       throw new Error("Babylon did not install the expected particle binding observer.");
     }
     owned.bindings.set(blend, { effect: currentEffect, observer, wrapper });
-    // Native setCustomEffect allocates a new wrapper without releasing the old
-    // one. Its public deferred disposal preserves the currently executing draw.
-    if (previous && previous.wrapper !== wrapper) previous.wrapper.dispose();
+    // DrawWrapper.dispose delays the Effect, but destroys its draw context
+    // immediately. A define change occurs inside onBind, before the current
+    // WebGPU draw consumes that context: retire the whole wrapper after frame.
+    if (previous && previous.wrapper !== wrapper) {
+      const retired = previous.wrapper;
+      const engine = material.getScene().getEngine();
+      const frameObserver = engine.onEndFrameObservable.addOnce(() => {
+        engine.onDisposeObservable.remove(disposeObserver);
+        retired.dispose();
+      });
+      const disposeObserver = engine.onDisposeObservable.addOnce(() => {
+        engine.onEndFrameObservable.remove(frameObserver);
+        retired.dispose(true);
+      });
+    }
   };
   native._createEffectForParticles = bind;
   adapted.add(material);

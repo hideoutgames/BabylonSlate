@@ -32,6 +32,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
   let acquisitions = 0;
   let releases = 0;
   let resets = 0;
+  let disposalResets = 0;
   const diagnostics: unknown[] = [];
   const acquireTexture = (guid: string) => {
       const resource = textures.get(guid);
@@ -90,7 +91,14 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     simulationSpeeds.set(native, speed);
     native.updateSpeed = 0;
     const reset = native.reset.bind(native);
-    native.reset = () => { resets += 1; reset(); };
+    const dispose = native.dispose.bind(native);
+    let retiring = false;
+    native.dispose = (...args) => { retiring = true; return dispose(...args); };
+    native.reset = () => {
+      if (retiring) disposalResets += 1;
+      else resets += 1;
+      reset();
+    };
     if ((native instanceof GPUParticleSystem) !== gpu) throw new Error(`Requested ${gpu ? "GPU" : "CPU"} particles were not constructed`);
     if (native instanceof GPUParticleSystem && !native.emitRateControl) throw new Error("GPU emitter lacks emit-rate control");
     return native;
@@ -213,7 +221,7 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     return { requestedBackend: backend, effectiveBackend: engine.isWebGPU ? "webgpu" : `webgl${(engine as Engine).webGLVersion}`,
       simulation: gpu ? "gpu" : "cpu", driver: "getGlInfo" in engine ? engine.getGlInfo() : engine.getInfo(), userAgent: navigator.userAgent,
       resolution: { width: 64, height: 64 },
-      captures, sceneIsolation, diagnostics, resets, acquisitions, releases, baseline, final,
+      captures, sceneIsolation, diagnostics, resets, disposalResets, acquisitions, releases, baseline, final,
       nativeSimulationAndSubmissionCpuMs: { samples: frameCpuMs.length, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
       particleBuffersAcquired: particleBuffers.size, liveParticleBuffers: [...particleBuffers].filter((buffer) => buffer.references > 0).length };
   } finally { service.dispose(); materials.dispose(); scene.dispose(); otherEngine.dispose(); engine.dispose(); canvas.remove(); }
