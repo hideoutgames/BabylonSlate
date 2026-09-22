@@ -13,6 +13,13 @@ initializeCapacitorAudioLifecycle();
 
 if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("particleLifecycleProof")
+) {
+  void import("./testing/particle-lifecycle-proof").then(({ runParticleLifecycleProof }) => {
+    Object.assign(window, { __babylonslateParticleLifecycleProof: runParticleLifecycleProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("scenePostProcessHostProof")
 ) {
   void import("./testing/scene-post-process-host-proof").then(({ createScenePostProcessHostProof }) => {
