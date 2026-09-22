@@ -1,4 +1,5 @@
 import { registerClusteredSurfaceMaterial } from "./clustered-material-policy";
+import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
   BonesBlock,
@@ -206,6 +207,7 @@ export function compileMaterialPlan(
       ? ShaderLanguage.WGSL
       : ShaderLanguage.GLSL,
   });
+  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
   material.mode =
     plan.domain === "postProcess"
