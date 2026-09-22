@@ -8,7 +8,7 @@ packageExtensionsChecksum: sha256-kGv20c4ap7RRpBbtGXcn20CMRGkXEzPl0au2ojzmg5g=
 
 patchedDependencies:
   '@babylonjs/core@9.20.0':
-    hash: 78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1
+    hash: 913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa
     path: patches/@babylonjs__core@9.20.0.patch
 
 importers:
@@ -126,7 +126,7 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.20.0
-        version: 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+        version: 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       '@babylonslate/anim-graph':
         specifier: workspace:*
         version: link:../../packages/anim-graph
@@ -307,7 +307,7 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.20.0
-        version: 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+        version: 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       '@babylonslate/anim-graph':
         specifier: workspace:*
         version: link:../../packages/anim-graph
@@ -578,7 +578,7 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.20.0
-        version: 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+        version: 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       '@babylonjs/havok':
         specifier: 1.3.14
         version: 1.3.14
@@ -597,16 +597,16 @@ importers:
     dependencies:
       '@babylonjs/core':
         specifier: 9.20.0
-        version: 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+        version: 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       '@babylonjs/ktx2decoder':
         specifier: 9.20.0
-        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))
+        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))
       '@babylonjs/loaders':
         specifier: 9.20.0
-        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))(babylonjs-gltf2interface@9.21.2)
+        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)
       '@babylonjs/serializers':
         specifier: 9.20.0
-        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))(babylonjs-gltf2interface@9.21.2)
+        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
@@ -6212,24 +6212,24 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)': {}
+  '@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)': {}
 
   '@babylonjs/havok@1.3.14':
     dependencies:
       '@types/emscripten': 1.41.5
 
-  '@babylonjs/ktx2decoder@9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))':
+  '@babylonjs/ktx2decoder@9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))':
     dependencies:
-      '@babylonjs/core': 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+      '@babylonjs/core': 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
 
-  '@babylonjs/loaders@9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))(babylonjs-gltf2interface@9.21.2)':
+  '@babylonjs/loaders@9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)':
     dependencies:
-      '@babylonjs/core': 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+      '@babylonjs/core': 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       babylonjs-gltf2interface: 9.21.2
 
-  '@babylonjs/serializers@9.20.0(@babylonjs/core@9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1))(babylonjs-gltf2interface@9.21.2)':
+  '@babylonjs/serializers@9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)':
     dependencies:
-      '@babylonjs/core': 9.20.0(patch_hash=78c5e57ba857e093f52f241f213c75b265124a78d44a7190f7250cd202f209e1)
+      '@babylonjs/core': 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
       babylonjs-gltf2interface: 9.21.2
 
   '@base-ui/react@1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
