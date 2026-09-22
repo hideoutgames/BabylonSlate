@@ -517,7 +517,7 @@ export function MaterialEditingProvider({
         status: !renderActionEnabled(previewState) ? "pending"
           : previewState.lastError ? "error"
             : renderCoolingDown && previewState.status === "ready" ? "success" : "idle",
-        message: previewState.lastError ?? undefined,
+        message: renderActionEnabled(previewState) ? previewState.lastError ?? undefined : undefined,
       },
     });
   }, [

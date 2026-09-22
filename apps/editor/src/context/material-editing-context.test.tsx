@@ -372,6 +372,10 @@ describe("MaterialEditingProvider preview isolation", () => {
           await vi.advanceTimersByTimeAsync(1);
         });
         expect(button.hasAttribute("disabled")).toBe(false);
+        if (result === "error") {
+          fireEvent.click(button);
+          expect(screen.getByRole("status").textContent).toBe("Render In Progress");
+        }
       } finally {
         vi.useRealTimers();
       }
