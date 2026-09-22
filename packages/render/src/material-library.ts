@@ -195,14 +195,18 @@ export class MaterialLibrary {
     }
 
     const textures = materialTextureBindings(this.options.acquireTexture);
-    const compiled = compileMaterialPlan(lowered.plan, {
+    let compiled: ReturnType<typeof compileMaterialPlan>;
+    try { compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       particlePreview: this.options.particlePreview,
       logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
-    });
+    }); } catch (error) {
+      textures.dispose();
+      throw error;
+    }
     if (materialCompileFailed(compiled)) {
       textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };

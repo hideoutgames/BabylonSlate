@@ -11,10 +11,13 @@ import { ResourceCache } from "./resource-cache";
 it("keeps a released pending upload pinned until failure, then releases every native wrapper", async () => {
   const { cache, engine } = host();
   let fail: ((message?: string) => void) | undefined;
-  const create = engine.createTexture.bind(engine);
+  const create = NullEngine.prototype.createTexture.bind(engine);
   vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
     fail = args[6] ?? undefined;
-    return create(...args);
+    args[5] = null;
+    const internal = create(...args);
+    internal.isReady = false;
+    return internal;
   });
   const lease = cache.acquireTexture("pending", engine, ktx2());
   const texture = lease.resource;
