@@ -9,6 +9,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   Scene,
+  ShadowGenerator,
   Vector3,
 } from "@babylonjs/core";
 import {
@@ -229,6 +230,8 @@ export async function runShadowSelfShadowingProof(
       await graph.prepare(camera);
       for (const factor of [0.5, 0.75, 1, 1.25]) {
         const generator = light.getShadowGenerator()!;
+        if (!(generator instanceof ShadowGenerator))
+          throw new Error("Slope diagnostic requires a native shadow generator");
         const probe = installSingleMapPcfSlopeProbe(generator, factor);
         try {
           await capture(`${pose}-raster-slope-${factor}`);
