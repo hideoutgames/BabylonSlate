@@ -1,6 +1,7 @@
 import {
   LightBlock,
   PBRMetallicRoughnessBlock,
+  ShaderLanguage,
   type NodeMaterial,
 } from "@babylonjs/core";
 
@@ -37,10 +38,12 @@ export function bindClusteredMaterialVariants(
         index++
       ) {
         if (!defines[`CLUSTLIGHT${index}`]) continue;
-        for (const name of [
-          `lightDataTexture${index}`,
-          `tileMaskTexture${index}`,
-        ]) {
+        const names = [`lightDataTexture${index}`];
+        // WGSL binds the mask via the tileMaskBuffer{X} storage buffer that
+        // lightUboDeclaration emits; only GLSL needs the sampler pair.
+        if (nodeMaterial.shaderLanguage === ShaderLanguage.GLSL)
+          names.push(`tileMaskTexture${index}`);
+        for (const name of names) {
           if (!state.samplers.includes(name)) state.samplers.push(name);
         }
       }

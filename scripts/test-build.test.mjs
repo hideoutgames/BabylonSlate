@@ -34,6 +34,8 @@ async function fixture(t) {
       "source-state.mjs",
       "process-runner.mjs",
       "shared-test-artifacts.mjs",
+      "execution-location.mjs",
+      "worker-arguments.mjs",
     ]) {
       try {
         await cp(join(scripts, script), join(directory, "scripts", script));
@@ -53,7 +55,7 @@ async function fixture(t) {
       join(directory, "scripts/local-resource-config.mjs"),
       `
 export async function readLocalResourceConfig(env = process.env) {
-  return { cacheDirectory: env.CI === 'true' ? null : env.FIXTURE_CACHE || null };
+  return { cacheDirectory: env.FIXTURE_CACHE || null };
 }
 `,
     );
@@ -74,11 +76,12 @@ export async function runStage(profile, command, args, options = {}) {
     return await (await import('./test-build.mjs')).buildOwnedArtifact();
   } finally { process.env = original; }
 }
-export async function runPnpm() {
+export async function runPnpm(profile, args) {
   const dist = join(repoRoot, 'apps/editor/dist');
   await mkdir(join(dist, 'assets'), { recursive: true });
   await mkdir(join(repoRoot, '.cache'), { recursive: true });
   await appendFile(join(repoRoot, '.cache/compilations.log'), 'compile\\n');
+  await appendFile(join(repoRoot, '.cache/build-commands.jsonl'), JSON.stringify(args)+'\\n');
   await writeFile(join(dist, 'index.html'), '<script type="module" src="/assets/main.js"></script>');
   await writeFile(join(dist, 'assets/main.js'), await readFile(join(repoRoot, 'apps/editor/src/main.js')));
   if (process.env.FIXTURE_BUILD_CHANGE)
@@ -123,6 +126,7 @@ try {
         env: {
           ...process.env,
           CI: "false",
+          BL_EXECUTION_POLICY: "local",
           FIXTURE_CACHE: cache,
           ...env,
           FIXTURE_OPTIONS: JSON.stringify(options),
@@ -512,10 +516,21 @@ test("concurrent same-key publishers leave complete independently verifiable art
   assert.equal(await compilations(third), 0);
 });
 
-test("CI and unconfigured machines retain worktree-local artifacts", async (t) => {
+test("hosted CI and explicitly disabled shared caches retain worktree-local artifacts", async (t) => {
   const f = await fixture(t);
   for (const [name, env] of [
-    ["ci", { CI: "true" }],
+    [
+      "ci",
+      {
+        CI: "true",
+        BL_EXECUTION_POLICY: "hosted-ci",
+        GITHUB_ACTIONS: "true",
+        RUNNER_ENVIRONMENT: "github-hosted",
+        GITHUB_RUN_ID: "123",
+        GITHUB_REPOSITORY: "fixture/repo",
+        RUNNER_OS: "Linux",
+      },
+    ],
     ["local", { FIXTURE_CACHE: "" }],
   ]) {
     const directory = await f.worktree(name);
@@ -526,4 +541,18 @@ test("CI and unconfigured machines retain worktree-local artifacts", async (t) =
     );
     assert.equal((await publishedArtifacts(f.cache)).length, 0);
   }
+});
+
+test("local CI assertions cannot opt into unchecked hosted bundle commands", async (t) => {
+  const f = await fixture(t);
+  const local = await f.worktree("local-ci");
+  const result = await f.run(local, { CI: "true", BL_TEST_TYPECHECKED: "1" });
+  assert.equal(result.error, undefined);
+  const commands = (
+    await readFile(join(local, ".cache/build-commands.jsonl"), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(commands, [["--filter", "editor", "build"]]);
 });

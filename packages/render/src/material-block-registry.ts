@@ -17,6 +17,7 @@ import {
   DistanceBlock,
   DivideBlock,
   DotBlock,
+  ElbowBlock,
   FresnelBlock,
   GradientBlock,
   GradientBlockColorStep,
@@ -34,7 +35,6 @@ import {
   PerturbNormalBlock,
   PowBlock,
   ReciprocalBlock,
-  ReflectBlock,
   RefractBlock,
   RemapBlock,
   ScaleBlock,
@@ -63,7 +63,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
-import { customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
+import { componentCount, customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
@@ -240,28 +240,38 @@ function trigonometry(operation: TrigonometryBlockOperations): BlockAdapter {
   };
 }
 
-function conditional(condition: ConditionalBlockConditions): BlockAdapter {
-  return ({ name, operation }) => {
-    const width = operation.resolvedType === "vec2" ? 2 : operation.resolvedType === "vec3" ? 3 : operation.resolvedType === "vec4" ? 4 : 1;
-    if (width > 1) {
-      const a = new VectorSplitterBlock(`${name}_a`);
-      const b = new VectorSplitterBlock(`${name}_b`);
-      const result = new VectorMergerBlock(`${name}_result`);
-      const blocks: NodeMaterialBlock[] = [a, b, result];
-      const axes = ["x", "y", "z", "w"] as const;
-      for (const axis of axes.slice(0, width)) {
-        const part = conditional(condition)({ name: `${name}_${axis}`, operation: { ...operation, resolvedType: "float" }, plumbing: {} });
-        blocks.push(...part.blocks);
-        a[axis].connectTo(part.inputs.a!);
-        b[axis].connectTo(part.inputs.b!);
-        part.outputs.out!.connectTo(result[axis]);
+/** Lift Babylon's scalar-only operations to the graph's resolved numeric width. */
+function componentwise(scalar: BlockAdapter): BlockAdapter {
+  return (context) => {
+    const { name, operation } = context;
+    const width = componentCount(operation.resolvedType);
+    if (width === 1) return scalar(context);
+    const result = new VectorMergerBlock(`${name}_result`);
+    const blocks: NodeMaterialBlock[] = [result];
+    const inputs: BlockRealization["inputs"] = {};
+    const splitters = new Map<string, VectorSplitterBlock>();
+    const axes = ["x", "y", "z", "w"] as const;
+    for (const axis of axes.slice(0, width)) {
+      const part = scalar({ ...context, name: `${name}_${axis}`, operation: { ...operation, resolvedType: "float" } });
+      blocks.push(...part.blocks);
+      for (const [pin, input] of Object.entries(part.inputs)) {
+        let split = splitters.get(pin);
+        if (!split) {
+          split = new VectorSplitterBlock(`${name}_${pin}`);
+          splitters.set(pin, split);
+          blocks.push(split);
+          inputs[pin] = width === 2 ? split.xyIn : width === 3 ? split.xyzIn : split.xyzw;
+        }
+        split[axis].connectTo(input);
       }
-      return {
-        blocks,
-        inputs: { a: width === 2 ? a.xyIn : width === 3 ? a.xyzIn : a.xyzw, b: width === 2 ? b.xyIn : width === 3 ? b.xyzIn : b.xyzw },
-        outputs: { out: width === 2 ? result.xyOut : width === 3 ? result.xyzOut : result.xyzw },
-      };
+      part.outputs.out!.connectTo(result[axis]);
     }
+    return { blocks, inputs, outputs: { out: width === 2 ? result.xyOut : width === 3 ? result.xyzOut : result.xyzw } };
+  };
+}
+
+function conditional(condition: ConditionalBlockConditions): BlockAdapter {
+  return componentwise(({ name }) => {
     const block = new ConditionalBlock(name);
     block.condition = condition;
     const trueValue = constantInput(`${name}_true`, "float", [1]);
@@ -273,8 +283,37 @@ function conditional(condition: ConditionalBlockConditions): BlockAdapter {
       inputs: { a: block.a, b: block.b },
       outputs: { out: block.output },
     };
-  };
+  });
 }
+
+const dotAdapter: BlockAdapter = (context) =>
+  binary(context.operation.resolvedType === "float" ? MultiplyBlock : DotBlock)(context);
+
+/** reflect(I, N) = I - 2 * dot(N, I) * N, preserving every resolved channel. */
+const reflectAdapter: BlockAdapter = (context) => {
+  const { name, operation } = context;
+  const incident = new ElbowBlock(`${name}_incident`);
+  const normal = new ElbowBlock(`${name}_normal`);
+  incident.input.type = normal.input.type = babylonTypeFor(operation.resolvedType);
+  const dot = dotAdapter({ ...context, name: `${name}_dot` });
+  incident.output.connectTo(dot.inputs.a!);
+  normal.output.connectTo(dot.inputs.b!);
+  const twice = new ScaleBlock(`${name}_twice`);
+  const two = constantInput(`${name}_two`, "float", [2]);
+  dot.outputs.out!.connectTo(twice.input);
+  two.output.connectTo(twice.factor);
+  const projected = new ScaleBlock(`${name}_projected`);
+  normal.output.connectTo(projected.input);
+  twice.output.connectTo(projected.factor);
+  const result = new SubtractBlock(name);
+  incident.output.connectTo(result.left);
+  projected.output.connectTo(result.right);
+  return {
+    blocks: [incident, normal, ...dot.blocks, twice, two, projected, result],
+    inputs: { incident: incident.input, normal: normal.input },
+    outputs: { out: result.output },
+  };
+};
 
 /** Babylon has no fwidth block; compose it from the derivative pair. */
 const fwidthAdapter: BlockAdapter = ({ name }) => {
@@ -385,10 +424,11 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "math.asin": trigonometry(TrigonometryBlockOperations.ArcSin),
   "math.acos": trigonometry(TrigonometryBlockOperations.ArcCos),
   "math.atan": trigonometry(TrigonometryBlockOperations.ArcTan),
-  "math.atan2": ({ name }) => {
+  "math.atan2": componentwise(({ name }) => {
     const block = new ArcTan2Block(name);
-    return single(block, { y: block.y, x: block.x }, { out: block.output });
-  },
+    // Babylon names its first atan(y, x) argument `x`.
+    return single(block, { y: block.x, x: block.y }, { out: block.output });
+  }),
   "math.pow": ({ name }) => {
     const block = new PowBlock(name);
     return single(
@@ -419,23 +459,23 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       { out: block.output },
     );
   },
-  "math.step": ({ name }) => {
+  "math.step": componentwise(({ name }) => {
     const block = new StepBlock(name);
     return single(
       block,
       { edge: block.edge, value: block.value },
       { out: block.output },
     );
-  },
-  "math.smoothstep": ({ name }) => {
+  }),
+  "math.smoothstep": componentwise(({ name }) => {
     const block = new SmoothStepBlock(name);
     return single(
       block,
       { edgeA: block.edge0, edgeB: block.edge1, value: block.value },
       { out: block.output },
     );
-  },
-  "math.remap": ({ name }) => {
+  }),
+  "math.remap": componentwise(({ name }) => {
     const block = new RemapBlock(name);
     return single(
       block,
@@ -448,26 +488,29 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       },
       { out: block.output },
     );
-  },
-  "vector.dot": binary(DotBlock),
+  }),
+  "vector.dot": dotAdapter,
   "vector.cross": binary(CrossBlock),
-  "vector.distance": binary(DistanceBlock),
-  "vector.length": ({ name }) => {
+  "vector.distance": (context) => {
+    if (context.operation.resolvedType !== "float") return binary(DistanceBlock)(context);
+    const difference = binary(SubtractBlock)(context);
+    const absolute = trigonometry(TrigonometryBlockOperations.Abs)({ ...context, name: `${context.name}_absolute` });
+    difference.outputs.out!.connectTo(absolute.inputs.value!);
+    return { blocks: [...difference.blocks, ...absolute.blocks], inputs: difference.inputs, outputs: absolute.outputs };
+  },
+  "vector.length": (context) => {
+    if (context.operation.resolvedType === "float") return trigonometry(TrigonometryBlockOperations.Abs)(context);
+    const { name } = context;
     const block = new LengthBlock(name);
     return single(block, { value: block.value }, { out: block.output });
   },
-  "vector.normalize": ({ name }) => {
+  "vector.normalize": (context) => {
+    if (context.operation.resolvedType === "float") return trigonometry(TrigonometryBlockOperations.Sign)(context);
+    const { name } = context;
     const block = new NormalizeBlock(name);
     return single(block, { value: block.input }, { out: block.output });
   },
-  "vector.reflect": ({ name }) => {
-    const block = new ReflectBlock(name);
-    return single(
-      block,
-      { incident: block.incident, normal: block.normal },
-      { out: block.output },
-    );
-  },
+  "vector.reflect": reflectAdapter,
   "vector.refract": ({ name }) => {
     const block = new RefractBlock(name);
     return single(
@@ -490,32 +533,18 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   },
   "vector.mask": ({ name, operation }): BlockRealization => {
     const split = new VectorSplitterBlock(`${name}_split`);
-    const value = operation.resolvedType === "vec2" ? split.xyIn : operation.resolvedType === "vec3" ? split.xyzIn : split.xyzw;
+    const value = split.xyzw;
     const channels = vectorMaskChannels(operation.properties).map((channel) => [split.x, split.y, split.z, split.w][VECTOR_MASK_CHANNELS.indexOf(channel)]!);
     if (channels.length === 1) return { blocks: [split], inputs: { value }, outputs: { out: channels[0]! } };
     const merge = new VectorMergerBlock(`${name}_merge`);
     channels.forEach((channel, index) => channel.connectTo([merge.x, merge.y, merge.z, merge.w][index]!));
     return { blocks: [split, merge], inputs: { value }, outputs: { out: channels.length === 2 ? merge.xyOut : channels.length === 3 ? merge.xyzOut : merge.xyzw } };
   },
-  "vector.split": ({ name, operation }): BlockRealization => {
-    if (operation.resolvedType === "float") {
-      const block = new AddBlock(name);
-      const zero = constantInput(`${name}_zero`, "float", [0]);
-      zero.output.connectTo(block.right);
-      return { blocks: [block, zero], inputs: { value: block.left }, outputs: { x: block.output } };
-    }
+  "vector.split": ({ name }): BlockRealization => {
     const block = new VectorSplitterBlock(name);
-    // VectorSplitter exposes one input per width; pick the one that matches
-    // so a Vector 2 is not offered to a Vector 4 connector.
-    const value =
-      operation.resolvedType === "vec2"
-        ? block.xyIn
-        : operation.resolvedType === "vec3"
-          ? block.xyzIn
-          : block.xyzw;
     return {
       blocks: [block],
-      inputs: { value },
+      inputs: { value: block.xyzw },
       outputs: { x: block.x, y: block.y, z: block.z, w: block.w },
     };
   },

@@ -72,6 +72,8 @@ test("commands preserve arguments without a shell and propagate failure", async 
     { capture: true },
   );
   assert.equal(result.code, 7);
+  assert.equal(result.nativeExitCode, 7);
+  assert.equal(result.signal, null);
   assert.deepEqual(JSON.parse(result.output), [
     "literal $(value)",
     "space and ü",

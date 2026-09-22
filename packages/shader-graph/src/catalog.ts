@@ -459,7 +459,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "vector.mask", title: "VectorMask(R)", category: "Vector", cost: 0,
-    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0, 0, 0, 0] }],
+    inputs: [{ id: "value", name: "Value", type: VEC4, defaultValue: [0, 0, 0, 0] }],
     outputs: [{ id: "out", name: "Out", type: FLOAT }],
   },
   {
@@ -467,7 +467,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
     title: "Split",
     category: "Vector",
     cost: 0,
-    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0] }],
+    inputs: [{ id: "value", name: "Value", type: VEC4, defaultValue: [0, 0, 0, 0] }],
     outputs: [
       { id: "x", name: "X", type: FLOAT },
       { id: "y", name: "Y", type: FLOAT },

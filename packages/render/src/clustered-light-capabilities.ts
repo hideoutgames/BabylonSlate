@@ -1,7 +1,13 @@
 import type { AbstractEngine } from "@babylonjs/core";
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 
 export type ClusteredLightCapabilities =
-  | { supported: true; batchSize: number; maxTextureSize: number }
+  | {
+      supported: true;
+      backend: "webgl2" | "webgpu";
+      batchSize: number;
+      maxTextureSize: number;
+    }
   | { supported: false; reason: string };
 
 const cached = new WeakMap<AbstractEngine, ClusteredLightCapabilities>();
@@ -44,13 +50,18 @@ export function clusteredLightCapabilities(
     });
   }
   let result: ClusteredLightCapabilities;
+  if (engine.isWebGPU) {
+    result = webgpuCapabilities(engine);
+    cached.set(engine, result);
+    return result;
+  }
   try {
     // Pinned adapter: Babylon's public caps omit the context needed for this
-    // numerical probe. WebGPU needs a separate storage-buffer admission path.
+    // numerical probe.
     const gl = (engine as AbstractEngine & { _gl?: WebGL2RenderingContext })
       ._gl;
     const caps = engine.getCaps();
-    if (engine.isWebGPU || !gl?.createVertexArray || !caps.texelFetch)
+    if (!gl?.createVertexArray || !caps.texelFetch)
       throw new Error("Clustered prototype requires WebGL2.");
     if (!caps.colorBufferFloat || !caps.blendFloat)
       throw new Error(
@@ -72,6 +83,7 @@ export function clusteredLightCapabilities(
     probeMask(gl, batchSize);
     result = {
       supported: true,
+      backend: "webgl2",
       batchSize,
       maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
     };
@@ -83,6 +95,48 @@ export function clusteredLightCapabilities(
   }
   cached.set(engine, result);
   return result;
+}
+
+/**
+ * WebGPU masks are exact u32 atomics in a storage buffer, so admission is a
+ * device-limits check instead of the WebGL2 float-blend probe. The storage
+ * buffer spans 64x64 tiles x 4 bytes per u32 word for every admitted batch
+ * (Babylon 9.20's worst case is the full 32-batch budget).
+ */
+function webgpuCapabilities(engine: AbstractEngine): ClusteredLightCapabilities {
+  try {
+    if (!(engine instanceof WebGPUEngine))
+      throw new Error("WebGPU clustered admission requires a WebGPUEngine.");
+    const limits = engine.currentLimits;
+    if ((limits?.maxStorageBuffersPerShaderStage ?? 0) < 1)
+      throw new Error(
+        "WebGPU clustered requires maxStorageBuffersPerShaderStage >= 1.",
+      );
+    if ((limits?.maxStorageBufferBindingSize ?? 0) < 64 * 64 * 32 * 4)
+      throw new Error(
+        "WebGPU clustered requires maxStorageBufferBindingSize >= 524288.",
+      );
+    const fragmentStage = (
+      limits as { maxStorageBuffersInFragmentStage?: number } | undefined
+    )?.maxStorageBuffersInFragmentStage;
+    if (fragmentStage !== undefined && fragmentStage < 1)
+      throw new Error(
+        "WebGPU clustered requires maxStorageBuffersInFragmentStage >= 1.",
+      );
+    return {
+      supported: true,
+      backend: "webgpu",
+      // Pinned to Babylon 9.20: ClusteredLightContainer._GetEngineBatchSize
+      // returns 32 for WebGPU (u32 atomic words, one light per bit).
+      batchSize: 32,
+      maxTextureSize: engine.getCaps().maxTextureSize,
+    };
+  } catch (error) {
+    return {
+      supported: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function probeMask(gl: WebGL2RenderingContext, bits: number): void {

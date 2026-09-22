@@ -28,7 +28,7 @@ import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
-import { markSceneReadinessDirty, prewarmSceneMaterials } from "./scene-perf";
+import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
@@ -650,6 +650,36 @@ describe("Play createEngine view", () => {
     await loaded;
     expect(ready).toBe(true);
     unrelated.dispose();
+  });
+
+  it("fails texture readiness only when the pending set stalls, naming what is still unready", async () => {
+    vi.useFakeTimers();
+    try {
+      const engine = sharedEngine();
+      const { handle } = playHandle(engine);
+      const first = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene, false);
+      first.name = "slow-albedo";
+      const second = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene, false);
+      second.name = "stuck-normal";
+      first.getInternalTexture()!.isReady = false;
+      second.getInternalTexture()!.isReady = false;
+      let outcome: "ready" | Error | null = null;
+      const pending = handle.whenMaterialTexturesReady().then(() => { outcome = "ready"; }, (error: Error) => { outcome = error; });
+      // Progress just before the stall budget keeps the load alive past the total budget.
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS - 100);
+      expect(outcome).toBeNull();
+      first.getInternalTexture()!.isReady = true;
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS - 100);
+      expect(outcome).toBeNull();
+      await vi.advanceTimersByTimeAsync(200);
+      await pending;
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as unknown as Error).message).toBe(
+        'Material textures did not become ready before the loading deadline. Still waiting for 1: texture "stuck-normal".',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {

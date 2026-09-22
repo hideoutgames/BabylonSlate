@@ -273,8 +273,7 @@ export function pinWithDisplayType(
 }
 
 /**
- * Host-supplied connection rule. Material graphs allow a Float to splat into a
- * vector pin, which the default exact-kind rule would reject.
+ * Host-supplied connection rule. Material graphs allow automatic numeric width conversions pin, which the default exact-kind rule would reject.
  */
 export type PinCompatibilityRule = (
   outgoing: SerializedPin,

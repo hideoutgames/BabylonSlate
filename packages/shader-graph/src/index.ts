@@ -76,12 +76,14 @@ export {
 export {
   componentCount,
   conversionFor,
+  convertMaterialValue,
   isNumericType,
   materialTypeLabel,
   resolveGenericType,
   typesAreAssignable,
   MATERIAL_NUMERIC_TYPES,
   type MaterialConversion,
+  type MaterialNumericType,
   type MaterialValueType,
 } from "./types";
 export {

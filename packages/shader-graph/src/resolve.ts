@@ -141,7 +141,7 @@ export function createTypeResolver(
       if (sourceType) connected.push(sourceType);
     }
     inProgress.delete(nodeId);
-    const resolution = resolveGenericType(connected.length === 0 && nodesById.get(nodeId)?.type === "vector.mask" ? ["vec4"] : connected);
+    const resolution = resolveGenericType(connected);
     const value = resolution.ok ? resolution.type : "conflict";
     generics.set(nodeId, value);
     return value;

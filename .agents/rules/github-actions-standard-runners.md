@@ -23,7 +23,7 @@ runs-on: macos-14
 ## Allowed
 
 - Standard GitHub-hosted labels only: `ubuntu-latest`, `windows-latest`, `macos-latest`, and versioned standard images (`ubuntu-24.04`, `macos-14`, …)
-- Self-hosted runners the team already operates (unrelated to GitHub’s larger-runner product)
+- Testing remains on standard GitHub-hosted runners in the public repository. Do not migrate testing to self-hosted hardware or paid services.
 - Keeping existing workflows on `ubuntu-latest` unless a task explicitly needs macOS for iOS/Xcode — still use **standard** `macos-*` only
 
 ## If a job is too slow or OOMs

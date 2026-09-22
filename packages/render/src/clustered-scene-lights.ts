@@ -246,6 +246,7 @@ export class ClusteredSceneLights {
       const batchBytes = clusteredTextureAllocationBytes(
         capability.batchSize,
         1,
+        capability.backend,
       );
       const available = availableManagedLightingBytes(this.scene.getEngine());
       // Native construction allocates one empty batch before a larger replacement.
@@ -310,7 +311,11 @@ export class ClusteredSceneLights {
         this.releaseContainer();
       } else {
         if (!this.container) {
-          const lease = this.reserveTextures(capability.batchSize, 1);
+          const lease = this.reserveTextures(
+            capability.batchSize,
+            1,
+            capability.backend,
+          );
           const fail = beginClusteredAllocation(this.scene, () =>
             lease.release(),
           );
@@ -360,7 +365,11 @@ export class ClusteredSceneLights {
         }
         const batches = Math.ceil(selected.size / capability.batchSize);
         if (batches > this.allocatedBatches) {
-          const lease = this.reserveTextures(capability.batchSize, batches);
+          const lease = this.reserveTextures(
+            capability.batchSize,
+            batches,
+            capability.backend,
+          );
           const fail = beginClusteredAllocation(this.scene, () =>
             lease.release(),
           );
@@ -503,10 +512,11 @@ export class ClusteredSceneLights {
   private reserveTextures(
     batchSize: number,
     batches: number,
+    backend: "webgl2" | "webgpu",
   ): ManagedLightingLease {
     const lease = beginManagedLightingAllocation(
       this.scene.getEngine(),
-      clusteredTextureAllocationBytes(batchSize, batches),
+      clusteredTextureAllocationBytes(batchSize, batches, backend),
     );
     if (!lease)
       throw new Error(
@@ -536,6 +546,9 @@ export class ClusteredSceneLights {
       : this.compareAuthored;
     this.scene.lights.sort(compare);
     for (const mesh of this.scene.meshes) mesh.lightSources.sort(compare);
+    // Frozen materials never re-evaluate their light defines without markDirty(true).
+    for (const material of this.scene.materials)
+      if (material.isFrozen) material.markDirty(true);
     this.orderDirty = false;
   }
 

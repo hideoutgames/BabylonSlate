@@ -19,6 +19,7 @@
     "test:e2e": "node scripts/run-tests.mjs e2e",
     "verify": "node scripts/run-tests.mjs verify",
     "test:tooling": "node scripts/run-tests.mjs tooling",
+    "test:resources": "node scripts/test-resources.mjs",
     "verify:local": "node scripts/verify-local.mjs",
     "test:build": "node scripts/run-tests.mjs build",
     "test:benchmark": "node scripts/benchmark-tests.mjs"

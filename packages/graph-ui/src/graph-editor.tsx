@@ -229,7 +229,7 @@ export interface GraphEditorProps {
     attachmentId: string,
   ) => NestedMenuItem[];
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
-  /** Host connection rule (material Float splat). Defaults to exact kinds. */
+  /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
   /** Struct/enum guid → display name for on-node type fields. */
   pinTypeNames?: PinTypeNames;

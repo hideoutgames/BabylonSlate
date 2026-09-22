@@ -1,6 +1,67 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { partitionTests, reportEntries } from "./browser-partition.mjs";
+import { workerArguments } from "./worker-arguments.mjs";
+
+test("CI partition discovery preserves resolved worker limits without permitting test filters", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "browser-partition-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "scripts"));
+  for (const file of ["browser-partition.mjs", "process-runner.mjs"])
+    await cp(new URL(file, import.meta.url), join(root, "scripts", file));
+  const cli = join(root, "node_modules/@playwright/test");
+  await mkdir(cli, { recursive: true });
+  await writeFile(join(cli, "package.json"), '{"name":"@playwright/test"}');
+  const report = {
+    suites: [
+      {
+        title: "selected.spec.ts",
+        specs: [
+          {
+            title: "executes",
+            file: "selected.spec.ts",
+            tests: [{ projectName: "desktop" }],
+          },
+        ],
+      },
+    ],
+  };
+  // Replace only Playwright discovery, keeping command launch and manifest I/O real.
+  await writeFile(
+    join(cli, "cli.js"),
+    `console.log(${JSON.stringify(JSON.stringify(report))});`,
+  );
+  await writeFile(join(root, "scripts/browser-timings.json"), '{"tests":{}}');
+  const { browserPartitionArgs } = await import(
+    pathToFileURL(join(root, "scripts/browser-partition.mjs"))
+  );
+  const args = workerArguments(
+    ["--partition=1/1"],
+    { browserWorkers: 1, retries: 2 },
+    "browser",
+  );
+  const selected = await browserPartitionArgs(args);
+  assert.equal(selected[0], "--test-list");
+  assert.equal(
+    await readFile(selected[1], "utf8"),
+    "[desktop] > selected.spec.ts > executes\n",
+  );
+  assert.deepEqual(selected.slice(2), ["--workers=1", "--retries=2"]);
+  for (const filter of [
+    "other.spec.ts",
+    "--grep=other",
+    "--project=tablet",
+    "--partition=1/2",
+  ])
+    await assert.rejects(
+      browserPartitionArgs([...args, filter]),
+      /cannot be combined with filters/,
+    );
+});
 
 test("partitions preserve every device execution exactly once and keep groups together", () => {
   const entries = [

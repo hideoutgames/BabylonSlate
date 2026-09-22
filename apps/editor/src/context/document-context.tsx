@@ -97,6 +97,7 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { getSessionLiveness } from "../lib/session-liveness";
 import {
   afterMutatingApply,
   isMutatingApplyBlocked,
@@ -769,6 +770,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
+  const livenessGuid = projectService.guid;
+  const livenessName = projectDocument?.metadata.name ?? null;
+  useEffect(() => {
+    getSessionLiveness()?.setProject(
+      livenessGuid
+        ? { guid: livenessGuid, name: livenessName ?? livenessGuid }
+        : null,
+    );
+  }, [livenessGuid, livenessName]);
   const [registryVersion, setRegistryVersion] = useState(0);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
