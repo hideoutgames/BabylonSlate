@@ -1,9 +1,9 @@
-import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
+import { Mesh, NullEngine, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
 import { encodeTriangleGlb } from "./model-mesh";
-import { createSnapshotSceneBinding } from "./snapshot-apply";
+import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
 import { visualMeshes } from "./visual-meshes";
@@ -37,14 +37,35 @@ describe("visual generation ownership", () => {
     const nextRoot = createModelActorRoot(scene, "next");
     await beginSlotModelAnimLoad(scene, binding, 0, "model", firstBytes, oldRoot);
     const oldMesh = visualMeshes(oldRoot)[0]!;
-    const oldGeometry = oldMesh.geometry;
+    expect(oldMesh).toBeInstanceOf(Mesh);
+    const oldGeometry = (oldMesh as Mesh).geometry;
     await beginSlotModelAnimLoad(scene, binding, 1, "model", secondBytes, nextRoot);
     expect(visualMeshes(nextRoot)[0]!.getVerticesData(VertexBuffer.PositionKind)![3]).toBe(2);
     expect(oldMesh.isDisposed()).toBe(false);
-    expect(oldMesh.geometry).toBe(oldGeometry);
+    expect((oldMesh as Mesh).geometry).toBe(oldGeometry);
     expect(oldMesh.getVerticesData(VertexBuffer.PositionKind)![3]).toBe(1);
     nextRoot.dispose();
     expect(oldMesh.getVerticesData(VertexBuffer.PositionKind)![3]).toBe(1);
+  });
+
+  it("retires original model clone materials after a borrowed material overrides them", async () => {
+    const { scene } = host();
+    const binding = createSnapshotSceneBinding();
+    const bytes = encodeTriangleGlb();
+    const borrowed = new StandardMaterial("library-owned", scene);
+    const cycle = async () => {
+      const root = createModelActorRoot(scene, "model");
+      binding.meshes.set(0, root);
+      await beginSlotModelAnimLoad(scene, binding, 0, "model", bytes, root);
+      for (const mesh of visualMeshes(root)) mesh.material = borrowed;
+      retirePlaySlot(binding, 0);
+    };
+    await cycle();
+    const warmed = scene.materials.length;
+    for (let index = 0; index < 200; index += 1) await cycle();
+    expect(scene.materials).toContain(borrowed);
+    expect(scene.materials).toHaveLength(warmed);
+    expect(scene.meshes).toHaveLength(0);
   });
 
   it("retires generated text construction materials in a persistent scene", () => {
