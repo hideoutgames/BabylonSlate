@@ -1,11 +1,11 @@
 import { installAssetBytes } from "@babylonslate/assets";
-import { Mesh, NullEngine, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Animation, AnimationGroup, FreeCamera, Mesh, NullEngine, PBRMaterial, RawTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import { parseText2DProperties } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
 import * as modelContainer from "./model-container";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
@@ -111,6 +111,38 @@ describe("visual generation ownership", () => {
     expect(visualMeshes(root)).toHaveLength(1);
   }, 60_000);
 
+  it("keeps a shared source texture animation on every independent material clone", async () => {
+    const { scene } = host();
+    new FreeCamera("camera", new Vector3(0, 0, -3), scene);
+    const original = modelContainer.loadModelContainer;
+    let shared!: RawTexture;
+    vi.spyOn(modelContainer, "loadModelContainer").mockImplementationOnce(async (...args) => {
+      const container = await original(...args);
+      shared = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+      container.textures.push(shared);
+      for (const material of container.materials) if (material instanceof PBRMaterial) material.albedoTexture = shared;
+      const group = new AnimationGroup("Texture", scene);
+      const animation = new Animation("offset", "uOffset", 60, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
+      animation.setKeys([{ frame: 0, value: 0 }, { frame: 60, value: 1 }]);
+      group.addTargetedAnimation(animation, shared);
+      container.animationGroups.push(group);
+      scene.removeAnimationGroup(group);
+      return container;
+    });
+    const root = createModelActorRoot(scene, "model");
+    const binding = createSnapshotSceneBinding();
+    await beginSlotModelAnimLoad(scene, binding, 0, "model", installAssetBytes(encodeUvHierarchyGlb({ separateMaterials: true })), root);
+    const textures = visualMeshes(root).map((mesh) => (mesh.material as PBRMaterial).albedoTexture!);
+    expect(textures).toHaveLength(2);
+    expect(textures[0]).not.toBe(textures[1]);
+    const group = binding.slotAnimationGroups!.get(0)![0]!;
+    group.goToFrame(30);
+    group.setWeightForAllAnimatables?.(1);
+    scene.render();
+    for (const texture of textures) expect((texture as RawTexture).uOffset).toBeCloseTo(0.5);
+    expect(shared.uOffset).toBe(0);
+  });
+
   it("preserves a usable Play primitive when model replacement loading fails", async () => {
     const { scene } = host();
     const binding = createSnapshotSceneBinding();
@@ -150,7 +182,7 @@ describe("visual generation ownership", () => {
   it("retires generated text construction materials in a persistent scene", () => {
     const { scene } = host();
     const cycle = () => createText2DMesh(scene, "text", {
-      text: "A <u>B</u>", size: 24, renderer: "bitmap",
+      text: "[wave=2]A [u]B[/u]", size: 24, renderer: "bitmap",
     }, undefined, { rich: true }).dispose();
     cycle();
     const warmed = { materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length };
