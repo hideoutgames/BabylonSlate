@@ -13,6 +13,17 @@ CEL alpha-cutout silhouettes. At `1e64c251`, the three changed TypeScript files
 passed scoped lint and the editor typecheck passed. Browser verification and a
 hands-on rerun are pending. [Actual failed scene](../assets/renderer-qualification/2026-09-22-computer-use-cel/native-cel-load-failure.png).
 
+At `0dc42902`, both geometry API cases (including native CEL coverage) and both
+compiled Scalability Play cases passed. The eight selected area-light/export
+cases produced seven passes and one failure: loose WebGPU settings export did
+not present its first frame. The isolated `cfe71bbe` rerun reproduced that failure;
+browser error messages were empty and the player had already stopped. Export
+qualification now captures the existing session shutdown diagnostics through
+the test-build handle, including failures that stop before boot completion.
+The seven passes cover area-light authoring/history/reopen, both prepared-emission
+exports, both native/graph receiver cases, packed WebGL2 settings export and the
+separate injected WebGPU-failure fallback. They do not certify loose WebGPU output.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

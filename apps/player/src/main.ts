@@ -224,6 +224,7 @@ async function launchLoaded(
       renderTasks: () => session.renderTasks(),
       setRenderSettings: (settings) => session.setRenderSettings(settings),
       executeConsoleCommand: (line) => session.executeConsoleCommand(line),
+      stop: () => session.stop(),
     };
   }
   if (window.parent !== window) {

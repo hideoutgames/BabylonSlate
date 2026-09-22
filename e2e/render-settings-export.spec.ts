@@ -206,6 +206,9 @@ for (const variant of [
       await testInfo.attach("standalone-final-diagnostics", {
         body: JSON.stringify({ errors, rendererMessages,
           state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
+          shutdown: await page.evaluate(() =>
+            (window as unknown as { __babylonslatePlayerTest: PlayerTestHandle }).__babylonslatePlayerTest.stop()
+          ).catch((error: unknown) => ({ unavailable: String(error) })),
           evidence: renderingEvidence("e2e/render-settings-export.spec.ts"),
         }), contentType: "application/json",
       });

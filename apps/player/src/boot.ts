@@ -111,7 +111,7 @@ export type PlayerBootHandle = {
 /** Browser qualification surface installed only in test-mode player builds. */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
   "visuals" | "meshMaterialNames" | "rendering" | "bakedSession" |
-  "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability"
+  "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 >;
 
 export type PlayerBootOptions = {
