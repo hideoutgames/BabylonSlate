@@ -89,14 +89,18 @@ describe("ProjectService plugin roots", () => {
     const base = createDefaultPluginSettings({ pluginGuid: "base", displayName: "Base" });
     base.version = "2.7";
     const settings = createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" });
+    settings.version = "0.1";
     settings.engineVersion = "older";
     settings.pluginDependencies = [{ guid: "base", version: "0.1" }];
     await writeProjectPlugin(storage, "base", base);
     await writeProjectPlugin(storage, "pack", settings);
     await service.remountRegistry();
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, displayName: "Renamed" });
-    expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ engineVersion: "older", pluginDependencies: [{ guid: "base", version: "0.1" }] });
-    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, version: "0.2" });
+    const opened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
+    expect(opened).toMatchObject({ version: "0.1", engineVersion: "older" });
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...opened, displayName: "Renamed" });
+    expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.1", engineVersion: "older", pluginDependencies: [{ guid: "base", version: "0.1" }] });
+    const reopened = await service.loadDocument("plugin-settings", "plugins/pack/pack.plugin.babasset");
+    await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...reopened, version: "0.2" });
     expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.2", engineVersion: ENGINE_VERSION, pluginDependencies: [{ guid: "base", version: "2.7" }] });
   });
 

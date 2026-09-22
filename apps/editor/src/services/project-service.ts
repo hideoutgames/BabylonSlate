@@ -1418,6 +1418,8 @@ export class ProjectService {
     if (migrated.pending) {
       this.migrationPending.push(migrated.pending);
     }
+    // PluginSettings.version is an author label, separate from the asset header schema version.
+    if (raw.type === "PluginSettings") return migrated.payload;
     const { version: _v, ...content } = migrated.payload as Record<
       string,
       unknown

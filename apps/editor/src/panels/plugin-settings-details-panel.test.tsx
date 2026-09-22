@@ -101,9 +101,11 @@ describe("Plugin Settings Details", () => {
   });
 
   it("preserves imported compatibility while editing identity without version-range fields", async () => {
+    harness.content.version = "0.1";
     harness.content.engineVersion = "0.0.0";
     render(<PluginSettingsDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByLabelText("Engine Version Range")).toBeNull();
+    expect((screen.getByLabelText("Version") as HTMLInputElement).value).toBe("0.1");
     fireEvent.change(screen.getByLabelText("Version"), { target: { value: "2.7" } });
     expect(harness.content.version).toBe("2.7");
 
