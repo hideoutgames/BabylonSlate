@@ -4,6 +4,7 @@ import type { CommandMessage } from "./channels";
 export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
   "setAreaLights",
+  "setActorOutlines",
   "assignMaterial",
   "attachToBone",
   "setMaterialParameter",

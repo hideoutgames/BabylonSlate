@@ -67,6 +67,27 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
       ]),
     ],
   };
+  // Both snapshots must expose a graph-native Color, not an RGB tuple.
+  for (const [index, id] of ["payload", "readback"].entries()) {
+    const chain = [
+      ["snapshot", "ScalabilitySnapshot", "effective", "RuntimeRenderingSettings"],
+      ["runtime", "RuntimeRenderingSettings", "render", "RenderSettings"],
+      ["render", "RenderSettings", "cel", "CelShading"],
+      ["cel", "CelShading", "outlineColor", "color"],
+    ] as const;
+    for (const [part, guid, field, type] of chain) observer.nodes.push({ id: `${id}-${part}-color`, type: "struct.break", data: { structGuid: `engine:${guid}`, fields: [{ name: field, typeId: type === "color" ? "color" : "struct", ...(type === "color" ? {} : { typeClassId: `engine:${type}` }) }] }, position: { x: 200, y: 500 + index * 200 } });
+    observer.nodes.push(
+      { id: `${id}-rgba`, type: "struct.breakColor", data: {}, position: { x: 500, y: 500 + index * 200 } },
+      { id: `${id}-red-text`, type: "literal.toStringFloat", data: {}, position: { x: 700, y: 500 + index * 200 } },
+      { id: `${id}-log-color`, type: "debug.log", data: {}, position: { x: 900, y: 500 + index * 200 } },
+    );
+    const links = [[id === "payload" ? "changed" : "read", "settings", `${id}-snapshot-color`, "in"],
+      ...chain.slice(1).map(([part], i) => [`${id}-${chain[i]![0]}-color`, chain[i]![2], `${id}-${part}-color`, "in"]),
+      [`${id}-cel-color`, "outlineColor", `${id}-rgba`, "in"], [`${id}-rgba`, "r", `${id}-red-text`, "in"],
+      [`${id}-red-text`, "out", `${id}-log-color`, "message"],
+      [index === 0 ? "logRead" : "payload-log-color", "execOut", `${id}-log-color`, "execIn"]];
+    for (const [link, [source, sourceHandle, target, targetHandle]] of links.entries()) observer.edges.push({ id: `${id}-color-${link}`, source: source!, sourceHandle: sourceHandle!, target: target!, targetHandle: targetHandle! });
+  }
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000002", type: "Class", name: "Main", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "Actor" }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
@@ -94,6 +115,10 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   expect(custom.tasks.some((name) => /FXAA/.test(name))).toBe(false);
   const transcript = page.getByTestId("debug-console-transcript");
   await expect(transcript.getByText(`[log] ${custom.scalability!.revision}`, { exact: true })).toHaveCount(2);
+  expect(custom.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
+  await expect(transcript.getByText("[log] 0.1875", { exact: true })).toHaveCount(2);
+  await command("qual_outline_roundtrip");
+  expect((await read(page)).scalability?.revision).toBe(custom.scalability!.revision);
   await command("qual_invalid");
   await command("qual_aa");
   await expect.poll(async () => (await read(page)).tasks.some((name) => /FXAA/.test(name))).toBe(true);

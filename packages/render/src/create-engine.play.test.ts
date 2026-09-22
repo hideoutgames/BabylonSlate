@@ -10,6 +10,7 @@ import {
 import {
   createActor,
   areaRectLightBindings,
+  outlineBindings,
   createDefaultScene,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
@@ -29,6 +30,7 @@ import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import { SnapshotInterpolator } from "./snapshot-sync";
@@ -3114,6 +3116,40 @@ describe("Play createEngine view", () => {
     expect(light.isEnabled()).toBe(true);
     handle.applyCommand({ type: "setAreaLights", slotId: 4, lights: [] });
     expect(handle.scene.getLightByName(light.name)).toBeNull();
+  });
+
+  it("hydrates outline commands before meshes arrive and retains actor styles across visual replacement until despawn", () => {
+    const attach = SceneRenderCoordinator.prototype.attachSharedOutline;
+    let view: SharedOutlineView | undefined;
+    const observing = vi.spyOn(SceneRenderCoordinator.prototype, "attachSharedOutline").mockImplementation(function (this: SceneRenderCoordinator, value: SharedOutlineView) {
+      view = value; return attach.call(this, value);
+    });
+    try {
+      const { handle } = playHandle(sharedEngine());
+      const outlines = outlineBindings("hero", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 3 } }]);
+      handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero", outlines });
+      expect(view!.active).toBe(false);
+      const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" };
+      handle.applyCommand(assign);
+      const previous = view!.contributions.get("component:hero:ink")!.targets[0]!.meshes[0]!;
+      handle.applyCommand({ ...assign, meshKind: "sphere" });
+      const replacement = view!.contributions.get("component:hero:ink")!;
+      expect(previous.isDisposed()).toBe(true);
+      expect(replacement.targets[0]!.meshes[0]).not.toBe(previous);
+      expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
+      expect(view!.contributions.has("selection")).toBe(false);
+      handle.applyCommand({ type: "setActorOutlines", slotId: 5, actorId: "child", outlines: outlineBindings("child", [{ id: "ink", classId: "OutlineComponent", properties: {} }]) });
+      handle.applyCommand({ ...assign, slotId: 5, actorGuid: "child" });
+      const child = view!.contributions.get("component:child:ink")!.targets[0]!.meshes[0]!;
+      child.parent = replacement.targets[0]!.meshes[0]!;
+      handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero", outlines });
+      expect(view!.contributions.get("component:hero:ink")!.targets[0]!.meshes).not.toContain(child);
+      child.parent = null;
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "hero" });
+      expect(view!.contributions.has("component:child:ink")).toBe(true);
+      handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "child" });
+      expect(view!.active).toBe(false);
+    } finally { observing.mockRestore(); }
   });
 
   it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {

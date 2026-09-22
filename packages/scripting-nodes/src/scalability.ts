@@ -10,21 +10,25 @@ function setter(id: string, title: string, description: string, inputs: GraphPin
 }
 function setting(id: string, title: string, description: string, type: string, path: string[]): NodeDefinition {
   return setter(id, title, description, [input("settings", "Settings", structRef(`engine:${type}`))], (ctx) => {
-    const body = path.reduceRight((value, key) => `{ ${key}: ${value} }`, ctx.input("settings"));
+    const settings = type === "CelShading" ? `((s) => ({ ...s, ...(s?.outlineColor === undefined ? {} : { outlineColor: Array.isArray(s.outlineColor) ? s.outlineColor : [s.outlineColor.x, s.outlineColor.y, s.outlineColor.z] }) }))(${ctx.input("settings")})` : ctx.input("settings");
+    const body = path.reduceRight((value, key) => `{ ${key}: ${value} }`, settings);
     return `{ kind: "patch", render: ${body} }`;
   });
 }
+/** Core serializes RGB tuples; graph Color fields use the native x/y/z/w value. */
+const graphSnapshot = (expression: string) => `((s) => { if (!s) return s; const value = (v) => !v ? v : ({ ...v, render: { ...v.render, cel: { ...v.render.cel, outlineColor: ((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(v.render.cel?.outlineColor) } } }); return { ...s, requested: value(s.requested), effective: value(s.effective) }; })(${expression})`;
 export const scalabilityNodes: NodeDefinition[] = [
   { id: "scalability.getEffective", title: "Get Effective Scalability", category: "scalability", pure: true,
     description: "Read requested and last renderer-confirmed settings. Ready is false before the first ready frame; pending or failed requests retain the previous effective values.",
     pins: () => [pin("settings", "Settings", "out", structRef("engine:ScalabilitySnapshot")), pin("ready", "Ready", "out", BOOL),
       pin("requestedBackend", "Requested GPU Backend", "out", enumRef("engine:GpuBackend")), pin("effectiveBackend", "Effective GPU Backend", "out", enumRef("engine:GpuBackend")),
-      pin("fallbackReason", "Fallback Reason", "out", STRING), pin("vignetteColor", "Vignette Color", "out", COLOR)],
-    codegen: () => ({ settings: "ctx.getScalability()", ready: "(ctx.getScalability()?.effective != null)",
+      pin("fallbackReason", "Fallback Reason", "out", STRING), pin("vignetteColor", "Vignette Color", "out", COLOR), pin("outlineColor", "CEL Outline Color", "out", COLOR)],
+    codegen: () => ({ settings: graphSnapshot("ctx.getScalability()"), ready: "(ctx.getScalability()?.effective != null)",
       requestedBackend: "(ctx.getScalability()?.pipeline?.requested.gpuBackend ?? ctx.getScalability()?.requested.render.gpuBackend ?? 'auto')",
       effectiveBackend: "(ctx.getScalability()?.pipeline?.effective.gpuBackend ?? 'auto')",
       fallbackReason: "(ctx.getScalability()?.pipeline?.limits.join(' ' ) ?? '')",
-      vignetteColor: "((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(ctx.getScalability()?.effective?.render.effects?.vignette.color)" }) },
+      vignetteColor: "((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(ctx.getScalability()?.effective?.render.effects?.vignette.color)",
+      outlineColor: "((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(ctx.getScalability()?.effective?.render.cel?.outlineColor)" }) },
   setter("setPreset", "Set Scalability Preset", "Apply a session quality tier. CEL/PBR, outline appearance and artistic effects remain independently authored.",
     [input("preset", "Preset", enumRef("engine:ScalabilityPreset"), "medium")], (ctx) => `{ kind: "preset", preset: ${ctx.input("preset")} }`),
   setter("setRenderScale", "Set Render Scale", "Set fixed render scale (0.25–1). Disables dynamic resolution. Wait for the settings-changed event for effective values.",
@@ -49,11 +53,14 @@ export const scalabilityNodes: NodeDefinition[] = [
   setting("setTextureQuality", "Set Texture Quality", "Set texture LOD bias, anisotropy and the managed byte budget. Device anisotropy limits appear in effective readback.", "TextureQuality", ["quality", "textures"]),
   setting("setPostProcessingQuality", "Set Post Processing Quality", "Scale passes that opt into scalable resolution. Artistic effect enablement remains independent.", "PostProcessingQuality", ["quality", "postprocessing"]),
   setting("setEffects", "Set Rendering Effects", "Configure the supported color pipeline, tone mapping, exposure, bloom, vignette and FXAA for this session.", "RenderEffects", ["effects"]),
-  setting("setCelShading", "Set CEL Shading", "Change CEL banding, specular and light mixing without changing project defaults.", "CelShading", ["cel"]),
+  setting("setCelShading", "Set CEL Shading", "Change CEL banding, specular, light mixing and outlines without changing project defaults.", "CelShading", ["cel"]),
+  setter("setCelOutlines", "Set CEL Outlines", "Set strictly occluded global CEL outlines. Component styles and editor selection remain independent.",
+    [input("enabled", "Enabled", BOOL, true), input("color", "Color", COLOR, { x: 0.03, y: 0.03, z: 0.03, w: 1 }), input("width", "Width", FLOAT, 1)],
+    (ctx) => `{ kind: "patch", render: { cel: { outlinesEnabled: ${ctx.input("enabled")}, outlineColor: [${ctx.input("color")}.x, ${ctx.input("color")}.y, ${ctx.input("color")}.z], outlineWidth: ${ctx.input("width")} } } }`),
   setting("setEnvironmentLighting", "Set Environment Lighting", "Change IBL enablement, intensity, orientation and CEL strength. Environment assets remain authored scene data.", "EnvironmentLighting", ["environmentLighting"]),
   setter("reset", "Reset to Project Defaults", "Clear temporary session overrides. Scene defaults resume inheritance. Persistent player preferences are separate.", [], () => `{ kind: "reset" }`),
   { id: "flow.event.scalabilityChanged", title: "Event Scalability Changed", category: "scalability", pure: true,
     description: "Runs when the renderer confirms or rejects the latest request. Read the result and effective settings; stale completions are ignored.",
     pins: () => [pin("execOut", "Then", "out", EXEC), pin("settings", "Settings", "out", structRef("engine:ScalabilitySnapshot"))],
-    codegen: () => ({ settings: "ctx.args.settings" }) },
+    codegen: () => ({ settings: graphSnapshot("ctx.args.settings") }) },
 ];

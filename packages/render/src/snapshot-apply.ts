@@ -105,6 +105,9 @@ export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
+  /** Runtime component records outlive asynchronous mesh realization. */
+  outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
+  onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
   boneAttachments: Map<number, BoneAttachment>;
@@ -195,6 +198,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
+    outlines: new Map(),
     meshes: new Map(),
     boneAttachments: new Map(),
     lights: new Map(),
@@ -637,6 +641,7 @@ export function applyAssignMesh(
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
+  binding.onVisualChanged?.(command.slotId);
 }
 
 /** Rebuild a Play mesh in `scene` when it was created on the wrong host Scene. */
@@ -672,6 +677,7 @@ export function migratePlaySlotVisual(
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, visible);
+  binding.onVisualChanged?.(slotId);
   return rebuilt;
 }
 
@@ -842,6 +848,7 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  binding.outlines.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
   retireBoneAttachments(binding, slotId);
@@ -884,11 +891,13 @@ export function retirePlaySlot(
   if (binding.possessedCameraSlotId === slotId) {
     binding.possessedCameraSlotId = null;
   }
+  binding.onVisualChanged?.(slotId);
 }
 
 /** Drop world Play visuals/cameras; overlay compositor slots stay. */
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
+    ...binding.outlines.keys(),
     ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
@@ -1092,7 +1101,7 @@ export function createPlayMesh(
         assetGuid,
         bytes,
         root,
-        () => applyLoadedModelMaterials(binding, slotId, assetGuid, root),
+        () => { applyLoadedModelMaterials(binding, slotId, assetGuid, root); binding.onVisualChanged?.(slotId); },
       );
     }
     return finishPlayWorldMesh(root);
@@ -1232,6 +1241,7 @@ export function applySnapshotToScene(
         mesh = createPlayVisual(hostScene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
+        binding.onVisualChanged?.(actor.slotId);
       }
       if (wantsOverlay) {
         disposeWorldOverlayLeftovers(scene, actor.slotId);
@@ -1320,6 +1330,8 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.outlines.clear();
+  binding.onVisualChanged = undefined;
   binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {

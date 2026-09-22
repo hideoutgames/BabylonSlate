@@ -14,7 +14,13 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     })) };
     return { name, graph };
   };
+  const outlineRoundtrip = graphCommand("qual_outline_roundtrip", [["scalability.setCelOutlines", { enabled: true, width: 4 }]]);
+  outlineRoundtrip.graph.nodes.push({ id: "read", typeId: "scalability.getEffective", properties: {}, position: { x: 0, y: 160 }, pins: registry.get("scalability.getEffective")!.pins({}) });
+  outlineRoundtrip.graph.edges.push({ id: "outline-color", sourceNodeId: "read", sourcePinId: "outlineColor", targetNodeId: "node-1", targetPinId: "color" });
   return [
+    graphCommand("qual_outlines", [["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
+    graphCommand("qual_outlines_off", [["scalability.setCelOutlines", { enabled: false, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
+    outlineRoundtrip,
     graphCommand("qual_pbr", [["scalability.setRenderMode", { mode: "pbr" }]]),
     graphCommand("qual_cel", [["scalability.setRenderMode", { mode: "cel" }]]),
     graphCommand("qual_runtime", [["scalability.setFrameCap", { fps: 20 }], ["scalability.setRenderScale", { scale: 0.5 }]]),
@@ -35,6 +41,7 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
       ["scalability.setEffects", { settings: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
       ["scalability.setVignetteColor", { color: { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],
       ["scalability.setCelShading", { settings: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" } }],
+      ["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }],
       ["scalability.setEnvironmentLighting", { settings: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 } }],
     ]),
     ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { preset }]])),

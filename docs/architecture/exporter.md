@@ -53,6 +53,16 @@ Textures: pack `selectTextureChunk`’s chosen variant (KTX2 when present **and*
 
 ## Packed layout (default)
 
+World `OutlineComponent` records travel with normal scene/Class component data
+in both packed and loose exports. Player hydration emits actor-bound outline
+contributions through the runtime bridge, including late model realization and
+spawn/despawn. Normalized `render.cel` defaults include global outline enable,
+RGB color and output-pixel width; scene overrides and session Scalability use
+the same settings contract as Play. Selection, gizmos and editor membership are
+view state and are never exported. Outlines require no extra asset preprocessing.
+The [qualification report](../design/renderer-qualification.md) distinguishes
+implemented wiring from independently served player acceptance.
+
 ```
 index.html          # CSS inlined; itch requires this at zip root
 player.js           # Vite `codeSplitting: false`; workers stay separate files

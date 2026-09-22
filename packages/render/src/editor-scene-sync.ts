@@ -1,4 +1,4 @@
-import { Mesh, type Camera, type Material, type Scene } from "@babylonjs/core";
+import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
 import type {
   SerializedActor,
@@ -44,6 +44,8 @@ import { isTilemapChunkMesh } from "./tilemap-mesh";
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
+  /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
+  freezeActiveMeshes?: boolean;
   resolveMaterial?: (
     guid: string,
     options?: { scene?: Scene; unlit?: boolean },
@@ -75,6 +77,7 @@ export class EditorSceneSync {
     options?: { scene?: Scene; unlit?: boolean },
   ) => Material | null;
   private readonly onAfterApply?: () => void;
+  private readonly freezeActiveMeshes: boolean;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
@@ -103,6 +106,7 @@ export class EditorSceneSync {
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
     this.onAfterApply = options?.onAfterApply;
+    this.freezeActiveMeshes = options?.freezeActiveMeshes !== false;
   }
 
   /** Ordered sorting layers from project settings, back to front. */
@@ -166,7 +170,7 @@ export class EditorSceneSync {
     this.selectedActorIds = new Set(options.selectedActorIds);
     this.selectedComponentIds = new Set(options.selectedComponentIds ?? []);
     if (!this.applyingScene && this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
-      freezeEditorActiveMeshes(this.scene);
+      this.freezeActiveQueue();
       this.scheduler?.invalidate("selection");
     }
   }
@@ -333,7 +337,7 @@ export class EditorSceneSync {
     this.assetsNeedRebuild = false;
     this.onAfterApply?.();
     if (generation !== this.applyGeneration) return;
-    freezeEditorActiveMeshes(this.scene);
+    this.freezeActiveQueue();
     this.applyingScene = null;
     this.materialsRefreshable = true;
     this.scheduler?.invalidate("asset");
@@ -352,7 +356,7 @@ export class EditorSceneSync {
     unfreezeEditorActiveMeshes(this.scene);
     for (const _progress of this.materialRefreshSteps(this.lastScene)) void _progress;
     this.onAfterApply?.();
-    freezeEditorActiveMeshes(this.scene);
+    this.freezeActiveQueue();
     this.scheduler?.invalidate("asset");
   }
 
@@ -366,6 +370,10 @@ export class EditorSceneSync {
       }
       yield 0.99;
     }
+  }
+
+  private freezeActiveQueue(): void {
+    if (this.freezeActiveMeshes) freezeEditorActiveMeshes(this.scene);
   }
 
   serializedScene(): SerializedScene | null {
@@ -385,16 +393,23 @@ export class EditorSceneSync {
       ? visualForMeshComponent(root, actorId, componentId) : null;
   }
 
-  visualMeshesForActor(actorId: string): Mesh[] {
+  visualMeshesForActor(actorId: string): AbstractMesh[] {
     const mesh = this.meshes.get(actorId);
     if (!mesh) return [];
     const roots = visualMeshesOfActorRoot(mesh);
-    const drawn: Mesh[] = [];
+    const drawn: AbstractMesh[] = [];
     for (const root of roots) {
       if (isColliderVisualMesh(root)) continue;
-      const parts = visualMeshes(root).filter(
-        (part): part is Mesh => part instanceof Mesh,
-      );
+      const parts = visualMeshes(root).filter((part) => {
+        // A child actor has its own authored identity even when its transform
+        // parent is this actor. Imported model parts retain their actor root.
+        for (let node: Node | null = part; node && node !== mesh; node = node.parent) {
+          if (!(node instanceof Mesh)) continue;
+          const owner = this.actorForMesh(node.name);
+          if (owner && owner !== actorId && this.meshes.get(owner) === node) return false;
+        }
+        return true;
+      });
       if (parts.length > 0) {
         drawn.push(...parts);
         continue;
@@ -466,7 +481,7 @@ export class EditorSceneSync {
     }
     this.syncCollisionVisibility(sceneData);
     // New and newly revealed dashes must enter the frozen active mesh list.
-    freezeEditorActiveMeshes(this.scene);
+    this.freezeActiveQueue();
     this.scheduler?.invalidate("asset");
   }
 
@@ -587,7 +602,7 @@ export class EditorSceneSync {
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
         if (!this.applyingScene) {
-          freezeEditorActiveMeshes(this.scene);
+          this.freezeActiveQueue();
           this.scheduler?.invalidate("asset");
           this.onAfterApply?.();
         }

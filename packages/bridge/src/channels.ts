@@ -291,6 +291,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {

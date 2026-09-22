@@ -10,6 +10,15 @@ The Project node category exposes pure string getters **Get Project Name** (`pro
 
 ## Package boundaries
 
+The **Scalability** category uses typed session transactions for Play and players.
+**Set CEL Outlines** changes global enable, Color and Width through that service;
+**Set CEL** also includes these appearance fields. **Get Effective Scalability**
+and the changed event expose the renderer-confirmed CEL values using native
+Graph Color `{x,y,z,w}` (RGB drives outline appearance). Runtime changes do not
+rewrite project defaults, survive scene transitions, and reset through **Reset
+to Project Defaults** or a new session. Outline component property setters keep
+actor ownership separate from global settings and do not rebuild mesh assets.
+
 | Package | Owns | Must not import |
 | --- | --- | --- |
 | `scripting` | Graph IR, pin type system, type context, pure validator + rule hook, deterministic JS codegen + anchor table | React, Babylon, Capacitor |

@@ -58,6 +58,7 @@ describe("script compiler service", () => {
             },
             { id: "pivot", classId: "ActorComponent", properties: {} },
             { id: "emitter", classId: "AreaRectLightComponent", parentId: "pivot", properties: { width: 2, textureGuid: "pattern" } },
+            { id: "ink", classId: "OutlineComponent", properties: { color: [0.2, 0.4, 0.6], width: 3, throughMeshes: true } },
           ],
         },
       },
@@ -80,7 +81,7 @@ describe("script compiler service", () => {
       const actor = runtime.spawnScriptedActor({ classId: "Child" })!;
       const sibling = runtime.spawnScriptedActor({ classId: "Child" })!;
       expect(actor.components.map((component) => component.classId)).toEqual([
-        "MeshComponent", "ActorComponent", "AreaRectLightComponent",
+        "MeshComponent", "ActorComponent", "AreaRectLightComponent", "OutlineComponent",
       ]);
       const latest = new Map(commands.filter((command) => command.type === "setAreaLights").map((command) => [command.slotId, command.lights]));
       expect(latest.size).toBe(2);
@@ -92,12 +93,17 @@ describe("script compiler service", () => {
         expect(lights[0]!.error).toBeUndefined();
       }
       expect(groups[0]![0]!.id).not.toBe(groups[1]![0]!.id);
+      const outlines = new Map(commands.filter((command) => command.type === "setActorOutlines").map((command) => [command.actorId, command.outlines]));
+      expect([...outlines.keys()].sort()).toEqual([actor.guid, sibling.guid].sort());
+      for (const values of outlines.values()) expect(values).toMatchObject([{ enabled: true, color: [0.2, 0.4, 0.6], width: 3, throughMeshes: true }]);
+      expect(outlines.get(actor.guid)![0]!.id).not.toBe(outlines.get(sibling.guid)![0]!.id);
       runtime.getWorld().destroyActor(actor.guid);
       runtime.tick();
       expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).toContain(actor.guid);
       expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).not.toContain(sibling.guid);
       expect(runtime.getWorld().findActor(sibling.guid)).toBe(sibling);
       expect(sibling.components.find((component) => component.sourceId === "emitter")?.getVariable("width")).toBe(2);
+      expect(sibling.components.find((component) => component.sourceId === "ink")?.getVariable("width")).toBe(3);
     } finally {
       runtime.stop();
     }

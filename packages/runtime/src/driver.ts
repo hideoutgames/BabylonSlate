@@ -1,5 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
-import { areaRectLightBindings } from "@babylonslate/core";
+import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -439,6 +439,7 @@ class InProcessRuntime implements RuntimeDriver {
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
+  private outlineSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -1031,7 +1032,8 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
-          this.emitMeshAssignment(owner, slotId);
+          if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          else this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
@@ -3560,7 +3562,21 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
+  private emitActorOutlines(actor: Actor, slotId: number): void {
+    const components = actor.components.filter((component) => !component.destroyed && component.classId === "OutlineComponent");
+    if (components.length || this.outlineSlots.has(slotId)) {
+      const outlines = outlineBindings(actor.guid, components.map((component) => ({
+        id: component.guid, classId: component.classId,
+        properties: Object.fromEntries(["enabled", "color", "width", "throughMeshes"].map((key) =>
+          [key, key === "color" && component.getVariable(key) != null ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])),
+      })));
+      this.emit({ type: "setActorOutlines", slotId, actorId: actor.guid, outlines });
+      if (outlines.length) this.outlineSlots.add(slotId); else this.outlineSlots.delete(slotId);
+    }
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
+    this.emitActorOutlines(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
     const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
@@ -4249,6 +4265,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     this.areaLightSlots.delete(slotId);
+    this.outlineSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);

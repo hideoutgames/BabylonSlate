@@ -24,6 +24,17 @@ const pixels = async (page: Page) =>
     style: "#player-hud { visibility: hidden !important; }",
   })).toString("base64");
 
+// Decode the actual presented screenshot, not the transient GPU canvas buffer.
+const magentaPixels = (page: Page, captured: string) => page.evaluate(async (base64) => {
+  const image = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))], { type: "image/png" }));
+  const canvas = new OffscreenCanvas(image.width, image.height), context = canvas.getContext("2d")!;
+  context.drawImage(image, 0, 0); image.close();
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let count = 0;
+  for (let index = 0; index < data.length; index += 4) if (data[index]! > 170 && data[index + 1]! < 100 && data[index + 2]! > 170) count++;
+  return count;
+}, captured);
+
 for (const variant of [
   { mode: "packed", backend: "webgl2", fail: false },
   { mode: "loose", backend: "webgpu", fail: false },
@@ -56,6 +67,9 @@ for (const variant of [
         // allocations. Dedicated shadow fixtures own actual caster coverage.
         for (const actor of scene.actors) for (const component of actor.components)
           if (component.classId === "LightComponent") component.properties.castShadows = false;
+        // Serialized authored state reaches runtime hydration in both packed
+        // and loose players; only this actor receives the magenta style.
+        scene.actors.find((actor) => actor.id === "material-actor")!.components.push({ id: "authored-ink", classId: "OutlineComponent", properties: { enabled: true, color: [1, 0, 1], width: 4, throughMeshes: false } });
         if (guid === "second") {
           scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
           scene.settings.celShading = { shadowBands: 7 };
@@ -106,6 +120,19 @@ for (const variant of [
       expect(await command(page, "qual_cel")).toMatchObject({ success: true });
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("cel");
       await expect.poll(async () => await pixels(page) === celPixels).toBe(true);
+      expect(await command(page, "qual_outlines_off")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlinesEnabled).toBe(false);
+      const componentOnly = await pixels(page);
+      expect(componentOnly).not.toBe(celPixels);
+      expect(await magentaPixels(page, componentOnly)).toBeGreaterThan(8);
+      await testInfo.attach("authored-component-only", { body: Buffer.from(componentOnly, "base64"), contentType: "image/png" });
+      expect(await command(page, "qual_outlines")).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlineWidth).toBe(4);
+      await expect.poll(async () => await pixels(page) !== componentOnly).toBe(true);
+      const outlined = await read(page);
+      expect(outlined.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
+      expect(await command(page, "qual_outline_roundtrip")).toMatchObject({ success: true });
+      expect((await read(page)).scalability?.revision).toBe(outlined.scalability?.revision);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
       const changed = await ready(2);
@@ -114,6 +141,7 @@ for (const variant of [
       expect((await read(page)).scalability?.revision).toBe(changed.scalability?.revision);
       expect(await command(page, "changescene second")).toMatchObject({ success: true });
       const transitioned = await ready(2, "second");
+      expect(transitioned.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
       expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
       expect(boot.scalability?.pipeline?.requested.gpuBackend).toBe(variant.backend);
@@ -130,6 +158,8 @@ for (const variant of [
       expect(await command(page, "qual_reset")).toMatchObject({ success: true });
       const reset = await ready(1.25, "second");
       expect(reset.scalability?.effective?.frameCap).toBe(30);
+      expect(reset.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
+      expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
       if (!variant.fail) {
         for (const preset of ["low", "medium", "high", "ultra"]) {
           expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
@@ -169,6 +199,7 @@ for (const variant of [
       }
       await page.reload();
       await ready(1.25);
+      expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(errors).toEqual([]);
     } finally { await server.close(); }

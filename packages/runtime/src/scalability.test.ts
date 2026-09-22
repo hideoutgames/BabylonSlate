@@ -23,6 +23,36 @@ async function run(graph: LogicGraph) {
   return { runtime, commands, actor };
 }
 describe("compiled Class Graph scalability", () => {
+  it("applies native Color outline controls and round-trips effective CEL through typed structures", async () => {
+    const struct = (id: string, guid: string, name: string, type: string) => node(id, "struct.break", {
+      structGuid: `engine:${guid}`, fields: [{ name, typeId: "struct", typeClassId: `engine:${type}` }],
+    });
+    const { runtime } = await run({ id: "outline-settings", kind: "event", nodes: [
+      node("begin", "flow.event.beginPlay"), node("outline", "scalability.setCelOutlines", { enabled: true, color: { x: 0.2, y: 0.4, z: 0.6, w: 1 }, width: 3 }),
+      node("changed", "flow.event.scalabilityChanged"), node("effective", "scalability.getEffective"),
+      struct("snapshot", "ScalabilitySnapshot", "effective", "RuntimeRenderingSettings"),
+      struct("runtime", "RuntimeRenderingSettings", "render", "RenderSettings"),
+      struct("render", "RenderSettings", "cel", "CelShading"), node("roundtrip", "scalability.setCelShading"),
+      node("color", "struct.break", { structGuid: "engine:CelShading", fields: [{ name: "outlineColor", typeId: "color" }] }),
+      node("colorRoundtrip", "scalability.setCelOutlines", { enabled: true, width: 3 }),
+    ], edges: [edge("begin", "execOut", "outline", "execIn"), edge("changed", "execOut", "roundtrip", "execIn"),
+      edge("effective", "settings", "snapshot", "in"), edge("snapshot", "effective", "runtime", "in"),
+      edge("runtime", "render", "render", "in"), edge("render", "cel", "roundtrip", "settings"),
+      edge("render", "cel", "color", "in"), edge("color", "outlineColor", "colorRoundtrip", "color"),
+      edge("roundtrip", "execOut", "colorRoundtrip", "execIn")] });
+    try {
+      const snapshot = runtime.getScalability();
+      expect(snapshot.requested.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.2, 0.4, 0.6], outlineWidth: 3 });
+      runtime.applyScalabilityStatus({ revision: snapshot.result.revision, status: "applied", message: "Ready", effective: snapshot.requested });
+      const roundtrip = runtime.getScalability();
+      expect(roundtrip.result.status).not.toBe("failed");
+      expect(roundtrip.requested).toEqual(snapshot.requested);
+      runtime.applyScalabilityStatus({ revision: roundtrip.result.revision, status: "applied", message: "Ready", effective: roundtrip.requested });
+      expect(runtime.getScalability().result.status).toBe("applied");
+      expect(runtime.getScalability().result.revision).toBe(roundtrip.result.revision);
+      expect(runtime.getScalability().effective?.render.cel?.outlineColor).toEqual([0.2, 0.4, 0.6]);
+    } finally { runtime.stop(); }
+  });
   it.each(["low", "medium", "high", "ultra"])("executes the %s enum preset without changing artistic mode or frame cap", async (preset) => {
     const { runtime } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"), node("preset", "scalability.setPreset", { preset })],
       edges: [edge("begin", "execOut", "preset", "execIn")] });
