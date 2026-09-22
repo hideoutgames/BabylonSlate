@@ -9,7 +9,9 @@ failed scene loading: the mask renderer rejected `engineDefaultMaterial:CEL`.
 This is a **FAIL**, not completed Route A acceptance. The repair admits the
 engine's native CEL adapter with its original hooks and retains StandardMaterial
 coverage semantics. The two-API geometry fixture now includes default CEL and
-CEL alpha-cutout silhouettes; verification and a hands-on rerun are pending.
+CEL alpha-cutout silhouettes. At `1e64c251`, the three changed TypeScript files
+passed scoped lint and the editor typecheck passed. Browser verification and a
+hands-on rerun are pending. [Actual failed scene](../assets/renderer-qualification/2026-09-22-computer-use-cel/native-cel-load-failure.png).
 
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
