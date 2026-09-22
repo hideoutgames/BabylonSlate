@@ -69,6 +69,22 @@ describe("modelSlotFingerprint", () => {
 });
 
 describe("applyAlbedoTexture", () => {
+  it("keeps the material and binding stable across 10,000 repeated sprite selections", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache();
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const assets = { resourceCache: cache, textureBytes: new Map([["atlas", new Uint8Array([1, 2, 3, 4])]]) };
+    applyAlbedoTexture(mesh, scene, "atlas", assets);
+    const material = mesh.material;
+    for (let i = 0; i < 10_000; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);
+    expect(mesh.material).toBe(material);
+    scene.dispose();
+    cache.flushUnreferenced();
+    expect(isDisposedGpuTexture((material as StandardMaterial).diffuseTexture!)).toBe(true);
+    cache.dispose();
+    engine.dispose();
+  });
   it("does not dispose a live material Texture when overlay sampling flags differ", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
