@@ -42,6 +42,7 @@ for (const variant of [
 ] as const) {
   test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player${variant.fail ? " after initialization failure" : ""}`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
+    await page.addInitScript(() => { Error.stackTraceLimit = 30; });
     const errors: string[] = [];
     const rendererMessages: string[] = [];
     page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
