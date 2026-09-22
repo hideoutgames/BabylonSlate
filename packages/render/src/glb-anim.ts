@@ -640,7 +640,7 @@ export function beginSlotModelAnimLoad(
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
-      const wrapped = instance.animationGroups.map((group) =>
+      const wrapped: NamedSeekableGroup[] = instance.animationGroups.map((group) =>
         wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       for (const row of retargets) {
