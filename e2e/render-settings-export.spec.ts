@@ -202,6 +202,14 @@ for (const variant of [
       expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
       expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
       expect(errors).toEqual([]);
-    } finally { await server.close(); }
+    } finally {
+      await testInfo.attach("standalone-final-diagnostics", {
+        body: JSON.stringify({ errors, rendererMessages,
+          state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
+          evidence: renderingEvidence("e2e/render-settings-export.spec.ts"),
+        }), contentType: "application/json",
+      });
+      await server.close();
+    }
   });
 }
