@@ -582,6 +582,9 @@ describe("@babylonslate/physics", () => {
       parseColliderProperties({ shape: { kind: "unknown" } }, "2d"),
     ).toThrow("Unsupported");
     expect(() =>
+      parseColliderProperties({ shape: { kind: "capsule", radius: 0.5, halfHeight: 1 } }, "2d"),
+    ).toThrow("Unsupported");
+    expect(() =>
       parseColliderProperties({ shape: { kind: "sphere", radius: NaN } }, "3d"),
     ).toThrow("finite numbers");
     for (const shape of [{ kind: "sphere", radius: 0 }, { kind: "mesh", vertices: [], indices: [] }]) {
