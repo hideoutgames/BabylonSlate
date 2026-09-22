@@ -906,7 +906,7 @@ Two consequences to handle explicitly:
 ### 10.3 The PluginSettings asset
 
 Opened in the editor as its own document tab. It defines:
-- **Identity**: display name, stable plugin guid, semver version, description, author, category, icon selected from a searchable Lucide dropdown. The guid rather than the folder name is the identity, so renaming a folder never loses project state. The icon appears beside the Project Settings name and on the base plugin folder only.
+- **Identity**: display name, stable plugin guid, author-controlled version, description, author, category, icon selected from a searchable Lucide dropdown. The guid rather than the folder name is the identity, so renaming a folder never loses project state. The icon appears beside the Project Settings name and on the base plugin folder only.
 - **Maturity**: experimental and beta flags, surfaced as a badge in the plugin list and a confirmation when enabling.
 - **Editor startup**: the EditorUtilityObjects this plugin runs on editor launch. Plugin-provided editor objects register through the plugin rather than through the project's own registered-objects list, so enabling the plugin is the single switch.
 - **Export defaults**: whether the plugin is enabled by default in an exported build.
