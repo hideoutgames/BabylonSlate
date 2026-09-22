@@ -24,6 +24,14 @@ The seven passes cover area-light authoring/history/reopen, both prepared-emissi
 exports, both native/graph receiver cases, packed WebGL2 settings export and the
 separate injected WebGPU-failure fallback. They do not certify loose WebGPU output.
 
+The isolated export call stack located a first-frame ordering defect: applying
+resolution quality in `Scene.onBeforeRenderObservable` resized WebGPU attachments,
+which synchronously emitted `beginFrame` and re-entered registered-view admission
+while the scene's FrameGraph was installed. Quality application now precedes
+shader/graph preparation and the host draw boundary. A focused host regression
+models the native resize notification and requires actual 384×216 output before
+presentation; the loose WebGPU export remains the integration acceptance case.
+
 Latest integration checkpoint: normal merge `106abcaf` incorporates main
 `93638dde`, retaining both catalog search aliases and Scalability descriptions
 through the shared result row. At `3bc0146b`, the scoped editor typecheck passed

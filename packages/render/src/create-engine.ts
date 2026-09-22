@@ -1254,7 +1254,8 @@ function initializeEngine(
     }
     appliedEffectsKey = effectsKey;
   };
-  scene.onBeforeRenderObservable.add(applyRenderingQuality);
+  // Apply at the host boundary below, never inside Scene.render. WebGPU
+  // attachment resizing emits beginFrame and can re-enter view admission.
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
   const sceneLayerCompositor = options.playMode
@@ -2151,6 +2152,7 @@ function initializeEngine(
     // Babylon invokes all render callbacks for each registered view. A loading
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    applyRenderingQuality();
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
@@ -2967,6 +2969,7 @@ function initializeEngine(
     },
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
+      applyRenderingQuality();
       await warmSceneMaterials(scope.target, scope.assert);
       scope.assert();
       freezeLibraryMaterials();

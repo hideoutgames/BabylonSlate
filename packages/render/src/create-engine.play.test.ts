@@ -14,6 +14,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
+  normalizeRenderProjectSettings,
   engineCommandBus,
   requestEditorDrop,
 } from "@babylonslate/core";
@@ -433,6 +434,36 @@ describe("Play createEngine view", () => {
     expect(ready).toBe(true);
     expect(gl.deleteSync).toHaveBeenCalledOnce();
     Reflect.deleteProperty(engine, "_gl");
+  });
+
+  it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    let width = 256, height = 256;
+    vi.spyOn(engine, "getRenderWidth").mockImplementation(() => width);
+    vi.spyOn(engine, "getRenderHeight").mockImplementation(() => height);
+    const resize = vi.spyOn(engine, "setSize").mockImplementation((nextWidth, nextHeight) => {
+      if (nextWidth === width && nextHeight === height) return false;
+      expect(handle.scene.frameGraph).toBeNull();
+      width = nextWidth; height = nextHeight;
+      // Pinned WebGPU attachment recreation emits beginFrame synchronously.
+      // Keep the real registered-view admission and graph ownership around it.
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      return true;
+    });
+    handle.setSize(480, 270);
+    handle.setRenderSettings(normalizeRenderProjectSettings({
+      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+    }));
+    await handle.prewarmSceneMaterials();
+    expect(resize).toHaveBeenCalledWith(384, 216);
+    expect([width, height]).toEqual([384, 216]);
+    const presented = handle.presentFirstFrame();
+    loop.mock.calls[0]![0]();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    expect(handle.scene.frameGraph).toBeNull();
   });
 
   it("draws an RTT preview once while every registered canvas retains its paused bitmap", async () => {
