@@ -11,13 +11,15 @@ selected catalog/cost-fixture files passed lint at `106abcaf`; the subsequent
 cost-fixture instrumentation import repair was included in the passing editor
 typecheck. Earlier rendering results below remain scoped to their revisions.
 
-The new fixed-output cost fixture is implemented, but its two cases and the two
-geometry cases did not execute: build admission required 4 GiB including the
-retained 2 GiB reserve, while observed free memory ranged from roughly 3.2 to
-3.9 GiB. Queued attempts were withdrawn when they blocked smaller work; no other
-agent's processes were stopped. Current-build Computer Use, cost, geometry,
-export/settings acceptance and required current-head CI remain **BLOCKED or
-PENDING**, not passed. PR #651 remains draft and unmerged.
+Build/browser admission initially required 4 GiB including the retained 2 GiB
+reserve while free memory ranged from roughly 3.2 to 3.9 GiB. Queued attempts
+were withdrawn when they blocked smaller work; no other agent's processes were
+stopped. Capacity later admitted the `6cc7cce3` editor/player build and four
+browser cases: **three passed, one failed**. Both geometry APIs passed; the
+WebGL2 cost/lifecycle case passed on default SwiftShader; the default WebGPU
+cost case could not obtain an adapter. The import repair also passed scoped lint
+at this revision. Hands-on acceptance, real-GPU cost, export/settings acceptance
+and required current-head CI remain pending. PR #651 remains draft and unmerged.
 
 The shared renderer, editor selection host, authored OutlineComponent, default CEL
 outlines, typed settings/Graph controls and runtime/export wiring are implemented
@@ -28,11 +30,11 @@ pending qualification; it is not enabled alongside the new host.
 | Requirement | Latest evidence | Remaining |
 | --- | --- | --- |
 | Shared ownership and pixels | `b05d4467`: both API cases passed all 43 presented states after repairing regular-instance readiness; software adapters | Hands-on acceptance and current integrated geometry qualification |
-| Materials, animation, LOD | `b05d4467`: both geometry cases failed; LOD passed, but WebGL lazy UV/morph readiness and unpublished color-morph data remained | Repairs at `19fea64c` pass all 18 scene readiness unit cases; both geometry browser cases await admission/execution |
+| Materials, animation, LOD | `6cc7cce3`: both geometry cases passed on effective software WebGL2/WebGPU after the readiness and morph-data repairs; 18 readiness unit cases passed `19fea64c` | Hands-on authoring and integrated export acceptance |
 | Authored/UI/settings | `531e7039`: five explicit UI files, 93 passes; `5308c759`: 75 passes across 11 unchanged core/runtime/render files | Hands-on authoring/history/reopen and new standalone export pixels |
 | Owner/runtime/Class regressions | `eea6009e`: four shared-owner cases and one Class inheritance case passed; failed parent/child lifecycle repaired and passed at `531e7039` | Browser authoring and runtime lifecycle acceptance |
 | Main integration | Normal merge retains snapshot membership/pose separation and rendering bindings; `ec1926c1`: two snapshot files, 67 passes; `bf2dc011`: eight selected outline/area-light cases passed | Current affected browser and CI gates |
-| Static checks | Render typecheck and five changed render/geometry-file lint checks passed `19fea64c`; editor/player build passed `b05d4467`; earlier scene-host lint repair passed `bf2dc011` | Editor/player build for subsequent readiness edits |
+| Static checks | Scoped editor typecheck passed `3bc0146b`; editor/player build and final cost-fixture lint passed `6cc7cce3`; prior scoped checks remain revision-scoped | Required current-head CI |
 | Computer Use | Chrome connected; retained parented/scaled area-light Play/save/reopen captures below are from `90267c2b` | Routes A/C and remainder of B on the completed build; texture import permission remains unresolved |
 | Cost/device | Previous shadow evidence retained; no new outline hardware cost claim | Fixed-quality desktop comparison and bounded lifecycle exercise; physical A16 remains deferred |
 | Delivery | Existing branch and draft PR #651 remain unmerged | Complete acceptance, review and exact-head required CI before guarded merge |
@@ -58,7 +60,12 @@ results, not Computer Use acceptance or representative hardware cost:
 [WebGPU presented instances](../assets/renderer-qualification/2026-09-22-shared-ownership/ownership-webgpu-three-disjoint-instances.png).
 Its two geometry failures remain failures. The subsequent readiness repair
 synchronizes Babylon's lazy texture matrices and active morph influences before
-strict readiness probes; it does not replace the missing browser rerun.
+strict readiness probes. The later `6cc7cce3` rerun passed both geometry cases:
+[WebGL2 geometry](../assets/renderer-qualification/2026-09-22-geometry-and-cost/webgl2-shared-outline-geometry-qualification.json),
+[WebGPU geometry](../assets/renderer-qualification/2026-09-22-geometry-and-cost/webgpu-shared-outline-geometry-qualification.json).
+The actual [native morph frame](../assets/renderer-qualification/2026-09-22-geometry-and-cost/webgl2-position-and-color-morph-native.png)
+and [outlined morph frame](../assets/renderer-qualification/2026-09-22-geometry-and-cost/webgl2-position-and-color-morph-outlined.png)
+were visually compared: both now show the moved receiver with a matching outline.
 
 At `19fea64c`, `packages/render/src/scene-perf.test.ts` passed all 18 cases,
 including PBR/Standard lazy morph activation and requested hot-swap behavior.
@@ -83,9 +90,14 @@ hosted CI forces the existing software adapters for functional lifetime checks o
 It separates synchronous CPU work, optional whole-engine WebGL GPU queries,
 presentation cadence and an explicitly estimated geometry upper bound. Stable
 uploads and zero retired outline allocations are asserted; no frame-rate budget
-or hardware performance pass is inferred. This fixture remains **unexecuted**
-until the admitted browser run completes; it does not replace hands-on gizmo,
-scene-transition or Play lifecycle acceptance.
+or hardware performance pass is inferred. At `6cc7cce3`, its WebGL2 case passed
+on SwiftShader (no GPU timer samples); default WebGPU failed adapter acquisition.
+The [functional cost/lifecycle report](../assets/renderer-qualification/2026-09-22-geometry-and-cost/webgl2-shared-outline-cost.json)
+records 1→5 total draw calls and 0→4 outline drawing passes for off→all consumers,
+about 5.53–5.54 MB accounted allocations when active and zero after retirement.
+Software cadence slowed from roughly 16.7 ms to 50 ms with all consumers; this
+is not a real-GPU or A16 cost claim. Hands-on gizmo, scene-transition and Play
+lifecycle acceptance remain separate.
 
 ### Runtime ownership repair — 22 September 2026
 
