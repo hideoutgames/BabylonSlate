@@ -311,7 +311,7 @@ void main() {
 function msdfAtlasTexture(
   scene: Scene,
   fontGuid: string,
-  png: Uint8Array,
+  png: Uint8Array | Blob,
   assets?: Text2DAssetContext,
 ): import("./resource-cache").ResourceLease<BaseTexture> | null {
   if (!assets?.resourceCache) return null;

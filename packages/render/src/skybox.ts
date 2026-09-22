@@ -84,11 +84,12 @@ export function resolveSkyboxCubeTexture(scene: Scene, faces: SkyboxFaces = empt
     });
     const cube = cache.acquireCubeTextureFromImages(skyboxCubeCacheGuid(parsed), scene, files);
     let released = false;
-    return { resource: cube.resource, key: cube.key, release() {
+    return { resource: cube.resource, key: cube.key, ready: cube.ready, release() {
       if (released) return;
       released = true;
       cube.release();
-      for (const source of sources) source.release();
+      const releaseSources = () => { for (const source of sources) source.release(); };
+      if (cube.ready) void cube.ready.then(releaseSources, releaseSources); else releaseSources();
     } };
   } catch (error) { for (const source of sources) source.release(); throw error; }
 }

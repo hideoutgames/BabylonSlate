@@ -1,3 +1,5 @@
+import { installedAssetIdentity } from "@babylonslate/assets";
+import { installTextureBytes } from "@babylonslate/render";
 import { useEffect, useRef, useState } from "react";
 import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
@@ -307,14 +309,15 @@ export function ModelPreviewCanvas({
         [],
         extraGuids,
       );
-      const textureBytes = await collectPlayTextureBytes(
+      const textureBytes = installTextureBytes(await collectPlayTextureBytes(
         new Map(),
         new Map(),
         materials.textureGuids,
-      );
+      ))!;
       if (cancelled || hostRef.current !== host) return;
       const lease = bindResourceCacheToHandle(resourceCacheForEngine(engine));
       const library = new MaterialLibrary({
+        textureIdentity: (guid) => { const source = textureBytes.get(guid); return source ? installedAssetIdentity(source) : undefined; },
         functions: () => Object.fromEntries(materials.functions),
         acquireTexture: (guid) => {
           const data = textureBytes.get(guid);

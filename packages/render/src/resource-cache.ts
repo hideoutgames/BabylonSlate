@@ -38,6 +38,7 @@ interface CacheEntry {
   extraBlobUrls: string[];
   bytes: number;
   refCount: number;
+  pending?: number;
   lastUsed: number;
   contentKey: string;
   textures: Map<string, BaseTexture>;
@@ -53,8 +54,9 @@ export function createEngineCubeTextureFromImages(
   engine: AbstractEngine,
   files: string[],
   noMipmap = false,
+  completion?: { onLoad: () => void; onError: (message?: string) => void },
 ): CubeTexture {
-  return new CubeTexture(files.join(""), engine, { files, noMipmap });
+  return new CubeTexture(files.join(""), engine, { files, noMipmap, ...completion });
 }
 
 /** Engine-static PNG (editor billboards). Not a project asset guid. */
@@ -225,6 +227,7 @@ export class ResourceCache {
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
+  private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
   private readonly textureKeys = new WeakMap<BaseTexture, string>();
   private readonly urlKeys = new Map<string, string>();
   private readonly clientTextures = new Map<string, Set<string>>();
@@ -242,7 +245,8 @@ export class ResourceCache {
   /** A lease owns one exact generation. Reading its resource never acquires again. */
   acquireTexture(assetGuid: string, engine: AbstractEngine, bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {}): ResourceLease<Texture | CubeTexture> {
-    return this.lease(this.prepareTexture(assetGuid, engine, bytes, options));
+    const lease = this.lease(this.prepareTexture(assetGuid, engine, bytes, options));
+    return { ...lease, key: `${lease.key}\0${samplingKey(options)}` };
   }
 
   acquireBlobUrl(assetGuid: string, bytes: Uint8Array | Blob): ResourceLease<string> {
@@ -262,11 +266,42 @@ export class ResourceCache {
   private lease<T extends BaseTexture | string>(resource: T): ResourceLease<T> {
     const key = this.resourceKey(resource);
     let released = false;
-    return { resource, key, release: () => {
+    return { resource, key, ready: typeof resource === "string" ? undefined : this.readiness.get(resource), release: () => {
       if (released) return;
       released = true;
       this.release(key);
     } };
+  }
+
+  private preparing(entry: CacheEntry) {
+    entry.pending = (entry.pending ?? 0) + 1;
+    let active = true;
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    // Ownership may retire before native upload settles; the cache still owns its pin.
+    void ready.catch(() => {});
+    const settle = (error?: Error) => {
+      if (!active) return;
+      active = false;
+      entry.pending = Math.max(0, (entry.pending ?? 1) - 1);
+      if (error) reject(error); else resolve();
+    };
+    return { ready, onLoad: () => settle(), onError: (message?: string) => settle(new Error(message ?? "Texture upload failed")),
+      observe: (texture: Texture | CubeTexture) => {
+        this.readiness.set(texture, ready);
+        if (texture.isReady()) settle();
+        else if (texture.loadingError) settle(new Error(texture.errorObject?.message ?? "Texture upload failed"));
+        else {
+          if (texture instanceof CubeTexture) {
+            const load = texture.onLoadObservable.addOnce(() => settle());
+            texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
+          } else {
+            const load = texture.onLoadObservable.addOnce(() => settle());
+            texture.onDisposeObservable.addOnce(() => { settle(new Error("Texture retired during upload")); texture.onLoadObservable.remove(load); });
+          }
+        }
+      } };
   }
 
   setByteCeiling(bytes: number): void {
@@ -314,6 +349,7 @@ export class ResourceCache {
   }
 
   private isUnreferenced(entry: CacheEntry): boolean {
+    if (entry.pending) return false;
     if (anyLiveTexture(entry)) return entry.refCount === 0;
     if (this.clientTextures.size === 0) return entry.refCount === 0;
     for (const guids of this.clientTextures.values()) {
@@ -398,13 +434,17 @@ export class ResourceCache {
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
     const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
-    const texture = options.isCube
+    const preparation = this.preparing(entry);
+    let texture: Texture | CubeTexture;
+    try {
+    texture = options.isCube
       ? new CubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: environment ? false : options.useSRGBBuffer ?? false,
           forcedExtension: environment ? `.${environment}` : undefined,
           prefiltered: !!environment,
           createPolynomials: !!environment,
+          onLoad: preparation.onLoad, onError: preparation.onError,
         })
       : new Texture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
@@ -414,7 +454,15 @@ export class ResourceCache {
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
           buffer: raw ? copyTextureBytesForUpload(raw) : undefined,
+          onLoad: preparation.onLoad, onError: preparation.onError,
         });
+    } catch (error) {
+      preparation.onError();
+      this.release(entry.key);
+      if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
+      throw error;
+    }
+    preparation.observe(texture);
     texture.hasAlpha = options.hasAlpha === true;
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
@@ -457,33 +505,26 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as CubeTexture;
     }
-    const texture = createEngineCubeTextureFromImages(
-      scene.getEngine(),
-      files,
-      noMipmap,
-    );
-    this.textureKeys.set(texture, variantKey);
-    if (existing) {
-      existing.textures.set(key, texture);
-      existing.refCount += 1;
-      existing.lastUsed = ++this.clock;
-      this.trackTextureBytes(existing, key, texture, undefined, !noMipmap);
-      return texture;
-    }
-    const entry: CacheEntry = {
-      assetGuid,
-      key: variantKey,
-      blobUrl: "",
-      extraBlobUrls: [],
-      bytes: 0,
-      refCount: 1,
-      lastUsed: ++this.clock,
-      contentKey: files.join(":"),
-      textures: new Map([[key, texture]]),
+    const entry: CacheEntry = existing ?? {
+      assetGuid, key: variantKey, blobUrl: "", extraBlobUrls: [], bytes: 0,
+      refCount: 0, lastUsed: ++this.clock, contentKey: files.join(":"), textures: new Map(),
     };
     this.entries.set(variantKey, entry);
-    this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
-    return texture;
+    entry.refCount++;
+    const preparation = this.preparing(entry);
+    try {
+      const texture = createEngineCubeTextureFromImages(scene.getEngine(), files, noMipmap, preparation);
+      this.textureKeys.set(texture, variantKey);
+      entry.textures.set(key, texture);
+      preparation.observe(texture);
+      this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
+      return texture;
+    } catch (error) {
+      preparation.onError();
+      this.release(entry.key);
+      if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
+      throw error;
+    }
   }
 
   /**
@@ -691,6 +732,7 @@ export class ResourceCache {
 export interface ResourceLease<T> {
   readonly resource: T;
   readonly key: string;
+  readonly ready?: Promise<void>;
   release(): void;
 }
 
@@ -703,7 +745,7 @@ export class ResourceCacheOwner implements TextureResources {
   constructor(private readonly inner: ResourceCache) {}
   private own<T>(lease: ResourceLease<T>): ResourceLease<T> {
     if (this.disposed) { lease.release(); throw new Error("Texture owner is retired"); }
-    const owned = { resource: lease.resource, key: lease.key, release: () => {
+    const owned = { resource: lease.resource, key: lease.key, ready: lease.ready, release: () => {
       if (!this.leases.delete(owned)) return;
       lease.release();
     } };
@@ -713,7 +755,7 @@ export class ResourceCacheOwner implements TextureResources {
   acquireTexture(...args: Parameters<ResourceCache["acquireTexture"]>) { return this.own(this.inner.acquireTexture(...args)); }
   acquireBlobUrl(...args: Parameters<ResourceCache["acquireBlobUrl"]>) { return this.own(this.inner.acquireBlobUrl(...args)); }
   acquireCubeTextureFromImages(...args: Parameters<ResourceCache["acquireCubeTextureFromImages"]>) { return this.own(this.inner.acquireCubeTextureFromImages(...args)); }
-  acquireExisting<T extends BaseTexture | string>(resource: T) { return this.own(this.inner.acquireExisting(resource)); }
+  acquireExisting<T extends BaseTexture | string>(resource: T) { return this.inner.acquireExisting(resource); }
   resourceKey(resource: string | BaseTexture) { return this.inner.resourceKey(resource); }
   setByteCeiling(bytes: number) { this.inner.setClientBudget(this, bytes); }
   setBudgetEnabled(enabled: boolean) { this.inner.setClientBudgetEnabled(this, enabled); }
@@ -761,13 +803,14 @@ export function acquireMaterialTexture(
   assetGuid: string,
   engine: AbstractEngine,
   bytes: Uint8Array | Blob,
+  options: TextureSamplingOptions = {},
 ): ResourceLease<Texture> | null {
   if (environmentContainer(bytes)) return null;
   const lease = cache.acquireTexture(
     assetGuid,
     engine,
     bytes,
-    MATERIAL_TEXTURE_SAMPLING,
+    { ...MATERIAL_TEXTURE_SAMPLING, ...options },
   );
   if (lease.resource.isCube) { lease.release(); return null; }
   return lease as ResourceLease<Texture>;
@@ -786,6 +829,7 @@ export function materialTextureBindings(acquire: ((guid: string) => ResourceLeas
       current?.release();
       return next.resource;
     },
+    ready(guid: string) { return leases.get(guid)?.ready; },
     prune(textures: readonly BaseTexture[]) {
       const used = new Set(textures);
       for (const [guid, lease] of leases) if (!used.has(lease.resource)) { leases.delete(guid); lease.release(); }

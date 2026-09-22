@@ -1,3 +1,4 @@
+import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
@@ -1011,7 +1012,7 @@ function initializeEngine(
   );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
-  binding.fontMsdfPng = options.fontMsdfPng;
+  binding.fontMsdfPng = installTextureBytes(options.fontMsdfPng);
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
@@ -1065,6 +1066,7 @@ function initializeEngine(
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
   const materialLibrary = new MaterialLibrary({
+    textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => Object.fromEntries(materialFunctions),
     acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
@@ -1107,7 +1109,7 @@ function initializeEngine(
         acquireTexture: (guid) => {
           const bytes = binding.textureBytes?.get(guid);
           if (!bytes) return null;
-          return acquireMaterialTexture(resourceCache, guid, engine, bytes);
+          return acquireMaterialTexture(resourceCache, guid, engine, bytes, { hasAlpha: true });
         },
         resolveMaterial: (guid) => {
           const live = binding.resolveMaterial?.(guid);
@@ -1430,7 +1432,7 @@ function initializeEngine(
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;
-      binding.fontMsdfPng = assets.fontMsdfPng;
+      binding.fontMsdfPng = installTextureBytes(assets.fontMsdfPng);
       binding.fontCssStack = assets.fontCssStack;
       binding.fontCssStackByGuid = assets.fontCssStackByGuid;
       binding.modelBytes = assets.modelBytes;
@@ -1449,7 +1451,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, textureBytes: binding.textureBytes, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,

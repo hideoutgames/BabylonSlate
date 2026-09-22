@@ -217,7 +217,7 @@ export class ParticleService {
         });
         return;
       }
-      texture.hasAlpha = true;
+      if (!lease) texture.hasAlpha = true;
       const capacity = particleCapacityFor(emitter, this.gpu);
       const system = createBabylonParticleSystem(
         `particle:${key}:${index}`,

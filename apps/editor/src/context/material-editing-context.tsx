@@ -1,3 +1,5 @@
+import { installedAssetIdentity } from "@babylonslate/assets";
+import { installTextureBytes } from "@babylonslate/render";
 import {
   createContext,
   useCallback,
@@ -113,7 +115,7 @@ export function MaterialEditingProvider({
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
-  const textureBytesRef = useRef(new Map<string, Uint8Array>());
+  const textureBytesRef = useRef<ReadonlyMap<string, Uint8Array | Blob>>(new Map());
   const engineRef = useRef<AbstractEngine | null>(null);
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
@@ -202,6 +204,7 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (libraryRef.current) return;
     libraryRef.current = new MaterialLibrary({
+      textureIdentity: (guid) => { const source = textureBytesRef.current.get(guid); return source instanceof Blob ? installedAssetIdentity(source) : undefined; },
       particlePreview: true,
       functions: () => functionsRef.current,
       acquireTexture: (guid) => {
@@ -355,7 +358,7 @@ export function MaterialEditingProvider({
         if (source && source.byteLength > 0) next.set(guid, source);
       }
       if (cancelled) return;
-      textureBytesRef.current = next;
+      textureBytesRef.current = installTextureBytes(next) ?? new Map();
       libraryRef.current?.markDirty();
       setLoadedTextureGuidsKey(textureGuidsKey);
       dispatch({ type: "edit", cost: costClassRef.current });

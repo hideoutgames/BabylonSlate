@@ -51,7 +51,7 @@ export interface MeshAssetContext {
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   /** MSDF atlas PNG keyed by Font asset guid. */
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   /** CSS font stack when no Font is picked (project default + generic). */
   fontCssStack?: string;
   /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
@@ -181,6 +181,8 @@ interface AlbedoBinding {
   lease?: ResourceLease<Texture | CubeTexture>;
   source?: Uint8Array | Blob;
   guid?: string;
+  identity?: string;
+  failed?: string;
   pending?: ResourceLease<Texture | CubeTexture>;
   cancel?: () => void;
 }
@@ -215,13 +217,15 @@ export function applyAlbedoTexture(
   }
   const source = assets?.textureBytes?.get(textureGuid);
   if (!source || !assets?.resourceCache) return;
-  if (binding.source === source && binding.guid === textureGuid &&
-    ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) return;
+  const identity = binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  if (binding.identity === identity && binding.guid === textureGuid &&
+    ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
+  if (binding.failed === `${textureGuid}:${identity}`) return;
   // An authored material owns its own texture contract. Sprite animation must not replace it.
   if (mesh.material && mesh.material !== binding.material && binding.material) return;
   const next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true });
   binding.cancel?.(); binding.pending?.release();
-  binding.source = source; binding.guid = textureGuid;
+  binding.source = source; binding.guid = textureGuid; binding.identity = identity;
   binding.pending = next;
   const publish = () => {
     if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
@@ -243,11 +247,22 @@ export function applyAlbedoTexture(
     binding.lease = next; binding.pending = undefined;
     previous?.release();
   };
-  if (!binding.lease || next.resource.isReady()) publish();
-  else {
-    const observer = next.resource.onLoadObservable.addOnce(publish);
-    binding.cancel = () => next.resource.onLoadObservable.remove(observer);
-  }
+  const failed = (error: unknown) => {
+    if (albedoBindings.get(mesh) !== binding || (binding.pending !== next && binding.lease !== next)) return;
+    if (binding.pending === next) binding.pending = undefined;
+    if (binding.lease === next) {
+      binding.lease = undefined;
+      if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
+    }
+    binding.failed = `${textureGuid}:${identity}`;
+    next.release();
+    console.error("Sprite texture replacement failed", error);
+  };
+  if (!binding.lease || next.resource.isReady()) {
+    publish();
+    void next.ready?.catch(failed);
+  } else if (next.ready) void next.ready.then(publish, failed);
+
 }
 
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */

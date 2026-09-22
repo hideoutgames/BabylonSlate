@@ -30,7 +30,7 @@ export function createSpriteQuad(
   return mesh;
 }
 
-const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; width?: number; height?: number; uv?: string }>();
+const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; width?: number; height?: number; u0?: number; v0?: number; u1?: number; v1?: number }>();
 function quadState(mesh: Mesh) {
   let state = appliedQuads.get(mesh);
   if (!state) {
@@ -55,12 +55,11 @@ export function setSpriteQuadSize(mesh: Mesh, width: number, height: number): vo
 export function applySpriteFrameUvs(mesh: Mesh, frame: SpriteFrame): void {
   const state = quadState(mesh);
   const { u0, v0, u1, v1 } = spriteFrameUvs(frame);
-  const key = `${u0}:${v0}:${u1}:${v1}`;
-  if (state.uv === key) return;
+  if (state.u0 === u0 && state.v0 === v0 && state.u1 === u1 && state.v1 === v1) return;
   state.uvs.set([u0, v0, u1, v0, u1, v1, u0, v1]);
   if (!mesh.getVertexBuffer(VertexBuffer.UVKind)?.isUpdatable()) mesh.markVerticesDataAsUpdatable(VertexBuffer.UVKind, true);
   mesh.updateVerticesData(VertexBuffer.UVKind, state.uvs, false, false);
-  state.uv = key;
+  state.u0 = u0; state.v0 = v0; state.u1 = u1; state.v1 = v1;
 }
 
 export function spriteWorldX(mesh: Mesh): number {
