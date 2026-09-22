@@ -3,6 +3,7 @@ import type { RichTextStyle } from "@babylonslate/core";
 import {
   bitmapGlyphKey,
   packBitmapGlyphAtlas,
+  planBitmapGlyphAtlas,
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
 } from "./text2d-bitmap";
@@ -140,6 +141,14 @@ describe("resolveText2DFontStack", () => {
 });
 
 describe("packBitmapGlyphAtlas", () => {
+  it("rejects invalid dimensions and budgets including the retained representation before packing", () => {
+    const limits = { maxTextureSize: 64, maxWorkingBytes: 1024 };
+    for (const width of [NaN, Infinity, -1, Number.MAX_SAFE_INTEGER]) {
+      expect(() => planBitmapGlyphAtlas([{ key: "A", width, height: 8 }], limits)).toThrow(/allocation limit/i);
+    }
+    expect(planBitmapGlyphAtlas([{ key: "A", width: 2, height: 2 }], limits)).toBeTruthy();
+    expect(() => planBitmapGlyphAtlas([{ key: "A", width: 2, height: 2 }], { ...limits, retainedBytes: 900 })).toThrow(/allocation limit/i);
+  });
   it("balances many unique small cells across both atlas dimensions", () => {
     const cells = Array.from({ length: 64 }, (_, index) => ({
       key: String(index), width: 8, height: 8, pixels: new Uint8ClampedArray(8 * 8 * 4).fill(index),

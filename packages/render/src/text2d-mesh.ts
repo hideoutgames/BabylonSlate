@@ -20,15 +20,21 @@ import {
   parseSceneLayerHitTest,
   parseText2DProperties,
   resolveText2DRenderer,
+  type RichTextStyle,
   type Text2DProperties,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
   bitmapGlyphKey,
+  DEFAULT_BITMAP_WORKING_BYTES,
+  measureBitmapGlyph,
   packBitmapGlyphAtlas,
+  planBitmapGlyphAtlas,
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
+  type BitmapAllocationLimits,
 } from "./text2d-bitmap";
+import { VisualBundle } from "./visual-bundle";
 import {
   combineText2DEffects,
   layoutHasLetterEffects,
@@ -43,13 +49,23 @@ export type Text2DMeshOptions = {
   rich?: boolean;
   metrics?: GlyphMetricsProvider;
   isPaused?: () => boolean;
+  bitmapLimits?: Partial<BitmapAllocationLimits>;
 };
 
 export type Text2DAssetContext = MeshAssetContext & {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   paused?: boolean;
 };
+
+/** CPU restoration data plus native bitmap storage kept during replacement. */
+export function text2DBitmapBytes(root: Mesh | undefined): number {
+  if (!root) return 0;
+  return [root, ...root.getChildMeshes()].reduce((total, mesh) => {
+    const bytes = (mesh.metadata as { text2dBitmapBytes?: number } | null)?.text2dBitmapBytes ?? 0;
+    return total + bytes;
+  }, 0);
+}
 
 type MsdfGlyph = {
   x: number;
@@ -134,8 +150,7 @@ function defaultMetrics(pixelsPerUnit: number): GlyphMetricsProvider {
 /** Quad size follows the raster cell so 5×7 fallback is not stretched to measureText. */
 function bitmapMetrics(
   pixelsPerUnit: number,
-  fontStack: string,
-  cells: Map<string, ReturnType<typeof rasterizeBitmapGlyph>>,
+  measure: (ch: string, style: RichTextStyle) => { width: number; height: number },
 ): GlyphMetricsProvider {
   const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
   return {
@@ -151,12 +166,7 @@ function bitmapMetrics(
           source: "bitmap",
         };
       }
-      const key = bitmapGlyphKey(ch, style, fontStack);
-      let cell = cells.get(key);
-      if (!cell) {
-        cell = rasterizeBitmapGlyph(ch, style, fontStack);
-        cells.set(key, cell);
-      }
+      const cell = measure(ch, style);
       const worldW = cell.width / ppu;
       const worldH = cell.height / ppu;
       return {
@@ -205,8 +215,8 @@ function msdfMetrics(
   };
 }
 
-function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture): StandardMaterial {
-  const material = new StandardMaterial(name, scene);
+function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture, bundle: VisualBundle): StandardMaterial {
+  const material = bundle.ownMaterial(new StandardMaterial(name, scene));
   material.disableLighting = true;
   material.backFaceCulling = false;
   material.emissiveColor = Color3.White();
@@ -227,8 +237,9 @@ function unlitMaterial(
   name: string,
   color: [number, number, number],
   msdf: boolean,
+  bundle: VisualBundle,
 ): StandardMaterial {
-  const material = new StandardMaterial(name, scene);
+  const material = bundle.ownMaterial(new StandardMaterial(name, scene));
   material.disableLighting = true;
   material.backFaceCulling = false;
   material.emissiveColor = new Color3(color[0], color[1], color[2]);
@@ -334,11 +345,12 @@ function msdfGlyphMaterial(
   outline: number,
   outlineColor: [number, number, number],
   atlas: BaseTexture | null,
+  bundle: VisualBundle,
 ): Material {
-  if (!atlas) return unlitMaterial(scene, name, color, true);
+  if (!atlas) return unlitMaterial(scene, name, color, true, bundle);
   try {
     ensureMsdfShaders();
-    const material = new ShaderMaterial(
+    const material = bundle.ownMaterial(new ShaderMaterial(
       name,
       scene,
       { vertex: MSDF_SHADER, fragment: MSDF_SHADER },
@@ -349,7 +361,7 @@ function msdfGlyphMaterial(
         samplers: ["atlas"],
         needAlphaBlending: true,
       },
-    );
+    ));
     material.backFaceCulling = false;
     material.setTexture("atlas", atlas);
     material.setColor3("fillColor", new Color3(color[0], color[1], color[2]));
@@ -361,7 +373,7 @@ function msdfGlyphMaterial(
     material.metadata = { ...(material.metadata ?? {}), msdf: true };
     return material;
   } catch {
-    const fallback = unlitMaterial(scene, name, color, true);
+    const fallback = unlitMaterial(scene, name, color, true, bundle);
     fallback.emissiveTexture = atlas as Texture;
     fallback.opacityTexture = atlas as Texture;
     return fallback;
@@ -407,6 +419,7 @@ function attachEffects(
   scene: Scene,
   parent: Mesh,
   glyphs: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }>,
+  bundle: VisualBundle,
   isPaused?: () => boolean,
 ): void {
   if (!glyphs.some((entry) => hasLetterEffects(entry.item))) return;
@@ -435,7 +448,7 @@ function attachEffects(
     elapsed += scene.getEngine().getDeltaTime() / 1000;
     tick(elapsed);
   });
-  parent.onDisposeObservable.add(() => {
+  bundle.cancelWith(() => {
     if (observer) scene.onBeforeRenderObservable.remove(observer);
   });
   parent.metadata = {
@@ -459,135 +472,153 @@ export function createText2DMesh(
   const fontGuid = parsed.fontAssetGuid;
   const json = fontGuid ? assets?.fontMsdfJson?.get(fontGuid) : undefined;
   const png = fontGuid ? assets?.fontMsdfPng?.get(fontGuid) : undefined;
-  const hasPair = Boolean(json && png && json.byteLength > 0 && png.byteLength > 0);
+  const hasPair = Boolean(json && png && json.byteLength > 0 && (png instanceof Blob ? png.size : png.byteLength) > 0);
   if (parsed.renderer === "msdf" && !hasPair) warnMsdfFallback(fontGuid);
   const renderer = resolveText2DRenderer(parsed.renderer, hasPair);
   const fontStack = resolveText2DFontStack(fontGuid, assets);
   const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
-  const bitmap = options.metrics ?? bitmapMetrics(ppu, fontStack, bitmapCells);
+  const measured = new Map<string, ReturnType<typeof measureBitmapGlyph>>();
+  const requests = new Map<string, { ch: string; style: RichTextStyle }>();
+  const measure = (ch: string, style: RichTextStyle) => {
+    const key = bitmapGlyphKey(ch, style, fontStack);
+    let cell = measured.get(key);
+    if (!cell) {
+      cell = measureBitmapGlyph(ch, style, fontStack);
+      measured.set(key, cell);
+      requests.set(key, { ch, style });
+    }
+    return bitmapCells.get(key) ?? { width: cell.layoutWidth, height: cell.layoutHeight };
+  };
+  const bitmap = options.metrics ?? bitmapMetrics(ppu, measure);
   const atlas = renderer === "msdf" && json ? parseMsdfAtlas(json) : null;
   const metrics = options.metrics ?? (atlas ? msdfMetrics(atlas, ppu, bitmap) : bitmap);
-  const { layout } = layoutText2DFromProperties(properties, {
-    rich,
-    pixelsPerUnit: ppu,
-    metrics,
-  });
+  const layoutOptions = { rich, pixelsPerUnit: ppu, metrics };
+  let { layout } = layoutText2DFromProperties(properties, layoutOptions);
+  // A custom metrics provider may not have requested bitmap measurements.
+  for (const item of layout.items) {
+    if (item.kind === "glyph" && item.source !== "msdf" && item.ch?.trim()) {
+      measure(item.ch, item.style);
+    }
+  }
+  const limits: BitmapAllocationLimits = {
+    maxTextureSize: Math.min(options.bitmapLimits?.maxTextureSize ?? Infinity, scene.getEngine().getCaps().maxTextureSize),
+    maxWorkingBytes: options.bitmapLimits?.maxWorkingBytes ?? DEFAULT_BITMAP_WORKING_BYTES,
+    retainedBytes: options.bitmapLimits?.retainedBytes ?? 0,
+  };
+  const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
+  for (const [key, request] of requests) {
+    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits));
+  }
+  // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
+  if (!options.metrics) layout = layoutText2DFromProperties(properties, layoutOptions).layout;
+  const packedBitmap = packBitmapGlyphAtlas([...bitmapCells.values()], limits, bitmapPlan);
   const wrapW =
     parsed.wrapWidth > 0 ? parsed.wrapWidth / ppu : Math.max(layout.width, 0.01);
   const wrapH =
     parsed.wrapHeight > 0 ? parsed.wrapHeight / ppu : Math.max(layout.height, 0.01);
-  const parent = MeshBuilder.CreatePlane(name, { width: wrapW, height: wrapH }, scene);
-  parent.material = unlitMaterial(scene, `${name}:pick`, [0, 0, 0], false);
-  parent.visibility = 0;
-  parent.isPickable = hitTest !== "ignore";
-  parent.metadata = {
-    ...(parent.metadata ?? {}),
-    text2d: true,
-    text2dRenderer: renderer,
-    text2dRich: rich,
-    text2dFontStack: fontStack,
-    text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,
-    text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
-  };
-
-  const atlasLease =
-    renderer === "msdf" && fontGuid && png
-      ? msdfAtlasTexture(scene, fontGuid, png, assets)
-      : null;
-  const atlasTexture = atlasLease?.resource ?? null;
-  parent.onDisposeObservable.addOnce(() => atlasLease?.release());
-
-  const packedCells: ReturnType<typeof rasterizeBitmapGlyph>[] = [];
-  const bitmapKeys = new Set<string>();
-  for (const item of layout.items) {
-    if (item.kind !== "glyph" || item.source === "msdf") continue;
-    const ch = item.ch ?? "";
-    if (!ch.trim()) continue;
-    const key = bitmapGlyphKey(ch, item.style, fontStack);
-    if (bitmapKeys.has(key)) continue;
-    bitmapKeys.add(key);
-    packedCells.push(
-      bitmapCells.get(key) ?? rasterizeBitmapGlyph(ch, item.style, fontStack),
-    );
-  }
-  const packedBitmap = packBitmapGlyphAtlas(packedCells);
-  let bitmapAtlas: RawTexture | null = null;
-  let sharedBitmapMaterial: StandardMaterial | null = null;
-  if (packedBitmap) {
-    bitmapAtlas = RawTexture.CreateRGBATexture(
-      packedBitmap.pixels,
-      packedBitmap.width,
-      packedBitmap.height,
-      scene,
-      false,
-      true,
-      Texture.BILINEAR_SAMPLINGMODE,
-    );
-    bitmapAtlas.hasAlpha = true;
-    bitmapAtlas.name = `${name}:bitmap-atlas`;
-    sharedBitmapMaterial = bitmapGlyphMaterial(scene, `${name}:bitmap`, bitmapAtlas);
-    parent.onDisposeObservable.add(() => {
-      sharedBitmapMaterial?.dispose();
-      bitmapAtlas?.dispose();
-    });
-  }
-
-  const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
-    [];
-  layout.items.forEach((item, index) => {
-    if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
-    const child = MeshBuilder.CreatePlane(
-      `${name}:${item.kind}:${index}`,
-      { width: Math.max(item.width, 0.001), height: Math.max(item.height, 0.001) },
-      scene,
-    );
-    child.parent = parent;
-    child.position.x = item.x;
-    child.position.y = item.y;
-    child.isPickable = false;
-    const msdf = item.source === "msdf" && renderer === "msdf";
-    const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
-    child.rotation.z = restRotation;
-    if (msdf) {
-      child.material = msdfGlyphMaterial(
-        scene,
-        `${name}:glyph:${index}`,
-        item.style.color,
-        item.style.outline,
-        item.style.outlineColor,
-        atlasTexture,
-      );
-      applyGlyphUvs(child, item.uvs);
-    } else if (item.kind === "image") {
-      child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false);
-      if (item.guid) applyAlbedoTexture(child, scene, item.guid, assets);
-    } else if (item.kind === "underline") {
-      child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false);
-    } else if (sharedBitmapMaterial && packedBitmap && item.ch) {
-      child.material = sharedBitmapMaterial;
-      applyGlyphUvs(
-        child,
-        packedBitmap.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)),
-      );
-    } else {
-      child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false);
-    }
-    if (item.style.bold && msdf) {
-      child.scaling.x = 1.08;
-      child.scaling.y = 1.08;
-    }
-    child.metadata = {
-      ...(child.metadata ?? {}),
-      text2dGlyph: true,
-      text2dSource: item.kind === "image" ? "image" : item.source,
+  const bundle = new VisualBundle();
+  try {
+    const parent = bundle.ownRenderUser(MeshBuilder.CreatePlane(name, { width: wrapW, height: wrapH }, scene));
+    parent.onDisposeObservable.addOnce(() => bundle.dispose());
+    parent.material = unlitMaterial(scene, `${name}:pick`, [0, 0, 0], false, bundle);
+    parent.visibility = 0;
+    parent.isPickable = hitTest !== "ignore";
+    parent.metadata = {
+      ...(parent.metadata ?? {}),
+      text2d: true,
+      text2dRenderer: renderer,
+      text2dRich: rich,
+      text2dFontStack: fontStack,
+      text2dBitmapBytes: packedBitmap ? packedBitmap.width * packedBitmap.height * 8 : 0,
+      visualBundle: bundle,
+      text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,
+      text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
     };
-    glyphMeshes.push({ mesh: child, item, restRotation });
-  });
 
-  if (rich && layoutHasLetterEffects(layout)) {
-    attachEffects(scene, parent, glyphMeshes, options.isPaused ?? (() => assets?.paused === true));
+    const atlasLease =
+      renderer === "msdf" && fontGuid && png
+        ? msdfAtlasTexture(scene, fontGuid, png, assets)
+        : null;
+    const atlasTexture = atlasLease?.resource ?? null;
+    bundle.releaseWith(() => atlasLease?.release());
+    let bitmapAtlas: RawTexture | null = null;
+    let sharedBitmapMaterial: StandardMaterial | null = null;
+    if (packedBitmap) {
+      bitmapAtlas = bundle.ownTexture(RawTexture.CreateRGBATexture(
+        packedBitmap.pixels,
+        packedBitmap.width,
+        packedBitmap.height,
+        scene,
+        false,
+        true,
+        Texture.BILINEAR_SAMPLINGMODE,
+      ));
+      bitmapAtlas.hasAlpha = true;
+      bitmapAtlas.name = `${name}:bitmap-atlas`;
+      sharedBitmapMaterial = bitmapGlyphMaterial(scene, `${name}:bitmap`, bitmapAtlas, bundle);
+    }
+
+    const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
+      [];
+    layout.items.forEach((item, index) => {
+      if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
+      const child = MeshBuilder.CreatePlane(
+        `${name}:${item.kind}:${index}`,
+        { width: Math.max(item.width, 0.001), height: Math.max(item.height, 0.001) },
+        scene,
+      );
+      child.parent = parent;
+      child.position.x = item.x;
+      child.position.y = item.y;
+      child.isPickable = false;
+      const msdf = item.source === "msdf" && renderer === "msdf";
+      const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
+      child.rotation.z = restRotation;
+      if (msdf) {
+        child.material = msdfGlyphMaterial(
+          scene,
+          `${name}:glyph:${index}`,
+          item.style.color,
+          item.style.outline,
+          item.style.outlineColor,
+          atlasTexture,
+          bundle,
+        );
+        applyGlyphUvs(child, item.uvs);
+      } else if (item.kind === "image") {
+        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
+        if (item.guid) applyAlbedoTexture(child, scene, item.guid, assets);
+      } else if (item.kind === "underline") {
+        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
+      } else if (sharedBitmapMaterial && packedBitmap && item.ch) {
+        child.material = sharedBitmapMaterial;
+        applyGlyphUvs(
+          child,
+          packedBitmap.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)),
+        );
+      } else {
+        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
+      }
+      if (item.style.bold && msdf) {
+        child.scaling.x = 1.08;
+        child.scaling.y = 1.08;
+      }
+      child.metadata = {
+        ...(child.metadata ?? {}),
+        text2dGlyph: true,
+        text2dSource: item.kind === "image" ? "image" : item.source,
+      };
+      glyphMeshes.push({ mesh: child, item, restRotation });
+    });
+
+    if (rich && layoutHasLetterEffects(layout)) {
+      attachEffects(scene, parent, glyphMeshes, bundle, options.isPaused ?? (() => assets?.paused === true));
+    }
+    return parent;
+  } catch (error) {
+    bundle.dispose();
+    throw error;
   }
-  return parent;
 }
 
 export function text2dPropertiesFromUnknown(

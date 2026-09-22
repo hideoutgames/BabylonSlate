@@ -40,6 +40,8 @@ import {
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
+import { BitmapAllocationLimitError } from "./text2d-bitmap";
+import { text2DBitmapBytes } from "./text2d-mesh";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
@@ -60,6 +62,7 @@ export type EditorSceneSyncOptions = {
 export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
   private readonly meshKinds = new Map<string, string | null>();
+  private readonly rejectedVisuals = new Map<string, string>();
   private applyGeneration = 0;
   private pendingApply: AbortController | null = null;
   private realization: Promise<void> | null = null;
@@ -269,17 +272,25 @@ export class EditorSceneSync {
     index = 0;
     for (const actor of sceneData.actors) {
       let mesh = this.meshes.get(actor.id);
-      if (mesh && (retired.has(actor.id) || mesh.isDisposed())) {
-        mesh.dispose();
-        this.meshes.delete(actor.id);
-        this.meshKinds.delete(actor.id);
-        mesh = undefined;
+      const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}`;
+      if ((!mesh || retired.has(actor.id) || mesh.isDisposed()) && this.rejectedVisuals.get(actor.id) !== descriptor) {
+        try {
+          const replacement = createActorMesh(this.scene, actor, {
+            ...assets, retainedTextBitmapBytes: text2DBitmapBytes(mesh),
+          }, sceneData.actors);
+          const previous = mesh;
+          mesh = replacement;
+          this.meshes.set(actor.id, mesh);
+          this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
+          this.rejectedVisuals.delete(actor.id);
+          previous?.dispose();
+        } catch (error) {
+          if (!(error instanceof BitmapAllocationLimitError) || !mesh || mesh.isDisposed()) throw error;
+          this.rejectedVisuals.set(actor.id, descriptor);
+          console.warn(`[render] ${error.code}: ${error.message}`);
+        }
       }
-      if (!mesh) {
-        mesh = createActorMesh(this.scene, actor, assets, sceneData.actors);
-        this.meshes.set(actor.id, mesh);
-        this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
-      }
+      if (!mesh) continue;
       this.beginEditorModelLoad(actor, mesh);
       applyActorTransform(mesh, actor);
       applyComponentChildTransforms(mesh, actor);
@@ -297,6 +308,7 @@ export class EditorSceneSync {
         mesh.dispose();
         this.meshes.delete(actorId);
         this.meshKinds.delete(actorId);
+        this.rejectedVisuals.delete(actorId);
       }
       yield 0.5 + 0.1 * ++index / Math.max(1, oldMeshes.length);
     }

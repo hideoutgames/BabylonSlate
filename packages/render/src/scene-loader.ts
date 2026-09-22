@@ -664,6 +664,7 @@ export function createMeshForComponent(
   ) {
     return createText2DMesh(scene, name, component.properties, assets, {
       rich: component.classId === "2DRichTextComponent",
+      bitmapLimits: { retainedBytes: assets?.retainedTextBitmapBytes },
     });
   }
   if (component.classId === "2DTextureComponent") {
@@ -892,42 +893,48 @@ function createActorOriginHierarchy(
     actor.components.map((component) => [component.id, component]),
   );
   const meshes = new Map<string, Mesh>();
-  for (const component of visuals) {
-    const mesh = createMeshForComponent(
-      scene,
-      editorComponentMeshName(actor.id, component.id),
-      actor,
-      component,
-      assets,
-    );
-    applySerializedTransform(
-      mesh,
-      component.transform ?? identitySerializedTransform(),
-    );
-    mesh.isVisible = actor.visible;
-    mesh.isPickable = visualIsPickable(mesh, actor.locked);
-    meshes.set(component.id, mesh);
+  try {
+    for (const component of visuals) {
+      const mesh = createMeshForComponent(
+        scene,
+        editorComponentMeshName(actor.id, component.id),
+        actor,
+        component,
+        assets,
+      );
+      mesh.parent = root;
+      applySerializedTransform(
+        mesh,
+        component.transform ?? identitySerializedTransform(),
+      );
+      mesh.isVisible = actor.visible;
+      mesh.isPickable = visualIsPickable(mesh, actor.locked);
+      meshes.set(component.id, mesh);
+    }
+    for (const component of visuals) {
+      const mesh = meshes.get(component.id);
+      if (!mesh) continue;
+      const parentId = parentVisualMeshId(component, meshes, componentsById);
+      mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
+    }
+    const helperIcon = helperBillboardIconOf(actor, allActors);
+    if (helperIcon && !visuals.some(isBillboardComponent)) {
+      const billboard = createEditorBillboard(
+        scene,
+        editorComponentMeshName(actor.id, EDITOR_HELPER_BILLBOARD_ID),
+        helperIcon,
+      );
+      applyEditorBillboardFromActor(billboard, actor);
+      billboard.isVisible = actor.visible;
+      billboard.isPickable = visualIsPickable(billboard, actor.locked);
+      billboard.parent = root;
+      syncEditorBillboardParentScale(billboard);
+    }
+    return root;
+  } catch (error) {
+    root.dispose();
+    throw error;
   }
-  for (const component of visuals) {
-    const mesh = meshes.get(component.id);
-    if (!mesh) continue;
-    const parentId = parentVisualMeshId(component, meshes, componentsById);
-    mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
-  }
-  const helperIcon = helperBillboardIconOf(actor, allActors);
-  if (helperIcon && !visuals.some(isBillboardComponent)) {
-    const billboard = createEditorBillboard(
-      scene,
-      editorComponentMeshName(actor.id, EDITOR_HELPER_BILLBOARD_ID),
-      helperIcon,
-    );
-    applyEditorBillboardFromActor(billboard, actor);
-    billboard.isVisible = actor.visible;
-    billboard.isPickable = visualIsPickable(billboard, actor.locked);
-    billboard.parent = root;
-    syncEditorBillboardParentScale(billboard);
-  }
-  return root;
 }
 
 /** Build the Babylon mesh for an actor's first renderable component. */

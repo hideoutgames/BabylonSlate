@@ -1,9 +1,10 @@
 import { Mesh, NullEngine, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import { parseText2DProperties } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
 import { encodeTriangleGlb } from "./model-mesh";
-import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
 import { visualMeshes } from "./visual-meshes";
@@ -89,5 +90,27 @@ describe("visual generation ownership", () => {
     expect(scene.meshes).toHaveLength(0);
     expect(scene.materials).toHaveLength(0);
     expect(scene.textures).toHaveLength(0);
+  });
+
+  it("keeps the current Play text when a replacement exceeds allocation limits", () => {
+    const { scene, engine } = host();
+    const binding = createSnapshotSceneBinding();
+    const caps = engine.getCaps();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...caps, maxTextureSize: 64 });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d: parseText2DProperties({ text: "A", size: 16 }) });
+    const previous = binding.meshes.get(0)!;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rasterize = vi.spyOn(bitmap, "rasterizeBitmapGlyph");
+    for (let repeat = 0; repeat < 100; repeat += 1) {
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d: parseText2DProperties({ text: "A", size: 256 }) });
+    }
+    expect(binding.meshes.get(0)).toBe(previous);
+    expect(previous.isDisposed()).toBe(false);
+    expect(previous.getChildMeshes()).toHaveLength(1);
+    expect(rasterize).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "2dtext", meshAssetGuid: null, text2d: parseText2DProperties({ text: "B", size: 16 }) });
+    expect(binding.meshes.get(0)).not.toBe(previous);
+    expect(previous.isDisposed()).toBe(true);
   });
 });

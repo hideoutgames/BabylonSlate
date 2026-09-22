@@ -85,7 +85,8 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
@@ -521,6 +522,8 @@ function applyPlayShadows(scene: Scene): void {
   shadows.sync();
 }
 
+const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
 export function applyAssignMesh(
   scene: Scene,
@@ -617,6 +620,31 @@ export function applyAssignMesh(
     return;
   }
   const existing = binding.meshes.get(command.slotId);
+  const stagesText = meshKind === "2dtext" || meshKind === "2drichtext";
+  // Text performs all allocation checks and construction while its predecessor
+  // remains usable. Native retirement must not erase the newly authored props.
+  let stagedText: Mesh | null = null;
+  if (stagesText) {
+    const descriptor = JSON.stringify(command);
+    const rejected = rejectedTextAssignments.get(binding);
+    if (existing && rejected?.get(command.slotId) === descriptor) return;
+    try {
+      stagedText = createPlayVisual(scene, command.slotId, binding);
+      rejected?.delete(command.slotId);
+    } catch (error) {
+      if (!(error instanceof BitmapAllocationLimitError) || !existing) throw error;
+      const failed = rejected ?? new Map<number, string>();
+      failed.set(command.slotId, descriptor);
+      rejectedTextAssignments.set(binding, failed);
+      console.warn(`[render] ${error.code}: ${error.message}`);
+      return;
+    }
+  }
+  if (stagedText) {
+    stampOverlayPick(stagedText, command);
+    try { applyMaterialToActorMeshes(binding, command.slotId, stagedText); }
+    catch (error) { stagedText.dispose(); throw error; }
+  }
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
@@ -628,11 +656,11 @@ export function applyAssignMesh(
       faces: emptySkyboxFaces(),
     });
   }
-  const rebuilt = createPlayVisual(scene, command.slotId, binding);
+  const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
-  applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
+  if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
 }
@@ -840,6 +868,7 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  rejectedTextAssignments.get(binding)?.delete(slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
@@ -916,10 +945,6 @@ function disposeSlotVisuals(
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
-  binding.skyboxProps.delete(slotId);
-  binding.text3dProps.delete(slotId);
-  binding.text2dProps.delete(slotId);
-  binding.overlayPanelProps.delete(slotId);
 }
 
 function createPlayVisual(
@@ -943,28 +968,34 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
-  for (const part of parts ?? []) {
-    const child = createPlayMesh(
-      scene,
-      slotId,
-      part.meshKind,
-      part.meshAssetGuid,
-      binding,
-      playComponentMeshName(slotId, part.componentId),
-      part.text3d,
-      part.text2d,
-    );
-    applyPartTransform(child, part);
-    meshes.set(part.componentId, child);
+  try {
+    for (const part of parts ?? []) {
+      const child = createPlayMesh(
+        scene,
+        slotId,
+        part.meshKind,
+        part.meshAssetGuid,
+        binding,
+        playComponentMeshName(slotId, part.componentId),
+        part.text3d,
+        part.text2d,
+      );
+      child.parent = root;
+      applyPartTransform(child, part);
+      meshes.set(part.componentId, child);
+    }
+    for (const part of parts ?? []) {
+      const child = meshes.get(part.componentId);
+      if (!child) continue;
+      const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+      child.parent = parent ?? root;
+    }
+    applyPlayVisualSorting(root, slotId, binding);
+    return root;
+  } catch (error) {
+    root.dispose();
+    throw error;
   }
-  for (const part of parts ?? []) {
-    const child = meshes.get(part.componentId);
-    if (!child) continue;
-    const parent = part.parentId ? meshes.get(part.parentId) : undefined;
-    child.parent = parent ?? root;
-  }
-  applyPlayVisualSorting(root, slotId, binding);
-  return root;
 }
 
 export function createPlayMesh(
@@ -1074,6 +1105,7 @@ export function createPlayMesh(
     return createText2DMesh(scene, name, props ?? {}, binding, {
       rich: meshKind === "2drichtext",
       isPaused: () => binding?.paused === true,
+      bitmapLimits: { retainedBytes: text2DBitmapBytes(binding?.meshes.get(slotId)) },
     });
   }
   if (assetGuid) {

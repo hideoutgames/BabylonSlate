@@ -58,6 +58,8 @@ export interface MeshAssetContext {
   fontCssStackByGuid?: ReadonlyMap<string, string>;
   /** Play pause — overlay letter effects freeze while true. */
   paused?: boolean;
+  /** Existing bitmap storage retained while a replacement visual is staged. */
+  retainedTextBitmapBytes?: number;
   /** Compiled overlay / mesh Materials (2DMaterial, 2DPanel). */
   resolveMaterial?: (
     guid: string,
