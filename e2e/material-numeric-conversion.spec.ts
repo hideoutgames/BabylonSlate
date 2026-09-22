@@ -32,33 +32,35 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       }
     };
     const expected = {
-      float: [[32, 0, 0, 255], [32, 0, 0, 255], [32, 0, 0, 255], [32, 0, 0, 255]],
-      vec2: [[32, 0, 0, 255], [32, 96, 0, 255], [32, 96, 0, 255], [32, 96, 0, 255]],
-      vec3: [[32, 0, 0, 255], [32, 96, 0, 255], [32, 96, 160, 255], [32, 96, 160, 255]],
-      vec4: [[32, 0, 0, 255], [32, 96, 0, 255], [32, 96, 160, 255], [32, 96, 160, 0]],
+      float: [[32, 255, 255, 255], [32, 255, 255, 255], [32, 255, 255, 255], [32, 255, 255, 255]],
+      vec2: [[32, 255, 255, 255], [32, 96, 255, 255], [32, 96, 255, 255], [32, 96, 255, 255]],
+      vec3: [[32, 255, 255, 255], [32, 96, 255, 255], [32, 96, 160, 255], [32, 96, 160, 255]],
+      vec4: [[32, 255, 255, 255], [32, 0, 255, 255], [32, 0, 160, 255], [32, 0, 160, 0]],
     };
     for (const from of ["float", "vec2", "vec3", "vec4"] as const) {
       for (const [index, to] of ["float", "vec2", "vec3", "vec4"].entries()) assertPixel(`${from}-${to}`, expected[from][index]!);
     }
-    assertPixel("mask-float", [0, 255, 0, 255]);
-    assertPixel("mask-vec2", [0, 255, 0, 255]);
-    assertPixel("mask-vec3", [160, 255, 0, 255]);
-    assertPixel("mask-vec4", [160, 0, 0, 255]);
-    assertPixel("mixed-a", [48, 104, 64, 255]);
-    assertPixel("mixed-b", [48, 104, 64, 255]);
-    assertPixel("step", [255, 0, 0, 255]);
-    assertPixel("atan2", [200, 0, 0, 255]);
-    assertPixel("smoothstep", [128, 128, 255, 255]);
-    assertPixel("remap", [85, 64, 191, 255]);
+    assertPixel("mask-float", [255, 255, 255, 255]);
+    assertPixel("mask-vec2", [255, 255, 255, 255]);
+    assertPixel("mask-vec3", [160, 255, 255, 255]);
+    assertPixel("mask-vec4", [160, 0, 255, 255]);
+    assertPixel("mixed-a", [48, 104, 191, 255]);
+    assertPixel("mixed-b", [48, 104, 191, 255]);
+    assertPixel("step", [255, 255, 255, 255]);
+    assertPixel("atan2", [200, 118, 255, 255]);
+    assertPixel("smoothstep", [128, 128, 215, 255]);
+    assertPixel("remap", [85, 191, 64, 255]);
+    assertPixel("multiply-float-left", [64, 128, 191, 255]);
+    assertPixel("multiply-float-right", [64, 128, 191, 255]);
     assertPixel("reflect-vec4", [51, 77, 102, 128]);
-    assertPixel("reflect-vec2", [64, 128, 0, 255]);
-    assertPixel("reflect-float", [64, 0, 0, 255]);
-    assertPixel("dot-float", [64, 0, 0, 255]);
-    assertPixel("distance-float", [128, 0, 0, 255]);
-    assertPixel("length-float", [128, 0, 0, 255]);
-    assertPixel("normalize-float", [255, 0, 0, 255]);
-    assertPixel("live-before", [64, 0, 0, 255]);
-    assertPixel("live-after", [191, 0, 0, 255]);
-    assertPixel("split-missing-w", [255, 0, 0, 255]);
+    assertPixel("reflect-vec2", [64, 128, 255, 255]);
+    assertPixel("reflect-float", [64, 255, 255, 255]);
+    assertPixel("dot-float", [64, 255, 255, 255]);
+    assertPixel("distance-float", [128, 255, 255, 255]);
+    assertPixel("length-float", [128, 255, 255, 255]);
+    assertPixel("normalize-float", [255, 255, 255, 255]);
+    assertPixel("live-before", [64, 255, 255, 255]);
+    assertPixel("live-after", [191, 255, 255, 255]);
+    assertPixel("split-missing-w", [255, 255, 255, 255]);
   });
 }
