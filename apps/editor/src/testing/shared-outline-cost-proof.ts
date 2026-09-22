@@ -1,8 +1,7 @@
 /** Fixed-output production measurements. Software adapters are functional evidence only. */
-import { Color3, Color4, Engine, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
-import { createRenderDiagnostics } from "@babylonslate/render/render-diagnostics";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 
 function distribution(values: number[]) {
@@ -30,7 +29,11 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("cost");
   const renderer = new SceneRenderCoordinator(scene), detach = renderer.attachSharedOutline(view);
   let cpuMs = 0;
-  const diagnostics = createRenderDiagnostics(scene, () => cpuMs);
+  // Babylon 9.20 whole-frame WebGPU timestamps use the removed encoder API.
+  // A WebGPU timestamp-query capability is not a valid whole-frame measurement.
+  const instrument = !engine.isWebGPU && engine.getCaps().timerQuery ? new EngineInstrumentation(engine) : null;
+  if (instrument) instrument.captureGPUFrameTime = true;
+  const gpuStatus = () => !instrument ? "unsupported" : instrument.gpuFrameTimeCounter.count ? "available" : "pending";
   const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
   const draw = () => {
     const start = performance.now();
@@ -78,13 +81,12 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
         for (let frame = 0; frame < 60; frame++) {
           const now = await nextFrame(); cadence.push(now - previous); previous = now;
           draw(); cpu.push(cpuMs); draws.push(readEngineDrawCalls(engine));
-          const sample = diagnostics();
-          if (sample.gpuStatus === "available" && sample.gpuMs !== null) gpu.push(sample.gpuMs);
+          if (instrument?.gpuFrameTimeCounter.count) gpu.push(instrument.gpuFrameTimeCounter.current / 1_000_000);
         }
         const passes = renderer.sharedOutlineDiagnostics();
         measurements.push({ count, mode, width: engine.getRenderWidth(), height: engine.getRenderHeight(),
           scalingLevel: engine.getHardwareScalingLevel(), cpuMs: distribution(cpu), cadenceMs: distribution(cadence),
-          gpuMs: distribution(gpu), gpuStatus: diagnostics().gpuStatus, drawCalls: distribution(draws), passes,
+          gpuMs: distribution(gpu), gpuStatus: gpuStatus(), drawCalls: distribution(draws), passes,
           // All boxes have 12 triangles. Mask instance dispatch can submit nonmembers
           // and discard them in the fragment shader; this is an upper bound, not a GPU counter.
           submittedTriangleUpperBound: (count + 1) * 12 * (1 + Math.max(0, passes.drawingPassCount - 1)) + (passes.drawingPassCount ? 2 : 0),
@@ -114,6 +116,6 @@ export async function runSharedOutlineCostProof(backend: "webgl2" | "webgpu") {
       measurements, lifecycle };
   } finally {
     detach(); await renderer.retire(); view.dispose(); await owner.whenReleased();
-    scene.dispose(); engine.dispose(); canvas.remove();
+    instrument?.dispose(); scene.dispose(); engine.dispose(); canvas.remove();
   }
 }
