@@ -37,9 +37,10 @@ are ready; see the typed session contract below.
 | Scene environment texture and authored post-process asset references | Asset/resource rebuild | Existing scene/asset owners; not cheap quality switches |
 | Rectangular-light dimensions, color, intensity and enabled state | Live component state | Per-actor light owner; admission shares the global lighting budget |
 | Rectangular-light Texture reference | Prepared resource replacement | Requires versioned emission data; shares uploads and retains other owners |
-| Outline fields | Pending native qualification and implementation | No placeholder schema or controls |
+| `cel.outlinesEnabled`, `outlineColor`, `outlineWidth` | Live contribution/style state; activation/retirement owns graph resources | Shared world-outline host; artistic settings survive quality presets and PBR/CEL switches |
+| `OutlineComponent.enabled`, `color`, `width`, `throughMeshes` | Live per-actor contribution/style state | Actor lifetime and view membership; no mesh reassignment for style edits |
 
-Physical A16 budgets and native outline ownership approval are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This inventory does not certify unimplemented settings transactions, outline coverage, area lights or device performance.
+Physical A16 budgets and outline acceptance are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This application inventory does not itself certify outline coverage, area lights or device performance.
 
 Shared Scene/Play views and asset previews accept Babylon's AbstractEngine contract, which both WebGL2 and WebGPU implement. Engine construction remains a separate project-lifetime responsibility; a Scene never changes its owning backend in place.
 `createAppWebGpuEngine` asynchronously creates a project Engine with local KTX2/mesh decoders, exact sRGB conversion and large-world support. It requests only supported compression, float filtering/blending and timer features. Failed initialization releases partial GPU resources, native listeners and EngineStore ownership through a pinned Babylon 9.20 cleanup adapter; ordinary initialized Engines retain native disposal. Cancellation waits for uncancellable browser adapter/device requests to settle and then disposes the superseded Engine. Callers must serialize backend transitions and supply a fresh canvas for a different graphics context.
@@ -1105,10 +1106,12 @@ attenuates occluded edges, and silently falls back from float to half/byte masks
 These properties do not meet independent styles and strict CEL visibility.
 
 - **Ownership:** one Scene owner assigns stable actor/group identities and owns
-  the source/LOD/thin-instance identity registrations. View owners hold separate
+  regular source/LOD identity registrations. View owners hold separate
   consumer contributions and style tables. Consumers never clear mesh-owned
   state. The same actor key groups model meshes and survives contribution order
-  changes. Selection exists only in its editor view; runtime views never inherit
+  changes. Thin-instance meshes use one uniform actor identity for all their
+  indices, without allocating or modifying a thin-instance ID buffer.
+  Selection exists only in its editor view; runtime views never inherit
   it. Per-pass instance buffers remain distinct on WebGPU. Identical identity
   sequences skip uploads; changed spans alone update an existing buffer.
 - **Representation:** background is ID zero; actor IDs 1–65,535 are encoded into
@@ -1117,6 +1120,8 @@ These properties do not meet independent styles and strict CEL visibility.
   style tables retain RGB and output-pixel width (0.25–8); float textures are
   sampled, not rendered to. Capacity or resource admission failure rejects the
   new transaction with a diagnostic while preserving valid prior contributions.
+  The capacity counts distinct actor keys over the Scene lifetime, not just
+  currently outlined actors; IDs are not recycled into potentially stale views.
   No arbitrary style quantization or silent member dropping is permitted.
 - **Visibility and overlap:** strict gameplay, intentional through-mesh gameplay,
   and editor selection use three distinct mask groups. Enabled components replace
@@ -1159,13 +1164,68 @@ requirements, not claims established by this design note. Repository search at
 this checkpoint found thin-instance proof code but no authored thin-instance
 mapping API; the implementation must define that boundary explicitly.
 
-The subsequent source audit identifies concrete generalization work still
-required before adoption: per-submaterial alpha/culling coverage, UV2-only
-cutouts, color morph shader defines, live material coverage changes and late LOD
-registrations. Authored Material Graph displacement and arbitrary discard need
-an identity-mask variant from the existing material plan; the generic selection
-shader cannot reproduce them. A replacement MultiMaterial is insufficient:
-Babylon's single current-submaterial cache resets DrawWrappers across passes
-when world and mask materials alternate. Keep original submaterial lookup and
-per-pass effect ownership when extending that path. Thin-instance targets are
-currently rejected explicitly, rather than silently rendered as one actor.
+The next implementation slice, still requiring its own pixel acceptance, uses
+native ObjectRenderer custom submission per submesh. Original materials and
+MultiMaterial lookup remain intact; each mask pass owns its actual DrawWrappers
+and retires replaced Effects. Native bone, position/UV morph, clip-plane and
+instance helpers preserve coverage; unused color morph attributes are omitted.
+Cutouts use the material's requested UV1 or UV2 set and live texture transforms/cutoffs;
+a missing requested set samples transformed zero coordinates, matching the world shader.
+UV sets beyond UV2 are explicitly unsupported. Late
+regular instance/LOD registrations are admitted when their actual draw needs
+them. Hosts provide authored world occluders so editor guides stay out of masks.
+
+Authored Material Graph masks compile from the same resolved plan, retaining
+world-position offset and alpha discard while replacing lighting output with
+identity output. Variants are shared per source material generation, replay
+current parameters, follow set/reset edits and borrow existing texture assets.
+Unknown custom shaders, opacity Fresnel and alpha UV sets beyond UV2 remain
+explicitly unsupported. Transparent coverage is conservative: positive supported
+opacity blocks strict outlines, zero coverage does not; identity masks never
+alpha-blend. Native opacity textures (including their independent UV transform),
+vertex alpha and thin-instance alpha are implemented but require the new pixel
+qualification. Whole-mesh thin groups are supported by the
+candidate; independent index authoring is not provided. The glTF GPU-instancing
+extension is not newly enabled by this renderer change.
+
+### Authored outline integration
+
+`OutlineComponent` stores enabled state, RGB color, output-pixel width and an
+explicit `throughMeshes` boolean. Defaults are enabled, RGB (0.03, 0.03, 0.03),
+1 pixel and strict visibility. Finite colors clamp to [0,1] and width to [0.25,8];
+malformed values normalize before rendering. Component IDs retain independent
+ownership through duplication, Class inheritance and runtime hydration. If more
+than one enabled component targets an actor, the lexicographically last component
+ID supplies its style, independent of insertion order. Removing it reveals the
+next enabled component or global CEL contribution.
+
+The world-view host groups an actor's realized primitive/model parts, updates
+late-loaded or replaced geometry, and removes despawned actors. Only authored
+world triangles contribute or occlude; skyboxes, collider helpers and editor
+guides are excluded. SceneLayers do not support this world-outline component.
+Regular instances remain independent actors; one thin-instance mesh is one actor
+group. There is no authored per-thin-index style or selection API.
+
+CEL defaults to enabled dark 1-pixel outlines. Global enable/color/width are
+artistic settings, with independent scene inheritance and typed session overrides.
+Scalability **Set CEL Outlines**, **Set CEL**, effective readback and changed events
+use the same transaction service; Graph Color is the native `{x,y,z,w}` structure
+(RGB is used). Presets preserve these artistic values, scene transitions retain
+session overrides, and Reset/new Play/player sessions restore project defaults.
+Editor selection stays separate and never enters exported component data.
+
+World rendering now uses the existing coordinator for editor and RTT views as
+well as Play. Hosted editor synchronization keeps world-matrix freezing but
+disables the classic active-mesh queue freeze, which conflicts with FrameGraph
+object collection. RTT outputs own sampleable depth through the existing target
+lifetime. This scheduling change requires a fresh equal-output CPU comparison;
+the historical shadow optimization profile is not evidence of its cost.
+
+In test builds only, `?test=1&renderDiagnostics=1` publishes a throttled read-only
+`data-render-diagnostics` snapshot on the ready viewport after its own presented
+frame. It includes requested settings, engine-confirmed API/adapter, actual
+canvas/output dimensions and resource accounting for Computer Use evidence.
+Normal sessions and timing fixtures do not incur this serialization. Whole-frame
+WebGPU GPU timing remains unsupported here: Babylon 9.20's encoder timestamp
+fallback returns zero without a measurement, so that value is not reported as
+GPU cost or fed to dynamic resolution. WebGL timer-query support is unchanged.

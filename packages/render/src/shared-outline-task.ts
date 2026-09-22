@@ -1,6 +1,5 @@
 import {
-  Color4, Constants, EffectWrapper, Material, ShaderLanguage, ShaderMaterial, Texture, Vector2,
-  type AbstractMesh, type Camera, type InstancedMesh, type Mesh,
+  Color4, Constants, EffectWrapper, ShaderLanguage, Texture, type Camera,
 } from "@babylonjs/core";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -15,10 +14,11 @@ import {
 import { managedRenderTextureResource } from "./render-target-resource-cost";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import {
-  SHARED_OUTLINE_ATTRIBUTE, SHARED_OUTLINE_GROUPS, SharedOutlineView,
+  SHARED_OUTLINE_GROUPS, SharedOutlineView,
   type SharedOutlineGroup,
 } from "./shared-outline";
-import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER, SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
+import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER } from "./shared-outline-shaders";
+import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 
 class OutlineCompose extends EffectWrapper { get drawWrapper() { return this._drawWrapper; } }
 type MaskRecord = {
@@ -27,7 +27,7 @@ type MaskRecord = {
   depth: FrameGraphTextureHandle;
   clear: FrameGraphClearTextureTask;
   objects: FrameGraphObjectRendererTask;
-  materials: Map<Mesh, { source: Material | null; mask: ShaderMaterial }>;
+  renderer: SharedOutlineMaskRenderer;
   clearPass?: FrameGraphRenderPass;
   drawPass?: FrameGraphRenderPass;
 };
@@ -99,7 +99,8 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         objects.enableBoundingBoxRendering = false; objects.enableOutlineRendering = false;
         objects.depthTest = true; objects.depthWrite = true;
         this.view.owner.registerRenderPass(objects.objectRenderer.renderPassId);
-        this.masks.push({ group, mask, depth, clear, objects, materials: new Map() });
+        this.masks.push({ group, mask, depth, clear, objects,
+          renderer: new SharedOutlineMaskRenderer(objects.objectRenderer, this.view, group) });
       }
     }
     this.sync();
@@ -147,60 +148,9 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (record.drawPass) record.drawPass.disabled = !active;
       record.objects.camera = this.camera;
       record.objects.objectList = { meshes: active ? this.view.meshesForGroup(record.group) : [], particleSystems: [] };
-      if (!active) continue;
-      const sources = new Set<Mesh>();
-      for (const mesh of record.objects.objectList.meshes ?? []) {
-        if (!mesh.subMeshes?.length) continue;
-        const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : mesh as Mesh;
-        sources.add(source);
-        for (const lod of source.getLODLevels()) if (lod.mesh) sources.add(lod.mesh);
-      }
-      for (const source of sources) {
-        let existing = record.materials.get(source);
-        const effectiveMaterial = source.material ?? this._frameGraph.scene.defaultMaterial;
-        if (existing && existing.source !== effectiveMaterial) {
-          this.retireMaterial(existing.mask, source, record.objects.objectRenderer.renderPassId);
-          record.materials.delete(source); existing = undefined;
-        }
-        if (!existing) {
-          const mask = this.createMaskMaterial(source, record.group);
-          existing = { source: effectiveMaterial, mask }; record.materials.set(source, existing);
-          record.objects.objectRenderer.setMaterialForRendering(source, mask);
-        }
-        existing.mask.setTexture("styleSampler", this.view.styleTexture(record.group));
-        existing.mask.setVector2("tableSize", new Vector2(this.view.tableWidth, this.view.tableHeight));
-      }
-      for (const [source, entry] of record.materials) if (source.isDisposed()) {
-        this.retireMaterial(entry.mask, source, record.objects.objectRenderer.renderPassId); record.materials.delete(source);
-      }
+      record.renderer.prune();
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;
-  }
-  private createMaskMaterial(source: Mesh, group: SharedOutlineGroup): ShaderMaterial {
-    const original = source.material ?? this._frameGraph.scene.defaultMaterial;
-    const texture = original?.needAlphaTestingForMesh(source) ? original.getAlphaTestTexture() : null;
-    const uv2 = texture?.coordinatesIndex === 1 && source.isVerticesDataPresent("uv2");
-    const alphaTest = !!texture && source.isVerticesDataPresent(uv2 ? "uv2" : "uv");
-    const material = new ShaderMaterial(`${this.name} ${group} Mask Material`, this._frameGraph.scene,
-      { vertex: SHARED_OUTLINE_MASK_SHADER, fragment: SHARED_OUTLINE_MASK_SHADER }, {
-        attributes: ["position", SHARED_OUTLINE_ATTRIBUTE, ...(alphaTest ? [uv2 ? "uv2" : "uv"] : [])],
-        uniforms: ["world", "viewProjection", "view", "selectionId", "tableSize", "discardNonmembers", "diffuseMatrix", "alphaCutoff"],
-        samplers: ["styleSampler", "diffuseSampler"],
-        defines: ["STORE_CAMERASPACE_Z", ...(alphaTest ? [uv2 ? "UV2" : "UV1"] : [])],
-        needAlphaBlending: false, needAlphaTesting: alphaTest, useClipPlane: true,
-        shaderLanguage: this._frameGraph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
-      }, true);
-    material.backFaceCulling = original?.backFaceCulling ?? true;
-    material.cullBackFaces = original?.cullBackFaces ?? true;
-    material.sideOrientation = original?.sideOrientation ?? Material.CounterClockWiseSideOrientation;
-    material.disableDepthWrite = false;
-    material.setFloat("discardNonmembers", group === "strict" ? 0 : 1);
-    material.setFloat("alphaCutoff", "alphaCutOff" in (original ?? {}) ? (original as Material & { alphaCutOff: number }).alphaCutOff : 0.4);
-    if (texture && alphaTest) {
-      material.setTexture("diffuseSampler", texture); material.setMatrix("diffuseMatrix", texture.getTextureMatrix());
-    }
-    material.onBindObservable.add((mesh: AbstractMesh) => material.getEffect()?.setFloat("selectionId", this.view.owner.identityFor(mesh)));
-    return material;
   }
   override isReady(): boolean {
     if (this.disposed) return false;
@@ -215,45 +165,24 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     ]);
     this.lease.commit(resources); this.committed = true;
   }
-  private retireMaterial(material: ShaderMaterial, source: Mesh, pass: number): void {
-    const wrappers: OwnedEffectRetirement[] = [];
-    for (const subMesh of source.subMeshes ?? []) {
-      const wrapper = subMesh._getDrawWrapper(pass);
-      if (!wrapper) continue;
-      // Transfer the actual per-pass reference before native detachment resets
-      // the cache. getEffect() only reports the last bound variant and misses
-      // variants compiled during preparation that have never drawn.
-      subMesh._removeDrawWrapper(pass, false);
-      if (wrapper.effect) source.geometry?._releaseVertexArrayObject(wrapper.effect);
-      wrappers.push(retireOwnedEffect(wrapper.effect, () => wrapper.dispose(true)));
-    }
-    if (!source.isDisposed()) source.setMaterialForRenderPass(pass, undefined);
-    let released = false;
-    const disposal = Promise.all(wrappers.map((entry) => entry.released)).then(() => {
-      material.dispose(true, false); released = true;
-    });
-    const completion = Promise.all(wrappers.map((entry) => entry.completion)).then(() => disposal);
-    void completion.catch(() => {});
-    this.retirements.push({ completion, released: disposal, isReleased: () => released });
-  }
   override dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const record of this.masks) {
-      for (const [source, entry] of record.materials) {
-        this.retireMaterial(entry.mask, source, record.objects.objectRenderer.renderPassId);
-      }
-      record.materials.clear();
+      record.renderer.dispose();
       this.view.owner.retireRenderPass(record.objects.objectRenderer.renderPassId);
       record.objects.dispose(); record.clear.dispose();
     }
     this.retirements.push(retireOwnedEffect(this.compose.effect, () => this.compose.dispose()));
     super.dispose();
   }
-  async whenDisposed(): Promise<void> { await Promise.all(this.retirements.map((entry) => entry.completion)); }
+  async whenDisposed(): Promise<void> { await Promise.all([
+    ...this.retirements.map((entry) => entry.completion), ...this.masks.map((record) => record.renderer.whenDisposed()),
+  ]); }
   whenReleased(): Promise<void> {
     this.released ??= this.graphReleased.then(async () => {
       await Promise.all(this.retirements.map((entry) => entry.released));
+      await Promise.all(this.masks.map((record) => record.renderer.whenReleased()));
       if (this.lease) await releaseManagedRenderLeaseAfterDisposal(this._frameGraph.engine, this.lease);
     });
     return this.released;

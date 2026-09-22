@@ -52,9 +52,20 @@ export class SharedOutlineOwner {
   private uploads = 0;
   private bufferBytes = 0;
   private disposed = false;
+  meshRevision = 0;
+  private readonly stopWatchingMeshes: () => void;
 
   private constructor(scene: Scene) {
     this.scene = scene;
+    const added = scene.onNewMeshAddedObservable.add(() => { this.meshRevision++; });
+    const removed = scene.onMeshRemovedObservable.add((mesh) => {
+      this.meshRevision++;
+      const record = this.sources.get(mesh as Mesh);
+      if (record) this.releaseSource(mesh as Mesh, record);
+    });
+    this.stopWatchingMeshes = () => {
+      scene.onNewMeshAddedObservable.remove(added); scene.onMeshRemovedObservable.remove(removed);
+    };
     scene.onDisposeObservable.addOnce(() => this.dispose());
   }
   createView(key: string): SharedOutlineView {
@@ -83,18 +94,16 @@ export class SharedOutlineOwner {
           const old = requested.get(mesh);
           if (old !== undefined && old !== target.key)
             throw new Error("Shared outline consumers must use the same actor key for the same mesh.");
-          if (mesh.hasThinInstances)
-            throw new Error("Authored thin-instance outline index mappings are not yet qualified.");
           requested.set(mesh, target.key);
         }
       }
     const newKeys = [...keys].filter((key) => !this.identities.has(key));
     if (this.identities.size + newKeys.length > SHARED_OUTLINE_MAX_ID)
-      throw new Error("Shared outline identity capacity (65,535 actor groups per Scene) exceeded.");
+      throw new Error("Shared outline identity capacity (65,535 actor keys over the Scene lifetime) exceeded.");
     const next = new Map<AbstractMesh, number>();
     const requiredSources = new Set<Mesh>();
     for (const mesh of requested.keys()) {
-      if (mesh.isAnInstance || mesh.hasInstances) {
+      if (!mesh.hasThinInstances && (mesh.isAnInstance || mesh.hasInstances)) {
         const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : mesh as Mesh;
         requiredSources.add(source);
         for (const lod of source.getLODLevels()) if (lod.mesh) requiredSources.add(lod.mesh);
@@ -121,6 +130,16 @@ export class SharedOutlineOwner {
       for (const instance of source.instances)
         instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(instance);
     }
+  }
+  /** Admit a late instance source/LOD only when its actual mask draw needs it. */
+  prepareRenderSource(source: Mesh): void {
+    if (source.hasThinInstances || this.sources.has(source)) return;
+    const master = source._masterMesh;
+    if (!source.hasInstances && !master?.hasInstances) return;
+    this.acquireSource(source);
+    source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(source);
+    for (const instance of source.instances)
+      instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(instance);
   }
   private acquireSource(source: Mesh): void {
     if (this.sources.has(source)) return;
@@ -260,6 +279,7 @@ export class SharedOutlineOwner {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopWatchingMeshes();
     for (const view of [...this.views]) view.dispose();
     for (const [source, record] of this.sources) this.releaseSource(source, record);
     this.meshIdentity.clear(); owners.delete(this.scene);
@@ -277,27 +297,59 @@ export class SharedOutlineView {
   private preparedRevision = -1;
   private readonly styles = new Map<SharedOutlineGroup, StyleRecord>();
   private readonly activeGroups = new Set<SharedOutlineGroup>();
+  private occluders: readonly AbstractMesh[] | null = null;
+  private readonly meshLists = new Map<SharedOutlineGroup, { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
   private styleUploads = 0;
   tableWidth = 1;
   tableHeight = 1;
   maximumWidth = 0;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
   get active(): boolean { return !this.isDisposed && [...this.contributions.values()].some((entry) => entry.targets.length > 0); }
+  /** Hosts supply authored world occluders, excluding editor helpers and guides. */
+  setOccluders(meshes: readonly AbstractMesh[] | null): void {
+    const next = meshes ? [...new Set(meshes)] : null;
+    if (next === null ? this.occluders === null : this.occluders !== null &&
+      next.length === this.occluders.length && next.every((mesh) => this.occluders!.includes(mesh))) return;
+    this.occluders = next; this.revision++;
+  }
   setContribution(key: string, input: SharedOutlineContribution): void {
     if (this.isDisposed) throw new Error("Shared outline view is disposed.");
-    if (!key || !["global", "component", "selection"].includes(input.kind) ||
-      !Number.isFinite(input.width) || input.width < 0.25 || input.width > SHARED_OUTLINE_MAX_WIDTH ||
-      input.color.length !== 3 || input.color.some((value) => !Number.isFinite(value) || value < 0 || value > 1) ||
-      input.targets.some((target) => !target.key))
-      throw new Error("Shared outline contribution has invalid identity, color, or width (0.25–8 pixels).");
-    const next: SharedOutlineContribution = { ...input, color: [...input.color],
-      targets: [...input.targets].map((target) => ({ key: target.key, meshes: [...target.meshes] })).sort((a, b) => a.key.localeCompare(b.key)) };
+    const next = normalizedContribution(key, input);
     const previous = this.contributions.get(key);
     if (previous && sameContribution(previous, next)) return;
     this.contributions.set(key, next);
-    try { this.owner.reconcile(); }
+    try { if (!previous || !sameTargets(previous, next)) this.owner.reconcile(); }
     catch (error) { if (previous) this.contributions.set(key, previous); else this.contributions.delete(key); throw error; }
     this.revision++;
+  }
+  /** Publish a complete host snapshot or retain the previous accepted snapshot. */
+  replaceContributions(entries: ReadonlyMap<string, SharedOutlineContribution>, occluders: readonly AbstractMesh[] | null): void {
+    if (this.isDisposed) throw new Error("Shared outline view is disposed.");
+    const next = new Map([...entries].map(([key, entry]) => [key, normalizedContribution(key, entry)]));
+    const nextOccluders = occluders ? [...new Set(occluders)] : null;
+    const contributionsChanged = next.size !== this.contributions.size || [...next].some(([key, value]) => {
+      const previous = this.contributions.get(key); return !previous || !sameContribution(previous, value);
+    });
+    const occludersChanged = nextOccluders === null ? this.occluders !== null : this.occluders === null ||
+      nextOccluders.length !== this.occluders.length || nextOccluders.some((mesh) => !this.occluders!.includes(mesh));
+    if (!contributionsChanged && !occludersChanged) return;
+    if (contributionsChanged) {
+      const previous = new Map(this.contributions);
+      const membershipChanged = previous.size !== next.size || [...next].some(([key, value]) => {
+        const before = previous.get(key); return !before || !sameTargets(before, value);
+      });
+      this.contributions.clear();
+      for (const [key, value] of next) this.contributions.set(key, value);
+      try { if (membershipChanged) this.owner.reconcile(); }
+      catch (error) {
+        this.contributions.clear();
+        for (const [key, value] of previous) this.contributions.set(key, value);
+        throw error;
+      }
+    }
+    this.occluders = nextOccluders;
+    this.revision++;
+    if (!this.active) this.releaseStyles();
   }
   removeContribution(key: string): void {
     if (!this.contributions.delete(key)) return;
@@ -380,9 +432,13 @@ export class SharedOutlineView {
   }
   meshesForGroup(group: SharedOutlineGroup): AbstractMesh[] {
     this.prepare();
-    if (group === "strict") return this.scene.meshes.filter((mesh) => !mesh.isDisposed());
+    const previous = this.meshLists.get(group);
+    if (previous?.revision === this.revision && previous.sceneRevision === this.owner.meshRevision) return previous.meshes;
     const data = this.styles.get(group)?.data;
-    return this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
+    const meshes = group === "strict" ? (this.occluders ?? this.scene.meshes).filter((mesh) => !mesh.isDisposed()) :
+      this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
+    this.meshLists.set(group, { revision: this.revision, sceneRevision: this.owner.meshRevision, meshes });
+    return meshes;
   }
   diagnostics() {
     return { revision: this.revision, consumerCount: this.contributions.size,
@@ -396,12 +452,24 @@ export class SharedOutlineView {
   private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.preparedRevision = -1; }
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
-    this.contributions.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
+    this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
   }
 }
 function sameContribution(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.kind === b.kind && a.width === b.width && !!a.throughMeshes === !!b.throughMeshes &&
-    a.color.every((value, index) => value === b.color[index]) && a.targets.length === b.targets.length &&
+    a.color.every((value, index) => value === b.color[index]) && sameTargets(a, b);
+}
+function normalizedContribution(key: string, input: SharedOutlineContribution): SharedOutlineContribution {
+  if (!key || !["global", "component", "selection"].includes(input.kind) ||
+    !Number.isFinite(input.width) || input.width < 0.25 || input.width > SHARED_OUTLINE_MAX_WIDTH ||
+    input.color.length !== 3 || input.color.some((value) => !Number.isFinite(value) || value < 0 || value > 1) ||
+    input.targets.some((target) => !target.key))
+    throw new Error("Shared outline contribution has invalid identity, color, or width (0.25–8 pixels).");
+  return { ...input, color: [...input.color], targets: [...input.targets]
+    .map((target) => ({ key: target.key, meshes: [...target.meshes] })).sort((a, b) => a.key.localeCompare(b.key)) };
+}
+function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
+  return a.targets.length === b.targets.length &&
     a.targets.every((target, index) => target.key === b.targets[index]!.key && target.meshes.length === b.targets[index]!.meshes.length &&
       target.meshes.every((mesh) => b.targets[index]!.meshes.includes(mesh)));
 }

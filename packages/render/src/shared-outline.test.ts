@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Matrix, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import {
   SHARED_OUTLINE_ATTRIBUTE,
   SharedOutlineOwner,
@@ -62,5 +63,45 @@ describe("shared outline admission", () => {
     expect(newSource.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE]).toBeUndefined();
     expect(occupiedSource.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(47);
     expect(owner.identityForKey("new")).toBe(0);
+  });
+
+  it("keeps whole-actor thin matrices owned by the mesh when another consumer leaves", () => {
+    const { scene, owner, view } = setup();
+    const mesh = MeshBuilder.CreateBox("thin-group", {}, scene);
+    const matrices = new Float32Array(32);
+    Matrix.Translation(-1, 0, 0).copyToArray(matrices, 0);
+    Matrix.Translation(1, 0, 0).copyToArray(matrices, 16);
+    mesh.thinInstanceSetBuffer("matrix", matrices, 16);
+    const target = { key: "actor", meshes: [mesh] };
+    view.setContribution("component", { ...style, targets: [target] });
+    view.setContribution("selection", { ...style, kind: "selection", targets: [target] });
+    const identity = owner.identityFor(mesh);
+    view.removeContribution("component");
+    expect(owner.identityFor(mesh)).toBe(identity);
+    expect(mesh.thinInstanceCount).toBe(2);
+    expect(mesh.thinInstanceGetWorldMatrices().map((matrix) => matrix.getTranslation().x)).toEqual([-1, 1]);
+    expect(mesh.getVertexBuffer(SHARED_OUTLINE_ATTRIBUTE)).toBeNull();
+    expect(owner.diagnostics().instanceBufferBytes).toBe(0);
+    view.dispose();
+    expect(mesh.thinInstanceCount).toBe(2);
+  });
+
+  it("admits a late LOD source without replacing its actor identity or foreign buffers", () => {
+    const { scene, owner, view } = setup();
+    const mesh = MeshBuilder.CreateBox("source", {}, scene);
+    const instance = mesh.createInstance("instance");
+    view.setContribution("component", { ...style, targets: [{ key: "actor", meshes: [instance] }] });
+    const identity = owner.identityFor(instance);
+    const lod = MeshBuilder.CreateBox("late-lod", {}, scene);
+    lod.registerInstancedBuffer("foreign", 1);
+    lod.instancedBuffers.foreign = 19;
+    mesh.addLODLevel(5, lod);
+    owner.prepareRenderSource(lod);
+    expect(lod.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(0);
+    expect(lod.instancedBuffers.foreign).toBe(19);
+    expect(owner.identityFor(instance)).toBe(identity);
+    const sources = owner.diagnostics().sourceCount;
+    owner.prepareRenderSource(lod);
+    expect(owner.diagnostics().sourceCount).toBe(sources);
   });
 });
