@@ -65,7 +65,12 @@ export async function browserPartitionArgs(args, options = {}) {
   const match = /^--partition=(\d+)\/(\d+)$/.exec(flag);
   if (!match || +match[1] < 1 || +match[1] > +match[2])
     throw new Error("Invalid browser partition");
-  if (args.length !== 1)
+  // The wrapper has already resolved these execution limits. They do not
+  // select tests, and must survive replacement of the partition selector.
+  const executionArgs = args.filter((arg) =>
+    /^--(?:workers|retries)=\d+$/.test(arg),
+  );
+  if (args.length !== executionArgs.length + 1)
     throw new Error("CI partitions cannot be combined with filters");
   const listed = await runCommand(
     process.execPath,
@@ -98,5 +103,5 @@ export async function browserPartitionArgs(args, options = {}) {
       estimatedMs: selected.weight,
     }) + "\n",
   );
-  return ["--test-list", file];
+  return ["--test-list", file, ...executionArgs];
 }
