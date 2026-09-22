@@ -979,7 +979,8 @@ class InProcessRuntime implements RuntimeDriver {
       moveCharacter: (actor, translation, dt, offset) => {
         const target = actor;
         if (!target) return;
-        this.physicsSync.moveCharacter(target, translation, dt, offset);
+        const sync = target.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
+        sync.moveCharacter(target, translation, dt, offset);
       },
       teleportActor: (actor, options) => {
         const sync = actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
@@ -2669,7 +2670,7 @@ class InProcessRuntime implements RuntimeDriver {
       const local = actorLocalPhysicsTransform({
         position: world,
         rotation: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
-      }, actor, worldTransforms, this.physicsWorldKind);
+      }, actor, worldTransforms);
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }
@@ -2823,13 +2824,13 @@ class InProcessRuntime implements RuntimeDriver {
         this.animEvalByComponent.set(evalKey, next);
         const clip = clipForState(document, next.stateId);
         if (clip?.kind === "sprite" && clip.assetGuid) {
-          this.physicsSync.setActorSpriteClip(actor, {
+          (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, {
             assetGuid: clip.assetGuid,
             clipName: clip.clipName,
             normalisedTime: next.normalisedTime,
           });
         } else {
-          this.physicsSync.setActorSpriteClip(actor, null);
+          (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
         }
         const currentLayer =
           next.layers.find((layer) => layer.stateId === next.stateId) ??
@@ -3069,13 +3070,13 @@ class InProcessRuntime implements RuntimeDriver {
     const justFinished = normalisedTime >= 1;
     this.btPlayAnimOwnedSlots.add(slotId);
     if (clip.clipKind === "sprite") {
-      this.physicsSync.setActorSpriteClip(actor, {
+      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, {
         assetGuid: clip.guid,
         clipName: clip.clipName,
         normalisedTime,
       });
     } else {
-      this.physicsSync.setActorSpriteClip(actor, null);
+      (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
     }
     this.emit({
       type: "animState",
@@ -3148,7 +3149,7 @@ class InProcessRuntime implements RuntimeDriver {
     delete memory.elapsedMs;
     const slotId = this.slotByGuid.get(actor.guid);
     if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
-    this.physicsSync.setActorSpriteClip(actor, null);
+    (actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync).setActorSpriteClip(actor, null);
   }
 
   private abortBtTask(

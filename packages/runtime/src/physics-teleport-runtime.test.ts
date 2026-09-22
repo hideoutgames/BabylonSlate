@@ -20,10 +20,12 @@ const script: CompiledScript = {
     "export function reset(ctx) {",
     "  ctx.setActorTransform(ctx.self, { position: { x: 12, y: 0, z: 0 } }, { velocity: 'reset' });",
     "}",
+    "export function move(ctx) { ctx.moveCharacter(ctx.self, { x: 2, y: 0, z: 0 }); }",
   ].join("\n"),
   entryPoints: [
     { name: "teleport", event: "Teleport", isAsync: false },
     { name: "reset", event: "Reset", isAsync: false },
+    { name: "move", event: "Move", isAsync: false },
   ],
 };
 
@@ -138,6 +140,18 @@ it("routes a SceneLayer gameplay pose write to its overlay physics owner", async
     expect(
       overlay.lineTrace({ x: 0, y: 2, z: 0 }, { x: 0, y: -2, z: 0 }).hit,
     ).toBe(false);
+    expect(
+      runtime
+        .getPhysicsSync()!
+        .getBackend()
+        .getBodyTransform(`body:${actor.guid}`),
+    ).toBeNull();
+    runtime.invokeScriptEvent("Teleporter", "Move", actor);
+    expect(runtime.getDiagnostics().entries()).toEqual([]);
+    expect(actor.transform.position.x).toBeCloseTo(10);
+    expect(
+      overlay.getBackend().getBodyTransform(`body:${actor.guid}`)!.position.x,
+    ).toBeCloseTo(10);
     expect(
       runtime
         .getPhysicsSync()!

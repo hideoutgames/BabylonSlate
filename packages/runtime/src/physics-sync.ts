@@ -26,7 +26,6 @@ import {
   parseColliderProperties,
   parseRigidBodyProperties,
   bakeColliderLocal,
-  colliderLocalPose,
   type ColliderShape,
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
@@ -425,12 +424,7 @@ export class PhysicsWorldSync {
     for (const [actorId, transform] of bodyPoses) {
       const actor = this.actorById.get(actorId);
       if (!actor || actor.destroyed) continue;
-      const local = actorLocalPhysicsTransform(
-        transform,
-        actor,
-        readbackWorld,
-        this.backend.kind,
-      );
+      const local = actorLocalPhysicsTransform(transform, actor, readbackWorld);
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }
@@ -564,7 +558,6 @@ export class PhysicsWorldSync {
       moved,
       actor,
       this.worldTransforms,
-      this.backend.kind,
     );
     actor.transform.position.x = localTransform.position.x;
     actor.transform.position.y = localTransform.position.y;
@@ -1145,7 +1138,6 @@ export function actorLocalPhysicsTransform(
   world: PhysicsTransform,
   actor: Actor,
   transforms: ActorTransformMap,
-  kind: "2d" | "3d" = "3d",
 ): PhysicsTransform {
   const parentId = actorParentGuid(actor);
   const parentWorld = parentId ? transforms.get(parentId) : undefined;
@@ -1162,21 +1154,7 @@ export function actorLocalPhysicsTransform(
       y: divideScale(offset.y, parentWorld.scale.y),
       z: divideScale(offset.z, parentWorld.scale.z),
     },
-    // Invert the same signed-scale decomposition used by physicsWorldTransforms.
-    // A mirrored parent changes the attachment rotation, not only its scale.
-    rotation: colliderLocalPose(
-      kind === "2d" ? "box2d" : "box",
-      {
-        position: { x: 0, y: 0, z: 0 },
-        rotation: multiplyQuaternion(inverseRotation, world.rotation),
-        scale: { x: 1, y: 1, z: 1 },
-      },
-      {
-        x: 1 / parentWorld.scale.x,
-        y: 1 / parentWorld.scale.y,
-        z: kind === "2d" ? 1 : 1 / parentWorld.scale.z,
-      },
-    ).rotation,
+    rotation: multiplyQuaternion(inverseRotation, world.rotation),
   };
 }
 

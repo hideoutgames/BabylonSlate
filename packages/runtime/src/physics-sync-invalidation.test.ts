@@ -1,9 +1,20 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as physics from "@babylonslate/physics";
 import * as assets from "@babylonslate/assets";
-import { identityTransform } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  identityTransform,
+} from "@babylonslate/core";
+import {
+  readActorSlot,
+  readSnapshotHeader,
+  snapshotFloatCount,
+} from "@babylonslate/bridge";
 import { ClassRegistry, World } from "@babylonslate/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
+import { createInProcessRuntime } from "./driver";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -272,24 +283,60 @@ it.each([
   { x: -1, y: 1, z: 1 },
   { x: 1, y: -1, z: 1 },
   { x: -2, y: 3, z: 1 },
+  { x: 2, y: 3, z: 1 },
 ])(
-  "preserves authored child rotation and collision under a mirrored parent %j",
+  "keeps collision aligned with the published visual transform under parent scale %j",
   (parentScale) => {
-    const { world, actor, collider, backend, sync } = fixture();
-    const parent = world.createActor({
-      classId: "Actor",
-      guid: "parent",
-      transform: identityTransform(),
+    const mesh = createMeshComponent("offset-box", "box");
+    mesh.transform!.position = [2, 0, 0];
+    let childSlot: number | undefined;
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        ...createDefaultScene(),
+        actors: [
+          createActor("parent", "Parent", {
+            transform: {
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [parentScale.x, parentScale.y, parentScale.z],
+            },
+          }),
+          createActor("child", "Child", {
+            parentId: "parent",
+            transform: {
+              position: [0, 0, 0],
+              rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
+              scale: [1, 1, 1],
+            },
+            components: [mesh],
+          }),
+        ],
+      },
+      onCommand: (command) => {
+        if (command.type === "spawn" && command.actorGuid === "child")
+          childSlot = command.slotId;
+      },
     });
-    parent.transform.scale = parentScale;
-    world.spawnActorNow(parent);
-    actor.setVariable("parentId", parent.guid);
-    actor.transform.rotation = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
-    collider.transform.position.x = 2;
     try {
-      sync.syncFromWorld(world);
+      runtime.realizePlayWorld();
+      runtime.start();
+      const actor = runtime.getWorld().findActor("child")!;
+      const backend = runtime.getPhysicsSync()!.getBackend();
+      const snapshot = new Float32Array(
+        snapshotFloatCount(runtime.snapshotCapacity),
+      );
       for (let tick = 0; tick < 10; tick++) {
-        sync.step(1 / 60, world);
+        runtime.tick();
+        expect(runtime.copySnapshot(snapshot)).toBe(true);
+        const slot = Array.from(
+          { length: readSnapshotHeader(snapshot).actorCount },
+          (_, index) => readActorSlot(snapshot, index),
+        ).find((value) => value.slotId === childSlot)!;
+        expect(slot).toBeDefined();
         const localX = physics.rotateQuatVec(actor.transform.rotation, {
           x: 1,
           y: 0,
@@ -297,7 +344,15 @@ it.each([
         });
         expect(localX.x).toBeCloseTo(0);
         expect(localX.y).toBeCloseTo(1);
-        const y = 2 * parentScale.y;
+        // The render mesh receives this actor snapshot TRS and its authored local
+        // offset. Query that visual center, rather than a physics-only transform.
+        const center = physics.rotateQuatVec(slot.rotation, {
+          x: 2 * slot.scale.x,
+          y: 0,
+          z: 0,
+        });
+        const y = slot.position.y + center.y;
+        expect(y).toBeCloseTo(2 * parentScale.x);
         expect(
           backend.lineTrace({ x: -5, y, z: 0 }, { x: 5, y, z: 0 }).hit,
         ).toBe(true);
@@ -306,7 +361,7 @@ it.each([
         ).toBe(false);
       }
     } finally {
-      sync.dispose();
+      runtime.stop();
     }
   },
 );
