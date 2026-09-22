@@ -93,12 +93,24 @@ for (const backend of ["webgl2", "webgpu"] as const)
             `${capture.name} executed backend`,
           ).toBe(backend);
           if (!capture.assertions) continue;
+          expect(
+            capture.effective.requestedShadows.distance,
+            capture.name,
+          ).toBe(80);
           const generator = capture.effective.lights.find(
             (light) => light.name === "oblique key",
           )!.generator!;
           expect(generator.cascades).toBe(configuration === "cascades" ? 2 : 1);
           expect(generator.map?.width).toBe(1024);
           expect(generator.map?.height).toBe(1024);
+          const thin = capture.effective.models.find(
+            (model) => model.name === "thin-slab",
+          );
+          if (thin)
+            expect(
+              thin.receiveShadows,
+              `${capture.name} thin participation`,
+            ).toBe(true);
           // The oracle classifies world-space points by independent ray/AABB
           // occlusion. Each pose compares frozen direct lighting in known lit
           // interiors and nearby contacts, never whole-image difference alone.

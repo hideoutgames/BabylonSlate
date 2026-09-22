@@ -102,10 +102,11 @@ export async function runShadowSelfShadowingProof(
       autoBias: boolean,
       depthBias = authored.depthBias,
       normalBias = authored.normalBias,
+      distance = authored.distance,
     ) => {
       setSceneRenderSettings(scene, {
         mode,
-        shadows: { ...authored, autoBias, depthBias, normalBias },
+        shadows: { ...authored, autoBias, depthBias, normalBias, distance },
         cel: normalizeCelShadingSettings({
           specularEnabled: false,
           shadowStrength: 1,
@@ -217,13 +218,18 @@ export async function runShadowSelfShadowingProof(
     if (configuration === "low") {
       // Native 9.20 PCF depth comparison moves 0.5*bias on BOTH backends.
       // 160-world-unit Low footprint/depth, 1024 map: these are independently
-      // hand-derived quarter, half and three-quarter texel depth corrections.
+      // hand-derived world-texel depth corrections.
       // Keep normal bias fixed, then restore depth for the separate normal sweep.
-      for (const [name, bias] of [
+      const depthSweep = [
         ["quarter", 0.00048828125],
         ["half", 0.0009765625],
         ["three-quarter", 0.00146484375],
-      ] as const) {
+        ["one", 0.001953125],
+        ["one-and-quarter", 0.00244140625],
+        ["one-and-half", 0.0029296875],
+        ["two", 0.00390625],
+      ] as const;
+      for (const [name, bias] of depthSweep) {
         settings(false, bias);
         await capture(`manual-depth-${name}-texel`);
       }
@@ -231,6 +237,12 @@ export async function runShadowSelfShadowingProof(
         settings(false, authored.depthBias, normalBias);
         await capture(`manual-normal-${normalBias}`);
       }
+      // Projection-utilization experiment only: unchanged resolution, camera,
+      // materials and lighting. Restore authored coverage before assertions.
+      settings(false, authored.depthBias, authored.normalBias, 16);
+      await capture("diagnostic-distance-16-authored-manual");
+      settings(true, authored.depthBias, authored.normalBias, 16);
+      await capture("diagnostic-distance-16-automatic");
       settings(true);
       // Deliberately separate geometry experiment: retain the principal pose
       // above unchanged, then introduce a thin contact resting on the floor.
@@ -240,6 +252,21 @@ export async function runShadowSelfShadowingProof(
         size: [0.08, 1, 0.7],
       };
       boxes.push(thin);
+      // Babylon defers its new-mesh notification. Already-ready materials and
+      // synchronous WebGL readbacks can otherwise keep this whole proof inside
+      // microtasks, before the controller learns that the new caster exists.
+      const addition = new Promise<void>((resolve, reject) => {
+        const observer = scene.onNewMeshAddedObservable.add((added) => {
+          if (added.name !== thin.name) return;
+          clearTimeout(timeout);
+          scene.onNewMeshAddedObservable.remove(observer);
+          resolve();
+        });
+        const timeout = setTimeout(() => {
+          scene.onNewMeshAddedObservable.remove(observer);
+          reject(new Error("Thin fixture mesh notification timed out"));
+        }, 5_000);
+      });
       const mesh = MeshBuilder.CreateBox(
         thin.name,
         { width: thin.size[0], height: thin.size[1], depth: thin.size[2] },
@@ -247,10 +274,30 @@ export async function runShadowSelfShadowingProof(
       );
       mesh.position = Vector3.FromArray(thin.center);
       mesh.material = material;
+      await addition;
       setSceneRenderSettings(scene);
+      const thinReady = await graph.prepare(camera);
+      if (thinReady.path !== "frameGraph") throw new Error(thinReady.reason);
+      if (
+        !mesh.receiveShadows ||
+        !light.getShadowGenerator()?.getShadowMap()?.renderList?.includes(mesh)
+      )
+        throw new Error(
+          "Thin fixture must join managed cast and receive participation before capture",
+        );
       await referencePose("thin-contact");
       await capture("automatic-thin-contact", true);
-      light.direction = new Vector3(0.45, -0.8, 0.75).normalize();
+      settings(false);
+      await capture("thin-authored-manual");
+      for (const [name, bias] of depthSweep) {
+        settings(false, bias);
+        await capture(`thin-manual-depth-${name}-texel`);
+      }
+      settings(true);
+      // Unlike the previous near-camera-aligned angle, this independent view
+      // contains 25 body-ground and 46 thin-ground occlusion samples at this
+      // fixed camera, before brightness/raster classification.
+      light.direction = new Vector3(1, -1, 0.4).normalize();
       await referencePose("second-light-angle");
       await capture("automatic-second-light-angle", true);
     } else if (configuration === "cascades") {
