@@ -157,9 +157,10 @@ export async function runShadowSelfShadowingProof(
     const samplerCollisions: unknown[] = [];
     let captureName = "initial";
     if (options.liveTransform && engine instanceof Engine) {
-      const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl;
-      const types = new Set([gl.SAMPLER_2D, gl.SAMPLER_CUBE, gl.SAMPLER_2D_SHADOW, gl.SAMPLER_2D_ARRAY, gl.SAMPLER_2D_ARRAY_SHADOW]);
-      engine.onBeforeDrawObservable.add(() => {
+      const internals = engine as unknown as { _gl: WebGL2RenderingContext; _currentEffect?: { defines: string; getSamplers(): string[] } };
+      const gl = internals._gl;
+      const types = new Set<number>([gl.SAMPLER_2D, gl.SAMPLER_CUBE, gl.SAMPLER_2D_SHADOW, gl.SAMPLER_2D_ARRAY, gl.SAMPLER_2D_ARRAY_SHADOW]);
+      const inspectDraw = (mesh: Mesh) => {
         if (samplerCollisions.length >= 12) return;
         const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
         if (!program) return;
@@ -171,12 +172,14 @@ export async function runShadowSelfShadowingProof(
           samplers.push({ name: uniform.name, type: uniform.type, unit: gl.getUniform(program, gl.getUniformLocation(program, uniform.name)!) });
         }
         if (samplers.some((a) => samplers.some((b) => a.unit === b.unit && a.type !== b.type)))
-          samplerCollisions.push({ captureName, pass: engine.currentRenderPassId, shadowEnabled: light.shadowEnabled,
-            samplers, defines: engine._currentEffect?.defines,
-            effectSamplers: engine._currentEffect?.getSamplers(),
+          samplerCollisions.push({ captureName, mesh: mesh.name, pass: engine.currentRenderPassId, shadowEnabled: light.shadowEnabled,
+            samplers, defines: internals._currentEffect?.defines,
+            effectSamplers: internals._currentEffect?.getSamplers(),
             material: scene.getCachedMaterial()?.name,
           });
-      });
+      };
+      for (const mesh of scene.meshes)
+        if (mesh instanceof Mesh) mesh.onBeforeDrawObservable.add(inspectDraw);
     }
     const render = async (name: string) => {
       captureName = name;
