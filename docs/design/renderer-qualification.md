@@ -17,8 +17,8 @@ browser groups also pass: six outline ownership/geometry/cost cases,
 and [four area-light receiver/export cases](../assets/renderer-qualification/2026-09-23-integration/area.json).
 The settings group includes a separate injected adapter failure; it does not
 count as native WebGPU evidence. The other cases confirm native WebGL2 or WebGPU.
-A fresh presented model route remains pending for this integration; earlier
-captures below retain their SHA.
+The fresh presented model route below also passes for this integration; earlier
+captures retain their SHA.
 
 The [integrated outline report](../assets/renderer-qualification/2026-09-23-integration/outlines.json)
 retains both APIs, fixed 640×360 output and all individual/combined consumers.
@@ -29,12 +29,14 @@ These are direct desktop queries; WebGPU direct timings remain unavailable.
 All eight lifecycle cycles retire to zero outline bytes/passes. Run-to-run timing
 differences do not establish an optimization gain or physical A16 headroom.
 
-Final hands-on acceptance uses application revision
+The complete pre-integration hands-on authoring route uses application revision
 `5d0f9a916e07dc97674efa2346cb99fee60eb40b`, artifact SHA-256
 `0a47744c69aa4bfc59bd96778c23af078af9cc0c4a9abd2f60b6e993f6f0e993`.
-The server checked artifact integrity and identified the source build. Earlier
-captures below retain their own revision; they are not retagged as current-head
-tests. Later documentation/evidence changes do not alter application behavior.
+The server checked artifact integrity and identified the source build. The
+integration rerun uses `94a1e73b` and artifact
+`c2c0f9f0070c7cade11d0ce0580ea4fd9f2574892c35d8912d9966531d8bc997`.
+Earlier captures are not retagged as current-head tests. Later documentation and
+evidence changes do not alter application behavior.
 
 | Requirement | Implementation and acceptance evidence | Status / limits |
 | --- | --- | --- |
@@ -47,6 +49,48 @@ tests. Later documentation/evidence changes do not alter application behavior.
 | Computer Use | Chrome 153 on Windows for both APIs; authorized T3 Chromium 150 fallback for texture/model file setup and subsequent normal UI authoring | **PASS** for recorded routes; Chrome native file selection **BLOCKED** (`Not allowed`), not counted as a picker pass |
 | Physical/other hosts | No physical iPad A16, thermal/input-latency/headroom, Safari/WebKit or native mobile-host measurement | **DEFERRED / unavailable**, not a desktop-derived pass |
 | Delivery | Same branch and PR retained; selected local checks pass with revision-scoped reuse | **PENDING** exact-head CI/reviews/merge |
+
+### Integration acceptance after main #663
+
+The saved nine-actor model project reopens with independent model outlines and
+prepared emission on the integrated build. Normal pointer/keyboard operations
+delete the blue model duplicate while the box remains selected: the orange model,
+green component, magenta through-mesh component, CEL result and editor selection
+survive on [WebGL2](../assets/renderer-qualification/2026-09-23-integration/survivors-webgl2.png)
+and [WebGPU](../assets/renderer-qualification/2026-09-23-integration/survivors-webgpu.png).
+Undo restores the duplicate. The additional WebGL2
+[strict-visibility edit](../assets/renderer-qualification/2026-09-23-integration/strict-webgl2.png)
+hides the magenta outline behind the occluder without changing the other styles;
+Undo restores its authored through-mesh setting. Both APIs' native pixel cases
+also recheck strict visibility, same-instance overlap and independent removal.
+
+The saved Scalability graph and animation run in
+[WebGL2 Play](../assets/renderer-qualification/2026-09-23-integration/play-webgl2.png)
+and [WebGPU Play](../assets/renderer-qualification/2026-09-23-integration/play-webgpu.png).
+Presented output is 240×135 at scale 0.5. Stop restores the 427×295 editor at scale
+1, 8,681,868 accounted bytes and zero pending retirement; runtime changes leave
+Save All disabled. The [reopened project](../assets/renderer-qualification/2026-09-23-integration/reopened-webgl2.png)
+retains the saved models, styles and emission. These are T3 Chromium 150 normal
+UI operations on Windows; [diagnostics and scope](../assets/renderer-qualification/2026-09-23-integration/computer-use.json)
+identify the effective NVIDIA APIs and DPR 1. The earlier complete authoring
+routes remain applicable to unchanged UI and serialization behavior.
+
+Fresh UI Export Game archives extracted successfully with Windows Expand-Archive
+and ran on separate origins in Computer Use Chrome 153:
+[packed WebGL2](../assets/renderer-qualification/2026-09-23-integration/packed-webgl2.png)
+and [loose WebGPU](../assets/renderer-qualification/2026-09-23-integration/loose-webgpu.png).
+Both present model/component/CEL outlines and asymmetric emission without editor
+guides or selection. DOM diagnostics confirm each effective API, no fallback,
+ready scene and 240×135 output in a 1280×565 viewport. The saved graph resets both
+players to 480×270 ([WebGL2](../assets/renderer-qualification/2026-09-23-integration/packed-reset.json),
+[WebGPU](../assets/renderer-qualification/2026-09-23-integration/loose-reset.json));
+[WebGPU reload](../assets/renderer-qualification/2026-09-23-integration/loose-reload.json)
+starts a fresh session and reruns the startup graph.
+[Archive identities](../assets/renderer-qualification/2026-09-23-integration/exports.json)
+retain checksums and file counts, not player distributions. Background Chrome
+cadence is functional evidence only. The native export cases separately verify
+resource transitions and external-request isolation. No new physical-device
+qualification is claimed.
 
 ### Final model, lifecycle and interaction route
 
