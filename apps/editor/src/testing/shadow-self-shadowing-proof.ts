@@ -49,7 +49,7 @@ export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",
   mode: "pbr" | "cel",
   configuration: "low" | "cascade-fallback" | "cascades",
-  options: { receiverPlane?: boolean; receiverTexel?: boolean } = {},
+  options: { receiverPlane?: boolean; receiverTexel?: boolean; transformed?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
@@ -101,6 +101,27 @@ export async function runShadowSelfShadowingProof(
       );
       mesh.position = Vector3.FromArray(box.center);
       mesh.material = material;
+    }
+    const boxes: ShadowBox[] = [...SHADOW_BOXES];
+    if (options.transformed) {
+      // Exercise final world normals under a non-uniform mirrored parent, and
+      // the instanced receiver/caster path, with independently updated bounds.
+      const head = scene.getMeshByName("head")!;
+      const parent = new TransformNode("mirrored non-uniform parent", scene);
+      parent.scaling.set(-2, 1.5, 0.75);
+      head.parent = parent;
+      head.position.set(0, 3.55 / 1.5, 0);
+      head.scaling.set(1.8 / 1.6 / 2, 1 / 1.5, 1.4 / 1.25 / 0.75);
+      boxes[boxes.findIndex((box) => box.name === "head")] = {
+        name: "head", center: [0, 3.55, 0], size: [1.8, 1.1, 1.4],
+      };
+      const left = scene.getMeshByName("left-arm")!;
+      const right = scene.getMeshByName("right-arm")!;
+      if (!(right instanceof Mesh)) throw new Error("Instance source must be a mesh");
+      const position = left.position.clone();
+      left.dispose();
+      const instance = right.createInstance("left-arm");
+      instance.position.copyFrom(position);
     }
     const ground = MeshBuilder.CreateGround(
       "ground",
@@ -184,7 +205,6 @@ export async function runShadowSelfShadowingProof(
         );
       return copy.toDataURL("image/png").split(",")[1]!;
     };
-    const boxes: ShadowBox[] = [...SHADOW_BOXES];
     let reference: number[] = [];
     let points: ReturnType<typeof shadowSurfaceSamples> = [];
     const diagnostics = () =>
@@ -398,39 +418,6 @@ export async function runShadowSelfShadowingProof(
       await capture("second-angle-manual-one-texel-zero-normal");
       await slopeSweep("second-angle");
       settings(true);
-      // Exercise final world normals under a non-uniform mirrored parent, and
-      // the instanced receiver/caster path, with independently updated bounds.
-      const head = scene.getMeshByName("head")!;
-      const parent = new TransformNode("mirrored non-uniform parent", scene);
-      parent.scaling.set(-2, 1.5, 0.75);
-      head.parent = parent;
-      head.position.set(0, 3.55 / 1.5, 0);
-      head.scaling.set(1.8 / 1.6 / 2, 1 / 1.5, 1.4 / 1.25 / 0.75);
-      boxes[boxes.findIndex((box) => box.name === "head")] = {
-        name: "head", center: [0, 3.55, 0], size: [1.8, 1.1, 1.4],
-      };
-      const left = scene.getMeshByName("left-arm")!;
-      const right = scene.getMeshByName("right-arm")!;
-      if (!(right instanceof Mesh)) throw new Error("Instance source must be a mesh");
-      const position = left.position.clone();
-      left.dispose();
-      const instance = right.createInstance("left-arm");
-      instance.position.copyFrom(position);
-      // Await Babylon's deferred membership signal before preparing the map.
-      await new Promise<void>((resolve, reject) => {
-        const observer = scene.onNewMeshAddedObservable.add((added) => {
-          if (added !== instance) return;
-          clearTimeout(timeout);
-          scene.onNewMeshAddedObservable.remove(observer);
-          resolve();
-        });
-        const timeout = setTimeout(() => {
-          scene.onNewMeshAddedObservable.remove(observer);
-          reject(new Error("Instance fixture mesh notification timed out"));
-        }, 5_000);
-      });
-      await referencePose("transformed-instance");
-      await capture("automatic-transformed-instance", true);
     } else if (configuration === "cascades") {
       // Dolly through the first split while retaining the same target and
       // projection settings. Capture each view's own independent reference.
@@ -445,6 +432,7 @@ export async function runShadowSelfShadowingProof(
     }
     return {
       synthetic: true,
+      transformed: options.transformed ?? false,
       receiverPlaneDiagnostic: receiverProbe?.evidence ?? null,
       nativeInput,
       backend,

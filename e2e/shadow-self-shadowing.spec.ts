@@ -7,7 +7,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const)
-  for (const configuration of ["low", "cascade-fallback", "cascades"] as const)
+  for (const configuration of ["low", "cascade-fallback", "cascades", "transformed"] as const)
     for (const mode of ["pbr", "cel"] as const)
       test(`synthetic hard-face contacts remain shadowed without acne: ${backend} ${configuration} ${mode}`, async ({
         page,
@@ -43,8 +43,8 @@ for (const backend of ["webgl2", "webgpu"] as const)
             ).__babylonslateShadowSelfShadowingProof(
               backend,
               mode,
-              configuration,
-              { receiverPlane, receiverTexel },
+              configuration === "transformed" ? "low" : configuration,
+              { receiverPlane, receiverTexel, transformed: configuration === "transformed" },
             ),
           { backend, mode, configuration, receiverPlane: process.env.BL_SHADOW_RECEIVER_PROBE === "1", receiverTexel: process.env.BL_SHADOW_RECEIVER_PROBE === "texel" },
         );

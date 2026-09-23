@@ -632,9 +632,11 @@ Directional PCF combines a quarter-world-texel caster correction with a
 receiver-plane correction derived from the current fragment's light-space depth
 slope and native PCF kernel (1/3/5). It retains native sample counts and filter
 weights. All cascade derivatives execute before cascade selection/blending.
-The receiver's comparison-depth shift is bounded by four reciprocal map-width
-units; singular derivatives use the caster correction alone. These limits
-scale with the actual allocation, not a model or scene bounding box. Manual
+The receiver's comparison-depth shift is derived from its projected depth
+gradient and actual map dimensions. A 0.05 normalized-depth ceiling guards
+numerical extremes; it is not a world-space displacement policy. Singular
+derivatives use the caster correction alone. No model or scene bounding box
+sets the offset. Manual
 mode bypasses the receiver correction. The pinned WGSL Low CSM blend adapter
 also supplies Babylon 9.20's omitted array-texture argument.
 

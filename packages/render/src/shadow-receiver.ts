@@ -4,9 +4,11 @@ import { checkedShader } from "./checked-shader";
  * Directional PCF receiver-plane correction for Babylon 9.20. The common
  * comparison depth reaches the nearest point of the native bilinear kernel.
  * It adds no fetches, samplers or caster displacement. Automatic mode only;
- * manual and perspective/cube lights retain the native path. The normalized
- * depth ceiling scales with the actual map allocation, independently of scene
- * bounds. Near-singular derivatives retain the small caster bias alone.
+ * manual and perspective/cube lights retain the native path. The correction
+ * includes the current projection depth interval and actual
+ * allocation through the UV/depth gradient. A 0.05 normalized-depth ceiling is
+ * only a numerical guard, not a world-space or scene-bounds offset policy.
+ * Near-singular derivatives retain the small caster bias alone.
  */
 const ELIGIBLE =
   "defined(SLATE_SHADOW_AUTO{X}) && defined(DIRLIGHT{X}) && defined(SHADOWPCF{X}) && !defined(SHADOWCUBE{X})";
@@ -60,7 +62,7 @@ if (rpScale > 1e-20 && rpScale < 1e20) {
 #endif
       // Minimum receiver-plane depth across usual PCF bilinear texel support.
       ${declare(f32, "rpBound", `dot(max(rpGradient, ${v2}(0.0)), rpPhase + ${v2}(rpRadius)) + dot(max(-rpGradient, ${v2}(0.0)), ${v2}(1.0 + rpRadius) - rpPhase)`)}
-      ${declare(f32, "rpOffset", `min(4.0 * light{X}.shadowsInfo.z, max(0.0, rpBound))`)}
+      ${declare(f32, "rpOffset", `min(0.05, max(0.0, rpBound))`)}
 #ifndef IS_NDC_HALF_ZRANGE
       rpOffset *= 2.0;
 #endif
@@ -123,4 +125,3 @@ ${receiverBlock(wgsl, single, target)}
       9,
     ).value;
 }
-
