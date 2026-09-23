@@ -13,7 +13,10 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`prepared rectangular emission survives standalone export and scene lifecycle on ${backend}`, async ({ page, baseURL, request }, testInfo) => {
-    test.setTimeout(120_000);
+    // Ten owned scene presentations include three complete retirement cycles.
+    // Linux software GL completed seven loads before the old aggregate budget
+    // expired; preserve every cycle and the individual loading deadlines.
+    test.setTimeout(180_000);
     const errors: string[] = [], external: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const presentationErrors: string[] = [];

@@ -134,6 +134,20 @@ output cost evidence remain applicable to unchanged behavior. The imported
 historical shadow appendix's original-image investigation remains separate;
 physical A16 work is **DEFERRED**, not a merge gate for this delivery.
 
+Verify `35893469618` at `be84fe27` passes static, unit and five browser shards.
+Both Linux shadow-host cases now pass without retries. The area-light WebGL2
+trace advances through seven successful loads and expires during load eight at
+the test's aggregate 120-second limit, without a scene-presentation error. Its
+three timed-out attempts cause shard 5 to exceed the unchanged 25-minute job
+deadline. The fixture now permits 180 seconds for its ten presentations,
+retaining all three retirement cycles, per-load deadlines, pixel comparisons,
+attribution and resource/external-request assertions. Software timing remains
+functional evidence only. A separate P6 scene-editing fixture expires while
+Save All is progressing through project/journal persistence; it now uses the
+existing 30-second transaction wait and explicitly requires a successful save
+with zero remaining dirty documents before continuing. The earlier 15-second
+failures remain recorded; these fixture edits still require fresh CI.
+
 The native command selects `shared-outline`, `shared-outline-geometry`,
 `shared-outline-cost`, `area-rect-light`, `area-light-export` and
 `clustered-lights-webgpu` under `test:e2e`, `playwright.perf.config.ts`, `perf-gpu`
