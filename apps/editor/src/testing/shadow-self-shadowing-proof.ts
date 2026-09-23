@@ -50,6 +50,7 @@ export async function runShadowSelfShadowingProof(
     transformed?: boolean;
     liveTransform?: boolean;
     filterQuality?: "low" | "medium" | "high";
+    grazing?: boolean;
   } = {},
 ) {
   const canvas = document.createElement("canvas");
@@ -80,10 +81,10 @@ export async function runShadowSelfShadowingProof(
     scene.activeCamera = camera;
     const light = new DirectionalLight(
       "oblique key",
-      Vector3.FromArray(SHADOW_LIGHT_DIRECTION).normalize(),
+      Vector3.FromArray(options.grazing ? [1, -0.012, 0.4] : SHADOW_LIGHT_DIRECTION).normalize(),
       scene,
     );
-    applyAuthoredLightProperties(light, { intensity: 2, castShadows: true });
+    applyAuthoredLightProperties(light, { intensity: options.grazing ? 20 : 2, castShadows: true });
     new HemisphericLight("fixed fill", Vector3.Up(), scene).intensity = 0.12;
     const material = new PBRMaterial("neutral matte", scene);
     material.albedoColor = new Color3(0.6, 0.6, 0.6);
@@ -97,6 +98,9 @@ export async function runShadowSelfShadowingProof(
       );
       mesh.position = Vector3.FromArray(box.center);
       mesh.material = material;
+      // Isolate ground self-shadowing from the long PCF penumbrae cast by
+      // upright objects at grazing incidence. Contact fixtures remain separate.
+      if (options.grazing) mesh.metadata = { slateShadowParticipation: { castShadows: false } };
     }
     const boxes: ShadowBox[] = [...SHADOW_BOXES];
     const transformFixture = () => {
@@ -128,9 +132,9 @@ export async function runShadowSelfShadowingProof(
     );
     ground.material = material;
     const authored = normalizeShadowSettings({
-      profile: "low",
+      profile: options.grazing ? "medium" : "low",
       cascades: configuration === "low" ? 1 : 2,
-      filterQuality: options.filterQuality ?? "low",
+      filterQuality: options.filterQuality ?? (options.grazing ? "medium" : "low"),
     });
     const settings = (
       autoBias: boolean,
@@ -232,6 +236,7 @@ export async function runShadowSelfShadowingProof(
         camera.viewport,
         boxes,
         filter,
+        options.grazing ? 0.005 : 0.2,
       );
       points.push(
         ...shadowThinContactEdgeSamples(

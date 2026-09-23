@@ -8,6 +8,7 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SharedOutlineOwner } from "./shared-outline";
+import { createGizmoHost } from "./gizmo-host";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -48,6 +49,67 @@ function holdGraphInitialization() {
   });
   return { started, release };
 }
+
+it("draws editor gizmos once after native and graph frames, never during preparation or skipped frames", async () => {
+  const { scene, camera, renderer } = host();
+  const box = MeshBuilder.CreateBox("selected", {}, scene);
+  const gizmos = createGizmoHost(scene, {
+    registerOverlay: (draw) => renderer.attachEditorOverlay(draw),
+  });
+  gizmos.attachTo(box);
+  const layer = gizmos.positionGizmo.gizmoLayer.utilityLayerScene;
+  let frames = 0;
+  layer.onAfterRenderObservable.add(() => { frames += 1; });
+  let ready = false;
+  scene.addIsReadyCheck({ isReady: () => ready });
+  expect(renderer.render().rendered).toBe(false);
+  expect(frames).toBe(0);
+  ready = true;
+  await renderer.prepare();
+  expect(frames).toBe(0);
+  expect(renderer.render().path).toBe("frameGraph");
+  expect(frames).toBe(1);
+  expect(camera.getScene()).toBe(scene);
+
+  // A new camera/output uses the same layer and native fallback while the
+  // graph is rebuilt. RTT depth clearing must not erase the world color.
+  const replacement = new FreeCamera("replacement", new Vector3(0, 0, -8), scene);
+  const target = new RenderTargetTexture("prefab", 32, scene);
+  replacement.outputRenderTarget = target;
+  scene.activeCamera = replacement;
+  await renderer.prepare();
+  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true });
+  expect(layer.activeCamera).toBe(replacement);
+  expect(replacement.getScene()).toBe(scene);
+  expect(replacement.outputRenderTarget).toBe(target);
+  expect(frames).toBe(2);
+  gizmos.dispose();
+  renderer.render();
+  expect(frames).toBe(2);
+  renderer.dispose();
+});
+
+it("restores a borrowed camera after an editor overlay fails and leaves sibling scenes usable", async () => {
+  const { scene, camera, engine, renderer } = host();
+  const gizmos = createGizmoHost(scene, {
+    registerOverlay: (draw) => renderer.attachEditorOverlay(draw),
+  });
+  const layer = gizmos.positionGizmo.gizmoLayer.utilityLayerScene;
+  await renderer.prepare();
+  const failure = layer.onBeforeRenderObservable.add(() => { throw new Error("overlay draw failed"); });
+  expect(() => renderer.render()).toThrow("overlay draw failed");
+  expect(camera.getScene()).toBe(scene);
+  expect(scene.activeCamera).toBe(camera);
+  expect(engine._currentRenderTarget).toBeNull();
+  layer.onBeforeRenderObservable.remove(failure);
+  const sibling = new Scene(engine);
+  sibling.activeCamera = new FreeCamera("sibling", Vector3.Zero(), sibling);
+  expect(() => sibling.render()).not.toThrow();
+  expect(renderer.render().readyForPresentation).toBe(true);
+  gizmos.dispose();
+  renderer.dispose();
+  sibling.dispose();
+});
 
 it("never presents an unready scene or acknowledges a temporary native fallback as a prepared graph frame", async () => {
   const { scene, renderer } = host();

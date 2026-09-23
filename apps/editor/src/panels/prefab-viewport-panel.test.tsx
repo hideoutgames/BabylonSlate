@@ -93,7 +93,7 @@ const {
     handle,
     createEngineMock,
     commitComponentTransforms: vi.fn(),
-    viewportState: { mode: "3d" as "3d" | "2d" },
+    viewportState: { mode: "3d" as "3d" | "2d", tool: "translate" as "translate" | "rotate" | "scale" },
     collectPlayMaterialLibrary: vi.fn(async () => ({
       documents: new Map(),
       functions: new Map(),
@@ -219,7 +219,7 @@ vi.mock("../context/document-workspace-context", () => ({
 
 vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
-    gizmoTool: "translate",
+    gizmoTool: viewportState.tool,
     snapEnabled: false,
     viewportMode: viewportState.mode,
     joystickEnabled: false,
@@ -263,6 +263,7 @@ describe("PrefabViewportPanel engine", () => {
     act(() =>
       receiveActiveAppSettingsUpdate({
         viewportGridSize: 3,
+        viewportSnapTranslate: 0.5,
         viewportSnapRotateDeg: 45,
         viewportSnapScale: 0.5,
       }),
@@ -270,10 +271,13 @@ describe("PrefabViewportPanel engine", () => {
     await waitFor(() =>
       expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith({
         enabled: false,
-        translate: 3,
+        translate: 0.5,
         rotateDeg: 45,
         scale: 0.5,
       }),
+    );
+    expect(handle.editor.setGridSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tileSize: 3 }),
     );
   });
 
@@ -282,6 +286,7 @@ describe("PrefabViewportPanel engine", () => {
     receiveActiveAppSettingsUpdate({
       viewportDropDistance: 10_000,
       viewportGridSize: 1,
+      viewportSnapTranslate: 1,
       viewportSnapRotateDeg: 15,
       viewportSnapScale: 0.25,
     });
@@ -299,6 +304,7 @@ describe("PrefabViewportPanel engine", () => {
     prefabState.selectedIds = [];
     handle.editor.syncSelectionDebug.mockClear();
     viewportState.mode = "3d";
+    viewportState.tool = "translate";
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
     play.ensureSharedEngine.mockClear();
@@ -527,6 +533,7 @@ describe("PrefabViewportPanel engine", () => {
   );
 
   it("rebinds Prefab when the shared Engine generation changes", () => {
+    viewportState.tool = "rotate";
     const first = { id: "engine-1" };
     const second = { id: "engine-2" };
     play.ensureSharedEngine.mockReturnValue(first);
@@ -546,10 +553,12 @@ describe("PrefabViewportPanel engine", () => {
       }),
     );
     handle.editor.syncSelectionDebug.mockClear();
+    handle.editor.gizmos.setTool.mockClear();
     play.ensureSharedEngine.mockReturnValue(second);
     play.sharedEngineGeneration = 2;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     expect(dispose).toHaveBeenCalled();
+    expect(handle.editor.gizmos.setTool).toHaveBeenCalledWith("rotate");
     expect(createEngineMock.mock.calls.at(-1)?.[1]).toMatchObject({
       sharedEngine: second,
       present: "rtt",

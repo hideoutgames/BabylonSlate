@@ -25,6 +25,7 @@ export class SceneRenderCoordinator {
   private readonly detachReadinessDirty: () => void;
   private outlineView: SharedOutlineView | undefined;
   private outlineRevision = -1;
+  private editorOverlay: ((camera: Camera) => void) | undefined;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -36,6 +37,17 @@ export class SceneRenderCoordinator {
 
   attachPostProcess(options: AttachPostProcessStackOptions): AttachedPostProcessStack {
     return this.graph.attachPostProcess(options, () => this.invalidate());
+  }
+
+  /** The view owns its overlay across graph rebuilds. Draw after final output,
+   * before the host copies the view/RTT, on both graph and native paths. */
+  attachEditorOverlay(draw: (camera: Camera) => void): () => void {
+    if (this.disposed || this.editorOverlay)
+      throw new Error("Editor overlay requires a live, unattached view.");
+    this.editorOverlay = draw;
+    return () => {
+      if (this.editorOverlay === draw) this.editorOverlay = undefined;
+    };
   }
 
   /** Explicit candidate opt-in for this view. Contributions remain owned by
@@ -175,6 +187,7 @@ export class SceneRenderCoordinator {
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     const result = this.graph.render(camera);
+    if (result.rendered !== false) this.editorOverlay?.(camera);
     const after = this.graph.readiness(camera);
     return { ...result, rendered: result.rendered !== false,
       readyForPresentation: result.rendered !== false && !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };
@@ -183,6 +196,7 @@ export class SceneRenderCoordinator {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.editorOverlay = undefined;
     this.outlineView = undefined;
     this.invalidate();
     this.detachReadinessDirty();

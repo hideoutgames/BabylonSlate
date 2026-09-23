@@ -66,7 +66,7 @@ export function ViewportToolbar({
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, projectDocument } = useDocuments();
-  const { flySpeed, gridSize, snapRotateDeg, snapScale } =
+  const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale } =
     useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
@@ -109,11 +109,7 @@ export function ViewportToolbar({
       ? `${scene?.settings.grid.snapRotateDeg ?? snapRotateDeg}°`
       : gizmoTool === "scale"
         ? (scene?.settings.grid.snapScale ?? snapScale)
-        : scene
-          ? viewportMode === "2d"
-            ? (scene.settings.grid.tileSize ?? 1)
-            : (scene.settings.grid.snapTranslate ?? 1)
-          : gridSize;
+        : (scene?.settings.grid.snapTranslate ?? snapTranslate);
 
   const setMode = (next: "2d" | "3d") => {
     setViewportMode(next);
@@ -267,7 +263,7 @@ export function ViewportToolbar({
       items: [
         {
           id: "grid-size",
-          label: "Grid Size",
+          label: "Grid Settings",
           testId: `${testIdPrefix}viewport-grid-size`,
           onSelect: () => setNumberPrompt("grid"),
         },
@@ -339,7 +335,7 @@ export function ViewportToolbar({
         />
         <TooltipContent>
           Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
-          {snapIncrement}. Hold Or Right-Click For Grid Size.
+          {snapIncrement}. Hold Or Right-Click For Grid Settings.
         </TooltipContent>
       </Tooltip>
       {showDragSelect ? (
@@ -419,6 +415,7 @@ export function ViewportToolbar({
         }}
         initialValue={{
           gridSize: scene?.settings.grid.tileSize ?? gridSize,
+          snapTranslate: scene?.settings.grid.snapTranslate ?? snapTranslate,
           snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
           snapScale: scene?.settings.grid.snapScale ?? snapScale,
         }}
@@ -432,7 +429,7 @@ export function ViewportToolbar({
                 grid: {
                   ...scene.settings.grid,
                   tileSize: value.gridSize,
-                  snapTranslate: value.gridSize,
+                  snapTranslate: value.snapTranslate,
                   snapRotateDeg: value.snapRotateDeg,
                   snapScale: value.snapScale,
                 },
@@ -442,6 +439,7 @@ export function ViewportToolbar({
           }
           void patchEngineViewportPrefs({
             viewportGridSize: value.gridSize,
+            viewportSnapTranslate: value.snapTranslate,
             viewportSnapRotateDeg: value.snapRotateDeg,
             viewportSnapScale: value.snapScale,
           });

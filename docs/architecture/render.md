@@ -1,5 +1,13 @@
 # Render sync and resource cache (P4)
 
+Editor gizmo utility layers belong to their viewport, independently of graph
+rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
+the final world output on graph and classic paths, before the host copies the
+view or Prefab RTT. Preparation and skipped frames do not draw it. Coordinated
+layers disable Babylon's automatic camera callback; standalone model-collider
+previews retain it. Overlay draws preserve world color, clear depth for handles,
+and restore borrowed camera and Engine state even if drawing fails.
+
 The session quality owner preserves override identity for repeated preset, value and reset requests. Runtime command delivery emits `setRenderingQuality` only when that state changes, so identical requests do not invalidate renderer readiness or reconfigure resources. This removes duplicate command work; it is not a measured GPU or A16 performance claim.
 
 ## Rendering handoff application contract
@@ -677,12 +685,23 @@ receiver plane before applying only its own bilinear-support correction. Native
 sample counts, positions and filter weights remain unchanged. All cascade
 derivatives execute before cascade selection/blending.
 The receiver's comparison-depth shift is derived from its projected depth
-gradient and actual map dimensions. A 0.05 normalized-depth ceiling guards
-numerical extremes; it is not a world-space displacement policy. Singular
+gradient and actual map dimensions. Finite offsets retain their full magnitude:
+clipping them to a fixed normalized-depth ceiling produces self-shadow bands
+at grazing light angles. Finite-gradient and singular-Jacobian guards remain,
+as does Babylon's native CSM comparison-depth range clamp. Singular
 derivatives use the caster correction alone. No model or scene bounding box
 sets the offset. Manual
 mode bypasses the receiver correction. The pinned WGSL Low CSM blend adapter
 also supplies Babylon 9.20's omitted array-texture argument.
+
+The grazing regression uses actual Medium settings (2048 maps, two cascades,
+Medium PCF), a self-shadowing ground plane, and pose-matched shadow-off references.
+Upright objects do not cast in that case, isolating acne from long grazing
+penumbrae. It failed on WebGL2 and WebGPU with the fixed offset ceiling and
+passes without it. Separate hard-face and thin-contact tests protect valid
+shadows across Low/Medium/High PCF and CEL cascades. These software-backend
+fixtures establish functional behavior, not original-project or device-performance
+qualification.
 
 Other directional filters retain a half-world-texel base correction with
 Poisson's actual blur radius; PCSS tap count is not treated as a filter width.

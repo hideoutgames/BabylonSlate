@@ -6,6 +6,27 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+for (const backend of ["webgl2", "webgpu"] as const)
+  test(`grazing surfaces avoid self-shadow acne with Medium cascades: ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.goto("/?test=1&shadowSelfShadowingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateShadowSelfShadowingProof?: unknown }).__babylonslateShadowSelfShadowingProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __babylonslateShadowSelfShadowingProof: typeof runShadowSelfShadowingProof;
+    }).__babylonslateShadowSelfShadowingProof(backend, "pbr", "cascades", { grazing: true }), backend);
+    for (const capture of result.captures) await testInfo.attach(capture.name, { body: Buffer.from(capture.png, "base64"), contentType: "image/png" });
+    await testInfo.attach("grazing-diagnostics", { body: JSON.stringify({ ...result, captures: result.captures.map(({ name, effective, assertions, regions }) => ({ name, effective, assertions, regions })) }, null, 2), contentType: "application/json" });
+    expect(result.backend).toBe(backend);
+    for (const capture of result.captures.filter((capture) => capture.assertions)) {
+      const generator = capture.effective.lights.find((light) => light.name === "oblique key")!.generator!;
+      expect(generator.cascades).toBe(2);
+      expect(generator.map?.width).toBe(2048);
+      const ground = capture.regions.ground!;
+      expect(ground.lit, `${capture.name} grazing lit population`).toBeGreaterThan(20);
+      expect(ground.falseDark / ground.lit, `${capture.name} grazing false shadows`).toBeLessThan(0.05);
+    }
+  });
+
 const cases = [
   { backend: "webgl2", configuration: "live-transform", mode: "pbr" } as const,
   { backend: "webgl2", configuration: "live-transform", mode: "cel" } as const,

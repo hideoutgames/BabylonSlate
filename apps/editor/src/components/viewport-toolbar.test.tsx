@@ -54,6 +54,7 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer" | "graph",
   gridSize: 1,
+  snapTranslate: 1,
   snapRotateDeg: 15,
   snapScale: 0.25,
   patchPrefs: vi.fn(async () => {}),
@@ -71,6 +72,7 @@ vi.mock("../lib/viewport-engine-prefs", async (importOriginal) => ({
   patchEngineViewportPrefs: harness.patchPrefs,
   useEditorViewportPrefs: () => ({
     gridSize: harness.gridSize,
+    snapTranslate: harness.snapTranslate,
     snapRotateDeg: harness.snapRotateDeg,
     snapScale: harness.snapScale,
     flySpeed: 8,
@@ -140,6 +142,7 @@ beforeEach(() => {
   harness.scene = createDefaultScene();
   harness.documentKind = "scene";
   harness.gridSize = 1;
+  harness.snapTranslate = 1;
   harness.snapRotateDeg = 15;
   harness.snapScale = 0.25;
   harness.patchPrefs.mockClear();
@@ -187,6 +190,8 @@ const GIZMO_LABELS = [
 
 describe("ViewportToolbar", () => {
   it("opens snap settings by right-click without toggling, and Cancel discards edits", () => {
+    harness.scene!.settings.grid.tileSize = 4;
+    harness.scene!.settings.grid.snapTranslate = 0.5;
     harness.scene!.settings.grid.snapRotateDeg = 45;
     harness.scene!.settings.grid.snapScale = 0.1;
     renderToolbar();
@@ -200,10 +205,14 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByLabelText("Scale Snap"), {
       target: { value: "2" },
     });
+    fireEvent.change(screen.getByLabelText("Grid Size"), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText("Grid Snap"), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(harness.setSnapEnabled).not.toHaveBeenCalled();
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.contextMenu(snap);
+    expect(screen.getByLabelText("Grid Size")).toHaveProperty("value", "4");
+    expect(screen.getByLabelText("Grid Snap")).toHaveProperty("value", "0.5");
     expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(snap, { detail: 0 });
@@ -277,9 +286,13 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByLabelText("Scale Snap"), {
       target: { value: "0.5" },
     });
+    fireEvent.change(screen.getByLabelText("Grid Snap"), {
+      target: { value: "0.25" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(harness.patchPrefs).toHaveBeenCalledWith({
       viewportGridSize: 2,
+      viewportSnapTranslate: 0.25,
       viewportSnapRotateDeg: 45,
       viewportSnapScale: 0.5,
     });
@@ -310,17 +323,18 @@ describe("ViewportToolbar", () => {
     );
   });
 
-  it("shows the prefab translation increment from editor grid preferences", () => {
+  it("shows the prefab translation increment independently of grid size", () => {
     harness.documentKind = "graph";
     harness.scene = null;
     harness.gridSize = 4;
+    harness.snapTranslate = 0.5;
     renderToolbar();
     expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
-      "4",
+      "0.5",
     );
   });
 
-  it("shows 2D tile snapping and the selected tool increment", () => {
+  it("shows the independent 2D movement snap and the selected tool increment", () => {
     harness.viewportMode = "2d";
     harness.scene!.settings.grid.tileSize = 3;
     harness.scene!.settings.grid.snapTranslate = 99;
@@ -328,7 +342,7 @@ describe("ViewportToolbar", () => {
     harness.scene!.settings.grid.snapScale = 0.5;
     const { rerender } = renderToolbar();
     expect(screen.getByRole("button", { name: "Snap Grid" }).textContent).toBe(
-      "3",
+      "99",
     );
     harness.gizmoTool = "rotate";
     rerender(
@@ -494,7 +508,7 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings-submenu")).toBeTruthy();
   });
 
-  it("opens Grid Size from Settings with the saved scene tile size", () => {
+  it("opens Grid Settings from Settings with the saved scene tile size", () => {
     harness.scene = {
       ...createDefaultScene(),
       settings: {
@@ -513,13 +527,16 @@ describe("ViewportToolbar", () => {
     );
   });
 
-  it("saves all snap steps together, including arithmetic on Enter", () => {
+  it("saves independent grid and snap steps, including arithmetic on Enter", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText("Grid Snap"), {
+      target: { value: "0.5" },
     });
     fireEvent.change(screen.getByTestId("scale-snap-input"), {
       target: { value: "0.5" },
@@ -536,7 +553,7 @@ describe("ViewportToolbar", () => {
         settings: expect.objectContaining({
           grid: expect.objectContaining({
             tileSize: 4,
-            snapTranslate: 4,
+            snapTranslate: 0.5,
             snapRotateDeg: 15,
             snapScale: 0.5,
           }),

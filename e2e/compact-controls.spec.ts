@@ -128,17 +128,20 @@ test(
     await expect(dialog).toBeVisible();
     await expect(snap).toHaveAttribute("aria-pressed", pressed!);
     await dialog.getByRole("textbox", { name: "Grid Size", exact: true }).fill("2");
+    await dialog.getByLabel("Grid Snap", { exact: true }).fill("0.25");
     await dialog.getByLabel("Rotation Snap (Degrees)").fill("90/2");
     await dialog.getByLabel("Scale Snap", { exact: true }).fill("0.5");
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(snap).toHaveText("2");
+    await expect(snap).toHaveText("0.25");
     await page.getByRole("button", { name: "Rotate", exact: true }).click();
     await expect(snap).toHaveText("45\u00b0");
     await page.getByRole("button", { name: "Scale", exact: true }).click();
     await expect(snap).toHaveText("0.5");
     await snap.click({ button: "right" });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Grid Size", { exact: true })).toHaveValue("2");
+    await expect(dialog.getByLabel("Grid Snap", { exact: true })).toHaveValue("0.25");
     await expect(dialog.getByLabel("Rotation Snap (Degrees)")).toHaveValue(
       "45",
     );

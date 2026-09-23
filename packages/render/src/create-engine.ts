@@ -1675,6 +1675,7 @@ function initializeEngine(
     debugOverlay = debugOverlayInstance;
     const gizmos = createGizmoHost(scene, {
       mode,
+      registerOverlay: (draw) => worldRenderer.attachEditorOverlay(draw),
       scheduler,
       manipulator: options.overlayTransformBox ? "overlay-box" : "trs",
       canvasCssHeight: () => pointerCanvas().height,
