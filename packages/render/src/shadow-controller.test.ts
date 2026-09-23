@@ -125,6 +125,7 @@ describe("shared shadow lifecycle", () => {
     const dashes = collider.getChildMeshes();
     const model = MeshBuilder.CreateBox("authored-child", {}, scene);
     model.parent = collider;
+    controller.setParticipation(collider, { castShadows: true, receiveShadows: true });
     controller.register(sun, true);
     controller.sync();
     const generator = controller.generator(sun)!;
