@@ -29,6 +29,7 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
     editorPickProxy?: boolean;
     editorBillboard?: string;
     editorVolume?: boolean;
+    editorColliderVisual?: boolean;
     playHelperVisual?: boolean;
     playActorOrigin?: boolean;
     playDebugOverlay?: boolean;
@@ -39,6 +40,7 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
     meta.editorPickProxy ||
     meta.editorBillboard ||
     meta.editorVolume ||
+    meta.editorColliderVisual ||
     meta.playHelperVisual ||
     meta.playActorOrigin ||
     meta.playDebugOverlay,
