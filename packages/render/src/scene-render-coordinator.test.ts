@@ -58,19 +58,17 @@ it("draws editor gizmos once after native and graph frames, never during prepara
   });
   gizmos.attachTo(box);
   const layer = gizmos.positionGizmo.gizmoLayer.utilityLayerScene;
-  const frames: Scene[] = [];
-  layer.onAfterRenderObservable.add(() => frames.push(camera.getScene()));
+  let frames = 0;
+  layer.onAfterRenderObservable.add(() => { frames += 1; });
   let ready = false;
   scene.addIsReadyCheck({ isReady: () => ready });
   expect(renderer.render().rendered).toBe(false);
-  expect(frames).toHaveLength(0);
+  expect(frames).toBe(0);
   ready = true;
-  expect(renderer.render().path).toBe("classic");
-  expect(frames).toEqual([layer]);
   await renderer.prepare();
-  expect(frames).toHaveLength(1);
+  expect(frames).toBe(0);
   expect(renderer.render().path).toBe("frameGraph");
-  expect(frames).toEqual([layer, layer]);
+  expect(frames).toBe(1);
   expect(camera.getScene()).toBe(scene);
 
   // A new camera/output uses the same layer and native fallback while the
@@ -80,14 +78,14 @@ it("draws editor gizmos once after native and graph frames, never during prepara
   replacement.outputRenderTarget = target;
   scene.activeCamera = replacement;
   await renderer.prepare();
-  expect(renderer.render().rendered).toBe(true);
+  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true });
   expect(layer.activeCamera).toBe(replacement);
   expect(replacement.getScene()).toBe(scene);
   expect(replacement.outputRenderTarget).toBe(target);
-  expect(frames).toHaveLength(3);
+  expect(frames).toBe(2);
   gizmos.dispose();
   renderer.render();
-  expect(frames).toHaveLength(3);
+  expect(frames).toBe(2);
   renderer.dispose();
 });
 

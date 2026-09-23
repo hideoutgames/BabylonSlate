@@ -890,16 +890,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const grid = scene?.settings.grid;
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
-      // 2D translation snaps to the tile the grid actually draws, so dragging
-      // with snap on lands sprites on tile boundaries.
-      translate:
-        viewportMode === "2d"
-          ? (grid?.tileSize ?? 1)
-          : (grid?.snapTranslate ?? 1),
+      translate: grid?.snapTranslate ?? 1,
       rotateDeg: grid?.snapRotateDeg ?? 15,
       scale: grid?.snapScale ?? 0.25,
     });
-  }, [scene?.settings.grid, snapEnabled, viewportMode, engineEpoch]);
+  }, [scene?.settings.grid, snapEnabled, engineEpoch]);
 
   useEffect(() => {
     const settings = scene?.settings;

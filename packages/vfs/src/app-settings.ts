@@ -87,6 +87,7 @@ export const engineSettingsSchema = z.object({
     return Math.max(0.0001, value);
   }, z.number().positive().default(1)),
   viewportSnapRotateDeg: z.number().finite().positive().default(15),
+  viewportSnapTranslate: z.number().finite().positive().optional(),
   viewportSnapScale: z.number().finite().positive().default(0.25),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
@@ -200,7 +201,12 @@ export const engineSettingsSchema = z.object({
       trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
     })
     .default(mutableFocusKeepPanels),
-});
+}).transform((settings) => ({
+  ...settings,
+  // Older Prefab preferences used the grid spacing for movement snapping.
+  // Materialize that value on load so later grid edits cannot change it.
+  viewportSnapTranslate: settings.viewportSnapTranslate ?? settings.viewportGridSize,
+}));
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;
 

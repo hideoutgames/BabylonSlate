@@ -7,6 +7,7 @@ export function useEditorViewportPrefs(): {
   flySpeed: number;
   dropDistance: number;
   gridSize: number;
+  snapTranslate: number;
   snapRotateDeg: number;
   snapScale: number;
   editorTextureLodEnabled: boolean;
@@ -18,6 +19,7 @@ export function useEditorViewportPrefs(): {
     flySpeed: settings.viewportFlySpeed,
     dropDistance: settings.viewportDropDistance,
     gridSize: settings.viewportGridSize,
+    snapTranslate: settings.viewportSnapTranslate,
     snapRotateDeg: settings.viewportSnapRotateDeg,
     snapScale: settings.viewportSnapScale,
     editorTextureLodEnabled: settings.editorTextureLodEnabled,
@@ -28,6 +30,7 @@ export function useEditorViewportPrefs(): {
 export async function patchEngineViewportPrefs(patch: {
   viewportFlySpeed?: number;
   viewportGridSize?: number;
+  viewportSnapTranslate?: number;
   viewportSnapRotateDeg?: number;
   viewportSnapScale?: number;
 }): Promise<void> {

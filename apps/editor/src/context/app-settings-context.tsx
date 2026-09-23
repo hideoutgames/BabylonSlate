@@ -115,6 +115,7 @@ export function updateActiveViewportPrefs(
     Partial<EngineSettings>,
     | "viewportFlySpeed"
     | "viewportGridSize"
+    | "viewportSnapTranslate"
     | "viewportSnapRotateDeg"
     | "viewportSnapScale"
   >,
@@ -129,6 +130,7 @@ type AppSettingsContextValue = AppSettingsSnapshot & {
       Partial<EngineSettings>,
       | "viewportFlySpeed"
       | "viewportGridSize"
+      | "viewportSnapTranslate"
       | "viewportSnapRotateDeg"
       | "viewportSnapScale"
     >,
@@ -185,6 +187,7 @@ export function AppSettingsProvider({
         Partial<EngineSettings>,
         | "viewportFlySpeed"
         | "viewportGridSize"
+        | "viewportSnapTranslate"
         | "viewportSnapRotateDeg"
         | "viewportSnapScale"
       >,

@@ -129,6 +129,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const {
     flySpeed,
     gridSize,
+    snapTranslate,
     snapRotateDeg,
     snapScale,
     dropDistance,
@@ -469,7 +470,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
-      translate: gridSize,
+      translate: snapTranslate,
       rotateDeg: snapRotateDeg,
       scale: snapScale,
     });
@@ -482,6 +483,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [
     snapEnabled,
     gridSize,
+    snapTranslate,
     snapRotateDeg,
     snapScale,
     gridVisible,

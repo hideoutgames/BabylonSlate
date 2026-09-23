@@ -70,7 +70,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
   return {
     createEngineMock,
     handle,
-    selection: { actorIds: [] as string[] },
+    selection: { actorIds: [] as string[], mode: "3d" as "2d" | "3d" },
     documents: {
       projectDocument: null as ReturnType<typeof createEmptyProject> | null,
       assetRegistry: null as Pick<AssetRegistry, "list" | "getByGuid"> | null,
@@ -167,7 +167,7 @@ vi.mock("../context/scene-editing-context", () => ({
     setSelectedActorIds: vi.fn(),
     gizmoTool: "translate",
     snapEnabled: false,
-    viewportMode: "3d",
+    viewportMode: selection.mode,
     joystickEnabled: false,
     gridVisible: true,
     navmeshVisible: false,
@@ -677,12 +677,13 @@ describe("ViewportPanel engine", () => {
     );
   });
 
-  it("pushes cameraBounds2D after the viewport engine is created", async () => {
+  it("pushes independent 2D grid, movement snap, and camera bounds after engine creation", async () => {
+    selection.mode = "2d";
     const scene = {
       name: "HUD",
       viewportMode: "2d" as const,
       settings: {
-        grid: { tileSize: 1, tileSubdivisions: 4 },
+        grid: { tileSize: 4, tileSubdivisions: 4, snapTranslate: 0.5 },
         cameraBounds2D: { width: 32, height: 18 },
       },
       actors: [],
@@ -703,10 +704,15 @@ describe("ViewportPanel engine", () => {
     await waitFor(() => {
       expect(handle.editor.setGridSettings).toHaveBeenCalledWith(
         expect.objectContaining({
+          tileSize: 4,
           cameraBounds2D: { width: 32, height: 18 },
         }),
       );
     });
+    expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith(
+      expect.objectContaining({ translate: 0.5 }),
+    );
+    selection.mode = "3d";
   });
 
   it("pauses the editor viewport while Preview Build is preparing", async () => {

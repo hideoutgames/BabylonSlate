@@ -18,12 +18,14 @@ import {
 
 interface SnapValues {
   gridSize: number;
+  snapTranslate: number;
   snapRotateDeg: number;
   snapScale: number;
 }
 
 const FIELDS = [
   { key: "gridSize", label: "Grid Size", testId: "number-prompt-input" },
+  { key: "snapTranslate", label: "Grid Snap", testId: "grid-snap-input" },
   {
     key: "snapRotateDeg",
     label: "Rotation Snap (Degrees)",
@@ -46,11 +48,11 @@ export function GridSizeDialog({
   "data-testid"?: string;
 }) {
   const id = useId();
-  const { gridSize, snapRotateDeg, snapScale } = initialValue;
+  const { gridSize, snapTranslate, snapRotateDeg, snapScale } = initialValue;
   const [value, setValue] = useState(initialValue);
   useEffect(() => {
-    if (open) setValue({ gridSize, snapRotateDeg, snapScale });
-  }, [open, gridSize, snapRotateDeg, snapScale]);
+    if (open) setValue({ gridSize, snapTranslate, snapRotateDeg, snapScale });
+  }, [open, gridSize, snapTranslate, snapRotateDeg, snapScale]);
 
   const submit = (next = value) => {
     if (
@@ -67,10 +69,10 @@ export function GridSizeDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid={testId}>
         <AlertDialogHeader>
-          <AlertDialogTitle>Grid Size</AlertDialogTitle>
+          <AlertDialogTitle>Grid Settings</AlertDialogTitle>
           <AlertDialogDescription>
-            Grid Size sets the visible cell size and move snap step. Set
-            rotation and scale snap steps below.
+            Grid Size sets the visible cell spacing. Grid Snap sets the movement
+            increment when snapping is on. Both use world units.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {open ? (
