@@ -48,6 +48,7 @@ export async function runShadowSelfShadowingProof(
   configuration: "low" | "cascade-fallback" | "cascades",
   options: {
     transformed?: boolean;
+    liveTransform?: boolean;
     filterQuality?: "low" | "medium" | "high";
   } = {},
 ) {
@@ -98,7 +99,7 @@ export async function runShadowSelfShadowingProof(
       mesh.material = material;
     }
     const boxes: ShadowBox[] = [...SHADOW_BOXES];
-    if (options.transformed) {
+    const transformFixture = () => {
       // Exercise final world normals under a non-uniform mirrored parent, and
       // the instanced receiver/caster path, with independently updated bounds.
       const head = scene.getMeshByName("head")!;
@@ -117,7 +118,9 @@ export async function runShadowSelfShadowingProof(
       left.dispose();
       const instance = right.createInstance("left-arm");
       instance.position.copyFrom(position);
-    }
+      return instance;
+    };
+    if (options.transformed) transformFixture();
     const ground = MeshBuilder.CreateGround(
       "ground",
       { width: 12, height: 12 },
@@ -392,6 +395,23 @@ export async function runShadowSelfShadowingProof(
       settings(false, 0.001953125, 0);
       await capture("second-angle-manual-one-texel-zero-normal");
       settings(true);
+      if (options.liveTransform) {
+        const instance = transformFixture();
+        await new Promise<void>((resolve, reject) => {
+          const observer = scene.onNewMeshAddedObservable.add((added) => {
+            if (added !== instance) return;
+            clearTimeout(timeout);
+            scene.onNewMeshAddedObservable.remove(observer);
+            resolve();
+          });
+          const timeout = setTimeout(() => {
+            scene.onNewMeshAddedObservable.remove(observer);
+            reject(new Error("Live instance notification timed out"));
+          }, 5_000);
+        });
+        await referencePose("live-transform");
+        await capture("automatic-live-transform", true);
+      }
     } else if (configuration === "cascades") {
       // Dolly through the first split while retaining the same target and
       // projection settings. Capture each view's own independent reference.

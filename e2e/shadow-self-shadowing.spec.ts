@@ -7,6 +7,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 const cases = [
+  { backend: "webgl2", configuration: "live-transform", mode: "pbr" } as const,
+  { backend: "webgl2", configuration: "live-transform", mode: "cel" } as const,
   ...(["webgl2", "webgpu"] as const).flatMap((backend) =>
     (["low", "cascade-fallback", "cascades", "transformed"] as const).flatMap((configuration) =>
       (["pbr", "cel"] as const).map((mode) => ({ backend, configuration, mode })))),
@@ -51,6 +53,7 @@ for (const { backend, configuration, mode } of cases)
           configuration === "cascades" || configuration === "cascade-fallback" ? configuration : "low",
           {
             transformed: configuration === "transformed",
+            liveTransform: configuration === "live-transform",
             filterQuality: configuration === "pcf-medium" ? "medium" : configuration === "pcf-high" ? "high" : "low",
           },
         ),
