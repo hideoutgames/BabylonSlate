@@ -68,6 +68,14 @@ with a bounded 30-second deadline for coverage instrumentation. Production code
 and the browser evidence below are unchanged by these test repairs; targeted
 reruns and a new exact-head Verify remain required.
 
+The same run exposed a frozen Material Graph receiver retaining an older WebGPU
+light UBO after camera movement (94-channel maximum difference in the existing
+clustered pixel oracle, also reproduced locally). The draw-context adapter now
+refreshes missing **or stale** light-buffer bindings while preserving the shadow
+invalidation optimization. It does not dirty materials, rebuild shaders or
+allocate buffers; native camera/light/resize pixel parity remains the acceptance
+check for this repair.
+
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
 delete the blue model duplicate while the box remains selected: the orange model,
