@@ -154,35 +154,7 @@ export async function runShadowSelfShadowingProof(
       assertions: boolean;
       regions: ReturnType<typeof shadowRegions>;
     }[] = [];
-    const samplerCollisions: unknown[] = [];
-    let captureName = "initial";
-    if (options.liveTransform && engine instanceof Engine) {
-      const internals = engine as unknown as { _gl: WebGL2RenderingContext; _currentEffect?: { defines: string; getSamplers(): string[] } };
-      const gl = internals._gl;
-      const types = new Set<number>([gl.SAMPLER_2D, gl.SAMPLER_CUBE, gl.SAMPLER_2D_SHADOW, gl.SAMPLER_2D_ARRAY, gl.SAMPLER_2D_ARRAY_SHADOW]);
-      const inspectDraw = (mesh: Mesh) => {
-        if (samplerCollisions.length >= 12) return;
-        const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
-        if (!program) return;
-        const samplers: { name: string; type: number; unit: unknown }[] = [];
-        const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number;
-        for (let i = 0; i < count; i++) {
-          const uniform = gl.getActiveUniform(program, i)!;
-          if (!types.has(uniform.type)) continue;
-          samplers.push({ name: uniform.name, type: uniform.type, unit: gl.getUniform(program, gl.getUniformLocation(program, uniform.name)!) });
-        }
-        if (samplers.some((a) => samplers.some((b) => a.unit === b.unit && a.type !== b.type)))
-          samplerCollisions.push({ captureName, mesh: mesh.name, pass: engine.currentRenderPassId, shadowEnabled: light.shadowEnabled,
-            samplers, defines: internals._currentEffect?.defines,
-            effectSamplers: internals._currentEffect?.getSamplers(),
-            material: scene.getCachedMaterial()?.name,
-          });
-      };
-      for (const mesh of scene.meshes)
-        if (mesh instanceof Mesh) mesh.onBeforeDrawObservable.add(inspectDraw);
-    }
-    const render = async (name: string) => {
-      captureName = name;
+    const render = async () => {
       const ready = await graph.prepare(camera);
       if (ready.path !== "frameGraph") throw new Error(ready.reason);
       engine.beginFrame();
@@ -276,7 +248,7 @@ export async function runShadowSelfShadowingProof(
     };
     const referencePose = async (name: string) => {
       light.shadowEnabled = false;
-      reference = await render(`${name}-reference`);
+      reference = await render();
       captures.push({
         name: `${name}-shadow-contribution-off`,
         png: png(reference),
@@ -287,7 +259,7 @@ export async function runShadowSelfShadowingProof(
       light.shadowEnabled = true;
     };
     const capture = async (name: string, assertions = false) => {
-      const pixels = await render(name);
+      const pixels = await render();
       // Use this draw's light matrices, including after changing the pose.
       updatePoints();
       captures.push({
@@ -473,7 +445,6 @@ export async function runShadowSelfShadowingProof(
       lightDirection: light.direction.asArray(),
       samples: points.length,
       captures,
-      samplerCollisions,
     };
   } finally {
     const device = (

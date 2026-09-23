@@ -401,6 +401,34 @@ it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
   graph.dispose();
 });
 
+it("warms the current shadow-enabled receiver layout before drawing a reused graph", async () => {
+  const { scene, engine, camera, mesh, light, map, graph, faces, render } = await fixture("sun");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const renderer = scene.objectRenderers.find((entry) => entry.name === "Forward objects")!;
+  const material = mesh.material!;
+  const ready = material.isReadyForSubMesh.bind(material);
+  const observed: boolean[] = [];
+  vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+    if (engine.currentRenderPassId === renderer.renderPassId) observed.push(light.shadowEnabled);
+    return ready(...args);
+  });
+  for (const enabled of [false, true]) {
+    light.shadowEnabled = enabled;
+    observed.length = 0;
+    const before = faces();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(observed.length).toBeGreaterThan(0);
+    expect(observed.every((value) => value === enabled)).toBe(true);
+    expect(light.shadowEnabled).toBe(enabled);
+    expect(faces()).toBe(before);
+    expect(scene.objectRenderers).toContain(renderer);
+    expect(light.getShadowGenerator()!.getShadowMap()).toBe(map);
+    expect(render()).toBe(enabled ? 1 : 0);
+  }
+  graph.dispose();
+});
+
 it("keeps admitted maps alive when the graph build fails", async () => {
   const { scene, camera, light, controller, generator, map, graph } =
     await fixture("spot");

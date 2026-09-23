@@ -658,6 +658,12 @@ detailed diagnostics. Local cache invalidation still observes authored bias
 edits before its draw decision. This change does not alter shadow coverage,
 map/pass/sampler budgets, ownership or the borrowed FrameGraph textures.
 
+The managed shadow bridge refreshes receiver bindings before readiness as well
+as before drawing. A shadow-enabled toggle on a reused graph must warm its new
+material layout; compiling the previous layout can otherwise present a stale
+shadow shader after a transform or instance change. This updates binding hooks
+only on state changes and does not redraw or replace the borrowed maps.
+
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators
 resolve the current camera for each render, including preview views. Runtime `quality shadows` overrides remain explicit; opening a scene does not override its authored map size. Exported players and editor previews inherit project quality unless an explicit local/session override applies.
