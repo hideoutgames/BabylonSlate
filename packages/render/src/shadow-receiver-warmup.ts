@@ -2,7 +2,7 @@ import { Mesh, SubMesh, type AbstractMesh, type Light, type Material, type Scene
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { withSceneReadinessState } from "./scene-perf";
 
-type Probe = { mesh: AbstractMesh; source: SubMesh; part: SubMesh; material: Material; instances: boolean; pass: number; ready: boolean };
+type Probe = { mesh: AbstractMesh; source: SubMesh; part?: SubMesh; material: Material; instances: boolean; pass: number; ready: boolean };
 type Work = {
   key: string;
   camera: Scene["activeCamera"];
@@ -21,7 +21,8 @@ export class ShadowReceiverWarmup {
   private work: Work | undefined;
   private probing = false;
   private readonly retired: Work[] = [];
-  constructor(private readonly scene: Scene) {}
+  private readonly scene: Scene;
+  constructor(scene: Scene) { this.scene = scene; }
 
   ready(key: string, layout: ReadonlyMap<Light, ShadowGenerator | null>, passes: readonly number[], current: () => boolean): boolean {
     if (this.work?.key === key) return this.work.remaining === 0 || this.work.failed;
@@ -37,11 +38,12 @@ export class ShadowReceiverWarmup {
       const variants = instanced ? [true] : mesh instanceof Mesh && mesh.instances.length ? [false, true] : [false];
       for (const source of mesh.subMeshes ?? []) {
         const material = source.getMaterial();
+        // Native ShadowDepthWrapper retains every effect-created SubMesh until
+        // the real mesh dies. It cannot safely own disposable detached probes.
+        if (material?.shadowDepthWrapper) { this.cancel(); return true; }
         if (!material?._storeEffectOnSubMeshes) continue;
         for (const pass of new Set(passes)) for (const instances of variants) {
-          const part = new SubMesh(source.materialIndex, source.verticesStart, source.verticesCount,
-            source.indexStart, source.indexCount, mesh, source.getRenderingMesh(), false, false);
-          work.probes.push({ mesh, source, part, material, pass, instances, ready: false });
+          work.probes.push({ mesh, source, material, pass, instances, ready: false });
         }
       }
     }
@@ -64,6 +66,7 @@ export class ShadowReceiverWarmup {
       if (probe.mesh.isDisposed() || !probe.mesh.subMeshes.includes(probe.source) || probe.source.getMaterial() !== probe.material) {
         this.cancel(); return;
       }
+      if (probe.material.shadowDepthWrapper) { work.failed = true; return; }
       try {
         const ready = this.probe(work, probe);
         if (this.work !== work || !work.current()) { this.cancel(); return; }
@@ -79,6 +82,10 @@ export class ShadowReceiverWarmup {
   private probe(work: Work, probe: Probe): boolean {
     const restored: (() => void)[] = [];
     const material = probe.material;
+    const source = probe.source;
+    // Allocate each detached part inside the dispatch budget, not in sync().
+    const part = probe.part ??= new SubMesh(source.materialIndex, source.verticesStart, source.verticesCount,
+      source.indexStart, source.indexCount, probe.mesh, source.getRenderingMesh(), false, false);
     const flags = [material.allowShaderHotSwapping, material.checkReadyOnEveryCall, material.checkReadyOnlyOnce] as const;
     this.probing = true;
     try {
@@ -97,8 +104,8 @@ export class ShadowReceiverWarmup {
       material.checkReadyOnlyOnce = false;
       return withSceneReadinessState(this.scene, () => {
         this.scene.getEngine().currentRenderPassId = probe.pass;
-        const ready = material.isReadyForSubMesh(probe.mesh, probe.part, probe.instances);
-        if (probe.part.effect?.getCompilationError()) throw new Error("Prospective shadow receiver compilation failed.");
+        const ready = material.isReadyForSubMesh(probe.mesh, part, probe.instances);
+        if (part.effect?.getCompilationError()) throw new Error("Prospective shadow receiver compilation failed.");
         return ready;
       });
     } finally {
@@ -123,6 +130,6 @@ export class ShadowReceiverWarmup {
   private release(work: Work): void {
     // Babylon 9.20 SubMesh.dispose splices mesh.subMeshes even for detached
     // parts (index -1). Release only their owned draw contexts and effect refs.
-    for (const probe of work.probes) probe.part.resetDrawCache(undefined, true);
+    for (const probe of work.probes) probe.part?.resetDrawCache(undefined, true);
   }
 }

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -52,6 +53,15 @@ it("warms a future layout without changing live frozen receivers, shadow maps or
   expect(mesh.subMeshes).toEqual(parts);
   expect(part.effect).toBe(effect);
   expect(effect?.isReady()).toBe(true);
+});
+
+it("uses normal preparation for wrappers that retain temporary submeshes", async () => {
+  const { scene, material, warmer, layout, passes } = await fixture();
+  material.shadowDepthWrapper = new ShadowDepthWrapper(material, scene);
+  const compile = vi.spyOn(material, "isReadyForSubMesh");
+  expect(warmer.ready("incoming", layout, passes, () => true)).toBe(true);
+  warmer.advance();
+  expect(compile).not.toHaveBeenCalled();
 });
 
 it("restores lookups and flags when a probe revokes its pending owner and throws", async () => {
