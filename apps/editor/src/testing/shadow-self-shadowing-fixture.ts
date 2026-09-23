@@ -73,6 +73,16 @@ function blocker(
     )
       nearest = { name: box.name, distance };
   }
+  // The actual 12x12 ground also casts. Wide PCF taps on a leg can extend its
+  // receiver plane below y=0, where this plane legitimately occludes the tap.
+  // Omitting it misclassifies filtered foot contacts as lit-surface acne.
+  if (ownSurface !== "ground" && point[1] < -1e-4 && direction[1] > 1e-8) {
+    const distance = -point[1] / direction[1];
+    const groundPoint = addScaled(point, direction, distance);
+    if (distance < maxDistance && Math.abs(groundPoint[0]) <= 6 && Math.abs(groundPoint[2]) <= 6 &&
+        (!nearest || distance < nearest.distance))
+      nearest = { name: "ground", distance };
+  }
   return nearest;
 }
 
