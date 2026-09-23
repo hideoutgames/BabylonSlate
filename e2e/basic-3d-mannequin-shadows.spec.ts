@@ -76,11 +76,16 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.lights.some(light => light.generator))).toBe(true);
   const initial = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
+    gpuBackend: variant.backend,
     mode: variant.mode, shadows: variant.profile === "medium" ? initial.requestedShadows : normalizeShadowSettings({ profile: "low" }),
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
   await page.evaluate(alternate => window.__babylonslateViewportTest.setShadowCaptureView(alternate ? [-3, 2, 4] : [3, 2, 4], [0, 1.35, 0], 0.7), variant.alternate);
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
+  await expect.poll(() => page.evaluate(() => {
+    const state = window.__babylonslateViewportTest.shadowDiagnostics();
+    return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.map?.width];
+  })).toEqual([variant.mode, variant.profile, variant.profile === "low" ? 1024 : 2048]);
   const geometry = await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
   const frames = async () => {
     const id = await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId);
@@ -106,6 +111,7 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   await testInfo.attach("effective-settings", { body: JSON.stringify({
     buildSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     host: "fresh Basic 3D editor", os: process.platform, variant, initial, state, regions,
+    samples: points.map((point, index) => ({ ...point, visible: visible[index], authored: authored.pixels.slice(index * 3, index * 3 + 3), direct: directOnly.pixels.slice(index * 3, index * 3 + 3) })),
     geometry: geometry.map(({ name, vertices, indices }) => ({ name, vertices, indices })),
   }, null, 2), contentType: "application/json" });
   expect(errors).toEqual([]);
