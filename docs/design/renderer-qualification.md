@@ -9,9 +9,25 @@ remain delivery gates. Physical A16 qualification remains **DEFERRED**.
 Main advanced to `931d6ee1` after readiness admission. The normal integration
 merge retains its immutable texture/model sources and staged visual ownership,
 plus this branch's emission and outline state. Single-model and multipart
-publication notify the shared outline host only after adoption. The extended
-Play regression, affected native browser cases and a fresh presented model route
-must pass for this integrated revision; earlier captures below retain their SHA.
+publication notify the shared outline host only after adoption. At integrated
+revision `94a1e73b736161c02d6c3ff14ab9b487eb49f7c2`, five selected Play/scene-owner
+unit cases, six-file lint and the render package typecheck pass. Three serialized
+browser groups also pass: six outline ownership/geometry/cost cases,
+[five settings/compiled-graph cases](../assets/renderer-qualification/2026-09-23-integration/settings.json)
+and [four area-light receiver/export cases](../assets/renderer-qualification/2026-09-23-integration/area.json).
+The settings group includes a separate injected adapter failure; it does not
+count as native WebGPU evidence. The other cases confirm native WebGL2 or WebGPU.
+A fresh presented model route remains pending for this integration; earlier
+captures below retain their SHA.
+
+The [integrated outline report](../assets/renderer-qualification/2026-09-23-integration/outlines.json)
+retains both APIs, fixed 640×360 output and all individual/combined consumers.
+With 12/192 instances, combined work remains four drawing passes, seven records,
+five total draws and 5,530,752/5,543,552 outline bytes. WebGL whole-engine median
+GPU times are 0.035/0.438 ms (off/all, 12 instances) and 0.045/0.489 ms (192).
+These are direct desktop queries; WebGPU direct timings remain unavailable.
+All eight lifecycle cycles retire to zero outline bytes/passes. Run-to-run timing
+differences do not establish an optimization gain or physical A16 headroom.
 
 Final hands-on acceptance uses application revision
 `5d0f9a916e07dc97674efa2346cb99fee60eb40b`, artifact SHA-256
