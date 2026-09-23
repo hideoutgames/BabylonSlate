@@ -35,6 +35,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
+import * as presentation from "./presented-frame";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
@@ -619,6 +620,47 @@ describe("Play createEngine view", () => {
       await presented.catch(() => {});
       read.mockRestore();
       globalThis.ImageData = previousImageData;
+    }
+  });
+
+  it.each(["completed", "stalled"] as const)("waits for a slow owned GPU frame beyond shader readiness, with bounded %s completion", async (completion) => {
+    const engine = sharedEngine();
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    let finishGpu!: () => void;
+    let cancelGpu!: (error: Error) => void;
+    const gpu = new Promise<void>((resolve, reject) => { finishGpu = resolve; cancelGpu = reject; });
+    const cancel = vi.fn(() => cancelGpu(new Error("Owned GPU wait cancelled")));
+    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      return { completed: gpu, cancel };
+    });
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, error => { state = "failed"; return error as Error; });
+    try {
+      loops.mock.calls[0]![0]();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(state).toBe("pending");
+      expect(cancel).not.toHaveBeenCalled();
+      if (completion === "completed") {
+        finishGpu();
+        await frame;
+        expect(state).toBe("ready");
+      } else {
+        await vi.advanceTimersByTimeAsync(11_000);
+        expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+        expect(state).toBe("failed");
+        expect(cancel).toHaveBeenCalledOnce();
+      }
+    } finally {
+      handle.dispose();
+      await frame;
+      submission.mockRestore();
+      vi.useRealTimers();
     }
   });
 
