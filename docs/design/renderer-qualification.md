@@ -15,9 +15,68 @@ Main subsequently advanced to `d42ba4d9` (#666). Its normal integration retains
 the projection-aware shadow correction, renderer-owned texture sampling and
 current shadow bindings before readiness, alongside this branch's typed runtime
 overrides and outline owner. The merged Play/player qualification hooks expose
-both Scalability and shadow diagnostics. The affected settings, ownership,
-presentation and native browser paths require a fresh integration check; earlier
+both Scalability and shadow diagnostics. The fresh checks below cover the
+affected settings, ownership, presentation and native browser paths; earlier
 captures continue to identify their original builds.
+
+### Integration acceptance after main #666
+
+At merge `5896d5c7`, the five selected settings/managed-shadow/runtime/texture/
+player unit files pass **30 cases**; lint of the five conflict-resolution files
+passes with one existing React hook warning. The editor/player build typechecks
+pass. [Eleven native browser cases](../assets/renderer-qualification/2026-09-23-shadow-integration/native-outlines-area.json)
+pass: shared-outline ownership, geometry and cost on both APIs; area receivers
+and independently served packed/loose area exports on both APIs; and the WebGPU
+clustered-light oracle (36 captures with zero maximum channel difference).
+
+At `30f7fb01`, [eight further cases](../assets/renderer-qualification/2026-09-23-shadow-integration/native-settings-shadows.json)
+pass: saved Scalability graphs in Play, packed/loose settings exports, three
+selected managed-shadow pixel/ownership cases, and a **separate injected
+WebGPU-initialization failure**. The successful native cases use NVIDIA WebGL2
+or WebGPU. The injected fallback is not native WebGPU qualification. All three
+partition contracts pass after the timing-only scheduling update. Three selected
+Windows SwiftShader cases also pass: WebGL2 area export lifecycle, CEL local/
+large shadow maps and native-glTF sRGB mode cycling. None is a Linux pass.
+
+Computer Use Chrome 153 reopens the saved seven-actor project on `30f7fb01`,
+artifact `711adeac5f0ab4c37b9516ef8ebaabec7bd8c73064cdf94cacaa01ffba90338f`.
+The integrity-checked server identity and the presented module URL agree with
+that artifact. Normal Inspector edits remove Neighbor's outline while preserving
+the other consumers on [WebGL2](../assets/renderer-qualification/2026-09-23-shadow-integration/removed-webgl2.png)
+and [WebGPU](../assets/renderer-qualification/2026-09-23-shadow-integration/removed-webgpu.png).
+Disabling Render Through Meshes hides the fully occluded box on
+[WebGL2](../assets/renderer-qualification/2026-09-23-shadow-integration/strict-webgl2.png)
+and [WebGPU](../assets/renderer-qualification/2026-09-23-shadow-integration/strict-webgpu.png);
+Undo restores each contribution. The saved graph presents a real 240×135 internal
+render buffer in [WebGL2 Play](../assets/renderer-qualification/2026-09-23-shadow-integration/play-webgl2.png)
+and [WebGPU Play](../assets/renderer-qualification/2026-09-23-shadow-integration/play-webgpu.png),
+copied to the 480×270 display canvas. Editor selection is absent. Stop restores
+427×217 at scale 1, zero pending retirement and Save All disabled. The
+[ten-step record](../assets/renderer-qualification/2026-09-23-shadow-integration/computer-use.json)
+distinguishes paused editor diagnostics from actual Play canvas/Stats inspection.
+Full earlier texture/model authoring and independent-output routes remain
+revision-scoped evidence for unchanged behavior; they are not retagged.
+
+The fresh cost record retains fixed 640×360, scale 1, disabled dynamic resolution,
+all individual consumers and 12/192 instances. Combined work remains four drawing
+passes, seven records, five total draws and 5,530,752/5,543,552 accounted outline
+bytes. All eight retirement cycles reach zero outline bytes/passes. Direct WebGL
+whole-engine median GPU samples are 0.051/0.716 ms (off/all, 12) and 0.065/0.799 ms
+(192), higher than the preceding run. These separate runs are not a controlled
+before/after comparison; no speedup or A16 headroom is claimed. WebGPU direct GPU
+timings remain unavailable. The report retains CPU, cadence, tails and geometry
+upper bounds rather than treating capped cadence as a GPU measurement.
+
+The native command selects `shared-outline`, `shared-outline-geometry`,
+`shared-outline-cost`, `area-rect-light`, `area-light-export` and
+`clustered-lights-webgpu` under `test:e2e`, `playwright.perf.config.ts`, `perf-gpu`
+and `BL_RENDER_NATIVE_GPU=1`. The second group selects `render-settings-export`,
+`scalability-play` and only the WebGL2-backbuffer, WebGPU-texture and Clustered
+promotion/demotion cases of `framegraph-shadows`. The software group selects
+only the three named cases in `area-light-export` and `cel-render-mode`, with
+`desktop-chrome`. All use the foreground `agent:wait` runner, shared mode, one
+worker and the unchanged 2 GiB host reserve. Required exact-head Verify remains
+a separate delivery gate.
 
 Main advanced to `931d6ee1` after readiness admission. The normal integration
 merge retains its immutable texture/model sources and staged visual ownership,
