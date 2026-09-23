@@ -1,9 +1,29 @@
 import { expect, it, vi } from "vitest";
-import { NodeMaterial, NullEngine, Scene, Texture, type Effect } from "@babylonjs/core";
+import { NodeMaterial, NullEngine, RenderTargetTexture, Scene, Texture, type Effect } from "@babylonjs/core";
 import { installAssetBytes } from "@babylonslate/assets";
 import { ResourceCache } from "./resource-cache";
 import { sceneRenderingSettings } from "./render-settings";
 import { QualityTextureBlock } from "./texture-quality";
+
+it("retains renderer-owned sampling when a graph binds a render target", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const target = new RenderTargetTexture("rendered input", 16, scene);
+  target.anisotropicFilteringLevel = 1;
+  const block = new QualityTextureBlock("input");
+  block.texture = target;
+  const material = new NodeMaterial("receiver", scene);
+  const effect = { setTexture: vi.fn(), setFloat: vi.fn(), setMatrix: vi.fn() } as unknown as Effect;
+  try {
+    sceneRenderingSettings(scene).textureAnisotropy = 8;
+    block.bind(effect, material);
+    expect(block.texture).toBe(target);
+    expect(target.anisotropicFilteringLevel).toBe(1);
+    sceneRenderingSettings(scene).textureAnisotropy = 2;
+    block.bind(effect, material);
+    expect(target.anisotropicFilteringLevel).toBe(1);
+  } finally { block.dispose(); scene.dispose(); engine.dispose(); }
+});
 
 it("isolates scene sampler quality without duplicating uploads or reacquiring steady bindings", () => {
   const engine = new NullEngine();
