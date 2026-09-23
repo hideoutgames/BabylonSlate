@@ -1,7 +1,8 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { createActor, createDefaultScene, createMeshComponent } from "../packages/core/src/index.ts";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 /** Locate actual handle pixels, without reaching into the utility scene. */
 async function handles(canvas: Locator) {
@@ -33,7 +34,7 @@ async function handles(canvas: Locator) {
 }
 
 test("selected objects show Move, Rotate, and Scale handles and a pointer drag is undoable", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await openTestProject(page);
   await openMainScene(page);
   const scene = createDefaultScene();
@@ -72,4 +73,26 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
   await expect.poll(documentX).not.toBe(before);
   await page.getByTestId("undo-document").click();
   await expect.poll(documentX).toBeCloseTo(before, 5);
+  await page.getByTestId("gizmo-tool-rotate").click();
+  await clickPlayAndWaitForOverlay(page);
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await expect(page.getByTestId("gizmo-tool-rotate")).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await handles(canvas)).colors[2], { timeout: 30_000 }).toBeGreaterThan(30);
+
+  // Prefab presents a depth-backed RTT through the same shared Engine.
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  const components = [createMeshComponent("prefab-mesh", "box")];
+  expect(await page.evaluate((components) => (window as unknown as {
+    __babylonslateTest: { setMainGraphComponents(value: typeof components): Promise<boolean> };
+  }).__babylonslateTest.setMainGraphComponents(components), components)).toBe(true);
+  await page.getByTestId("tree-row-prefab-mesh").click();
+  await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
+  const prefab = page.getByTestId("prefab-preview-canvas");
+  await expect(prefab).toBeVisible();
+  for (const tool of ["translate", "rotate", "scale"] as const) {
+    await page.getByTestId(`prefab-gizmo-tool-${tool}`).click();
+    await expect.poll(async () => Math.min(...(await handles(prefab)).colors), { timeout: 20_000 }).toBeGreaterThan(5);
+  }
+  await testInfo.attach("prefab-handles", { body: await prefab.screenshot(), contentType: "image/png" });
 });
