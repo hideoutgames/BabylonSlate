@@ -44,6 +44,10 @@ import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { serveExportFiles } from "./export-static-server";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 const SCENE_GUID = "00000000-0000-4000-8000-000000000001";
 const MATERIAL_GUID = "00000000-0000-4000-8000-000000000088";

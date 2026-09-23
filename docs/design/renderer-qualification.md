@@ -89,6 +89,25 @@ the owner's GPU completion and copy, cancels a stalled submission, and retains
 replacement/disposal/error handling. The new Linux result remains required;
 this deadline repair is not itself evidence that the export case passes.
 
+At `bbfe7578`, eleven selected presentation cases pass, including delayed GPU
+completion, a permanently stalled submission, owned canvas copies, replacement,
+hidden/sibling views and render errors. Two-file lint and the render package
+typecheck pass. At `4476e578`, the Windows software WebGL2 area-export lifecycle
+and both imported shadow-host cases pass. The shadow fixture now exports its
+actual rendering settings and pins scale 1 with dynamic resolution disabled;
+the prior Linux run omitted those export settings and compared changing Play
+buffers (one captured frame was entirely black). Output size is now asserted
+before comparison, without changing the false-shadow or contact thresholds.
+These Windows results do not establish Linux success.
+
+The same CI run completed 66 cases on shard 5 before its 25-minute job timeout.
+Its unfinished cases remain unqualified. Scheduling weights are refreshed from
+426 successful first-attempt records across the seven shards; failed, retried,
+skipped and unfinished cases retain their prior weights. This changes grouping
+only, retaining every test, seven standard runners, one browser worker and the
+25-minute deadline. The flaky launcher reveal route now waits for the same COI
+bootstrap boundary as the other launcher helpers before observing its animation.
+
 The native command selects `shared-outline`, `shared-outline-geometry`,
 `shared-outline-cost`, `area-rect-light`, `area-light-export` and
 `clustered-lights-webgpu` under `test:e2e`, `playwright.perf.config.ts`, `perf-gpu`
