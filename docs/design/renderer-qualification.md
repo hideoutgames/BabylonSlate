@@ -364,7 +364,7 @@ Matched real captures and bounded state dumps:
 | ![Synthetic original-policy capture](./evidence/shadow-self-shadowing/original-policy.png) | ![Synthetic corrected capture](./evidence/shadow-self-shadowing/corrected.png) |
 | [Effective settings](./evidence/shadow-self-shadowing/original-policy.json) | [Effective settings and thin contacts](./evidence/shadow-self-shadowing/corrected.json) |
 
-The [negative-control patch](./evidence/shadow-self-shadowing/original-policy.patch)
+The [negative-control patch](https://github.com/hideoutgames/BabylonSlate/blob/9efbd2781207eafe57c3e64a55e698ce6765ce7f/docs/design/evidence/shadow-self-shadowing/original-policy.patch)
 applies to verified commit `9f3304ef` and reproduces the isolated old policy.
 The experiment's first attempt (`58d1b2a7`) stopped at a diagnostics type error
 before browser execution; it is not counted as pixel evidence.
