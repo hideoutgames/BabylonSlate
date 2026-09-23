@@ -501,7 +501,7 @@ export async function runClusteredLightProof() {
     }
     return { capabilities, captures, ties, lifecycle, graphics: {
       requestedApi: backend ?? "webgl2", effectiveApi: engine.isWebGPU ? "webgpu" : "webgl2",
-      adapter: engine.getGlInfo(), browser: navigator.userAgent,
+      adapter: engine.getInfo(), browser: navigator.userAgent,
       viewport: { width: innerWidth, height: innerHeight },
       drawingBuffer: { width: engine.getRenderWidth(), height: engine.getRenderHeight() },
       devicePixelRatio,
