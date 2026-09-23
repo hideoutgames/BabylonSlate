@@ -147,6 +147,14 @@ Save All is progressing through project/journal persistence; it now uses the
 existing 30-second transaction wait and explicitly requires a successful save
 with zero remaining dirty documents before continuing. The earlier 15-second
 failures remain recorded; these fixture edits still require fresh CI.
+The [sanitized trace summary](../assets/renderer-qualification/2026-09-23-shadow-integration/linux-lifecycle-progress.json)
+retains the observed loading/save boundaries without treating incomplete work as
+passed. At `4c8e5826`, the two explicitly selected Windows browser cases and their
+two-file lint pass. The command selects only `build, save, reopen` from
+`p6-scene-editing.spec.ts` and `scene lifecycle on webgl2` from
+`area-light-export.spec.ts`, with `desktop-chrome`, shared mode and the unchanged
+2 GiB reserve. Production sources are unchanged, so prior native, presentation
+unit and Computer Use evidence remains applicable at its recorded revisions.
 
 The native command selects `shared-outline`, `shared-outline-geometry`,
 `shared-outline-cost`, `area-rect-light`, `area-light-export` and
