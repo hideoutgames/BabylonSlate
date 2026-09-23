@@ -1,5 +1,13 @@
 # Render sync and resource cache (P4)
 
+Editor gizmo utility layers belong to their viewport, independently of graph
+rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
+the final world output on graph and classic paths, before the host copies the
+view or Prefab RTT. Preparation and skipped frames do not draw it. Coordinated
+layers disable Babylon's automatic camera callback; standalone model-collider
+previews retain it. Overlay draws preserve world color, clear depth for handles,
+and restore borrowed camera and Engine state even if drawing fails.
+
 The session quality owner preserves override identity for repeated preset, value and reset requests. Runtime command delivery emits `setRenderingQuality` only when that state changes, so identical requests do not invalidate renderer readiness or reconfigure resources. This removes duplicate command work; it is not a measured GPU or A16 performance claim.
 
 ## Rendering handoff application contract

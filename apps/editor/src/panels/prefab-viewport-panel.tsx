@@ -464,7 +464,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
-  }, [gizmoTool]);
+  }, [gizmoTool, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSnap({

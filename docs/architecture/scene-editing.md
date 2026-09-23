@@ -1,5 +1,9 @@
 # Scene editing (P6)
 
+Scene and Prefab transform handles render after the world and its effects on
+both supported rendering paths. Their viewport-owned utility layer survives
+graph rebuilds; Prefab viewport recreation reapplies the selected transform tool.
+
 Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 4`). **One world scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). Graphs, Content Browser, and **SceneLayer** overlay tabs stay. An **open** Scene tab stays mounted (`p18-inactive-documents`); idle-unmount does **not** close it. Closing or replacing the Scene tab disposes that viewport `Scene` (and cache retains), not the project Engine. Overlay Play uses `ensureSharedEngine` whether or not a Scene tab is open.
 
 SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world scene. See [scene-layers.md](scene-layers.md).

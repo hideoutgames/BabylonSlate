@@ -5,6 +5,7 @@ import {
   ScaleGizmo,
   UtilityLayerRenderer,
   type AbstractMesh,
+  type Camera,
   type Scene,
   type StandardMaterial,
 } from "@babylonjs/core";
@@ -41,6 +42,9 @@ export interface GizmoHostOptions {
   manipulator?: GizmoManipulator;
   /** View-canvas CSS height for overlay-box 44px handles. */
   canvasCssHeight?: () => number;
+  /** Coordinated views draw overlays after final output instead of relying on
+   * Babylon's native camera callback, which FrameGraph does not emit. */
+  registerOverlay?: (draw: (camera: Camera) => void) => () => void;
 }
 
 export interface GizmoHost {
@@ -321,7 +325,7 @@ export function createGizmoHost(
   scene: Scene,
   options: GizmoHostOptions = {},
 ): GizmoHost {
-  const layer = new UtilityLayerRenderer(scene);
+  const layer = new UtilityLayerRenderer(scene, true, !!options.registerOverlay);
   layer.utilityLayerScene.onBeforeDrawPhaseObservable.add(() => {
     if (layer.utilityLayerScene.activeCamera?.outputRenderTarget) {
       // Babylon's camera RTT clear path ignores depth-only auto-clears when
@@ -475,6 +479,36 @@ export function createGizmoHost(
 
   applyAttachment();
 
+  const detachOverlay = options.registerOverlay?.((camera) => {
+    layer.setRenderCamera(camera);
+    const engine = scene.getEngine();
+    const cameraScene = camera._scene;
+    const leftScene = camera.leftCamera?._scene;
+    const rightScene = camera.rightCamera?._scene;
+    const target = engine._currentRenderTarget;
+    const viewport = engine.currentViewport;
+    const width = engine.getRenderWidth();
+    const height = engine.getRenderHeight();
+    const renderPass = engine.currentRenderPassId;
+    try {
+      // Uses the selected camera's output target; preserves world color.
+      layer.render();
+    } finally {
+      // Babylon temporarily borrows the camera but does not restore its Scene
+      // if a utility draw throws. Never strand the shared Engine/view owner.
+      camera._scene = cameraScene;
+      if (camera.leftCamera && leftScene) camera.leftCamera._scene = leftScene;
+      if (camera.rightCamera && rightScene) camera.rightCamera._scene = rightScene;
+      engine.currentRenderPassId = renderPass;
+      if (engine._currentRenderTarget !== target) {
+        if (target) engine.bindFramebuffer(target);
+        else engine.restoreDefaultFramebuffer();
+      }
+      engine.setViewport(viewport ?? camera.viewport, width, height);
+      scene.resetCachedMaterial();
+    }
+  });
+
   return {
     get tool() {
       return tool;
@@ -538,6 +572,7 @@ export function createGizmoHost(
       scene.simulatePointerUp(pick, pointerEventInit);
     },
     dispose: () => {
+      detachOverlay?.();
       releaseLease?.();
       releaseLease = null;
       overlayBox?.dispose();
