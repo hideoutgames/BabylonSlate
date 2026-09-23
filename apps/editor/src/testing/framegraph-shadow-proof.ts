@@ -91,8 +91,8 @@ export async function runFrameGraphShadowProof(
   const lifecycle = [];
   const handoffs = [];
   let graphBuilds = 0;
-  const build = FrameGraph.prototype.build;
-  FrameGraph.prototype.build = function (...args) {
+  const build = FrameGraph.prototype.buildAsync;
+  FrameGraph.prototype.buildAsync = function (...args) {
     graphBuilds++;
     return build.apply(this, args);
   };
@@ -556,7 +556,7 @@ export async function runFrameGraphShadowProof(
       resourceProof: undefined,
     };
   } finally {
-    FrameGraph.prototype.build = build;
+    FrameGraph.prototype.buildAsync = build;
     engine.dispose();
     canvas.remove();
   }
