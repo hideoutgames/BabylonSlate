@@ -93,6 +93,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(quarter).toBeLessThan(at("fade-quarter-pixel-near").redCoverage[0]!);
     expect(at("fade-perspective-near").redCoverage.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
     expect(at("fade-perspective-far").redCoverage).toEqual([0, 0, 0]);
+    expect(at("fade-reverse-depth-near").redCoverage.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+    expect(at("fade-reverse-depth-far").redCoverage).toEqual([0, 0, 0]);
+    expect(at("fade-thin-near-and-far").redCoverage[0]).toBeGreaterThan(0);
+    expect(at("fade-thin-near-and-far").redCoverage[2]).toBe(0);
     for (const name of ["identical-requests", "all-visibility-groups", "live-component-style-restored", "consumer-order-reversed", "sibling-view-selection-isolated", "sibling-view-disposed", "no-assigned-material-removed"])
       expect(at(name).lanes, name).toEqual(original.lanes);
     const defaultMaterial = at("no-assigned-material-selected");

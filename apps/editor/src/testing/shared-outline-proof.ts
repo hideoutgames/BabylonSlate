@@ -1,5 +1,6 @@
 /** Pixel qualification of the production coordinator; no fixture-owned renderer. */
-import { Camera, Color3, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Camera, Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
@@ -202,8 +203,29 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     await capture("fade-perspective-near");
     camera.position.z = -11;
     await capture("fade-perspective-far");
+    engine.useReverseDepthBuffer = true;
+    camera.position.z = -5;
+    camera.getProjectionMatrix(true);
+    await capture("fade-reverse-depth-near");
+    camera.position.z = -11;
+    await capture("fade-reverse-depth-far");
+    engine.useReverseDepthBuffer = false;
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     camera.position.z = -5;
+    camera.getProjectionMatrix(true);
+    // One actor identity can span very different camera distances. Fade must
+    // use the surface depth, not an actor/source center or per-ID distance.
+    for (const instance of instances) instance.setEnabled(false);
+    const thin = MeshBuilder.CreateBox("Thin Fade Distances", { size: 0.8 }, scene);
+    thin.material = material;
+    const matrices = new Float32Array(32);
+    Matrix.Translation(-1.5, 0, 0).copyToArray(matrices, 0);
+    Matrix.Translation(1.5, 0, 6).copyToArray(matrices, 16);
+    thin.thinInstanceSetBuffer("matrix", matrices, 16);
+    mount("global", { ...contributions.global!, targets: [{ key: "thin-fade", meshes: [thin] }], distanceFade: { start: 6, end: 10 } });
+    await capture("fade-thin-near-and-far");
+    thin.dispose();
+    for (const instance of instances) instance.setEnabled(true);
     mount("global");
     mount("component", { ...contributions.component!, color: [1, 0, 0], width: 4 });
     await capture("live-component-color-and-width");
