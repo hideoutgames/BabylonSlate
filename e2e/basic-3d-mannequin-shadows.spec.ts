@@ -10,13 +10,14 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
 
 type Viewport = {
   shadowDiagnostics(): ShadowDiagnostics | null;
+  mannequinShadowProbe(neutral: boolean): Promise<unknown>;
   setRenderSettings(settings: RenderShadingSettings): void;
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
 };
 declare global { interface Window { __babylonslateViewportTest: Viewport } }
 
 test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/?test=1");
@@ -39,16 +40,25 @@ test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
   const captures = [];
-  for (const position of [[3, 2, 4], [-3, 2, -4], [3, 2, -4], [-3, 2, 4]]) {
-    await page.evaluate(position => window.__babylonslateViewportTest.setShadowCaptureView(position, [0, 0.8, 0], 0.55), position);
-    for (const enabled of [true, false]) {
+  for (const neutral of [false, true]) {
+    const probe = await page.evaluate(neutral => window.__babylonslateViewportTest.mannequinShadowProbe(neutral), neutral);
+    await testInfo.attach(`geometry-${neutral}`, { body: JSON.stringify(probe), contentType: "application/json" });
+    const position = [3, 2, 4];
+    await page.evaluate(position => window.__babylonslateViewportTest.setShadowCaptureView(position, [0, 1.35, 0], 0.7), position);
+    for (const variant of ["baseline", "off", "normal-zero", "manual", "single", "unfiltered"] as const) {
+      const enabled = variant !== "off";
       await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), {
-        ...settings, shadows: { ...settings.shadows!, enabled },
+        ...settings, shadows: { ...settings.shadows!, enabled,
+          ...(variant === "normal-zero" ? { normalBias: 0 } : {}),
+          ...(variant === "manual" ? { autoBias: false } : {}),
+          ...(variant === "single" ? { cascades: 1 } : {}),
+          ...(variant === "unfiltered" ? { filter: "none" } : {}),
+        },
       });
       const id = await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId);
       await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId)).toBeGreaterThan(id + 2);
       const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
-      const name = `${position.join("_")}-${enabled ? "shadows" : "direct-only"}`;
+      const name = `${neutral ? "neutral" : "authored"}-${variant}`;
       await testInfo.attach(name, { body: await canvas.screenshot(), contentType: "image/png" });
       captures.push({ name, state });
     }
