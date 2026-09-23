@@ -252,6 +252,9 @@ export function shadowSurfaceSamples(
 ): ShadowSurfaceSample[] {
   const result: ShadowSurfaceSample[] = [];
   const footprint = pcfFootprint(filter, toLight, boxes);
+  // Wider filters leave smaller fully lit/contact interiors. Sample those
+  // interiors more densely while retaining unique native pixels and thresholds.
+  const step = filter?.quality && filter.quality !== "low" ? 0.04 : 0.08;
   const pixels = new Set<string>();
   const add = (
     point: ShadowTriple,
@@ -373,8 +376,8 @@ export function shadowSurfaceSamples(
         normal[axis] = side;
         ta[a] = 1;
         tb[b] = 1;
-        for (let u = -0.4; u <= 0.401; u += 0.08)
-          for (let v = -0.4; v <= 0.401; v += 0.08) {
+        for (let u = -0.4; u <= 0.401; u += step)
+          for (let v = -0.4; v <= 0.401; v += step) {
             const point: ShadowTriple = [...box.center];
             point[axis] = box.center[axis]! + (side * box.size[axis]!) / 2;
             point[a] = box.center[a]! + u * box.size[a]!;
@@ -384,8 +387,8 @@ export function shadowSurfaceSamples(
       }
     }
   }
-  for (let x = -1.8; x <= 1.8; x += 0.08)
-    for (let z = -1.2; z <= 1.8; z += 0.08)
+  for (let x = -1.8; x <= 1.8; x += step)
+    for (let z = -1.2; z <= 1.8; z += step)
       add([x, 0, z], [0, 1, 0], [1, 0, 0], [0, 0, 1], "ground");
   return result;
 }

@@ -630,8 +630,11 @@ Manual mode uses both authored values exactly after input normalization.
 
 Directional PCF combines a quarter-world-texel caster correction with a
 receiver-plane correction derived from the current fragment's light-space depth
-slope and native PCF kernel (1/3/5). It retains native sample counts and filter
-weights. All cascade derivatives execute before cascade selection/blending.
+slope at each existing native bilinear PCF tap. A common shift for the whole
+1/3/5 kernel removes valid contacts with wider filters, so each tap follows the
+receiver plane before applying only its own bilinear-support correction. Native
+sample counts, positions and filter weights remain unchanged. All cascade
+derivatives execute before cascade selection/blending.
 The receiver's comparison-depth shift is derived from its projected depth
 gradient and actual map dimensions. A 0.05 normalized-depth ceiling guards
 numerical extremes; it is not a world-space displacement policy. Singular
