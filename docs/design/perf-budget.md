@@ -80,6 +80,13 @@ Software rendering stayed far below the viewport cap. Scene-render CPU medians w
 
 ### Static shadow reuse comparison
 
+The targeted `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
+measure first and repeated camera-driven point-shadow promotions in PBR and CEL
+with the shared allocation ceiling fixed to one cube. Reports include preparation
+time, graph build count, selected light and reserved bytes. Run the exact cases
+on the same native GPU and settings before comparing revisions; software rendering
+establishes correctness, not device performance.
+
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
 
 | Fixture | Reference median / p95 / p99 (ms) | Cached median / p95 / p99 (ms) | Cached interval samples | Estimated shadow MiB |

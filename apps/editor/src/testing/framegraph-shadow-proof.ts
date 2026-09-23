@@ -17,6 +17,7 @@ import {
   type RenderTargetWrapper,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
@@ -48,7 +49,7 @@ import {
 export async function runFrameGraphShadowProof(
   backend: "webgl2" | "webgpu" = "webgl2",
   output: "backbuffer" | "texture" = "backbuffer",
-  options: { clustered?: boolean; constrainedResources?: boolean } = {},
+  options: { clustered?: boolean; constrainedResources?: boolean; handoffs?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -88,6 +89,13 @@ export async function runFrameGraphShadowProof(
   type Kind = "point" | "spot" | "sun";
   const captures = [];
   const lifecycle = [];
+  const handoffs = [];
+  let graphBuilds = 0;
+  const build = FrameGraph.prototype.build;
+  FrameGraph.prototype.build = function (...args) {
+    graphBuilds++;
+    return build.apply(this, args);
+  };
   const fixture = async (mode: "pbr" | "cel", kind: Kind) => {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.04, 0.07, 0.12, 1);
@@ -293,7 +301,10 @@ export async function runFrameGraphShadowProof(
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       readinessDrawStacks = [];
+      const buildsBefore = graphBuilds;
+      const preparationStarted = performance.now();
       const prepared = await graph.prepare(camera);
+      const preparationMs = performance.now() - preparationStarted;
       const readinessStacks = readinessDrawStacks;
       readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
@@ -309,6 +320,8 @@ export async function runFrameGraphShadowProof(
       captures.push({
         name: `${mode}-${kind}-${pose}`,
         prepared,
+        preparationMs,
+        graphBuilds: graphBuilds - buildsBefore,
         readinessDraws,
         readinessStacks,
         readinessFaces,
@@ -360,6 +373,32 @@ export async function runFrameGraphShadowProof(
     };
   };
   try {
+    if (options.handoffs) {
+      for (const mode of ["pbr", "cel"] as const) {
+        const host = await fixture(mode, "point");
+        const origin = host.camera.position.clone();
+        const incoming = new PointLight("incoming", new Vector3(40, 4, -2), host.scene);
+        applyAuthoredLightProperties(incoming, { intensity: 8, range: 100, castShadows: true });
+        await host.capture("handoff-initial");
+        // The incoming cube must fit the same shared allowance as the current
+        // cube; preparation cannot hide over-budget temporary allocations.
+        limitManagedLightingBytes(engine, managedLightingReservations(engine).reservedBytes);
+        for (const [index, x] of [40, origin.x, 40, origin.x].entries()) {
+          // Respect the production residency interval before each real handoff.
+          await new Promise<void>((resolve) => setTimeout(resolve, 300));
+          host.camera.position.x = x;
+          host.camera.setTarget(new Vector3(0, 0.3, 0));
+          await host.capture(`handoff-${index}`);
+          const capture = captures.at(-1)!;
+          handoffs.push({ mode, index, preparationMs: capture.preparationMs, graphBuilds: capture.graphBuilds,
+            active: host.scene.lights.filter((light) => light.getShadowGenerator()).map((light) => light.name),
+            allocations: capture.allocations, resources: managedLightingReservations(engine) });
+        }
+        host.graph.dispose(); host.scene.dispose();
+      }
+      return { backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+        webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle, handoffs };
+    }
     if (options.constrainedResources) {
       const first = await fixture("pbr", "spot");
       await first.capture("reserved");
@@ -517,6 +556,7 @@ export async function runFrameGraphShadowProof(
       resourceProof: undefined,
     };
   } finally {
+    FrameGraph.prototype.build = build;
     engine.dispose();
     canvas.remove();
   }
