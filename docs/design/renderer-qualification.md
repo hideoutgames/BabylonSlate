@@ -325,7 +325,9 @@ The negative control restores the original CSM helper/callback and the original
 single-map authored-bias behavior, and disables the new receiver correction.
 It retains the anisotropy and readiness repairs to isolate bias policy. It is
 not an untouched historical app build. Fixture, cameras and assertions are
-identical to the verified implementation. The original policy fails the known-lit head assertion (93.56% false-dark; limit below 5%). The identical assertion passes with the corrected policy.
+identical to the verified implementation. The original policy fails the known-lit
+head assertion (93.56% false-dark; limit below 5%). The identical assertion passes
+with the corrected policy.
 
 Windows Chromium, 384×384 render pixels, DPR 1, Low, distance 80 world units,
 one 1024² directional PCF map, fixed neutral material and oblique light:
@@ -380,14 +382,20 @@ suite, coverage sweep, broad preflight or paid runner was used.
 | `e2e/shadow-self-shadowing-hosts.spec.ts`, desktop Chrome | `9f3304ef` | 2 passed: editor, Play and locally exported player pixels, authored-settings round trip and runtime updates |
 | Selected `e2e/framegraph-shadows.spec.ts` cases | `9f3304ef` | 3 passed: WebGL2 backbuffer, WebGPU texture output, shared lighting reservations; point/spot/directional refresh, motion, reload and ownership |
 | Original-policy `webgl2 low pbr` negative control | `843565fe` | Failed as intended on false-dark head samples; no shader/backend error |
-| Scoped ESLint and render/player/editor typechecks | Pending current feature head | Pending scoped checks |
+| ESLint for all 30 changed TypeScript files; render/player/editor typechecks | `b0d18594`, repaired at `74eb74f8` | Passed; two existing React hook warnings remain |
 
 Unit command: `pnpm --silent agent:wait local --script test --` followed by the
 six explicit `packages/render/src/*.test.ts` paths above. Browser command:
 `pnpm --silent agent:wait local --script test:e2e -- e2e/shadow-self-shadowing.spec.ts e2e/shadow-self-shadowing-hosts.spec.ts e2e/framegraph-shadows.spec.ts --project=desktop-chrome --grep 'synthetic|on webgl2 backbuffer|on webgpu texture|Shared managed lighting'`.
 The negative control selects only `e2e/shadow-self-shadowing.spec.ts` with
-`--grep 'webgl2 low pbr'`. Subsequent documentation-only updates retain these
-unchanged-runtime results. Required GitHub Verify remains a separate gate.
+`--grep 'webgl2 low pbr'`. The admitted static helper runs ESLint on the explicit
+changed-file list and `pnpm --filter <package> typecheck` sequentially for
+`@babylonslate/render`, `player` and `editor`. Initial lint found two unused
+destructured evidence fields; `74eb74f8` keeps exactly the same serialized fields
+without the unused bindings, and the affected file's lint passed. The other
+29 files are unchanged. Both hook warnings also exist on main.
+Documentation and this equivalent serialization cleanup retain the verified
+runtime and pixel results. Required GitHub Verify remains a separate gate.
 
 Playwright attaches real PNGs, regional assertions and effective-state JSON to
 each selected case. Local evidence is retained under the ignored
