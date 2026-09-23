@@ -8,6 +8,7 @@ import {
   lookAtRotation,
   MAIN_SCENE_FILE,
   normalizeCelShadingSettings,
+  normalizeRenderingQuality,
   normalizeShadowSettings,
   PROJECT_FILE,
   type RenderProjectSettings,
@@ -60,6 +61,11 @@ function fixture(mode: "pbr" | "cel") {
     gpuBackend: "webgl2",
     renderPath: "forward",
     mode,
+    // Pixel pairs must keep the same drawing buffer. Medium's adaptive scale
+    // can change between shadow-on and shadow-off on software CI adapters.
+    quality: normalizeRenderingQuality({
+      resolution: { scale: 1, minScale: 1, dynamic: false },
+    }),
     shadows: normalizeShadowSettings({ profile: "low" }),
     cel: normalizeCelShadingSettings({
       specularEnabled: false,
@@ -380,6 +386,11 @@ for (const mode of ["pbr", "cel"] as const) {
         expect(automatic.backend.requested, host).toBe("webgl2");
         expect(automatic.surfaceMode, host).toBe(mode);
         expect(automatic.requestedShadows, host).toMatchObject(render.shadows);
+        expect(automatic.viewport.scalingLevel, host).toBe(1);
+        if (host !== "editor") {
+          expect(automatic.viewport.renderWidth, host).toBe(render.width);
+          expect(automatic.viewport.renderHeight, host).toBe(render.height);
+        }
         const allocation = sun(automatic)!.generator!;
         expect(allocation.type, host).toBe("ShadowGenerator");
         expect(allocation.map, host).toMatchObject({
@@ -441,6 +452,9 @@ for (const mode of ["pbr", "cel"] as const) {
           .poll(async () => sun(await diagnostics(canvas, host))?.generator)
           .toBeNull();
         await freshFrames(canvas, host);
+        const referenceState = (await diagnostics(canvas, host))!;
+        expect(referenceState.viewport, `${host} fixed shadow reference output`)
+          .toEqual(automatic.viewport);
         // The sparse values form a compact row only AFTER native pixel sampling;
         // adapt coordinates to the shared classifier without altering intensities.
         const points = shadowed.points.map((point, index) => ({
@@ -556,7 +570,7 @@ for (const mode of ["pbr", "cel"] as const) {
         bundleDebugger: false,
         startupSceneGuid: SCENE_GUID,
         scripts: [],
-        customResolution: render,
+        renderSettings: render,
         assets: [
           {
             guid: SCENE_GUID,
