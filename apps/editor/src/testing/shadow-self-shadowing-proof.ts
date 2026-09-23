@@ -25,9 +25,6 @@ import {
   setSceneRenderSettings,
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
-import { installSingleMapPcfSlopeProbe } from "./shadow-slope-probe";
-import { installReceiverPlaneProbe } from "./shadow-receiver-plane-probe";
-import { installReceiverTexelProbe } from "./shadow-receiver-texel-probe";
 
 import {
   SHADOW_BOXES,
@@ -49,7 +46,10 @@ export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",
   mode: "pbr" | "cel",
   configuration: "low" | "cascade-fallback" | "cascades",
-  options: { receiverPlane?: boolean; receiverTexel?: boolean; transformed?: boolean } = {},
+  options: {
+    transformed?: boolean;
+    filterQuality?: "low" | "medium" | "high";
+  } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
@@ -63,11 +63,6 @@ export async function runShadowSelfShadowingProof(
           disableWebGL2Support: false,
         });
   if (configuration === "cascade-fallback") engine._features.supportCSM = false;
-  const receiverProbe = options.receiverTexel
-    ? installReceiverTexelProbe({ cap: 4 / 1024 })
-    : options.receiverPlane
-    ? installReceiverPlaneProbe({ strength: 1, cap: 4 / 1024 })
-    : null;
   const scene = new Scene(engine);
   const graph = new ForwardSceneFrameGraph(scene);
   try {
@@ -132,6 +127,7 @@ export async function runShadowSelfShadowingProof(
     const authored = normalizeShadowSettings({
       profile: "low",
       cascades: configuration === "low" ? 1 : 2,
+      filterQuality: options.filterQuality ?? "low",
     });
     const settings = (
       autoBias: boolean,
@@ -154,7 +150,6 @@ export async function runShadowSelfShadowingProof(
       effective: ReturnType<typeof captureShadowDiagnostics>;
       assertions: boolean;
       regions: ReturnType<typeof shadowRegions>;
-      rasterProbe?: ReturnType<typeof installSingleMapPcfSlopeProbe>["evidence"];
     }[] = [];
     const render = async () => {
       const ready = await graph.prepare(camera);
@@ -218,11 +213,12 @@ export async function runShadowSelfShadowingProof(
       const generator = light.getShadowGenerator() as ShadowGenerator;
       const size = generator.getShadowMap()!.getSize();
       const filter = configuration === "cascades" ? undefined : {
-        kind: "directional-single-pcf1" as const,
+        kind: "directional-single-pcf" as const,
         view: Array.from(generator.viewMatrix.asArray()),
         projection: Array.from(generator.projectionMatrix.asArray()),
         width: size.width,
         height: size.height,
+        quality: authored.filterQuality,
       };
       points = shadowSurfaceSamples(
         camera.position.asArray() as ShadowTriple,
@@ -271,25 +267,6 @@ export async function runShadowSelfShadowingProof(
         regions: shadowRegions(reference, pixels, points, SIZE),
       });
     };
-    const slopeSweep = async (pose: string) => {
-      if (receiverProbe) return;
-      settings(false);
-      await graph.prepare(camera);
-      for (const factor of [0.5, 0.75, 1, 1.25]) {
-        const generator = light.getShadowGenerator()!;
-        if (!(generator instanceof ShadowGenerator))
-          throw new Error("Slope diagnostic requires a native shadow generator");
-        const probe = installSingleMapPcfSlopeProbe(generator, factor);
-        try {
-          await capture(`${pose}-raster-slope-${factor}`);
-        } finally {
-          probe.dispose();
-        }
-        captures[captures.length - 1]!.rasterProbe = probe.evidence;
-      }
-      await capture(`${pose}-raster-rollback`);
-      settings(true);
-    };
     settings(false);
     await referencePose("baseline");
     await capture("authored-manual");
@@ -321,7 +298,7 @@ export async function runShadowSelfShadowingProof(
     settings(true);
     await capture("automatic", true);
     await capture("automatic-repeat", true);
-    if (configuration === "low") {
+    if (configuration === "low" && authored.filterQuality === "low") {
       // Native 9.20 PCF depth comparison moves 0.5*bias on BOTH backends.
       // 160-world-unit Low footprint/depth, 1024 map: these are independently
       // hand-derived world-texel depth corrections.
@@ -349,7 +326,6 @@ export async function runShadowSelfShadowingProof(
       await capture("diagnostic-distance-16-authored-manual");
       settings(true, authored.depthBias, authored.normalBias, 16);
       await capture("diagnostic-distance-16-automatic");
-      await slopeSweep("baseline");
       settings(true);
       // Deliberately separate geometry experiment: retain the principal pose
       // above unchanged, then introduce a thin contact resting on the floor.
@@ -400,7 +376,6 @@ export async function runShadowSelfShadowingProof(
         settings(false, bias);
         await capture(`thin-manual-depth-${name}-texel`);
       }
-      await slopeSweep("thin-contact");
       settings(true);
       // Unlike the previous near-camera-aligned angle, this independent view
       // contains 25 body-ground and 46 thin-ground occlusion samples at this
@@ -416,7 +391,6 @@ export async function runShadowSelfShadowingProof(
       }
       settings(false, 0.001953125, 0);
       await capture("second-angle-manual-one-texel-zero-normal");
-      await slopeSweep("second-angle");
       settings(true);
     } else if (configuration === "cascades") {
       // Dolly through the first split while retaining the same target and
@@ -433,7 +407,6 @@ export async function runShadowSelfShadowingProof(
     return {
       synthetic: true,
       transformed: options.transformed ?? false,
-      receiverPlaneDiagnostic: receiverProbe?.evidence ?? null,
       nativeInput,
       backend,
       mode,
@@ -464,7 +437,6 @@ export async function runShadowSelfShadowingProof(
     graph.dispose();
     scene.dispose();
     engine.dispose();
-    receiverProbe?.dispose();
     canvas.remove();
   }
 }

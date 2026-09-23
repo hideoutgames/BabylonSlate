@@ -230,7 +230,7 @@ async function pixels(canvas: Locator, state: ShadowDiagnostics) {
     state.viewport.cameraViewport!,
     SHADOW_BOXES,
     sun(state)?.generator?.cascades === 1 ? {
-      kind: "directional-single-pcf1",
+      kind: "directional-single-pcf",
       view: sun(state)!.generator!.projections[0]!.view!,
       projection: sun(state)!.generator!.projections[0]!.matrix!,
       width: sun(state)!.generator!.map!.width,

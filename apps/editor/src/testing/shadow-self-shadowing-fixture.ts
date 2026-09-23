@@ -84,13 +84,14 @@ export type ShadowSurfaceSample = {
   idealBlockedWeight?: number;
 };
 
-/** Ordinary directional LOW PCF only; cascade selection/blending is not modeled. */
-export type ShadowPcf1Projection = {
-  kind: "directional-single-pcf1";
+/** Ordinary directional PCF only; cascade selection/blending is not modeled. */
+export type ShadowPcfProjection = {
+  kind: "directional-single-pcf";
   view: readonly number[];
   projection: readonly number[];
   width: number;
   height: number;
+  quality?: "low" | "medium" | "high";
 };
 
 /** Intersect an image pixel center with one axis-aligned fixture face. */
@@ -124,14 +125,14 @@ function pixelOnFace(
   return w > 0 && point.every(Number.isFinite) ? point : null;
 }
 
-function pcf1Footprint(
-  filter: ShadowPcf1Projection | undefined,
+function pcfFootprint(
+  filter: ShadowPcfProjection | undefined,
   toLight: ShadowTriple,
   boxes: readonly ShadowBox[],
 ) {
   if (!filter) return undefined;
   if (
-    filter.kind !== "directional-single-pcf1" ||
+    filter.kind !== "directional-single-pcf" ||
     !Number.isInteger(filter.width) ||
     filter.width <= 0 ||
     !Number.isInteger(filter.height) ||
@@ -148,7 +149,7 @@ function pcf1Footprint(
     Math.abs(filter.projection[15]! - 1) > 1e-8
   )
     throw new Error(
-      "PCF1 oracle requires the actual orthographic single-map projection",
+      "PCF oracle requires the actual orthographic single-map projection",
     );
   const transform = (point: readonly number[], matrix: readonly number[]) =>
     [0, 1, 2, 3].map(
@@ -191,13 +192,25 @@ function pcf1Footprint(
     const fx = x - ix,
       fy = y - iy;
     let blocked = 0;
-    // Native PCF1 is one hardware bilinear comparison over four texel centers.
+    // Expanded separable tent weights of Babylon's optimized bilinear taps.
+    // Low has two texels per axis; Medium and High have four and six. These
+    // weights describe ideal geometric visibility, independently of our bias.
+    const weights = (phase: number): readonly (readonly [number, number])[] => {
+      if (filter.quality === "high")
+        return [[-2, (1 - phase) / 12], [-1, (3 - 2 * phase) / 12],
+          [0, (4 - phase) / 12], [1, (3 + phase) / 12],
+          [2, (1 + 2 * phase) / 12], [3, phase / 12]];
+      if (filter.quality === "medium")
+        return [[-1, (1 - phase) / 4], [0, (2 - phase) / 4],
+          [1, (1 + phase) / 4], [2, phase / 4]];
+      return [[0, 1 - phase], [1, phase]];
+    };
     // Intersect each center ray with the receiver plane, then independently ask
     // whether authored box geometry occludes it. No rendered depths or shader
     // bias are used: this models ideal filtered coverage, including penumbra.
-    for (const dx of [0, 1])
-      for (const dy of [0, 1]) {
-        const weight = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
+    for (const [dx, wx] of weights(fx))
+      for (const [dy, wy] of weights(fy)) {
+        const weight = wx * wy;
         const tx = Math.max(0, Math.min(filter.width - 1, ix + dx));
         const ty = Math.max(0, Math.min(filter.height - 1, iy + dy));
         const e =
@@ -235,10 +248,10 @@ export function shadowSurfaceSamples(
   height: number,
   viewport = { x: 0, y: 0, width: 1, height: 1 },
   boxes: readonly ShadowBox[] = SHADOW_BOXES,
-  filter?: ShadowPcf1Projection,
+  filter?: ShadowPcfProjection,
 ): ShadowSurfaceSample[] {
   const result: ShadowSurfaceSample[] = [];
-  const footprint = pcf1Footprint(filter, toLight, boxes);
+  const footprint = pcfFootprint(filter, toLight, boxes);
   const pixels = new Set<string>();
   const add = (
     point: ShadowTriple,
@@ -444,7 +457,7 @@ export function shadowThinContactEdgeSamples(
   height: number,
   viewport = { x: 0, y: 0, width: 1, height: 1 },
   boxes: readonly ShadowBox[] = SHADOW_BOXES,
-  filter?: ShadowPcf1Projection,
+  filter?: ShadowPcfProjection,
 ): ShadowSurfaceSample[] {
   const thin = boxes.find((box) => box.name === "thin-slab");
   if (!thin || Math.abs(thin.center[1] - thin.size[1] / 2) > 1e-6) return [];
@@ -452,7 +465,7 @@ export function shadowThinContactEdgeSamples(
     throw new Error("Bounded fixture resolution exceeded");
   const band = 2 * thin.size[0];
   const m = viewProjection;
-  const footprint = pcf1Footprint(filter, toLight, boxes);
+  const footprint = pcfFootprint(filter, toLight, boxes);
   const groundAt = (x: number, y: number) =>
     pixelOnFace(x, y, width, height, viewport, m, [0, 1, 0], [0, 0, 0]);
   const visibleGround = (point: ShadowTriple | null) => {

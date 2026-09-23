@@ -15,7 +15,6 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
-import { withReceiverPlaneProbe } from "./shadow-receiver-plane-probe";
 import {
   SHADOW_BOXES,
   SHADOW_CAMERA_TARGET,
@@ -78,8 +77,10 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
   try {
     // Use the pinned upstream include while compiling this scene's fresh effects.
     // A fresh engine prevents reuse of effects compiled with an earlier probe.
+    if (input.receiverPlane && !previousInclude)
+      throw new Error("Production shadow receiver adapter was not installed");
     ShaderStore.IncludesShadersStore.lightFragment = input.receiverPlane
-      ? withReceiverPlaneProbe(lightFragment.shader, false, { strength: 1, cap: 4 / 1024 })
+      ? previousInclude!
       : lightFragment.shader;
     engine = new Engine(canvas, false, {
       preserveDrawingBuffer: true,
@@ -153,6 +154,14 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
     ground.material = material;
     ground.receiveShadows = true;
     const generator = new ShadowGenerator(input.mapSize, key);
+    if (input.receiverPlane) {
+      const prepare = generator.prepareDefines.bind(generator);
+      generator.prepareDefines = (defines, index) => {
+        prepare(defines, index);
+        defines[`SLATE_SHADOW_AUTO${index}`] = true;
+        defines.rebuild();
+      };
+    }
     generator.filter = ShadowGenerator.FILTER_PCF;
     generator.filteringQuality = input.filteringQuality;
     generator.bias = input.depthBias;
@@ -314,11 +323,11 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
       ],
     };
   } finally {
+    scene?.dispose();
+    engine?.dispose();
     if (previousInclude === undefined)
       delete ShaderStore.IncludesShadersStore.lightFragment;
     else ShaderStore.IncludesShadersStore.lightFragment = previousInclude;
-    scene?.dispose();
-    engine?.dispose();
     canvas.remove();
   }
 }
