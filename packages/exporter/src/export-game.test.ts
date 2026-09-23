@@ -325,9 +325,34 @@ describe("exportGame", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.manifest.mode).toBe("loose");
-    expect(result.value.files.has("assets/scene-1.bin")).toBe(true);
-    expect(result.value.files.has("assets/tex-1.bin")).toBe(true);
+    expect(result.value.manifest.assets).toHaveLength(2);
+    expect(result.value.files.get(result.value.manifest.assets[0]!.path!)).toEqual(new Uint8Array([1]));
+    expect(result.value.files.get(result.value.manifest.assets[1]!.path!)).toEqual(new Uint8Array([2]));
     expect(result.value.files.has("boot.babpack")).toBe(false);
+  });
+
+  it("exports namespaced sidecars to portable loose files without merging distinct asset IDs", async () => {
+    const guids = ["area-emission:tex", "area-emission/tex", "area-emission_tex", "Area-emission:tex", "audioReverb:scene", "CON"];
+    const result = await exportGame({
+      mode: "loose", bundleDebugger: false, startupSceneGuid: "scene-1",
+      scripts: [], playerFiles: stubPlayer(),
+      assets: guids.map((guid, index) => ({
+        guid, type: "AreaEmission", sceneGuid: "scene-1", bytes: new Uint8Array([index + 1]),
+      })),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const extracted = unzipExport(zipExport(result.value));
+    const manifest = parseGameManifest(new TextDecoder().decode(extracted[GAME_MANIFEST_FILE]));
+    expect(manifest.assets.map((entry) => entry.guid)).toEqual(guids);
+    const paths = manifest.assets.map((entry) => entry.path!);
+    expect(new Set(paths.map((path) => path.toLowerCase())).size).toBe(guids.length);
+    for (const [index, path] of paths.entries()) {
+      expect(path).not.toMatch(/[<>:"\\|?*\x00-\x1f]/);
+      expect(path.split("/")).not.toEqual(expect.arrayContaining([".", ".."]));
+      expect(path.split("/").at(-1)).not.toMatch(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])\./i);
+      expect(extracted[path]).toEqual(new Uint8Array([index + 1]));
+    }
   });
 
   it("records authored Texture pixel size on the manifest index", async () => {

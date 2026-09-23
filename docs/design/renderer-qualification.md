@@ -1,6 +1,69 @@
 # Renderer qualification
 
-## Current continuation status — 22 September 2026
+## Current continuation status — 23 September 2026
+
+The same PR remains draft and unmerged. Current acceptance uses the verified
+`f61ff565` application artifact (SHA-256
+`506efc43871906d4c7a08acab673959cc77ce5f656907cfe94df93dfbcc3203f`);
+application code is unchanged through `9a2e4fd2`. The newer reporting-only
+changes do not invalidate the retained native rendering results.
+
+**Computer Use C, Chrome:** the saved Class was extended through the graph UI
+with Scalability Changed → Print, Get Effective Scalability Ready → Print Value,
+and a delayed Reset to Project Defaults after Low → Set Render Scale.
+Save/reopen retained the graph. With authored 480×270, scale 1, dynamic resolution
+off and Black Bars on, Play presented
+[384×216 at 0.8](../assets/renderer-qualification/2026-09-23-computer-use/play-scale-08-ready.png),
+[240×135 at 0.5](../assets/renderer-qualification/2026-09-23-computer-use/play-scale-05-ready.png)
+and [480×270 after reset](../assets/renderer-qualification/2026-09-23-computer-use/play-reset-ready.png).
+The changed-event readback printed true; CEL bands and outlines survived Low.
+Stopping left Save All disabled. Matching canvas/HUD JSON accompanies each
+capture. The [UI-authored project](../assets/renderer-qualification/2026-09-23-computer-use/authored-project.zip)
+retains the 0.5 version with a 60-second delay for reproducible observation.
+An initial capture taken during loading was excluded; dimensions alone did not
+establish a presented frame.
+
+**Authorized T3 browser fallback B/C:** Chrome file selection again failed at
+`fileChooser.setFiles` with `Not allowed`. The fallback imported that exact
+project backup and the existing numeric asymmetric PNG fixtures through their
+normal file-input change pipeline using deterministic file injection. This is
+setup evidence, not a manual native-file-picker pass. All subsequent Texture,
+inspector, outliner, history, graph and export actions used pointer/keyboard UI.
+T3 Chromium 150 on Windows confirmed effective WebGPU / NVIDIA / turing, DPR 1,
+1280×720 browser viewport and 427×295 editor drawing buffer, scale 1.
+
+- Prepare Emission reached [Ready](../assets/renderer-qualification/2026-09-23-computer-use/t3-texture-ready.png).
+  A first cancel attempt was too late and is not counted; a second Texture
+  [cancelled to Not Prepared](../assets/renderer-qualification/2026-09-23-computer-use/t3-emission-cancelled.png),
+  then prepared successfully on retry.
+- The parented, scaled emitter showed
+  [asymmetric CEL illumination](../assets/renderer-qualification/2026-09-23-computer-use/t3-textured-cel.png).
+  Local Z rotation by 180 degrees
+  [reversed the pattern](../assets/renderer-qualification/2026-09-23-computer-use/t3-textured-rotated.png);
+  undo restored it. [Replacement](../assets/renderer-qualification/2026-09-23-computer-use/t3-emission-replaced.png)
+  changed the presented pattern. [Clear](../assets/renderer-qualification/2026-09-23-computer-use/t3-texture-cleared.png)
+  returned uniform illumination and 65,536 area-light bytes; undo restored the
+  prepared assignment. Duplicate/delete/undo/redo preserved the survivor and
+  one shared 5,657,940-byte area-light allocation.
+- [All three outline consumers](../assets/renderer-qualification/2026-09-23-computer-use/t3-all-consumers.png)
+  coexist with prepared illumination. Preview Build retained component/global
+  outlines and emission, excluded cyan editor selection and guides, executed
+  [0.5 scale](../assets/renderer-qualification/2026-09-23-computer-use/t3-preview-scale-05.png)
+  and [reset](../assets/renderer-qualification/2026-09-23-computer-use/t3-preview-reset.png).
+  [Diagnostics](../assets/renderer-qualification/2026-09-23-computer-use/t3-diagnostics.json)
+  are functional observations, not controlled timing measurements.
+
+The [textured source project](../assets/renderer-qualification/2026-09-23-computer-use/textured-project.zip)
+is portable; exported player builds stay local. Actual UI Export Game produced
+packed and loose ZIPs. Windows extraction of the loose ZIP **failed** because
+namespaced emission/audio IDs became filenames containing colons. The exporter
+now preserves IDs in the manifest and assigns portable ordinal filenames.
+The focused regression and repaired independent-player acceptance are pending;
+the original loose archive is not a pass. Remaining work includes independent
+output, additional lifecycle/interaction evidence, review and exact-head CI.
+Physical A16 remains deferred.
+
+## Earlier continuation checkpoints — 22 September 2026
 
 Computer Use on build `6cc7cce3` reached OutlineComponent authoring in Chrome
 153 on the NVIDIA RTX 2060 (effective WebGL2, DPR 1.5, 720×272 drawing buffer).

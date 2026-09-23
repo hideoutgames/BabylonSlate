@@ -1,0 +1,14 @@
+{
+  "canvas": [
+    {
+      "height": "135",
+      "style": "width: 1004px; height: 565px; cursor: none; touch-action: none;",
+      "width": "240"
+    }
+  ],
+  "hud": "render CPU 1.25 ms · engine GPU unsupported · 240×135 · 1 sample · shadows 0 draws / 0 triangles / 0 allocated passes / ~0 B",
+  "prints": [
+    "true",
+    "true"
+  ]
+}

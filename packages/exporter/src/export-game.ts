@@ -187,8 +187,10 @@ function writeLooseAssets(
   assets: readonly ExportAssetBytes[],
 ): { packs: string[]; index: GameAssetIndexEntry[] } {
   const index: GameAssetIndexEntry[] = [];
-  for (const asset of assets) {
-    const path = `assets/${asset.guid}.bin`;
+  for (const [indexInExport, asset] of assets.entries()) {
+    // Asset IDs include namespaced sidecars (for example area-emission:guid).
+    // Keep IDs in the manifest and use portable, collision-free file names.
+    const path = `assets/data-${indexInExport}.bin`;
     files.set(path, asset.bytes);
     index.push(indexEntry(asset, { path }));
   }

@@ -1,0 +1,10 @@
+{
+  "canvas": [
+    {
+      "height": "270",
+      "style": "width: 1004px; height: 565px; cursor: none; touch-action: none;",
+      "width": "480"
+    }
+  ],
+  "hud": "render CPU 1.71 ms · engine GPU unsupported · 480×270 · 1 sample · shadows 0 draws / 0 triangles / 0 allocated passes / ~0 B"
+}
