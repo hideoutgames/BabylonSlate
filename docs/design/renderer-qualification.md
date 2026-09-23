@@ -65,8 +65,12 @@ depth allocator while retaining real texture/RTT ownership; post-process tests
 wait for coordinator preparation before asserting native fallback lifetime.
 The full 1024-square offline emission test retains all output-byte assertions
 with a bounded 30-second deadline for coverage instrumentation. Production code
-and the browser evidence below are unchanged by these test repairs; targeted
-reruns and a new exact-head Verify remain required.
+and the earlier browser evidence are unchanged by these test repairs. At
+`74c2de1f`, the three selected render files passed 148 cases and failed two RTT
+preparation cases; both repaired cases pass at `b7875bae`. That revision also
+passes all 16 cases in `cel-shading`, `scene-teardown`, `engine-types` and
+`area-emission`, eight-file lint, and scoped core/assets/scripting/runtime/render
+typechecks. These are revision-scoped results, not a full local suite.
 
 The same run exposed a frozen Material Graph receiver retaining an older WebGPU
 light UBO after camera movement (94-channel maximum difference in the existing
@@ -74,7 +78,14 @@ clustered pixel oracle, also reproduced locally). The draw-context adapter now
 refreshes missing **or stale** light-buffer bindings while preserving the shadow
 invalidation optimization. It does not dirty materials, rebuild shaders or
 allocate buffers; native camera/light/resize pixel parity remains the acceptance
-check for this repair.
+check for this repair. Five binding cases and eleven managed-shadow cases pass
+at `df3d261a`; the five binding cases pass again after bounding the scan to
+Babylon's admitted light prefix at `2c59d65e`. The native
+[clustered oracle](../assets/renderer-qualification/2026-09-23-repair/native-clustered.json)
+passes at `5135e650`: 36 captures have zero maximum channel difference, all eight
+tie cases pass, and sibling pixels survive disposal. This is effective NVIDIA
+WebGPU, not adapter-failure injection. The retained report includes pixel hashes,
+dimensions, source/build identities and adapter details.
 
 CEL's previous single authoring case is split into five independent color/Play,
 light-mixing, per-light, shadow-map and specular/mode cases. All pixel assertions,
@@ -82,6 +93,45 @@ real saves and default global outlines are retained. The separate mannequin
 workflow has a bounded two-minute deadline; the prior one-minute deadline expired
 even after its save reported a clean completed document. This scopes deadlines
 to progressing workflows without changing production quality or CI gates.
+All five cases, the mannequin case and the WebGL2 area-export lifecycle case
+pass together at `ad6f398e` on Windows SwiftShader WebGL; scoped lint/render
+typechecking also pass. An earlier identical test invocation passed its browser
+assertions but failed the runner's report-path check; only the corrected complete
+invocation is counted. The previous Linux export transition's first-frame
+deadline failure remains subject to the next exact-head Verify result; Windows
+passes do not certify Linux.
+
+At `a72e7ba6`, [eight native outline/area cases](../assets/renderer-qualification/2026-09-23-repair/native-outlines-area.json)
+pass on NVIDIA WebGL2 and WebGPU: ownership, geometry, fixed-output cost and native
+PBR/Material Graph area receivers. The editor/player build includes their scoped
+TypeScript checks. The first headless-shell attempt passed four WebGL2 cases but
+could not obtain a WebGPU adapter; it is not native WebGPU qualification. The
+successful run uses `playwright.perf.config.ts` / `perf-gpu`, one worker and shared
+admission. `5135e650` only adds the clustered case to that configuration's explicit
+selector; its focused lint and native case pass. CI retains its software adapter
+and unchanged acceptance assertions.
+
+The repeat cost fixture retains 640×360, scale 1 and disabled dynamic resolution.
+Combined work remains four drawing passes, seven records and 5,530,752/5,543,552
+outline bytes for 12/192 instances. WebGL whole-engine median GPU queries are
+0.041/0.237 ms (off/all, 12) and 0.041/0.292 ms (192); the report retains CPU,
+cadence and tail measurements. WebGPU direct GPU timings remain unavailable.
+All eight lifecycle cycles retire to zero. These desktop samples do not prove
+a performance improvement or A16 headroom.
+
+Computer Use Chrome 153 rechecks the saved seven-actor project on the verified
+`5135e650` artifact. Normal Inspector enable/disable, Undo/Redo and selection
+operations preserve [independent consumers](../assets/renderer-qualification/2026-09-23-repair/removed-webgpu.png).
+Strict visibility hides the fully occluded magenta box on
+[WebGPU](../assets/renderer-qualification/2026-09-23-repair/strict-webgpu.png) and
+[WebGL2](../assets/renderer-qualification/2026-09-23-repair/strict-webgl2.png).
+The saved graph presents actual 240×135 [WebGPU Play](../assets/renderer-qualification/2026-09-23-repair/play-webgpu.png)
+and [WebGL2 Play](../assets/renderer-qualification/2026-09-23-repair/play-webgl2.png)
+without editor selection. Stop restores 427×217 at scale 1, zero pending retirement
+and a clean project. [Ready-frame diagnostics and steps](../assets/renderer-qualification/2026-09-23-repair/computer-use.json)
+record the effective APIs, NVIDIA adapters, 1280×565 viewport and DPR 1.
+Earlier full texture/model authoring and independent packed/loose export routes
+remain applicable to their unchanged code. Exact-head CI and merge remain gates.
 
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
