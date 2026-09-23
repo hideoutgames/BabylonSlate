@@ -6,6 +6,30 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+for (const backend of ["webgl2", "webgpu"] as const)
+  test(`grazing surfaces retain light and contacts with Medium cascades: ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.goto("/?test=1&shadowSelfShadowingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateShadowSelfShadowingProof?: unknown }).__babylonslateShadowSelfShadowingProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __babylonslateShadowSelfShadowingProof: typeof runShadowSelfShadowingProof;
+    }).__babylonslateShadowSelfShadowingProof(backend, "pbr", "cascades", { grazing: true }), backend);
+    for (const capture of result.captures) await testInfo.attach(capture.name, { body: Buffer.from(capture.png, "base64"), contentType: "image/png" });
+    await testInfo.attach("grazing-diagnostics", { body: JSON.stringify({ ...result, captures: result.captures.map(({ png: _png, ...capture }) => capture) }, null, 2), contentType: "application/json" });
+    expect(result.backend).toBe(backend);
+    for (const capture of result.captures.filter((capture) => capture.assertions)) {
+      const generator = capture.effective.lights.find((light) => light.name === "oblique key")!.generator!;
+      expect(generator.cascades).toBe(2);
+      expect(generator.map?.width).toBe(2048);
+      const ground = capture.regions.ground!;
+      expect(ground.lit, `${capture.name} grazing lit population`).toBeGreaterThan(20);
+      expect(ground.falseDark / ground.lit, `${capture.name} grazing false shadows`).toBeLessThan(0.05);
+      const contacts = Object.values(capture.regions).reduce((total, region) => ({ count: total.count + region.contact, retained: total.retained + region.retainedContact }), { count: 0, retained: 0 });
+      expect(contacts.count, `${capture.name} contact population`).toBeGreaterThan(5);
+      expect(contacts.retained / contacts.count, `${capture.name} retained contacts`).toBeGreaterThan(0.8);
+    }
+  });
+
 const cases = [
   { backend: "webgl2", configuration: "live-transform", mode: "pbr" } as const,
   { backend: "webgl2", configuration: "live-transform", mode: "cel" } as const,

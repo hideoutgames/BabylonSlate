@@ -259,6 +259,7 @@ export function shadowSurfaceSamples(
   viewport = { x: 0, y: 0, width: 1, height: 1 },
   boxes: readonly ShadowBox[] = SHADOW_BOXES,
   filter?: ShadowPcfProjection,
+  minimumLightCosine = 0.2,
 ): ShadowSurfaceSample[] {
   const result: ShadowSurfaceSample[] = [];
   const footprint = pcfFootprint(filter, toLight, boxes);
@@ -273,7 +274,7 @@ export function shadowSurfaceSamples(
     tangentB: ShadowTriple,
     region: string,
   ) => {
-    if (dot(normal, toLight) < 0.2) return;
+    if (dot(normal, toLight) < minimumLightCosine) return;
     const toCamera = subtract(camera, point);
     if (
       dot(normal, toCamera) <= 0 ||
