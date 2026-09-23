@@ -98,6 +98,9 @@ export async function runShadowSelfShadowingProof(
       );
       mesh.position = Vector3.FromArray(box.center);
       mesh.material = material;
+      // Isolate ground self-shadowing from the long PCF penumbrae cast by
+      // upright objects at grazing incidence. Contact fixtures remain separate.
+      if (options.grazing) mesh.metadata = { slateShadowParticipation: { castShadows: false } };
     }
     const boxes: ShadowBox[] = [...SHADOW_BOXES];
     const transformFixture = () => {

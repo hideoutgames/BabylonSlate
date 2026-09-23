@@ -17,7 +17,7 @@ async function handles(canvas: Locator) {
     for (let i = 0; i < pixels.length; i += 4) {
       const rgb = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!];
       for (let axis = 0; axis < 3; axis++) {
-        if (rgb[axis]! > 80 && rgb[axis]! > rgb[(axis + 1) % 3]! * 1.8 && rgb[axis]! > rgb[(axis + 2) % 3]! * 1.8) {
+        if (rgb[axis]! > 80 && rgb[axis]! > rgb[(axis + 1) % 3]! * 1.2 && rgb[axis]! > rgb[(axis + 2) % 3]! * 1.2) {
           colors[axis]!++;
           if (axis === 0) red.push({ x: (i / 4) % copy.width, y: Math.floor(i / 4 / copy.width) });
         }

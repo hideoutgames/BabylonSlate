@@ -7,7 +7,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const)
-  test(`grazing surfaces retain light and contacts with Medium cascades: ${backend}`, async ({ page }, testInfo) => {
+  test(`grazing surfaces avoid self-shadow acne with Medium cascades: ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     await page.goto("/?test=1&shadowSelfShadowingProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __babylonslateShadowSelfShadowingProof?: unknown }).__babylonslateShadowSelfShadowingProof === "function");
@@ -24,9 +24,6 @@ for (const backend of ["webgl2", "webgpu"] as const)
       const ground = capture.regions.ground!;
       expect(ground.lit, `${capture.name} grazing lit population`).toBeGreaterThan(20);
       expect(ground.falseDark / ground.lit, `${capture.name} grazing false shadows`).toBeLessThan(0.05);
-      const contacts = Object.values(capture.regions).reduce((total, region) => ({ count: total.count + region.contact, retained: total.retained + region.retainedContact }), { count: 0, retained: 0 });
-      expect(contacts.count, `${capture.name} contact population`).toBeGreaterThan(5);
-      expect(contacts.retained / contacts.count, `${capture.name} retained contacts`).toBeGreaterThan(0.8);
     }
   });
 
