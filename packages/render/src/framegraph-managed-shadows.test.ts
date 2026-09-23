@@ -18,6 +18,7 @@ import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { sceneShadowController } from "./shadow-controller";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
+import { createColliderVisualMesh } from "./collider-visual";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -131,6 +132,11 @@ it.each(["point", "spot", "sun"] as const)(
       render,
       faces,
     } = await fixture(kind);
+    const collider = createColliderVisualMesh(scene, "collider-guide", {
+      kind: "capsule", radius: 0.5, halfHeight: 1,
+    });
+    controller.setParticipation(collider, { castShadows: true });
+    controller.sync();
     const textures = scene.textures.length;
     const references = texture._references;
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
@@ -138,6 +144,11 @@ it.each(["point", "spot", "sun"] as const)(
     expect(faces()).toBe(0);
     const count = kind === "point" ? 6 : 1;
     expect(render()).toBe(count);
+    expect(render()).toBe(kind === "sun" ? 1 : 0);
+    collider.position.x = 2;
+    collider.setEnabled(false);
+    expect(render()).toBe(kind === "sun" ? 1 : 0);
+    collider.setEnabled(true);
     expect(render()).toBe(kind === "sun" ? 1 : 0);
     mesh.position.x = 0.4;
     expect(render()).toBe(count);
