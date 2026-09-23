@@ -38,7 +38,7 @@ describe("CEL settings persistence and inheritance", () => {
     const bounded = normalizeCelShadingSettings({ outlineFadeStart: 1e20, outlineFadeEnd: 1e20 });
     expect(bounded.outlineFadeEnd).toBeLessThanOrEqual(1_000_000);
     expect(bounded.outlineFadeEnd).toBeGreaterThan(bounded.outlineFadeStart);
-    for (const start of [500_000, 999_999.99]) {
+    for (const start of [500_000, 999_999.99, 2 ** 19 - 0.005, 2 ** 18 - 0.001]) {
       const range = normalizeCelShadingSettings({ outlineFadeStart: start, outlineFadeEnd: start + 0.01 });
       expect(Math.fround(range.outlineFadeEnd)).toBeGreaterThan(Math.fround(range.outlineFadeStart));
     }

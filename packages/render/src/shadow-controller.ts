@@ -636,12 +636,14 @@ export class SceneShadowController {
     const canWarm = this.receiverPass !== undefined && camera && !cameraChanged &&
       this.authoredRevision === this.appliedAuthoredRevision && incoming.length > 0 && incoming.length === outgoing.length &&
       owners.every((entry) => candidates.includes(entry) && !entry.resetAllocation &&
+        entry.key === JSON.stringify([entry.mapSize, entry.light.needCube(), entry.light instanceof DirectionalLight ? settings.cascades : 1]) &&
         entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
       outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
     const layout = new Map<Light, ShadowGenerator | null>();
     const donors = [...outgoing];
     if (canWarm) for (const entry of incoming) {
-      const index = donors.findIndex((donor) => donor.light.getTypeID() === entry.light.getTypeID() && donor.mapSize === entry.mapSize);
+      const index = donors.findIndex((donor) => donor.light.getTypeID() === entry.light.getTypeID() &&
+        donor.light.needCube() === entry.light.needCube() && donor.mapSize === entry.mapSize);
       if (index < 0) break;
       layout.set(entry.light, donors.splice(index, 1)[0]!.generator);
     }

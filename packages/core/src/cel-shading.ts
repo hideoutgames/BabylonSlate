@@ -113,7 +113,7 @@ export function resolveCelShadingSettings(
 function resolveOutlineFadeRange(settings: CelShadingSettings): CelShadingSettings {
   // At large distances a 0.01 range can collapse to equal float32 shader
   // endpoints. Keep at least one representable step, including at the cap.
-  const step = 2 ** (Math.floor(Math.log2(Math.max(1, settings.outlineFadeStart))) - 23);
+  const step = 2 ** (Math.floor(Math.log2(Math.max(1, Math.fround(settings.outlineFadeStart)))) - 23);
   settings.outlineFadeEnd = Math.max(settings.outlineFadeEnd, settings.outlineFadeStart + Math.max(0.01, step));
   return settings;
 }

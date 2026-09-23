@@ -403,6 +403,23 @@ it("keeps the admitted map while a compatible camera handoff warms, then commits
   expect(scene.lights.filter((light) => light.getShadowGenerator())).toEqual([incoming]);
 });
 
+it("uses normal preparation when a point-light handoff changes cube layout", async () => {
+  const { scene, camera, light, controller, graph } = await fixture("point");
+  const incoming = new PointLight("directed point", new Vector3(40, 3, -2), scene);
+  incoming.direction = Vector3.Down();
+  incoming.range = light.range = 100;
+  controller.register(incoming, true); controller.sync();
+  await graph.prepare(camera);
+  const now = performance.now();
+  vi.spyOn(performance, "now").mockReturnValue(now + 500);
+  camera.position.x = 40;
+  controller.sync();
+  expect(controller.status(incoming)).toBe("active");
+  expect(controller.generator(light)).toBeNull();
+  expect(controller.generator(incoming)?.getShadowMap()?.isCube).toBe(false);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+});
+
 it("settles the material shadow layout before readiness instead of invalidating the first presented frame", async () => {
   const { scene, camera, mesh, graph } = await fixture("spot");
   const dirty = vi.spyOn(mesh.material!, "markDirty");
