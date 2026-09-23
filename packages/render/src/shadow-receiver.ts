@@ -6,8 +6,9 @@ import { checkedShader } from "./checked-shader";
  * It adds no fetches, samplers or caster displacement. Automatic mode only;
  * manual and perspective/cube lights retain the native path. The correction
  * includes the current projection depth interval and actual
- * allocation through the UV/depth gradient. A 0.05 normalized-depth ceiling is
- * only a numerical guard, not a world-space or scene-bounds offset policy.
+ * allocation through the UV/depth gradient. Valid finite plane offsets must
+ * remain intact at grazing angles; clamping their magnitude causes self-shadow
+ * bands even on a lone flat receiver. Native CSM depth-range clamps remain.
  * Near-singular derivatives retain the small caster bias alone.
  */
 const ELIGIBLE =
@@ -115,7 +116,7 @@ fn slatePcfDepth(tap: vec2f, origin: vec3f, plane: vec3f)->f32 {
 #ifdef USE_REVERSE_DEPTHBUFFER
   offset = -offset;
 #endif
-  return origin.z + clamp(offset, -0.05, 0.05);
+  return origin.z + offset;
 }
 ` : `
 #ifdef USE_REVERSE_DEPTHBUFFER
@@ -132,7 +133,7 @@ float slatePcfDepth(vec2 tap, vec3 origin, vec3 plane) {
 #ifdef USE_REVERSE_DEPTHBUFFER
   offset = -offset;
 #endif
-  return origin.z + clamp(offset, -0.05, 0.05);
+  return origin.z + offset;
 }
 `;
   let result = source;

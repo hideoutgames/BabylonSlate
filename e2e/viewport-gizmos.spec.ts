@@ -19,7 +19,9 @@ async function handles(canvas: Locator) {
       for (let axis = 0; axis < 3; axis++) {
         if (rgb[axis]! > 80 && rgb[axis]! > rgb[(axis + 1) % 3]! * 1.2 && rgb[axis]! > rgb[(axis + 2) % 3]! * 1.2) {
           colors[axis]!++;
-          if (axis === 0) red.push({ x: (i / 4) % copy.width, y: Math.floor(i / 4 / copy.width) });
+          // The orange selection outline is also red-dominant; the red axis
+          // has nearly equal green/blue channels and is the draggable target.
+          if (axis === 0 && Math.abs(rgb[1]! - rgb[2]!) < rgb[0]! * 0.18) red.push({ x: (i / 4) % copy.width, y: Math.floor(i / 4 / copy.width) });
         }
       }
     }
@@ -30,7 +32,7 @@ async function handles(canvas: Locator) {
   });
 }
 
-test("selected objects show Move, Rotate, and Scale handles and a pointer drag is undoable", async ({ page }) => {
+test("selected objects show Move, Rotate, and Scale handles and a pointer drag is undoable", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   await openTestProject(page);
   await openMainScene(page);
@@ -51,8 +53,11 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
     }
   }
   await page.getByTestId("gizmo-tool-translate").click();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect.poll(async () => (await handles(canvas)).colors[0]).toBeGreaterThan(10);
   const point = (await handles(canvas)).point!;
+  await testInfo.attach("move-handles", { body: await canvas.screenshot(), contentType: "image/png" });
+  await testInfo.attach("handle-pixels", { body: JSON.stringify(await handles(canvas)), contentType: "application/json" });
   const bounds = (await canvas.boundingBox())!;
   const x = bounds.x + bounds.width * point.x;
   const y = bounds.y + bounds.height * point.y;
