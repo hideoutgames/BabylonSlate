@@ -10,7 +10,7 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
 
 type Viewport = {
   shadowDiagnostics(): ShadowDiagnostics | null;
-  mannequinShadowProbe(neutral: boolean): Promise<unknown>;
+  mannequinShadowProbe(neutral: boolean, modelOnly?: boolean): Promise<unknown>;
   setRenderSettings(settings: RenderShadingSettings): void;
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
 };
@@ -45,7 +45,7 @@ test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
     await testInfo.attach(`geometry-${neutral}`, { body: JSON.stringify(probe), contentType: "application/json" });
     const position = [3, 2, 4];
     await page.evaluate(position => window.__babylonslateViewportTest.setShadowCaptureView(position, [0, 1.35, 0], 0.7), position);
-    for (const variant of ["baseline", "off", "normal-zero", "manual", "single", "unfiltered"] as const) {
+    for (const variant of ["baseline", "off", "normal-zero", "manual", "single", "unfiltered", "model-only"] as const) {
       const enabled = variant !== "off";
       await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), {
         ...settings, shadows: { ...settings.shadows!, enabled,
@@ -55,6 +55,7 @@ test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
           ...(variant === "unfiltered" ? { filter: "none" } : {}),
         },
       });
+      await page.evaluate(({ neutral, modelOnly }) => window.__babylonslateViewportTest.mannequinShadowProbe(neutral, modelOnly), { neutral, modelOnly: variant === "model-only" });
       const id = await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId);
       await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId)).toBeGreaterThan(id + 2);
       const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;

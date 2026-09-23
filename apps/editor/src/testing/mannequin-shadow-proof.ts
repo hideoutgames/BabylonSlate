@@ -1,10 +1,11 @@
 import { Color3, Matrix, PBRMaterial, Vector3, VertexBuffer, type Material, type Scene } from "@babylonjs/core";
+import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 
 const names = new Set(["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"]);
 const originals = new WeakMap<Scene, Map<string, Material | null>>();
 
 /** Explicit test-build probe of the six real starter meshes, never a frame hook. */
-export function mannequinShadowProbe(scene: Scene, neutral: boolean) {
+export function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly = false) {
   const meshes = scene.meshes.filter(mesh => names.has(mesh.name));
   if (meshes.length !== 6) throw new Error(`Expected six mannequin parts, got ${meshes.length}`);
   let saved = originals.get(scene);
@@ -15,6 +16,9 @@ export function mannequinShadowProbe(scene: Scene, neutral: boolean) {
     material.albedoColor = new Color3(0.6, 0.6, 0.6);
     material.metallic = 0;
     material.roughness = 1;
+  }
+  for (const mesh of scene.meshes) {
+    if (!names.has(mesh.name)) sceneShadowController(scene).setParticipation(mesh, { castShadows: !modelOnly });
   }
   return meshes.map(mesh => {
     const source = mesh.material;
