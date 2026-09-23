@@ -15,7 +15,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
       __babylonslateShadowSelfShadowingProof: typeof runShadowSelfShadowingProof;
     }).__babylonslateShadowSelfShadowingProof(backend, "pbr", "cascades", { grazing: true }), backend);
     for (const capture of result.captures) await testInfo.attach(capture.name, { body: Buffer.from(capture.png, "base64"), contentType: "image/png" });
-    await testInfo.attach("grazing-diagnostics", { body: JSON.stringify({ ...result, captures: result.captures.map(({ png: _png, ...capture }) => capture) }, null, 2), contentType: "application/json" });
+    await testInfo.attach("grazing-diagnostics", { body: JSON.stringify({ ...result, captures: result.captures.map(({ name, effective, assertions, regions }) => ({ name, effective, assertions, regions })) }, null, 2), contentType: "application/json" });
     expect(result.backend).toBe(backend);
     for (const capture of result.captures.filter((capture) => capture.assertions)) {
       const generator = capture.effective.lights.find((light) => light.name === "oblique key")!.generator!;

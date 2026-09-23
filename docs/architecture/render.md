@@ -694,6 +694,15 @@ sets the offset. Manual
 mode bypasses the receiver correction. The pinned WGSL Low CSM blend adapter
 also supplies Babylon 9.20's omitted array-texture argument.
 
+The grazing regression uses actual Medium settings (2048 maps, two cascades,
+Medium PCF), a self-shadowing ground plane, and pose-matched shadow-off references.
+Upright objects do not cast in that case, isolating acne from long grazing
+penumbrae. It failed on WebGL2 and WebGPU with the fixed offset ceiling and
+passes without it. Separate hard-face and thin-contact tests protect valid
+shadows across Low/Medium/High PCF and CEL cascades. These software-backend
+fixtures establish functional behavior, not original-project or device-performance
+qualification.
+
 Other directional filters retain a half-world-texel base correction with
 Poisson's actual blur radius; PCSS tap count is not treated as a filter width.
 Babylon 9.20 GLSL/WGSL hardware comparison depth changes by `0.5 * bias`, or
