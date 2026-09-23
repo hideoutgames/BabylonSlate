@@ -178,6 +178,14 @@ remain applicable: this batch changes test budgets/catalog expectations and
 failure reporting, not rendering behavior. Fresh exact-head Verify remains
 required.
 
+The shard timing inventory now includes 24 first-attempt successful rendering
+cases measured in Verify run `35878942140`. Previously each missing case received
+the 30-second default, including a 270-second renderer baseline and several
+84–132-second CEL workflows. These measured weights rebalance the existing seven
+shards without changing their coverage, workers, assertions or job deadline.
+Failed, retried and skipped attempts do not supply these timing updates; weights
+are scheduling data, not a claim that the failed run passed.
+
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
 delete the blue model duplicate while the box remains selected: the orange model,

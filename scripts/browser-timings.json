@@ -227,6 +227,36 @@
     "[ipad-landscape] > touch-shell.spec.ts > Touch shell UX > suppresses the native context menu across the shell": 8800,
     "[ipad-landscape] > windows-menu.spec.ts > Windows menu > does not list Editor Utilities": 10400,
     "[ipad-landscape] > windows-menu.spec.ts > Windows menu > restores Outliner and Output Log to their default dock positions": 11100,
-    "[ipad-landscape] > windows-menu.spec.ts > Windows menu > sits left of Focus and is disabled on Content Browser": 3300
-  }
+    "[ipad-landscape] > windows-menu.spec.ts > Windows menu > sits left of Focus and is disabled on Content Browser": 3300,
+    "[desktop-chrome] > scalability-play.spec.ts > saved Class scalability graphs compile and run with confirmed events in editor Play on webgl2": 21300,
+    "[desktop-chrome] > scalability-play.spec.ts > saved Class scalability graphs compile and run with confirmed events in editor Play on webgpu": 18700,
+    "[desktop-chrome] > area-light-export.spec.ts > prepared rectangular emission survives standalone export and scene lifecycle on webgpu": 33100,
+    "[desktop-chrome] > cel-render-mode.spec.ts > Mannequin illumination stays stable when directional shadows are enabled": 84000,
+    "[desktop-chrome] > cel-render-mode.spec.ts > world-space material inputs remain anchored when the editor camera moves": 44300,
+    "[desktop-chrome] > cel-render-mode.spec.ts > CEL preserves authored colors through Play and unlit scene overrides": 53500,
+    "[desktop-chrome] > cel-render-mode.spec.ts > CEL mixes overlapping lights into discrete bands and preserves fill hues": 126000,
+    "[desktop-chrome] > cel-render-mode.spec.ts > CEL applies directional, point and spot colors and neutral influence": 132000,
+    "[desktop-chrome] > cel-render-mode.spec.ts > CEL applies live specular controls and restores PBR surface response": 102000,
+    "[desktop-chrome] > area-rect-light.spec.ts > rectangular area emitters reach native and graph receivers through FrameGraph on webgl2": 31400,
+    "[desktop-chrome] > area-rect-light.spec.ts > rectangular area emitters reach native and graph receivers through FrameGraph on webgpu": 28700,
+    "[desktop-chrome] > rendering-baseline.spec.ts > local renderer baseline bounds sixteen eligible point and spot shadow lights across reloads": 270000,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on webgl2 backbuffer": 51600,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on webgl2 texture": 51700,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on webgpu backbuffer": 52200,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Forward FrameGraph borrows admitted shadows with pixel, refresh and scene ownership parity on webgpu texture": 53300,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Clustered FrameGraph keeps one contribution through managed shadow promotion and demotion": 54900,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Shared managed lighting reservations constrain real clustered and shadow allocations across scenes": 6100,
+    "[desktop-chrome] > render-settings-export.spec.ts > non-default packed settings reach the standalone webgl2 player": 27200,
+    "[desktop-chrome] > render-settings-export.spec.ts > non-default loose settings reach the standalone webgpu player": 12700,
+    "[desktop-chrome] > render-settings-export.spec.ts > non-default packed settings reach the standalone webgpu player after initialization failure": 23400,
+    "[desktop-chrome] > clustered-lights-webgpu.spec.ts > clustered point and spot contributions preserve native and graph PBR and CEL pixels on WebGPU": 29300,
+    "[desktop-chrome] > shared-outline-geometry.spec.ts > shared outlines follow material coverage, thin groups, LOD and deformation on webgl2": 9800,
+    "[desktop-chrome] > shared-outline-geometry.spec.ts > shared outlines follow material coverage, thin groups, LOD and deformation on webgpu": 10000
+  },
+  "updates": [
+    {
+      "source": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35878942140",
+      "scope": "First-attempt successful rendering cases; failed, retried and skipped cases do not supply timing updates."
+    }
+  ]
 }
