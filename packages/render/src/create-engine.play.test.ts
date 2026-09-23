@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, InternalTexture, InternalTextureSource, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import {
@@ -18,7 +19,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { encodeGlbJsonBin } from "@babylonslate/assets";
+import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -221,6 +222,7 @@ describe("Play createEngine view", () => {
 
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
+    mockCubeTextureIO(engine);
     // NullEngine stores raw bytes but never marks the upload complete. Model
     // the real synchronous raw-texture upload boundary without bypassing the
     // scene's texture readiness checks (individual tests can hold a texture).
@@ -250,6 +252,57 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it("retires particle owners on world replacement and SceneLayer lifecycle commands", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true,
+      textureBytes: new Map([["particle-texture", new Uint8Array([1])]]),
+      particleLibrary: {
+        emitters: new Map([["emitter", { ...createDefaultParticleEmitterPayload(), textureGuid: "particle-texture" }]]),
+        systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]),
+      },
+    });
+    handles.push(handle);
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene);
+    const acquire = ResourceCache.prototype.acquireTexture;
+    let liveLeases = 0;
+    vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, ...args) {
+      if (args[0] !== "particle-texture") return acquire.apply(this, args);
+      liveLeases += 1;
+      return { resource: texture, key: "controlled-particle-texture", release: () => { liveLeases -= 1; } };
+    });
+    const assign = (slotId: number, layer?: string) => {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `particle-${slotId}`, classId: "Actor", sceneLayerId: layer });
+      handle.applyCommand({ type: "assignParticle", slotId, actorGuid: `particle-${slotId}`, componentId: "particle", particleSystemGuid: "system" });
+    };
+    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    assign(1);
+    assign(2, "particles");
+    expect(handle.scene.particleSystems).toHaveLength(1);
+    expect(liveLeases).toBe(1);
+    createLayer();
+    expect(handle.sceneLayerScenes()[0]!.scene.particleSystems).toHaveLength(1);
+    expect(liveLeases).toBe(2);
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 1 });
+    expect(handle.scene.particleSystems).toHaveLength(0);
+    expect(liveLeases).toBe(1);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "particles" });
+    expect(liveLeases).toBe(0);
+    createLayer(); assign(3, "particles");
+    handle.applyCommand({ type: "sceneLayerClear" });
+    expect(liveLeases).toBe(0);
+    assign(4);
+    handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "particle-4" });
+    expect(liveLeases).toBe(0);
+    assign(5);
+    handle.resetParticleSession();
+    expect(liveLeases).toBe(0);
+    assign(6);
+    handle.dispose();
+    await handle.whenReleased();
+    expect(liveLeases).toBe(0);
+  });
 
   function postProcessGraphEngine(): NullEngine {
     const engine = sharedEngine();
@@ -310,7 +363,8 @@ describe("Play createEngine view", () => {
     const observers = [engine.onEndFrameObservable, engine.onContextLostObservable, engine.onContextRestoredObservable];
     const observerCounts = observers.map((observable) => observable.observers.length);
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const retained = sibling.resourceCache.getTexture("sibling-texture", engine, bytes);
+    const retainedLease = sibling.resourceCache.acquireTexture("sibling-texture", engine, bytes);
+    const retained = retainedLease.resource;
     const cache = resourceCacheForEngine(engine);
     sibling.setTextureBudget(100, true);
     hidden.setTextureBudget(100, true);
@@ -346,13 +400,13 @@ describe("Play createEngine view", () => {
     expect([...failedCanvas.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true);
     await vi.waitFor(() => expect(observers.map((observable) => observable.observers.length)).toEqual(observerCounts));
     expect(resourceCacheForEngine(engine)).toBe(cache);
-    expect(sibling.resourceCache.getTexture("sibling-texture", engine, bytes)).toBe(retained);
+    expect(sibling.resourceCache.acquireTexture("sibling-texture", engine, bytes).resource).toBe(retained);
     expect(isDisposedGpuTexture(retained)).toBe(false);
     const retainedBytes = cache.accountedBytes();
     // Accounting only: no GPU or CPU allocation. A failed view's disabled
     // budget must not prevent the remaining clients from evicting unused data.
     cache.account("unused-after-failure", 4 * 1024 ** 3);
-    cache.release("unused-after-failure");
+    cache.releaseAccounting("unused-after-failure");
     cache.evictToCeiling();
     expect(cache.accountedBytes()).toBe(retainedBytes);
     sibling.scheduler.invalidate("manual");
@@ -1576,7 +1630,8 @@ describe("Play createEngine view", () => {
       expect(passes).toHaveLength(2);
 
       await prewarmMaterial(material as NodeMaterial, null);
-      expect(handle.scene.getMaterialByName("material:pp")).toBe(material);
+      // Two independent pass materials intentionally share this display name.
+      expect(handle.scene.materials).toContain(material);
       expect(camera._postProcesses.filter((pass) => pass != null)).toEqual(passes);
       expect(handle.postProcessPassCount()).toBe(2);
 
@@ -1614,16 +1669,16 @@ describe("Play createEngine view", () => {
     vi.spyOn(SceneRenderCoordinator.prototype, "retire").mockImplementation(function (this: SceneRenderCoordinator) {
       return retire.call(this).then(() => held);
     });
-    const clearTextures = vi.spyOn(handle.resourceCache, "clearClientTextures");
+    const retireTextures = vi.spyOn(handle.resourceCache, "dispose");
     const stopped = vi.spyOn(engine, "stopRenderLoop");
     handle.dispose();
     expect(stopped).toHaveBeenCalled();
     expect(handle.scene.isDisposed).toBe(false);
     expect(engine.isDisposed).toBe(false);
-    expect(clearTextures).not.toHaveBeenCalled();
+    expect(retireTextures).not.toHaveBeenCalled();
     release();
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
-    expect(clearTextures).toHaveBeenCalledWith(handle.scene.uid);
+    expect(retireTextures).toHaveBeenCalledOnce();
     expect(engine.isDisposed).toBe(false);
   });
 
@@ -2979,11 +3034,13 @@ describe("Play createEngine view", () => {
     editor.setMeshAssets({
       textureBytes: new Map([["tex-shared", bytes]]),
     });
-    const first = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    const firstLease = editor.resourceCache.acquireTexture("tex-shared", engine, bytes);
+    const first = firstLease.resource;
     const disposeCache = vi.spyOn(ResourceCache.prototype, "dispose");
     play.dispose();
     expect(disposeCache).not.toHaveBeenCalled();
-    const second = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    const secondLease = editor.resourceCache.acquireTexture("tex-shared", engine, bytes);
+    const second = secondLease.resource;
     expect(second).toBe(first);
     expect(isDisposedGpuTexture(first)).toBe(false);
   });

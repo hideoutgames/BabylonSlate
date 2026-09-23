@@ -1416,6 +1416,7 @@ describe("script host runs compiled graphs", () => {
         node(registry, "self", "actor.getSelf"),
         node(registry, "make", "struct.makeTransform", {
           "default:location": { x: 4, y: 5, z: 6 },
+          "default:scale": { x: 1, y: 1, z: 1 },
         }),
         node(registry, "add", "component.add", { classId: "MeshComponent" }),
       ],
@@ -1504,6 +1505,7 @@ describe("script host runs compiled graphs", () => {
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "make", "struct.makeTransform", {
           "default:location": { x: 10, y: 20, z: 30 },
+          "default:scale": { x: 1, y: 1, z: 1 },
         }),
         node(registry, "spawn", "actor.spawn", { classId: "Child" }),
       ],
@@ -1560,6 +1562,7 @@ describe("script host runs compiled graphs", () => {
         node(registry, "spawn", "actor.spawn", { classId: "Child" }),
         node(registry, "pose", "struct.makeTransform", {
           "default:location": { x: 10, y: 20, z: 30 },
+          "default:scale": { x: 1, y: 1, z: 1 },
         }),
       ],
       edges: [

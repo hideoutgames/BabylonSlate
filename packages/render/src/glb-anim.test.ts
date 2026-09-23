@@ -1,3 +1,4 @@
+import { installAssetBytes } from "@babylonslate/assets";
 import { FreeCamera, Vector3, MeshBuilder, TransformNode } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import type { NamedSeekableGroup } from "./anim-apply";
@@ -121,7 +122,7 @@ describe("beginSlotModelAnimLoad", () => {
     const animations = split.json.animations as Record<string, unknown>[];
     animations.push({ ...animations[0], name: "Second" });
     try {
-      await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", encodeGlbJsonBin(split.json, split.bin), root);
+      await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
       const [first, second] = binding.slotAnimationGroups!.get(1)! as NamedSeekableGroup[];
       first!.goToFrame(30);
       first!.setWeightForAllAnimatables?.(1);
@@ -141,8 +142,8 @@ describe("beginSlotModelAnimLoad", () => {
     const bytes = encodeParentedAnimatedTriangleGlb("Idle");
     try {
       await Promise.all([
-        beginSlotModelAnimLoad(handle.scene, binding, 1, "model", bytes, root),
-        beginSlotModelAnimLoad(handle.scene, binding, 2, "model", bytes, root),
+        beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(bytes), root),
+        beginSlotModelAnimLoad(handle.scene, binding, 2, "model", installAssetBytes(bytes), root),
       ]);
       expect(visualMeshes(root)).toHaveLength(1);
       expect(handle.scene.animatables).toHaveLength(0);
@@ -178,7 +179,7 @@ describe("beginSlotModelAnimLoad", () => {
     expect(view.byteOffset).toBe(16);
     const binding = createSnapshotSceneBinding();
     const root = createModelActorRoot(scene, "actor-2");
-    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", view, root);
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", installAssetBytes(view), root);
     expect(visualMeshes(root).length).toBeGreaterThan(0);
   });
 
@@ -190,7 +191,7 @@ describe("beginSlotModelAnimLoad", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const load = beginSlotModelAnimLoad(handle.scene, binding, 2, "broken",
-        encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array()), root);
+        installAssetBytes(encodeGlbJsonBin({ asset: { version: "99.0" } }, new Uint8Array())), root);
       if (reason === "superseded") invalidateSlotAnimLoad(binding, 2);
       else root.dispose();
       await expect(load).resolves.toBeUndefined();
@@ -217,7 +218,7 @@ describe("beginSlotModelAnimLoad", () => {
     ]);
     const root = createModelActorRoot(scene, "actor-2");
     root.scaling.set(2, 2, 2);
-    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", encodeTriangleGlb(), root);
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", installAssetBytes(encodeTriangleGlb()), root);
     expect(root.scaling.x).toBe(2);
     expect(root.scaling.y).toBe(2);
     expect(root.scaling.z).toBe(2);
@@ -247,7 +248,7 @@ describe("beginSlotModelAnimLoad", () => {
       binding,
       2,
       "model-missing-bytes",
-      encodeTriangleGlb(),
+      installAssetBytes(encodeTriangleGlb()),
       root,
     );
     expect(visualMeshes(root).length).toBeGreaterThan(0);

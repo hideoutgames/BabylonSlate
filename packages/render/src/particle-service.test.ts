@@ -295,7 +295,8 @@ describe("ParticleService", () => {
       playing: true,
     });
     expect(service.stats().playing).toBe(1);
-    expect(system.isStarted()).toBe(true);
+    expect(scene.particleSystems[0]?.isStarted()).toBe(true);
+    expect(scene.particleSystems[0]).not.toBe(system);
     service.resetSession();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().playing).toBe(0);
@@ -544,8 +545,8 @@ describe("ParticleService", () => {
       scene,
       gpuSupported: false,
       resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
-      resolveMaterial: (guid) =>
-        guid === "mat-1" ? (material as never) : null,
+      acquireMaterial: (guid) =>
+        guid === "mat-1" ? { resource: material, key: "material", release: () => material.dispose() } : null,
     });
     withMaterial.setLibrary({
       emitters: new Map([

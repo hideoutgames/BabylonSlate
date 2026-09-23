@@ -4,7 +4,7 @@ import type {
   SphericalPolynomial,
 } from "@babylonjs/core";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
-import type { ResourceCache } from "./resource-cache";
+import type { TextureResources } from "./resource-cache";
 import { readEnvironmentBaseRadiance } from "./environment-base-radiance";
 
 interface Preparation {
@@ -26,7 +26,7 @@ const preparations = new WeakMap<InternalTexture, Preparation>();
 export function ownEnvironmentIrradiance(
   view: CubeTexture,
   source: CubeTexture,
-  cache: ResourceCache,
+  cache: TextureResources,
   changed: () => void,
 ): { isReady(): boolean; dispose(): void } {
   let current: Preparation | undefined;
@@ -74,7 +74,7 @@ export function ownEnvironmentIrradiance(
 function prepare(
   source: CubeTexture,
   internal: InternalTexture,
-  cache: ResourceCache,
+  cache: TextureResources,
 ): Preparation {
   const request: Preparation = {
     hardware: internal._hardwareTexture,
@@ -86,7 +86,7 @@ function prepare(
   const rgbd = source.isRGBD;
   const gamma = source.gammaSpace;
   const exactSrgb = internal.getEngine().useExactSrgbConversions;
-  cache.retain(source);
+  const preparationLease = cache.acquireExisting(source);
   const current = () =>
     source.getInternalTexture() === internal &&
     internal._hardwareTexture === request.hardware;
@@ -132,7 +132,7 @@ function prepare(
     })
     .finally(() => {
       request.pending = false;
-      cache.release(source);
+      preparationLease.release();
       for (const notify of request.listeners) notify();
     });
   return request;

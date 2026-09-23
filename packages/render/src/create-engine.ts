@@ -1,3 +1,4 @@
+import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
@@ -100,8 +101,6 @@ import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-bu
 import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
 import {
   isSkyboxMesh,
-  skyboxCubeCacheGuid,
-  skyboxCubeCacheGuidsFromScene,
 } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
@@ -113,10 +112,10 @@ import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import {
   bindResourceCacheToHandle,
-  getMaterialTexture,
+  acquireMaterialTexture,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
-  type ResourceCache,
+  type TextureResources,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
@@ -160,7 +159,7 @@ import {
   playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
-import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import {
@@ -201,6 +200,7 @@ import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
+import { acquireParticleMaterial } from "./particle-material";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
@@ -232,7 +232,7 @@ export interface EngineHandle {
   engine: AbstractEngine;
   scene: Scene;
   scheduler: RenderScheduler;
-  resourceCache: ResourceCache;
+  resourceCache: TextureResources;
   scaling: HardwareScalingController;
   dispose: () => void;
   /**
@@ -941,8 +941,7 @@ function initializeEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
-  onRollback(() => cacheBinding.releaseHandleRetains());
-  onRollback(() => resourceCache.clearClientTextures(scene.uid));
+  onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
     resourceCache.setByteCeiling(options.textureByteCeiling);
@@ -1003,24 +1002,22 @@ function initializeEngine(
   binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
-  binding.textureBytes = options.textureBytes;
+  binding.textureBytes = installTextureBytes(options.textureBytes);
   binding.texturePixelSizes = options.texturePixelSizes;
-  resourceCache.setClientTextures(
-    scene.uid,
-    options.textureBytes?.keys() ?? [],
-  );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
-  binding.fontMsdfPng = options.fontMsdfPng;
+  binding.fontMsdfPng = installTextureBytes(options.fontMsdfPng);
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
   binding.modelBytes = options.modelBytes;
+  binding.modelSources = installModelSources(options);
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
   binding.retargetAnimationLoads = options.retargetAnimationLoads;
   binding.resourceCache = resourceCache;
   binding.slotAnimReady = () => {
+    appliedSnapshotIdentity = null;
     scheduler.invalidate("snapshot");
   };
 
@@ -1065,11 +1062,12 @@ function initializeEngine(
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
   const materialLibrary = new MaterialLibrary({
+    textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => Object.fromEntries(materialFunctions),
-    resolveTexture: (guid) => {
+    acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return getMaterialTexture(resourceCache, guid, engine, bytes);
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
@@ -1092,8 +1090,8 @@ function initializeEngine(
     else compiledMaterialGuids.delete(guid);
     return material;
   };
-  binding.releaseMaterialInstance = (key) =>
-    materialLibrary.releaseInstance(key);
+  binding.releaseMaterialInstance = (key, assetGuid) =>
+    materialLibrary.releaseInstance(key, assetGuid);
   binding.validateMaterialParameter = (guid, name, value) => {
     const document = materialDocuments.get(guid);
     return (
@@ -1104,22 +1102,37 @@ function initializeEngine(
   const particleService = options.playMode
     ? new ParticleService({
         scene,
-        resolveTexture: (guid) => {
+        acquireTexture: (guid) => {
           const bytes = binding.textureBytes?.get(guid);
           if (!bytes) return null;
-          return getMaterialTexture(resourceCache, guid, engine, bytes);
+          return acquireMaterialTexture(resourceCache, guid, engine, bytes, { hasAlpha: true });
         },
-        resolveMaterial: (guid) => {
-          const live = binding.resolveMaterial?.(guid);
-          return live && "createEffectForParticles" in live
-            ? (live as import("@babylonjs/core").NodeMaterial)
-            : null;
+        acquireMaterial: (guid, owner) => {
+          const document = materialDocuments.get(guid);
+          return document ? acquireParticleMaterial(materialLibrary, guid, document, owner) : null;
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
         onDiagnostic: options.onParticleDiagnostic,
       })
     : null;
   onRollback(() => particleService?.dispose());
+  binding.slotVisualReady = (slotId, successor) => {
+    // Move emitter nodes before recursive retirement of the old visual root.
+    particleService?.bindSlot(slotId, successor);
+    queueMicrotask(() => {
+      if (successor.isDisposed() || binding.meshes.get(slotId) !== successor) return;
+      appliedSnapshotIdentity = null;
+      const pending = binding.pendingAnimState?.get(slotId);
+      if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
+        animationGroups: successor.getScene().animationGroups,
+        spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+        spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
+        applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
+      }), pending);
+      scheduler.invalidate("snapshot");
+    });
+  };
+
   if (particleService && options.particleLibrary) {
     particleService.setLibrary(options.particleLibrary);
   }
@@ -1256,7 +1269,9 @@ function initializeEngine(
   binding.isOverlaySlot = (slotId) =>
     sceneLayerCompositor?.layerIdForSlot(slotId) != null;
   particleService?.setSceneForSlot(
-    (slotId) => sceneLayerCompositor?.sceneForSlot(slotId) ?? null,
+    (slotId) => binding.isOverlaySlot?.(slotId)
+      ? sceneLayerCompositor?.sceneForSlot(slotId) ?? null
+      : scene,
   );
   const pendingOverlayAssign = new Map<
     number,
@@ -1409,31 +1424,18 @@ function initializeEngine(
     };
   };
 
-  const pinClientTextures = () => {
-    const guids = new Set<string>(binding.textureBytes?.keys() ?? []);
-    for (const props of binding.skyboxProps.values()) {
-      guids.add(skyboxCubeCacheGuid(props.faces));
-    }
-    for (const guid of skyboxCubeCacheGuidsFromScene(
-      editorSync?.serializedScene() ?? null,
-    )) {
-      guids.add(guid);
-    }
-    resourceCache.setClientTextures(scene.uid, guids);
-  };
-
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
-      binding.textureBytes = assets.textureBytes;
+      binding.textureBytes = installTextureBytes(assets.textureBytes);
       binding.texturePixelSizes = assets.texturePixelSizes;
-      pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;
-      binding.fontMsdfPng = assets.fontMsdfPng;
+      binding.fontMsdfPng = installTextureBytes(assets.fontMsdfPng);
       binding.fontCssStack = assets.fontCssStack;
       binding.fontCssStackByGuid = assets.fontCssStackByGuid;
       binding.modelBytes = assets.modelBytes;
+      binding.modelSources = installModelSources(assets);
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
       binding.retargetAnimationLoads = assets.retargetAnimationLoads;
@@ -1449,7 +1451,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -1485,7 +1487,6 @@ function initializeEngine(
     assertCurrent(generation);
     freezeLibraryMaterials();
     rebuildPostProcessStack();
-    pinClientTextures();
     lastBakedSceneGuid = load.sceneAssetGuid;
     bakedSession.apply(sceneData, bakeHost(load.sceneAssetGuid, load.signal));
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
@@ -1509,7 +1510,6 @@ function initializeEngine(
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
-      pinClientTextures();
       bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
@@ -1530,14 +1530,12 @@ function initializeEngine(
       });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
-      pinClientTextures();
       bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
-    pinClientTextures();
     bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
   };
 
@@ -1798,7 +1796,7 @@ function initializeEngine(
         const sceneData = editorSync.serializedScene();
         return sceneData ? calculateEditorDropTransforms({
           sceneData, selectedActorIds, maxDistance, meshForActor: (id) => editorSync.meshForActor(id),
-          assets: { modelBytes: binding.modelBytes, modelPayloads: binding.modelPayloads,
+          assets: { modelBytes: binding.modelBytes, modelSources: binding.modelSources, modelPayloads: binding.modelPayloads,
             spritePayloads: binding.spritePayloads, tilemaps: binding.tilemaps, tilesets: binding.tilesets,
             pixelsPerUnit: binding.pixelsPerUnit },
         }) : [];
@@ -2289,12 +2287,11 @@ function initializeEngine(
         debugOverlay?.dispose();
         debugOverlay = null;
         disposeSnapshotBinding(binding);
-        materialLibrary.dispose();
-        resourceCache.clearClientTextures(scene.uid);
         particleService?.dispose();
+        materialLibrary.dispose();
         scene.dispose();
         rttPresent?.dispose();
-        cacheBinding.releaseHandleRetains();
+        cacheBinding.dispose();
       };
       const reportRetirementFailure = (error: unknown) => {
         console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
@@ -2419,6 +2416,7 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
         worldSceneAssetGuid = command.sceneAssetGuid;
@@ -2430,6 +2428,7 @@ function initializeEngine(
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {
+          particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
           cancelPresentation(new Error("SceneLayer loading was superseded."), `layer:${command.layerId}`);
           layerLoads.set(command.layerId, { loadId: command.layerLoadId, ready: false });
         }
@@ -2440,12 +2439,14 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
+        particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
         cancelPresentation(new Error("SceneLayer was removed."), `layer:${command.layerId}`);
         layerLoads.delete(command.layerId);
         sceneLayerCompositor?.remove(command.layerId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
+        particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) != null);
         for (const layerId of layerLoads.keys()) cancelPresentation(new Error("SceneLayer was removed."), `layer:${layerId}`);
         layerLoads.clear();
         pendingOverlayAssign.clear();
@@ -2490,10 +2491,8 @@ function initializeEngine(
         } else {
           applyAssignMesh(scene, binding, command);
         }
-        // A spawned `light:*` visual may be the baked source the receiver
-        // could not resolve at bind; re-check exclusions now that it exists.
+        // A spawned light can resolve a baked receiver's pending exclusion.
         if (command.meshKind?.startsWith("light:")) bakedSession.refresh();
-        pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
           command.slotId,
@@ -2508,7 +2507,7 @@ function initializeEngine(
               spriteAnimations:
                 binding.spriteAnimations ?? options.spriteAnimations,
               applyTexture: (mesh, guid) =>
-                applyAlbedoTexture(mesh, scene, guid, binding),
+                applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
             }),
             pending,
           );
@@ -2582,7 +2581,7 @@ function initializeEngine(
             spriteAnimations:
               binding.spriteAnimations ?? options.spriteAnimations,
             applyTexture: (mesh, guid) =>
-              applyAlbedoTexture(mesh, scene, guid, binding),
+              applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
             onMissingClip: (info) => {
               const groups = binding.slotAnimationGroups?.get(info.slotId);
               if (
@@ -2605,6 +2604,7 @@ function initializeEngine(
       binding.paused = paused;
       scheduler.setPaused(paused);
       audioService?.setPaused(paused);
+      particleService?.setPaused(paused);
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);

@@ -48,10 +48,13 @@ describe("createParticlePreviewScene", () => {
         ["mat-1", createDefaultMaterialDocument("Sparks", "particle")],
       ]),
     });
-    const material = resolver.resolve("mat-1");
+    const owner = { scene: host.scene, instanceKey: "preview:emitter:1" };
+    const lease = resolver.acquire("mat-1", owner);
+    const material = lease?.resource;
     expect(material).toBeTruthy();
     expect(material?.mode).toBe(2);
-    expect(resolver.resolve("missing")).toBeNull();
+    expect(resolver.acquire("missing", owner)).toBeNull();
+    lease?.release();
     resolver.dispose();
     host.dispose();
   });

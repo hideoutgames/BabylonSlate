@@ -1,26 +1,25 @@
 import "./gltf-loader";
 import { applyMaterialBounds } from "./material-bounds";
 import type {
-  AbstractMesh,
   AnimationGroup,
   Material,
-  TransformNode,
 } from "@babylonjs/core";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { loadModelContainer } from "./model-container";
-import type { ModelMaterialSlot } from "@babylonslate/assets";
+import { normalizeModelImportScale, type ModelMaterialSlot } from "@babylonslate/assets";
 import {
-  aimPreviewCameraAtMesh,
   createMaterialPreviewScene,
   type MaterialPreviewScene,
 } from "./material-preview";
-import { applyModelImportScale } from "./glb-anim";
+import { MODEL_IMPORT_SCALE_NODE_NAME } from "./glb-anim";
+import { VisualBundle } from "./visual-bundle";
 import {
   isGltfModelBytes,
 } from "./model-mesh";
 import {
   constructionMaterialOf,
-  visualHierarchyBoundingVectors,
   visualMeshes,
 } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
@@ -136,46 +135,78 @@ export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
   return child ?? host.mesh;
 }
 
+const previewRequests = new WeakMap<MaterialPreviewScene, object>();
+const previewBundles = new WeakMap<MaterialPreviewScene, VisualBundle>();
+
 export async function loadModelPreviewSource(
   host: MaterialPreviewScene,
   bytes: Uint8Array,
   importScale = 1,
 ): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
   if (!isGltfModelBytes(bytes)) return null;
+  const request = {};
+  previewRequests.set(host, request);
   const container = await loadModelContainer(host.scene, bytes, "model-preview.glb");
-  container.addAllToScene();
-  const wrapper = applyModelImportScale(host.mesh, importScale);
-  const candidates = [
-    ...(container.rootNodes ?? []),
-    ...container.transformNodes,
-    ...container.meshes,
-  ];
-  const seen = new Set<(typeof candidates)[number]>();
-  for (const node of candidates) {
-    if (seen.has(node) || node === host.mesh || node === wrapper) continue;
-    seen.add(node);
-    if (!node.parent) node.parent = wrapper;
+  const bundle = new VisualBundle();
+  bundle.ownRenderUser(container);
+  if (host.scene.isDisposed || host.mesh.isDisposed() || previewRequests.get(host) !== request) {
+    bundle.dispose();
+    return null;
   }
-  host.mesh.visibility = 0;
-  host.mesh.computeWorldMatrix(true);
-  // Imported joint transforms can put the visible rest pose far from raw vertices.
-  // Refresh once for framing; avoid CPU skinning on every preview frame.
-  for (const skeleton of container.skeletons) skeleton.prepare(true);
-  for (const mesh of container.meshes) {
-    if (mesh.skeleton) mesh.refreshBoundingInfo({ applySkeleton: true });
+  const priorTarget = host.camera.target.clone();
+  const priorRadius = host.camera.radius;
+  try {
+    const wrapper = new TransformNode(MODEL_IMPORT_SCALE_NODE_NAME, host.scene);
+    bundle.ownRenderUser({ dispose: () => { if (!wrapper.isDisposed()) wrapper.dispose(true); } });
+    const scale = normalizeModelImportScale(importScale);
+    wrapper.scaling.set(scale, scale, scale);
+    wrapper.setEnabled(false);
+    const candidates = [
+      ...(container.rootNodes ?? []),
+      ...container.transformNodes,
+      ...container.meshes,
+    ];
+    const seen = new Set<(typeof candidates)[number]>();
+    for (const node of candidates) {
+      if (seen.has(node) || node === host.mesh || node === wrapper) continue;
+      seen.add(node);
+      if (!node.parent) node.parent = wrapper;
+    }
+    host.mesh.visibility = 0;
+    host.mesh.computeWorldMatrix(true);
+    // Imported joint transforms can put the visible rest pose far from raw vertices.
+    // Refresh once for framing; avoid CPU skinning on every preview frame.
+    for (const skeleton of container.skeletons) skeleton.prepare(true);
+    for (const mesh of container.meshes) {
+      if (mesh.skeleton) mesh.refreshBoundingInfo({ applySkeleton: true });
+    }
+    const previous = previewBundles.get(host);
+    // Frame the candidate alone; the prior generation can still be visible.
+    wrapper.computeWorldMatrix(true);
+    const extent = wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh instanceof AbstractMesh && mesh.getTotalVertices() > 0);
+    const center = extent.min.add(extent.max).scale(0.5);
+    if ([center.x, center.y, center.z].every(Number.isFinite)) host.camera.setTarget(center);
+    const size = extent.max.subtract(extent.min).length();
+    if (Number.isFinite(size) && size > 0) {
+      const lower = host.camera.lowerRadiusLimit ?? 0.5;
+      const upper = host.camera.upperRadiusLimit ?? 400;
+      host.camera.radius = Math.min(upper, Math.max(lower, size * 1.2));
+    }
+    container.addAllToScene();
+    wrapper.parent = host.mesh;
+    wrapper.setEnabled(true);
+    previewBundles.set(host, bundle);
+    const observer = host.mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    bundle.cancelWith(() => host.mesh.onDisposeObservable.remove(observer));
+    previous?.dispose();
+    return {
+      dispose: () => bundle.dispose(),
+      animationGroups: container.animationGroups,
+    };
+  } catch (error) {
+    host.camera.setTarget(priorTarget);
+    host.camera.radius = priorRadius;
+    bundle.dispose();
+    throw error;
   }
-  aimPreviewCameraAtMesh(host.camera, host.mesh);
-  const extent = visualHierarchyBoundingVectors(host.mesh);
-  const size = extent.max.subtract(extent.min).length();
-  if (Number.isFinite(size) && size > 0) {
-    const lower = host.camera.lowerRadiusLimit ?? 0.5;
-    const upper = host.camera.upperRadiusLimit ?? 400;
-    host.camera.radius = Math.min(upper, Math.max(lower, size * 1.2));
-  }
-  return {
-    dispose: () => {
-      container.dispose();
-    },
-    animationGroups: container.animationGroups,
-  };
 }

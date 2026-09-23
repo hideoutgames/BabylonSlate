@@ -143,12 +143,13 @@ describe("applyPixelArtSampling", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const owned = cache.getTexture(
+    const ownedLease = cache.acquireTexture(
       "tex",
       engine,
       new Uint8Array([1, 2, 3, 4]),
       { samplingMode: Texture.TRILINEAR_SAMPLINGMODE },
     );
+    const owned = ownedLease.resource;
     const local = new Texture(
       null,
       scene,

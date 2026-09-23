@@ -24,6 +24,7 @@ import {
   parseTypeFaceJson,
 } from "./default-typeface";
 import type { MeshAssetContext } from "./mesh-assets";
+import { VisualBundle } from "./visual-bundle";
 
 const TEXT3D_RESOLUTION = 4;
 
@@ -183,18 +184,20 @@ export function createText3DMesh(
   const parsed = parseText3DProperties(properties);
   const { font } = resolveText3DFontData(parsed, assets);
   const text = parsed.text.length > 0 ? parsed.text : " ";
-  const material = createText3DMaterial(scene, name, parsed.color);
-  const created = createFlatTextMesh(
-    scene,
-    name,
-    text,
-    parsed.size,
-    font,
-    parsed.alignment,
-  );
-  if (!created || !created.getVerticesData(VertexBuffer.PositionKind)) {
-    created?.dispose();
-    return createFallbackPlane(scene, name, parsed, material);
+  const bundle = new VisualBundle();
+  try {
+    const material = bundle.ownMaterial(createText3DMaterial(scene, name, parsed.color));
+    const created = createFlatTextMesh(scene, name, text, parsed.size, font, parsed.alignment);
+    let mesh: Mesh;
+    if (!created || !created.getVerticesData(VertexBuffer.PositionKind)) {
+      created?.dispose();
+      mesh = createFallbackPlane(scene, name, parsed, material);
+    } else mesh = applyText3DVisual(created, material);
+    bundle.ownRenderUser(mesh);
+    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    return mesh;
+  } catch (error) {
+    bundle.dispose();
+    throw error;
   }
-  return applyText3DVisual(created, material);
 }

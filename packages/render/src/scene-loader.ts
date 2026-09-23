@@ -33,7 +33,7 @@ import {
   hideModelPlaceholder,
   isEditorModelPlaceholder,
 } from "./glb-anim";
-import { isGltfModelBytes } from "./model-mesh";
+import { installModelSources } from "./mesh-assets";
 import { syncAuthoredIllumination, isAuthoredLightClassId } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
@@ -61,7 +61,7 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
   applyWorldVisualGroup,
   applyComponentSorting,
@@ -664,6 +664,7 @@ export function createMeshForComponent(
   ) {
     return createText2DMesh(scene, name, component.properties, assets, {
       rich: component.classId === "2DRichTextComponent",
+      bitmapLimits: { retainedBytes: assets?.retainedTextBitmapBytes },
     });
   }
   if (component.classId === "2DTextureComponent") {
@@ -892,42 +893,50 @@ function createActorOriginHierarchy(
     actor.components.map((component) => [component.id, component]),
   );
   const meshes = new Map<string, Mesh>();
-  for (const component of visuals) {
-    const mesh = createMeshForComponent(
-      scene,
-      editorComponentMeshName(actor.id, component.id),
-      actor,
-      component,
-      assets,
-    );
-    applySerializedTransform(
-      mesh,
-      component.transform ?? identitySerializedTransform(),
-    );
-    mesh.isVisible = actor.visible;
-    mesh.isPickable = visualIsPickable(mesh, actor.locked);
-    meshes.set(component.id, mesh);
+  let retainedBitmapBytes = assets?.retainedTextBitmapBytes ?? 0;
+  try {
+    for (const component of visuals) {
+      const mesh = createMeshForComponent(
+        scene,
+        editorComponentMeshName(actor.id, component.id),
+        actor,
+        component,
+        { ...assets, retainedTextBitmapBytes: retainedBitmapBytes },
+      );
+      mesh.parent = root;
+      retainedBitmapBytes += text2DBitmapBytes(mesh);
+      applySerializedTransform(
+        mesh,
+        component.transform ?? identitySerializedTransform(),
+      );
+      mesh.isVisible = actor.visible;
+      mesh.isPickable = visualIsPickable(mesh, actor.locked);
+      meshes.set(component.id, mesh);
+    }
+    for (const component of visuals) {
+      const mesh = meshes.get(component.id);
+      if (!mesh) continue;
+      const parentId = parentVisualMeshId(component, meshes, componentsById);
+      mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
+    }
+    const helperIcon = helperBillboardIconOf(actor, allActors);
+    if (helperIcon && !visuals.some(isBillboardComponent)) {
+      const billboard = createEditorBillboard(
+        scene,
+        editorComponentMeshName(actor.id, EDITOR_HELPER_BILLBOARD_ID),
+        helperIcon,
+      );
+      applyEditorBillboardFromActor(billboard, actor);
+      billboard.isVisible = actor.visible;
+      billboard.isPickable = visualIsPickable(billboard, actor.locked);
+      billboard.parent = root;
+      syncEditorBillboardParentScale(billboard);
+    }
+    return root;
+  } catch (error) {
+    root.dispose();
+    throw error;
   }
-  for (const component of visuals) {
-    const mesh = meshes.get(component.id);
-    if (!mesh) continue;
-    const parentId = parentVisualMeshId(component, meshes, componentsById);
-    mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
-  }
-  const helperIcon = helperBillboardIconOf(actor, allActors);
-  if (helperIcon && !visuals.some(isBillboardComponent)) {
-    const billboard = createEditorBillboard(
-      scene,
-      editorComponentMeshName(actor.id, EDITOR_HELPER_BILLBOARD_ID),
-      helperIcon,
-    );
-    applyEditorBillboardFromActor(billboard, actor);
-    billboard.isVisible = actor.visible;
-    billboard.isPickable = visualIsPickable(billboard, actor.locked);
-    billboard.parent = root;
-    syncEditorBillboardParentScale(billboard);
-  }
-  return root;
 }
 
 /** Build the Babylon mesh for an actor's first renderable component. */
@@ -1220,6 +1229,7 @@ export function applySceneToBabylonScene(
 
   const meshAssets: MeshAssetContext = {
     ...(assets ?? {}),
+    modelSources: installModelSources(assets ?? {}),
     drawMeshCollision:
       assets?.drawMeshCollision ?? sceneData.settings.physicsWorld !== "2d",
   };
@@ -1230,6 +1240,7 @@ export function applySceneToBabylonScene(
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
     modelBytes: meshAssets.modelBytes,
+    modelSources: meshAssets.modelSources,
     modelPayloads: meshAssets.modelPayloads,
     modelClipAnimationGuids: meshAssets.modelClipAnimationGuids,
     retargetAnimationLoads: meshAssets.retargetAnimationLoads,
@@ -1246,8 +1257,8 @@ export function applySceneToBabylonScene(
       (component) => component.classId === "MeshComponent",
     )?.properties.assetGuid;
     const bytes =
-      typeof guid === "string" ? assets?.modelBytes?.get(guid) : undefined;
-    if (typeof guid === "string" && bytes && isGltfModelBytes(bytes)) {
+      typeof guid === "string" ? meshAssets.modelSources?.get(guid) : undefined;
+    if (typeof guid === "string" && bytes) {
       const placeholder = editorModelLoadTarget(mesh, actor);
       void beginSlotModelAnimLoad(
         scene,

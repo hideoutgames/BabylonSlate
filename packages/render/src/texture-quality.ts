@@ -1,3 +1,5 @@
+import { acquireTextureVariant, type ResourceLease } from "./resource-cache";
+import type { Texture } from "@babylonjs/core";
 import {
   MaterialPluginBase,
   RegisterMaterialPlugin,
@@ -28,13 +30,41 @@ export function textureLodSamplePattern(
 }
 
 export class QualityTextureBlock extends TextureBlock {
+  private qualityLease?: ResourceLease<Texture>;
+  private qualitySource?: Texture;
+  private qualityAnisotropy?: number;
+  override get texture(): Texture | null {
+    return this.qualityLease?.resource ?? super.texture;
+  }
+  override set texture(texture: Texture | null) {
+    if (super.texture !== texture) {
+      this.qualityLease?.release();
+      this.qualityLease = undefined;
+      this.qualitySource = undefined;
+    }
+    super.texture = texture;
+  }
+  override dispose(): void {
+    this.qualityLease?.release(); this.qualityLease = undefined;
+    super.dispose();
+  }
   override getClassName(): string {
     return "QualityTextureBlock";
   }
   override bind(effect: Effect, material?: NodeMaterial): void {
+    const source = super.texture;
+    if (material && source) {
+      const anisotropy = sceneRenderingSettings(material.getScene()).textureAnisotropy;
+      if (this.qualitySource !== source || this.qualityAnisotropy !== anisotropy) {
+        const next = source.anisotropicFilteringLevel === anisotropy ? null
+          : acquireTextureVariant(source, { anisotropicFilteringLevel: anisotropy });
+        this.qualityLease?.release(); this.qualityLease = next ?? undefined;
+        this.qualitySource = source; this.qualityAnisotropy = anisotropy;
+        // Imported, individually owned wrappers retain their existing behavior.
+        if (!next && source.anisotropicFilteringLevel !== anisotropy) source.anisotropicFilteringLevel = anisotropy;
+      }
+    }
     super.bind(effect);
-    if (material && this.texture)
-      this.texture.anisotropicFilteringLevel = sceneRenderingSettings(material.getScene()).textureAnisotropy;
     effect.setFloat(
       "slateTextureLodBias",
       material?.mode === 0

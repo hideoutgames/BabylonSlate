@@ -235,7 +235,7 @@ describe("struct nodes", () => {
     ).toEqual([]);
   });
 
-  it("compiles Make Transform to position, quaternion rotation, and scale", () => {
+  it.each([undefined, { x: 0, y: 2, z: 3 }])("executes Make Transform with authored or default scale %j", (scale) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -245,7 +245,7 @@ describe("struct nodes", () => {
         node(registry, "make", "struct.makeTransform", {
           "default:location": { x: 1, y: 2, z: 3 },
           "default:rotation": { pitch: 0, yaw: 0, roll: 0 },
-          "default:scale": { x: 1, y: 1, z: 1 },
+          ...(scale ? { "default:scale": scale } : {}),
         }),
         node(registry, "log", "debug.log"),
       ],
@@ -270,5 +270,12 @@ describe("struct nodes", () => {
     expect(compiled.source).toContain("position:");
     expect(compiled.source).toContain("ctx.rotatorToQuat");
     expect(compiled.source).toContain("scale:");
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const begin = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void;
+    const values: unknown[] = [];
+    begin({ rotatorToQuat: () => ({ x: 0, y: 0, z: 0, w: 1 }), formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => values.push(value) });
+    expect(values).toEqual([{ position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: scale ?? { x: 1, y: 1, z: 1 } }]);
   });
 });

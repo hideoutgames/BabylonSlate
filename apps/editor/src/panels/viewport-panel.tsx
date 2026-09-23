@@ -932,6 +932,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        sceneTexturePixels: () => Promise<unknown>;
         sceneVisuals: () => Array<
           MaterialViewportTestSnapshot & {
             actorId: string;
@@ -1127,6 +1128,20 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             timerQuery: !!caps.timerQuery,
           },
         };
+      },
+      sceneTexturePixels: async () => {
+        const sync = engineRef.current?.editor?.sync;
+        if (!sync) return [];
+        const samples = [];
+        for (const actor of sceneRef.current?.actors ?? []) {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          const texture = visual?.material?.getActiveTextures()[0];
+          if (!texture || texture.isCube || !texture.isReady()) continue;
+          const pixels = await texture.readPixels(0, 0, null, true, false, 0, 0, 1, 1);
+          samples.push({ actorId: actor.id, name: texture.name, size: texture.getSize(),
+            pixel: pixels ? Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)) : null });
+        }
+        return samples;
       },
       sceneVisuals: () => {
         const sync = engineRef.current?.editor?.sync;
