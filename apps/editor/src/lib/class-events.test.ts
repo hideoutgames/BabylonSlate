@@ -7,9 +7,10 @@ import {
 } from "./class-members";
 
 describe("nativeEventStubs", () => {
-  it("lists Begin Play, Tick, and On Actor Destroyed", () => {
+  it("lists Actor lifecycle and Scalability events", () => {
     const stubs = nativeEventStubs({ parentClass: "Actor" });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
@@ -18,6 +19,7 @@ describe("nativeEventStubs", () => {
 
   it("defaults to Actor events when no parent class is given", () => {
     expect(nativeEventStubs().map((stub) => stub.eventType)).toEqual([
+      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
@@ -26,7 +28,7 @@ describe("nativeEventStubs", () => {
 
   it("exposes lifecycle events on ActorComponent descendants without Actor collision events", () => {
     const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ActorComponent" : id === "ActorComponent" ? "BObject" : null };
-    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
+    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.scalabilityChanged", "flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
     for (const event of nativeEventStubs(options)) expect(isScriptCatalogNodeAllowed(event.eventType, options)).toBe(true);
     expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
   });
@@ -39,6 +41,7 @@ describe("nativeEventStubs", () => {
     expect(
       nativeEventStubs({ parentClass: "GameInstance" }).map((stub) => stub.eventType),
     ).toEqual([
+      "flow.event.scalabilityChanged",
       "flow.event.init",
       "flow.event.tick",
       "flow.event.end",
@@ -167,6 +170,7 @@ describe("nativeEventStubs", () => {
         (stub) => stub.eventType,
       ),
     ).toEqual([
+      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",

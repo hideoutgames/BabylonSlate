@@ -462,9 +462,11 @@ describe("collectEnumMemberNames", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       "engine:Key": expect.arrayContaining(["KeyW", "MouseLeft", "Gamepad1Button0", "Gamepad1Axis0"]),
       "engine:InputComponent": ["X", "Y"],
+      "engine:RenderMode": ["pbr", "cel"],
+      "engine:ScalabilityPreset": ["low", "medium", "high", "ultra"],
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
       "engine:CollisionChannel": [

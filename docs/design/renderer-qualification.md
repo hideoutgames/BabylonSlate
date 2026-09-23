@@ -133,6 +133,15 @@ record the effective APIs, NVIDIA adapters, 1280×565 viewport and DPR 1.
 Earlier full texture/model authoring and independent packed/loose export routes
 remain applicable to their unchanged code. Exact-head CI and merge remain gates.
 
+The `8f03f99f` Verify run passes static checking and package unit/coverage work,
+then exposes seven editor catalog expectations that predate the added Scalability
+event and built-in types. The focused repair includes Scalability Changed for
+the supported class hosts and asserts render-mode/preset choices and typed
+requested/effective snapshots alongside authored type overrides. Authored entries
+must still occur exactly once. This test-only correction retains the application
+build and Computer Use evidence above; the full unit job remains failed until a
+new exact-head Verify succeeds.
+
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
 delete the blue model duplicate while the box remains selected: the orange model,
