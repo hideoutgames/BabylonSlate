@@ -57,6 +57,7 @@ describe("packed player backend lifetime", () => {
     player = {
       ticks: () => 0,
       rendering: () => null,
+      shadowDiagnostics: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],
       bakedSession: () => null,

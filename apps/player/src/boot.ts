@@ -1,6 +1,6 @@
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
-import { lightsDebugText } from "@babylonslate/render";
+import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { snapshotFloatCount, type ControlMessage } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
@@ -88,6 +88,7 @@ export type PlayerDiagnostic = {
 export type PlayerBootHandle = {
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
+  shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
   bakedSession: () => ReturnType<
@@ -733,6 +734,7 @@ function initializePlayer(
     return {
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
+      shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
       bakedSession: () =>

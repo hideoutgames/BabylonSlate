@@ -1,0 +1,753 @@
+{
+  "buildSha": "843565fea02bef5a9dd65e5328d7ede6ce1cde16",
+  "host": "Playwright synthetic FrameGraph proof",
+  "os": "win32",
+  "qualification": "software backend functional pixels; not A16 performance or original asset proof",
+  "synthetic": true,
+  "backend": "webgl2",
+  "mode": "pbr",
+  "configuration": "low",
+  "webGLVersion": 2,
+  "width": 384,
+  "height": 384,
+  "authored": {
+    "profile": "low",
+    "enabled": true,
+    "fadeFraction": 0.1,
+    "filter": "pcf",
+    "softness": 0.05,
+    "autoBias": true,
+    "depthBias": 0.0001,
+    "normalBias": 0.005,
+    "localLightMode": "auto",
+    "distance": 80,
+    "mapSize": 1024,
+    "cascades": 1,
+    "filterQuality": "low",
+    "localMapSize": 512,
+    "maxLocalLights": 1,
+    "preset": "low"
+  },
+  "boxes": [
+    {
+      "name": "head",
+      "center": [
+        0,
+        3.55,
+        0
+      ],
+      "size": [
+        1.6,
+        1.1,
+        1.25
+      ]
+    },
+    {
+      "name": "torso",
+      "center": [
+        0,
+        2.25,
+        0
+      ],
+      "size": [
+        1.15,
+        1.5,
+        0.7
+      ]
+    },
+    {
+      "name": "left-arm",
+      "center": [
+        -0.8,
+        2.2,
+        0
+      ],
+      "size": [
+        0.45,
+        1.6,
+        0.7
+      ]
+    },
+    {
+      "name": "right-arm",
+      "center": [
+        0.8,
+        2.2,
+        0
+      ],
+      "size": [
+        0.45,
+        1.6,
+        0.7
+      ]
+    },
+    {
+      "name": "left-leg",
+      "center": [
+        -0.325,
+        0.75,
+        0
+      ],
+      "size": [
+        0.5,
+        1.5,
+        0.65
+      ]
+    },
+    {
+      "name": "right-leg",
+      "center": [
+        0.325,
+        0.75,
+        0
+      ],
+      "size": [
+        0.5,
+        1.5,
+        0.65
+      ]
+    },
+    {
+      "name": "thin-slab",
+      "center": [
+        -1.45,
+        0.5,
+        -0.1
+      ],
+      "size": [
+        0.08,
+        1,
+        0.7
+      ]
+    }
+  ],
+  "camera": {
+    "position": [
+      -5,
+      4.2,
+      -7
+    ],
+    "minZ": 0.1,
+    "maxZ": 100,
+    "fov": 0.62
+  },
+  "lightDirection": [
+    0.6804138174397717,
+    -0.6804138174397717,
+    0.2721655269759087
+  ],
+  "capture": {
+    "name": "automatic",
+    "effective": {
+      "version": 1,
+      "provenance": {
+        "buildSha": null,
+        "host": "synthetic FrameGraph proof",
+        "os": null,
+        "sceneUnits": "synthetic world units",
+        "renderId": 15,
+        "capturedAfterViewDraw": "caller-responsibility"
+      },
+      "backend": {
+        "requested": "webgl2",
+        "actual": "webgl2",
+        "fallbackReason": null,
+        "adapter": {
+          "api": "webgl2",
+          "vendor": "Google Inc. (Microsoft)",
+          "renderer": "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "ndcHalfZRange": false,
+        "reverseDepthBuffer": false
+      },
+      "surfaceMode": "pbr",
+      "pipeline": {
+        "requested": {
+          "renderPath": "forward",
+          "gpuBackend": "webgl2"
+        },
+        "effective": {
+          "renderPath": "forward",
+          "gpuBackend": "webgl2"
+        },
+        "limits": []
+      },
+      "viewport": {
+        "cssWidth": 384,
+        "cssHeight": 384,
+        "devicePixelRatio": 1,
+        "renderWidth": 384,
+        "renderHeight": 384,
+        "scalingLevel": 1,
+        "cameraViewport": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "camera": {
+        "id": "fixed close view",
+        "name": "fixed close view",
+        "mode": "perspective",
+        "position": [
+          -5,
+          4.199999809265137,
+          -7.000000476837158
+        ],
+        "near": 0.1,
+        "far": 100,
+        "fov": 0.62,
+        "ortho": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "worldMatrix": [
+          0.8137335181236267,
+          2.9980826710129804e-09,
+          -0.5812382102012634,
+          0,
+          0.15013180673122406,
+          0.9660656452178955,
+          0.21018454432487488,
+          0,
+          0.5615142583847046,
+          -0.25829651951789856,
+          0.7861199975013733,
+          0,
+          -5,
+          4.199999809265137,
+          -7.000000476837158,
+          1
+        ],
+        "view": [
+          0.8137334585189819,
+          0.15013180673122406,
+          0.5615142583847046,
+          0,
+          0,
+          0.9660657048225403,
+          -0.25829654932022095,
+          0,
+          -0.5812381505966187,
+          0.21018454432487488,
+          0.7861199975013733,
+          0,
+          1.8509500421259872e-07,
+          -1.8355249166488647,
+          9.395256996154785,
+          1
+        ],
+        "projection": [
+          3.12180495262146,
+          0,
+          0,
+          0,
+          0,
+          3.12180495262146,
+          0,
+          0,
+          0,
+          0,
+          1.0020020008087158,
+          1,
+          0,
+          0,
+          -0.20020020008087158,
+          0
+        ],
+        "viewProjection": [
+          2.5403170585632324,
+          0.4686822295188904,
+          0.5626384019851685,
+          0.5615142583847046,
+          0,
+          3.015868663787842,
+          -0.25881364941596985,
+          -0.25829654932022095,
+          -1.8145121335983276,
+          0.6561551690101624,
+          0.7876937985420227,
+          0.7861199975013733,
+          5.778305194326094e-07,
+          -5.7301506996154785,
+          9.213866233825684,
+          9.395256996154785
+        ]
+      },
+      "requestedShadows": {
+        "profile": "low",
+        "enabled": true,
+        "fadeFraction": 0.1,
+        "filter": "pcf",
+        "softness": 0.05,
+        "autoBias": true,
+        "depthBias": 0.0001,
+        "normalBias": 0.005,
+        "localLightMode": "auto",
+        "distance": 80,
+        "mapSize": 1024,
+        "cascades": 1,
+        "filterQuality": "low",
+        "localMapSize": 512,
+        "maxLocalLights": 1,
+        "preset": "low"
+      },
+      "lights": [
+        {
+          "id": "oblique key",
+          "name": "oblique key",
+          "type": "DirectionalLight",
+          "requested": true,
+          "status": {
+            "name": "oblique key",
+            "illumination": "active",
+            "status": "active",
+            "reason": null,
+            "allocationError": null,
+            "refreshMode": "continuous",
+            "effectiveFilter": "pcf",
+            "passes": 1,
+            "mapSize": 1024
+          },
+          "worldPosition": [
+            -0.5306686305052324,
+            0.7580980435789034,
+            -0.3790490217894517
+          ],
+          "worldDirection": [
+            0.5306686305052324,
+            -0.7580980435789034,
+            0.3790490217894517
+          ],
+          "parentWorldMatrix": null,
+          "requestedMapSize": 1024,
+          "allocationDownsized": false,
+          "generator": {
+            "type": "ShadowGenerator",
+            "cameraId": "fixed close view",
+            "map": {
+              "id": 22,
+              "width": 1024,
+              "height": 1024,
+              "cube": false,
+              "anisotropy": 1
+            },
+            "cascades": 1,
+            "filter": "pcf",
+            "filteringQuality": 2,
+            "autoBias": true,
+            "receiverCorrection": null,
+            "currentBias": {
+              "depth": 0.0001,
+              "normalWorld": 0.005
+            },
+            "lastDrawBias": [
+              {
+                "layer": 0,
+                "cameraId": "fixed close view",
+                "renderId": 14,
+                "depthBias": 0.0001,
+                "normalBias": 0.005,
+                "worldTexelSize": 0.1562499976716936,
+                "depthScale": 0.5,
+                "mode": "directional-auto"
+              }
+            ],
+            "depthTexture": true,
+            "cubeDistanceDepth": false,
+            "nativeDepthMin": 1,
+            "nativeDepthMax": 1,
+            "projections": [
+              {
+                "layer": 0,
+                "scope": "layer",
+                "matrix": [
+                  0.012500000186264515,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.012500000186264515,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.012500000186264515,
+                  0,
+                  -0.03515625,
+                  0.04296875,
+                  0.0936337262392044,
+                  1
+                ],
+                "view": [
+                  0.5812382102012634,
+                  0.6168897747993469,
+                  0.5306686162948608,
+                  0,
+                  0,
+                  0.6521406173706055,
+                  -0.7580980658531189,
+                  0,
+                  -0.8137334585189819,
+                  0.4406355321407318,
+                  0.37904903292655945,
+                  0,
+                  5.551115123125783e-17,
+                  -5.551115123125783e-17,
+                  1,
+                  1
+                ],
+                "orthographicExtents": {
+                  "min": [
+                    -77.18749884981663,
+                    -83.43749875668438,
+                    -87.49069679542337
+                  ],
+                  "max": [
+                    82.8124987659976,
+                    76.56249885912986,
+                    72.50930082039086
+                  ],
+                  "width": 159.99999761581424,
+                  "height": 159.99999761581424,
+                  "depth": 159.99999761581424
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "fixed fill",
+          "name": "fixed fill",
+          "type": "HemisphericLight",
+          "requested": false,
+          "status": {
+            "name": "fixed fill",
+            "illumination": "active",
+            "status": "unsupported",
+            "reason": null,
+            "allocationError": null,
+            "refreshMode": null,
+            "effectiveFilter": null,
+            "passes": 0,
+            "mapSize": 0
+          },
+          "worldPosition": null,
+          "worldDirection": null,
+          "parentWorldMatrix": null,
+          "requestedMapSize": 512,
+          "allocationDownsized": null,
+          "generator": null
+        }
+      ],
+      "models": [
+        {
+          "id": "head",
+          "name": "head",
+          "worldBounds": {
+            "min": [
+              -0.8,
+              2.9999999523162844,
+              -0.625
+            ],
+            "max": [
+              0.8,
+              4.099999952316284,
+              0.625
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            3.549999952316284,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "torso",
+          "name": "torso",
+          "worldBounds": {
+            "min": [
+              -0.575,
+              1.5,
+              -0.35
+            ],
+            "max": [
+              0.575,
+              3,
+              0.35
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            2.25,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "left-arm",
+          "name": "left-arm",
+          "worldBounds": {
+            "min": [
+              -1.025000011920929,
+              1.4000000476837158,
+              -0.35
+            ],
+            "max": [
+              -0.575000011920929,
+              3.0000000476837156,
+              0.35
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            -0.800000011920929,
+            2.200000047683716,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "right-arm",
+          "name": "right-arm",
+          "worldBounds": {
+            "min": [
+              0.575000011920929,
+              1.4000000476837158,
+              -0.35
+            ],
+            "max": [
+              1.025000011920929,
+              3.0000000476837156,
+              0.35
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0.800000011920929,
+            2.200000047683716,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "left-leg",
+          "name": "left-leg",
+          "worldBounds": {
+            "min": [
+              -0.574999988079071,
+              0,
+              -0.325
+            ],
+            "max": [
+              -0.07499998807907104,
+              1.5,
+              0.325
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            -0.32499998807907104,
+            0.75,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "right-leg",
+          "name": "right-leg",
+          "worldBounds": {
+            "min": [
+              0.07499998807907104,
+              0,
+              -0.325
+            ],
+            "max": [
+              0.574999988079071,
+              1.5,
+              0.325
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0.32499998807907104,
+            0.75,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        },
+        {
+          "id": "ground",
+          "name": "ground",
+          "worldBounds": {
+            "min": [
+              -6,
+              0,
+              -6
+            ],
+            "max": [
+              6,
+              0,
+              6
+            ]
+          },
+          "worldMatrix": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "receiveShadows": true
+        }
+      ],
+      "truncated": {
+        "lights": 0,
+        "meshes": 0
+      }
+    },
+    "assertions": true,
+    "regions": {
+      "head": {
+        "lit": 295,
+        "falseDark": 276,
+        "contact": 0,
+        "retainedContact": 0,
+        "penumbra": 13
+      },
+      "torso": {
+        "lit": 64,
+        "falseDark": 56,
+        "contact": 32,
+        "retainedContact": 32,
+        "penumbra": 25
+      },
+      "left-arm": {
+        "lit": 262,
+        "falseDark": 232,
+        "contact": 1,
+        "retainedContact": 1,
+        "penumbra": 32
+      },
+      "right-arm": {
+        "lit": 59,
+        "falseDark": 57,
+        "contact": 33,
+        "retainedContact": 33,
+        "penumbra": 29
+      },
+      "left-leg": {
+        "lit": 128,
+        "falseDark": 124,
+        "contact": 27,
+        "retainedContact": 27,
+        "penumbra": 73
+      },
+      "right-leg": {
+        "lit": 96,
+        "falseDark": 91,
+        "contact": 2,
+        "retainedContact": 2,
+        "penumbra": 56
+      },
+      "ground": {
+        "lit": 1054,
+        "falseDark": 871,
+        "contact": 12,
+        "retainedContact": 12,
+        "penumbra": 59
+      }
+    }
+  },
+  "imageSha256": "244617928abf792eeea5bd820c3242a4eae75d15407172c3bee388ae78824ed2"
+}

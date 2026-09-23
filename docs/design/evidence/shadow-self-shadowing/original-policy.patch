@@ -1,0 +1,141 @@
+diff --git a/packages/render/src/shadow-bias.ts b/packages/render/src/shadow-bias.ts
+index b9533aac..b2eb45e7 100644
+--- a/packages/render/src/shadow-bias.ts
++++ b/packages/render/src/shadow-bias.ts
+@@ -94,3 +94,21 @@ export function resolveDirectionalShadowBias(
+   );
+   return result;
+ }
++
++// ORIGINAL-POLICY EXPERIMENT: legacy CSM helper follows verbatim.
++/** A quarter of the filter footprint, converted from world texels to depth. */
++export function calibratedShadowBias(
++  mapSize: number,
++  extent: number,
++  depth: number,
++  quality: "low" | "medium" | "high",
++  minimum: number,
++): number {
++  if (
++    !(mapSize > 0 && extent > 0 && depth > 0) ||
++    !Number.isFinite(extent / depth)
++  )
++    return minimum;
++  const kernel = quality === "high" ? 5 : quality === "medium" ? 3 : 1;
++  return Math.max(minimum, (0.25 * kernel * extent) / (mapSize * depth));
++}
+diff --git a/packages/render/src/shadow-controller.ts b/packages/render/src/shadow-controller.ts
+index 5b0a140f..12d13718 100644
+--- a/packages/render/src/shadow-controller.ts
++++ b/packages/render/src/shadow-controller.ts
+@@ -36,7 +36,7 @@ import {
+ import { ShadowSpatialIndex } from "./shadow-spatial-index";
+ import "./shadow-shader";
+ import { partitionShadowGeometry } from "./shadow-geometry-partitions";
+-import { resolveDirectionalShadowBias } from "./shadow-bias";
++import { calibratedShadowBias } from "./shadow-bias";
+ import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
+ import { readEngineDrawCalls } from "./draw-calls";
+ import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
+@@ -705,7 +705,7 @@ export class SceneShadowController {
+           generator.prepareDefines = (defines, lightIndex) => {
+             prepare(defines, lightIndex);
+             defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
+-              directionalLight && entry.settings!.autoBias && generator.usePercentageCloserFiltering;
++              false; // Original policy had no receiver-plane correction.
+             if (generator instanceof CascadedShadowGenerator)
+               defines[`SLATE_SHADOW_FADE${lightIndex}`] = entry.settings!.fadeFraction;
+             defines.rebuild();
+@@ -734,9 +734,36 @@ export class SceneShadowController {
+               -1,
+               true,
+             );
+-          // Registered after Babylon 9.20's native observer: single-map view /
+-          // projection and the CSM layer are current, caster uniforms are not
+-          // bound yet. Never derive from the previous frame in applySettings.
++          if (generator instanceof CascadedShadowGenerator)
++            map?.onBeforeRenderObservable.add((layer) => {
++              const settings = entry.settings!;
++              if (!settings.autoBias) return;
++              const min = generator.getCascadeMinExtents(layer);
++              const max = generator.getCascadeMaxExtents(layer);
++              if (min && max) {
++                const extent = Math.max(max.x - min.x, max.y - min.y);
++                generator.bias = calibratedShadowBias(
++                  mapSize,
++                  extent,
++                  max.z - min.z,
++                  settings.filterQuality,
++                  settings.depthBias,
++                );
++                const kernelRadius =
++                  settings.filterQuality === "high"
++                    ? 2.5
++                    : settings.filterQuality === "medium"
++                      ? 1.5
++                      : 0.5;
++                generator.normalBias = Math.max(
++                  settings.normalBias,
++                  (kernelRadius * extent) / mapSize,
++                );
++              }
++            });
++          // ORIGINAL-POLICY EXPERIMENT: diagnostics only. The exact old CSM
++          // observer above owns adaptation; ordinary directional maps keep
++          // authored values from applySettings, exactly as in 93638dde.
+           let preparedBias: EffectiveShadowBias | null = null;
+           let clearedForDraw = false;
+           map?.onBeforeRenderObservable.add((layer) => {
+@@ -748,24 +775,19 @@ export class SceneShadowController {
+               : generator.projectionMatrix;
+             const size = map.getSize();
+             const matrix = projection?.m;
+-            const effective = resolveDirectionalShadowBias({
+-              width: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0,
+-              height: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0,
+-              depth: matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0,
+-              mapWidth: size.width,
+-              mapHeight: size.height,
+-              filter: generator.usePercentageCloserFiltering ? "pcf"
+-                : generator.useContactHardeningShadow ? "pcss"
+-                  : generator.usePoissonSampling ? "poisson" : "none",
+-              filterQuality: generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
+-                : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low",
+-              poissonRadiusTexels: generator.blurScale,
+-              depthClamp: generator instanceof CascadedShadowGenerator && generator.depthClamp,
+-              authoredDepthBias: settings.depthBias,
+-              authoredNormalBias: settings.normalBias,
+-            });
+-            generator.bias = effective.bias;
+-            generator.normalBias = effective.normalBias;
++            const width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
++            const height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
++            const texel = Math.max(width / size.width, height / size.height);
++            const hardwareDepth = generator.usePercentageCloserFiltering || generator.useContactHardeningShadow;
++            const effective = {
++              bias: generator.bias,
++              normalBias: generator.normalBias,
++              worldTexelSize: Number.isFinite(texel) ? texel : 0,
++              depthScale: hardwareDepth
++                ? generator instanceof CascadedShadowGenerator && generator.depthClamp && !generator.useContactHardeningShadow
++                  ? 1.5 : 0.5
++                : 1,
++            };
+             const record = preparedBias ??= {
+               layer, cameraId: null, renderId: -1, depthBias: 0, normalBias: 0, worldTexelSize: 0, depthScale: 0,
+               mode: "manual",
+diff --git a/packages/render/src/shadow-diagnostics.ts b/packages/render/src/shadow-diagnostics.ts
+index 0c127825..02777849 100644
+--- a/packages/render/src/shadow-diagnostics.ts
++++ b/packages/render/src/shadow-diagnostics.ts
+@@ -233,9 +233,7 @@ export function captureShadowDiagnostics(
+               filter: filterName(generator),
+               filteringQuality: generator.filteringQuality,
+               autoBias: state.shadows.autoBias,
+-              receiverCorrection: state.shadows.autoBias && light instanceof DirectionalLight && generator.usePercentageCloserFiltering
+-                ? { method: "pcf-receiver-plane", maximumNormalizedDepth: 0.05, extraTextureFetches: 0 }
+-                : null,
++              receiverCorrection: null,
+               // For CSM these scalars may be restored after drawing; never label
+               // them as the value that was used by every cascade.
+               currentBias: {

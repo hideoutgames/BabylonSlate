@@ -17,7 +17,7 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
-import { sceneRenderingSettings } from "./render-settings";
+import { applyMaterialTextureAnisotropy, sceneRenderingSettings } from "./render-settings";
 
 /** Implicit material samples may bias mip choice; explicit LOD and shadow samples remain authored. */
 export function textureLodSamplePattern(
@@ -61,7 +61,7 @@ export class QualityTextureBlock extends TextureBlock {
         this.qualityLease?.release(); this.qualityLease = next ?? undefined;
         this.qualitySource = source; this.qualityAnisotropy = anisotropy;
         // Imported, individually owned wrappers retain their existing behavior.
-        if (!next && source.anisotropicFilteringLevel !== anisotropy) source.anisotropicFilteringLevel = anisotropy;
+        if (!next && source.anisotropicFilteringLevel !== anisotropy) applyMaterialTextureAnisotropy(source, anisotropy);
       }
     }
     super.bind(effect);
