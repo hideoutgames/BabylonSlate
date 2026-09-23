@@ -39,7 +39,7 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
   const camera = state.camera!.position as V;
   const matrix = state.camera!.viewProjection as V;
   const texel = sun.generator!.lastDrawBias[0]!.worldTexelSize;
-  const points = new Map<string, { x: number; y: number; region: string; expected: "lit" | "contact" | "edge" }>();
+  const points = new Map<string, { x: number; y: number; region: string; worldPosition: number[]; expected: "lit" | "contact" | "edge" }>();
   for (const tri of triangles) {
     const incidence = dot(tri.normal, toLight);
     if (incidence <= 0.02 || dot(tri.normal, sub(camera, tri.a)) <= 0) continue;
@@ -60,13 +60,13 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
       let blocked = 0;
       for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1])
         if (hit(add(add(point, tangent, radius * dx), bitangent, radius * dy), toLight)) blocked++;
-      points.set(`${x}:${y}`, { x, y, region: tri.name, expected: blocked === 0 ? "lit" : blocked === 9 ? "contact" : "edge" });
+      points.set(`${x}:${y}`, { x, y, region: tri.name, worldPosition: point, expected: blocked === 0 ? "lit" : blocked === 9 ? "contact" : "edge" });
     }
   }
   return [...points.values()];
 }
 
-export function mannequinShadowMetrics(points: ReturnType<typeof mannequinShadowSamples>, authored: number[], modelOnly: number[], directOnly: number[]) {
+export function mannequinShadowMetrics(points: ReturnType<typeof mannequinShadowSamples>, authored: number[], modelOnly: number[], directOnly: number[], visible: boolean[] = points.map(() => true)) {
   const regions: Record<string, { samples: number; changed: number; lit: number; falseDark: number; contacts: number; retained: number; edges: number; changedEdges: number }> = {};
   points.forEach((point, index) => {
     const region = regions[point.region] ??= { samples: 0, changed: 0, lit: 0, falseDark: 0, contacts: 0, retained: 0, edges: 0, changedEdges: 0 };
@@ -77,7 +77,7 @@ export function mannequinShadowMetrics(points: ReturnType<typeof mannequinShadow
     region.samples++;
     if (difference) region.changed++;
     if (point.expected === "edge") { region.edges++; if (difference) region.changedEdges++; }
-    if (reference < 25) return; // Authored black texture pixels contain no useful shadow signal.
+    if (!visible[index] || reference < 25) return; // Foreground helpers and authored black texture pixels contain no surface shadow signal.
     if (point.expected === "lit") { region.lit++; if (actual < reference * 0.85) region.falseDark++; }
     if (point.expected === "contact") { region.contacts++; if (actual < reference * 0.7) region.retained++; }
   });

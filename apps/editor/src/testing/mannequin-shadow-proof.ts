@@ -1,29 +1,24 @@
-import { Color3, Matrix, PBRMaterial, Vector3, VertexBuffer, type Material, type Scene } from "@babylonjs/core";
+import { Matrix, Ray, Vector3, VertexBuffer, type AbstractMesh, type Scene } from "@babylonjs/core";
 import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import type { ShadowParticipation } from "../../../../packages/render/src/shadow-mesh-policy";
 
 const names = new Set(["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"]);
-const originals = new WeakMap<Scene, Map<string, Material | null>>();
+const originals = new WeakMap<Scene, Map<AbstractMesh, ShadowParticipation | undefined>>();
 
 /** Explicit test-build probe of the six real starter meshes, never a frame hook. */
-export async function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly = false) {
+export function mannequinShadowProbe(scene: Scene, modelOnly = false) {
   const meshes = scene.meshes.filter(mesh => names.has(mesh.name));
   if (meshes.length !== 6) throw new Error(`Expected six mannequin parts, got ${meshes.length}`);
   let saved = originals.get(scene);
-  if (!saved) { saved = new Map(meshes.map(mesh => [mesh.id, mesh.material])); originals.set(scene, saved); }
-  let material = scene.getMaterialByName("mannequin-shadow-neutral") as PBRMaterial | null;
-  if (neutral && !material) {
-    material = new PBRMaterial("mannequin-shadow-neutral", scene);
-    material.albedoColor = new Color3(0.6, 0.6, 0.6);
-    material.metallic = 0;
-    material.roughness = 1;
-  }
+  if (!saved) { saved = new Map(); originals.set(scene, saved); }
+  const controller = sceneShadowController(scene);
   for (const mesh of scene.meshes) {
-    sceneShadowController(scene).setParticipation(mesh, { castShadows: names.has(mesh.name) || !modelOnly });
+    if (!saved.has(mesh)) saved.set(mesh, mesh.metadata?.slateShadowParticipation);
+    const original = saved.get(mesh);
+    controller.setParticipation(mesh, modelOnly ? { ...original, castShadows: names.has(mesh.name) } : original ?? {});
+    if (!modelOnly && !original && mesh.metadata) delete mesh.metadata.slateShadowParticipation;
   }
-  const result = meshes.map(mesh => {
-    const source = mesh.material;
-    const effect = mesh.subMeshes[0]?.effect;
-    mesh.material = neutral ? material : saved!.get(mesh.id)!;
+  return meshes.map(mesh => {
     const world = mesh.computeWorldMatrix(true);
     const normalMatrix = Matrix.Transpose(Matrix.Invert(world));
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
@@ -33,9 +28,21 @@ export async function mannequinShadowProbe(scene: Scene, neutral: boolean, model
     for (let i = 0; i < positions.length; i += 3) vertices.push({
       position: Vector3.TransformCoordinates(Vector3.FromArray(positions, i), world).asArray(),
       normal: Vector3.TransformNormal(Vector3.FromArray(normals, i), normalMatrix).normalize().asArray(),
+      localPosition: Array.from(positions.slice(i, i + 3)),
+      localNormal: Array.from(normals.slice(i, i + 3)),
     });
-    return { name: mesh.name, vertices, indices: Array.from(mesh.getIndices()!), material: source?.getClassName(), defines: effect?.defines, fragment: effect?.fragmentSourceCode };
+    return { name: mesh.name, vertices, indices: Array.from(mesh.getIndices()!), material: mesh.material?.getClassName() };
   });
-  if (neutral) await Promise.all(meshes.map(mesh => material!.forceCompilationAsync(mesh)));
-  return result;
+}
+
+/** Exclude foreground editor geometry from contact tests, not shadow boundaries. */
+export function mannequinShadowVisibility(scene: Scene, points: { worldPosition: number[]; region: string }[]) {
+  if (points.length > 8192) throw new Error("Mannequin visibility probe limit exceeded");
+  const camera = scene.activeCamera!.globalPosition;
+  return points.map(point => {
+    const offset = Vector3.FromArray(point.worldPosition).subtract(camera);
+    const ray = new Ray(camera, offset.normalizeToNew(), offset.length() + 0.001);
+    const picked = scene.pickWithRay(ray, mesh => mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0 && mesh.getTotalVertices() > 0);
+    return picked?.pickedMesh?.name === point.region;
+  });
 }

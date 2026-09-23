@@ -11,7 +11,8 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
 
 type Viewport = {
   shadowDiagnostics(): ShadowDiagnostics | null;
-  mannequinShadowProbe(neutral: boolean, modelOnly?: boolean): Promise<MannequinGeometry>;
+  mannequinShadowProbe(modelOnly?: boolean): Promise<MannequinGeometry>;
+  mannequinShadowVisibility(points: { worldPosition: number[]; region: string }[]): Promise<boolean[]>;
   setRenderSettings(settings: RenderShadingSettings): void;
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
 };
@@ -65,8 +66,9 @@ test("Basic 3D mannequin keeps lit faces and contacts with collider helpers visi
   const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
   const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   const points = mannequinShadowSamples(geometry, state, size.width, size.height);
+  const visible = await page.evaluate(points => window.__babylonslateViewportTest.mannequinShadowVisibility(points), points);
   const authored = await capture(canvas, points);
-  await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false, true));
+  await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(true));
   await frames();
   const modelOnly = await capture(canvas, points);
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), { ...settings, shadows: { ...settings.shadows!, enabled: false } });
@@ -74,7 +76,7 @@ test("Basic 3D mannequin keeps lit faces and contacts with collider helpers visi
   const directOnly = await capture(canvas, points);
   for (const [name, value] of Object.entries({ authored, modelOnly, directOnly }))
     await testInfo.attach(name, { body: Buffer.from(value.png, "base64"), contentType: "image/png" });
-  const regions = mannequinShadowMetrics(points, authored.pixels, modelOnly.pixels, directOnly.pixels);
+  const regions = mannequinShadowMetrics(points, authored.pixels, modelOnly.pixels, directOnly.pixels, visible);
   await testInfo.attach("effective-settings", { body: JSON.stringify({
     buildSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     host: "fresh Basic 3D editor", os: process.platform, initial, state, regions,
