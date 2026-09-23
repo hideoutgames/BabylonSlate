@@ -359,6 +359,22 @@ it("retains binding observers on settled frames and refreshes them for camera an
   graph.dispose();
 });
 
+it("prepares replacement shadow maps without retiring the live object pass", async () => {
+  const { scene, camera, light, controller, graph, render } = await fixture("spot");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const renderer = scene.objectRenderers.find((entry) => entry.name === "Forward objects")!;
+  const pass = renderer.renderPassId;
+  for (const enabled of [false, true, false, true]) {
+    controller.register(light, enabled);
+    controller.sync();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(scene.objectRenderers).toContain(renderer);
+    expect(renderer.renderPassId).toBe(pass);
+    expect(render()).toBe(enabled ? 1 : 0);
+  }
+});
+
 it("settles the material shadow layout before readiness instead of invalidating the first presented frame", async () => {
   const { scene, camera, mesh, graph } = await fixture("spot");
   const dirty = vi.spyOn(mesh.material!, "markDirty");

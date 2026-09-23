@@ -689,7 +689,7 @@ export class ForwardSceneFrameGraph {
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
-        this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
+        this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))

@@ -1,5 +1,12 @@
 # Render sync and resource cache (P4)
 
+Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings
+and receiver readiness in place. The ordered shadow pass renders these RTTs
+unmanaged before the object pass; their native samplers need no graph texture
+imports. Replacing a map preserves the object render-pass ID, effects and outline
+tasks, avoiding unrelated shader preparation and resource churn. Revocation and
+first-map readiness guards still apply before either drawing or sampling a map.
+
 Editor gizmo utility layers belong to their viewport, independently of graph
 rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
 the final world output on graph and classic paths, before the host copies the

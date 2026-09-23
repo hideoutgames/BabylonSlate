@@ -23,6 +23,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(handoffs).toHaveLength(8);
     for (const step of handoffs) {
+      expect(step.graphBuilds).toBe(0);
       expect(step.active).toEqual([step.index % 2 === 0 ? "incoming" : "key"]);
       expect(step.allocations).toBe(1);
       expect(step.resources.reservedBytes).toBeLessThanOrEqual(step.resources.limit);
