@@ -17,6 +17,7 @@ import {
   createBabylonParticleSystem,
   gpuParticlesSupported,
   particleCapacityFor,
+  particleLifetimeBound,
 } from "./particle-system-factory";
 
 describe("particle-system-factory", () => {
@@ -52,7 +53,7 @@ describe("particle-system-factory", () => {
   });
 
   it("does not claim GPU support when the caller opts out", () => {
-    expect(gpuParticlesSupported(false)).toBe(false);
+    expect(gpuParticlesSupported(host().scene.getEngine(), false)).toBe(false);
   });
 
   it("applies box spawn, standard blend, local space, and drag onto a live system", () => {
@@ -218,5 +219,31 @@ describe("particle-system-factory", () => {
     expect(oldEffect).not.toHaveBeenCalled();
     live.dispose(false);
     library.dispose();
+  });
+
+  it("bounds absolute lifetime gradients even when base lifetime is less than one", () => {
+    const { scene } = host();
+    const system = createBabylonParticleSystem("gradient", scene, 16, false);
+    system.minLifeTime = 0.1;
+    system.maxLifeTime = 0.2;
+    system.addLifeTimeGradient(0, 1.5, 2);
+    system.addLifeTimeGradient(1, 0.5);
+    expect(particleLifetimeBound(system)).toBe(2);
+    system.dispose(false);
+  });
+
+  it("removes the custom readiness check when effect preparation fails", async () => {
+    const { scene, texture } = host();
+    const system = createBabylonParticleSystem("failed", scene, 16, false);
+    const material = new NodeMaterial("failed material", scene);
+    material.mode = NodeMaterialModes.Particle;
+    material.createEffectForParticles = () => { throw new Error("controlled effect failure"); };
+    const add = vi.spyOn(scene, "addIsReadyCheck");
+    const remove = vi.spyOn(scene, "removeIsReadyCheck");
+    await expect(applyParticleLook({ system, emitter: createDefaultParticleEmitterPayload(),
+      systemPayload: createDefaultParticleSystemPayload(), gpu: false, texture, material })).rejects.toThrow("controlled effect failure");
+    expect(remove).toHaveBeenCalledWith(add.mock.calls[0]![0]);
+    system.dispose(false);
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });

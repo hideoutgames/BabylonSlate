@@ -1,11 +1,12 @@
 import {
   Mesh,
+  SphericalPolynomial,
   PBRMaterial,
   Texture,
   UniversalCamera,
   Vector3,
 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
@@ -169,8 +170,14 @@ describe("editor skybox mesh", () => {
     expect(scene.getMeshByName(editorMeshName("actor-skybox"))).toBeNull();
   });
 
-  it("rebuilds when a face guid is assigned", () => {
-    const { scene } = createHandle();
+  it("rebuilds when a face guid is assigned", async () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "createCubeTexture").mockImplementation((url, _scene, _files, noMipmap) => {
+      const internal = engine.createTexture(url, noMipmap ?? false, false, null);
+      internal.isCube = true;
+      internal._sphericalPolynomial = new SphericalPolynomial();
+      return internal;
+    });
     const sync = new EditorSceneSync(scene);
     const actor = createActor("sky", "Skybox", {
       components: [createSkyboxComponent("sky-comp")],
@@ -188,7 +195,9 @@ describe("editor skybox mesh", () => {
       nz: null,
     };
     sync.apply(sceneData);
-    const after = scene.getMeshByName(editorMeshName("sky"));
+    expect(sync.meshForActor("sky")).toBe(before);
+    await sync.whenEditorModelsReady();
+    const after = sync.meshForActor("sky");
     expect(after).not.toBeNull();
     expect(after).not.toBe(before);
     sync.dispose();

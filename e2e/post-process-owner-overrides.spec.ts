@@ -10,7 +10,17 @@ import { DISABLED_MASK_GUID, POST_PROCESS_SCENE_GUID, postProcessFixture } from 
 import { saveAllIfEnabled } from "./save-all";
 
 const errorsByPage = new WeakMap<Page, string[]>();
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const events: unknown[] = [];
+    (window as unknown as { textureUrlLifecycle: unknown[] }).textureUrlLifecycle = events;
+    const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (blob) => { const url = create(blob); events.push({ operation: "create", url, stack: new Error().stack }); return url; };
+    URL.revokeObjectURL = (url) => { events.push({ operation: "revoke", url, stack: new Error().stack }); revoke(url); };
+  });
+});
 test.afterEach(async ({ page }, info) => {
+  await info.attach("texture-url-lifecycle", { body: JSON.stringify(await page.evaluate(() => (window as unknown as { textureUrlLifecycle?: unknown }).textureUrlLifecycle ?? [])), contentType: "application/json" });
   await info.attach("render-errors", { body: JSON.stringify(errorsByPage.get(page) ?? []), contentType: "application/json" });
 });
 
@@ -90,6 +100,7 @@ test("saved duplicate Post Process texture overrides survive editor reload, Play
 test("export closure retains disabled override textures and packed player presents independent entries", async ({ page, baseURL }, info) => {
   test.setTimeout(120_000);
   const errors = renderErrors(page);
+
   const fixture = await postProcessFixture(page);
   const closure = collectExportReachability({
     startupSceneGuid: POST_PROCESS_SCENE_GUID,

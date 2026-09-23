@@ -10,7 +10,7 @@ import {
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -1376,12 +1376,13 @@ describe("material compiler", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     disposers.push(() => cache.dispose());
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const cached = getMaterialTexture(
+    const cachedLease = acquireMaterialTexture(
       cache,
       "tex-1",
       scene.getEngine(),
       bytes,
     );
+    const cached = cachedLease?.resource ?? null;
     expect(cached).not.toBeNull();
     // A real sibling checks TextureBlock dirty notifications. Connected samples
     // expose their source texture, but do not own the setter's backing texture.

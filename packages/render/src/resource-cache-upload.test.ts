@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   Constants,
@@ -7,6 +8,73 @@ import {
   type CubeTexture,
 } from "@babylonjs/core";
 import { ResourceCache } from "./resource-cache";
+
+it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {
+  const { cache, engine } = host();
+  let fail: NonNullable<Parameters<typeof engine.createTexture>[6]> | undefined;
+  const create = NullEngine.prototype.createTexture.bind(engine);
+  vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+    fail = args[6] ?? undefined;
+    args[5] = null;
+    const internal = create(...args);
+    internal.isReady = false;
+    return internal;
+  });
+  const lease = cache.acquireTexture("pending", engine, ktx2());
+  const texture = lease.resource;
+  lease.release();
+  lease.release();
+  cache.flushUnreferenced();
+  expect(texture.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toMatchObject({ leases: 0, pending: 0 });
+  fail!("controlled upload failure", undefined);
+  await expect(lease.ready).rejects.toThrow("final owner");
+  cache.flushUnreferenced();
+  expect(texture.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
+it("reclaims provisional URLs and ownership when native texture construction throws", () => {
+  const { cache, engine } = host();
+  vi.spyOn(engine, "createTexture").mockImplementation(() => { throw new Error("controlled constructor failure"); });
+  expect(() => cache.acquireTexture("failed", engine, ktx2())).toThrow("controlled constructor failure");
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
+it("retries a failed upload under the same source identity before eviction", async () => {
+  const { cache, engine } = host();
+  const create = NullEngine.prototype.createTexture.bind(engine);
+  let fail!: NonNullable<Parameters<typeof engine.createTexture>[6]>;
+  vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
+    fail = args[6]!; args[5] = null;
+    const internal = create(...args); internal.isReady = false; return internal;
+  });
+  const bytes = ktx2();
+  const failed = cache.acquireTexture("retry", engine, bytes);
+  fail("controlled failure", undefined);
+  await expect(failed.ready).rejects.toThrow("controlled failure");
+  failed.release();
+  const retry = cache.acquireTexture("retry", engine, bytes);
+  expect(retry.resource).not.toBe(failed.resource);
+  expect(failed.resource.getInternalTexture()).toBeNull();
+  uploaded(retry.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  await retry.ready;
+  retry.release(); cache.flushUnreferenced();
+  expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+});
+
+it("rejects an over-budget successor without retiring the working upload", () => {
+  const { cache, engine } = host();
+  cache.setByteCeiling(200);
+  const working = cache.acquireTexture("working", engine, ktx2());
+  uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  expect(cache.accountedBytes()).toBe(80);
+  expect(() => cache.acquireTexture("successor", engine, ktx2(16, 8, 5))).toThrow(/budget/);
+  expect(working.resource.isReady()).toBe(true);
+  expect(cache.accountedBytes()).toBe(80);
+  expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+  working.release();
+});
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -29,6 +97,7 @@ function ktx2(width = 8, height = 4, levels = 4) {
 
 function host() {
   const engine = new NullEngine();
+  mockCubeTextureIO(engine);
   const cache = new ResourceCache();
   const create = engine.createTexture.bind(engine);
   // Keep real wrappers/cache/refcounts; control only NullEngine's pretend GPU
@@ -68,13 +137,15 @@ function uploaded(
 it("reserves RGBA then independently accounts compressed and fallback sampling variants", () => {
   const { cache, engine } = host();
   const bytes = ktx2();
-  const compressed = cache.getTexture("atlas", engine, bytes);
+  const compressedLease = cache.acquireTexture("atlas", engine, bytes);
+    const compressed = compressedLease.resource;
   expect(cache.accountedBytes()).toBe(172);
-  expect(cache.getTexture("atlas", engine, bytes)).toBe(compressed);
+  expect(cache.acquireTexture("atlas", engine, bytes).resource).toBe(compressed);
   expect(cache.accountedBytes()).toBe(172);
   uploaded(compressed, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   expect(cache.accountedBytes()).toBe(80);
-  const fallback = cache.getTexture("atlas", engine, bytes, { noMipmap: true });
+  const fallbackLease = cache.acquireTexture("atlas", engine, bytes, { noMipmap: true });
+    const fallback = fallbackLease.resource;
   expect(cache.accountedBytes()).toBe(252);
   // Babylon uploads every KTX2 mip even for this no-mip sampling request, and
   // its RGBA uploader leaves dimensions at the final 1x1 mip.
@@ -91,7 +162,8 @@ it("reserves RGBA then independently accounts compressed and fallback sampling v
 
 it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
   const { cache, engine } = host();
-  const partial = cache.getTexture("partial", engine, ktx2(8, 4, 2));
+  const partialLease = cache.acquireTexture("partial", engine, ktx2(8, 4, 2));
+    const partial = partialLease.resource;
   expect(cache.accountedBytes()).toBe(160);
   uploaded(partial, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_BPTC_UNORM);
   expect(cache.accountedBytes()).toBe(48);
@@ -100,7 +172,8 @@ it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
   const header = new DataView(png.buffer);
   header.setUint32(16, 8);
   header.setUint32(20, 4);
-  const raster = cache.getTexture("raster", engine, png);
+  const rasterLease = cache.acquireTexture("raster", engine, png);
+    const raster = rasterLease.resource;
   expect(cache.accountedBytes()).toBe(220);
   uploaded(raster, Constants.TEXTUREFORMAT_RGBA, 4, 2, false);
   expect(cache.accountedBytes()).toBe(80);
@@ -109,11 +182,13 @@ it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
 it("clears observer accounting on context release and ignores retired upload notifications", () => {
   const { cache, engine } = host();
   const bytes = ktx2();
-  const old = cache.getTexture("atlas", engine, bytes);
+  const oldLease = cache.acquireTexture("atlas", engine, bytes);
+    const old = oldLease.resource;
   cache.releaseGpuTextures();
   expect(cache.accountedBytes()).toBe(0);
   expect(old.onLoadObservable.hasObservers()).toBe(false);
-  const replacement = cache.getTexture("atlas", engine, bytes);
+  const replacementLease = cache.acquireTexture("atlas", engine, bytes);
+    const replacement = replacementLease.resource;
   uploaded(replacement, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   old.onLoadObservable.notifyObservers(old as never);
   expect(cache.accountedBytes()).toBe(80);
@@ -134,10 +209,12 @@ it("reads Blob KTX2 headers without a late header reviving a disposed generation
       }),
   );
   const slice = vi.spyOn(bytes, "slice").mockReturnValue(header);
-  const old = cache.getTexture("atlas", engine, bytes);
+  const oldLease = cache.acquireTexture("atlas", engine, bytes);
+    const old = oldLease.resource;
   cache.releaseGpuTextures();
   slice.mockRestore();
-  const replacement = cache.getTexture("atlas", engine, bytes);
+  const replacementLease = cache.acquireTexture("atlas", engine, bytes);
+    const replacement = replacementLease.resource;
   uploaded(replacement, Constants.TEXTUREFORMAT_RGBA, 1, 1);
   await vi.waitFor(() => expect(cache.accountedBytes()).toBe(172));
   complete(ktx2(64, 64).buffer);
@@ -149,15 +226,16 @@ it("reads Blob KTX2 headers without a late header reviving a disposed generation
 it("counts real six-face cube allocation and releases it after the final lease", () => {
   const { cache, engine } = host();
   const scene = new Scene(engine);
-  const cube = cache.getCubeTextureFromImages(
+  const cubeLease = cache.acquireCubeTextureFromImages(
     "sky",
     scene,
     ["px", "py", "pz", "nx", "ny", "nz"],
     true,
   );
+    const cube = cubeLease.resource;
   uploaded(cube, Constants.TEXTUREFORMAT_RGB, 8, 8, false);
   expect(cache.accountedBytes()).toBe(1152);
-  cache.release(cube);
+  cubeLease.release();
   cache.flushUnreferenced();
   expect(cache.accountedBytes()).toBe(0);
   expect(cube.onLoadObservable.hasObservers()).toBe(false);

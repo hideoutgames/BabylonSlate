@@ -4,11 +4,25 @@ import { extractGltfPositions } from "./glb-geometry";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import {
   cookGeneratedCollisionFromGltf,
+  createDefaultSimpleCollider,
   generateSimpleCollisionFromPoints,
   normalizeModelSimpleColliders,
   simpleColliderToPhysicsShape,
   uniqueSimpleColliderName,
 } from "./simple-collision";
+
+it("keeps authored collider transforms independent of other colliders and future defaults", () => {
+  const edited = createDefaultSimpleCollider("box");
+  const retained = createDefaultSimpleCollider("sphere");
+  edited.position[0] = 5;
+  edited.rotation[3] = 0.5;
+  edited.scale[1] = 3;
+  for (const collider of [retained, createDefaultSimpleCollider("capsule")]) {
+    expect(collider.position).toEqual([0, 0, 0]);
+    expect(collider.rotation).toEqual([0, 0, 0, 1]);
+    expect(collider.scale).toEqual([1, 1, 1]);
+  }
+});
 
 describe("uniqueSimpleColliderName", () => {
   it("appends a number when the label is already used", () => {

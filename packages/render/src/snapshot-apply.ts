@@ -39,7 +39,10 @@ import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import {
   applyAlbedoTexture,
+  restoreAlbedoMaterial,
+  ownedVisualTexturePreparation,
   applyTilemapAlbedoTextures,
+  meshAssetFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
@@ -51,7 +54,9 @@ import { applyModelMaterialSlots } from "./model-preview";
 import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
+  isEditorModelPlaceholder,
   invalidateSlotAnimLoad,
+  publishModelHierarchyAnimations,
 } from "./glb-anim";
 import {
   applySerializedTransform,
@@ -85,7 +90,8 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
@@ -161,6 +167,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimEpoch?: Map<number, number>;
   /** Called after a slot's AnimationGroups are registered (replay pending seek). */
   slotAnimReady?: (slotId: number) => void;
+  /** Move external render users to a prepared successor before retiring its predecessor. */
+  slotVisualReady?: (slotId: number, successor: Mesh) => void;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
   /** Material asset guid per slot (whole actor), keyed by slotId. */
@@ -177,7 +185,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
       values: Map<string, MaterialParameterValue>;
     }
   >;
-  releaseMaterialInstance?: (instanceKey: string) => void;
+  releaseMaterialInstance?: (instanceKey: string, assetGuid?: string) => void;
   validateMaterialParameter?: (
     assetGuid: string,
     name: string,
@@ -245,9 +253,16 @@ export function applyAssignMaterial(
   const previous = componentId
     ? binding.componentMaterialGuids.get(instanceKey)
     : binding.materialAssetGuids.get(command.slotId);
+  const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
+  let provisionalGuid: string | undefined;
   if (previous !== command.materialAssetGuid) {
+    const privateGuid = binding.materialParameters.get(instanceKey)?.materialAssetGuid;
+    if (restart) {
+      // Keep the actual predecessor owner; a superseded candidate's different
+      // GUID can retire after its native users have been cancelled below.
+      if (privateGuid && retainedMaterialOwners.get(binding)?.get(command.slotId)?.get(instanceKey) !== privateGuid) provisionalGuid = privateGuid;
+    } else binding.releaseMaterialInstance?.(instanceKey);
     binding.materialParameters.delete(instanceKey);
-    binding.releaseMaterialInstance?.(instanceKey);
   }
   if (componentId) {
     binding.componentMaterialGuids.set(
@@ -256,6 +271,12 @@ export function applyAssignMaterial(
     );
   } else {
     binding.materialAssetGuids.set(command.slotId, command.materialAssetGuid);
+  }
+  if (restart) {
+    try { restart(); } finally {
+      if (provisionalGuid) binding.releaseMaterialInstance?.(instanceKey, provisionalGuid);
+    }
+    return;
   }
   const root = binding.meshes.get(command.slotId);
   if (!root) return;
@@ -318,6 +339,8 @@ export function applySetMaterialParameter(
     binding.materialParameters.set(key, parameters);
   }
   parameters.values.set(command.parameterName, command.parameter);
+  const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
+  if (restart) { restart(); return; }
   const root = binding.meshes.get(command.slotId);
   if (root) applyMaterialToActorMeshes(binding, command.slotId, root);
 }
@@ -410,7 +433,7 @@ export function applyMaterialToActorMeshes(
     const componentId = componentIdForPlayMesh(target, slotId, binding);
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {
-      target.material = null;
+      if (!restoreAlbedoMaterial(target)) target.material = null;
       continue;
     }
     if (!guid) continue;
@@ -524,12 +547,52 @@ function applyPlayShadows(scene: Scene): void {
   shadows.sync();
 }
 
+const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+// A material command supersedes preparation for the exact pending visual, not
+// the already published model generation or another incarnation of this slot.
+const pendingMaterialPreparations = new WeakMap<SnapshotSceneBinding, Map<number, () => void>>();
+
+const retainedMaterialOwners = new WeakMap<SnapshotSceneBinding, Map<number, Map<string, string>>>();
+
+function retainWorkingMaterialOwners(binding: SnapshotSceneBinding, slotId: number, hasPredecessor = true): void {
+  const slots = retainedMaterialOwners.get(binding) ?? new Map<number, Map<string, string>>();
+  retainedMaterialOwners.set(binding, slots);
+  if (slots.has(slotId)) return;
+  const prefix = `${slotId}|`;
+  slots.set(slotId, new Map(hasPredecessor ? [...binding.materialParameters]
+    .filter(([key]) => key.startsWith(prefix)).map(([key, state]) => [key, state.materialAssetGuid]) : []));
+}
+
+function releaseRetainedMaterialOwners(binding: SnapshotSceneBinding, slotId: number, retiringSlot = false): void {
+  const slots = retainedMaterialOwners.get(binding);
+  const owners = slots?.get(slotId);
+  for (const [key, guid] of owners ?? []) {
+    const current = binding.materialParameters.get(key);
+    if (retiringSlot) {
+      // Ordinary parameter-owner teardown below releases all GUIDs for this key.
+      if (!current) binding.releaseMaterialInstance?.(key);
+    } else if (current?.materialAssetGuid !== guid) binding.releaseMaterialInstance?.(key, guid);
+  }
+  slots?.delete(slotId);
+  if (!slots?.size) retainedMaterialOwners.delete(binding);
+}
+
+function cancelPendingVisualReplacement(binding: SnapshotSceneBinding, slotId: number): void {
+  const pending = pendingVisualReplacements.get(binding);
+  pending?.get(slotId)?.dispose();
+  pending?.delete(slotId);
+  pendingMaterialPreparations.get(binding)?.delete(slotId);
+}
+
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
 export function applyAssignMesh(
   scene: Scene,
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  cancelPendingVisualReplacement(binding, command.slotId);
   const primaryId = !partsNeedOrigin(command.parts)
     ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
     : undefined;
@@ -540,7 +603,8 @@ export function applyAssignMesh(
     : primaryId
       ? new Set([primaryId])
       : null;
-  if (componentIds) {
+  const retireRemovedMaterials = () => {
+    if (!componentIds) return;
     const prefix = `${command.slotId}|`;
     const keys = new Set([
       ...binding.componentMaterialGuids.keys(),
@@ -553,8 +617,9 @@ export function applyAssignMesh(
       binding.componentMaterialGuids.delete(key);
       binding.materialParameters.delete(key);
       binding.releaseMaterialInstance?.(key);
+      retainedMaterialOwners.get(binding)?.get(command.slotId)?.delete(key);
     }
-  }
+  };
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshSorting.set(command.slotId, { actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer });
@@ -563,6 +628,14 @@ export function applyAssignMesh(
     binding.meshParts.set(command.slotId, command.parts);
   } else {
     binding.meshParts.delete(command.slotId);
+  }
+  if (command.skybox) {
+    binding.skyboxProps.set(command.slotId, command.skybox);
+  } else if (meshKind === "skybox") {
+    binding.skyboxProps.set(command.slotId, {
+      size: 1000,
+      faces: emptySkyboxFaces(),
+    });
   }
   if (command.light) binding.lightProps.set(command.slotId, command.light);
   if (command.text3d) {
@@ -620,22 +693,162 @@ export function applyAssignMesh(
     return;
   }
   const existing = binding.meshes.get(command.slotId);
+  const modelSource = command.meshAssetGuid ? binding.modelSources?.get(command.meshAssetGuid) : undefined;
+  if (existing && existing.getScene() === scene && isEditorModelPlaceholder(existing) &&
+    modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) {
+    const guid = command.meshAssetGuid;
+    const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
+    pendingMaterialPreparations.set(binding, refreshes);
+    const restart = () => applyAssignMesh(scene, binding, command);
+    retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
+    refreshes.set(command.slotId, restart);
+    const load = beginSlotModelAnimLoad(scene, binding, command.slotId, guid, modelSource, existing,
+      () => {
+        stampOverlayPick(existing, command);
+        applyPlayVisualSorting(existing, command.slotId, binding);
+        setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
+        retireRemovedMaterials();
+        releaseRetainedMaterialOwners(binding, command.slotId);
+      },
+      () => binding.meshes.get(command.slotId) === existing && refreshes.get(command.slotId) === restart,
+      (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
+    );
+    void load.finally(() => {
+      if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
+    }).catch(() => {});
+    return;
+  }
+  const ownsTexture = (kind: string | null | undefined) =>
+    kind === "skybox" || kind === "sprite" || kind === "tilemap";
+  const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
+    (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
+      part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+  if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
+    const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
+    if (!existing) binding.meshes.set(command.slotId, working);
+    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
+    rejectedPreparedAssignments.set(binding, rejected);
+    if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
+    const targets: PlayVisualTargets = { spriteOverlays: new Map(), lights: new Map(), cameras: new Map() };
+    const deferred: DeferredModelLoad[] = [];
+    let candidate: Mesh | undefined;
+    let adopted = false;
+    const releaseProvisional = () => {
+      if (adopted) return;
+      for (const light of targets.lights.values()) light.dispose();
+      for (const camera of targets.cameras.values()) camera.dispose();
+      targets.lights.clear(); targets.cameras.clear();
+    };
+    try {
+      candidate = createPlayVisual(scene, command.slotId, binding, deferred, targets);
+      candidate.setEnabled(false);
+      candidate.onDisposeObservable.addOnce(releaseProvisional);
+      stampOverlayPick(candidate, command);
+      applyMaterialToActorMeshes(binding, command.slotId, candidate);
+    } catch (error) {
+      candidate?.dispose(); releaseProvisional();
+      if (!stagesModels) rejected.set(command.slotId, descriptor);
+      console.warn(`[render] Visual preparation failed: ${String(error)}`);
+      return;
+    }
+    const staged = candidate;
+    const pending = pendingVisualReplacements.get(binding) ?? new Map<number, Mesh>();
+    pendingVisualReplacements.set(binding, pending);
+    pending.set(command.slotId, staged);
+    const refreshes = pendingMaterialPreparations.get(binding) ?? new Map<number, () => void>();
+    pendingMaterialPreparations.set(binding, refreshes);
+    const restart = () => applyAssignMesh(scene, binding, command);
+    retainWorkingMaterialOwners(binding, command.slotId, Boolean(existing));
+    refreshes.set(command.slotId, restart);
+    const ownsLoad = () => pending.get(command.slotId) === staged &&
+      binding.meshes.get(command.slotId) === working && !staged.isDisposed() && !scene.isDisposed;
+    const preparation = Promise.all([
+      ownedVisualTexturePreparation(staged),
+      ...deferred.map((start) => start({ ownsLoad })),
+    ]);
+    const load = preparation.then(() => {
+      if (!ownsLoad()) return;
+      staged.position.copyFrom(working.position);
+      staged.rotation.copyFrom(working.rotation);
+      staged.rotationQuaternion = working.rotationQuaternion?.clone() ?? null;
+      staged.scaling.copyFrom(working.scaling);
+      staged.parent = working.parent;
+      // Material commands restart preparation; do not attach an unprepared
+      // successor generation after the joined preparation has completed.
+      // Retirement must not cancel this winning candidate or its new helpers.
+      binding.slotVisualReady?.(command.slotId, staged);
+      pending.delete(command.slotId);
+      disposeSlotVisuals(binding, command.slotId);
+      retireRemovedMaterials();
+      releaseRetainedMaterialOwners(binding, command.slotId);
+      binding.meshes.set(command.slotId, staged);
+      for (const [slot, overlay] of targets.spriteOverlays) (binding.spriteOverlays ??= new Map()).set(slot, overlay);
+      for (const [slot, light] of targets.lights) {
+        binding.lights.set(slot, light);
+        const props = binding.lightProps.get(slot);
+        if (props) applyAuthoredLightProperties(light, props); else light.setEnabled(true);
+      }
+      for (const [slot, camera] of targets.cameras) binding.cameras.set(slot, camera);
+      adopted = true;
+      rejected.delete(command.slotId);
+      staged.setEnabled(true);
+      setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
+      if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
+      refreshPlayActiveCamera(scene, binding);
+      applyPlayShadows(scene);
+    }, (error: unknown) => {
+      if (!ownsLoad()) return;
+      if (stagesModels) throw error;
+      rejected.set(command.slotId, descriptor);
+      // The exact texture owner reports preparation failure once.
+    }).finally(() => {
+      if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
+      if (pending.get(command.slotId) === staged) pending.delete(command.slotId);
+      if (!adopted) staged.dispose();
+    });
+    if (stagesModels) (binding.slotAnimLoads ??= new Map()).set(command.slotId, load);
+    void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
+    return;
+  }
+  const stagesText = meshKind === "2dtext" || meshKind === "2drichtext" ||
+    command.parts?.some((part) => part.meshKind === "2dtext" || part.meshKind === "2drichtext");
+  // Text performs all allocation checks and construction while its predecessor
+  // remains usable. Native retirement must not erase the newly authored props.
+  let stagedText: Mesh | null = null;
+  const deferredModels: DeferredModelLoad[] = [];
+  if (stagesText) {
+    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
+    const rejected = rejectedTextAssignments.get(binding);
+    if (existing && rejected?.get(command.slotId) === descriptor) return;
+    try {
+      stagedText = createPlayVisual(scene, command.slotId, binding, deferredModels);
+      rejected?.delete(command.slotId);
+    } catch (error) {
+      if (!(error instanceof BitmapAllocationLimitError) || !existing) throw error;
+      const failed = rejected ?? new Map<number, string>();
+      failed.set(command.slotId, descriptor);
+      rejectedTextAssignments.set(binding, failed);
+      console.warn(`[render] ${error.code}: ${error.message}`);
+      return;
+    }
+  }
+  if (stagedText) {
+    stampOverlayPick(stagedText, command);
+    try { applyMaterialToActorMeshes(binding, command.slotId, stagedText); }
+    catch (error) { stagedText.dispose(); throw error; }
+  }
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
-  if (command.skybox) {
-    binding.skyboxProps.set(command.slotId, command.skybox);
-  } else if (meshKind === "skybox") {
-    binding.skyboxProps.set(command.slotId, {
-      size: 1000,
-      faces: emptySkyboxFaces(),
-    });
-  }
-  const rebuilt = createPlayVisual(scene, command.slotId, binding);
+  retireRemovedMaterials();
+  releaseRetainedMaterialOwners(binding, command.slotId);
+  const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  for (const start of deferredModels) void start().catch(() => {});
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
-  applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
+  if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
 }
@@ -649,6 +862,7 @@ export function migratePlaySlotVisual(
   const existing = binding.meshes.get(slotId);
   if (!existing) return null;
   if (existing.getScene() === scene) return existing;
+  cancelPendingVisualReplacement(binding, slotId);
   const position = existing.position.clone();
   const rotationQuaternion = existing.rotationQuaternion?.clone();
   const rotation = existing.rotation.clone();
@@ -668,7 +882,9 @@ export function migratePlaySlotVisual(
   }
   rebuilt.scaling.copyFrom(scaling);
   if (metadata && typeof metadata === "object") {
-    rebuilt.metadata = { ...(rebuilt.metadata ?? {}), ...metadata };
+    const identity = { ...metadata };
+    for (const key of ["visualBundle", "babylonslateModelInstance", "babylonslateModelLoadKey", "disposeModelOnDespawn"]) delete identity[key];
+    rebuilt.metadata = { ...identity, ...(rebuilt.metadata ?? {}) };
   }
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
@@ -843,6 +1059,9 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  rejectedTextAssignments.get(binding)?.delete(slotId);
+  rejectedPreparedAssignments.get(binding)?.delete(slotId);
+  cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
@@ -853,6 +1072,7 @@ export function retirePlaySlot(
   binding.meshSorting.delete(slotId);
   binding.primaryComponentIds.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
+  releaseRetainedMaterialOwners(binding, slotId, true);
   for (const key of binding.materialParameters.keys()) {
     if (!key.startsWith(`${slotId}|`)) continue;
     binding.materialParameters.delete(key);
@@ -910,6 +1130,7 @@ function disposeSlotVisuals(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  cancelPendingVisualReplacement(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.spriteOverlays?.get(slotId)?.dispose();
@@ -919,22 +1140,28 @@ function disposeSlotVisuals(
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
-  binding.skyboxProps.delete(slotId);
-  binding.text3dProps.delete(slotId);
-  binding.text2dProps.delete(slotId);
-  binding.overlayPanelProps.delete(slotId);
 }
+
+type DeferredModelLoad = (preparation?: { ownsLoad: () => boolean }) => Promise<void>;
+
+type PlayVisualTargets = {
+  spriteOverlays: Map<number, Mesh>;
+  lights: Map<number, Light>;
+  cameras: Map<number, Camera>;
+};
 
 function createPlayVisual(
   scene: Scene,
   slotId: number,
   binding: SnapshotSceneBinding,
+  deferredModels?: DeferredModelLoad[],
+  targets?: PlayVisualTargets,
 ): Mesh {
   const parts = binding.meshParts.get(slotId);
   const meshKind = binding.meshKinds.get(slotId);
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
-    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
+    const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels, undefined, targets);
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -946,28 +1173,39 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
-  for (const part of parts ?? []) {
-    const child = createPlayMesh(
-      scene,
-      slotId,
-      part.meshKind,
-      part.meshAssetGuid,
-      binding,
-      playComponentMeshName(slotId, part.componentId),
-      part.text3d,
-      part.text2d,
-    );
-    applyPartTransform(child, part);
-    meshes.set(part.componentId, child);
+  let retainedBitmapBytes = text2DBitmapBytes(binding.meshes.get(slotId));
+  try {
+    for (const part of parts ?? []) {
+      const child = createPlayMesh(
+        scene,
+        slotId,
+        part.meshKind,
+        part.meshAssetGuid,
+        binding,
+        playComponentMeshName(slotId, part.componentId),
+        part.text3d,
+        part.text2d,
+        deferredModels,
+        retainedBitmapBytes,
+        targets,
+      );
+      child.parent = root;
+      retainedBitmapBytes += text2DBitmapBytes(child);
+      applyPartTransform(child, part);
+      meshes.set(part.componentId, child);
+    }
+    for (const part of parts ?? []) {
+      const child = meshes.get(part.componentId);
+      if (!child) continue;
+      const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+      child.parent = parent ?? root;
+    }
+    applyPlayVisualSorting(root, slotId, binding);
+    return root;
+  } catch (error) {
+    root.dispose();
+    throw error;
   }
-  for (const part of parts ?? []) {
-    const child = meshes.get(part.componentId);
-    if (!child) continue;
-    const parent = part.parentId ? meshes.get(part.parentId) : undefined;
-    child.parent = parent ?? root;
-  }
-  applyPlayVisualSorting(root, slotId, binding);
-  return root;
 }
 
 export function createPlayMesh(
@@ -979,6 +1217,9 @@ export function createPlayMesh(
   meshName?: string,
   partText3d?: Text3DProperties,
   partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
+  deferredModels?: DeferredModelLoad[],
+  retainedBitmapBytes?: number,
+  targets?: PlayVisualTargets,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -1023,7 +1264,7 @@ export function createPlayMesh(
       overlay.parent = mesh;
       overlay.visibility = 0;
       applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding);
-      binding.spriteOverlays.set(slotId, overlay);
+      (targets?.spriteOverlays ?? binding.spriteOverlays).set(slotId, overlay);
     }
     return mesh;
   }
@@ -1077,22 +1318,31 @@ export function createPlayMesh(
     return createText2DMesh(scene, name, props ?? {}, binding, {
       rich: meshKind === "2drichtext",
       isPaused: () => binding?.paused === true,
+      bitmapLimits: { retainedBytes: retainedBitmapBytes ?? text2DBitmapBytes(binding?.meshes.get(slotId)) },
     });
   }
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
-    const bytes = binding?.modelBytes?.get(assetGuid);
-    if (bytes && binding) {
-      void beginSlotModelAnimLoad(
-        scene,
-        binding,
-        slotId,
-        assetGuid,
-        bytes,
-        root,
-        () => applyLoadedModelMaterials(binding, slotId, assetGuid, root),
+    const bytes = binding?.modelSources?.get(assetGuid);
+    const start: DeferredModelLoad = async (preparation) => {
+      if (!bytes || !binding) {
+        if (preparation) throw new Error(`Model ${assetGuid} source is not installed.`);
+        return;
+      }
+      // Parts own independent native instances and preparation epochs. Only the
+      // winning whole hierarchy publishes their animation lookup into the slot.
+      const owner = preparation ? {
+        ...binding, slotAnimEpoch: new Map(), slotAnimLoads: new Map(), slotAnimationGroups: new Map(),
+        pendingAnimState: undefined, slotAnimReady: undefined,
+      } : binding;
+      await beginSlotModelAnimLoad(
+        scene, owner, slotId, assetGuid, bytes, root, undefined,
+        preparation?.ownsLoad,
+        (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
       );
-    }
+    };
+    if (deferredModels) deferredModels.push(start);
+    else void start().catch(() => {});
     return finishPlayWorldMesh(root);
   }
   if (meshKind === "skybox") {
@@ -1149,8 +1399,9 @@ export function createPlayMesh(
               : new PointLight(lightName, Vector3.Zero(), scene);
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
-      binding.lights.set(slotId, light);
-      applyPlayShadows(scene);
+      (targets?.lights ?? binding.lights).set(slotId, light);
+      if (targets) light.setEnabled(false);
+      else applyPlayShadows(scene);
     }
     if (meshKind === "camera" && binding) {
       const camera = new UniversalCamera(
@@ -1166,8 +1417,8 @@ export function createPlayMesh(
       camera.inputs.clear();
       const props = binding.cameraProps.get(slotId);
       if (props) applyAuthoredCameraProperties(camera, props);
-      binding.cameras.set(slotId, camera);
-      refreshPlayActiveCamera(scene, binding);
+      (targets?.cameras ?? binding.cameras).set(slotId, camera);
+      if (!targets) refreshPlayActiveCamera(scene, binding);
     }
     return finishPlayWorldMesh(mesh);
   }
@@ -1317,6 +1568,13 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  const pending = pendingVisualReplacements.get(binding);
+  for (const candidate of pending?.values() ?? []) candidate.dispose();
+  pending?.clear();
+  pendingVisualReplacements.delete(binding);
+  pendingMaterialPreparations.delete(binding);
+  rejectedPreparedAssignments.delete(binding);
+  rejectedTextAssignments.delete(binding);
   binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
   for (const mesh of binding.meshes.values()) {
@@ -1337,6 +1595,11 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
   binding.pendingAnimState?.clear();
+  for (const slotId of retainedMaterialOwners.get(binding)?.keys() ?? []) releaseRetainedMaterialOwners(binding, slotId, true);
+  for (const key of binding.materialParameters.keys()) binding.releaseMaterialInstance?.(key);
+  binding.materialParameters.clear();
+  binding.componentMaterialGuids.clear();
+  binding.materialAssetGuids.clear();
   binding.slotAnimLoads?.clear();
   binding.slotAnimEpoch?.clear();
   binding.lights.clear();

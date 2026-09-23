@@ -1,3 +1,4 @@
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
@@ -21,6 +22,7 @@ describe("installPreviewEnvironment", () => {
 
   it("installs the engine default skybox on a material preview scene", () => {
     const handle = createTestEngine();
+    mockCubeTextureIO(handle.engine);
     handles.push(handle);
     const host = createMaterialPreviewScene(handle.engine);
     expect(host.scene.getMeshByName(PREVIEW_SKYBOX_MESH_NAME)).toBeNull();
@@ -43,6 +45,7 @@ describe("installPreviewEnvironment", () => {
 
   it("shares one uploaded cube across preview scenes on the same engine", () => {
     const handle = createTestEngine();
+    mockCubeTextureIO(handle.engine);
     handles.push(handle);
     const first = createMaterialPreviewScene(handle.engine);
     const second = createModelPreviewScene(handle.engine);
@@ -67,6 +70,7 @@ describe("installPreviewEnvironment", () => {
 
   it("leaves thumbnail-style transparent hosts without a skybox by default", () => {
     const handle = createTestEngine();
+    mockCubeTextureIO(handle.engine);
     handles.push(handle);
     // model-thumbnail builds this host; it never installs the environment.
     const host = createModelPreviewScene(handle.engine, { transparent: true });

@@ -1,3 +1,4 @@
+import { installModelSources } from "./mesh-assets";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,6 +84,7 @@ describe("createPlayMesh", () => {
     sprite.textureGuid = "tex-1";
     binding.spritePayloads = new Map([["sprite-1", sprite]]);
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
 
     const spriteMesh = createPlayMesh(scene, 1, "sprite", "sprite-1", binding);
     expect(spriteMesh.material).toBeInstanceOf(StandardMaterial);
@@ -277,6 +279,7 @@ describe("createPlayMesh", () => {
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     const box = createPlayMesh(scene, 1, "box", null, binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     await binding.slotAnimLoads?.get(2);
@@ -294,6 +297,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     const bytes = encodeTriangleGlb();
     binding.modelBytes = new Map([["model-1", bytes]]);
+    binding.modelSources = installModelSources(binding);
     const first = createPlayMesh(scene, 2, "box", "model-1", binding);
     const second = createPlayMesh(scene, 3, "box", "model-1", binding);
     await binding.slotAnimLoads?.get(2);
@@ -309,6 +313,7 @@ describe("createPlayMesh", () => {
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     expect(glbClipNames(encodeTriangleGlb())).toEqual([]);
     await binding.slotAnimLoads?.get(2);
@@ -348,6 +353,7 @@ describe("createPlayMesh", () => {
     ).toBe(true);
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", source]]);
+    binding.modelSources = installModelSources(binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     await binding.slotAnimLoads?.get(2);
     expect(visualMeshes(model).length).toBeGreaterThan(0);
@@ -360,6 +366,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     const override = new StandardMaterial("slot-mat", scene);
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelPayloads = new Map([
       [
         "model-1",
@@ -389,6 +396,7 @@ describe("createPlayMesh", () => {
     const slotMat = new StandardMaterial("slot-mat", scene);
     const meshMat = new StandardMaterial("mesh-mat", scene);
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelPayloads = new Map([
       [
         "model-1",
@@ -425,6 +433,7 @@ describe("createPlayMesh", () => {
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
     const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
@@ -441,6 +450,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     const override = new StandardMaterial("slot-0", scene);
     binding.modelBytes = new Map([["hero-model", encodeUvHierarchyGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelPayloads = new Map([
       [
         "hero-model",
@@ -476,6 +486,7 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([
       ["hero-model", encodeUvHierarchyGlb({ separateMaterials: true })],
     ]);
+    binding.modelSources = installModelSources(binding);
     binding.modelPayloads = new Map([
       [
         "hero-model",
@@ -511,6 +522,7 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([
       ["hero-model", encodeParentedAnimatedTriangleGlb("Walk")],
     ]);
+    binding.modelSources = installModelSources(binding);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
     const native = scene.animationGroups.find((group) => group.name === "Walk");
@@ -554,6 +566,7 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([
       ["hero-model", encodeUvHierarchyGlb({ clipName: "Run" })],
     ]);
+    binding.modelSources = installModelSources(binding);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
     const native = scene.animationGroups.find((group) => group.name === "Run");
@@ -596,6 +609,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     const override = new StandardMaterial("slot-0", scene);
     binding.modelBytes = new Map([["mannequin", kenneyMannequinGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelPayloads = new Map([
       [
         "mannequin",
@@ -627,6 +641,7 @@ describe("createPlayMesh", () => {
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["mannequin", kenneyMannequinGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelClipAnimationGuids = new Map([
       ["mannequin", new Map([["idle", "mannequin-idle"], ["walk", "mannequin-walk"]])],
     ]);
@@ -702,6 +717,7 @@ describe("createPlayMesh", () => {
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
     binding.modelClipAnimationGuids = new Map([
       ["hero-model", new Map([["Idle", "hero-idle-anim"]])],
     ]);
@@ -723,6 +739,7 @@ describe("createPlayMesh", () => {
       ["hero-model", glb],
       ["mixamo-model", glb],
     ]);
+    binding.modelSources = installModelSources(binding);
     binding.retargetAnimationLoads = new Map([
       [
         "hero-model",
@@ -752,6 +769,7 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([
       ["hero-model", encodeParentedAnimatedTriangleGlb()],
     ]);
+    binding.modelSources = installModelSources(binding);
     const root = createPlayMesh(scene, 2, "box", "hero-model", binding);
     binding.meshes.set(2, root);
     await binding.slotAnimLoads?.get(2);

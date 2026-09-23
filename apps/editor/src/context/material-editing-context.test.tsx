@@ -92,7 +92,7 @@ const harness = vi.hoisted(() => ({
   installPreviewEnvironment: vi.fn(),
   gestures: { dispose: vi.fn() },
   libraryOptions: null as {
-    resolveTexture?: (guid: string) => unknown;
+    acquireTexture?: (guid: string) => { resource: unknown; release(): void } | null;
     functions?: () => unknown;
   } | null,
   acquireCalls: 0,
@@ -108,7 +108,7 @@ const harness = vi.hoisted(() => ({
     path: "assets/albedo.babasset",
     header: { guid: "tex-1", type: "Texture", name: "albedo" },
   },
-  cachedTextures: [] as Array<{ guid: string; bytes: Uint8Array }>,
+  cachedTextures: [] as Array<{ guid: string; bytes: Blob }>,
 }));
 
 const playValue = {
@@ -147,12 +147,10 @@ vi.mock("./document-context", () => ({
 vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
   const cache = {
-    release: vi.fn(),
-    getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
+    acquireTexture(guid: string, _engine: unknown, bytes: Blob) {
       harness.cachedTextures.push({ guid, bytes });
       return {
-        name: guid,
-        isDisposed: () => false,
+        resource: { name: guid, isDisposed: () => false }, key: guid, release: vi.fn(),
       };
     },
     releaseGpuTextures() {
@@ -166,14 +164,14 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     ...actual,
     setSceneRenderSettings: harness.setRenderSettings,
     ResourceCache: class {
-      getTexture = cache.getTexture;
+      acquireTexture = cache.acquireTexture;
       releaseGpuTextures = cache.releaseGpuTextures;
       dispose = cache.dispose;
     },
     resourceCacheForEngine: () => cache,
     MaterialLibrary: class {
       constructor(options: {
-        resolveTexture?: (guid: string) => unknown;
+        acquireTexture?: (guid: string) => { resource: unknown; release(): void } | null;
         functions?: () => unknown;
       }) {
         harness.libraryOptions = options;
@@ -387,7 +385,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     await waitFor(() => {
       expect(harness.createScene).toHaveBeenCalled();
     });
-    expect(typeof harness.libraryOptions?.resolveTexture).toBe("function");
+    expect(typeof harness.libraryOptions?.acquireTexture).toBe("function");
   });
 
   it("loads Texture pixels then source and resolves them for preview compile", async () => {
@@ -413,13 +411,20 @@ describe("MaterialEditingProvider preview isolation", () => {
       );
     });
     await waitFor(() => {
-      expect(harness.libraryOptions?.resolveTexture?.("tex-1")).toEqual(
+      expect(harness.libraryOptions?.acquireTexture?.("tex-1")?.resource).toEqual(
         expect.objectContaining({ name: "tex-1" }),
       );
     });
-    expect(harness.cachedTextures).toEqual([
-      { guid: "tex-1", bytes: new Uint8Array([9, 9, 9]) },
-    ]);
+    expect(harness.cachedTextures).toHaveLength(1);
+    expect(harness.cachedTextures[0]!.guid).toBe("tex-1");
+    // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
+    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(harness.cachedTextures[0]!.bytes);
+    });
+    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([9, 9, 9]));
   });
 
   it("recompiles onto a new preview Scene after the canvas remounts", async () => {

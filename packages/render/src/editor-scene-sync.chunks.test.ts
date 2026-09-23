@@ -301,7 +301,7 @@ describe("cooperative editor realization", () => {
     expect(onAfterApply).toHaveBeenCalledOnce();
   });
 
-  it.each(["before", "after"] as const)("lets a replacement %s model completion reuse the container without cancelled adoption", async (replace) => {
+  it.each(["before", "after"] as const)("retires a cancelled request %s completion without adopting it over the replacement", async (replace) => {
     const { sync, scene, onAfterApply } = fixture();
     sync.apply(document(1));
     const previousRoot = sync.meshForActor("actor-0");
@@ -316,7 +316,10 @@ describe("cooperative editor realization", () => {
       signal: controller.signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
       yieldControl: async () => {
-        if (sync.meshForActor("actor-0") !== previousRoot) controller.abort(failure);
+        if (requests.mock.calls.length) {
+          await delayed.ready;
+          controller.abort(failure);
+        }
       },
     })).rejects.toBe(failure);
     const root = sync.meshForActor("actor-0")!;
@@ -331,17 +334,21 @@ describe("cooperative editor realization", () => {
     await Promise.all(requests.mock.results.map((result) => result.value));
     if (replace === "after") {
       expect(instantiate).not.toHaveBeenCalled();
-      expect(visualMeshes(root)).toHaveLength(0);
+      expect(root).toBe(previousRoot);
+      expect(root.isDisposed()).toBe(false);
       expect(onAfterApply).not.toHaveBeenCalled();
       expect(scene._activeMeshesFrozen).toBe(false);
       await expect(sync.whenEditorModelsReady()).rejects.toBe(failure);
       await sync.applyAsync(next, { signal: new AbortController().signal });
     }
     await sync.whenEditorModelsReady();
-    expect(sync.meshForActor("actor-0")).toBe(root);
-    expect(instantiate).toHaveBeenCalledOnce();
-    expect(modelLoads.glbContainerLoadCount(scene)).toBe(1);
-    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+    const adopted = sync.meshForActor("actor-0")!;
+    expect(adopted).not.toBe(root);
+    expect(root.isDisposed()).toBe(true);
+    // An unowned in-flight generation retires; a completed cached generation can be reused.
+    expect(instantiate).toHaveBeenCalledTimes(replace === "before" ? 0 : 1);
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(replace === "before" ? 2 : 1);
+    expect(visualMeshes(adopted).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
   });
 
   it.each(["sync", "async"] as const)("keeps %s replacement readiness independent of an obsolete unresolved model", async (mode) => {
@@ -384,7 +391,7 @@ describe("cooperative editor realization", () => {
     sync.apply(next);
     await delayed.ready;
     const root = sync.meshForActor("actor-0")!;
-    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(false);
     await sync.applyAsync(next, { signal: new AbortController().signal });
     expect(sync.meshForActor("actor-0")).toBe(root);
     let ready = false;
@@ -394,7 +401,9 @@ describe("cooperative editor realization", () => {
     delayed.release();
     await readiness;
     expect(ready).toBe(true);
-    expect(modelLoads.glbContainerLoadCount(scene)).toBe(2);
+    expect(visualMeshes(sync.meshForActor("actor-0")!).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+    // The superseded retarget upload had no remaining owner and was retired.
+    expect(modelLoads.glbContainerLoadCount(scene)).toBe(3);
   });
 
   it("restores a static actor matrix when its model lands during the final freeze phase", async () => {

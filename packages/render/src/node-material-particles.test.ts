@@ -1,4 +1,4 @@
-import { ParticleSystem, RawTexture } from "@babylonjs/core";
+import { DrawWrapper, ParticleSystem, RawTexture } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -46,10 +46,15 @@ describe("compiled particle effect bindings", () => {
       creations = 0;
       const previous = system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)!;
       effects.add(previous);
+      const wrapper = (system as unknown as { _customWrappers: Record<number, DrawWrapper> })._customWrappers[ParticleSystem.BLENDMODE_ONEONE]!;
+      const dispose = vi.spyOn(wrapper, "dispose");
       system.billboardMode = billboard;
       previous.onBindObservable.notifyObservers(previous);
       const current = system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)!;
       const changed = creations;
+      expect(dispose).not.toHaveBeenCalled();
+      engine.endFrame();
+      expect(dispose).toHaveBeenCalledOnce();
       current.onBindObservable.notifyObservers(current);
       current.onBindObservable.notifyObservers(current);
       expect(creations).toBe(changed);

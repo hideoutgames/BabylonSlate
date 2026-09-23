@@ -6,6 +6,7 @@ import {
   spriteClipFrameAt,
 } from "@babylonslate/assets";
 import { applySpriteFrameUvs, setSpriteQuadSize } from "./sprite-quad";
+import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 /**
@@ -45,6 +46,8 @@ export function applySpriteAnimFrame(
   if (frame) applySpriteFrameUvs(mesh, frame);
 }
 
+const spritePivots = new WeakMap<Mesh, { x: number; y: number }>();
+
 /** Bind a Sprite Animation asset frame (full UVs, texture, pivot) onto the sprite quad. */
 export function applySpriteAnimationAssetFrame(
   mesh: Mesh,
@@ -76,13 +79,13 @@ export function applySpriteAnimationAssetFrame(
   const worldWidth = (frame.width ?? 100) / ppu;
   const worldHeight = (frame.height ?? 100) / ppu;
   setSpriteQuadSize(mesh, worldWidth, worldHeight);
-  mesh.setPivotPoint(
-    new Vector3(
-      (frame.pivot.x - 0.5) * worldWidth,
-      (0.5 - frame.pivot.y) * worldHeight,
-      0,
-    ),
-  );
+  const x = (frame.pivot.x - 0.5) * worldWidth;
+  const y = (0.5 - frame.pivot.y) * worldHeight;
+  const previous = spritePivots.get(mesh);
+  if (!previous || previous.x !== x || previous.y !== y) {
+    mesh.setPivotPoint(new Vector3(x, y, 0));
+    spritePivots.set(mesh, { x, y });
+  }
 }
 
 export type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
@@ -221,14 +224,14 @@ function applySpriteLayers(
   }
   const primary = layers[0]!;
   applySpriteLayer(slot, slot.mesh, primary);
-  slot.mesh.visibility = primary.weight;
+  applySpriteVisibility(slot.mesh, primary.weight);
   if (slot.overlayMesh) {
     const secondary = layers[1];
     if (secondary) {
       applySpriteLayer(slot, slot.overlayMesh, secondary);
-      slot.overlayMesh.visibility = secondary.weight;
+      applySpriteVisibility(slot.overlayMesh, secondary.weight);
     } else {
-      slot.overlayMesh.visibility = 0;
+      applySpriteVisibility(slot.overlayMesh, 0);
     }
   }
 }

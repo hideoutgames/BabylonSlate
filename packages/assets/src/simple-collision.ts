@@ -139,7 +139,9 @@ export function createDefaultSimpleCollider(
     id,
     name,
     kind,
-    ...IDENTITY_SIMPLE_COLLIDER_TRANSFORM,
+    position: [...IDENTITY_SIMPLE_COLLIDER_TRANSFORM.position] as [number, number, number],
+    rotation: [...IDENTITY_SIMPLE_COLLIDER_TRANSFORM.rotation] as [number, number, number, number],
+    scale: [...IDENTITY_SIMPLE_COLLIDER_TRANSFORM.scale] as [number, number, number],
   };
   switch (kind) {
     case "sphere":
