@@ -628,15 +628,24 @@ scene or runtime serialization. Normal Bias is a world-space inset and remains
 exactly authored: automatic mode adds no displacement at split-normal edges.
 Manual mode uses both authored values exactly after input normalization.
 
-The depth policy starts with half a world texel across the effective sampling
-footprint (PCF reconstruction width 1/3/5, Poisson's actual blur radius, or a base
-texel for PCSS). Babylon 9.20 GLSL/WGSL hardware comparison depth changes by
-`0.5 × bias`, or `1.5 × bias` for depth-clamped CSM PCF; color-depth comparison
-changes by `1 × bias`. Reverse depth changes direction, not these magnitudes.
-PCSS has a separate blocker-search color metric; sample count is not treated as
-a fixed filter width. The automatic native value is limited to the existing
-0.05 input range for recovering projections, while authored floors remain intact.
-These bounds do not promise correctness for arbitrary thin geometry.
+Directional PCF combines a quarter-world-texel caster correction with a
+receiver-plane correction derived from the current fragment's light-space depth
+slope and native PCF kernel (1/3/5). It retains native sample counts and filter
+weights. All cascade derivatives execute before cascade selection/blending.
+The receiver's comparison-depth shift is bounded by four reciprocal map-width
+units; singular derivatives use the caster correction alone. These limits
+scale with the actual allocation, not a model or scene bounding box. Manual
+mode bypasses the receiver correction. The pinned WGSL Low CSM blend adapter
+also supplies Babylon 9.20's omitted array-texture argument.
+
+Other directional filters retain a half-world-texel base correction with
+Poisson's actual blur radius; PCSS tap count is not treated as a filter width.
+Babylon 9.20 GLSL/WGSL hardware comparison depth changes by `0.5 ? bias`, or
+`1.5 ? bias` for depth-clamped CSM PCF; color-depth comparison changes by
+`1 ? bias`. Reverse depth changes direction, not these magnitudes. PCSS has a
+separate blocker-search color metric. The native bias is limited to the 0.05
+input range for recovering projections, while authored floors remain intact.
+These numerical guards do not promise correctness for arbitrary thin geometry.
 
 Point and spot **automatic adjustment remains unsupported**. Their perspective
 and radial depth paths retain authored offsets, reported as `local-authored` in

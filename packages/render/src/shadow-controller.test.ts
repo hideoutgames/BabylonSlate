@@ -5,6 +5,7 @@ import {
   InternalTextureSource,
   DirectionalLight,
   MeshBuilder,
+  MaterialDefines,
   NullEngine,
   PointLight,
   SpotLight,
@@ -343,7 +344,7 @@ describe("shared shadow lifecycle", () => {
       const max = generator.getCascadeMaxExtents(layer)!;
       const texel = Math.max(max.x - min.x, max.y - min.y) / 1024;
       expect(effective[layer].worldTexelSize).toBeCloseTo(texel, 7);
-      expect(effective[layer].depthBias).toBeCloseTo(Math.min(0.05, (texel / 2) / (max.z - min.z) / 1.5), 8);
+      expect(effective[layer].depthBias).toBeCloseTo(Math.min(0.05, (texel / 4) / (max.z - min.z) / 1.5), 8);
       expect(effective[layer].normalBias).toBe(0.001);
     }
     scene.activeCamera!.position.x += 6;
@@ -366,6 +367,34 @@ describe("shared shadow lifecycle", () => {
     expect(controller.effectiveBias(light).map(({ mode, depthBias, normalBias }) => ({ mode, depthBias, normalBias })))
       .toEqual([{ mode: "manual", depthBias: 0.002, normalBias: 0.025 }, { mode: "manual", depthBias: 0.002, normalBias: 0.025 }]);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ autoBias: false, depthBias: 0.002, normalBias: 0.025 });
+  });
+  it("selects receiver correction only for automatic directional PCF and invalidates mode changes once", () => {
+    const { scene, controller } = fixture();
+    scene.getEngine()._features.supportShadowSamplers = true;
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 1, scene);
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    const directional = controller.generator(sun)!;
+    const local = controller.generator(spot)!;
+    const defines = () => {
+      const result = new MaterialDefines() as MaterialDefines & Record<string, unknown>;
+      directional.prepareDefines(result, 0);
+      local.prepareDefines(result, 1);
+      return result;
+    };
+    expect(defines()).toMatchObject({ SLATE_SHADOW_AUTO0: true, SLATE_SHADOW_AUTO1: false });
+    const dirty = vi.spyOn(scene, "markAllMaterialsAsDirty");
+    updateSceneRenderingSettings(scene, { shadows: { ...sceneRenderingSettings(scene).shadows, autoBias: false } });
+    controller.sync();
+    expect(defines()).toMatchObject({ SLATE_SHADOW_AUTO0: false, SLATE_SHADOW_AUTO1: false });
+    expect(dirty).toHaveBeenCalled();
+    const count = dirty.mock.calls.length;
+    controller.sync();
+    expect(dirty).toHaveBeenCalledTimes(count);
+    expect(controller.generator(sun)).toBe(directional);
+    expect(controller.generator(spot)).toBe(local);
   });
   it("budgets local lights separately and transfers capacity when an owner is disabled", () => {
     const { scene, controller } = fixture();

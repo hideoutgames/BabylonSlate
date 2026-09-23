@@ -288,6 +288,25 @@ These single-run timing distributions were collected while other development pro
 
 ## Triangular-shadow investigation — 22 September 2026
 
+Checkpoint, 23 September: `b34c0f07` passed the three selected Low diagnostic
+pixel cases (WebGL2 PBR/CEL, actual software WebGPU PBR). A separate defect
+was isolated: material quality changed shadow RTT anisotropy from 1 to 4 on
+repeated settings updates. Excluding render targets restores the native PCF
+footprint and removes the grazing top-row failure. The native comparison's
+readiness probe now selects the correct shadow versus camera render-pass ID;
+its earlier seven sampler errors were a fixture defect. Those earlier errored
+native captures are not clean comparison evidence.
+
+The successful diagnostic combines receiver-plane correction with small caster
+offsets. Known lit interiors have no dark samples and both thin-contact edge
+masks retain 10/10 pixels at the two light angles. Genuine coarse filtered
+shadow boundaries remain; this does not prove the original image's cause.
+The next production candidate gates this receiver correction on directional
+Auto Bias and uses a quarter-texel PCF caster correction, the smallest tested
+depth-sweep value. Production matrix and cross-host checks are still pending.
+The selected WebGPU cascade test also reproduced Babylon 9.20's missing texture
+argument in the Low CSM blend call; its targeted adapter repair awaits rerun.
+
 **Not ready to merge:** the automatic-bias coverage gap is implemented, but the
 first synthetic browser regression still fails. The half-texel depth correction
 is a candidate policy, not the smallest visually validated correction. Do not

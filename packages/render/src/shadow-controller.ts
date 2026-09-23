@@ -634,7 +634,8 @@ export class SceneShadowController {
       entry.settings = settings;
       if (entry.generator) {
         this.applySettings(entry.generator, settings);
-        if (previousSettings?.fadeFraction !== settings.fadeFraction) {
+        if (previousSettings?.fadeFraction !== settings.fadeFraction ||
+            (directionalLight && previousSettings?.autoBias !== settings.autoBias)) {
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
         }
@@ -690,13 +691,6 @@ export class SceneShadowController {
                 casterBounds.min,
                 casterBounds.max,
               );
-            const prepare = generator.prepareDefines.bind(generator);
-            generator.prepareDefines = (defines, lightIndex) => {
-              prepare(defines, lightIndex);
-              defines[`SLATE_SHADOW_FADE${lightIndex}`] =
-                entry.settings!.fadeFraction;
-              defines.rebuild();
-            };
           } else if (entry.light instanceof DirectionalLight) {
             configureDirectionalShadowProjection(
               entry.light,
@@ -707,6 +701,15 @@ export class SceneShadowController {
             );
           }
           this.applySettings(generator, settings);
+          const prepare = generator.prepareDefines.bind(generator);
+          generator.prepareDefines = (defines, lightIndex) => {
+            prepare(defines, lightIndex);
+            defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
+              directionalLight && entry.settings!.autoBias && generator.usePercentageCloserFiltering;
+            if (generator instanceof CascadedShadowGenerator)
+              defines[`SLATE_SHADOW_FADE${lightIndex}`] = entry.settings!.fadeFraction;
+            defines.rebuild();
+          };
           validateAllocation(generator);
           for (const mesh of this.meshes)
             generator.addShadowCaster(mesh, false);

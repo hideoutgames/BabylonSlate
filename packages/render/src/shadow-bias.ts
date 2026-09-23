@@ -75,20 +75,17 @@ export function resolveDirectionalShadowBias(
   if (!positiveFinite(worldTexelSize)) return result;
   result.worldTexelSize = worldTexelSize;
 
-  // Native PCF uses 1/3/5-tap-width reconstruction. PCSS quality changes sample
+  // PCF's receiver-plane correction covers its actual 1/3/5 reconstruction
+  // support. The caster needs only the smallest validated raster correction
+  // (one quarter of a world texel), independent of that receiver kernel.
+  // PCSS quality changes sample
   // count, not a fixed filter width, so it uses only the base raster correction.
   // Poisson quality is ignored by Babylon; its radius is controlled by blurScale.
   const footprint =
-    input.filter === "pcf"
-      ? input.filterQuality === "high"
-        ? 5
-        : input.filterQuality === "medium"
-          ? 3
-          : 1
-      : input.filter === "poisson"
+    input.filter === "poisson"
         ? Math.max(1, 2 * nonNegativeFinite(input.poissonRadiusTexels ?? 2))
         : 1;
-  const normalizedCorrection = (0.5 * footprint * worldTexelSize) / input.depth;
+  const normalizedCorrection = ((input.filter === "pcf" ? 0.25 : 0.5) * footprint * worldTexelSize) / input.depth;
   // Match the authored native-depth range for pathological/recovering extents.
   // This is a numerical guard, not a guarantee for arbitrary thin geometry.
   result.bias = Math.max(

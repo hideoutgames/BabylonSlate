@@ -19,12 +19,12 @@ const projection: DirectionalShadowBiasInput = {
 
 describe("directional automatic shadow bias", () => {
   it.each([
-    { filter: "pcf", depthClamp: false, bias: 0.001, depthScale: 0.5 },
-    { filter: "pcf", depthClamp: true, bias: 1 / 3000, depthScale: 1.5 },
+    { filter: "pcf", depthClamp: false, bias: 0.0005, depthScale: 0.5 },
+    { filter: "pcf", depthClamp: true, bias: 1 / 6000, depthScale: 1.5 },
     { filter: "pcss", depthClamp: true, bias: 0.001, depthScale: 0.5 },
     { filter: "none", depthClamp: false, bias: 0.0005, depthScale: 1 },
   ] as const)(
-    "preserves the same world-depth correction for $filter with clamp=$depthClamp",
+    "converts world-depth correction into native units for $filter with clamp=$depthClamp",
     ({ filter, depthClamp, bias, depthScale }) => {
       const effective = resolveDirectionalShadowBias({
         ...projection,
@@ -33,9 +33,9 @@ describe("directional automatic shadow bias", () => {
       });
       expect(effective.bias).toBeCloseTo(bias, 12);
       expect(effective.depthScale).toBe(depthScale);
-      // 0.1-world-unit texels need a 0.05-world-unit base correction. These
+      // 0.1-world-unit texels use 0.025 for PCF and 0.05 for other paths. These
       // independently derived comparison-depth factors are the pinned contract.
-      expect(effective.bias * depthScale * 100).toBeCloseTo(0.05, 12);
+      expect(effective.bias * depthScale * 100).toBeCloseTo(filter === "pcf" ? 0.025 : 0.05, 12);
     },
   );
 
@@ -48,7 +48,7 @@ describe("directional automatic shadow bias", () => {
       mapHeight: 400,
     });
     expect(downsize.worldTexelSize).toBe(0.4);
-    expect(downsize.bias).toBe(0.004);
+    expect(downsize.bias).toBe(0.002);
     const recovery = resolveDirectionalShadowBias({
       ...projection,
       width: 80,
@@ -58,18 +58,18 @@ describe("directional automatic shadow bias", () => {
       mapHeight: 1600,
     });
     expect(recovery.worldTexelSize).toBe(0.1);
-    expect(recovery.bias).toBe(0.0005);
+    expect(recovery.bias).toBe(0.00025);
   });
 
-  it("uses PCF reconstruction width but does not mistake PCSS tap count for width", () => {
+  it("keeps caster correction independent of receiver PCF support and PCSS sample count", () => {
     expect(
       resolveDirectionalShadowBias({ ...projection, filterQuality: "medium" })
         .bias,
-    ).toBeCloseTo(0.003, 12);
+    ).toBeCloseTo(0.0005, 12);
     expect(
       resolveDirectionalShadowBias({ ...projection, filterQuality: "high" })
         .bias,
-    ).toBeCloseTo(0.005, 12);
+    ).toBeCloseTo(0.0005, 12);
     for (const filterQuality of ["low", "medium", "high"] as const) {
       expect(
         resolveDirectionalShadowBias({
