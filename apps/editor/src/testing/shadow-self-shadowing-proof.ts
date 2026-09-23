@@ -118,7 +118,7 @@ export async function runShadowSelfShadowingProof(
     ) => {
       setSceneRenderSettings(scene, {
         mode,
-        shadows: { ...authored, autoBias: receiverProbe ? false : autoBias, depthBias, normalBias, distance },
+        shadows: { ...authored, autoBias, depthBias, normalBias, distance },
         cel: normalizeCelShadingSettings({
           specularEnabled: false,
           shadowStrength: 1,
@@ -295,6 +295,7 @@ export async function runShadowSelfShadowingProof(
         toneMappingType: scene.imageProcessingConfiguration.toneMappingType,
       },
     } : undefined;
+    await capture("authored-manual-repeat");
     settings(true);
     await capture("automatic", true);
     await capture("automatic-repeat", true);

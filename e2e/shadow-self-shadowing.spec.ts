@@ -14,7 +14,8 @@ for (const backend of ["webgl2", "webgpu"] as const)
       }, testInfo) => {
         test.setTimeout(120_000);
         const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        let phase = "managed";
+        page.on("pageerror", (error) => errors.push(`${phase}: ${error.message}`));
         page.on("console", (message) => {
           if (
             ["warning", "error"].includes(message.type()) &&
@@ -22,7 +23,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
               message.text(),
             )
           )
-            errors.push(message.text());
+            errors.push(`${phase}: ${message.text()}`);
         });
         await page.goto("/?test=1&shadowSelfShadowingProof=1");
         await page.waitForFunction(
@@ -78,6 +79,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
         });
         if (backend === "webgl2" && configuration === "low" && mode === "pbr") {
           for (const receiverPlane of [false, true]) {
+          phase = receiverPlane ? "native receiver plane" : "native baseline";
           const native = await page.evaluate(
             (input) => (window as unknown as {
               __babylonslateShadowNativeProof: typeof runNativeShadowProof;
@@ -129,6 +131,7 @@ for (const backend of ["webgl2", "webgpu"] as const)
           expect(generator.cascades).toBe(configuration === "cascades" ? 2 : 1);
           expect(generator.map?.width).toBe(1024);
           expect(generator.map?.height).toBe(1024);
+          expect(generator.map?.anisotropy, `${capture.name} native shadow sampling`).toBe(1);
           const thin = capture.effective.models.find(
             (model) => model.name === "thin-slab",
           );

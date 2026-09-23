@@ -15,7 +15,7 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
-import { sceneRenderingSettings } from "./render-settings";
+import { applyMaterialTextureAnisotropy, sceneRenderingSettings } from "./render-settings";
 
 /** Implicit material samples may bias mip choice; explicit LOD and shadow samples remain authored. */
 export function textureLodSamplePattern(
@@ -34,7 +34,7 @@ export class QualityTextureBlock extends TextureBlock {
   override bind(effect: Effect, material?: NodeMaterial): void {
     super.bind(effect);
     if (material && this.texture)
-      this.texture.anisotropicFilteringLevel = sceneRenderingSettings(material.getScene()).textureAnisotropy;
+      applyMaterialTextureAnisotropy(this.texture, sceneRenderingSettings(material.getScene()).textureAnisotropy);
     effect.setFloat(
       "slateTextureLodBias",
       material?.mode === 0

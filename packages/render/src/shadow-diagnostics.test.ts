@@ -86,7 +86,7 @@ describe("opt-in shadow evidence capture", () => {
       allocationDownsized: true,
       worldPosition: [4, 6, 8],
       generator: {
-        map: { width: 256, height: 256, cube: false },
+        map: { width: 256, height: 256, cube: false, anisotropy: 1 },
         autoBias: false,
         currentBias: { depth: 0.002, normalWorld: 0.007 },
       },

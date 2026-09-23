@@ -226,6 +226,7 @@ export function captureShadowDiagnostics(
                     width: dimensions.width,
                     height: dimensions.height,
                     cube: map!.isCube,
+                    anisotropy: map!.anisotropicFilteringLevel,
                   }
                 : null,
               cascades,

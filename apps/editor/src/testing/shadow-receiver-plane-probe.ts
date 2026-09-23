@@ -170,7 +170,7 @@ export function installReceiverPlaneProbe(options: Options) {
     get evidence() {
       return {
         ...options,
-        mode: "manual-authored-diagnostic",
+        mode: "receiver-diagnostic-with-selected-caster-bias",
         label: "test-only directional PCF receiver-plane common-reference correction",
         nativeComparisonFetchCountChanged: false,
         normalOrCasterGeometryChanged: false,

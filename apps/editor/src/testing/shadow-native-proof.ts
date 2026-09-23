@@ -159,15 +159,38 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
     generator.normalBias = input.normalBias;
     generator.frustumEdgeFalloff = 0;
     generator.getShadowMap()!.renderList = [...nativeScene.meshes];
+    nativeScene.updateTransformMatrix(true);
     const boundedReady = async () => {
       const deadline = performance.now() + 30_000;
       // Own the polling lifetime: racing Babylon's asynchronous readiness
       // helpers against a timeout would leave their internal timers alive.
       for (;;) {
-        const castersReady = nativeScene.meshes.every((mesh) =>
-          mesh.subMeshes.every((subMesh) => generator.isReady(subMesh, false, false)),
-        );
-        if (nativeScene.isReady() && castersReady) return;
+        const previousPass = nativeEngine.currentRenderPassId;
+        const hotSwap = material.allowShaderHotSwapping;
+        const everyCall = material.checkReadyOnEveryCall;
+        let castersReady = true;
+        let receiversReady = false;
+        try {
+          // isReady stores its effect in the CURRENT pass's submesh wrapper.
+          // Match the shadow RTT pass without invoking RTT draw observables.
+          // Probing in the camera pass overwrites PBR wrappers with casters.
+          nativeEngine.currentRenderPassId = generator.getShadowMap()!.renderPassId;
+          for (const mesh of nativeScene.meshes)
+            for (const subMesh of mesh.subMeshes)
+              castersReady = generator.isReady(subMesh, false, false) && castersReady;
+          nativeEngine.currentRenderPassId = camera.renderPassId;
+          // A shadow-enabled toggle must compile the requested receiver variant,
+          // rather than accepting the previous ready effect through hot swapping.
+          material.allowShaderHotSwapping = false;
+          material.checkReadyOnEveryCall = true;
+          receiversReady = nativeScene.isReady(false);
+        } finally {
+          material.allowShaderHotSwapping = hotSwap;
+          material.checkReadyOnEveryCall = everyCall;
+          nativeEngine.currentRenderPassId = previousPass;
+          nativeScene.resetCachedMaterial();
+        }
+        if (receiversReady && castersReady) return;
         if (performance.now() >= deadline)
           throw new Error("Native shader readiness timed out");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
@@ -241,6 +264,10 @@ export async function runNativeShadowProof(input: NativeShadowProofInput) {
         ndcHalfZRange: nativeEngine.isNDCHalfZRange,
         material: material.getClassName(),
         renderPath: "native scene.render",
+        readinessRenderPasses: {
+          receiver: camera.renderPassId,
+          caster: map.renderPassId,
+        },
         map: map.getSize(),
         filter: "pcf",
         filteringQuality: generator.filteringQuality,
