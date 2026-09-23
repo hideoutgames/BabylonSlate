@@ -107,7 +107,7 @@ for (const { backend, configuration, mode } of cases)
           contentType: "image/png",
         });
       await testInfo.attach(`${receiverPlane ? "native-plane" : "native"}-effective-settings`, {
-        body: JSON.stringify({ ...native, captures: native.captures.map(({ png: _png, pixels: _pixels, ...capture }) => capture) }),
+        body: JSON.stringify({ ...native, captures: native.captures.map(({ name, regions }) => ({ name, regions })) }),
         contentType: "application/json",
       });
       for (const error of Object.values(native.effective.comparisonError)) {
