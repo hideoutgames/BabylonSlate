@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|shared-outline(?:-cost|-geometry)?|render-settings-export|scalability-play|area-light-export|area-rect-light|framegraph-shadows|clustered-lights-webgpu)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|shared-outline(?:-cost|-geometry)?|render-settings-export|scalability-play|area-light-export|area-rect-light|framegraph-shadows|shadow-self-shadowing-hosts|clustered-lights-webgpu)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,
