@@ -1,3 +1,4 @@
+import { setEngineBackendStatus } from "./backend-status";
 import type { AbstractEngine } from "@babylonjs/core";
 import type { GpuBackend } from "@babylonslate/core";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
@@ -46,6 +47,7 @@ export async function createBackendEngineSession(
         throw new Error("WebGL2 is required but unavailable in this browser.");
       }
       const ownedEngine = engine;
+      setEngineBackendStatus(ownedEngine, { requestedBackend, effectiveBackend: backend, fallbackReason });
       let disposed = false;
       return {
         engine: ownedEngine,

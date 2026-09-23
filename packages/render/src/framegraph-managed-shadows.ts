@@ -1,6 +1,7 @@
 import type {
   Camera,
   InternalTexture,
+  Light,
   RenderTargetTexture,
   Scene,
   ShadowGenerator,
@@ -77,6 +78,33 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     } finally {
       this._renderer.customIsReadyFunction = previous;
     }
+  }
+
+  protected override _setLightsForShadow(): void {
+    // Retain native generator binding, including its camera-key contract.
+    super._setLightsForShadow();
+    const admitted = new Set<Light>(this.shadowGenerators?.map((task) => task.shadowGenerator.getLight())
+      .filter((light) => light.isEnabled() && light.shadowEnabled));
+    const changed = new Map<Light, boolean>();
+    this._renderer.onBeforeRenderObservable.remove(this._onBeforeRenderObservable);
+    this._renderer.onAfterRenderObservable.remove(this._onAfterRenderObservable);
+    this._onBeforeRenderObservable = this._renderer.onBeforeRenderObservable.add(() => {
+      changed.clear();
+      for (const light of this._scene.lights) {
+        // With no map, the material already resolves to an unshadowed variant.
+        // Native 9.20 toggles even these lights, dirtying every receiver twice
+        // per pass despite identical shader output. Preserve their authored flag.
+        if (!(light.getShadowGenerator(this.camera) ?? light.getShadowGenerator())) continue;
+        const enabled = !this.disableShadows && admitted.has(light);
+        if (light.shadowEnabled === enabled) continue;
+        changed.set(light, light.shadowEnabled);
+        light.shadowEnabled = enabled;
+      }
+    });
+    this._onAfterRenderObservable = this._renderer.onAfterRenderObservable.add(() => {
+      for (const [light, enabled] of changed) light.shadowEnabled = enabled;
+      changed.clear();
+    });
   }
 
   bindManagedShadows(

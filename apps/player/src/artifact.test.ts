@@ -4,7 +4,8 @@ import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
-import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE } from "@babylonslate/exporter";
+import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid } from "@babylonslate/exporter";
+import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@babylonslate/assets";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
@@ -24,11 +25,26 @@ function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string)
 }
 
 describe("loadGameFromFiles", () => {
+  it.each([true, false])("loads prepared emission independently of visual texture bytes (packed=%s)", async (pack) => {
+    const emission = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), "a".repeat(64));
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], mode: pack ? "packed" : "loose", assets: [
+      { guid: "texture", type: "Texture", bytes: new Uint8Array([1, 2, 3]), sceneGuid: "scene" },
+      { guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, sceneGuid: "scene" },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(game.areaEmissions.get("texture")?.rgba.every((value) => value === 200)).toBe(true);
+    emission[emission.length - 1] = 0;
+    const corrupted = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], mode: pack ? "packed" : "loose", assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, sceneGuid: "scene" }] });
+    if (!corrupted.ok) throw new Error(corrupted.error);
+    await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow("Corrupt");
+  });
   it("loads scripts from the filename declared by the manifest", async () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [],
     });
@@ -51,7 +67,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-guid-1",
-      customResolution: {
+      renderSettings: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
         customResolution: true,
         width: 640,
@@ -86,7 +102,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -127,7 +143,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -185,7 +201,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -219,7 +235,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -253,7 +269,7 @@ describe("loadGameFromFiles", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [
         {
@@ -290,7 +306,7 @@ describe("loadGameFromHttp", () => {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [],
       assets: [],
     });

@@ -253,6 +253,9 @@ function handleControl(msg: ControlMessage): void {
     case "audioVoiceEnded":
       ensureRuntime().applyAudioVoiceEnded(msg);
       return;
+    case "scalabilityStatus":
+      ensureRuntime().applyScalabilityStatus(msg.acknowledgement);
+      return;
     case "renderPathStatus":
       ensureRuntime().applyRenderPathStatus(msg);
       return;

@@ -8,6 +8,8 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   emptySkyboxFaces,
   parseText3DProperties,
+  parseAreaRectLightProperties,
+  parseOutlineProperties,
   createRichText2DComponent,
   createText2DComponent,
 } from "@babylonslate/core";
@@ -84,6 +86,8 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "AI",
   ),
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
+  engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
+  engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
   engineComponent(
     "HemisphericFillLightComponent",
     "Hemispheric Fill Light",
@@ -221,6 +225,10 @@ export function defaultPropertiesFor(
         enabled: true,
         castShadows: false,
       };
+    case "AreaRectLightComponent":
+      return { ...parseAreaRectLightProperties({}) };
+    case "OutlineComponent":
+      return { ...parseOutlineProperties({}) };
     case "HemisphericFillLightComponent":
       return {
         intensity: 0.9,

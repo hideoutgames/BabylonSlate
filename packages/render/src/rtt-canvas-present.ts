@@ -1,4 +1,4 @@
-import { NullEngine, RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { Constants, NullEngine, RenderTargetTexture, type Scene } from "@babylonjs/core";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 
@@ -66,6 +66,7 @@ export function createRttCanvasPresent(
         scene,
         false,
       );
+      rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
     }
     camera.outputRenderTarget = rtt;
   };

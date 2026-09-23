@@ -1,0 +1,5684 @@
+{
+  "backend": "webgpu",
+  "output": "texture",
+  "info": {
+    "vendor": "nvidia",
+    "renderer": "turing",
+    "version": "unknown version"
+  },
+  "webGLVersion": null,
+  "captures": [
+    {
+      "name": "pbr-point-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "32c1c81e9f9cfc417dde3874dccdd5321d65004f1d8da86c380eb97b829d17f1"
+        }
+      },
+      "classic": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "32c1c81e9f9cfc417dde3874dccdd5321d65004f1d8da86c380eb97b829d17f1"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "32c1c81e9f9cfc417dde3874dccdd5321d65004f1d8da86c380eb97b829d17f1"
+        }
+      },
+      "forceGraph": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "32c1c81e9f9cfc417dde3874dccdd5321d65004f1d8da86c380eb97b829d17f1"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "594ef1ad91fbb46534d3a6fca56fc57fb3fea7bf4187b787d9b33182a2c2dc4c"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "594ef1ad91fbb46534d3a6fca56fc57fb3fea7bf4187b787d9b33182a2c2dc4c"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "594ef1ad91fbb46534d3a6fca56fc57fb3fea7bf4187b787d9b33182a2c2dc4c"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "594ef1ad91fbb46534d3a6fca56fc57fb3fea7bf4187b787d9b33182a2c2dc4c"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c38cab314f9183ce0c1544b61260cee9cc553bddf4ec9319fe7312f9850e92d1"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c38cab314f9183ce0c1544b61260cee9cc553bddf4ec9319fe7312f9850e92d1"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c38cab314f9183ce0c1544b61260cee9cc553bddf4ec9319fe7312f9850e92d1"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c38cab314f9183ce0c1544b61260cee9cc553bddf4ec9319fe7312f9850e92d1"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "80efd95b57d25c47b6e353e6b348c7c2ba5ffda37a32d9a7c4837d0a05e24891"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "80efd95b57d25c47b6e353e6b348c7c2ba5ffda37a32d9a7c4837d0a05e24891"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "80efd95b57d25c47b6e353e6b348c7c2ba5ffda37a32d9a7c4837d0a05e24891"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "80efd95b57d25c47b6e353e6b348c7c2ba5ffda37a32d9a7c4837d0a05e24891"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-point-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "cbaa97a29e33f865de7221adc95443d709ff2a6341aa3c8b9cfae0ff4315fe81"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "cbaa97a29e33f865de7221adc95443d709ff2a6341aa3c8b9cfae0ff4315fe81"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "cbaa97a29e33f865de7221adc95443d709ff2a6341aa3c8b9cfae0ff4315fe81"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "cbaa97a29e33f865de7221adc95443d709ff2a6341aa3c8b9cfae0ff4315fe81"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "50d51f1749359574f38ce278d2e8275d568463ca7d1a92dfac7fc766f3ba7b98"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "50d51f1749359574f38ce278d2e8275d568463ca7d1a92dfac7fc766f3ba7b98"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "50d51f1749359574f38ce278d2e8275d568463ca7d1a92dfac7fc766f3ba7b98"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "50d51f1749359574f38ce278d2e8275d568463ca7d1a92dfac7fc766f3ba7b98"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "d840d49fd211cd0fe0bb0012186485485938b99ef03f17fae3097a7cc89cb54e"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "d840d49fd211cd0fe0bb0012186485485938b99ef03f17fae3097a7cc89cb54e"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "d840d49fd211cd0fe0bb0012186485485938b99ef03f17fae3097a7cc89cb54e"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "d840d49fd211cd0fe0bb0012186485485938b99ef03f17fae3097a7cc89cb54e"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "022bac4a670dc9c1c1b88bb0ae65bbd6d10c0a5fb7fc7f50fd48727cf0189f2b"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "022bac4a670dc9c1c1b88bb0ae65bbd6d10c0a5fb7fc7f50fd48727cf0189f2b"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "022bac4a670dc9c1c1b88bb0ae65bbd6d10c0a5fb7fc7f50fd48727cf0189f2b"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "022bac4a670dc9c1c1b88bb0ae65bbd6d10c0a5fb7fc7f50fd48727cf0189f2b"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-spot-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-sun-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c3593fa121dea47a79f8c9c4d1b5ebd5fe6d0feeda3563a3348d68c8f2b526b0"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c3593fa121dea47a79f8c9c4d1b5ebd5fe6d0feeda3563a3348d68c8f2b526b0"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c3593fa121dea47a79f8c9c4d1b5ebd5fe6d0feeda3563a3348d68c8f2b526b0"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c3593fa121dea47a79f8c9c4d1b5ebd5fe6d0feeda3563a3348d68c8f2b526b0"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "8d5fbc852298dad91b15fca4ea44f1e5c0a1436e5a9725be8b3ff20cdec78436"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "8d5fbc852298dad91b15fca4ea44f1e5c0a1436e5a9725be8b3ff20cdec78436"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "8d5fbc852298dad91b15fca4ea44f1e5c0a1436e5a9725be8b3ff20cdec78436"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "8d5fbc852298dad91b15fca4ea44f1e5c0a1436e5a9725be8b3ff20cdec78436"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "425a00d1100d41915aa4e7230c69865cb55b5c076b317348bc837fecae4a9bd0"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "425a00d1100d41915aa4e7230c69865cb55b5c076b317348bc837fecae4a9bd0"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "425a00d1100d41915aa4e7230c69865cb55b5c076b317348bc837fecae4a9bd0"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "425a00d1100d41915aa4e7230c69865cb55b5c076b317348bc837fecae4a9bd0"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c650525519a1dd96fbb088f515fb2a65a11b4aaa1f8d8a8237d8e3fd528c5b0e"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c650525519a1dd96fbb088f515fb2a65a11b4aaa1f8d8a8237d8e3fd528c5b0e"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c650525519a1dd96fbb088f515fb2a65a11b4aaa1f8d8a8237d8e3fd528c5b0e"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c650525519a1dd96fbb088f515fb2a65a11b4aaa1f8d8a8237d8e3fd528c5b0e"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "pbr-sun-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "pbr-sun-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-point-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "3e7d28b9752a2e8e6bdf0790397075c2f339521ffa1e0798d5499f44e495d007"
+        }
+      },
+      "classic": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "3e7d28b9752a2e8e6bdf0790397075c2f339521ffa1e0798d5499f44e495d007"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "3e7d28b9752a2e8e6bdf0790397075c2f339521ffa1e0798d5499f44e495d007"
+        }
+      },
+      "forceGraph": {
+        "draws": 14,
+        "faces": 6,
+        "shadowDraws": 10,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "3e7d28b9752a2e8e6bdf0790397075c2f339521ffa1e0798d5499f44e495d007"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "7d197e01b2cd47861091c32f57a24565401bcc8d3fddd764d977e1e1c3f88863"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "7d197e01b2cd47861091c32f57a24565401bcc8d3fddd764d977e1e1c3f88863"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "7d197e01b2cd47861091c32f57a24565401bcc8d3fddd764d977e1e1c3f88863"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "7d197e01b2cd47861091c32f57a24565401bcc8d3fddd764d977e1e1c3f88863"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "afeffe5020ed5baebedf122c9435f7095fab4571df3f9d273c6dbbd13e8523d3"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "afeffe5020ed5baebedf122c9435f7095fab4571df3f9d273c6dbbd13e8523d3"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "afeffe5020ed5baebedf122c9435f7095fab4571df3f9d273c6dbbd13e8523d3"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "afeffe5020ed5baebedf122c9435f7095fab4571df3f9d273c6dbbd13e8523d3"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "828e5a636e7315bcdfd11d3d4e8cc662119afb655064789cd37e76f22b74e780"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "828e5a636e7315bcdfd11d3d4e8cc662119afb655064789cd37e76f22b74e780"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "828e5a636e7315bcdfd11d3d4e8cc662119afb655064789cd37e76f22b74e780"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "828e5a636e7315bcdfd11d3d4e8cc662119afb655064789cd37e76f22b74e780"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-point-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "classic": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "forceGraph": {
+        "draws": 12,
+        "faces": 6,
+        "shadowDraws": 8,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0390982f2e8633b18a14145cb8dd20612c546b033472f747f85b56758eeada89"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0390982f2e8633b18a14145cb8dd20612c546b033472f747f85b56758eeada89"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0390982f2e8633b18a14145cb8dd20612c546b033472f747f85b56758eeada89"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0390982f2e8633b18a14145cb8dd20612c546b033472f747f85b56758eeada89"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "5cea72f6141095e6002e09be562f8f4f4079623e394e3efc5f97419058fc3084"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "5cea72f6141095e6002e09be562f8f4f4079623e394e3efc5f97419058fc3084"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "5cea72f6141095e6002e09be562f8f4f4079623e394e3efc5f97419058fc3084"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "5cea72f6141095e6002e09be562f8f4f4079623e394e3efc5f97419058fc3084"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0f45f960aa98fcfe57c0df4d313db5e159de04db25a760fefd74c31e90bfbe6e"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0f45f960aa98fcfe57c0df4d313db5e159de04db25a760fefd74c31e90bfbe6e"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0f45f960aa98fcfe57c0df4d313db5e159de04db25a760fefd74c31e90bfbe6e"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "0f45f960aa98fcfe57c0df4d313db5e159de04db25a760fefd74c31e90bfbe6e"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "6efe623a334d693b0944131399969ec63ca656f7aebb247456f25e1936a8586d"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "6efe623a334d693b0944131399969ec63ca656f7aebb247456f25e1936a8586d"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "6efe623a334d693b0944131399969ec63ca656f7aebb247456f25e1936a8586d"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "6efe623a334d693b0944131399969ec63ca656f7aebb247456f25e1936a8586d"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-spot-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "classic": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "forceGraph": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 0
+    },
+    {
+      "name": "cel-sun-initial",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-caster-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "4960545b59bff8545c7ae5dd60e4a9262650467b147c406466a51c31841b74a9"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "4960545b59bff8545c7ae5dd60e4a9262650467b147c406466a51c31841b74a9"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "4960545b59bff8545c7ae5dd60e4a9262650467b147c406466a51c31841b74a9"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "4960545b59bff8545c7ae5dd60e4a9262650467b147c406466a51c31841b74a9"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-light-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "e9c59a4c19af2cf6040288a1012d0f250a75ce70c59ab12d83dcbe309c9c74e2"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "e9c59a4c19af2cf6040288a1012d0f250a75ce70c59ab12d83dcbe309c9c74e2"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "e9c59a4c19af2cf6040288a1012d0f250a75ce70c59ab12d83dcbe309c9c74e2"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "e9c59a4c19af2cf6040288a1012d0f250a75ce70c59ab12d83dcbe309c9c74e2"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-camera-moved",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "67bf0151247b023df007a2822e403cc13a7d4332fec6a085ddefb72d37edfa4f"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "67bf0151247b023df007a2822e403cc13a7d4332fec6a085ddefb72d37edfa4f"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "67bf0151247b023df007a2822e403cc13a7d4332fec6a085ddefb72d37edfa4f"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "67bf0151247b023df007a2822e403cc13a7d4332fec6a085ddefb72d37edfa4f"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-resized",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-disabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c9ab21642fa842a5c865509e3287096dee6dd4ed1a2bf28e96cbb747d5659e9c"
+        }
+      },
+      "classic": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c9ab21642fa842a5c865509e3287096dee6dd4ed1a2bf28e96cbb747d5659e9c"
+        }
+      },
+      "settled": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c9ab21642fa842a5c865509e3287096dee6dd4ed1a2bf28e96cbb747d5659e9c"
+        }
+      },
+      "forceGraph": {
+        "draws": 4,
+        "faces": 0,
+        "shadowDraws": 0,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "c9ab21642fa842a5c865509e3287096dee6dd4ed1a2bf28e96cbb747d5659e9c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 0,
+      "generatorEntries": 0,
+      "cascades": 0
+    },
+    {
+      "name": "cel-sun-reenabled",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-after-sibling",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 49152,
+          "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+        }
+      },
+      "width": 128,
+      "height": 96,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    },
+    {
+      "name": "cel-sun-reloaded",
+      "prepared": {
+        "path": "frameGraph"
+      },
+      "readinessDraws": 0,
+      "readinessStacks": [],
+      "readinessFaces": 0,
+      "graph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "classic": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "settled": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "forceGraph": {
+        "draws": 10,
+        "faces": 2,
+        "shadowDraws": 6,
+        "maskPasses": 0,
+        "classicReadyBefore": null,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "frameGraph"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+        }
+      },
+      "width": 80,
+      "height": 64,
+      "clusterCount": 0,
+      "keyContributions": 1,
+      "sameMask": true,
+      "sameMap": true,
+      "allocations": 1,
+      "generatorEntries": 1,
+      "cascades": 2
+    }
+  ],
+  "lifecycle": [
+    {
+      "name": "pbr-point",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "621f4430ce5c6196d2e3d6e130c0e1245a6cb97330f85645682c927771703e0b"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "80efd95b57d25c47b6e353e6b348c7c2ba5ffda37a32d9a7c4837d0a05e24891"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "ecece58c2aa7ddcd716cd842603fd2619d3b5171a5e6624a3224e3ecb849cbcd"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "remainingScenes": 0
+    },
+    {
+      "name": "pbr-spot",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "5e7da52a4e0f7e6d6ae854ab9e5eef77cdc460e097c9e5592d0678bc71bc7de1"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "022bac4a670dc9c1c1b88bb0ae65bbd6d10c0a5fb7fc7f50fd48727cf0189f2b"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "remainingScenes": 0
+    },
+    {
+      "name": "pbr-sun",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "d2146165111afaeb6b2094718dd253cce5817d31f6cfe0948e1bb34d2a3afad4"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "c650525519a1dd96fbb088f515fb2a65a11b4aaa1f8d8a8237d8e3fd528c5b0e"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "392977f6206361803c2a161967a4b6955833cf91f7a62c3503381f47c38b58c6"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "a2241014986f10d8aa36ff3d79b7ccf7476f3356ece99e399b9b96fd62959719"
+        }
+      },
+      "remainingScenes": 0
+    },
+    {
+      "name": "cel-point",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "2fc7f5ed44ab8fc00b19647dd2700e847193dfa3fedf7aefcd7d5d5653b12de2"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "828e5a636e7315bcdfd11d3d4e8cc662119afb655064789cd37e76f22b74e780"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "dc5ab2883606bb74d02460c8bb9e4d1cb2221c3fea1532726fc0013290e6a8e8"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "remainingScenes": 0
+    },
+    {
+      "name": "cel-spot",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "2b9a63f38363afa7d9c208455e4dc9791e788a66e59e2b63e231ed825c8db16c"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "6efe623a334d693b0944131399969ec63ca656f7aebb247456f25e1936a8586d"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "remainingScenes": 0
+    },
+    {
+      "name": "cel-sun",
+      "stableAllocation": true,
+      "stableMask": true,
+      "maskOwnedAfterGraphDispose": true,
+      "liveChildrenAfterOwnerDispose": 0,
+      "remainingClusterMaps": 0,
+      "shadowed": {
+        "byteLength": 49152,
+        "sha256": "5a7069c8b4ff985d7aa0bd2bbcee01daa3e0e1342be02d6db93f3a74e222e29c"
+      },
+      "unshadowed": {
+        "byteLength": 49152,
+        "sha256": "c9ab21642fa842a5c865509e3287096dee6dd4ed1a2bf28e96cbb747d5659e9c"
+      },
+      "initial": {
+        "byteLength": 20480,
+        "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+      },
+      "reload": {
+        "byteLength": 20480,
+        "sha256": "c8286718764640dd427355fddcf6c550655e6ddadd20c6aa3de885a843274b5e"
+      },
+      "ownedAfterGraphDispose": true,
+      "outputReferences": [
+        1,
+        1
+      ],
+      "outputUsable": true,
+      "retainedGraphObjects": 0,
+      "siblingPreserved": true,
+      "siblingBefore": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "siblingAfter": {
+        "draws": 8,
+        "faces": 1,
+        "shadowDraws": 4,
+        "maskPasses": 0,
+        "classicReadyBefore": true,
+        "activeMeshes": [
+          "receiver-0",
+          "caster-0",
+          "receiver-1",
+          "caster-1"
+        ],
+        "result": {
+          "path": "classic"
+        },
+        "pixelEvidence": {
+          "byteLength": 20480,
+          "sha256": "b5f8d74db54c3d76c25a7cece8ea88449163e431ed57e62990342cfa8507c8a8"
+        }
+      },
+      "remainingScenes": 0
+    }
+  ]
+}

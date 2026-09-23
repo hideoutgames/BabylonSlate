@@ -1,0 +1,46 @@
+{
+  "buildRevision": "5fafa7b49cd6d7708dafa9b656b4447f6d5f89eb",
+  "run": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35887663686",
+  "host": "GitHub ubuntu-latest, software WebGL2",
+  "case": "prepared rectangular emission survives standalone export and scene lifecycle on webgl2",
+  "transition": "textured to uniform",
+  "attempts": [
+    {
+      "retry": 0,
+      "status": "FAIL",
+      "atDeadline": {
+        "ready": true,
+        "draws": 1,
+        "rendered": true,
+        "gpuPending": true,
+        "copied": true
+      },
+      "deadlineMs": 4000
+    },
+    {
+      "retry": 1,
+      "status": "FAIL",
+      "atDeadline": {
+        "ready": true,
+        "draws": 1,
+        "rendered": true,
+        "gpuPending": true,
+        "copied": true
+      },
+      "deadlineMs": 4000
+    },
+    {
+      "retry": 2,
+      "status": "FAIL",
+      "atDeadline": {
+        "ready": true,
+        "draws": 1,
+        "rendered": true,
+        "gpuPending": true,
+        "copied": true
+      },
+      "deadlineMs": 4000
+    }
+  ],
+  "scope": "Observed completion boundary; this does not establish the driver-level cause of delayed GPU completion."
+}

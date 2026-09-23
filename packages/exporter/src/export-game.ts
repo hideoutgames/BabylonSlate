@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -187,8 +187,10 @@ function writeLooseAssets(
   assets: readonly ExportAssetBytes[],
 ): { packs: string[]; index: GameAssetIndexEntry[] } {
   const index: GameAssetIndexEntry[] = [];
-  for (const asset of assets) {
-    const path = `assets/${asset.guid}.bin`;
+  for (const [indexInExport, asset] of assets.entries()) {
+    // Asset IDs include namespaced sidecars (for example area-emission:guid).
+    // Keep IDs in the manifest and use portable, collision-free file names.
+    const path = `assets/data-${indexInExport}.bin`;
     files.set(path, asset.bytes);
     index.push(indexEntry(asset, { path }));
   }
@@ -251,8 +253,8 @@ export async function exportGame(
     reverbDampingScale: clampAudioScale(options.reverbDampingScale, 1),
     bundleDebugger: options.bundleDebugger,
     mode,
-    render: options.customResolution,
-    playFrameCap: options.playFrameCap ?? 60,
+    render: normalizeRenderProjectSettings(options.renderSettings),
+    playFrameCap: normalizePlayFrameCap(options.playFrameCap),
     touchMinTargetPx:
       typeof options.touchMinTargetPx === "number" &&
       options.touchMinTargetPx > 0
@@ -346,6 +348,8 @@ export function parseGameManifest(source: string): GameManifest {
   delete rest.uiDesignerPresets;
   return {
     ...rest,
+    render: normalizeRenderProjectSettings(parsed.render),
+    playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     project: {
       name: typeof parsed.project?.name === "string" ? parsed.project.name : "",
       version: typeof parsed.project?.version === "string" ? parsed.project.version : "",

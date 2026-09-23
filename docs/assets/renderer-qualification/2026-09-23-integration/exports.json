@@ -1,0 +1,226 @@
+﻿[
+    {
+        "mode":  "packed",
+        "requestedBackend":  "webgl2",
+        "render":  {
+                       "renderPath":  "forward",
+                       "gpuBackend":  "webgl2",
+                       "mode":  "cel",
+                       "cel":  {
+                                   "shadowBands":  3,
+                                   "shadowThreshold":  0.5,
+                                   "shadowStrength":  0.65,
+                                   "specularEnabled":  true,
+                                   "specularStrength":  0.2,
+                                   "specularSize":  0.2,
+                                   "lightColorInfluence":  1,
+                                   "lightMixing":  "strongest",
+                                   "outlinesEnabled":  true,
+                                   "outlineColor":  [
+                                                        0.03,
+                                                        0.03,
+                                                        0.03
+                                                    ],
+                                   "outlineWidth":  1
+                               },
+                       "environmentLighting":  {
+                                                   "enabled":  true,
+                                                   "intensity":  1,
+                                                   "rotationYDegrees":  0,
+                                                   "celStrength":  0
+                                               },
+                       "effects":  {
+                                       "colorPipeline":  {
+                                                             "version":  1,
+                                                             "mode":  "legacyDisplay"
+                                                         },
+                                       "toneMapping":  "none",
+                                       "exposure":  1,
+                                       "contrast":  1,
+                                       "vignette":  {
+                                                        "enabled":  false,
+                                                        "weight":  1.5,
+                                                        "color":  [
+                                                                      0,
+                                                                      0,
+                                                                      0
+                                                                  ]
+                                                    },
+                                       "bloom":  {
+                                                     "enabled":  false,
+                                                     "threshold":  0.9,
+                                                     "weight":  0.15,
+                                                     "kernel":  64,
+                                                     "scale":  0.5
+                                                 },
+                                       "fxaa":  false
+                                   },
+                       "shadows":  {
+                                       "profile":  "medium",
+                                       "enabled":  true,
+                                       "fadeFraction":  0.1,
+                                       "filter":  "pcf",
+                                       "softness":  0.05,
+                                       "autoBias":  true,
+                                       "depthBias":  0.0001,
+                                       "normalBias":  0.005,
+                                       "localLightMode":  "auto",
+                                       "distance":  200,
+                                       "mapSize":  2048,
+                                       "cascades":  2,
+                                       "filterQuality":  "medium",
+                                       "localMapSize":  1024,
+                                       "maxLocalLights":  2,
+                                       "preset":  "medium"
+                                   },
+                       "quality":  {
+                                       "resolution":  {
+                                                          "preset":  "custom",
+                                                          "scale":  1,
+                                                          "dynamic":  false,
+                                                          "minScale":  0.75,
+                                                          "targetFps":  60
+                                                      },
+                                       "textures":  {
+                                                        "preset":  "medium",
+                                                        "lodBias":  0,
+                                                        "anisotropy":  4,
+                                                        "byteBudget":  536870912
+                                                    },
+                                       "postprocessing":  {
+                                                              "preset":  "medium",
+                                                              "resolutionScale":  0.75
+                                                          },
+                                       "lighting":  {
+                                                        "preset":  "medium",
+                                                        "localLightMode":  "auto",
+                                                        "maxLocalLights":  16
+                                                    }
+                                   },
+                       "customResolution":  true,
+                       "width":  480,
+                       "height":  270,
+                       "blackBars":  true
+                   },
+        "zipBytes":  7580265,
+        "zipSha256":  "3c105ddde9e57a26a96b9d30c1e66672d80b9afce50c0e08a44e1b181df319c1",
+        "fileCount":  53,
+        "uncompressedBytes":  26592217,
+        "extraction":  "PASS: Windows Expand-Archive",
+        "sourceBuild":  "94a1e73b736161c02d6c3ff14ab9b487eb49f7c2",
+        "artifactSha256":  "c2c0f9f0070c7cade11d0ce0580ea4fd9f2574892c35d8912d9966531d8bc997",
+        "playerSha256":  "68b607100a8c232de23461fdddb23699433193f69e33e554bda358229c96ead6"
+    },
+    {
+        "mode":  "loose",
+        "requestedBackend":  "webgpu",
+        "render":  {
+                       "renderPath":  "forward",
+                       "gpuBackend":  "webgpu",
+                       "mode":  "cel",
+                       "cel":  {
+                                   "shadowBands":  3,
+                                   "shadowThreshold":  0.5,
+                                   "shadowStrength":  0.65,
+                                   "specularEnabled":  true,
+                                   "specularStrength":  0.2,
+                                   "specularSize":  0.2,
+                                   "lightColorInfluence":  1,
+                                   "lightMixing":  "strongest",
+                                   "outlinesEnabled":  true,
+                                   "outlineColor":  [
+                                                        0.03,
+                                                        0.03,
+                                                        0.03
+                                                    ],
+                                   "outlineWidth":  1
+                               },
+                       "environmentLighting":  {
+                                                   "enabled":  true,
+                                                   "intensity":  1,
+                                                   "rotationYDegrees":  0,
+                                                   "celStrength":  0
+                                               },
+                       "effects":  {
+                                       "colorPipeline":  {
+                                                             "version":  1,
+                                                             "mode":  "legacyDisplay"
+                                                         },
+                                       "toneMapping":  "none",
+                                       "exposure":  1,
+                                       "contrast":  1,
+                                       "vignette":  {
+                                                        "enabled":  false,
+                                                        "weight":  1.5,
+                                                        "color":  [
+                                                                      0,
+                                                                      0,
+                                                                      0
+                                                                  ]
+                                                    },
+                                       "bloom":  {
+                                                     "enabled":  false,
+                                                     "threshold":  0.9,
+                                                     "weight":  0.15,
+                                                     "kernel":  64,
+                                                     "scale":  0.5
+                                                 },
+                                       "fxaa":  false
+                                   },
+                       "shadows":  {
+                                       "profile":  "medium",
+                                       "enabled":  true,
+                                       "fadeFraction":  0.1,
+                                       "filter":  "pcf",
+                                       "softness":  0.05,
+                                       "autoBias":  true,
+                                       "depthBias":  0.0001,
+                                       "normalBias":  0.005,
+                                       "localLightMode":  "auto",
+                                       "distance":  200,
+                                       "mapSize":  2048,
+                                       "cascades":  2,
+                                       "filterQuality":  "medium",
+                                       "localMapSize":  1024,
+                                       "maxLocalLights":  2,
+                                       "preset":  "medium"
+                                   },
+                       "quality":  {
+                                       "resolution":  {
+                                                          "preset":  "custom",
+                                                          "scale":  1,
+                                                          "dynamic":  false,
+                                                          "minScale":  0.75,
+                                                          "targetFps":  60
+                                                      },
+                                       "textures":  {
+                                                        "preset":  "medium",
+                                                        "lodBias":  0,
+                                                        "anisotropy":  4,
+                                                        "byteBudget":  536870912
+                                                    },
+                                       "postprocessing":  {
+                                                              "preset":  "medium",
+                                                              "resolutionScale":  0.75
+                                                          },
+                                       "lighting":  {
+                                                        "preset":  "medium",
+                                                        "localLightMode":  "auto",
+                                                        "maxLocalLights":  16
+                                                    }
+                                   },
+                       "customResolution":  true,
+                       "width":  480,
+                       "height":  270,
+                       "blackBars":  true
+                   },
+        "zipBytes":  7583050,
+        "zipSha256":  "b14f1a1e5929da79d4ee747c89e1efde7ebad03bd52e625942d4ac72c5ec04b1",
+        "fileCount":  88,
+        "uncompressedBytes":  26586901,
+        "extraction":  "PASS: Windows Expand-Archive",
+        "sourceBuild":  "94a1e73b736161c02d6c3ff14ab9b487eb49f7c2",
+        "artifactSha256":  "c2c0f9f0070c7cade11d0ce0580ea4fd9f2574892c35d8912d9966531d8bc997",
+        "playerSha256":  "68b607100a8c232de23461fdddb23699433193f69e33e554bda358229c96ead6"
+    }
+]

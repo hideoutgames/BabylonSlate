@@ -8,6 +8,7 @@ import { publishSceneRenderPath, syncSceneRenderPath } from "./scene-render-path
 type RenderPathSession = {
   request: RenderPathOverrides;
   listeners: Set<(request: RenderPathOverrides) => void>;
+  play?: { views: number; editorRequest: RenderPathOverrides };
 };
 
 const sessions = new WeakMap<AbstractEngine, RenderPathSession>();
@@ -29,6 +30,31 @@ export function renderPathSession(
   engine: AbstractEngine,
 ): RenderPathOverrides {
   return sessions.get(engine)?.request ?? {};
+}
+
+/** Shared Play views own one game session, distinct from the editor's request. */
+export function retainPlayRenderPathSession(engine: AbstractEngine): () => void {
+  const entry = ensureSession(engine);
+  const first = !entry.play;
+  const scope = entry.play ??= { views: 0, editorRequest: { ...entry.request } };
+  scope.views += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    scope.views -= 1;
+    if (scope.views === 0 && entry.play === scope) {
+      entry.play = undefined;
+      if (sessions.get(engine) === entry) requestRenderPath(engine, scope.editorRequest);
+    }
+  };
+  try { if (first) requestRenderPath(engine, {}); }
+  catch (error) {
+    try { release(); }
+    catch (restoreError) { throw new AggregateError([error, restoreError], "Play render-path session could not start or restore."); }
+    throw error;
+  }
+  return release;
 }
 
 /**

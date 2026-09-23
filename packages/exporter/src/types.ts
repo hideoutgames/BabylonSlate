@@ -110,7 +110,8 @@ export type ExportGameOptions = {
   reverbWetScale?: number;
   reverbDecayScale?: number;
   reverbDampingScale?: number;
-  customResolution: RenderProjectSettings;
+  /** Complete authored rendering defaults, serialized as game.json `render`. */
+  renderSettings: RenderProjectSettings;
   playFrameCap?: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;

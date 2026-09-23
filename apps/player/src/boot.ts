@@ -1,3 +1,4 @@
+import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
@@ -88,6 +89,7 @@ export type PlayerDiagnostic = {
 export type PlayerBootHandle = {
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
+  scalability: () => ScalabilityAcknowledgement | undefined;
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
@@ -107,6 +109,12 @@ export type PlayerBootHandle = {
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
+/** Browser qualification surface installed only in test-mode player builds. */
+export type PlayerTestHandle = Pick<PlayerBootHandle,
+  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" | "bakedSession" |
+  "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
+>;
+
 export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
@@ -114,6 +122,7 @@ export type PlayerBootOptions = {
   content?: PackedGameContent;
   /** Runs after every player resource has attempted cleanup, including startup rollback. */
   onStopped?: () => void;
+  onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onStats?: (stats: {
     ticks: number;
     fps: number;
@@ -186,6 +195,10 @@ function initializePlayer(
   });
 
   own(() => consoleHost.dispose());
+  const publishScalabilityStatus = (acknowledgement: ScalabilityAcknowledgement) => {
+    if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
+    else runtime?.applyScalabilityStatus(acknowledgement);
+  };
   const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
     const control: ControlMessage = {
       type: "renderPathStatus",
@@ -197,6 +210,7 @@ function initializePlayer(
     if (worker) worker.postControl(control);
     else runtime?.applyRenderPathStatus(control);
   };
+  let runtimeOutput = manifest.render;
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
@@ -211,6 +225,7 @@ function initializePlayer(
     pixelPerfect: content.pixelPerfect,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,
+    areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
@@ -326,6 +341,8 @@ function initializePlayer(
       else runtime?.applyAudioVoiceEnded(control);
     },
     onRenderPathChanged: publishRenderPathStatus,
+    onScalabilityApplied: publishScalabilityStatus,
+    onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
   });
   own(() => handle.dispose());
   handle.applySceneEnvironment(scene);
@@ -380,10 +397,10 @@ function initializePlayer(
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
   const resizeObserver =
-    framebuffer || typeof ResizeObserver === "undefined"
+    typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
-          if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+          if (!playFramebufferSize(runtimeOutput) && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
             handle.resize();
           }
         });
@@ -497,6 +514,9 @@ function initializePlayer(
       runtime?.notifySceneLayerReady(layerId, layerLoadId);
     },
     onFailed: (_scene, error) => {
+      // Standalone hosts have no parent preview channel. Keep the underlying
+      // exception visible as well as the structured lifecycle diagnostic.
+      console.error("[player] Scene loading failed.", error);
       diagnostics.push({
         message: `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`,
         severity: "error",
@@ -649,6 +669,8 @@ function initializePlayer(
   // The subscription above fired before the runtime existed; report the
   // current status now that the worker or in-process runtime can store it.
   publishRenderPathStatus(handle.renderPathStatus());
+  const initialScalability = handle.scalabilityStatus?.();
+  if (initialScalability) publishScalabilityStatus(initialScalability);
 
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
@@ -734,6 +756,7 @@ function initializePlayer(
     return {
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
+      scalability: () => handle.scalabilityStatus?.(),
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),

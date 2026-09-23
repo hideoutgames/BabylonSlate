@@ -1,5 +1,11 @@
 # Exporter and packaged player (P14)
 
+The internal export option is `renderSettings: RenderProjectSettings`; the serialized contract remains `game.json.render`. Project loading, export, and manifest parsing share `normalizeRenderProjectSettings`, preserving backend/path, PBR/CEL, quality, shadows, environment, effects and output dimensions. Unknown/editor-local fields are discarded, missing legacy fields receive project defaults, and the artifact owns its normalized values. Capability fallback is resolved separately at engine creation without rewriting the saved request. Boundary tests do not certify rendered parity or device performance.
+
+The same boundary normalizes the separate `playFrameCap` through `normalizePlayFrameCap`: finite positive rates are preserved, malformed rates use the 60 fps project default. Positive fractional output dimensions round to at least one pixel.
+
+`e2e/render-settings-export.spec.ts` serves actual packed/loose player files outside the editor with non-default CEL, fixed render scale, disabled shadows, FXAA and frame cap. It checks presented CEL/PBR pixels, live task/scale readback, session scale and frame cap across a verified scene transition, project defaults after reload, and a deliberately rejected WebGPU adapter with the original requested backend retained. Its test-only hook delegates console requests to the ordinary session command service. Desktop browser evidence is separate from physical A16 qualification.
+
 Spec: [engineplan.md](../engineplan.md) §15, §15.1, §15.2. Implementation: `@babylonslate/exporter` (headless packer), `apps/player` (Vite canvas host), editor **Export Game** and **Preview Build**.
 
 Overlay Play (shared Engine, `registerView`) stays the default. Packaged **itch zip / Export Game** always starts from `project.json` `startupSceneGuid` (asset guid). Overlay Play and Preview Build seed that guid when Debug **Play from Scene** is off, or when it is on and no scene tab is open; otherwise they seed the open scene for that session only. Do not boot or tree-shake from `BabprojectManifest.startupScene` or `assets/main.scene.babasset`.
@@ -47,6 +53,16 @@ Textures: pack `selectTextureChunk`’s chosen variant (KTX2 when present **and*
 
 ## Packed layout (default)
 
+World `OutlineComponent` records travel with normal scene/Class component data
+in both packed and loose exports. Player hydration emits actor-bound outline
+contributions through the runtime bridge, including late model realization and
+spawn/despawn. Normalized `render.cel` defaults include global outline enable,
+RGB color and output-pixel width; scene overrides and session Scalability use
+the same settings contract as Play. Selection, gizmos and editor membership are
+view state and are never exported. Outlines require no extra asset preprocessing.
+The [qualification report](../design/renderer-qualification.md) distinguishes
+implemented wiring from independently served player acceptance.
+
 ```
 index.html          # CSS inlined; itch requires this at zip root
 player.js           # Vite `codeSplitting: false`; workers stay separate files
@@ -64,7 +80,7 @@ meshopt/…           # glTF meshopt decoder (EXT_meshopt_compression)
 
 `GameManifest` records `startupSceneGuid`, optional `gameInstanceClass` (project field), `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), Engine Settings `touchMinTargetPx` (default 44), `packs`, `scriptsFile`, `physicsWorld`, and `assets[]`. The player parses the manifest first and resolves the script registry from `scriptsFile`. Older manifests without the field migrate to `scripts.js`; a present value must be a non-empty string. Audio fields: optional `audioMixerGuid`, `occlusionEnabled` (default on), and reverb scales (default 1). Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`. The player boot prefers `manifest.gameInstanceClass`, then the startup scene field. When `bundleDebugger` is true the manifest also carries `infiniteLoopDetection` and `loopCount` from Project Settings (defaults on / 1_000_000); release packs omit those keys. `parseGameManifest` fills the defaults for old debugger-bundled `game.json` files and ignores the fields on release manifests. `GameManifest` does not include HUD keys.
 
-`loose` is an explicit preset option (`packed: false`): tree-shaken `assets/<guid>.bin`, no `.babpack`. Wasm, transcoder, and `coi-serviceworker.js` stay real files in both modes.
+`loose` is an explicit preset option (`packed: false`): tree-shaken `assets/data-<index>.bin`, no `.babpack`. The manifest maps unchanged asset IDs to these portable filenames, including namespaced emission and audio sidecars. Names remain distinct on case-insensitive filesystems and cannot introduce path separators or Windows reserved names. Wasm, transcoder, and `coi-serviceworker.js` stay real files in both modes.
 
 `exportGame` retains Rapier whenever the exported asset closure contains a `SceneLayer`, including a 3D project whose layers use a separate 2D physics world. A 3D export without layers still omits Rapier; a 2D export omits Havok.
 

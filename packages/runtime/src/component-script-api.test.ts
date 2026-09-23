@@ -36,6 +36,42 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 }
 
 describe("component script API", () => {
+  it("changes an actor's authored outline without rebuilding its mesh or changing a sibling", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneOf(["a", "b"].map((id) => createActor(id, id, { classId: "Hero", components: [
+        createMeshComponent(`${id}-mesh`),
+        { id: `${id}-ink`, classId: "OutlineComponent", properties: { width: 1, color: [0.03, 0.03, 0.03] } },
+      ] }))), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "a-ink"); ctx.setVariableOn(c, "color", { x: 1, y: 0.25, z: 0 }); ctx.setVariableOn(c, "width", 3); ctx.setVariableOn(c, "throughMeshes", true); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const before = commands.filter((command) => command.type === "assignMesh").length;
+      const sibling = commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "b").at(-1);
+      runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("a")!);
+      expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(before);
+      expect(commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "a").at(-1))
+        .toMatchObject({ outlines: [{ actorId: "a", id: "a-ink", color: [1, 0.25, 0], width: 3, throughMeshes: true }] });
+      expect(commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "b").at(-1)).toBe(sibling);
+    } finally { runtime.stop(); }
+  });
+  it("updates a rectangular emitter alongside a render mesh through native component variables", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      playScene: sceneOf([createActor("panel", "Panel", { classId: "Hero", components: [
+        createMeshComponent("mesh"),
+        { id: "area", classId: "AreaRectLightComponent", properties: { width: 2, textureGuid: "pattern" } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([script('export function onBeginPlay(ctx) { const c = ctx.getComponentById(ctx.self, "area"); ctx.setVariableOn(c, "width", 4); }')]);
+    runtime.realizePlayWorld();
+    const emissions = commands.filter((command) => command.type === "setAreaLights");
+    expect(emissions.at(-1)).toMatchObject({ lights: [{ id: "area", properties: { width: 4, textureGuid: "pattern" } }] });
+    expect(commands.some((command) => command.type === "assignMesh" && command.meshKind === "box")).toBe(true);
+    runtime.stop();
+  });
   it("Set Text updates the component text, refreshes the mesh, and fires On Text Changed", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

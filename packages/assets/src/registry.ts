@@ -36,6 +36,10 @@ import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
 } from "./texture-compression";
 import { authoredEncodeMaxDimension } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
+import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
+import { sha256Hex } from "./bytes";
+
+export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
 export interface IndexedAsset {
@@ -175,6 +179,10 @@ export class AssetRegistry {
     return this.byGuid.get(guid);
   }
 
+  getByPath(path: string): IndexedAsset | undefined {
+    return this.byPath.get(path);
+  }
+
   list(filter?: { rootId?: string; type?: string }): IndexedAsset[] {
     let out = [...this.byGuid.values()];
     if (filter?.rootId) {
@@ -299,6 +307,10 @@ export class AssetRegistry {
   }
 
   async deleteAsset(guid: string): Promise<void> {
+    return this.withAssetWrite(guid, () => this.deleteAssetUnlocked(guid));
+  }
+
+  private async deleteAssetUnlocked(guid: string): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) return;
     if (asset.placeholder) {
@@ -316,12 +328,12 @@ export class AssetRegistry {
     this.assertWritable(root);
     const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
-    await storage.remove(folderPath);
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
-        this.removeFromIndex(asset);
+        await this.deleteAsset(asset.header.guid);
       }
     }
+    await storage.remove(folderPath);
     for (const known of [...this.knownFolders]) {
       if (isWithinFolder(known, folderPath)) {
         this.knownFolders.delete(known);
@@ -367,6 +379,10 @@ export class AssetRegistry {
     rootId: string,
     newRelativePath: string,
   ): Promise<IndexedAsset> {
+    return this.withAssetWrite(guid, () => this.moveAssetUnlocked(guid, rootId, newRelativePath));
+  }
+
+  private async moveAssetUnlocked(guid: string, rootId: string, newRelativePath: string): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     if (asset.rootId !== rootId) {
@@ -398,6 +414,10 @@ export class AssetRegistry {
   }
 
   async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
+    return this.withAssetWrite(guid, () => this.renameAssetUnlocked(guid, newName));
+  }
+
+  private async renameAssetUnlocked(guid: string, newName: string): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const root = this.roots.get(asset.rootId);
@@ -777,6 +797,56 @@ export class AssetRegistry {
     });
   }
 
+  /** Explicit asset processing/build work. Gameplay only consumes the committed chunk. */
+  async prepareAreaEmission(guid: string, process: AreaEmissionProcessor, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<Uint8Array> {
+    if (!this.encodeQueue) throw new Error("Texture processing queue is unavailable.");
+    options.signal?.throwIfAborted();
+    options.onProgress?.({ phase: "queued", progress: 0 });
+    return this.encodeQueue.enqueueDerived(async (signal) => {
+      const asset = this.byGuid.get(guid);
+      if (!asset || asset.header.type !== "Texture" || isEnvironmentTexturePayload(asset.header.payload)) throw new Error("Area emission requires a raster Texture asset.");
+      const file = await this.storageForAsset(asset).readBinary(asset.path);
+      const header = readBabassetHeader(file);
+      const sourceEntry = header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+      if (!sourceEntry) throw new Error("The Texture has no retained source pixels.");
+      const cached = currentAreaEmissionChunk(header);
+      if (cached) {
+        try {
+          const bytes = await this.loader.loadChunk(file, cached, this.blobsForAsset(asset));
+          if (bytes) {
+            await decodeAreaEmission(bytes, sourceEntry.sha256);
+            signal.throwIfAborted();
+            return bytes;
+          }
+        } catch {
+          // This is an explicit processing request. Rebuild a corrupt derived
+          // representation from the retained source, never in gameplay.
+          signal.throwIfAborted();
+        }
+      }
+      this.assertWritable(this.getRootOrThrow(asset.rootId));
+      const source = await this.loader.loadChunk(file, sourceEntry, this.blobsForAsset(asset));
+      if (!source || await sha256Hex(source) !== sourceEntry.sha256) throw new Error("The emission source is missing or corrupt.");
+      const bytes = await process({ source, sourceHash: sourceEntry.sha256, mime: sourceEntry.mime }, signal, options.onProgress);
+      signal.throwIfAborted();
+      await decodeAreaEmission(bytes, sourceEntry.sha256);
+      options.onProgress?.({ phase: "saving", progress: 1 });
+      await this.enqueueTextureWrite(guid, async () => {
+        if (!this.byGuid.has(guid)) throw new Error("The Texture was removed during emission processing.");
+        await this.rewriteTexture(guid, async (current, chunks) => {
+          signal.throwIfAborted();
+          const pixels = [...chunks.values()].find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+          if (!pixels || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
+          for (const [id, chunk] of chunks) if (chunk.kind === AREA_EMISSION_CHUNK_KIND) chunks.delete(id);
+          const id = areaEmissionChunkId(sourceEntry.sha256);
+          chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission", data: bytes });
+          return { header: current, chunks };
+        }, () => signal.throwIfAborted());
+      });
+      return bytes;
+    }, options.signal);
+  }
+
   async retryTextureEncoding(
     guid: string,
     options?: { maxDimension?: number; force?: boolean },
@@ -911,17 +981,20 @@ export class AssetRegistry {
     guid: string,
     work: () => Promise<void>,
   ): Promise<void> {
+    return this.withAssetWrite(guid, work);
+  }
+
+  /** Serialize read/modify/write with derived chunks, document saves and moves. */
+  withAssetWrite<T>(guid: string, work: () => Promise<T>): Promise<T> {
     const next = (this.textureWriteChain.get(guid) ?? Promise.resolve()).then(
       work,
       work,
     );
-    this.textureWriteChain.set(
-      guid,
-      next.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
+    const settled = next.then(() => undefined, () => undefined);
+    this.textureWriteChain.set(guid, settled);
+    void settled.then(() => {
+      if (this.textureWriteChain.get(guid) === settled) this.textureWriteChain.delete(guid);
+    });
     return next;
   }
 
@@ -934,6 +1007,7 @@ export class AssetRegistry {
       header: Omit<BabassetHeader, "chunks">;
       chunks: Map<string, ChunkInput>;
     }>,
+    assertCurrent: () => void = () => {},
   ): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) return;
@@ -963,6 +1037,7 @@ export class AssetRegistry {
       chunks: [...next.chunks.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
+    assertCurrent();
     await storage.writeBinary(asset.path, bytes);
     const header = readBabassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header);

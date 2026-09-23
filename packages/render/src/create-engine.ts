@@ -1,11 +1,15 @@
+import { RuntimeScalability } from "./runtime-scalability";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
-import { requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSession } from "./render-path-session";
 import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
+import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
@@ -71,7 +75,6 @@ import {
   selectionGizmoRoots,
   type GizmoMultiSelectDrag,
 } from "./gizmo-multi-select";
-import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
@@ -107,6 +110,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   refreshAuthoredCameraLenses,
   syncAuthoredCamerasFromMeshes,
+  syncAuthoredAreaLightsFromMeshes,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -263,6 +267,7 @@ export interface EngineHandle {
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
   renderPathStatus: () => ResolvedRenderingPipeline;
+  scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Non-persistent game-wide session render path request; null resumes the project path. */
   setRenderPath: (renderPath: RenderPath | null) => void;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
@@ -421,7 +426,9 @@ export interface CreateEngineOptions {
   environmentColor?: readonly [number, number, number];
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
-  renderSettings?: RenderShadingSettings;
+  renderSettings?: Partial<RenderProjectSettings>;
+  onScalabilityApplied?: (acknowledgement: ScalabilityAcknowledgement) => void;
+  onRuntimeOutputChanged?: (settings: RenderProjectSettings) => void;
   /** Plain scene-owned requested/effective selection, emitted only when it changes. */
   onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
@@ -438,6 +445,7 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  areaEmissions?: MeshAssetContext["areaEmissions"];
   /** Authored Texture source pixels for overlay 2DTexture world size. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
@@ -567,7 +575,7 @@ export interface EditorTools {
   camera: EditorCameraController;
   gizmos: GizmoHost;
   grid: EditorGrid;
-  selection: SelectionOutline;
+  selection: SceneOutlineSelection;
   sync: EditorSceneSync;
   setViewportMode: (mode: ViewportMode) => void;
   /** Session overlay: PBR / Unlit / Wireframe. */
@@ -778,6 +786,8 @@ function initializeEngine(
   });
   const previousScaling = engine.getHardwareScalingLevel();
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
+  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
+  onRollback(() => releasePlayRenderPath?.());
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
     caps: engine.getCaps(),
@@ -802,9 +812,9 @@ function initializeEngine(
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
-  // Editor active-mesh freezing and caller-bound preview targets retain their
-  // native path. Play world/layers share the existing presentation scheduler.
-  const worldRenderer = options.playMode && !presentRtt ? new SceneRenderCoordinator(scene) : null;
+  // Every view shares the same graph path for authored and selection outlines.
+  // The graph owns its active queue; editor world matrices still freeze.
+  const worldRenderer = new SceneRenderCoordinator(scene);
   onRollback(() => worldRenderer?.dispose());
   let disposed = false;
   let releasedHandle: Promise<void> | null = null;
@@ -819,6 +829,8 @@ function initializeEngine(
     resolve: () => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    ready: boolean;
+    attempts: number;
     rendered: boolean;
     owner?: SceneLayerLoadIdentity;
     submission: ReturnType<typeof submitPresentedFrame> | null;
@@ -834,6 +846,11 @@ function initializeEngine(
       pending.submission?.cancel();
       pending.reject(error);
     }
+  };
+  const expirePresentation = (key: string) => {
+    const pending = pendingPresentations.get(key);
+    if (!pending) return;
+    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}.`), key);
   };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
@@ -903,21 +920,34 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
+  onRollback(() => outlineHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
+  const scaledLockedViewSize = () => lockedViewSize ? {
+    width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
+    height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
+  } : null;
+  const syncLockedViewSize = () => {
+    const size = scaledLockedViewSize();
+    if (size && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)) engine.setSize(size.width, size.height);
+  };
+  let runtimeScalability: RuntimeScalability | undefined;
+  let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
   const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
   const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
-  const shouldRenderFrame = (now: number) => !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
+  const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
       if (worldRenderer) {
         const css = cssCanvasPixelSize(canvas);
         const scale = engine.getHardwareScalingLevel();
-        const size = lockedViewSize ?? {
+        const size = scaledLockedViewSize() ?? {
           width: Math.max(1, Math.floor(css.width / scale)),
           height: Math.max(1, Math.floor(css.height / scale)),
         };
@@ -1003,6 +1033,7 @@ function initializeEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
+  binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
@@ -1207,6 +1238,7 @@ function initializeEngine(
   let appliedProject: unknown;
   let appliedSceneOverrides: unknown;
   let appliedSessionOverrides: unknown;
+  let appliedRuntimeOverrides: unknown;
   let appliedLocalOverrides: unknown;
   const applyTextureAnisotropy = (texture: BaseTexture) => {
     const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
@@ -1214,7 +1246,8 @@ function initializeEngine(
   };
   const applyRenderingQuality = () => {
     const state = sceneRenderingSettings(scene);
-    if (appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
+    if (appliedRuntimeOverrides === state.runtimeOverrides && appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
+    appliedRuntimeOverrides = state.runtimeOverrides;
     appliedProject = state.project;
     appliedSceneOverrides = state.shadowOverrides;
     appliedSessionOverrides = state.qualityOverrides;
@@ -1222,8 +1255,10 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution))
+    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution)) {
       scaling.configureQuality(quality.resolution);
+      syncLockedViewSize();
+    }
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
@@ -1239,7 +1274,8 @@ function initializeEngine(
     }
     appliedEffectsKey = effectsKey;
   };
-  scene.onBeforeRenderObservable.add(applyRenderingQuality);
+  // Apply at the host boundary below, never inside Scene.render. WebGPU
+  // attachment resizing emits beginFrame and can re-enter view admission.
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
   const sceneLayerCompositor = options.playMode
@@ -1354,11 +1390,38 @@ function initializeEngine(
     : null;
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
+        freezeActiveMeshes: false,
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
-        onAfterApply: () => viewportShading?.apply(),
+        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); },
       })
     : null;
   onRollback(() => editorSync?.dispose());
+  const syncEditorOutlines = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    outlineHost.replaceActors(data.actors.map((actor) => ({ id: actor.id,
+      meshes: editorSync.visualMeshesForActor(actor.id), bindings: outlineBindings(actor.id, actor.components) })));
+    outlineHost.refreshSettings();
+  };
+  const outlineActorBySlot = new Map<number, string>();
+  const refreshRuntimeOutline = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = binding.outlines.get(slotId);
+    const actorId = authored?.actorId ?? binding.meshSorting.get(slotId)?.actorGuid;
+    const previous = outlineActorBySlot.get(slotId);
+    if (previous && (!root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      outlineHost.removeActor(previous); outlineActorBySlot.delete(slotId);
+    }
+    if (!actorId || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    // Runtime transforms are normally world-space. If a caller attaches actor
+    // roots, descendants still belong to their own actor's outline identity.
+    const otherRoots = new Set([...binding.meshes.values()].filter((mesh) => mesh !== root));
+    const meshes = visualMeshes(root, otherRoots);
+    outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
+    outlineActorBySlot.set(slotId, actorId);
+  };
+  binding.onVisualChanged = refreshRuntimeOutline;
 
   // One bake owner per world Scene. `apply` runs at the end of every scene
   // load; receivers that have not spawned yet (Play command realization) keep
@@ -1428,6 +1491,14 @@ function initializeEngine(
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
+      binding.areaEmissions = assets.areaEmissions;
+      let emissionChanged = false;
+      for (const group of binding.areaLights.values())
+        emissionChanged = group.refreshEmissions(assets.areaEmissions) || emissionChanged;
+      if (emissionChanged) {
+        worldRenderer?.invalidate();
+        scheduler.invalidate("asset");
+      }
       binding.texturePixelSizes = assets.texturePixelSizes;
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;
@@ -1497,6 +1568,13 @@ function initializeEngine(
     loadOptions?: { sceneAssetGuid?: string },
   ) => {
     assertCurrent(loadGeneration);
+    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+      isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+      editorSync.apply(sceneData);
+      outlineHost.refreshSettings();
+      return;
+    }
     loadGeneration += 1;
     worldRenderer?.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
@@ -1555,7 +1633,7 @@ function initializeEngine(
       camera: cameraController.camera,
     });
     onRollback(() => grid.dispose());
-    const selection = new SelectionOutline(scene);
+    const selection = outlineHost.selection;
     onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
     const parentIdOf = (id: string): string | null =>
@@ -1623,6 +1701,7 @@ function initializeEngine(
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
         const sceneData = editorSync.serializedScene();
+        syncAuthoredAreaLightsFromMeshes(scene, (id) => editorSync.meshForActor(id));
         if (sceneData) {
           syncAuthoredCamerasFromMeshes(scene, sceneData, (id) =>
             editorSync.meshForActor(id),
@@ -1716,6 +1795,7 @@ function initializeEngine(
       },
       setViewportShadingMode: (next: ViewportShadingMode) => {
         viewportShading?.setMode(next);
+        syncEditorOutlines();
         scheduler.invalidate("asset");
       },
       setDrawMeshCollision: (enabled: boolean) => {
@@ -1740,18 +1820,14 @@ function initializeEngine(
         if (typeof settings.showGrid === "boolean") {
           grid.setVisible(settings.showGrid);
         }
-        if (scene._activeMeshesFrozen) {
+        if (!worldRenderer && scene._activeMeshesFrozen) {
           freezeEditorActiveMeshes(scene);
         }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
         lastSelectedActorIds = [...actorIds];
-        const meshes = actorIds.map((id) => editorSync.meshForActor(id));
-        const visuals = actorIds.flatMap((id) =>
-          editorSync.visualMeshesForActor(id),
-        );
-        selection.set(visuals.length > 0 ? visuals : meshes);
+        outlineHost.setSelection(actorIds);
         // Locked actors are not pickable; keep the gizmo off them so lock is
         // more than a pick filter. Attach to the first pickable selection root
         // so a selected child is not the group handle when its parent is too.
@@ -1846,11 +1922,11 @@ function initializeEngine(
     if (registeredView && !registeredViewIsEnabled(registeredView)) {
       return;
     }
+    lockedViewSize = null;
     if (presentRtt) {
       // Resize owned GPU targets while keeping the last completed canvas copy.
       rttPresent?.bind();
     } else if (registeredView) {
-      lockedViewSize = null;
       registeredView.customResize = undefined;
       const size = cssCanvasPixelSize(canvas);
       const scale = engine.getHardwareScalingLevel();
@@ -1879,6 +1955,30 @@ function initializeEngine(
     notifyOverlayResize();
   };
 
+  const setSize = (width: number, height: number) => {
+      lockedViewSize = { width: Math.max(1, Math.floor(width)), height: Math.max(1, Math.floor(height)) };
+      const { width: nextWidth, height: nextHeight } = scaledLockedViewSize()!;
+      if (registeredView) {
+        // Native view admission runs before this callback. Defer visible bitmap
+        // writes until that frame can replace them, and retain the authored
+        // locked resolution instead of letting native CSS sizing override it.
+        registeredView.customResize = () => {
+          const size = scaledLockedViewSize();
+          if (!size) return;
+          if (canvas.width !== size.width) canvas.width = size.width;
+          if (canvas.height !== size.height) canvas.height = size.height;
+          engine.setSize(size.width, size.height);
+        };
+      } else if (options.sharedEngine && !presentRtt) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
+      engine.setSize(nextWidth, nextHeight);
+      sceneLayerCompositor?.resize();
+      refreshAuthoredCameraLenses(scene);
+      notifyOverlayResize();
+    };
+
   let interpAlpha = 1;
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
@@ -1903,6 +2003,9 @@ function initializeEngine(
     return registeredView ? enabled === 1 : enabled === 0;
   };
   const gpuAttribution = (): GpuAttribution => {
+    // Babylon's WebGPU whole-frame counter can contain a synthetic zero when
+    // command-encoder timestamps are absent. Per-pass timing is separate.
+    if (engine.isWebGPU || !engine.getCaps().timerQuery) return "unavailable";
     if (!soleRenderingView()) return "shared-engine";
     return engine.getGPUFrameTimeCounter().count > 0 ? "view" : "unavailable";
   };
@@ -1928,7 +2031,8 @@ function initializeEngine(
   };
   const presentationReady = (pending: PendingPresentation) => {
     try {
-      return pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      return pending.ready;
     } catch (error) {
       cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
       return false;
@@ -1992,11 +2096,72 @@ function initializeEngine(
     };
     return sampled;
   }
+  if (options.playMode) {
+    let appliedOutput = normalizeRenderProjectSettings(options.renderSettings);
+    runtimeScalability = new RuntimeScalability({ revision: 0, overrides: {}, settings: {
+      render: appliedOutput, frameCap: normalizePlayFrameCap(options.frameCap),
+    } }, {
+      apply: (transaction) => {
+        const state = sceneRenderingSettings(scene);
+        const { quality, shadows, ...visual } = transaction.overrides;
+        state.runtimeOverrides = visual;
+        state.qualityOverrides = { ...quality, ...(shadows ? { shadows } : {}) };
+        setSceneRenderSettings(scene);
+        outlineHost.refreshSettings();
+        applyRenderingQuality();
+        requestRenderPath(engine, visual.renderPath ? { renderPath: visual.renderPath } : {});
+        scheduler.setFrameCap(transaction.settings.frameCap);
+        const output = transaction.settings.render;
+        if (["width", "height", "customResolution", "blackBars"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
+          options.onRuntimeOutputChanged?.(output);
+          const framebuffer = playFramebufferSize(output);
+          if (framebuffer) setSize(framebuffer.width, framebuffer.height);
+          else resize();
+          appliedOutput = output;
+        }
+        scheduler.invalidate("asset");
+      },
+      prepare: async (assertCurrent) => {
+        assertCurrent();
+        await worldRenderer?.prepare(assertCurrent);
+        for (const layer of sceneLayerCompositor?.layers() ?? []) {
+          if (layerLoads.get(layer.layerId)?.ready !== false) await sceneLayerCompositor?.prepare(layer.layerId, assertCurrent);
+        }
+        assertCurrent();
+      },
+      read: (transaction) => {
+        const state = sceneRenderingSettings(scene);
+        const { shadows, ...quality } = resolveSceneRenderingQuality(scene);
+        quality.textures = { ...quality.textures, anisotropy: state.textureAnisotropy };
+        const pipeline = sceneRenderPathStatus(scene);
+        return { revision: transaction.revision, status: transaction.clamped || pipeline.limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
+          message: pipeline.limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
+          effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
+            ...pipeline.effective, quality, shadows, cel: state.cel, mode: state.mode,
+            environmentLighting: state.environmentLighting, effects: state.effects } } };
+      },
+      publish: (acknowledgement) => {
+        lastScalabilityStatus = acknowledgement;
+        options.onScalabilityApplied?.(acknowledgement);
+      },
+      invalidate: () => scheduler.invalidate("asset"),
+      retainResources: () => {
+        const world = worldRenderer?.retainResources();
+        const layers = sceneLayerCompositor?.retainResources();
+        return () => { try { world?.(); } finally { layers?.(); } };
+      },
+    });
+    onRollback(() => runtimeScalability?.dispose());
+  }
   const renderLoop = () => {
     if (disposed || contextLost || registeredView?.enabled === false) return;
     // Babylon invokes all render callbacks for each registered view. A loading
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    applyRenderingQuality();
+    outlineHost.refreshSettings();
+    if (!worldLoading) runtimeScalability?.advance();
+    if (!registeredView) syncLockedViewSize();
     const sampled = prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
@@ -2027,10 +2192,21 @@ function initializeEngine(
         if (pending.rendered || pending.submission) { draw(); return; }
         pending.copied = false;
         const submission = submitPresentedFrame(engine, () => {
+          pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         });
         pending.submission = submission;
+        if (pending.rendered) {
+          // A validated draw is progress beyond shader readiness. Observed
+          // software-GL completion can outlast that earlier budget even after
+          // the canvas copy. Give completion its own bounded budget, without
+          // acknowledging before both this owner's fence and copy finish.
+          clearTimeout(pending.timer);
+          pending.timer = setTimeout(() => {
+            if (pendingPresentations.get(key) === pending) expirePresentation(key);
+          }, 15_000);
+        }
         void submission.completed.then(() => {
           if (pending.submission !== submission) return;
           pending.submission = null;
@@ -2073,6 +2249,7 @@ function initializeEngine(
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
     if (framePresented) {
+      if (!worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability?.presented();
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
@@ -2082,11 +2259,11 @@ function initializeEngine(
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
       const sole = soleRenderingView();
-      if (sole && presentationSignals && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
+      if (!engine.isWebGPU && sole && presentationSignals && !gpuFrameCaptureRequested && engine.getCaps().timerQuery) {
         gpuFrameCaptureRequested = true;
         engine.captureGPUFrameTime(true);
       }
-      const counter = presentationSignals && sole ? engine.getGPUFrameTimeCounter() : null;
+      const counter = !engine.isWebGPU && presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
       lastPressureSample = {
         presentationMs:
           presentationSignals && previousFramePresented
@@ -2097,6 +2274,7 @@ function initializeEngine(
       };
       lastPresentedAt = presentedAt;
       scaling.noteFramePressure(lastPressureSample);
+      if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
     framePresented = false;
@@ -2229,7 +2407,9 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      runtimeScalability?.dispose();
       unsubscribeRenderPath();
+      unsubscribeRenderPathSession();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -2254,12 +2434,16 @@ function initializeEngine(
         }
       };
       track(bounded, () => retireAttachedStack());
+      track(bounded, () => outlineHost.dispose());
       track(bounded, () => nativeRetirement.whenDisposed());
       track(bounded, () => worldRenderer?.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
       track(actual, () => nativeRetirement.whenReleased());
       track(actual, () => worldRenderer?.whenReleased());
+      track(actual, () => outlineHost.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
+      // Cancel graph preparation before restoring the editor's global request.
+      track(bounded, () => releasePlayRenderPath?.());
       const retired = Promise.all(bounded);
       const released = Promise.all(actual).then(() => {});
       releasedHandle = released;
@@ -2313,6 +2497,12 @@ function initializeEngine(
       if (registeredView) {
         engine.unRegisterView(canvas);
         if (options.playMode) {
+          // Play borrows the Engine-wide scale while sibling views are held.
+          // Restore it before admitting their next native resize/copy. Their
+          // unchanged quality snapshots otherwise leave Play's scale installed.
+          if (engine.getHardwareScalingLevel() !== previousScaling) {
+            engine.setHardwareScalingLevel(previousScaling);
+          }
           setOtherEngineViewsEnabled(engine, canvas, true);
         }
       }
@@ -2323,28 +2513,7 @@ function initializeEngine(
     },
     whenReleased: () => releasedHandle ?? Promise.resolve(),
     resize,
-    setSize: (width: number, height: number) => {
-      const nextWidth = Math.max(1, Math.floor(width));
-      const nextHeight = Math.max(1, Math.floor(height));
-      if (registeredView) {
-        lockedViewSize = { width: nextWidth, height: nextHeight };
-        // Native view admission runs before this callback. Defer visible bitmap
-        // writes until that frame can replace them, and retain the authored
-        // locked resolution instead of letting native CSS sizing override it.
-        registeredView.customResize = () => {
-          if (canvas.width !== nextWidth) canvas.width = nextWidth;
-          if (canvas.height !== nextHeight) canvas.height = nextHeight;
-          engine.setSize(nextWidth, nextHeight);
-        };
-      } else if (options.sharedEngine && !presentRtt) {
-        canvas.width = nextWidth;
-        canvas.height = nextHeight;
-      }
-      engine.setSize(nextWidth, nextHeight);
-      sceneLayerCompositor?.resize();
-      refreshAuthoredCameraLenses(scene);
-      notifyOverlayResize();
-    },
+    setSize,
     loadScene,
     loadSceneAsync,
     pushSnapshot: (buffer: Float32Array) => {
@@ -2461,6 +2630,32 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
+      if (command.type === "setActorOutlines") {
+        const previous = binding.outlines.get(command.slotId);
+        binding.outlines.set(command.slotId, { actorId: command.actorId, bindings: command.outlines });
+        try { refreshRuntimeOutline(command.slotId); }
+        catch (error) {
+          if (previous) binding.outlines.set(command.slotId, previous);
+          else binding.outlines.delete(command.slotId);
+          throw error;
+        }
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setAreaLights") {
+        let group = binding.areaLights.get(command.slotId);
+        let changed = false;
+        if (command.lights.length) {
+          if (!group) { group = new AreaRectLightGroup(scene, `playAreaLight:${command.slotId}`); binding.areaLights.set(command.slotId, group); }
+          changed = group.update(command.lights, binding.areaEmissions);
+          const mesh = binding.meshes.get(command.slotId);
+          if (mesh) group.setWorld(mesh.getWorldMatrix());
+        } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }
+        if (changed) {
+          appliedSnapshotIdentity = null;
+          worldRenderer?.invalidate();
+          scheduler.invalidate("asset");
+        }
+      }
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         appliedSnapshotIdentity = null;
@@ -2552,6 +2747,7 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }
+      if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
       if (command.type === "setRenderingQuality" && options.playMode) {
         sceneRenderingSettings(scene).qualityOverrides = command.overrides;
         setSceneRenderSettings(scene);
@@ -2616,6 +2812,7 @@ function initializeEngine(
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
     renderPathStatus: () => sceneRenderPathStatus(scene),
+    scalabilityStatus: () => lastScalabilityStatus,
     setRenderPath: (renderPath: RenderPath | null) => {
       requestRenderPath(engine, renderPath ? { renderPath } : {});
     },
@@ -2728,6 +2925,7 @@ function initializeEngine(
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+      outlineHost.refreshSettings();
       applySerializedSceneEnvironment(scene, sceneData, {
         applyClearColor: true,
         assets: binding,
@@ -2740,8 +2938,9 @@ function initializeEngine(
       const previousMode = sceneRenderingSettings(scene).mode;
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();
-      if (options.editor && previousMode !== sceneRenderingSettings(scene).mode)
+      if (options.editor && !worldRenderer && previousMode !== sceneRenderingSettings(scene).mode)
         freezeEditorActiveMeshes(scene);
+      outlineHost.refreshSettings();
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () =>
@@ -2803,10 +3002,12 @@ function initializeEngine(
     },
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
+      applyRenderingQuality();
       await warmSceneMaterials(scope.target, scope.assert);
       scope.assert();
       freezeLibraryMaterials();
-      if (options.editor && !owner) freezeEditorActiveMeshes(scene);
+      if (options.editor && !owner && !worldRenderer) freezeEditorActiveMeshes(scene);
+      outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
       else await worldRenderer?.prepare(scope.assert);
       scope.assert();
@@ -2846,10 +3047,8 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => {
-        cancelPresentation(new Error("The scene did not present a frame before the loading deadline."), key);
-      }, SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, rendered: false, owner, submission: null, copied: false });
+      const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
@@ -2981,3 +3180,4 @@ export function createAppEngine(
   });
   return engine;
 }
+import { AreaRectLightGroup } from "./area-rect-light";

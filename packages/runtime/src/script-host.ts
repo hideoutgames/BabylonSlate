@@ -1,4 +1,4 @@
-import type { InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -174,6 +174,8 @@ export interface ScriptHostServices {
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
+  getScalability?(): ScalabilitySnapshot | null;
+  requestScalability?(request: ScalabilityRequest): ScalabilityResult;
   setMaterialParameter?(
     material: MaterialInstanceObject,
     parameterName: string,
@@ -475,6 +477,8 @@ export interface ScriptContext {
     materialGuid: string,
   ): void;
   setRenderResolution(width: number, height: number): void;
+  getScalability(): ScalabilitySnapshot | null;
+  requestScalability(request: ScalabilityRequest): ScalabilityResult;
   setMaterialFloatParameter(
     material: unknown,
     name: string,
@@ -1491,6 +1495,10 @@ export class ScriptHost {
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
       },
+      getScalability: () => services.getScalability?.() ?? null,
+      requestScalability: (request) => services.requestScalability?.(request) ?? {
+        revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
+      },
       possessCamera: (target) => {
         services.possessCamera?.(target);
       },
@@ -1884,6 +1892,7 @@ function lightComponentOf(target: unknown): ActorComponent | null {
   if (
     target instanceof ActorComponent &&
     (target.classId === "LightComponent" ||
+      target.classId === "AreaRectLightComponent" ||
       target.classId === "HemisphericFillLightComponent")
   ) {
     return target;
@@ -1892,6 +1901,7 @@ function lightComponentOf(target: unknown): ActorComponent | null {
     actorOf(target)?.components.find(
       (component) =>
         (component.classId === "LightComponent" ||
+          component.classId === "AreaRectLightComponent" ||
           component.classId === "HemisphericFillLightComponent") &&
         !component.destroyed,
     ) ?? null

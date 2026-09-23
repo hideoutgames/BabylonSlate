@@ -117,6 +117,7 @@ export interface PlayOverlayProps {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  areaEmissions?: ReadonlyMap<string, import("@babylonslate/assets").AreaEmissionPixels>;
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
@@ -202,6 +203,7 @@ export function PlayOverlay({
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
+  areaEmissions,
   texturePixelSizes,
   fontFacetypeBytes,
   fontMsdfJson,
@@ -312,6 +314,8 @@ export function PlayOverlay({
   const tilesetPayloadsRef = useRef(tilesetPayloads);
   tilesetPayloadsRef.current = tilesetPayloads;
   const textureBytesRef = useRef(textureBytes);
+  const areaEmissionsRef = useRef(areaEmissions);
+  areaEmissionsRef.current = areaEmissions;
   textureBytesRef.current = textureBytes;
   const texturePixelSizesRef = useRef(texturePixelSizes);
   texturePixelSizesRef.current = texturePixelSizes;
@@ -392,6 +396,7 @@ export function PlayOverlay({
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
   const initialRenderRef = useRef(render);
+  const runtimeRenderRef = useRef(render);
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
@@ -426,7 +431,7 @@ export function PlayOverlay({
         overlay,
         canvas,
         ...initialPlayPreviewRef.current,
-        render: initialRenderRef.current,
+        render: runtimeRenderRef.current,
         liveSize: liveSizeRef.current,
       });
     };
@@ -445,7 +450,7 @@ export function PlayOverlay({
       resize: () => void;
     }) => {
       const framebuffer = playFramebufferSize(
-        initialRenderRef.current,
+        runtimeRenderRef.current,
         liveSizeRef.current,
       );
       if (framebuffer) {
@@ -482,6 +487,7 @@ export function PlayOverlay({
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
+      areaEmissions: areaEmissionsRef.current,
       texturePixelSizes: texturePixelSizesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
       fontMsdfJson: fontMsdfJsonRef.current,
@@ -568,6 +574,11 @@ export function PlayOverlay({
       },
       onBehaviourTreeSnapshot: setTrees,
       onBtState: (state) => reportBtState(state),
+      onRenderOutputChanged: (settings) => {
+        runtimeRenderRef.current = settings;
+        liveSizeRef.current = null;
+        layoutPlay();
+      },
       onSetRenderResolution: (width, height) => {
         liveSizeRef.current = {
           width: clampRenderResolution(width),
@@ -606,7 +617,7 @@ export function PlayOverlay({
     const resizeObserver = new ResizeObserver(() => {
       layoutPlay();
       const framebuffer = playFramebufferSize(
-        initialRenderRef.current,
+        runtimeRenderRef.current,
         liveSizeRef.current,
       );
       if (!framebuffer) {
@@ -684,6 +695,8 @@ export function PlayOverlay({
         modelLoadCount: () => number;
         tickIndex: () => number;
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
+        scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
+        renderTasks: () => string[];
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         bakedSession: () => ReturnType<PlaySession["handle"]["bakedSessionDiagnostics"]> | null;
@@ -693,6 +706,8 @@ export function PlayOverlay({
     host.__babylonslatePlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
+      scalability: () => sessionRef.current?.handle.scalabilityStatus(),
+      renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
       shadowDiagnostics: () => {
         const handle = sessionRef.current?.handle;
         return handle ? captureShadowDiagnostics(handle.scene, { host: "play", meshes: handle.scene.meshes }) : null;

@@ -111,6 +111,10 @@ export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
+  /** Runtime component records outlive asynchronous mesh realization. */
+  outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
+  onVisualChanged?: (slotId: number) => void;
+  areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
@@ -204,11 +208,13 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
+    outlines: new Map(),
     meshes: new Map(),
     boneAttachments: new Map(),
     lights: new Map(),
     cameras: new Map(),
     lightProps: new Map(),
+    areaLights: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
@@ -709,6 +715,7 @@ export function applyAssignMesh(
         setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
         retireRemovedMaterials();
         releaseRetainedMaterialOwners(binding, command.slotId);
+        binding.onVisualChanged?.(command.slotId);
       },
       () => binding.meshes.get(command.slotId) === existing && refreshes.get(command.slotId) === restart,
       (prepared) => applyLoadedModelMaterials(binding, command.slotId, guid, prepared),
@@ -797,6 +804,7 @@ export function applyAssignMesh(
       if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
+      binding.onVisualChanged?.(command.slotId);
     }, (error: unknown) => {
       if (!ownsLoad()) return;
       if (stagesModels) throw error;
@@ -851,6 +859,7 @@ export function applyAssignMesh(
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
+  binding.onVisualChanged?.(command.slotId);
 }
 
 /** Rebuild a Play mesh in `scene` when it was created on the wrong host Scene. */
@@ -889,6 +898,7 @@ export function migratePlaySlotVisual(
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, visible);
+  binding.onVisualChanged?.(slotId);
   return rebuilt;
 }
 
@@ -1059,6 +1069,9 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  binding.outlines.delete(slotId);
+  binding.areaLights.get(slotId)?.dispose();
+  binding.areaLights.delete(slotId);
   rejectedTextAssignments.get(binding)?.delete(slotId);
   rejectedPreparedAssignments.get(binding)?.delete(slotId);
   cancelPendingVisualReplacement(binding, slotId);
@@ -1103,11 +1116,14 @@ export function retirePlaySlot(
   if (binding.possessedCameraSlotId === slotId) {
     binding.possessedCameraSlotId = null;
   }
+  binding.onVisualChanged?.(slotId);
 }
 
 /** Drop world Play visuals/cameras; overlay compositor slots stay. */
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
+    ...binding.outlines.keys(),
+    ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
     ...binding.lights.keys(),
@@ -1336,7 +1352,8 @@ export function createPlayMesh(
         pendingAnimState: undefined, slotAnimReady: undefined,
       } : binding;
       await beginSlotModelAnimLoad(
-        scene, owner, slotId, assetGuid, bytes, root, undefined,
+        scene, owner, slotId, assetGuid, bytes, root,
+        preparation ? undefined : () => binding.onVisualChanged?.(slotId),
         preparation?.ownsLoad,
         (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
       );
@@ -1475,6 +1492,7 @@ function reconcileSnapshotVisuals(
       mesh = createPlayVisual(hostScene, actor.slotId, binding);
       binding.meshes.set(actor.slotId, mesh);
       applyMaterialToActorMeshes(binding, actor.slotId, mesh);
+      binding.onVisualChanged?.(actor.slotId);
     }
     if (wantsOverlay) {
       disposeWorldOverlayLeftovers(scene, actor.slotId);
@@ -1501,6 +1519,7 @@ export function applySnapshotToScene(
     const mesh = binding.snapshotMeshes[i];
     if (!mesh) continue;
     writeActorTransform(mesh, actor);
+    binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
@@ -1532,6 +1551,9 @@ export function applySnapshotToScene(
   }
   snapPlayCameraToPixelGrid(scene, binding);
   updateBoneAttachments(binding);
+  for (const [slotId, attachment] of binding.boneAttachments) {
+    if (attachment.applied) binding.areaLights.get(slotId)?.setWorld(attachment.world);
+  }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
     const light = binding.lights.get(slotId);
@@ -1568,6 +1590,8 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.outlines.clear();
+  binding.onVisualChanged = undefined;
   const pending = pendingVisualReplacements.get(binding);
   for (const candidate of pending?.values() ?? []) candidate.dispose();
   pending?.clear();
@@ -1587,6 +1611,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
     invalidateSlotAnimLoad(binding, slotId);
   }
   for (const light of binding.lights.values()) light.dispose();
+  for (const group of binding.areaLights.values()) group.dispose();
+  binding.areaLights.clear();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();
@@ -1685,3 +1711,4 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     mesh.computeWorldMatrix();
   }
 }
+import { AreaRectLightGroup } from "./area-rect-light";

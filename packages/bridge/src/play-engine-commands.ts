@@ -3,6 +3,8 @@ import type { CommandMessage } from "./channels";
 /** Worker/runtime commands the Play/player Babylon handle must apply. */
 export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
+  "setAreaLights",
+  "setActorOutlines",
   "assignMaterial",
   "attachToBone",
   "setMaterialParameter",
@@ -16,6 +18,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setGlobalVolume",
   "setFrameCap",
   "setRenderingQuality",
+  "setScalability",
   "setRenderPath",
   "setLightsDebug",
   "assignParticle",

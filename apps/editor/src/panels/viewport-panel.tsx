@@ -2,7 +2,7 @@ import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipe
 import type { AbstractEngine } from "@babylonjs/core";
 import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
@@ -22,7 +22,7 @@ import {
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { bakeRuntimeAssetReader } from "@babylonslate/assets";
-import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
 import {
@@ -64,6 +64,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -96,6 +97,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -616,6 +618,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
   );
+  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
+  const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
 
   useEffect(() => {
@@ -698,6 +702,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const areaEmissions = await collectPlayAreaEmissions([scene]);
         controller.signal.throwIfAborted();
         const msdf = fontMsdfMapsFromPairs(
           await collectPlayFontMsdfPair(scene),
@@ -716,6 +721,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           textureBytes,
           texturePixelSizes,
           fontFacetypeBytes,
+          areaEmissions,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
           fontCssStack: fontCss.fontCssStack,
@@ -808,12 +814,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     requestedRenderSettingsKey,
     renderSettingsKey,
     materialLibraryKey,
+    areaEmissionKey,
     textureLodKey,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -1244,6 +1252,44 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       delete host.__babylonslateViewportTest;
     };
   }, [commitGizmoTransform, ensureSharedEngine]);
+
+  useEffect(() => {
+    // Explicitly opt in for Computer Use's read-only DOM inspection. Ordinary
+    // editor sessions and performance fixtures do not serialize diagnostics.
+    if (import.meta.env.VITE_TEST_MODE !== "true" || !isTestModeEnabled() ||
+      new URLSearchParams(location.search).get("renderDiagnostics") !== "1") return;
+    const panel = panelRef.current;
+    const canvas = canvasRef.current;
+    const handle = engineRef.current;
+    if (!panel || !canvas || !handle || !sceneReady || sceneLoad.open ||
+      requestedRenderSettingsKey !== renderSettingsKey) return;
+    let lastFrame = -1;
+    let lastAt = -Infinity;
+    const publish = () => {
+      const frame = handle.scheduler.stats().renderedFrames;
+      const now = performance.now();
+      if (engineRef.current !== handle || handle.scene.isDisposed ||
+        frame <= 0 || frame === lastFrame || now - lastAt < 250) return;
+      const rect = canvas.getBoundingClientRect();
+      panel.dataset.renderDiagnostics = JSON.stringify({
+        frame, capturedAt: new Date().toISOString(),
+        userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio,
+        canvas: { width: canvas.width, height: canvas.height, cssWidth: rect.width, cssHeight: rect.height },
+        requested: JSON.parse(requestedRenderSettingsKey),
+        render: handle.renderDiagnostics(),
+      });
+      lastFrame = frame;
+      lastAt = now;
+    };
+    // sceneReady follows this view's presented first frame, not a sibling's
+    // shared-Engine notification. Later captures require its own frame count.
+    publish();
+    const observer = handle.engine.onEndFrameObservable.add(publish);
+    return () => {
+      handle.engine.onEndFrameObservable.remove(observer);
+      delete panel.dataset.renderDiagnostics;
+    };
+  }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
 
   return (
     <div

@@ -26,6 +26,15 @@ description = "netrc-style credentials"
 regex = '''(?i)machine\s+\S+\s+login\s+\S+\s+password\s+\S+'''
 tags = ["credentials"]
 
+[[rules]]
+id = "generic-api-key"
+  [[rules.allowlists]]
+  description = "Two public SHA-256 build artifacts in retained renderer evidence, including commit history"
+  condition = "AND"
+  regexTarget = "match"
+  paths = ['''^docs/assets/renderer-qualification/2026-09-22-(stock|shared-outline)/web(gl2|gpu)\.json$''']
+  regexes = ['''^buildKey":\s*"(9543eab34dc8365e1c59ee0b5d7eee9abed340f468d75c575e8c153caeb4c5b9|5ed00cf36afd408b3c33a38fec982e640be153b44b47b75f8e3e85f8f9277875)"$''']
+
 [allowlist]
 description = "Binary test fixtures"
 # Text lockfiles and `.gltf` JSON stay scanned because they can contain

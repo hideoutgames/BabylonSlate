@@ -73,8 +73,11 @@ import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
+import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 
 export interface CompileMaterialOptions {
+  /** Internal coverage variant; retains authored deformation and alpha discard. */
+  surfaceVariant?: "outlineMask";
   /** Internal FrameGraph variant; shared resources are bound by its render pass. */
   logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
@@ -114,6 +117,16 @@ export interface FailedMaterial {
 export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
 
 const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
+export interface AuthoredOutlineVariant {
+  compiled: CompiledMaterial;
+  /** Release after the caller's pass DrawWrappers have released their Effects. */
+  release: () => Promise<void>;
+}
+const authoredOutlineFactories = new WeakMap<Material, () => AuthoredOutlineVariant>();
+/** Only compiler-owned material generations have reproducible authored coverage. */
+export function acquireAuthoredOutlineVariant(source: Material): AuthoredOutlineVariant | undefined {
+  return authoredOutlineFactories.get(source)?.();
+}
 
 function isEngineErrorSampler(texture: Texture): boolean {
   const engine =
@@ -200,7 +213,8 @@ export function compileMaterialPlan(
   options: CompileMaterialOptions,
 ): CompileMaterialResult {
   const { scene } = options;
-  const cacheableShadowShape = plan.domain === "surface" && plan.blendMode === "opaque" &&
+  const outlineMask = options.surfaceVariant === "outlineMask";
+  const cacheableShadowShape = !outlineMask && plan.domain === "surface" && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: scene.getEngine().isWebGPU
@@ -209,6 +223,13 @@ export function compileMaterialPlan(
   });
   if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
+  const configureSurface = () => {
+    if (outlineMask) {
+      material.backFaceCulling = plan.twoSided !== true;
+      material.transparencyMode = Material.MATERIAL_OPAQUE;
+      material.alphaMode = Constants.ALPHA_DISABLE;
+    } else { applyAuthoredSurfaceBlend(material, plan); syncSceneLighting(scene); }
+  };
   material.mode =
     plan.domain === "postProcess"
       ? NodeMaterialModes.PostProcess
@@ -551,9 +572,14 @@ export function compileMaterialPlan(
       if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else {
-      outputNodes.push(
-        attachSurfaceShading(plan, options, created, plumbing, outputPoint),
-      );
+      if (outlineMask) {
+        const identity = new SharedOutlineIdentityBlock(`${options.name}_identity`);
+        const output = new SharedOutlineOutputBlock(`${options.name}_outline`);
+        identity.identity.connectTo(output.rgb);
+        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
+          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.a);
+        created.push(identity, output); outputNodes.push(output);
+      } else outputNodes.push(attachSurfaceShading(plan, options, created, plumbing, outputPoint));
       if (plan.blendMode === "masked") {
         const discard = new DiscardBlock(`${options.name}_alphaClip`);
         const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
@@ -565,7 +591,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if (plan.domain === "surface") {
+    if (plan.domain === "surface" && !outlineMask) {
       const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
       if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
     }
@@ -624,8 +650,7 @@ export function compileMaterialPlan(
     }
   });
   const buildObserver = material.onBuildObservable.add(() => {
-    applyAuthoredSurfaceBlend(material, plan);
-    syncSceneLighting(scene);
+    configureSurface();
     if (buildState === "pending") {
       if (checkingShader) return;
       if (plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
@@ -689,7 +714,7 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
-      if (plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
+      if (!outlineMask && plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });
@@ -730,8 +755,7 @@ export function compileMaterialPlan(
     return fail();
   }
 
-  applyAuthoredSurfaceBlend(material, plan);
-  syncSceneLighting(scene);
+  configureSurface();
 
   const loadObservers: Array<() => void> = [];
   const rebuildWhenReady = (): void => {
@@ -740,7 +764,7 @@ export function compileMaterialPlan(
     if (wasFrozen) material.unfreeze();
     try {
       material.build();
-      applyAuthoredSurfaceBlend(material, plan);
+      configureSurface();
       markCompiledMaterialDirty(material);
     } catch (error) {
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
@@ -794,12 +818,48 @@ export function compileMaterialPlan(
     material,
     options.resolveTexture,
   );
+  let variant: { compiled: CompiledMaterial; references: number } | undefined;
+  const setParameter: CompiledMaterial["setParameter"] = (name, value) => {
+    if (!parameters.setParameter(name, value)) return false;
+    variant?.compiled.setParameter(name, value);
+    return true;
+  };
+  const resetParameter: CompiledMaterial["resetParameter"] = (name) => {
+    if (!parameters.resetParameter(name)) return false;
+    const value = parameters.getParameter(name);
+    if (value) variant?.compiled.setParameter(name, value);
+    return true;
+  };
+  if (plan.domain === "surface" && !outlineMask) authoredOutlineFactories.set(material, () => {
+    if (disposed) throw new Error("Cannot outline a disposed authored material.");
+    if (!variant) {
+      const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:outlineMask`, surfaceVariant: "outlineMask" });
+      if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
+      for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
+        const name = String(operation.properties.name ?? "").trim();
+        const value = parameters.getParameter(name);
+        if (value) compiled.setParameter(name, value);
+      }
+      variant = { compiled, references: 0 };
+    }
+    const retained = variant;
+    retained.references++;
+    let released = false;
+    return { compiled: retained.compiled, release: async () => {
+      if (released) return; released = true;
+      if (--retained.references === 0) {
+        if (variant === retained) variant = undefined;
+        await retained.compiled.whenReleased();
+      }
+    } };
+  });
   // The NodeMaterial stays quarantined until every owned compile-time pass
   // confirms actual native release; a release failure keeps it alive.
   let released: Promise<void> | null = null;
   const disposeCompiled = () => {
     if (disposed) return;
     disposed = true;
+    authoredOutlineFactories.delete(material);
     finishShaderCheck();
     if (buildState === "pending") {
       buildState = "failed";
@@ -827,9 +887,9 @@ export function compileMaterialPlan(
     material,
     ready,
     get buildState() { return buildState; },
-    setParameter: parameters.setParameter,
+    setParameter,
     getParameter: parameters.getParameter,
-    resetParameter: parameters.resetParameter,
+    resetParameter,
     dispose: disposeCompiled,
     whenReleased: () => {
       disposeCompiled();

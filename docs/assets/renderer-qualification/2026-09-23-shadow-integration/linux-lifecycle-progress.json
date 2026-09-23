@@ -1,0 +1,29 @@
+{
+  "buildSha": "be84fe2796ef059776fb73dd639acb5bfe9ef167",
+  "run": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35893469618",
+  "status": "FAIL",
+  "areaExportWebGL2": {
+    "job": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35893469618/job/107291435554",
+    "source": "First-retry Playwright trace and error context",
+    "error": "Test timeout of 120000ms exceeded",
+    "activeSceneLoadId": 8,
+    "phase": "Presenting First Frame",
+    "progress": 90,
+    "previousLoadsCompleted": 7,
+    "productionScenePresentationErrorsRecorded": [],
+    "interpretation": "The preceding sequential change/capture assertions completed; the aggregate fixture deadline interrupted the eighth load. This does not certify the remaining lifecycle steps.",
+    "repair": "Allow 180 seconds for all ten presentations, preserving individual deadlines and every lifecycle, pixel and resource assertion."
+  },
+  "p6SceneEditing": {
+    "job": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35893469618/job/107291435471",
+    "saveWaitMs": 15000,
+    "attempts": [
+      { "phase": "project", "pending": true, "elapsedMs": 15189, "phaseElapsedMs": 1301, "dirtyDocuments": 1 },
+      { "phase": "journal", "pending": true, "elapsedMs": 15133, "phaseElapsedMs": 246, "dirtyDocuments": 0 },
+      { "phase": "journal", "pending": true, "elapsedMs": 14983, "phaseElapsedMs": 386, "dirtyDocuments": 0 }
+    ],
+    "interpretation": "Diagnostics show an in-progress save, not a failed save result. They do not prove eventual persistence.",
+    "repair": "Use the existing 30-second transaction wait and assert a successful saved result with zero dirty documents before continuing."
+  },
+  "remainingGate": "Fresh exact-head Verify, including all seven browser shards."
+}

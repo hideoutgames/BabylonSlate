@@ -1,0 +1,1278 @@
+{
+  "buildRevision": "5135e6509ea1426ffc091a10872c067543f2def7",
+  "artifactSha256": "93d22ab980348817d187f72be72a3416eca131e7cdfa93f03293af32d3c494da",
+  "host": "Computer Use Chrome 153 on Windows 10",
+  "scope": "Focused normal-UI recheck after the frozen WebGPU light-buffer binding repair; prior full authoring/export evidence retains its original revision.",
+  "observations": [
+    {
+      "step": "Reopen saved seven-actor scene; enable magenta through-mesh box and green strict Neighbor; select Occluder.",
+      "expected": "Independent styles and editor selection remain visible with CEL and area illumination.",
+      "observed": "PASS: magenta through occluder, green exposed neighbor edge and blue occluder selection visible.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T14:55:48.720Z",
+        "devicePixelRatio": 1,
+        "frame": 100,
+        "render": {
+          "adapter": {
+            "api": "webgpu",
+            "renderer": "turing",
+            "vendor": "nvidia",
+            "version": "unknown version"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 2.3599999994039536,
+          "drawCalls": 17,
+          "gpuAttribution": "unavailable",
+          "gpuMs": null,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "unsupported",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 2.3599999994039536,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 17,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgpu",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "step": "Undo only Neighbor enable while Occluder remains selected.",
+      "expected": "Green authored style removed; magenta and editor selection survive.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T14:56:04.587Z",
+        "devicePixelRatio": 1,
+        "frame": 119,
+        "render": {
+          "adapter": {
+            "api": "webgpu",
+            "renderer": "turing",
+            "vendor": "nvidia",
+            "version": "unknown version"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 2.1950000002980232,
+          "drawCalls": 17,
+          "gpuAttribution": "unavailable",
+          "gpuMs": null,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "unsupported",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 2.1950000002980232,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 17,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgpu",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      },
+      "observed": "PASS: green removed; magenta and blue selection survived in the presented pixels."
+    },
+    {
+      "step": "Disable box Render Through Meshes and select Occluder.",
+      "expected": "Fully hidden box has no magenta outline; green Neighbor and editor selection survive.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T14:56:31.370Z",
+        "devicePixelRatio": 1,
+        "frame": 155,
+        "render": {
+          "adapter": {
+            "api": "webgpu",
+            "renderer": "turing",
+            "vendor": "nvidia",
+            "version": "unknown version"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 1.675000000745058,
+          "drawCalls": 16,
+          "gpuAttribution": "unavailable",
+          "gpuMs": null,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "unsupported",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 1.675000000745058,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 17,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgpu",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      },
+      "observed": "PASS: magenta is absent behind the occluder; green and blue outlines remain."
+    },
+    {
+      "step": "Save, start Play, wait for the owning loading dialog to close.",
+      "expected": "Saved graph applies scale 0.5 to 480 by 270 without dirtying the project.",
+      "observed": "PASS: actual play canvas 240 by 135; component/global outlines and area illumination visible; no editor selection; Save All disabled."
+    },
+    {
+      "step": "Stop Play.",
+      "expected": "Editor scale and valid resources restored; project remains clean.",
+      "observed": "PASS: 427 by 217 at scale 1, zero pending retirement and Save All disabled.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T14:57:27.969Z",
+        "devicePixelRatio": 1,
+        "frame": 187,
+        "render": {
+          "adapter": {
+            "api": "webgpu",
+            "renderer": "turing",
+            "vendor": "nvidia",
+            "version": "unknown version"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 4.160000000149012,
+          "drawCalls": 17,
+          "gpuAttribution": "unavailable",
+          "gpuMs": null,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "unsupported",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgpu",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 4.160000000149012,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 16,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgpu",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "step": "Project Settings > Rendering > GPU Backend WebGL2; close settings and await engine restart.",
+      "expected": "Same styles and lighting on the requested native API.",
+      "observed": "PASS: actual NVIDIA D3D11 WebGL2, 427 by 217; magenta, green and selection retained.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T14:59:48.226Z",
+        "devicePixelRatio": 1,
+        "frame": 28,
+        "render": {
+          "adapter": {
+            "api": "webgl2",
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "vendor": "Google Inc. (NVIDIA)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 3.544999999925494,
+          "drawCalls": 17,
+          "gpuAttribution": "view",
+          "gpuMs": 1004.738112,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "available",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 3.544999999925494,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 16,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgl2",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "step": "Disable box Render Through Meshes on WebGL2 and select Occluder.",
+      "expected": "Hidden magenta contribution removed, green and selection survive.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T15:00:10.225Z",
+        "devicePixelRatio": 1,
+        "frame": 59,
+        "render": {
+          "adapter": {
+            "api": "webgl2",
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "vendor": "Google Inc. (NVIDIA)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 1.7200000006705525,
+          "drawCalls": 16,
+          "gpuAttribution": "view",
+          "gpuMs": 996.727936,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "available",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 1.7200000006705525,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 16,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgl2",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      },
+      "observed": "PASS: hidden magenta absent; green and blue survivor pixels retained."
+    },
+    {
+      "step": "Run saved graph in WebGL2 Play.",
+      "expected": "Actual 240 by 135 output and no editor selection.",
+      "diagnostics": {
+        "canvas": {
+          "height": 135,
+          "width": 240
+        },
+        "loading": false,
+        "saveDisabled": true
+      },
+      "observed": "PASS: 240 by 135, gameplay outlines and illumination visible, editor selection absent, project clean."
+    },
+    {
+      "step": "Stop WebGL2 Play.",
+      "expected": "Restore valid editor resources at scale 1.",
+      "observed": "PASS: 427 by 217, scale 1, zero pending retirement, Save All disabled.",
+      "diagnostics": {
+        "canvas": {
+          "cssHeight": 217,
+          "cssWidth": 427,
+          "height": 217,
+          "width": 427
+        },
+        "capturedAt": "2026-09-23T15:01:29.593Z",
+        "devicePixelRatio": 1,
+        "frame": 106,
+        "render": {
+          "adapter": {
+            "api": "webgl2",
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "vendor": "Google Inc. (NVIDIA)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "clusteredLights": 0,
+          "cpuMs": 3.0350000001490116,
+          "drawCalls": 17,
+          "gpuAttribution": "view",
+          "gpuMs": 996.603072,
+          "gpuReservations": {
+            "categoryBytes": {
+              "areaLight": 65536,
+              "cluster": 0,
+              "depth": 1111908,
+              "geometry": 0,
+              "postprocess": 1112676,
+              "sceneColor": 0
+            },
+            "limit": 536870912,
+            "pendingBytes": 0,
+            "reservedBytes": 2290120,
+            "resourceBytes": 2290120,
+            "shadowBytes": 0,
+            "sharedBytes": 0
+          },
+          "gpuStatus": "available",
+          "height": 217,
+          "pipeline": {
+            "effective": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            },
+            "limits": [],
+            "requested": {
+              "gpuBackend": "webgl2",
+              "renderPath": "forward"
+            }
+          },
+          "pressure": {
+            "cpuMs": 3.0350000001490116,
+            "gpuMs": null,
+            "presentationMs": null
+          },
+          "qualityLimits": [],
+          "readbackMs": null,
+          "resources": {
+            "cachedTextures": 16,
+            "materials": 11,
+            "meshes": 11,
+            "textures": 5
+          },
+          "samples": 1,
+          "scalingLevel": 1,
+          "shadowDrawCalls": 0,
+          "shadowLights": [],
+          "shadowMapBytes": 0,
+          "shadowPasses": 0,
+          "shadowTriangles": 0,
+          "width": 427
+        },
+        "requested": {
+          "blackBars": true,
+          "cel": {
+            "lightColorInfluence": 1,
+            "lightMixing": "strongest",
+            "outlineColor": [
+              0.03,
+              0.03,
+              0.03
+            ],
+            "outlineWidth": 1,
+            "outlinesEnabled": true,
+            "shadowBands": 3,
+            "shadowStrength": 0.65,
+            "shadowThreshold": 0.5,
+            "specularEnabled": true,
+            "specularSize": 0.2,
+            "specularStrength": 0.2
+          },
+          "customResolution": true,
+          "effects": {
+            "bloom": {
+              "enabled": false,
+              "kernel": 64,
+              "scale": 0.5,
+              "threshold": 0.9,
+              "weight": 0.15
+            },
+            "colorPipeline": {
+              "mode": "legacyDisplay",
+              "version": 1
+            },
+            "contrast": 1,
+            "exposure": 1,
+            "fxaa": false,
+            "toneMapping": "none",
+            "vignette": {
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "enabled": false,
+              "weight": 1.5
+            }
+          },
+          "environmentLighting": {
+            "enabled": true
+          },
+          "environmentSource": null,
+          "gpuBackend": "webgl2",
+          "height": 270,
+          "mode": "cel",
+          "quality": {
+            "lighting": {
+              "localLightMode": "auto",
+              "maxLocalLights": 16,
+              "preset": "medium"
+            },
+            "postprocessing": {
+              "preset": "medium",
+              "resolutionScale": 0.75
+            },
+            "resolution": {
+              "dynamic": false,
+              "minScale": 0.75,
+              "preset": "custom",
+              "scale": 1,
+              "targetFps": 60
+            },
+            "textures": {
+              "anisotropy": 4,
+              "byteBudget": 536870912,
+              "lodBias": 0,
+              "preset": "medium"
+            }
+          },
+          "renderPath": "forward",
+          "shadows": {
+            "autoBias": true,
+            "cascades": 2,
+            "depthBias": 0.0001,
+            "distance": 200,
+            "enabled": true,
+            "fadeFraction": 0.1,
+            "filter": "pcf",
+            "filterQuality": "medium",
+            "localLightMode": "auto",
+            "localMapSize": 1024,
+            "mapSize": 2048,
+            "maxLocalLights": 2,
+            "normalBias": 0.005,
+            "preset": "medium",
+            "profile": "medium",
+            "softness": 0.05
+          },
+          "width": 480
+        },
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+      }
+    }
+  ],
+  "viewport": {
+    "width": 1280,
+    "height": 565,
+    "devicePixelRatio": 1
+  },
+  "status": "PASS"
+}

@@ -3,7 +3,7 @@ import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
-import { saveAllIfEnabled } from "./save-all";
+import { readSaveAllDiagnostics, saveAllIfEnabled } from "./save-all";
 
 /** Commit a simulated gizmo drag (mesh mutation → applySceneChange). */
 async function commitGizmoNudge(page: Page): Promise<boolean> {
@@ -101,7 +101,12 @@ test.describe("P6 first-playable scene editing", () => {
     await expect.poll(async () => sceneDocumentX(page)).toBeCloseTo(beforeDoc ?? 0, 5);
     await expect.poll(async () => sceneMeshX(page)).toBeCloseTo(beforeMesh ?? 0, 5);
 
-    await saveAllIfEnabled(page);
+    // The real template save includes project metadata and journal persistence;
+    // Linux reached those phases just beyond the default 15-second UI wait.
+    await saveAllIfEnabled(page, 30_000);
+    expect((await readSaveAllDiagnostics(page)).save).toMatchObject({
+      ok: true, reason: "saved", dirtyAfter: 0,
+    });
 
     await page.getByTestId("viewport-mode-toggle").click();
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
@@ -113,7 +118,10 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("viewport-mode-toggle").click();
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
-    await saveAllIfEnabled(page);
+    await saveAllIfEnabled(page, 30_000);
+    expect((await readSaveAllDiagnostics(page)).save).toMatchObject({
+      ok: true, reason: "saved", dirtyAfter: 0,
+    });
 
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();

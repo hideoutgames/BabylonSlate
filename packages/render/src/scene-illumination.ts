@@ -1,4 +1,6 @@
 import { setAuthoredLightEnabled } from "./light-policy";
+import { AreaRectLightGroup } from "./area-rect-light";
+import { authoredActorMatrices } from "./authored-transform-matrices";
 import {
   Camera,
   Color3,
@@ -22,6 +24,7 @@ import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
+  areaRectLightBindings,
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -69,6 +72,7 @@ export type SyncIlluminationOptions = {
 };
 
 type AuthoredState = {
+  areaLights: Map<string, AreaRectLightGroup>;
   lights: Map<string, Light>;
   cameras: Map<string, Camera>;
   lightKinds: Map<string, string>;
@@ -80,6 +84,7 @@ function stateOf(scene: Scene): AuthoredState {
   let state = stateByScene.get(scene);
   if (!state) {
     state = {
+      areaLights: new Map(),
       lights: new Map(),
       cameras: new Map(),
       lightKinds: new Map(),
@@ -158,7 +163,7 @@ export function actorUpFromRotation(rotation: {
 }
 
 export function isAuthoredLightClassId(classId: string): boolean {
-  return classId === "LightComponent" || classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID;
+  return classId === "LightComponent" || classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID || classId === "AreaRectLightComponent";
 }
 
 function lightKindOf(component: { properties: Record<string, unknown> }): string {
@@ -409,6 +414,16 @@ export function syncAuthoredCamerasFromMeshes(
   }
 }
 
+/** Gizmo preview uses the live actor matrix; component chains stay owned. */
+export function syncAuthoredAreaLightsFromMeshes(scene: Scene, meshForActor: (actorId: string) => AbstractMesh | null): void {
+  const state = stateByScene.get(scene);
+  if (!state) return;
+  for (const [id, group] of state.areaLights) {
+    const mesh = meshForActor(id);
+    if (mesh) group.setWorld(mesh.computeWorldMatrix(true));
+  }
+}
+
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
@@ -476,11 +491,26 @@ export function* syncAuthoredIlluminationSteps(
 
   const liveLights = new Set<string>();
   const liveCameras = new Set<string>();
+  const liveAreaLights = new Set<string>();
+  const actorWorld = authoredActorMatrices(sceneData.actors);
 
 
   let completed = 0;
   const total = Math.max(1, sceneData.actors.length);
   for (const actor of sceneData.actors) {
+    const areaBindings = areaRectLightBindings(actor.components);
+    if (areaBindings.length) {
+      liveAreaLights.add(actor.id);
+      let group = state.areaLights.get(actor.id);
+      if (!group) { group = new AreaRectLightGroup(scene, `authoredAreaLight:${actor.id}`, options.onDiagnostic); state.areaLights.set(actor.id, group); }
+      try {
+        group.setWorld(actorWorld(actor));
+        group.update(areaBindings, options.assets?.areaEmissions);
+      } catch (error) {
+        group.update([]);
+        options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);
+      }
+    }
     const fillComponent = actor.components.find(
       (component) => component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID,
     );
@@ -571,6 +601,7 @@ export function* syncAuthoredIlluminationSteps(
   }
 
   const shadows = sceneShadowController(scene);
+  for (const [id, group] of state.areaLights) if (!liveAreaLights.has(id)) { group.dispose(); state.areaLights.delete(id); }
 
 
   const namedId = resolveDefaultCameraActorId(sceneData);

@@ -1,0 +1,175 @@
+[
+  {
+    "canvas": {
+      "cssHeight": 272,
+      "cssWidth": 720,
+      "height": 272,
+      "width": 720
+    },
+    "capturedAt": "2026-09-22T13:20:28.135Z",
+    "devicePixelRatio": 1.5,
+    "frame": 157,
+    "render": {
+      "adapter": {
+        "api": "webgpu",
+        "renderer": "turing",
+        "vendor": "nvidia",
+        "version": "unknown version"
+      },
+      "clusteredLights": 0,
+      "cpuMs": 1.244999997317791,
+      "drawCalls": 14,
+      "gpuAttribution": "unavailable",
+      "gpuMs": null,
+      "gpuReservations": {
+        "categoryBytes": {
+          "areaLight": 65536,
+          "cluster": 0,
+          "depth": 2350080,
+          "geometry": 0,
+          "postprocess": 2350848,
+          "sceneColor": 0
+        },
+        "limit": 536870912,
+        "pendingBytes": 0,
+        "reservedBytes": 4766464,
+        "resourceBytes": 4766464,
+        "shadowBytes": 0,
+        "sharedBytes": 0
+      },
+      "gpuStatus": "unsupported",
+      "height": 272,
+      "pipeline": {
+        "effective": {
+          "gpuBackend": "webgpu",
+          "renderPath": "forward"
+        },
+        "limits": [],
+        "requested": {
+          "gpuBackend": "webgpu",
+          "renderPath": "forward"
+        }
+      },
+      "pressure": {
+        "cpuMs": 1.244999997317791,
+        "gpuMs": null,
+        "presentationMs": null
+      },
+      "qualityLimits": [],
+      "readbackMs": null,
+      "resources": {
+        "cachedTextures": 17,
+        "materials": 12,
+        "meshes": 10,
+        "textures": 5
+      },
+      "samples": 1,
+      "scalingLevel": 1,
+      "shadowDrawCalls": 0,
+      "shadowLights": [],
+      "shadowMapBytes": 0,
+      "shadowPasses": 0,
+      "shadowTriangles": 0,
+      "width": 720
+    },
+    "requested": {
+      "blackBars": false,
+      "cel": {
+        "lightColorInfluence": 1,
+        "lightMixing": "strongest",
+        "outlineColor": [
+          0.03,
+          0.03,
+          0.03
+        ],
+        "outlineWidth": 1,
+        "outlinesEnabled": true,
+        "shadowBands": 3,
+        "shadowStrength": 0.65,
+        "shadowThreshold": 0.5,
+        "specularEnabled": true,
+        "specularSize": 0.2,
+        "specularStrength": 0.2
+      },
+      "customResolution": true,
+      "effects": {
+        "bloom": {
+          "enabled": false,
+          "kernel": 64,
+          "scale": 0.5,
+          "threshold": 0.9,
+          "weight": 0.15
+        },
+        "colorPipeline": {
+          "mode": "legacyDisplay",
+          "version": 1
+        },
+        "contrast": 1,
+        "exposure": 1,
+        "fxaa": false,
+        "toneMapping": "none",
+        "vignette": {
+          "color": [
+            0,
+            0,
+            0
+          ],
+          "enabled": false,
+          "weight": 1.5
+        }
+      },
+      "environmentLighting": {
+        "enabled": true
+      },
+      "environmentSource": null,
+      "gpuBackend": "webgpu",
+      "height": 1080,
+      "mode": "cel",
+      "quality": {
+        "lighting": {
+          "localLightMode": "auto",
+          "maxLocalLights": 16,
+          "preset": "medium"
+        },
+        "postprocessing": {
+          "preset": "medium",
+          "resolutionScale": 0.75
+        },
+        "resolution": {
+          "dynamic": false,
+          "minScale": 0.75,
+          "preset": "custom",
+          "scale": 1,
+          "targetFps": 60
+        },
+        "textures": {
+          "anisotropy": 4,
+          "byteBudget": 536870912,
+          "lodBias": 0,
+          "preset": "medium"
+        }
+      },
+      "renderPath": "forward",
+      "shadows": {
+        "autoBias": true,
+        "cascades": 2,
+        "depthBias": 0.0001,
+        "distance": 200,
+        "enabled": true,
+        "fadeFraction": 0.1,
+        "filter": "pcf",
+        "filterQuality": "medium",
+        "localLightMode": "auto",
+        "localMapSize": 1024,
+        "mapSize": 2048,
+        "maxLocalLights": 2,
+        "normalBias": 0.005,
+        "preset": "medium",
+        "profile": "medium",
+        "softness": 0.05
+      },
+      "width": 1920
+    },
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+  }
+]

@@ -25,7 +25,7 @@ async function game(custom = false) {
   const files = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "scene",
-    customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
+    renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },
     scripts: [],
     assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encode(createDefaultScene()) },
@@ -57,6 +57,7 @@ describe("packed player backend lifetime", () => {
     player = {
       ticks: () => 0,
       rendering: () => null,
+      scalability: () => undefined,
       shadowDiagnostics: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],

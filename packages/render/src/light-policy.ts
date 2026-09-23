@@ -1,6 +1,7 @@
 import {
   DirectionalLight,
   HemisphericLight,
+  RectAreaLight,
   ShadowLight,
   Vector3,
   type Light,
@@ -11,6 +12,7 @@ import {
   isClusteredLocalAllowed,
   isManagedClusteredLight,
 } from "./clustered-light-policy";
+import { lightingSamplerCapacity, lightSamplerCost, lightSamplerCount } from "./light-sampler-budget";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -96,6 +98,8 @@ export function syncForwardLightPolicy(
   requested: number;
   admitted: number;
   limited: Light[];
+  samplerLimited: Light[];
+  samplers: number;
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
@@ -114,24 +118,35 @@ export function syncForwardLightPolicy(
   );
   const capacity = Math.max(0, Math.floor(slots));
   const localCapacity = Math.max(0, Math.floor(localSlots));
+  const samplerCapacity = lightingSamplerCapacity(scene);
   if (
     candidates.length > capacity ||
-    candidates.filter(local).length > localCapacity
+    candidates.filter(local).length > localCapacity ||
+    lightSamplerCount(scene, candidates) > samplerCapacity
   )
     candidates.sort(compareLightAdmission(scene, candidates, previous));
   const selected = previous;
   selected.clear();
   let selectedLocals = 0;
+  let samplers = 0, hasArea = false;
   const limited: Light[] = [];
+  const samplerLimited: Light[] = [];
   for (const light of candidates) {
     const authoredLocal = local(light);
+    const samplerCost = lightSamplerCost(scene, light, hasArea);
     if (
       selected.size >= capacity ||
       (authoredLocal && selectedLocals >= localCapacity)
     )
       limited.push(light);
+    else if (samplers + samplerCost > samplerCapacity) {
+      limited.push(light);
+      samplerLimited.push(light);
+    }
     else {
       selected.add(light);
+      samplers += samplerCost;
+      hasArea ||= light instanceof RectAreaLight;
       if (authoredLocal) selectedLocals++;
     }
   }
@@ -148,6 +163,8 @@ export function syncForwardLightPolicy(
     requested: selected.size + limited.length,
     admitted: selected.size,
     limited,
+    samplerLimited,
+    samplers,
   };
 }
 

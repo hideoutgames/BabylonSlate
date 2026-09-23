@@ -20,6 +20,8 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "SkyboxComponent",
   "CameraComponent",
   "LightComponent",
+  "AreaRectLightComponent",
+  "OutlineComponent",
   "HemisphericFillLightComponent",
 ] as const;
 

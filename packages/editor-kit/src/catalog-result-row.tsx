@@ -6,6 +6,8 @@ export interface CatalogResultRowProps
   extends Omit<ComponentProps<"div">, "children" | "onClick" | "onSelect" | "title"> {
   title: string;
   description?: string;
+  /** Optional full contract shown on hover without changing the compact rows. */
+  tooltip?: string;
   leading?: ReactNode;
   active?: boolean;
   striped?: boolean;
@@ -16,6 +18,7 @@ export interface CatalogResultRowProps
 export function CatalogResultRow({
   title,
   description,
+  tooltip,
   leading,
   active = false,
   striped = false,
@@ -29,6 +32,7 @@ export function CatalogResultRow({
   return (
     <div
       {...props}
+      title={tooltip}
       role={role}
       aria-selected={role === "option" ? active : undefined}
       tabIndex={tabIndex}

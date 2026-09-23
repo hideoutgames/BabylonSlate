@@ -3,7 +3,7 @@ import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core"
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
-import { importEnvironmentTexture } from "@babylonslate/assets";
+import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@babylonslate/assets";
 import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
 
 function textureAsset(): IndexedAsset {
@@ -40,6 +40,22 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
+  it("keeps processed emission separate from a Texture's visual representation and rejects corrupt data on reachability", async () => {
+    const asset = textureAsset();
+    const sourceHash = "a".repeat(64);
+    asset.header.chunks[0]!.sha256 = sourceHash;
+    const id = areaEmissionChunkId(sourceHash);
+    asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-babylonslate-area-emission", sha256: "b".repeat(64), locator: { inline: { offset: 0, length: 1 } } });
+    const prepared = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(190), sourceHash);
+    const load = () => loadExportDocuments({ assets: [asset], loadDocument: async () => null, readAssetChunk: async (_path, chunk) => chunk === id ? prepared : new Uint8Array([7]) });
+    const loaded = await load();
+    expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([7]));
+    expect(loaded.areaEmissionBytesByGuid("tex-1")).toBe(prepared);
+    prepared[prepared.length - 1] = 0;
+    const corrupt = await load();
+    expect(() => corrupt.areaEmissionBytesByGuid("tex-1")).toThrow("Corrupt");
+    expect(corrupt.areaEmissionBytesByGuid("unrelated")).toBeNull();
+  });
   it("exports retained HDR cube bytes and dimensional metadata without transcoding", async () => {
     const source = buildFloatDdsCubeFixture();
     const [imported] = await importEnvironmentTexture(source, { fileName: "Studio.dds", existingGuids: new Set() });

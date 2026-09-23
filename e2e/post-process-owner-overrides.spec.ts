@@ -118,7 +118,7 @@ test("export closure retains disabled override textures and packed player presen
       bytes: fixture.bytes.get(asset.guid)!,
       ...(asset.type === "Texture" ? { width: 1, height: 1 } : {}),
     })),
-    customResolution: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgl2", customResolution: true, width: 320, height: 180, blackBars: true },
+    renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgl2", customResolution: true, width: 320, height: 180, blackBars: true },
     playFrameCap: 60, physicsWorld: "3d",
     playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
   });

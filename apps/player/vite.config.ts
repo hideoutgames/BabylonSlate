@@ -25,6 +25,7 @@ function copyRuntimePublic(): Plugin {
     copyIfPresent(path.join(editorPublic, "ktx2"), path.join(dest, "ktx2"));
     copyIfPresent(path.join(editorPublic, "draco"), path.join(dest, "draco"));
     copyIfPresent(path.join(editorPublic, "meshopt"), path.join(dest, "meshopt"));
+    copyIfPresent(path.join(editorPublic, "legal"), path.join(dest, "legal"));
     copyEngineDefaultSkyboxFaces(repoRoot, dest);
   };
   return {

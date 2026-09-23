@@ -280,6 +280,20 @@ it("waits for camera-pass materials as well as graph-pass effects without consum
   expect(render()).toBe(0);
 });
 
+it("keeps settled material readiness when an enabled light has no admitted shadow map", async () => {
+  const { scene, camera, mesh, graph, render } = await fixture("spot");
+  const unshadowed = new PointLight("unshadowed contribution", new Vector3(0, 1, -1), scene);
+  expect(unshadowed.shadowEnabled).toBe(true);
+  expect(unshadowed.getShadowGenerator()).toBeNull();
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const dirty = vi.spyOn(mesh, "_markSubMeshesAsLightDirty");
+  render(); render();
+  expect(unshadowed.shadowEnabled).toBe(true);
+  expect(unshadowed.getShadowGenerator()).toBeNull();
+  expect(dirty).not.toHaveBeenCalled();
+});
+
 it("rechecks admission after scene callbacks so revoked maps are never rendered or rebound", async () => {
   const {
     scene,

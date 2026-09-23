@@ -12,6 +12,9 @@ import {
   parseSkyboxSize,
   parseText2DProperties,
   parseText3DProperties,
+  parseAreaRectLightProperties,
+  parseOutlineProperties,
+  OUTLINE_WIDTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -1333,6 +1336,30 @@ export function componentPropertyRows(
           update,
           new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
         ),
+      ];
+    }
+    case "OutlineComponent": {
+      const properties = parseOutlineProperties(component.properties);
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
+          description: "Outline this actor's geometry. Disabling reveals any applicable global CEL outline.", onChange: (next) => update("enabled", next) },
+        { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
+        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", value: properties.width,
+          min: OUTLINE_WIDTH_LIMITS[0], max: OUTLINE_WIDTH_LIMITS[1], sensitivity: 0.025,
+          description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
+          description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
+      ];
+    }
+    case "AreaRectLightComponent": {
+      const properties = parseAreaRectLightProperties(component.properties);
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
+          description: "Unshadowed: this light can illuminate through walls. It emits along the component's forward direction (+Z).", onChange: (next) => update("enabled", next) },
+        ...(["width", "height"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: key === "width" ? "Width" : "Height", value: properties[key], min: 0.0001, description: "Local units. Actor and parent scale apply once. Sheared transforms are unsupported.", onChange: (next) => update(key, next) })),
+        { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
+        { kind: "number", id: rowId(actorId, component.id, "intensity"), label: "Intensity", value: properties.intensity, min: 0, onChange: (next) => update("intensity", next) },
+        assetRow(actorId, component, "textureGuid", "Emission Texture", ["Texture"], update, context, "Choose Emission Texture", "Uniform Emission"),
       ];
     }
     case "CameraComponent": {

@@ -32,6 +32,7 @@ const MAP_V: PinType = { kind: "resolvingWildcard", group: "V" };
 /** Runtime export names for catalog event entry nodes. */
 const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
+  "flow.event.scalabilityChanged": "onScalabilityChanged",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
   "flow.event.init": "onInit",

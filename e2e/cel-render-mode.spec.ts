@@ -31,6 +31,7 @@ test.afterEach(async ({ page }, info) => {
 });
 
 test("Mannequin illumination stays stable when directional shadows are enabled", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   await openTestProject(page);
   const modelGuid = await guidForPath(page, "assets/Mannequin/mannequin.babasset");
   const scene = createDefaultScene("Mannequin Shadows");
@@ -205,10 +206,9 @@ test("world-space material inputs remain anchored when the editor camera moves",
   await expect.poll(() => pixelsNear(canvas, [0, 0, 188])).toBeGreaterThan(100);
 });
 
-test("CEL preserves authored and texture colors, supports every light, and restores PBR in viewport and Play", async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(180_000);
+// Keep the color/shadow workflows bounded independently; every case still runs
+// with the project's default global CEL outlines and the real authoring/save path.
+async function setupCelColorFixture(page: Page, saveTimeout?: number) {
   const shaderErrors: string[] = [];
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -228,7 +228,7 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .locator('.react-flow__node[data-id="baseColor"]')
     .click();
   await page.getByTestId("property-color").fill("#33994d");
-  await saveAllIfEnabled(page);
+  await saveAllIfEnabled(page, saveTimeout);
   const materialGuid = await guidForPath(page, materialPath);
   expect(materialGuid).not.toBe("");
   await projectMode(page, "CEL", true);
@@ -269,10 +269,19 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   });
   scene.actors = [...subjects, fill];
   await openMainScene(page);
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, saveTimeout);
   const viewport = page.getByTestId("viewport-canvas");
   const authored = [51, 153, 77];
   await projectMode(page, "CEL");
+  return { scene, subjects, fill, viewport, authored, verifyErrors: () => {
+    expect(shaderErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  } };
+}
+
+test("CEL preserves authored colors through Play and unlit scene overrides", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page);
   await expect
     .poll(() => pixelsNear(viewport, authored), { timeout: 30_000 })
     .toBeGreaterThan(500);
@@ -303,6 +312,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     .poll(() => pixelsNear(viewport, [38, 115, 58]))
     .toBeGreaterThan(500);
 
+  verifyErrors();
+});
+
+test("CEL mixes overlapping lights into discrete bands and preserves fill hues", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page);
   // Overlapping fractional lights must share one ramp. Quantizing each light
   // separately produces extra brightness levels even with zero softness.
   for (const lightMixing of ["strongest", "additive", "blend"] as const) {
@@ -440,6 +455,12 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   // nominally hard-banded hemisphere light.
   await expect.poll(() => pixelsNear(viewport, [17, 77, 0])).toBeLessThan(30);
 
+  verifyErrors();
+});
+
+test("CEL applies directional, point and spot colors and neutral influence", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page);
   for (const kind of ["directional", "point", "spot"] as const) {
     scene.settings.celShading = { shadowStrength: 1 };
     const light = createActor("key", "Key", {
@@ -500,6 +521,14 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     }
   }
 
+  verifyErrors();
+});
+
+test("CEL preserves surface color while casting shadows across local and large maps", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  // The Linux trace reaches the project/journal phase after 15 seconds while
+  // saving. Keep the full clean-state assertion with a bounded save deadline.
+  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page, 30_000);
   // Keep both primitives in contact with the receiver: sphere radius 1.875,
   // box half-height 1.5. Intersections must not masquerade as shadow artifacts.
   subjects[0]!.transform.position[1] = 0.375;
@@ -516,13 +545,13 @@ test("CEL preserves authored and texture colors, supports every light, and resto
     components: [createMeshComponent("receiver-mesh", "ground")],
   })];
   scene.settings.celShading = { specularEnabled: false, shadowStrength: 0.65 };
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, 30_000);
   await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(100);
   const withoutShadows = await framePixels(viewport);
   const frameSize = await viewport.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-unshadowed.png") });
   sun.components[0]!.properties.castShadows = true;
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, 30_000);
   await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-shadowed.png") });
   await expect.poll(async () => {
     const withShadows = await framePixels(viewport);
@@ -579,6 +608,19 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   subjects[0]!.transform.position[1] = 0;
   subjects[0]!.transform.position[0] = -1.5;
 
+  verifyErrors();
+});
+
+test("CEL applies live specular controls and restores PBR surface response", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { scene, subjects, fill, viewport, authored, verifyErrors } = await setupCelColorFixture(page);
+  const sun = createActor("shadow-sun", "Shadow Sun", {
+    // No sideways component: neither test subject should cast onto the other.
+    transform: { position: [0, 5, -3], rotation: [0.382683, 0, 0, 0.923880], scale: [1, 1, 1] },
+    components: [{ id: "sun-light", classId: "LightComponent", properties: {
+      lightKind: "directional", color: [1, 1, 1], intensity: 1.5, castShadows: false,
+    } }],
+  });
   scene.actors = [...subjects, fill];
   scene.settings.celShading = { specularStrength: 1, specularSize: 1 };
   await setPreviewScene(page, scene);
@@ -616,13 +658,15 @@ test("CEL preserves authored and texture colors, supports every light, and resto
   await expect
     .poll(() => pixelsNear(viewport, authored), { timeout: 20_000 })
     .toBeGreaterThan(500);
-  expect(shaderErrors).toEqual([]);
-  expect(pageErrors).toEqual([]);
+  verifyErrors();
 });
 
 test("CEL preserves sRGB image pixels on a native glTF surface", async ({
   page,
 }) => {
+  // Three mode round-trips plus saved Play take 47 seconds on local SwiftShader;
+  // allow the same complete workflow on the slower hosted software adapter.
+  test.setTimeout(120_000);
   // A numeric texture fixture exercises Babylon's automatic hardware sRGB decode.
   const uri = await page.evaluate(() => {
     const canvas = document.createElement("canvas");

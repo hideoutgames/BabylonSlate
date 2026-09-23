@@ -499,7 +499,13 @@ export async function runClusteredLightProof() {
       });
       scene.dispose();
     }
-    return { capabilities, captures, ties, lifecycle };
+    return { capabilities, captures, ties, lifecycle, graphics: {
+      requestedApi: backend ?? "webgl2", effectiveApi: engine.isWebGPU ? "webgpu" : "webgl2",
+      adapter: engine.getInfo(), browser: navigator.userAgent,
+      viewport: { width: innerWidth, height: innerHeight },
+      drawingBuffer: { width: engine.getRenderWidth(), height: engine.getRenderHeight() },
+      devicePixelRatio,
+    } };
   } finally {
     engine.dispose();
     canvas.remove();

@@ -286,6 +286,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
+  const [playAreaEmissions, setPlayAreaEmissions] = useState<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>(() => new Map());
   const [playFontMsdfJson, setPlayFontMsdfJson] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
@@ -353,6 +354,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+    collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -1129,12 +1131,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         );
         setPlaySpriteAnimationPayloads(spriteAnimations);
 
-        try {
-          const fontScenes = [
+        const fontScenes = [
             resolvedScene?.scene,
             ...playLibrary.map((entry) => entry.scene),
             ...resourceScenes,
           ];
+        try {
+          // Do not let a failed new session reuse the previous session's data.
+          setPlayAreaEmissions(new Map());
+          setPlayAreaEmissions(await collectPlayAreaEmissions(fontScenes, true));
+        } catch (error) {
+          appendLog(`Area-light emission load failed: ${error instanceof Error ? error.message : String(error)}`);
+          setPrepareState(null);
+          return;
+        }
+        try {
           setPlayFontFacetypeBytes(
             await collectPlayFontFacetypeBytes(
               resolvedScene?.scene,
@@ -1234,6 +1245,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
+      collectPlayAreaEmissions,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
       collectPlayFontCssStacks,
@@ -1489,6 +1501,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             textureBytes={playTextureBytes}
             texturePixelSizes={playTexturePixelSizes}
             fontFacetypeBytes={playFontFacetypeBytes}
+            areaEmissions={playAreaEmissions}
             fontMsdfJson={playFontMsdfJson}
             fontMsdfPng={playFontMsdfPng}
             fontFaceEntries={playFontFaceEntries}

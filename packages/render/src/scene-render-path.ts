@@ -1,3 +1,4 @@
+import { engineBackendStatus } from "./backend-status";
 import {
   Camera,
   DirectionalLight,
@@ -32,7 +33,7 @@ function requested(
   return resolveRenderingPipeline(
     state.project,
     renderPathSession(scene.getEngine()),
-    { gpuBackend: scene.getEngine().isWebGPU ? "webgpu" : "webgl2" },
+    { gpuBackend: scene.getEngine().isWebGPU ? "webgpu" : "webgl2", reason: engineBackendStatus(scene.getEngine())?.fallbackReason },
     availability,
   );
 }

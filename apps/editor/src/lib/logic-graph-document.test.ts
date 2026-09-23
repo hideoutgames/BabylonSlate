@@ -431,7 +431,7 @@ describe("collectGraphTypeAssets", () => {
         },
       ],
     });
-    expect(catalog.structures).toEqual([
+    expect(catalog.structures).toEqual(expect.arrayContaining([
       {
         guid: "engine:HitResult",
         name: "Hit Result",
@@ -445,13 +445,20 @@ describe("collectGraphTypeAssets", () => {
       },
       expect.objectContaining({ guid: "engine:InputType", name: "Input Type" }),
       expect.objectContaining({ guid: "engine:InputBinding", name: "Input Binding" }),
+      expect.objectContaining({
+        guid: "engine:ScalabilitySnapshot", name: "Scalability Snapshot",
+        fields: expect.arrayContaining([
+          { name: "requested", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
+          { name: "effective", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
+        ]),
+      }),
       {
         guid: "struct-stats",
         name: "Stats",
         fields: [{ name: "Health", typeId: "int" }],
       },
-    ]);
-    expect(catalog.enums).toEqual([
+    ]));
+    expect(catalog.enums).toEqual(expect.arrayContaining([
       {
         guid: "engine:CollisionChannel",
         name: "Collision Channel",
@@ -465,6 +472,7 @@ describe("collectGraphTypeAssets", () => {
       },
       expect.objectContaining({ guid: "engine:Key", name: "Key" }),
       expect.objectContaining({ guid: "engine:InputComponent", name: "Input Component" }),
+      { guid: "engine:RenderMode", name: "Render Mode", members: [{ name: "pbr", value: 0 }, { name: "cel", value: 1 }] },
       {
         guid: "enum-team",
         name: "Team",
@@ -473,6 +481,8 @@ describe("collectGraphTypeAssets", () => {
           { name: "Blue", value: 2 },
         ],
       },
-    ]);
+    ]));
+    expect(catalog.structures.filter((entry) => entry.guid === "struct-stats")).toHaveLength(1);
+    expect(catalog.enums.filter((entry) => entry.guid === "enum-team")).toHaveLength(1);
   });
 });

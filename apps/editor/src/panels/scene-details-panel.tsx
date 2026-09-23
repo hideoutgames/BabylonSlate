@@ -669,7 +669,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     const showPostProcess = matches("Post Processing Material Entry ID Enabled Scalable Resolution");
     const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
     const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
-    const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Specular Light Color Influence Mixing Strongest Additive Blend");
+    const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Specular Light Color Influence Mixing Strongest Additive Blend Outlines Outline Color Width");
     const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
     return (
       <PanelFrame data-testid="scene-details-panel">

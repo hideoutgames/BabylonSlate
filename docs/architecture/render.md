@@ -1,5 +1,46 @@
 # Render sync and resource cache (P4)
 
+The session quality owner preserves override identity for repeated preset, value and reset requests. Runtime command delivery emits `setRenderingQuality` only when that state changes, so identical requests do not invalidate renderer readiness or reconfigure resources. This removes duplicate command work; it is not a measured GPU or A16 performance claim.
+
+## Rendering handoff application contract
+
+Authored defaults belong to `RenderProjectSettings`; editor preferences and session overrides remain separate. Export owns a normalized copy. Backend capability resolution runs before Engine creation and retains requested/effective values separately. The existing `RenderingQualitySession` survives scene changes and resets on a new Play/player session. No persistent player-preference policy is introduced by this handoff.
+
+The following inventory defines the application boundary for the shared runtime
+settings service and Class Graph Scalability category. Transactions report
+requested values separately from renderer-confirmed completion. Resource-changing
+requests report pending/failure and retain valid resources until replacements
+are ready; see the typed session contract below.
+
+| Fields | Application class | Existing owner / constraint |
+| --- | --- | --- |
+| `gpuBackend` | Restart required | Project Engine owner; never a Scene shader toggle |
+| `renderPath` | Graph/resource rebuild | Per-Engine request, capability resolver and scene coordinator; global session scope |
+| `mode` | Material/graph rebuild | Scene render-mode owner; never mutate authored materials |
+| `cel.shadowBands`, `shadowThreshold`, `shadowStrength`, `specularStrength`, `specularSize`, `lightColorInfluence` | Live shader state | Native/graph CEL uniforms; independent of quality presets |
+| `cel.specularEnabled`, `lightMixing` | Material/graph rebuild | Shader variants; independent of quality presets |
+| `environmentLighting.enabled`, `intensity`, `rotationYDegrees`, `celStrength` | Live state | Scene environment owner; texture replacement separately requires readiness |
+| `quality.resolution.scale`, `dynamic`, `minScale`, `targetFps` | Resource resize/state | Existing hardware scaling controller; report actual dimensions and scale |
+| `quality.textures.anisotropy` | Live sampling state | Capability-clamped texture sampling |
+| `quality.textures.lodBias` | Material/graph rebuild | Quality texture blocks/plugins |
+| `quality.textures.byteBudget` | Resource admission | Shared Engine resource cache; no forced disposal of referenced assets |
+| `quality.postprocessing.resolutionScale` | Graph/resource rebuild | Authored post-process owners, including SceneLayers |
+| `quality.lighting.localLightMode`, `maxLocalLights` | Lighting admission/resource update | Managed scene lighting and clustered owners; report effective limits |
+| `shadows.enabled`, `mapSize`, `localMapSize`, `cascades`, `filter`, `filterQuality`, `localLightMode`, `maxLocalLights` | Shadow resource/variant rebuild | Managed shadow controller and lighting budgets |
+| `shadows.distance`, `fadeFraction`, `softness`, `autoBias`, `depthBias`, `normalBias` | Live shadow state / refresh | Shadow owner; affected cached shadows must be invalidated |
+| Quality/shadow `profile` | Admission/resource update | Determines tier capacities; not merely a display label |
+| Quality/shadow `preset` | Authoring provenance | Tier selection applies the full preset patch; the label alone is not a quality transaction |
+| `effects.colorPipeline.mode`, `toneMapping`, `exposure`, `contrast`, `vignette.enabled/weight/color`, `bloom.enabled/threshold/weight/kernel/scale`, `fxaa` | Graph/resource rebuild in current implementation | Effects key invalidates the owned chain; CEL keeps display-space semantics |
+| `effects.colorPipeline.version` | Authoring/data evolution | Serialized contract version; no runtime setter |
+| `customResolution`, `width`, `height`, `blackBars` | Output resource/layout update | Host framebuffer and containment owner, coordinated with render scale |
+| Project `playFrameCap` | Live presentation state | Existing scheduler; fixed simulation step is unchanged |
+| Scene environment texture and authored post-process asset references | Asset/resource rebuild | Existing scene/asset owners; not cheap quality switches |
+| Rectangular-light dimensions, color, intensity and enabled state | Live component state | Per-actor light owner; admission shares the global lighting budget |
+| Rectangular-light Texture reference | Prepared resource replacement | Requires versioned emission data; shares uploads and retains other owners |
+| `cel.outlinesEnabled`, `outlineColor`, `outlineWidth` | Live contribution/style state; activation/retirement owns graph resources | Shared world-outline host; artistic settings survive quality presets and PBR/CEL switches |
+| `OutlineComponent.enabled`, `color`, `width`, `throughMeshes` | Live per-actor contribution/style state | Actor lifetime and view membership; no mesh reassignment for style edits |
+
+Physical A16 budgets and outline acceptance are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This application inventory does not itself certify outline coverage, area lights or device performance.
 Generated text records its pick, glyph, underline and construction materials in a visual bundle at creation, including materials later replaced by an inline image. The same bundle pattern owns the construction material of 3D text and overlay texture quads even after an authored material replaces it. Retirement cancels effects, disposes render users and owned materials/wrappers, then releases shared atlas leases. Borrowed material-library results remain library-owned.
 
 Model realization consumes immutable `modelSources` installed beside the raw `modelBytes` used for synchronous collision extraction. Scene-local decoded generations are keyed by the installed source identity and the texture-slimming decision before unpacking bytes. Instance scale and animation/retarget dependencies belong to the instance descriptor. Preparing and live instances hold exact source leases; an older generation is retired after its last instance releases it. A failed source entry is removed by exact entry identity, permitting retry without evicting a newer request.
@@ -40,7 +81,7 @@ Project Settings → Rendering exposes independent Render Path and GPU Backend p
 
 Requested path changes enter the existing viewport loading/shader/first-presentation barrier. Engine session requests and Play/player serialized settings reach the same renderer policy; a session change re-keys shader/presentation admission like a project change and reports the new status through `renderPathStatus` bridge messages. The editor shows the active Scene's requested/effective result and the initialized Engine backend without replacing the saved preference. A viewport-generation lease rejects stale status callbacks and cleanup. `EngineHandle.renderPathStatus()` and `RenderDiagnostics.pipeline` expose plain metadata; `EngineHandle.setRenderPath` requests the session path (`null` resumes the project path). The path controller does not call `Scene.render` or replace FrameGraph ownership. Device performance, WebGPU clustering and unsupported material/layout parity remain separate gates; no Apple A16 qualification is implied.
 
-The `ClusteredSceneLights` owner borrows an explicit authored light registry, retaining enabled values and returning children to conventional lighting before shadow promotion or disposal. WebGL2 admission tests an actual R32F framebuffer and additive mask precision, restores caller GL state, and caches the result only until context restoration. WebGPU admission instead requires a real WebGPUEngine and checks its device limits for the storage-buffer mask — at least one storage buffer per shader stage (and per fragment stage in compat mode) plus a binding size covering the full 32-batch u32 mask — without a numerical probe, since the WebGPU mask uses exact u32 atomics at a fixed batch of 32. Eligible finite-range default-falloff point/spot lights exclude live shadow maps, projection/IES textures and per-mesh filters; unsupported lights keep bounded conventional admission. Container resources have separate dimension/count limits; on WebGPU the resource accounting tracks the tile-mask storage buffer beside the light-data texture and the 64×64 R8 dummy target. The shared Lighting quality allowance selects authored locals by priority, camera distance and hysteresis before clustering. Clustered children and conventional shadowed/unsupported locals share that total; the container itself consumes a shader slot but no authored-local slot. Auto derives the shared tier target, while Manual may exceed it subject to real shader/storage admission. Zero local allowance retains the separately admitted sun. Diagnostics report retained allocation capacity when membership shrinks; Babylon reuses that high-water allocation until the owner releases the container. Physical PBR has no finite authored cutoff: a guarded proxy-shader adapter covers every camera tile and depth slice while preserving the original packed attenuation and authored range. This conservative mode saves conventional shader slots but does not cull individual physical lights. Finite-range CEL retains native bounds. The borrowed mask pass restores blend mode/equation and depth state before surface rendering, treating Babylon's invalid alpha-cache sentinel as disabled blending. An owned container subclass registers first-use NodeMaterial cluster defines; scene-owned light-block wrappers add the newly required samplers when an existing conventional slot changes type and restore the original methods on release. Orthographic cameras retain conventional rendering pending a compatible mask projection. The borrowed FrameGraph mask task renders once before objects, preserves shadow texture dependencies, performs no readiness draw, and never releases the container-owned map. A guarded Babylon 9.20 packing adapter restores authored child order after native camera-depth packing, remaps each slice to a conservative enclosing index interval, and uploads only when the order differs. It borrows the data texture and reuses its scratch storage. CEL continues each child comparison from the preceding conventional peak and carries whether a child won, preserving the sequential epsilon rule before the existing final ramp; the WGSL build mirrors this through a patched slateCelClusteredLightingCompute include instead of GLSL inline code. An aggregate maximum cannot substitute for that sequence. Strongest admits only a contiguous authored tail after conventional lights; interleaved or oversized tails report conventional fallback. The decision changes with authored topology, priority, style or quality, not camera movement or shadow-map admission. Authored shadow requests remain conventional even when disabled globally or waiting for a map. Turning the authored request off can extend a compatible tail without replacing its mask. Returning borrowed children restores scene and per-mesh order; a cluster does not enable priority sorting on a previously unsorted scene. Frozen materials are marked dirty on these clustered membership changes so a changed light set re-evaluates their light defines. On WebGPU, graph NodeMaterials additionally force a rebind when a submesh draw context lacks a uniform buffer the active effect declares: DrawWrapper.setEffect empties the per-submesh context, and a frozen NodeMaterial then skips the bindable blocks that would repopulate it. Native/graph pixel parity and device benefit remain prototype acceptance gates. The numeric browser oracle pairs the managed-shadow fixture with 48 clustered locals: shadow promotion/demotion must keep one key-light contribution, reuse the mask, and preserve the existing first-frame, motion, resize, reload and sibling-scene pixel invariants. Readiness must draw neither masks nor shadow maps; presented frames render exactly one mask pass. Shadow membership checks current Scene ownership when Babylon delivers deferred mesh-added events, so the already-removed cluster proxy cannot become a caster or force static maps to refresh continuously. The Forward coordinator rejects unmanaged containers. The WebGPU browser oracle normalizes canvas readback from the bgra8unorm swap chain to RGBA before pixel assertions. These absolute storage limits are safety bounds, independent of the shared quality categories; Forward remains the saved default; explicit Clustered Forward and Auto use the scene policy above.
+The `ClusteredSceneLights` owner borrows an explicit authored light registry, retaining enabled values and returning children to conventional lighting before shadow promotion or disposal. WebGL2 admission tests an actual R32F framebuffer and additive mask precision, restores caller GL state, and caches the result only until context restoration. WebGPU admission instead requires a real WebGPUEngine and checks its device limits for the storage-buffer mask — at least one storage buffer per shader stage (and per fragment stage in compat mode) plus a binding size covering the full 32-batch u32 mask — without a numerical probe, since the WebGPU mask uses exact u32 atomics at a fixed batch of 32. Eligible finite-range default-falloff point/spot lights exclude live shadow maps, projection/IES textures and per-mesh filters; unsupported lights keep bounded conventional admission. Container resources have separate dimension/count limits; on WebGPU the resource accounting tracks the tile-mask storage buffer beside the light-data texture and the 64×64 R8 dummy target. The shared Lighting quality allowance selects authored locals by priority, camera distance and hysteresis before clustering. Clustered children and conventional shadowed/unsupported locals share that total; the container itself consumes a shader slot but no authored-local slot. Auto derives the shared tier target, while Manual may exceed it subject to real shader/storage admission. Zero local allowance retains the separately admitted sun. Diagnostics report retained allocation capacity when membership shrinks; Babylon reuses that high-water allocation until the owner releases the container. Physical PBR has no finite authored cutoff: a guarded proxy-shader adapter covers every camera tile and depth slice while preserving the original packed attenuation and authored range. This conservative mode saves conventional shader slots but does not cull individual physical lights. Finite-range CEL retains native bounds. The borrowed mask pass restores blend mode/equation and depth state before surface rendering, treating Babylon's invalid alpha-cache sentinel as disabled blending. An owned container subclass registers first-use NodeMaterial cluster defines; scene-owned light-block wrappers add the newly required samplers when an existing conventional slot changes type and restore the original methods on release. Orthographic cameras retain conventional rendering pending a compatible mask projection. The borrowed FrameGraph mask task renders once before objects, preserves shadow texture dependencies, performs no readiness draw, and never releases the container-owned map. A guarded Babylon 9.20 packing adapter restores authored child order after native camera-depth packing, remaps each slice to a conservative enclosing index interval, and uploads only when the order differs. It borrows the data texture and reuses its scratch storage. CEL continues each child comparison from the preceding conventional peak and carries whether a child won, preserving the sequential epsilon rule before the existing final ramp; the WGSL build mirrors this through a patched slateCelClusteredLightingCompute include instead of GLSL inline code. An aggregate maximum cannot substitute for that sequence. Strongest admits only a contiguous authored tail after conventional lights; interleaved or oversized tails report conventional fallback. The decision changes with authored topology, priority, style or quality, not camera movement or shadow-map admission. Authored shadow requests remain conventional even when disabled globally or waiting for a map. Turning the authored request off can extend a compatible tail without replacing its mask. Returning borrowed children restores scene and per-mesh order; a cluster does not enable priority sorting on a previously unsorted scene. Frozen materials are marked dirty on these clustered membership changes so a changed light set re-evaluates their light defines. On WebGPU, graph NodeMaterials additionally refresh a submesh binding when a declared uniform buffer is missing or a bound light has rotated to another backing buffer: DrawWrapper.setEffect empties the per-submesh context, and a frozen NodeMaterial then skips the bindable blocks that would repopulate it. Native/graph pixel parity and device benefit remain prototype acceptance gates. The numeric browser oracle pairs the managed-shadow fixture with 48 clustered locals: shadow promotion/demotion must keep one key-light contribution, reuse the mask, and preserve the existing first-frame, motion, resize, reload and sibling-scene pixel invariants. Readiness must draw neither masks nor shadow maps; presented frames render exactly one mask pass. Shadow membership checks current Scene ownership when Babylon delivers deferred mesh-added events, so the already-removed cluster proxy cannot become a caster or force static maps to refresh continuously. The Forward coordinator rejects unmanaged containers. The WebGPU browser oracle normalizes canvas readback from the bgra8unorm swap chain to RGBA before pixel assertions. These absolute storage limits are safety bounds, independent of the shared quality categories; Forward remains the saved default; explicit Clustered Forward and Auto use the scene policy above.
 
 Loading warms each mesh/material variant and acknowledges presentation only after scene, shadow-target, post-process, and overlay passes are ready before and after the submitted frame.
 
@@ -93,7 +134,7 @@ The Basic 3D template recalculates the bundled Mannequin's normals from its exis
 
 - **Project Settings → Rendering → Render Mode** selects PBR (the default for new and existing projects) or native CEL surface lighting. CEL controls are hidden and inactive in PBR; switching modes retains their saved values.
 - CEL evaluates authored base colors and color textures in display space, without a PBR BRDF, metallic remapping, environment reflections, or automatic tone mapping. Neutral unit lighting preserves the fully lit base color; colored lights tint it. Native glTF surfaces re-encode automatically decoded sRGB samples and retain emissive texture modulation without changing their shared textures. Authored unlit surfaces and post-process materials keep their own shading. Explicit post-process passes can still change final colors.
-- **Shadow Bands**, **Shadow Threshold**, **Shadow Strength**, **Specular Strength / Size**, **Light Color Influence**, and **Light Mixing** control the style. The **Specular** switch disables highlights without losing their strength or size; strength zero also disables them. Lighting bands, shadow visibility and highlights are always hard steps with no residual smooth lobe. No CEL outline pass is added.
+- **Shadow Bands**, **Shadow Threshold**, **Shadow Strength**, **Specular Strength / Size**, **Light Color Influence**, and **Light Mixing** control the style. The **Specular** switch disables highlights without losing their strength or size; strength zero also disables them. Lighting bands, shadow visibility and highlights are always hard steps with no residual smooth lobe. Default-on CEL outlines use the shared bounded outline owner described below; disabling them retires only the global contribution.
 - **Light Mixing** defaults to **Strongest Light**: the brightest diffuse contribution at each surface point supplies its color and highlight (ties retain the first light). **Additive** sums light contributions before applying one brightness ramp and may stack whole highlight quanta from distinct lights. **Blend** mixes their hues at the strongest contributor's brightness and keeps a hard all-or-nothing highlight: the combined highlight is exactly the tinted full-strength value or nothing. All three band distance/cone falloff and shadows; there is no Smooth option. Legacy `lightFalloff` and softness keys are ignored.
 - The stepped brightness treatment takes inspiration from [Babylon's Cell Shading demo](https://www.babylonjs.com/Demos/CellShading/), with adjustable levels and the project's chosen light-mixing policy.
 - Hemispheric sky/ground color transitions use the same bands, so a two-color fill does not introduce a smooth color gradient in the default style.
@@ -490,7 +531,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `editor-place` | Screen-to-world for Place Actors and Outliner drop. 3D: view ray vs the view-facing plane at `max(EDITOR_PLACE_MIN_DISTANCE, radius * 0.75)` from the camera. 2D: ortho frustum onto XY at Z = 0 (screen center = camera target). `EditorTools.worldPositionAtClient` / `worldPositionAtViewCenter`. |
 | `gizmo-host` | `manipulator: "trs"` (default): translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS` / `GIZMO_UNIFORM_COLOR`); `scaleRatio` 1.8 clamped by `GIZMO_MIN_CAMERA_DISTANCE` 2 so near-eye Camera actors stay pickable; thin shafts with larger end caps; leaf colliders scaled 2.5× for touch; rotation uses `GIZMO_ROTATION_THICKNESS` 8 (aligned fatter torus collider, not a uniformly scaled pick ring); `ScaleGizmo.sensitivity` 10; planar handles; hover; axis set filtered by `ViewportMode`. `manipulator: "overlay-box"` (SceneLayer / SceneLayerActor prefab via `createEngine({ overlayTransformBox: true })`): 2D transform box on the **same** utility layer (move interior, eight resize handles, Z-rotation knob above the box); TRS gizmos stay detached. Handle **pick** size is `overlayMinTargetWorldSize(44, canvasCssHeight, frustumHeight)` from the view canvas, not `getRenderHeight()`; visible handle meshes are ¼ of that scale (invisible 44px pick meshes keep `PointerDragBehavior`). World 2D scenes stay on axis gizmos. `hitTest` / `isDragging` block camera look. Scene `registerView` blit and Prefab `present: "rtt"` canvases are not the Engine input element — both map CSS coords into Engine pick space and `forwardPointer` simulates down/move/up so `PointerDragBehavior` runs. |
 | `editor-grid` | World-aligned shader plane (3D XZ / 2D XY) that follows the editor camera; tile spacing + subdivisions; `cameraBounds2D` overlay. Grid `renderingGroupId` is `world` (1), same as 3D MeshComponent / Play primitive / model visuals, with depth test on and depth write off so meshes occlude the plane (no group-to-group depth clear). Hide/show keeps `isVisible` true and `alwaysSelectAsActiveMesh` so `freezeActiveMeshes` keeps the plane in the frozen active list; `ShaderMaterial` ignores `mesh.visibility`, so Show Grid also sets a `gridVisible` fragment uniform (0 discards) plus `mesh.visibility` 0/1. The 2D `cameraBounds2D` orange frame is a freeze-stable XY plane (`__editor-camera-bounds__`, not GreasedLine) scaled to the authored width×height (world corners `±width/2`, `±height/2`, same as `2DAnchor`) with a 2px `fwidth(vWorldPos.xy)` screen-space border (`CAMERA_BOUNDS_LINE_WIDTH`) so horizontal and vertical strokes stay equal under ortho aspect and zoom. It stays visible when the grid is hidden (`boundsVisible` uniform; Show Grid does not dispose it), draws in `RENDERING_GROUP.foreground` (`alwaysSelectAsActiveMesh`, depth write off), and `setGridSettings` re-freezes when the editor scene is already frozen so a late bounds update cannot drop it. ViewportPanel / PrefabViewportPanel push `setGridSettings` on engine create and when `engineEpoch` changes so a scene that existed before `createEngine` still gets `cameraBounds2D` (otherwise the frame stays hidden until Show Grid or Layer Size). 3D mode and `setCameraBounds(null)` hide via the uniform without rebuilding. Grid `GRID_ALPHA_INDEX` 0 draws the plane first among world transparents. Fragment shader is GLES 1.00 (`fwidth` AA) without `GL_OES_standard_derivatives` so WebGL2 compile succeeds. Edge fade is planar from the follow origin (2D zoom-in stays opaque). A separate view fade dims the grid when too many major cells fit in the frustum so far cameras do not shimmer (starts at 28 cells, gone at 100). |
-| `selection-outline` | Highlight mesh(es) for selected actors. Only meshes whose material draws a triangle topology are outlined: Babylon's outline pass re-draws the mesh with `zOffsetUnits` bias, and WebGPU forbids a non-zero depth bias on line/point topologies (the engine patch in `patches/` also zeroes it at pipeline creation). LinesMesh debug visuals under a selected actor therefore keep no outline rather than failing validation. |
+| `scene-outline-host` | Groups selected actor/model triangle visuals into the view's shared outline contribution. Line/point/wireframe guides are excluded. The old per-mesh outline renderer is retired; selection uses the same bounded FrameGraph owner as gameplay outlines, with separate view-local styling and lifetime. |
 | `viewport-shading-mode` | Session **Viewport Mode** overlay (`PBR` / `Unlit` / `Wireframe`) on actor world materials. Unlit uses native material flags and compiled NodeMaterial `PBRMetallicRoughnessBlock.unlit` plus `scene.lightsEnabled = false` (independent of authored lights; does not require a default hemi). Changed shading invalidates shader defines and cached readiness while preserving frozen materials, texture bindings, and material identity. Original block flags are restored when leaving Unlit. Wireframe sets `Material.fillMode`. Authored Babylon `pointsCloud` fill is restored when returning to PBR/Unlit. Skips gizmos, grid, billboards, volumes, collider dashes, and debug overlays. Re-applied after `EditorSceneSync`. Model Preview reuses the overlay for a session **Preview Shading** radio dropdown (top-right, `size="sm"` outline, not `ModelPayload`) plus **Show Collision** (session, default off when a Model workspace opens) and collider gizmos. Not Play console `wireframe`. |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes. Multi/offset visuals **and** Light / Camera / Audio / Particle / **RigidBody** / **NavMesh** / empty / volume billboards always use a **non-billboard** origin root at `actor.transform` (volumetric pick collider, `visibility = 0`); the gizmo stays on that origin so billboard facing is not written into rotation. `ColliderComponent` is a visual in the same pipeline as `MeshComponent`: opaque dashed segment meshes (`collider-visual.ts`, dash/gap 0.12 / 0.08), `renderingGroupId = world`, depth write on, full local TRS. 3D `MeshComponent` collision (`collisionMode` ≠ `none`) parents the same dash meshes onto the visual when Viewport **Show Collisions** is on (session, default off); 2D worlds skip them. Play does not draw Mesh dashes unless console `showcollision`. `NavMeshBlockerComponent` / `BlockingVolumeComponent` draw dotted unit volumes (`editor-volume.ts`) plus a `default` billboard at the actor pivot (the icon inverts origin local scale so non-uniform scale hits the volume only). Real meshes occlude dashes in front; dashes in front of meshes draw on top. Not UtilityLayer, `EditorDebugOverlay`, `RENDERING_GROUP.ui`, or `mesh.overlay`. Outline uses `visualMeshesForActor` (drawn glTF parts / primitives; skips the hidden Model placeholder and collider dashes), not the pick proxy. Model actors keep a hidden named root; instantiated glTF parents under a `__importScale` child so Model `importScale` does not share `mesh.scaling` with actor TRS. A collider (or extra visual) origin loads the GLB under the MeshComponent child. `setMeshAssets` that only adds `modelBytes` instantiates in place and does not dispose the scene. `whenEditorModelsReady()` settles pending GLB `slotAnimLoads` (empty scenes resolve immediately). `SkyboxComponent` is a visual (`createSkyboxMesh`); fingerprint includes `size` plus the six face guids. `Text3DComponent` is a visual (`createText3DMesh`); fingerprint includes text / size / depth / color / font. Editor and Prefab viewports bind `MeshComponent.materialGuid` through `MaterialLibrary.resolveMaterial` (whole-mesh override; skip `meshKind: "pivot"`). Rebind every apply so a Details-only edit or late document load does not need a mesh rebuild; `setMaterialDocuments` re-applies the last scene when the mesh-asset fingerprint is unchanged. |
 | `scene-illumination` | Incremental `authoredLight:<actorId>` / `authoredCamera:<actorId>` maps. `LightComponent` (point/dir/spot) plus `HemisphericFillLightComponent` (`light:hemispheric`, direction actor rotation × world +Y). No unnamed viewport hemi. Direction for point/dir/spot is (actor rotation × component rotation) × Babylon forward `(0,0,1)`. Position is actor TRS × Light/Camera `component.transform`. Game cameras are detached `UniversalCamera` (never ArcRotate); Euler `.rotation` is zeroed after `rotationQuaternion` so they do not fight. `syncAuthoredCamerasFromMeshes` copies a live origin-mesh world pose during gizmo drag so PIP / Game Camera preview do not wait for document commit. `applyAuthoredCameraLens(camera, properties, aspect)` is the single lens path: unfreeze, set `Camera.ORTHOGRAPHIC_CAMERA` / `PERSPECTIVE_CAMERA`, vertical FOV, ortho `±size` × live aspect (not hardcoded 16:9). Zero/invalid canvas size falls back to 16:9 so the first Play frame cannot write a degenerate ortho box. Perspective freezes the projection at that aspect so a later `getRenderWidth()` from the wrong canvas cannot leak in. `applyAuthoredCameraProperties` reads engine render size; `refreshAuthoredCameraLenses` runs from `createEngine` `resize` / `setSize` over illumination cameras and `authoredCamera:` scene cameras (not the 320×180 PIP). Editor keeps the orbit camera (`stealActiveCamera: false`) unless Viewport **Game Camera** preview is on. Play uses the named Default Camera; missing keeps the Play default. Shared scene-owned shadow allocation uses project/scene settings, stabilized directional cascades and a separate local-light budget. Helpers, skyboxes and debug overlays neither cast nor receive; Mesh components expose independent participation. Linear fog + optional IBL cube; `environmentColor` is Play and 3D-editor clear (2D editor keeps chrome clear). Contract: [engineplan §2.5](../engineplan.md). |
@@ -859,6 +900,8 @@ Runtime `quality` queries requested settings and provenance; Stats/light diagnos
 
 Local editor rendering preferences are opt-in through **Override Project Rendering**. With it off, resolution and texture budgets inherit the project. With it on, local preferences overlay authored values; explicit runtime quality commands have higher priority. Disabling it restores inheritance. Editor texture downsampling is a separate opt-in source-size optimization and defaults off. Texture quality mip bias affects sampling bandwidth; it does not shrink already resident mip chains. Memory budgets reclaim unreferenced representations and never dispose textures still leased by a preview or scene.
 
+Overlay Play temporarily owns the shared Engine's hardware scale while editor views are held. Stop restores the scale captured before Play before readmitting those views, so an unchanged editor quality snapshot cannot inherit a runtime-only resolution override. The next Play session resolves its own project defaults.
+
 | Quality | Resolution / Dynamic Minimum | Texture Mip Bias | Anisotropy | Texture Budget | Eligible Post-process Scale |
 | --- | --- | --- | --- | --- | --- |
 | Low | 0.75 / 0.5 | 1 | 2 | 256 MiB | 0.5 |
@@ -921,7 +964,7 @@ Authored interface, custom-event and object-function calls use the same owner ad
 
 Texture readiness includes scene-owned native texture work, including environment BRDF RGBD decode even when the active CEL material no longer samples it. The texture load observable alone is insufficient: decode can issue a later render and only then mark the internal texture ready. Other scenes' cached resources do not block this owner.
 
-First-frame presentation also waits for the owning GPU submission and the registered canvas copy. WebGPU scopes wrap only one owner's synchronous draw and submission; earlier shared work is flushed outside the scopes, and captured validation/allocation errors remain visible as warnings and loading failures. WebGL2 uses an owned fence with nonblocking polling and cancellation cleanup (WebGL1 completes the draw synchronously). Disposal, replacement and the loading deadline cancel these waits and prevent late acknowledgements. NullEngine verifies lifecycle ordering but provides no GPU-completion evidence.
+First-frame presentation also waits for the owning GPU submission and the registered canvas copy. WebGPU scopes wrap only one owner's synchronous draw and submission; earlier shared work is flushed outside the scopes, and captured validation/allocation errors remain visible as warnings and loading failures. WebGL2 uses an owned fence with nonblocking polling and cancellation cleanup (WebGL1 completes the draw synchronously). The first valid draw must arrive within the existing four-second readiness budget. That progress starts a separate 15-second GPU/copy completion budget; it does not repeatedly extend with polling or subsequent frames. Linux software WebGL can still have pending GPU work after a ready draw and canvas copy. Neither a readiness probe nor the copy substitutes for GPU completion. Disposal, replacement and the loading deadline cancel these waits and prevent late acknowledgements. NullEngine verifies lifecycle ordering but provides no GPU-completion evidence.
 
 Pending owners must pass readiness before drawing, including while GPU validation is pending; snapshot camera changes are applied before registered-view admission. SceneLayer post-process blit resources are prepared before this check. RTT previews acknowledge their exact readback-to-canvas promise instead of engine end-frame, and disposal or resize rejects a stale readback before it can write to the canvas.
 
@@ -1015,6 +1058,348 @@ Defaults reproduce prior output exactly, so legacy projects without the block lo
 
 **D2 (not implemented).** SSAO, TAA, SSR, LUT and capture stages remain out of scope; the versioned stage contract reserves `colorPipeline.version` for their addition.
 
+### Typed session scalability contract
+
+`ScalabilitySession` in Core owns temporary render and presentation overrides for one Play/player session. Its typed requests share the existing quality resolver and console parser, preserve scene inheritance and artistic settings across presets, and reset to project defaults without editing the project. Backend changes reject the whole transaction with `restartRequired`. Invalid/non-finite requests also leave the current request intact. Requests carry monotonically increasing revisions; duplicate values do not enqueue renderer work.
+
+Readback separates `requested` from `effective`: effective values stay null until the renderer acknowledges its first ready frame, and retain their last confirmed value during a pending or failed rebuild. Stale acknowledgements cannot replace newer requests. Renderer acknowledgements and Class Graph nodes share this service. Physical A16 testing is deferred by user for this delivery; these contracts do not certify device performance.
+
+Runtime and worker commands carry `setScalability` revisions. The Play view applies the latest queued transaction through its existing registered-view admission, prepares the owning coordinator, and publishes `scalabilityStatus` only after a ready frame. While preparing, the visible canvas retains its last completed image. Failed preparation requests restoration of the last confirmed settings. The qualification report records the tested Play and standalone-player transactions and remaining release gates.
+
+### Class Graph Scalability nodes
+
+The **Scalability** category supplies Get Effective Scalability, Set Scalability Preset, Set Render Scale, Set Render Resolution, Set Frame Cap, shadow/lighting/texture/resolution/post-processing quality setters, FXAA, rendering effects, CEL shading, environment lighting, render mode/path, Reset to Project Defaults, and Event Scalability Changed. Enum and Structure pins are engine types, available through Make/Break Structure. Every setter returns a Scalability Result with revision, status and message. Get Effective Scalability exposes requested/effective settings, readiness, backend selection and fallback diagnostics. Vignette tint uses the graph Color pin through the dedicated color setter/readback; serialized render data retains its RGB tuple.
+
+Use the changed event to react to renderer confirmation or failure. An immediate `rebuildPending` result only accepts the request; it is not evidence of presentation. Console quality, framecap and renderpath commands use the same session service. Existing Render/Set Render Resolution graphs remain compatible and enter that service too. Changes survive scene transitions and reset with the Play/player session; they never write project defaults. Class Graphs for Actor, ActorComponent and GameInstance expose the event. Backend creation remains a host startup operation; no ordinary live backend-switch node is advertised.
+
+The generic lighting budget also admits rectangular lights and reports effective
+limits. **Set CEL Outlines** joins the same service; its enable/color/width
+appear in effective readback and changed events. These nodes do not certify
+rendered acceptance or A16 performance.
+
+Settings transactions retain the previous FrameGraph resource owners until the replacement has presented. Intermediate candidates from superseded requests are released rather than added to that retained set. Disposal releases retained owners, and a failed restoration remains unpresentable until a new explicit request instead of retrying allocation every frame. This retention covers the graph-owned targets/tasks; managed lighting allocations retain their separate owner policy.
+
+Engine startup retains requested/effective backend and the exact initialization fallback reason on the Engine owner; scene and scalability readback share that evidence. Scene transitions re-acknowledge settings against the new scene, with CEL/environment/shadow defaults beneath the persistent session overrides. The standalone qualification fixture compiles real Class Graph commands for mode, cap, scale and reset, verifies their presented pixels/readback, and exercises repeated no-op calls and scene inheritance.
+# Rectangular area light ownership
+
+To author a light, choose **Add Component → Rendering → Rectangular Area
+Light**, set Width/Height in local units, and adjust Color and Intensity. It
+illuminates receivers without a visible plane or material. For textured emission,
+open an ordinary Texture asset, choose **Prepare Emission**, wait for Ready,
+then assign it in **Emission Texture**. Clearing the picker restores uniform
+emission. Preparation is cancellable and saved with the Texture; reopening or
+duplicating the asset reuses current prepared data. Replacing source pixels
+requires preparation again. The Enabled description states the unshadowed,
+through-walls limitation; there is no Cast Shadows control.
+
+`AreaRectLightComponent` uses the additive authored fields `enabled`, `width`,
+`height`, `color`, `intensity`, and optional `textureGuid`. Its core normalizer
+stores no engine handles. Component attachment chains retain every local
+transform, including non-rendering parents. The renderer owns the native
+`RectAreaLight` and its transform adapter. Authored forward is +Z; native
+emission is -Z. Width and height are local units, with parent scale applied once.
+Mirrored scale preserves the authored emission side. Sheared or degenerate
+transforms disable the emitter with a diagnostic until corrected.
+
+Native lights remain unshadowed and can illuminate through walls. The adapter
+does not register a shadow generator. The native 64 by 64 half-float LTC tables
+are bundled from BabylonJS Assets (CC BY 4.0), shared per engine across views,
+and released after the last owned emitter. They require 65,536 GPU bytes before
+driver overhead. Their original bytes and SHA-256 are recorded in
+`packages/render/src/resources/area-lights-ltc.ts`; no CDN access is required.
+Editor illumination synchronization and the existing Play snapshot owner both
+use the same per-actor emitter group. `setAreaLights` carries normalized component
+data and attachment chains through the reliable bridge; it is independent of
+mesh assignment, so multiple emitters and emitters on model actors survive model
+loading. Unchanged bindings retain native resources. Snapshot transforms and
+gizmo preview update existing adapters. Actor/component removal releases owned
+lights, adapters and lookup references. The compact inspector and Class Graph
+native variables expose the authored properties. Editor guides draw the rectangle
+and emitting side without a spotlight cone or implied hard cutoff.
+
+The CEL adapter keeps native LTC diffuse in the shared final ramp and replaces
+the smooth native specular lobe with the existing CEL highlight threshold/tint.
+The tested native/graph PBR and CEL receiver combinations, backend paths and
+standalone textured export results are recorded in
+[renderer qualification](../design/renderer-qualification.md). A referenced
+texture without prepared lighting data disables the emitter with a diagnostic
+rather than silently displaying uniform emission.
+
+Area resources reserve bytes in the existing managed rendering ledger under
+`areaLight`. Allocation failure leaves no partial emitter. Lookup sharing counts
+unique native texture handles, and WebGPU retirement keeps its reservation until
+the existing deferred-disposal boundary completes.
+
+Derived emission uses a versioned `BARE` envelope and a Texture representation
+chunk keyed by processor version plus source SHA-256. The envelope validates its
+dimensions, encoding and pixel SHA-256 before upload; source replacement cannot
+reuse stale data. The processing module ports the pinned native mirrored border
+and separable progressive RGBA8 filter, with progress/cancellation checkpoints.
+The Texture editor's Prepare Emission action schedules that worker through the
+shared asset queue. The saved representation is reused by view uploads and
+export; production gameplay never invokes the processor. The qualification
+report distinguishes source resampling policy from native encoding/blur parity.
+
+### Prepared rectangular emission resources
+
+`MeshAssetContext.areaEmissions` carries validated native RGBA8 data keyed by the
+ordinary Texture GUID, through Viewport, Class Preview, Play and player boot.
+Each engine shares uploads by processor/pixel hash. The full 1024-square mip
+chain accounts for 5,592,404 bytes in the existing `areaLight` resource ledger;
+LTC lookup tables add 65,536 bytes once per engine. These are allocation estimates,
+not measured driver memory. Replacing a texture acquires its replacement before
+releasing the old reference. Missing data disables that emitter with a diagnostic;
+clearing the optional Texture returns it to uniform emission. Every owner releases
+its references on native light disposal. Player files include the LTC attribution
+and CC BY 4.0 license under `legal/`.
+
+Emission texture identity/readiness participates in the lighting layout cache.
+A live assignment invalidates frozen material readiness and recompiles the native
+textured-light define once; unchanged assignments keep the cached result.
+
+The pinned RectAreaLight adapter registers its textured-emission define when a
+conventional slot previously held another light type. Babylon 9.20 otherwise adds
+the property without rebuilding the define key list, leaving the uniform shader
+active despite a ready emission texture. The adapter retains the native shader.
+
+The app-owned PBR and CEL graph light blocks refresh dynamic light samplers when
+a shader slot changes type, even if that slot's uniforms already exist. Their
+sampler lists are deduplicated across define updates and view passes. This avoids
+missing emission bindings and repeated LTC entries exhausting WebGL texture units.
+The browser fixture checks the actual bound emission resource at draw time.
+
+Scene and Class viewports observe the current derived chunk identity only for
+their referenced emission textures. Preparing or replacing one refreshes the
+existing view's assets; unrelated registry updates and unchanged saves do not
+reload emission data. Replacing source pixels invalidates the old representation.
+
+Lighting and shadows share the existing eight-sampler material/environment reserve.
+Conventional admission charges two shared LTC samplers plus one emission binding
+per textured rectangle, including lights that share an uploaded texture. Clustered
+and projected/IES light bindings consume the same headroom. Shadow admission uses
+the remaining capacity after direct-light selection. Existing light priority and
+distance hysteresis choose overflow; diagnostics report sampler use and excluded
+lights without changing authored Enabled or emission textures. The generic local
+lighting scalability budget also bounds area lights; there is no unlimited-area
+claim or hidden conversion to point lights.
+
+The export collector loads the Class/Animation compiler only when reachable
+graphs require it. A scene-only asset export can run without importing editor UI
+modules, and still uses the same reachability, prepared-emission and pack pipeline.
+
+Locked output dimensions are the base resolution. Render scale applies once to
+that base: a 480×270 output at scale 0.8 renders 384×216 pixels, and scale 0.5
+renders 240×135. The per-view lock survives scale changes and scene transitions;
+presentation retains the same authored aspect and CSS layout. Diagnostics report
+actual drawing-buffer dimensions separately from the scaling level. A layout
+with Black Bars disabled retains the existing CSS-sized output policy.
+Settings-only effect graphs rebuild their fixed-size targets when the output
+changes, just like authored post-process stacks. This keeps color and depth
+attachments compatible through scaling and avoids an unintended native fallback.
+
+Installing replacement emission assets refreshes existing runtime light owners;
+it does not require another actor update or respawn. Identical asset maps are
+no-ops. Missing prepared content disables its emitter with the same diagnostic
+as initial loading. Editor Play preparation stops on missing/corrupt required
+emission data and clears the previous session's map before loading; these errors
+are reported as emission failures independently of font loading.
+
+SceneLayer preparation and frame admission observe the active view's actual
+backbuffer size, including dynamic resolution changes without a DOM resize.
+Unchanged dimensions are cached. A resize replaces layer targets through the
+existing retirement owner, retaining the presented image until its successor is
+ready; it does not add another scheduling loop.
+
+Emission processor v3 first resamples the source to the 768-pixel emitter
+interior: area averaging for minification and mirrored linear magnification,
+with RGBA8 rounding after each axis. This avoids backend-dependent mip filters
+and aliasing of odd-sized fine detail. The longer axis is reduced first to bound
+the intermediate raster. Native mirrored padding, Y orientation and progressive
+blur then produce the 1024-square lighting data. Sampling operates on
+display-encoded RGBA8; alpha remains unfiltered during the blur. The version
+invalidates earlier derived chunks. Resampling and blur are cancellable worker
+work, independent of player texture-sampling preferences. Browser qualification
+compares the native encoding/blur using this canonical prefiltered source;
+source-filter average preservation is checked separately. It does not claim
+identical preprocessing to every backend's original-image mip generator.
+
+Scalability browser qualification uses the same Class graph definitions as
+saved editor assets and as compiled standalone scripts. Editor Play exposes
+read-only acknowledgement/task diagnostics only in test mode. An authored
+observer reads the typed settings-changed payload and Get Effective Scalability
+through ordinary Structure and To String nodes; it does not bypass graph type
+checking or change renderer internals from a test command.
+
+Render-path overrides belong to a Play session. The first Play view on a shared
+engine captures the editor request and starts from project defaults; additional
+views share the active game request. The final Play view restores the captured
+editor request after cancelling its graph preparation. Disposed handles remove
+their session listeners. Construction rollback releases the same lease, and a
+new Play session does not inherit the previous game's render-path override.
+
+### Managed shadow material readiness
+
+`ManagedShadowObjectRendererTask` retains Babylon's generator/camera-key binding,
+then scopes temporary shadow flags only to lights that actually have a map.
+Without a generator, native PBR/CEL material defines already resolve to
+unshadowed lighting. Babylon 9.20 otherwise disables/restores those lights on
+every pass and dirties all receivers despite identical output. The adapter keeps
+map-owning light isolation and restoration, existing failure guards, controller
+admission and strict readiness caching. No allocation, shadow quality or authored
+light setting changes. The targeted regression detects this redundant per-frame
+invalidation; browser shadow parity and desktop profiling are recorded in
+[renderer qualification](../design/renderer-qualification.md).
+
+### Shared outline candidate (22 September 2026)
+
+Strict material readiness resolves Babylon's lazy morph influence and texture
+matrix state before probing shader variants. Otherwise a UV identity transition
+or newly active morph can first dirty defines during drawing, allowing an older
+WebGL hot-swap effect into a frame reported ready. This work occurs during the
+existing invalidated readiness probes, not on unchanged steady-state frames.
+
+The continuation authorized a bounded shared extension after reproducing the
+pinned native failure. The design below is now the production path for editor,
+component and global CEL outlines. Its revision-scoped native pixels, Computer
+Use routes, desktop cost and deferred hosts are recorded in
+[renderer qualification](../design/renderer-qualification.md#current-continuation-status-23-september-2026);
+that evidence is separate from PR CI and merge approval.
+The stock fixture again reproduced removal of another consumer's regular-instance
+buffer on both APIs and loss of its pixels on effective WebGPU. Stock layers also
+overwrite mesh-owned selection IDs; reference counting alone cannot isolate
+overlapping memberships. Native composition exposes one color/width per layer,
+attenuates occluded edges, and silently falls back from float to half/byte masks.
+These properties do not meet independent styles and strict CEL visibility.
+
+- **Ownership:** one Scene owner assigns stable actor/group identities and owns
+  regular source/LOD identity registrations. View owners hold separate
+  consumer contributions and style tables. Consumers never clear mesh-owned
+  state. The same actor key groups model meshes and survives contribution order
+  changes. Thin-instance meshes use one uniform actor identity for all their
+  indices, without allocating or modifying a thin-instance ID buffer.
+  Selection exists only in its editor view; runtime views never inherit
+  it. Per-pass instance buffers remain distinct on WebGPU. Identical identity
+  sequences skip uploads; changed spans alone update an existing buffer.
+- **Representation:** background is ID zero; actor IDs 1–65,535 are encoded into
+  RGB bytes in nearest-sampled RGBA8 masks, without blending, mipmaps or MSAA.
+  Each group uses a D32F depth target. No float/half identity render-target
+  fallback can merge identities. Nearest RGBA32F
+  style tables retain RGB and output-pixel width (0.25–8); float textures are
+  sampled, not rendered to. Capacity or resource admission failure rejects the
+  new transaction with a diagnostic while preserving valid prior contributions.
+  The capacity counts distinct actor keys over the Scene lifetime, not just
+  currently outlined actors; IDs are not recycled into potentially stale views.
+  No arbitrary style quantization or silent member dropping is permitted.
+- **Visibility and overlap:** strict gameplay, intentional through-mesh gameplay,
+  and editor selection use three distinct mask groups. Enabled components replace
+  their target's global CEL contribution; removing the component reveals CEL.
+  Selection composes last. Strict masks include ordinary occluders as ID zero,
+  with depth testing/writes, and composition additionally compares candidate and
+  destination depth so dilation cannot spill onto a foreground occluder.
+  Through/selection masks depth-test only their own members. Strict CEL never
+  borrows through-mesh visibility. Opaque surfaces occlude; alpha-tested surfaces
+  use their actual texture/cutoff; transparent surfaces conservatively occlude
+  where covered. Custom alpha/deformation paths require explicit qualification.
+- **Pass budget:** at most three geometry-mask passes and one fullscreen compose
+  per view, independent of actor/style count; separate clears make at most seven
+  FrameGraph render records. Geometry submissions and pixels still scale with
+  content, output size and width. Reuse matching sampleable scene depth where
+  camera, size, samples, representation and transparent-occluder semantics agree;
+  otherwise the single strict mask produces its shared depth while drawing its
+  occluders. No per-consumer full-scene depth pass is added.
+- **Ordering:** masks and composition belong to the existing view FrameGraph,
+  after scene transparency and the authored/display-color stages, before FXAA
+  and the single output copy. SceneLayers subsequently compose in their existing
+  order; editor overlays remain outside gameplay. The extension adds no render
+  loop and no hidden classic-renderer fallback.
+- **Lifetime:** allocate only for an active view at actual output resolution;
+  reserve replacement peaks through the shared Engine resource ledger. Track
+  mask/depth/style textures and instance buffers, including source/LOD aliases.
+  Membership/color/width edits update existing tables without graph/material
+  rebuilding; topology/size changes prepare a replacement through current view
+  readiness. Dispose tasks before graph storage and release reservations only
+  after native retirement (WebGPU's next end-frame drain). With every consumer
+  inactive, retire all outline-only allocations and execute no outline passes.
+
+The first slice qualified three independently removable same-source instance
+consumers, overlapping membership and order changes on native WebGL2 and WebGPU.
+The old editor selection renderer was retired after survivor pixels and hands-on
+acceptance passed. Later native fixtures cover LOD, whole-actor thin groups,
+animation, alpha/custom graph coverage, runtime/export integration and cost.
+There is no authored per-thin-index mapping API; a thin mesh remains one actor
+identity and style. See the qualification report for exact cases and limitations.
+
+Mask drawing uses native ObjectRenderer custom submission per submesh. Original
+materials and MultiMaterial lookup remain intact; each mask pass owns its actual DrawWrappers
+and retires replaced Effects. Native bone, position/UV morph, clip-plane and
+instance helpers preserve coverage; unused color morph attributes are omitted.
+Cutouts use the material's requested UV1 or UV2 set and live texture transforms/cutoffs;
+a missing requested set samples transformed zero coordinates, matching the world shader.
+UV sets beyond UV2 are explicitly unsupported. Late
+regular instance/LOD registrations are admitted when their actual draw needs
+them. Hosts provide authored world occluders so editor guides stay out of masks.
+
+Authored Material Graph masks compile from the same resolved plan, retaining
+world-position offset and alpha discard while replacing lighting output with
+identity output. Variants are shared per source material generation, replay
+current parameters, follow set/reset edits and borrow existing texture assets.
+Unknown custom shaders, opacity Fresnel and alpha UV sets beyond UV2 remain
+explicitly unsupported. Transparent coverage is conservative: positive supported
+opacity blocks strict outlines, zero coverage does not; identity masks never
+alpha-blend. Native opacity textures (including their independent UV transform),
+vertex alpha and thin-instance alpha are covered by the native geometry
+qualification. Whole-mesh thin groups are supported;
+independent index authoring is not provided. The glTF GPU-instancing
+extension is not newly enabled by this renderer change.
+
+### Authored outline integration
+
+`OutlineComponent` stores enabled state, RGB color, output-pixel width and an
+explicit `throughMeshes` boolean. Defaults are enabled, RGB (0.03, 0.03, 0.03),
+1 pixel and strict visibility. Finite colors clamp to [0,1] and width to [0.25,8];
+malformed values normalize before rendering. Component IDs retain independent
+ownership through duplication, Class inheritance and runtime hydration. If more
+than one enabled component targets an actor, the lexicographically last component
+ID supplies its style, independent of insertion order. Removing it reveals the
+next enabled component or global CEL contribution.
+
+The world-view host groups an actor's realized primitive/model parts, updates
+late-loaded or replaced geometry, and removes despawned actors. Only authored
+world triangles contribute or occlude; skyboxes, collider helpers and editor
+guides are excluded. SceneLayers do not support this world-outline component.
+Regular instances remain independent actors; one thin-instance mesh is one actor
+group. There is no authored per-thin-index style or selection API.
+
+CEL defaults to enabled dark 1-pixel outlines. Global enable/color/width are
+artistic settings, with independent scene inheritance and typed session overrides.
+Scalability **Set CEL Outlines**, **Set CEL**, effective readback and changed events
+use the same transaction service; Graph Color is the native `{x,y,z,w}` structure
+(RGB is used). Presets preserve these artistic values, scene transitions retain
+session overrides, and Reset/new Play/player sessions restore project defaults.
+Editor selection stays separate and never enters exported component data.
+
+Model publication refreshes outline membership after the winning single-model
+or multipart hierarchy is installed. Provisional meshes cannot enter the mask;
+failed or cancelled successors leave the retained visual and its outline intact.
+Editor adoption also respects the host's active-mesh-freeze policy, so a staged
+replacement cannot restore the classic queue freeze under FrameGraph.
+
+World rendering now uses the existing coordinator for editor and RTT views as
+well as Play. Hosted editor synchronization keeps world-matrix freezing but
+disables the classic active-mesh queue freeze, which conflicts with FrameGraph
+object collection. RTT outputs own sampleable depth through the existing target
+lifetime. Current equal-output off/consumer costs and ordinary editor activity
+observations are retained in the qualification report; the historical shadow
+optimization profile is not evidence of this scheduling change's cost.
+
+In test builds only, `?test=1&renderDiagnostics=1` publishes a throttled read-only
+`data-render-diagnostics` snapshot on the ready viewport after its own presented
+frame. It includes requested settings, engine-confirmed API/adapter, actual
+canvas/output dimensions and resource accounting for Computer Use evidence.
+Normal sessions and timing fixtures do not incur this serialization. Whole-frame
+WebGPU GPU timing remains unsupported here: Babylon 9.20's encoder timestamp
+fallback returns zero without a measurement, so that value is not reported as
+GPU cost or fed to dynamic resolution. WebGL timer-query support is unchanged.
 ## Transactional generated visuals
 
 Model preparation retains the current editor or Play hierarchy until the next source generation, material bindings and animation groups are usable. Staged GLBs borrow the exact requested MaterialLibrary generation's readiness, including current authored texture parameter admission; resolving a working predecessor does not bypass a pending successor. Library successors compile for their current mesh users before replacing predecessor materials. Imported and assigned mesh variants finish native shader preparation before the model bundle publishes. Texture leases retain their admission deadline, while each native shader variant uses the existing shader stall deadline. Slot invalidation, placeholder disposal and scene disposal cancel the pending model owner; late completions cannot publish it. A failed structural editor replacement keeps the prior visual, and obsolete staged roots are disposed when their apply generation is superseded. Playback borrows animation groups from the visual bundle; bundle retirement removes its matching playback references. Authored material replacement can release the predecessor with `MaterialLibrary.releaseInstance(instanceKey, assetGuid)` after publication; omitting the GUID still releases every private material for a retired owner.

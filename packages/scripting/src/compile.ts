@@ -34,6 +34,7 @@ export type ScriptEventName =
 
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
+  "flow.event.scalabilityChanged": "onScalabilityChanged",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
   "flow.event.init": "onInit",

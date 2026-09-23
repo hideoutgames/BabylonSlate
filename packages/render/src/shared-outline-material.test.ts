@@ -1,0 +1,41 @@
+import { afterEach, expect, it } from "vitest";
+import { NullEngine, Scene } from "@babylonjs/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
+import { isDisposedNodeMaterial } from "./gpu-resource-live";
+
+const engines: NullEngine[] = [];
+afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
+
+it("shares authored outline coverage and keeps parameter edits and reset synchronized until the last consumer releases", async () => {
+  const engine = new NullEngine(); engines.push(engine);
+  const scene = new Scene(engine);
+  const doc = createDefaultMaterialDocument();
+  doc.blendMode = "masked";
+  const output = doc.nodes.find((node) => node.type === "output.surface")!;
+  output.properties = { ...output.properties, "default:worldPositionOffset": [0, 1, 0] };
+  doc.nodes.push({ id: "cutout", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Cutout", value: [0.4] } });
+  doc.edges.push({ id: "cutout-output", sourceNodeId: "cutout", sourcePinId: "out", targetNodeId: output.id, targetPinId: "alphaClip" });
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const source = compileMaterialPlan(lowered.plan, { scene, name: "authored-outline" });
+  if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+  expect(await source.ready).toEqual([]);
+  source.setParameter("Cutout", { kind: "float", value: 0.2 });
+  const first = acquireAuthoredOutlineVariant(source.material)!;
+  const second = acquireAuthoredOutlineVariant(source.material)!;
+  expect(await first.compiled.ready).toEqual([]);
+  expect(second.compiled.material).toBe(first.compiled.material);
+  expect(first.compiled.getParameter("Cutout")).toEqual({ kind: "float", value: 0.2 });
+  source.setParameter("Cutout", { kind: "float", value: 0.8 });
+  expect(first.compiled.getParameter("Cutout")).toEqual({ kind: "float", value: 0.8 });
+  source.resetParameter("Cutout");
+  expect(first.compiled.getParameter("Cutout")).toEqual({ kind: "float", value: 0.4 });
+  await first.release();
+  expect(isDisposedNodeMaterial(second.compiled.material, scene)).toBe(false);
+  await second.release();
+  expect(isDisposedNodeMaterial(second.compiled.material, scene)).toBe(true);
+  expect(isDisposedNodeMaterial(source.material, scene)).toBe(false);
+  source.dispose();
+  expect(acquireAuthoredOutlineVariant(source.material)).toBeUndefined();
+});

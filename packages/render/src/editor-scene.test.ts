@@ -59,7 +59,6 @@ import {
   GIZMO_SCALE_SENSITIVITY,
   GIZMO_SHAFT_THICKNESS,
 } from "./gizmo-host";
-import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { isEditorModelPlaceholder } from "./glb-anim";
 import { isColliderVisualMesh } from "./collider-visual";
@@ -1996,33 +1995,6 @@ describe("editor grid", () => {
     expect(billboard!.renderingGroupId).toBe(RENDERING_GROUP.foreground);
     expect(grid.mesh.alphaIndex).toBeLessThan(billboard!.alphaIndex);
     grid.dispose();
-  });
-});
-
-describe("selection outline", () => {
-  it("outlines the selected meshes and clears the previous ones", () => {
-    const { scene } = createHandle();
-    const sync = new EditorSceneSync(scene);
-    sync.apply(sceneWith([createActor("a", "A"), createActor("b", "B")]));
-    const outline = new SelectionOutline(scene);
-
-    outline.set([sync.meshForActor("a")]);
-    expect(sync.meshForActor("a")!.renderOutline).toBe(true);
-
-    outline.set([sync.meshForActor("b")]);
-    expect(sync.meshForActor("a")!.renderOutline).toBe(false);
-    expect(sync.meshForActor("b")!.renderOutline).toBe(true);
-    expect(outline.selected()).toHaveLength(1);
-
-    outline.clear();
-    expect(sync.meshForActor("b")!.renderOutline).toBe(false);
-  });
-
-  it("ignores null meshes", () => {
-    const { scene } = createHandle();
-    const outline = new SelectionOutline(scene);
-    outline.set([null, undefined]);
-    expect(outline.selected()).toHaveLength(0);
   });
 });
 

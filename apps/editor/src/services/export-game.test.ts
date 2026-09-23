@@ -96,7 +96,7 @@ describe("collectAndExportGame", () => {
       sceneByGuid: (guid) => guid === "scene-main" ? scene : null,
       graphByGuid: (guid) => graphs[guid] ?? null,
       bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : graphs[guid] ?? {})),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -152,7 +152,7 @@ describe("collectAndExportGame", () => {
         sceneByGuid: (guid) => (guid === "scene-start" ? start : secondary),
         graphByGuid: () => null,
         bytesByGuid: (guid) => new TextEncoder().encode(guid),
-        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap: 60,
         physicsWorld: "3d",
         playerFiles,
@@ -184,7 +184,7 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => null,
       graphByGuid: () => null,
       bytesByGuid: () => null,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -235,7 +235,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new TextEncoder().encode("{}"),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -282,7 +282,7 @@ describe("collectAndExportGame", () => {
           return new TextEncoder().encode(JSON.stringify(material));
         return null;
       },
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -318,7 +318,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new TextEncoder().encode("{}"),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -364,7 +364,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new TextEncoder().encode(guid),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -389,7 +389,7 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -441,7 +441,7 @@ describe("collectAndExportGame", () => {
           guid === "scene-1"
             ? new TextEncoder().encode(JSON.stringify(scene))
             : new TextEncoder().encode("{}"),
-        customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap: 60,
         physicsWorld: "3d",
         playerFiles,
@@ -487,7 +487,7 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -560,7 +560,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new TextEncoder().encode(JSON.stringify(doc)),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -594,7 +594,7 @@ describe("collectAndExportGame", () => {
       graphByGuid: () => null,
       bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
       navmeshByGuid: (guid) => (guid === "scene-1" ? nav : null),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -643,7 +643,7 @@ describe("collectAndExportGame", () => {
         if (guid === "tex-1") return ktx2;
         return null;
       },
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -670,7 +670,7 @@ describe("collectAndExportGame", () => {
       graphByGuid: () => null,
       bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
       audioReverbByGuid: (guid) => (guid === "scene-1" ? field : null),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -722,7 +722,7 @@ describe("collectAndExportGame", () => {
         return null;
       },
       fontFacetypeBytesByGuid: (guid) => (guid === "font-1" ? facetype : null),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -781,7 +781,7 @@ describe("collectAndExportGame", () => {
         guid === "font-1" ? new Uint8Array([9]) : null,
       fontMsdfPngByGuid: (guid) =>
         guid === "font-1" ? new Uint8Array([8]) : null,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -816,7 +816,7 @@ describe("collectAndExportGame", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
       bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       infiniteLoopDetection: false,
@@ -854,7 +854,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new Uint8Array([1, 2, 3]),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
@@ -898,7 +898,7 @@ describe("collectAndExportGame", () => {
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
           : new Uint8Array([1, 2, 3]),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       pixelsPerUnit: 64,

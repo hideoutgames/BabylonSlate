@@ -58,6 +58,19 @@ const begin: PaletteNode = {
 };
 
 describe("NodePalette", () => {
+  it("retains node contracts and selection when finding a node through its alias", () => {
+    const onAddNode = vi.fn();
+    const node = { ...log, description: "Changes only this running session.", searchAliases: ["session output"] };
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[node]} onAddNode={onAddNode} />,
+    );
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "session output" } });
+    const row = getByTestId("node-palette-item-debug.log");
+    expect(row.getAttribute("title")).toBe(node.description);
+    expect(row.getAttribute("aria-description")).toBe(node.description);
+    fireEvent.click(row);
+    expect(onAddNode).toHaveBeenCalledWith(node);
+  });
   it("adds the keyboard-selected search result without requiring row tabbing", () => {
     const onAddNode = vi.fn();
     const { getByPlaceholderText, getByTestId } = render(

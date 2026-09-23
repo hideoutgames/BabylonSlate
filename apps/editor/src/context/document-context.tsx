@@ -108,6 +108,7 @@ import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
+import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import {
   recordedTraceFileName,
   spillRecordedTraceDocument,
@@ -313,6 +314,8 @@ interface DocumentContextValue {
     newPath: string,
   ) => void;
   retryFailedTextureEncoding: () => Promise<number>;
+  prepareAreaEmission: ProjectService["prepareAreaEmission"];
+  collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
     options?: { maxDimension?: number; force?: boolean },
@@ -1174,6 +1177,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, projectService],
   );
 
+  const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
+    await projectService.prepareAreaEmission(guid, options);
+    bump();
+  }, [bump, projectService]);
+
   const onSessionDiagnostic = useCallback(
     (listener: (line: string) => void) => projectService.onDiagnostic(listener),
     [projectService],
@@ -1794,11 +1802,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         fontFacetypeBytesByGuid: loaded.fontFacetypeBytesByGuid,
+        areaEmissionBytesByGuid: loaded.areaEmissionBytesByGuid,
         fontMsdfJsonByGuid: loaded.fontMsdfJsonByGuid,
         fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
-        customResolution:
+        renderSettings:
           exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
           exportDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
@@ -3003,6 +3012,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [loadPlayAssetContent, projectService],
   );
+
+  const collectPlayAreaEmissions = useCallback(async (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs = false) => collectAreaEmissions({
+    assets: projectService.registry?.list() ?? [], scenes,
+    graphs: includeGraphs ? (await loadProjectGraphDocuments()).map((entry) => entry.content) : undefined,
+    readChunk: (path, id) => projectService.readAssetChunk(path, id),
+    onDiagnostic: (message) => console.warn(message),
+  }), [loadProjectGraphDocuments, projectService]);
 
   const collectPlayTextureBytes = useCallback(
     async (
@@ -4300,6 +4316,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
+      prepareAreaEmission,
+      collectPlayAreaEmissions,
       retryTextureEncoding,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
@@ -4365,6 +4383,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
+      prepareAreaEmission,
+      collectPlayAreaEmissions,
       retryTextureEncoding,
       onSessionDiagnostic,
       loadAssetThumbnail,

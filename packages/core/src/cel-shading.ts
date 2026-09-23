@@ -1,3 +1,5 @@
+import { DEFAULT_OUTLINE_PROPERTIES, normalizeOutlineColor, OUTLINE_WIDTH_LIMITS } from "./outline-component";
+
 /** Native surface lighting; PBR is the default project mode. */
 export type RenderMode = "pbr" | "cel";
 
@@ -10,6 +12,10 @@ export interface CelShadingSettings {
   specularSize: number;
   lightColorInfluence: number;
   lightMixing: "strongest" | "additive" | "blend";
+  outlinesEnabled: boolean;
+  outlineColor: [number, number, number];
+  /** Strictly occluded global outlines, measured in output pixels. */
+  outlineWidth: number;
 }
 
 /** Missing scene keys inherit independently, including after project edits. */
@@ -24,6 +30,9 @@ export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   specularSize: 0.2,
   lightColorInfluence: 1,
   lightMixing: "strongest",
+  outlinesEnabled: true,
+  outlineColor: [...DEFAULT_OUTLINE_PROPERTIES.color],
+  outlineWidth: DEFAULT_OUTLINE_PROPERTIES.width,
 };
 
 export const CEL_SHADING_LIMITS = {
@@ -33,6 +42,7 @@ export const CEL_SHADING_LIMITS = {
   specularStrength: [0, 1],
   specularSize: [0.01, 1],
   lightColorInfluence: [0, 1],
+  outlineWidth: OUTLINE_WIDTH_LIMITS,
 } as const;
 
 /** Invalid override values inherit; finite out-of-range values are clamped. */
@@ -42,6 +52,10 @@ export function normalizeCelShadingOverrides(
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
   const result: CelShadingOverrides = {};
+  if (typeof source.outlinesEnabled === "boolean")
+    result.outlinesEnabled = source.outlinesEnabled;
+  const outlineColor = normalizeOutlineColor(source.outlineColor);
+  if (outlineColor) result.outlineColor = outlineColor;
   if (typeof source.specularEnabled === "boolean")
     result.specularEnabled = source.specularEnabled;
   for (const key of Object.keys(
@@ -69,6 +83,7 @@ export function normalizeCelShadingSettings(
 ): CelShadingSettings {
   return {
     ...DEFAULT_CEL_SHADING_SETTINGS,
+    outlineColor: [...DEFAULT_CEL_SHADING_SETTINGS.outlineColor],
     ...normalizeCelShadingOverrides(value),
   };
 }

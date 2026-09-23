@@ -25,6 +25,7 @@ export function managedLightingReservations(engine: AbstractEngine) {
     limit: value.limit,
     shadowBytes: value.shadowBytes,
     clusterBytes: value.categoryBytes.cluster,
+    areaLightBytes: value.categoryBytes.areaLight,
     pendingBytes: value.pendingBytes,
     reservedBytes: value.reservedBytes,
   };

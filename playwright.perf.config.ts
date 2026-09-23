@@ -9,12 +9,13 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /play-(performance|sustained)-route\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|shared-outline(?:-cost|-geometry)?|render-settings-export|scalability-play|area-light-export|area-rect-light|framegraph-shadows|shadow-self-shadowing-hosts|clustered-lights-webgpu)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,
   workers: 1,
-  reporter: [["list"], ["json", { outputFile: "test-results/perf-route.json" }]],
+  reporter: [["list"], ["json", { outputFile: "test-results/timings.json" }]],
+  metadata: { testRunNonce: process.env.BL_TEST_SERVER_NONCE },
   outputDir: "test-results/perf-route",
   globalSetup: "./e2e/verify-test-server.ts",
   use: {

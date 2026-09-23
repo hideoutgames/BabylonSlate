@@ -1,5 +1,6 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
-import { RenderingQualitySession, type RenderProjectSettings } from "@babylonslate/core";
+import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
+import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
 import {
@@ -309,6 +310,9 @@ export interface RuntimeDriver {
   applyRenderPathStatus(
     message: Extract<ControlMessage, { type: "renderPathStatus" }>,
   ): void;
+  applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void;
+  requestScalability(request: ScalabilityRequest): ScalabilityResult;
+  getScalability(): ScalabilitySnapshot;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -423,9 +427,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
-  private readonly renderingQuality: RenderingQualitySession;
+  private readonly scalability: ScalabilitySession;
   private lastRenderPathStatus: RenderPathStatus | null = null;
-  private frameCap: number;
+  private readonly scalabilityProjectRenderPath: RenderPath;
   private volume = 1;
   private timeDilation = 1;
   private showCollision = false;
@@ -434,6 +438,8 @@ class InProcessRuntime implements RuntimeDriver {
   private flushingConsoleActors = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
+  private areaLightSlots = new Set<number>();
+  private outlineSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -548,11 +554,9 @@ class InProcessRuntime implements RuntimeDriver {
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
-    this.renderingQuality = new RenderingQualitySession(options.renderSettings, options.playScene?.settings.shadowOverrides);
-    this.frameCap =
-      options.frameCap !== undefined && options.frameCap > 0
-        ? options.frameCap
-        : DEFAULT_PLAY_FRAME_CAP;
+    this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
+    this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
+      (transaction) => this.emit({ type: "setScalability", transaction }));
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
@@ -1004,14 +1008,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.unregisterSceneLayerPostProcess(layerGuid, materialGuid);
       },
       setRenderResolution: (width, height) => {
-        const nextWidth = Math.max(1, Math.round(Number(width) || 0));
-        const nextHeight = Math.max(1, Math.round(Number(height) || 0));
-        this.emit({
-          type: "setRenderResolution",
-          width: nextWidth,
-          height: nextHeight,
-        });
+        this.requestScalability({ kind: "patch", render: { width, height, customResolution: true, blackBars: true } });
       },
+      getScalability: () => this.getScalability(),
+      requestScalability: (request) => this.requestScalability(request),
       getPostProcessEntry: (owner, entryId) => {
         if (!this.canRunOwner(owner)) return null;
         const material = getPostProcessMaterialObject(owner, entryId);
@@ -1037,7 +1037,8 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
-          this.emitMeshAssignment(owner, slotId);
+          if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          else this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
@@ -1561,6 +1562,21 @@ class InProcessRuntime implements RuntimeDriver {
       gpuBackend: message.gpuBackend,
       limits: [...message.limits],
     };
+  }
+
+  requestScalability(request: ScalabilityRequest): ScalabilityResult {
+    return this.scalability.request(request);
+  }
+
+  getScalability(): ScalabilitySnapshot { return this.scalability.snapshot(); }
+
+  applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void {
+    if (!this.scalability.acknowledge(acknowledgement)) return;
+    const snapshot = this.scalability.snapshot();
+    const owners = [this.world.gameInstance, this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
+    for (const owner of owners) if (owner && this.canRunOwner(owner)) {
+      this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
+    }
   }
 
   private ensureOverlayDesignPose(actor: Actor): void {
@@ -2167,7 +2183,7 @@ class InProcessRuntime implements RuntimeDriver {
       layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
     };
     this.playScene = next;
-    this.renderingQuality.scene = next.settings.shadowOverrides ?? {};
+    this.scalability.setScene(next.settings);
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.
@@ -3393,22 +3409,16 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      quality: (group, choice, value) => {
-        const result = this.renderingQuality.execute(group, choice, value);
-        if (result.success && choice !== undefined)
-          this.emit({ type: "setRenderingQuality", overrides: this.renderingQuality.overrides });
-        return result;
-      },
+      quality: (group, choice, value) => this.scalability.executeQuality(group, choice, value),
       setRenderPath: (path) => {
-        this.emit({ type: "setRenderPath", renderPath: path });
+        this.requestScalability({ kind: "patch", render: { renderPath: path ?? this.scalabilityProjectRenderPath } });
       },
       getRenderPath: () => this.lastRenderPathStatus,
       setLightsDebug: (enabled) => this.emit({ type: "setLightsDebug", enabled }),
       setFrameCap: (fps) => {
-        this.frameCap = fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
-        this.emit({ type: "setFrameCap", fps: this.frameCap });
+        this.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
       },
-      getFrameCap: () => this.frameCap,
+      getFrameCap: () => this.scalability.requested.frameCap,
       setVolume: (volume) => {
         this.volume = Number(volume);
         this.emit({ type: "setGlobalVolume", volume: this.volume });
@@ -3557,7 +3567,36 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
+  private emitActorOutlines(actor: Actor, slotId: number): void {
+    const components = actor.components.filter((component) => !component.destroyed && component.classId === "OutlineComponent");
+    if (components.length || this.outlineSlots.has(slotId)) {
+      const outlines = outlineBindings(actor.guid, components.map((component) => ({
+        id: component.guid, classId: component.classId,
+        properties: Object.fromEntries(["enabled", "color", "width", "throughMeshes"].map((key) =>
+          [key, key === "color" && component.getVariable(key) != null ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])),
+      })));
+      this.emit({ type: "setActorOutlines", slotId, actorId: actor.guid, outlines });
+      if (outlines.length) this.outlineSlots.add(slotId); else this.outlineSlots.delete(slotId);
+    }
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
+    this.emitActorOutlines(actor, slotId);
+    const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
+    if (hasAreaLight || this.areaLightSlots.has(slotId)) {
+    const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
+      const { position, rotation, scale } = component.transform;
+      return {
+        id: component.guid, classId: component.classId, parentId: component.parentId,
+        properties: component.classId === "AreaRectLightComponent" ? Object.fromEntries(["enabled", "width", "height", "color", "intensity", "textureGuid"].map((key) => [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])) : {},
+        transform: { position: [position.x, position.y, position.z] as [number, number, number], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number], scale: [scale.x, scale.y, scale.z] as [number, number, number] },
+      };
+    })) : [];
+    // A separate component command also handles actors with meshes, multiple
+    // emitters and asynchronous model loading. It uses the same view owner.
+    this.emit({ type: "setAreaLights", slotId, lights });
+    if (lights.length) this.areaLightSlots.add(slotId); else this.areaLightSlots.delete(slotId);
+    }
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.world);
@@ -4231,6 +4270,8 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private releaseSlot(actorGuid: string, slotId: number): void {
+    this.areaLightSlots.delete(slotId);
+    this.outlineSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);

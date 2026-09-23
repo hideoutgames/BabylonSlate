@@ -27,6 +27,8 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "TilemapComponent",
   "CameraComponent",
   "LightComponent",
+  "AreaRectLightComponent",
+  "OutlineComponent",
   "HemisphericFillLightComponent",
   "SkyboxComponent",
   "Text3DComponent",
@@ -69,6 +71,8 @@ const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "SkyboxComponent",
   "CameraComponent",
   "LightComponent",
+  "AreaRectLightComponent",
+  "OutlineComponent",
   "HemisphericFillLightComponent",
 ]);
 

@@ -1,0 +1,59 @@
+import { compileGraph, type GraphNode, type LogicGraph } from "../packages/scripting/src/index";
+import { createDefaultNodeRegistry } from "../packages/scripting-nodes/src/index";
+import type { ScriptBundleEntry } from "../packages/bridge/src/channels";
+
+/** The same saved Class graphs qualify editor compilation and standalone execution. */
+export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph }[] {
+  const registry = createDefaultNodeRegistry();
+  const graphCommand = (name: string, actions: [string, Record<string, unknown>][]) => {
+    const nodes: GraphNode[] = [["flow.event.commandRun", { commandName: name }] as [string, Record<string, unknown>], ...actions].map(([typeId, properties], index) => ({
+      id: `node-${index}`, typeId, properties, position: { x: index * 300, y: 0 }, pins: registry.get(typeId)!.pins(properties),
+    }));
+    const graph: LogicGraph = { id: name, kind: "event", nodes, edges: actions.map((_, index) => ({
+      id: `exec-${index}`, sourceNodeId: `node-${index}`, sourcePinId: "execOut", targetNodeId: `node-${index + 1}`, targetPinId: "execIn",
+    })) };
+    return { name, graph };
+  };
+  const outlineRoundtrip = graphCommand("qual_outline_roundtrip", [["scalability.setCelOutlines", { enabled: true, width: 4 }]]);
+  outlineRoundtrip.graph.nodes.push({ id: "read", typeId: "scalability.getEffective", properties: {}, position: { x: 0, y: 160 }, pins: registry.get("scalability.getEffective")!.pins({}) });
+  outlineRoundtrip.graph.edges.push({ id: "outline-color", sourceNodeId: "read", sourcePinId: "outlineColor", targetNodeId: "node-1", targetPinId: "color" });
+  return [
+    graphCommand("qual_outlines", [["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
+    graphCommand("qual_outlines_off", [["scalability.setCelOutlines", { enabled: false, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }]]),
+    outlineRoundtrip,
+    graphCommand("qual_pbr", [["scalability.setRenderMode", { mode: "pbr" }]]),
+    graphCommand("qual_cel", [["scalability.setRenderMode", { mode: "cel" }]]),
+    graphCommand("qual_runtime", [["scalability.setFrameCap", { fps: 20 }], ["scalability.setRenderScale", { scale: 0.5 }]]),
+    graphCommand("qual_reset", [["scalability.reset", {}]]),
+    graphCommand("qual_clamped", [["scalability.setRenderScale", { scale: 0.1 }]]),
+    graphCommand("qual_invalid", [["scalability.setFrameCap", { fps: -10 }]]),
+    graphCommand("qual_aa", [["scalability.setAntialiasing", { enabled: true }]]),
+    graphCommand("qual_cluster", [["scalability.setRenderPath", { path: "clusteredForward" }]]),
+    graphCommand("qual_settings", [
+      ["scalability.setResolution", { width: 400, height: 240 }],
+      ["scalability.setResolutionQuality", { settings: { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],
+      ["scalability.setFrameCap", { fps: 24 }],
+      ["scalability.setShadowsEnabled", { enabled: false }],
+      ["scalability.setShadowQuality", { settings: { distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filter: "pcf", filterQuality: "low", softness: 0.08, autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 } }],
+      ["scalability.setLightingQuality", { settings: { localLightMode: "manual", maxLocalLights: 3 } }],
+      ["scalability.setTextureQuality", { settings: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 } }],
+      ["scalability.setPostProcessingQuality", { settings: { resolutionScale: 0.5 } }],
+      ["scalability.setEffects", { settings: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
+      ["scalability.setVignetteColor", { color: { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],
+      ["scalability.setCelShading", { settings: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" } }],
+      ["scalability.setCelOutlines", { enabled: true, color: { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, width: 4 }],
+      ["scalability.setEnvironmentLighting", { settings: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 } }],
+    ]),
+    ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { preset }]])),
+  ];
+}
+
+/** Commands only trigger the compiled graph's native entry. */
+export function scalabilityGraphScripts(): ScriptBundleEntry[] {
+  const registry = createDefaultNodeRegistry();
+  return scalabilityGraphDefinitions().map(({ name, graph }) => {
+    const compiled = compileGraph(graph, { registry, assetGuid: name });
+    return { assetGuid: name, classId: name, parentClassId: "BDebugCommand", source: compiled.source, anchors: compiled.anchors,
+      entryPoints: compiled.entryPoints, command: { name, category: "Qualification", description: "Exercise a compiled scalability graph", parameters: [] } };
+  });
+}

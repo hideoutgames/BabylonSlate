@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/vfs";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
+import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
@@ -86,6 +87,7 @@ async function launchLoaded(
   await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
   startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
+  let runtimeRender = game.manifest.render;
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
     document.getElementById("player-hud") ?? document.createElement("div"),
@@ -157,6 +159,10 @@ async function launchLoaded(
         );
       }
     },
+    onRenderOutputChanged: (render) => {
+      runtimeRender = render;
+      applyPlayerLayout({ root: rootEl(), canvas: canvasEl(), render });
+    },
     onStats: (stats) => {
       if (stopped) return;
       currentLightsDebugText = stats.lightsDebugText ?? null;
@@ -201,31 +207,25 @@ async function launchLoaded(
   layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(() => layoutFromManifest(game.manifest));
+      : new ResizeObserver(() => applyPlayerLayout({ root: rootEl(), canvas: canvasEl(), render: runtimeRender }));
   layoutObserver?.observe(rootEl());
   if (import.meta.env.VITE_TEST_MODE === "true") {
     (
       window as typeof window & {
-        __babylonslatePlayerTest?: {
-          visuals: () => ReturnType<typeof session.visuals>;
-          meshMaterialNames: () => string[];
-          rendering: typeof session.rendering;
-          shadowDiagnostics: typeof session.shadowDiagnostics;
-          bakedSession: typeof session.bakedSession;
-          postProcessPassCount: typeof session.postProcessPassCount;
-          renderTasks: typeof session.renderTasks;
-          setRenderSettings: typeof session.setRenderSettings;
-        };
+        __babylonslatePlayerTest?: PlayerTestHandle;
       }
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
       rendering: () => session.rendering(),
+      scalability: () => session.scalability(),
       shadowDiagnostics: () => session.shadowDiagnostics(),
       meshMaterialNames: () => session.meshMaterialNames(),
       bakedSession: () => session.bakedSession(),
       postProcessPassCount: () => session.postProcessPassCount(),
       renderTasks: () => session.renderTasks(),
       setRenderSettings: (settings) => session.setRenderSettings(settings),
+      executeConsoleCommand: (line) => session.executeConsoleCommand(line),
+      stop: () => session.stop(),
     };
   }
   if (window.parent !== window) {

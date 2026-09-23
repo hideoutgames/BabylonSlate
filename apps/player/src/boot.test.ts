@@ -59,7 +59,7 @@ function flushFrames(count: number) {
 
 async function fixture() {
   const scene = { ...createDefaultScene(), actors: [] };
-  const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+  const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);

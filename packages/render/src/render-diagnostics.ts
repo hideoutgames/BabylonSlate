@@ -29,9 +29,10 @@ export type RenderDiagnostics = {
   pressure: FramePressureSample | null;
   /** Why `gpuMs` is this view's own cost, shared with siblings, or missing. */
   gpuAttribution: GpuAttribution;
+  /** Actual drawing-buffer dimensions after render scale. */
   width: number;
   height: number;
-  /** Dynamic-resolution valve level; raster size is `width / scalingLevel`. */
+  /** Inverse render scale. Do not apply this again to the buffer dimensions. */
   scalingLevel: number;
   samples: number;
   shadowPasses: number;
@@ -80,7 +81,11 @@ export function createRenderDiagnostics(
 ): () => RenderDiagnostics {
   const engine = scene.getEngine();
   let instrument = instruments.get(engine);
-  const supported = !!engine.getCaps().timerQuery;
+  // Babylon 9.20's whole-frame WebGPU path uses the removed encoder-level
+  // writeTimestamp API and records zero when it is absent. A timestamp-query
+  // capability alone therefore does not establish a measured frame duration.
+  // Per-pass WebGPU timestamp attribution is not implemented here.
+  const supported = !engine.isWebGPU && !!engine.getCaps().timerQuery;
   if (!instrument && supported) {
     instrument = new EngineInstrumentation(engine);
     instrument.captureGPUFrameTime = true;

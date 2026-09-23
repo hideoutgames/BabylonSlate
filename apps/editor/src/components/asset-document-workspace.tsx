@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -36,6 +36,8 @@ import {
   normalizeFontPayload,
   shouldCompressTexture,
   isEnvironmentTexturePayload,
+  currentAreaEmissionChunk,
+  type AreaEmissionProgress,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
@@ -526,7 +528,22 @@ function AssetSettingsEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding } = useDocuments();
+  const { retryTextureEncoding, prepareAreaEmission, assetRegistry } = useDocuments();
+  const emissionJob = useRef<AbortController | null>(null);
+  const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
+  const [emissionError, setEmissionError] = useState("");
+  useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
+  const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
+  const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
+  const prepareEmission = async () => {
+    if (!guid || emissionJob.current) return;
+    const job = new AbortController();
+    emissionJob.current = job;
+    setEmissionError("");
+    try { await prepareAreaEmission(guid, { signal: job.signal, onProgress: setEmissionProgress }); }
+    catch (error) { if (!job.signal.aborted) setEmissionError(error instanceof Error ? error.message : String(error)); }
+    finally { if (emissionJob.current === job) { emissionJob.current = null; setEmissionProgress(null); } }
+  };
   const rows: PropertyRow[] = [];
   const environment = assetType === "Texture" && isEnvironmentTexturePayload(payload);
   if (environment) {
@@ -669,6 +686,18 @@ function AssetSettingsEditor({
           <TexturePreview path={path} payload={payload} />
         ) : null}
         <PropertyGrid rows={rows} />
+        {assetType === "Texture" && !environment && guid ? (
+          <Field>
+            <FieldLabel>Area Light Emission</FieldLabel>
+            <FieldDescription>Prepare this Texture for rectangular lights. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.</FieldDescription>
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={emissionProgress !== null} onClick={() => void prepareEmission()}>{emissionReady ? "Check Emission Data" : "Prepare Emission"}</Button>
+              {emissionProgress ? <Button size="sm" variant="outline" onClick={() => emissionJob.current?.abort()}>Cancel</Button> : null}
+              <span role="status" className="text-xs text-muted-foreground">{emissionProgress ? `${emissionProgress.phase === "queued" ? "Queued" : emissionProgress.phase === "decoding" ? "Decoding" : emissionProgress.phase === "filtering" ? "Filtering" : "Saving"} ${Math.round(emissionProgress.progress * 100)}%` : emissionReady ? "Ready" : "Not Prepared"}</span>
+            </div>
+            {emissionError ? <FieldError>{emissionError}</FieldError> : null}
+          </Field>
+        ) : null}
       </div>
     </PanelFrame>
   );

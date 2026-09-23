@@ -4,7 +4,7 @@ import {
   type CelShadingOverrides,
   type CelShadingSettings,
 } from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
+import { ColorField, colorToHex, NumberField } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Switch } from "@babylonslate/ui/components/switch";
 import {
@@ -35,6 +35,21 @@ const fields: {
   label: string;
   description: string;
 }[] = [
+  {
+    key: "outlinesEnabled",
+    label: "Outlines",
+    description: "Outline eligible scene geometry. Global outlines are hidden by other geometry; disabling preserves their appearance settings.",
+  },
+  {
+    key: "outlineColor",
+    label: "Outline Color",
+    description: "Default silhouette color. An enabled Outline component supplies its own style.",
+  },
+  {
+    key: "outlineWidth",
+    label: "Outline Width",
+    description: "Default silhouette width in output pixels.",
+  },
   {
     key: "lightMixing",
     label: "Light Mixing",
@@ -91,7 +106,7 @@ type Props = {
 export function CelShadingFields({ project, overrides, onChange, hideTitle = false }: Props) {
   const scene = overrides !== undefined;
   const effective = resolveCelShadingSettings(project, overrides);
-  const patch = (key: keyof CelShadingSettings, value: number | string | boolean) =>
+  const patch = (key: keyof CelShadingSettings, value: CelShadingSettings[keyof CelShadingSettings]) =>
     onChange({ ...(scene ? overrides : project), [key]: value });
   return (
     <FieldSet
@@ -126,11 +141,11 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                   </Button>
                 ) : null}
               </div>
-              {key === "specularEnabled" ? (
+              {key === "specularEnabled" || key === "outlinesEnabled" ? (
                 <Switch
                   id={id}
                   aria-describedby={`${id}-description`}
-                  checked={effective.specularEnabled}
+                  checked={effective[key]}
                   disabled={scene && !overridden}
                   onCheckedChange={(value) => patch(key, value)}
                 />
@@ -139,7 +154,7 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                   value={effective.lightMixing}
                   disabled={scene && !overridden}
                   onValueChange={(value) => {
-                    if (value) patch(key, value);
+                    if (value === "strongest" || value === "additive" || value === "blend") patch(key, value);
                   }}
                 >
                   <SelectTrigger id={id} aria-describedby={`${id}-description`}>
@@ -159,6 +174,15 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+              ) : key === "outlineColor" ? (
+                <ColorField
+                  key={`${key}-${overridden ? "override" : "project"}`}
+                  id={id}
+                  aria-label={label}
+                  value={effective.outlineColor}
+                  disabled={scene && !overridden}
+                  onChange={(value) => patch(key, value)}
+                />
               ) : (
                 <NumberField
                   key={
@@ -178,7 +202,7 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
               )}
               <FieldDescription id={`${id}-description`}>
                 {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" ? project[key] ? "On" : "Off" : project[key]}. `
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" || key === "outlinesEnabled" ? project[key] ? "On" : "Off" : key === "outlineColor" ? colorToHex(project[key]) : project[key]}. `
                   : ""}
                 {description}
               </FieldDescription>

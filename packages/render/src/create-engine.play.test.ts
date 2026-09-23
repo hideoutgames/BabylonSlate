@@ -1,6 +1,6 @@
-import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, InternalTexture, InternalTextureSource, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -10,16 +10,19 @@ import {
 } from "@babylonslate/bridge";
 import {
   createActor,
+  areaRectLightBindings,
+  outlineBindings,
   createDefaultScene,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
+  normalizeRenderProjectSettings,
   engineCommandBus,
   requestEditorDrop,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -29,8 +32,10 @@ import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
+import * as presentation from "./presented-frame";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
@@ -223,6 +228,7 @@ describe("Play createEngine view", () => {
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
     mockCubeTextureIO(engine);
+    mockDepthTextureIO(engine);
     // NullEngine stores raw bytes but never marks the upload complete. Model
     // the real synchronous raw-texture upload boundary without bypassing the
     // scene's texture readiness checks (individual tests can hold a texture).
@@ -322,18 +328,6 @@ describe("Play createEngine view", () => {
     });
     vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
       engine._createHardwareRenderTargetWrapper(true, false, size));
-    // The host layer also owns a sampleable depth attachment. NullEngine has no
-    // native depth allocator; retain the actual InternalTexture/RTT lifecycle.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
-      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
-      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
-      texture.width = texture.baseWidth = dimensions.width;
-      texture.height = texture.baseHeight = dimensions.height;
-      texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
-      texture.isReady = true;
-      engine.getLoadedTexturesCache().push(texture);
-      return texture;
-    });
     return engine;
   }
 
@@ -486,6 +480,79 @@ describe("Play createEngine view", () => {
     Reflect.deleteProperty(engine, "_gl");
   });
 
+  it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
+    const engine = sharedEngine();
+    // NullEngine hard-codes scale 1; model the native scale storage boundary.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    let width = 256, height = 256;
+    vi.spyOn(engine, "getRenderWidth").mockImplementation(() => width);
+    vi.spyOn(engine, "getRenderHeight").mockImplementation(() => height);
+    const resize = vi.spyOn(engine, "setSize").mockImplementation((nextWidth, nextHeight) => {
+      if (nextWidth === width && nextHeight === height) return false;
+      expect(handle.scene.frameGraph).toBeNull();
+      width = nextWidth; height = nextHeight;
+      // Pinned WebGPU attachment recreation emits beginFrame synchronously.
+      // Keep the real registered-view admission and graph ownership around it.
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      return true;
+    });
+    handle.setSize(480, 270);
+    handle.setRenderSettings(normalizeRenderProjectSettings({
+      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+    }));
+    await handle.prewarmSceneMaterials();
+    expect(resize).toHaveBeenCalledWith(384, 216);
+    expect([width, height]).toEqual([384, 216]);
+    const presented = handle.presentFirstFrame();
+    loop.mock.calls[0]![0]();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    expect(handle.scene.frameGraph).toBeNull();
+  });
+
+  it("restores the editor scale before readmitting shared views when Play stops", async () => {
+    const engine = sharedEngine();
+    let hardwareScaling = 1;
+    let restoring = false;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => {
+      hardwareScaling = level;
+      if (restoring) {
+        // WebGPU resizing can synchronously re-enter native view admission.
+        expect(engine.views.every((view) => !view.enabled)).toBe(true);
+        engine.onBeginFrameObservable.notifyObservers(engine);
+      }
+    });
+    const { handle: editor } = editorHandle(engine);
+    editor.setRenderSettings(normalizeRenderProjectSettings({
+      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+    }));
+    await editor.prewarmSceneMaterials();
+    expect(hardwareScaling).toBe(1.25);
+    const editorView = engine.views[0]!;
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const { handle: play } = playHandle(engine);
+      play.setRenderSettings(normalizeRenderProjectSettings({
+        quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
+      }));
+      await play.prewarmSceneMaterials();
+      expect(hardwareScaling).toBe(2);
+      expect(editorView.enabled).toBe(false);
+      restoring = true;
+      play.dispose();
+      restoring = false;
+      await play.whenReleased();
+      expect(engine.getHardwareScalingLevel()).toBe(1.25);
+      expect(editor.scaling.getLevel()).toBe(1.25);
+      expect(engine.views).toEqual([editorView]);
+      expect(editorView.enabled).toBe(true);
+    }
+  });
+
   it("draws an RTT preview once while every registered canvas retains its paused bitmap", async () => {
     const engine = sharedEngine();
     const nativeDispatch = engine._renderViews;
@@ -499,6 +566,7 @@ describe("Play createEngine view", () => {
     const preview = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" });
     handles.push(main, preview);
     main.setPaused(true);
+    await preview.prewarmSceneMaterials();
     const mainDraw = vi.fn();
     const previewDraw = vi.fn();
     main.scene.onAfterRenderObservable.add(mainDraw);
@@ -527,6 +595,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
     handles.push(handle);
     handle.setPaused(true);
+    await handle.prewarmSceneMaterials();
     let resolve!: (pixels: Uint8Array) => void;
     const pixels = new Promise<Uint8Array>((done) => { resolve = done; });
     const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
@@ -551,6 +620,47 @@ describe("Play createEngine view", () => {
       await presented.catch(() => {});
       read.mockRestore();
       globalThis.ImageData = previousImageData;
+    }
+  });
+
+  it.each(["completed", "stalled"] as const)("waits beyond shader readiness for a slow owned GPU frame that is %s", async (completion) => {
+    const engine = sharedEngine();
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    let finishGpu!: () => void;
+    let cancelGpu!: (error: Error) => void;
+    const gpu = new Promise<void>((resolve, reject) => { finishGpu = resolve; cancelGpu = reject; });
+    const cancel = vi.fn(() => cancelGpu(new Error("Owned GPU wait cancelled")));
+    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      return { completed: gpu, cancel };
+    });
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, error => { state = "failed"; return error as Error; });
+    try {
+      loops.mock.calls[0]![0]();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(state).toBe("pending");
+      expect(cancel).not.toHaveBeenCalled();
+      if (completion === "completed") {
+        finishGpu();
+        await frame;
+        expect(state).toBe("ready");
+      } else {
+        await vi.advanceTimersByTimeAsync(11_000);
+        expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+        expect(state).toBe("failed");
+        expect(cancel).toHaveBeenCalledOnce();
+      }
+    } finally {
+      handle.dispose();
+      await frame;
+      submission.mockRestore();
+      vi.useRealTimers();
     }
   });
 
@@ -1413,6 +1523,9 @@ describe("Play createEngine view", () => {
     engine.onBeginFrameObservable.notifyObservers(engine);
     renderLoop();
     engine.onEndFrameObservable.notifyObservers(engine);
+    // Model a timer-capable driver for attribution only; NullEngine supplies no
+    // GPU sample, and these diagnostics must not attribute a shared frame to one view.
+    Object.assign(engine.getCaps(), { timerQuery: {} });
     const diagnostics = first.handle.renderDiagnostics();
     expect(diagnostics.gpuAttribution).toBe("shared-engine");
     expect(diagnostics.gpuMs).toBeNull();
@@ -1622,7 +1735,7 @@ describe("Play createEngine view", () => {
         { materialGuid: "pp", enabled: true },
         { materialGuid: "pp", enabled: true },
       ]);
-      if (playMode) await handle.prewarmSceneMaterials();
+      await handle.prewarmSceneMaterials();
       const material = handle.scene.getMaterialByName("material:pp");
       expect(material).toBeInstanceOf(NodeMaterial);
       const camera = handle.scene.activeCamera!;
@@ -1643,13 +1756,14 @@ describe("Play createEngine view", () => {
     }
   });
 
-  it("routes Play and layer post effects through their coordinator while editor previews remain native", () => {
+  it("routes editor, Play and layer post effects through their coordinators", async () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
     const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ materialGuid: "pp", enabled: true }] };
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
     handles.push(editor);
     editor.setPostProcessStack(options.postProcessStack);
-    expect(attach).not.toHaveBeenCalled();
+    await editor.prewarmSceneMaterials();
+    expect(attach.mock.calls.some(([value]) => value.scene === editor.scene && value.camera === editor.scene.activeCamera && value.deviceBuffers === undefined)).toBe(true);
     expect(editor.postProcessPassCount()).toBe(1);
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
     handles.push(play);
@@ -1693,6 +1807,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     // Editor handles seed the default scene, which owns the post-process stack.
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    await handle.prewarmSceneMaterials();
     const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     let release!: () => void;
@@ -1722,6 +1837,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    await handle.prewarmSceneMaterials();
     const retired = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
     expect(retired).toBeInstanceOf(OwnedPostProcess);
     let release!: () => void;
@@ -1732,6 +1848,7 @@ describe("Play createEngine view", () => {
     // the first override only establishes the quality baseline.
     handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
     handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
+    await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBe(1);
     expect(handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1)).not.toBe(retired);
     handle.dispose();
@@ -1752,6 +1869,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    await handle.prewarmSceneMaterials();
     const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     vi.spyOn(pass, "isReleased", "get").mockReturnValue(false);
@@ -1776,6 +1894,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setPostProcessStack([{ materialGuid: "pp", enabled: true }]);
+    await handle.prewarmSceneMaterials();
     const pass = handle.scene.activeCamera!._postProcesses.filter(Boolean).at(-1) as OwnedPostProcess;
     expect(pass).toBeInstanceOf(OwnedPostProcess);
     // An uncertain bounded report warns but never authorizes or blocks
@@ -2366,7 +2485,7 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBe(0);
   });
 
-  it("applies project effects settings on the editor viewport's native chain", () => {
+  it("applies project effects after the editor coordinator prepares its native capability fallback", async () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
     handles.push(handle);
@@ -2381,6 +2500,7 @@ describe("Play createEngine view", () => {
       },
     });
     handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
+    await handle.prewarmSceneMaterials();
     const camera = handle.scene.activeCamera!;
     const passes = camera._postProcesses.filter(Boolean);
     expect(passes.map((pass) => pass!.getClassName())).toEqual([
@@ -3177,6 +3297,107 @@ describe("Play createEngine view", () => {
     expect(down).toHaveBeenCalled();
   });
 
+  it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const lights = areaRectLightBindings([{ id: "emitter", classId: "AreaRectLightComponent", properties: { textureGuid: "texture" } }]);
+    handle.applyCommand({ type: "setAreaLights", slotId: 4, lights });
+    const light = handle.scene.getLightByName("playAreaLight:4:emitter")!;
+    expect(light.isEnabled()).toBe(false);
+    const pixels = await decodeAreaEmission(await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(170), "a".repeat(64)));
+    const areaEmissions = new Map([["texture", pixels]]);
+    handle.setMeshAssets({ areaEmissions });
+    expect(light.isEnabled()).toBe(true);
+    expect(light.metadata.areaLight.error).toBeNull();
+    const uploaded = [...engine.getLoadedTexturesCache()];
+    handle.setMeshAssets({ areaEmissions });
+    expect(engine.getLoadedTexturesCache()).toEqual(uploaded);
+    handle.setMeshAssets({ areaEmissions: new Map() });
+    expect(light.isEnabled()).toBe(false);
+    expect(light.metadata.areaLight.error).toContain("Prepare Emission");
+    handle.setMeshAssets({ areaEmissions });
+    expect(handle.scene.getLightByName(light.name)).toBe(light);
+    expect(light.isEnabled()).toBe(true);
+    handle.applyCommand({ type: "setAreaLights", slotId: 4, lights: [] });
+    expect(handle.scene.getLightByName(light.name)).toBeNull();
+  });
+
+  it("hydrates outline commands before meshes arrive and retains actor styles across visual replacement until despawn", async () => {
+    const attach = SceneRenderCoordinator.prototype.attachSharedOutline;
+    let view: SharedOutlineView | undefined;
+    const observing = vi.spyOn(SceneRenderCoordinator.prototype, "attachSharedOutline").mockImplementation(function (this: SceneRenderCoordinator, value: SharedOutlineView) {
+      view = value; return attach.call(this, value);
+    });
+    try {
+      const { handle } = playHandle(sharedEngine());
+      const outlines = outlineBindings("hero", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 3 } }]);
+      handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero", outlines });
+      expect(view!.active).toBe(false);
+      const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" };
+      handle.applyCommand(assign);
+      const previous = view!.contributions.get("component:hero:ink")!.targets[0]!.meshes[0]!;
+      handle.applyCommand({ ...assign, meshKind: "sphere" });
+      let replacement = view!.contributions.get("component:hero:ink")!;
+      expect(previous.isDisposed()).toBe(true);
+      expect(replacement.targets[0]!.meshes[0]).not.toBe(previous);
+      expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
+      expect(view!.contributions.has("selection")).toBe(false);
+      handle.setMeshAssets({ modelBytes: new Map([
+        ["model-a", encodeTriangleGlb()], ["model-b", encodeTriangleGlb()],
+      ]) });
+      for (const assetGuid of ["model-a", "model-b"]) {
+        const predecessor = replacement.targets[0]!.meshes[0]!;
+        handle.applyCommand({ ...assign, meshAssetGuid: assetGuid });
+        await handle.whenEditorModelsReady();
+        replacement = view!.contributions.get("component:hero:ink")!;
+        expect(predecessor.isDisposed()).toBe(true);
+        expect(replacement.targets[0]!.meshes).toHaveLength(1);
+        expect(replacement.targets[0]!.meshes[0]!.getTotalVertices()).toBe(3);
+        expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
+      }
+      const predecessor = replacement.targets[0]!.meshes[0]!;
+      handle.applyCommand({ ...assign, parts: ["model-a", "model-b"].map((guid, index) => ({
+        componentId: `part-${index}`, parentId: null, meshKind: "box", meshAssetGuid: guid,
+        position: [index * 2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+      })) });
+      await handle.whenEditorModelsReady();
+      replacement = view!.contributions.get("component:hero:ink")!;
+      expect(predecessor.isDisposed()).toBe(true);
+      expect(replacement.targets[0]!.meshes.map((mesh) => mesh.getTotalVertices())).toEqual([3, 3]);
+      expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
+      handle.applyCommand({ type: "setActorOutlines", slotId: 5, actorId: "child", outlines: outlineBindings("child", [{ id: "ink", classId: "OutlineComponent", properties: {} }]) });
+      handle.applyCommand({ ...assign, slotId: 5, actorGuid: "child" });
+      const child = view!.contributions.get("component:child:ink")!.targets[0]!.meshes[0]!;
+      child.parent = replacement.targets[0]!.meshes[0]!;
+      handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero", outlines });
+      expect(view!.contributions.get("component:hero:ink")!.targets[0]!.meshes).not.toContain(child);
+      child.parent = null;
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "hero" });
+      expect(view!.contributions.has("component:child:ink")).toBe(true);
+      handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "child" });
+      expect(view!.active).toBe(false);
+    } finally { observing.mockRestore(); }
+  });
+
+  it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
+    const engine = sharedEngine();
+    // NullEngine hardcodes a scaling level of one; supply the browser boundary.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    handle.setSize(800, 450);
+    const view = engine.views!.find((entry) => entry.target === canvas)!;
+    handle.scaling.setSettingsLevel(2);
+    view.customResize!(canvas);
+    expect([canvas.width, canvas.height]).toEqual([400, 225]);
+    handle.scaling.setSettingsLevel(1);
+    view.customResize!(canvas);
+    expect([canvas.width, canvas.height]).toEqual([800, 450]);
+  });
+
   it("sizes the shared Play framebuffer from the overlay canvas instead of engine.resize", () => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -3453,6 +3674,29 @@ describe("Play createEngine view", () => {
     canvas.emit("pointerdown", pointerAt(128 + 16, 128));
     canvas.emit("pointerup", pointerAt(128 + 16, 128));
     expect(events).toContain("onClick");
+  });
+
+  it("scopes render-path overrides to the live Play session and restores the editor preference", () => {
+    const engine = sharedEngine();
+    const { handle: editor } = editorHandle(engine);
+    editor.setRenderPath("clusteredForward");
+    const { handle: first } = playHandle(engine);
+    expect(first.renderPathStatus().requested.renderPath).toBe("forward");
+    first.setRenderPath("clusteredForward");
+    const { handle: second } = playHandle(engine);
+    expect(second.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    first.dispose();
+    const disposedInvalidation = vi.spyOn(first.scheduler, "invalidate");
+    second.setRenderPath("forward");
+    expect(disposedInvalidation).not.toHaveBeenCalled();
+    second.dispose();
+    expect(editor.renderPathStatus().requested.renderPath).toBe("clusteredForward");
+    editor.setRenderPath(null);
+    const { handle: next } = playHandle(engine);
+    expect(next.renderPathStatus().requested.renderPath).toBe("forward");
+    next.setRenderPath("clusteredForward");
+    next.dispose();
+    expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
   });
 
   it("applies a setRenderPath command game-wide and reports the session status", () => {

@@ -2,6 +2,7 @@ import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path
 import "./texture-quality";
 import { syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { lightingSamplerCapacity } from "./light-sampler-budget";
 import {
   clusteredLightingLimits,
   clusteredLocalContributionCount,
@@ -15,6 +16,7 @@ import {
   NodeMaterial,
   NodeMaterialModes,
   PBRMetallicRoughnessBlock,
+  RectAreaLight,
   type Light,
   type Observer,
   type Scene,
@@ -62,6 +64,7 @@ export function syncSceneLighting(scene: Scene): void {
 
 export function sceneLightingLimits(scene: Scene): string[] {
   return [
+    ...scene.lights.flatMap((light) => typeof light.metadata?.areaLight?.error === "string" ? [`${light.name}: ${light.metadata.areaLight.error}`] : []),
     ...clusteredLightingLimits(scene),
     ...(lightingByScene.get(scene)?.limits() ?? []),
   ];
@@ -77,7 +80,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let nextEnabled: Light[] = [];
   let shadowLayout: unknown[] = [];
   let nextShadowLayout: unknown[] = [];
-  let admission = { requested: 0, admitted: 0, limited: [] as Light[] };
+  let admission = { requested: 0, admitted: 0, limited: [] as Light[], samplerLimited: [] as Light[], samplers: 0 };
   let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
@@ -110,6 +113,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
         light.shadowEnabled,
         light.getShadowGenerator(scene.activeCamera) ??
           light.getShadowGenerator(),
+        light instanceof RectAreaLight ? light.emissionTexture : null,
+        light instanceof RectAreaLight ? light.emissionTexture?.isReady() : false,
       );
     }
     const changed =
@@ -200,7 +205,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     limits: () =>
       admission.limited.length
         ? [
-            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved). Limited: ${admission.limited
+            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. Limited: ${admission.limited
               .slice(0, 16)
               .map((light) => light.name)
               .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,

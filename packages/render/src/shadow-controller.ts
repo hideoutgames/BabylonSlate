@@ -41,9 +41,9 @@ import { configureDirectionalShadowProjection } from "./directional-shadow-proje
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
   ENGINE_SHADOW_BUDGET,
-  SHADOW_MATERIAL_SAMPLER_RESERVE,
   otherShadowReservations,
   availableSceneShadowBytes,
   reserveSceneShadows,
@@ -490,10 +490,7 @@ export class SceneShadowController {
       0,
       Math.min(profile.passes, ENGINE_SHADOW_BUDGET.passes - other.passes),
     );
-    const samplerBudget = Math.max(
-      0,
-      caps.maxTexturesImageUnits - SHADOW_MATERIAL_SAMPLER_RESERVE,
-    );
+    const samplerBudget = remainingShadowSamplers(scene);
     const bytesPerTexel = shadowBytesPerTexel(scene.getEngine());
     const admitted: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
     const reserveLocalMaps =

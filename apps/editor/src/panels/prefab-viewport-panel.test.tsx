@@ -31,6 +31,7 @@ const {
   collectPlayTextureBytes,
   collectPlayTexturePixelSizes,
   collectPlayFontFacetypeBytes,
+  collectPlayAreaEmissions,
   collectPlayFontMsdfPair,
   collectPlayFontFaceEntries,
   collectPlayFontCssStacks,
@@ -106,6 +107,7 @@ const {
     collectPlayTextureBytes: vi.fn(async () => new Map()),
     collectPlayTexturePixelSizes: vi.fn(() => new Map()),
     collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
+    collectPlayAreaEmissions: vi.fn(async () => new Map()),
     collectPlayFontMsdfPair: vi.fn(async () => new Map()),
     collectPlayFontFaceEntries: vi.fn(async () => []),
     collectPlayFontCssStacks: vi.fn(() => ({
@@ -195,6 +197,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
+  collectPlayAreaEmissions,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,

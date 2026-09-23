@@ -120,6 +120,8 @@ function PaletteWindowedList({
             <CatalogResultRow
               role="option"
               id={`${listId}-${encodeURIComponent(node.id)}`}
+              tooltip={node.description}
+              aria-description={node.description}
               active={node.id === activeId}
               striped={row.striped}
               tabIndex={-1}

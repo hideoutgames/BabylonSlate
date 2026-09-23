@@ -68,6 +68,27 @@ function host(engine = new NullEngine()) {
   return { engine, scene, camera };
 }
 
+it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
+  const releasePrevious = graph.retainResources();
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  await graph.prepare(camera);
+  expect(release).not.toHaveBeenCalled();
+  expect(graph.taskNames()).toContain("Scene Effects FXAA");
+  // A cancelled intermediate build must not accumulate another retained graph.
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: false } });
+  await graph.prepare(camera);
+  expect(release).toHaveBeenCalledTimes(1);
+  releasePrevious(); releasePrevious();
+  expect(release).toHaveBeenCalledTimes(2);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+  expect(release).toHaveBeenCalledTimes(3);
+});
+
 it("probes without rendering and preserves the chosen camera through one scene frame", async () => {
   const { scene, camera } = host();
   const other = new FreeCamera("other", Vector3.Zero(), scene);
@@ -384,6 +405,26 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(scene.objectRenderers).toEqual([renderer]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
+});
+
+it("resizes settings-only effect targets together with the output depth", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 480;
+  options.renderHeight = 270;
+  const { scene, camera } = host(new NullEngine(options));
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    for (const [width, height] of [[480, 270], [384, 216], [240, 135], [480, 270]]) {
+      options.renderWidth = width!;
+      options.renderHeight = height!;
+      // buildAsync validates the actual color/depth dimensions. A stale effect
+      // target would latch a native fallback and silently lose the graph.
+      expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.taskNames()).toContain("Scene Effects FXAA");
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    }
+  } finally { graph.dispose(); }
 });
 
 it("skips strict readiness probes on unchanged frames after admission", async () => {

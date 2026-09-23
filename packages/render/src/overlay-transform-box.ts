@@ -16,8 +16,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
-/** Same RGB as `SELECTION_COLOR` in gizmo-host; imported here to avoid a cycle. */
-import { SELECTION_OUTLINE_COLOR } from "./selection-outline";
+import { SELECTION_COLOR } from "./selection-style";
 import type { RenderScheduler } from "./render-scheduler";
 import { overlayMinTargetWorldSize } from "./overlay-touch-target";
 
@@ -456,7 +455,7 @@ export function createOverlayTransformBox(
   options: OverlayTransformBoxOptions = {},
 ): OverlayTransformBox {
   const util = layer.utilityLayerScene;
-  const color = SELECTION_OUTLINE_COLOR;
+  const color = SELECTION_COLOR;
   const fill = unlitMaterial("overlay-box-fill", util, color);
   const interiorMat = unlitMaterial("overlay-box-interior", util, color, 0);
 

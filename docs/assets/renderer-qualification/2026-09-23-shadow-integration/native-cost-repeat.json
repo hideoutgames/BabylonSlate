@@ -1,0 +1,3685 @@
+{
+  "stats": {
+    "startTime": "2026-09-23T16:19:08.070Z",
+    "duration": 52636.15,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "cases": [
+    {
+      "title": "shared outline fixed-output cost and repeated retirement on webgl2",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 25248,
+          "reports": [
+            {
+              "name": "shared-outline-cost",
+              "data": {
+                "requestedBackend": "webgl2",
+                "effectiveBackend": "webgl2",
+                "adapter": {
+                  "vendor": "Google Inc. (NVIDIA)",
+                  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                  "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+                },
+                "viewport": {
+                  "width": 1280,
+                  "height": 720
+                },
+                "devicePixelRatio": 1,
+                "output": {
+                  "width": 640,
+                  "height": 360,
+                  "dynamicResolution": false,
+                  "samples": 1
+                },
+                "policy": {
+                  "outlineWidthOutputPixels": 1,
+                  "warmupFrames": 15,
+                  "measuredFrames": 60,
+                  "cpu": "Synchronous Engine beginFrame + coordinator render + endFrame",
+                  "gpu": "Asynchronous whole-engine query samples when supported; WebGPU unavailable",
+                  "cadence": "requestAnimationFrame intervals, not GPU timing or headroom",
+                  "geometry": "Conservative submitted triangle upper bound, not a measured GPU counter",
+                  "interaction": "Synthetic membership/resize only; hands-on gizmo and Play/scene transitions require separate acceptance"
+                },
+                "measurements": [
+                  {
+                    "count": 12,
+                    "mode": "off",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.2300000004470348,
+                      "p95": 4.5150000005960464,
+                      "maximum": 4.8900000005960464
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.714999999999918,
+                      "p95": 16.815000000000055,
+                      "maximum": 16.909999999999854
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.016896,
+                      "p95": 0.042464,
+                      "maximum": 0.043008
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 156,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 0,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 0
+                      },
+                      "view": {
+                        "revision": 1,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 0
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 0,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 0
+                      },
+                      "view": {
+                        "revision": 1,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 0
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "global",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.1799999997019768,
+                      "p95": 1.719999998807907,
+                      "maximum": 2.0850000008940697
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.7199999999998,
+                      "p95": 16.770000000000437,
+                      "maximum": 16.799999999999727
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.367136,
+                      "p95": 0.4112,
+                      "maximum": 2.55136
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 314,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 128,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530496,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530496
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 128,
+                        "instanceUploadCount": 1
+                      },
+                      "view": {
+                        "revision": 2,
+                        "consumerCount": 1,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 3
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 128,
+                        "instanceUploadCount": 1
+                      },
+                      "view": {
+                        "revision": 2,
+                        "consumerCount": 1,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 3
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "component",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.3949999995529652,
+                      "p95": 4.679999999701977,
+                      "maximum": 5.625
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.715000000000146,
+                      "p95": 16.970000000000255,
+                      "maximum": 17.024999999999636
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.26208,
+                      "p95": 0.26688,
+                      "maximum": 0.268288
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 4,
+                      "p95": 4,
+                      "maximum": 4
+                    },
+                    "passes": {
+                      "drawingPassCount": 3,
+                      "renderRecordCount": 5
+                    },
+                    "submittedTriangleUpperBound": 470,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 256,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530624,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530624
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 256,
+                        "instanceUploadCount": 2
+                      },
+                      "view": {
+                        "revision": 3,
+                        "consumerCount": 12,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 5
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 256,
+                        "instanceUploadCount": 2
+                      },
+                      "view": {
+                        "revision": 3,
+                        "consumerCount": 12,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 5
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "selection",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 2.605000000447035,
+                      "p95": 3.730000000447035,
+                      "maximum": 4.519999999552965
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.729999999999563,
+                      "p95": 16.80500000000029,
+                      "maximum": 16.860000000000582
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.389888,
+                      "p95": 0.416288,
+                      "maximum": 2.222944
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 314,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 384,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530752,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530752
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 4,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 8
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 4,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 8
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "all",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.2300000004470348,
+                      "p95": 2.949999999254942,
+                      "maximum": 4.855000000447035
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.704999999999927,
+                      "p95": 17.01000000000022,
+                      "maximum": 17.074999999999818
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.278528,
+                      "p95": 0.287712,
+                      "maximum": 0.349664
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 5,
+                      "p95": 5,
+                      "maximum": 5
+                    },
+                    "passes": {
+                      "drawingPassCount": 4,
+                      "renderRecordCount": 7
+                    },
+                    "submittedTriangleUpperBound": 626,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 384,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530752,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530752
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 5,
+                        "consumerCount": 14,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 10
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 5,
+                        "consumerCount": 14,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 10
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "off-restored",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 0.7249999977648258,
+                      "p95": 1.3999999985098839,
+                      "maximum": 2.094999998807907
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.719999999999345,
+                      "p95": 16.965000000000146,
+                      "maximum": 17.1299999999992
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.030752,
+                      "p95": 0.055296,
+                      "maximum": 0.094176
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 156,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 6,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 10
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 6,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 10
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "off",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.5049999989569187,
+                      "p95": 3.3099999986588955,
+                      "maximum": 4.46000000089407
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.715000000000146,
+                      "p95": 16.959999999999127,
+                      "maximum": 17.030000000000655
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.042752,
+                      "p95": 0.05072,
+                      "maximum": 0.062816
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 2316,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 15
+                      },
+                      "view": {
+                        "revision": 19,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 30
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 15
+                      },
+                      "view": {
+                        "revision": 19,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 30
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "global",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.8200000002980232,
+                      "p95": 2.2799999974668026,
+                      "maximum": 2.769999999552965
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.889999999999418,
+                      "maximum": 16.93000000000029
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.282944,
+                      "p95": 0.409568,
+                      "maximum": 0.43296
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 4634,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1024,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5542912,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5542912
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1024,
+                        "instanceUploadCount": 16
+                      },
+                      "view": {
+                        "revision": 20,
+                        "consumerCount": 1,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 33
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1024,
+                        "instanceUploadCount": 16
+                      },
+                      "view": {
+                        "revision": 20,
+                        "consumerCount": 1,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 33
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "component",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.869999997317791,
+                      "p95": 4.3900000005960464,
+                      "maximum": 5.594999998807907
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.719999999999345,
+                      "p95": 16.875,
+                      "maximum": 17.05999999999949
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.294912,
+                      "p95": 0.332768,
+                      "maximum": 2.891328
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 4,
+                      "p95": 4,
+                      "maximum": 4
+                    },
+                    "passes": {
+                      "drawingPassCount": 3,
+                      "renderRecordCount": 5
+                    },
+                    "submittedTriangleUpperBound": 6950,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1536,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543424,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543424
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1536,
+                        "instanceUploadCount": 17
+                      },
+                      "view": {
+                        "revision": 21,
+                        "consumerCount": 192,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 35
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1536,
+                        "instanceUploadCount": 17
+                      },
+                      "view": {
+                        "revision": 21,
+                        "consumerCount": 192,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 35
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "selection",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.3949999995529652,
+                      "p95": 2.7149999998509884,
+                      "maximum": 3.955000001937151
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.86999999999898,
+                      "maximum": 17.024999999997817
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.421888,
+                      "p95": 0.441344,
+                      "maximum": 0.441376
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 4634,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1664,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543552,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543552
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 22,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 38
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 22,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 38
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "all",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 2.1349999979138374,
+                      "p95": 4.220000002533197,
+                      "maximum": 8.439999997615814
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.860000000000582,
+                      "maximum": 16.93500000000131
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.418368,
+                      "p95": 0.425152,
+                      "maximum": 0.429344
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 5,
+                      "p95": 5,
+                      "maximum": 5
+                    },
+                    "passes": {
+                      "drawingPassCount": 4,
+                      "renderRecordCount": 7
+                    },
+                    "submittedTriangleUpperBound": 9266,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1664,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543552,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543552
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 23,
+                        "consumerCount": 194,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 40
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 23,
+                        "consumerCount": 194,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 40
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "off-restored",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.3450000025331974,
+                      "p95": 3.7399999983608723,
+                      "maximum": 5.524999998509884
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.719999999997526,
+                      "p95": 16.830000000001746,
+                      "maximum": 16.909999999999854
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.020352,
+                      "p95": 0.034976,
+                      "maximum": 0.035264
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 2316,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 24,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 40
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 24,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 40
+                      }
+                    }
+                  }
+                ],
+                "lifecycle": [
+                  {
+                    "count": 12,
+                    "cycle": 0,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 6
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 1,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 9
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 2,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 12
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 3,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 15
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 0,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 21
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 1,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 24
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 2,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 27
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 3,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 30
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  }
+                ],
+                "evidence": {
+                  "kind": "desktop-functional-only",
+                  "recordedAt": "2026-09-23T16:19:33.947Z",
+                  "buildRevision": "5fafa7b49cd6d7708dafa9b656b4447f6d5f89eb",
+                  "artifactSha256": "711adeac5f0ab4c37b9516ef8ebaabec7bd8c73064cdf94cacaa01ffba90338f",
+                  "sceneSource": "apps/editor/src/testing/shared-outline-cost-proof.ts",
+                  "sceneSourceSha256": "4019a76db779f18970f413e44362b8f07c0b08fc2a09a1aa72e737e116ec1636",
+                  "host": {
+                    "os": "win32",
+                    "osVersion": "10.0.19045",
+                    "arch": "x64",
+                    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+                  },
+                  "graphicsArguments": [
+                    "--use-angle=d3d11",
+                    "--ignore-gpu-blocklist",
+                    "--enable-gpu-rasterization",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding"
+                  ],
+                  "a16Acceptance": "deferred-by-user-unmeasured"
+                },
+                "errors": []
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "shared outline fixed-output cost and repeated retirement on webgl2",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 24924,
+          "reports": [
+            {
+              "name": "shared-outline-cost",
+              "data": {
+                "requestedBackend": "webgl2",
+                "effectiveBackend": "webgl2",
+                "adapter": {
+                  "vendor": "Google Inc. (NVIDIA)",
+                  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                  "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+                },
+                "viewport": {
+                  "width": 1280,
+                  "height": 720
+                },
+                "devicePixelRatio": 1,
+                "output": {
+                  "width": 640,
+                  "height": 360,
+                  "dynamicResolution": false,
+                  "samples": 1
+                },
+                "policy": {
+                  "outlineWidthOutputPixels": 1,
+                  "warmupFrames": 15,
+                  "measuredFrames": 60,
+                  "cpu": "Synchronous Engine beginFrame + coordinator render + endFrame",
+                  "gpu": "Asynchronous whole-engine query samples when supported; WebGPU unavailable",
+                  "cadence": "requestAnimationFrame intervals, not GPU timing or headroom",
+                  "geometry": "Conservative submitted triangle upper bound, not a measured GPU counter",
+                  "interaction": "Synthetic membership/resize only; hands-on gizmo and Play/scene transitions require separate acceptance"
+                },
+                "measurements": [
+                  {
+                    "count": 12,
+                    "mode": "off",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.3099999986588955,
+                      "p95": 2.425000000745058,
+                      "maximum": 2.955000001937151
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.740000000000236,
+                      "p95": 16.990000000000236,
+                      "maximum": 17.014999999999873
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.018016,
+                      "p95": 0.034688,
+                      "maximum": 0.108544
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 156,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 0,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 0
+                      },
+                      "view": {
+                        "revision": 1,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 0
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 0,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 0
+                      },
+                      "view": {
+                        "revision": 1,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 0
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "global",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 0.9700000025331974,
+                      "p95": 1.4100000001490116,
+                      "maximum": 1.550000000745058
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.7199999999998,
+                      "p95": 16.820000000000164,
+                      "maximum": 16.875
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.40912,
+                      "p95": 0.425984,
+                      "maximum": 0.43088
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 314,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 128,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530496,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530496
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 128,
+                        "instanceUploadCount": 1
+                      },
+                      "view": {
+                        "revision": 2,
+                        "consumerCount": 1,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 3
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 128,
+                        "instanceUploadCount": 1
+                      },
+                      "view": {
+                        "revision": 2,
+                        "consumerCount": 1,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 3
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "component",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.1700000017881393,
+                      "p95": 3.449999999254942,
+                      "maximum": 3.919999998062849
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.729999999999563,
+                      "p95": 16.914999999999964,
+                      "maximum": 16.985000000000582
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.410336,
+                      "p95": 0.469856,
+                      "maximum": 3.057696
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 4,
+                      "p95": 4,
+                      "maximum": 4
+                    },
+                    "passes": {
+                      "drawingPassCount": 3,
+                      "renderRecordCount": 5
+                    },
+                    "submittedTriangleUpperBound": 470,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 256,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530624,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530624
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 256,
+                        "instanceUploadCount": 2
+                      },
+                      "view": {
+                        "revision": 3,
+                        "consumerCount": 12,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 5
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 256,
+                        "instanceUploadCount": 2
+                      },
+                      "view": {
+                        "revision": 3,
+                        "consumerCount": 12,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 5
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "selection",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 0.9649999998509884,
+                      "p95": 2.225000001490116,
+                      "maximum": 2.8799999989569187
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.704999999999927,
+                      "p95": 16.925000000000182,
+                      "maximum": 16.974999999999454
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.426496,
+                      "p95": 0.451168,
+                      "maximum": 0.478112
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 314,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 384,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530752,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530752
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 4,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 8
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 4,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 8
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "all",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.0199999995529652,
+                      "p95": 3.2899999991059303,
+                      "maximum": 3.599999997764826
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.719999999999345,
+                      "p95": 16.860000000000582,
+                      "maximum": 16.915000000000873
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.447968,
+                      "p95": 0.454656,
+                      "maximum": 0.455168
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 5,
+                      "p95": 5,
+                      "maximum": 5
+                    },
+                    "passes": {
+                      "drawingPassCount": 4,
+                      "renderRecordCount": 7
+                    },
+                    "submittedTriangleUpperBound": 626,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 384,
+                        "depth": 2764800,
+                        "postprocess": 2765568,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5530752,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5530752
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 5,
+                        "consumerCount": 14,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 10
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 384,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 5,
+                        "consumerCount": 14,
+                        "targetCount": 12,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 10
+                      }
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "mode": "off-restored",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 0.6050000004470348,
+                      "p95": 1.5049999989569187,
+                      "maximum": 2.155000001192093
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.835000000000946,
+                      "maximum": 16.98999999999978
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.04096,
+                      "p95": 0.051232,
+                      "maximum": 0.058656
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 156,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 6,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 10
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 3
+                      },
+                      "view": {
+                        "revision": 6,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 10
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "off",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.044999998062849,
+                      "p95": 2.1950000002980232,
+                      "maximum": 2.3700000010430813
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.715000000000146,
+                      "p95": 16.88000000000102,
+                      "maximum": 16.93000000000029
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.051136,
+                      "p95": 0.057376,
+                      "maximum": 0.067904
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 2316,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 15
+                      },
+                      "view": {
+                        "revision": 19,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 30
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 12,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 15
+                      },
+                      "view": {
+                        "revision": 19,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 30
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "global",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 2.2850000001490116,
+                      "p95": 3.9450000002980232,
+                      "maximum": 4.21000000089407
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.914999999999054,
+                      "maximum": 17.030000000000655
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.446464,
+                      "p95": 0.456608,
+                      "maximum": 0.462848
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 4634,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1024,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5542912,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5542912
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1024,
+                        "instanceUploadCount": 16
+                      },
+                      "view": {
+                        "revision": 20,
+                        "consumerCount": 1,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 33
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1024,
+                        "instanceUploadCount": 16
+                      },
+                      "view": {
+                        "revision": 20,
+                        "consumerCount": 1,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict"
+                        ],
+                        "styleUploadCount": 33
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "component",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.6850000023841858,
+                      "p95": 4.644999999552965,
+                      "maximum": 5.125
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.93499999999949,
+                      "maximum": 16.98999999999978
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.466944,
+                      "p95": 0.521472,
+                      "maximum": 0.585536
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 4,
+                      "p95": 4,
+                      "maximum": 4
+                    },
+                    "passes": {
+                      "drawingPassCount": 3,
+                      "renderRecordCount": 5
+                    },
+                    "submittedTriangleUpperBound": 6950,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1536,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543424,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543424
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1536,
+                        "instanceUploadCount": 17
+                      },
+                      "view": {
+                        "revision": 21,
+                        "consumerCount": 192,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 35
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1536,
+                        "instanceUploadCount": 17
+                      },
+                      "view": {
+                        "revision": 21,
+                        "consumerCount": 192,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through"
+                        ],
+                        "styleUploadCount": 35
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "selection",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.6499999985098839,
+                      "p95": 2.3850000016391277,
+                      "maximum": 2.4649999998509884
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.715000000000146,
+                      "p95": 16.919999999998254,
+                      "maximum": 17
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.466688,
+                      "p95": 0.514688,
+                      "maximum": 0.515264
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 3,
+                      "p95": 3,
+                      "maximum": 3
+                    },
+                    "passes": {
+                      "drawingPassCount": 2,
+                      "renderRecordCount": 3
+                    },
+                    "submittedTriangleUpperBound": 4634,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1664,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543552,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543552
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 22,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 38
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 22,
+                        "consumerCount": 1,
+                        "targetCount": 3,
+                        "activeGroups": [
+                          "selection"
+                        ],
+                        "styleUploadCount": 38
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "all",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 1.6149999983608723,
+                      "p95": 2.324999999254942,
+                      "maximum": 2.3299999982118607
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.899999999997817,
+                      "maximum": 16.909999999999854
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.495776,
+                      "p95": 0.52288,
+                      "maximum": 2.749088
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 5,
+                      "p95": 5,
+                      "maximum": 5
+                    },
+                    "passes": {
+                      "drawingPassCount": 4,
+                      "renderRecordCount": 7
+                    },
+                    "submittedTriangleUpperBound": 9266,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 1664,
+                        "depth": 2764800,
+                        "postprocess": 2777088,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 5543552,
+                      "pendingBytes": 0,
+                      "reservedBytes": 5543552
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 23,
+                        "consumerCount": 194,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 40
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 1,
+                        "instanceBufferBytes": 1664,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 23,
+                        "consumerCount": 194,
+                        "targetCount": 192,
+                        "activeGroups": [
+                          "strict",
+                          "through",
+                          "selection"
+                        ],
+                        "styleUploadCount": 40
+                      }
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "mode": "off-restored",
+                    "width": 640,
+                    "height": 360,
+                    "scalingLevel": 1,
+                    "cpuMs": {
+                      "count": 60,
+                      "median": 0.9749999977648258,
+                      "p95": 2.2650000005960464,
+                      "maximum": 3.100000001490116
+                    },
+                    "cadenceMs": {
+                      "count": 60,
+                      "median": 16.720000000001164,
+                      "p95": 16.849999999998545,
+                      "maximum": 16.875
+                    },
+                    "gpuMs": {
+                      "count": 60,
+                      "median": 0.050592,
+                      "p95": 0.057344,
+                      "maximum": 0.059168
+                    },
+                    "gpuStatus": "available",
+                    "drawCalls": {
+                      "count": 60,
+                      "median": 1,
+                      "p95": 1,
+                      "maximum": 1
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    },
+                    "submittedTriangleUpperBound": 2316,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "before": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 24,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 40
+                      }
+                    },
+                    "after": {
+                      "owner": {
+                        "identityCount": 204,
+                        "sourceCount": 0,
+                        "instanceBufferBytes": 0,
+                        "instanceUploadCount": 18
+                      },
+                      "view": {
+                        "revision": 24,
+                        "consumerCount": 0,
+                        "targetCount": 0,
+                        "activeGroups": [],
+                        "styleUploadCount": 40
+                      }
+                    }
+                  }
+                ],
+                "lifecycle": [
+                  {
+                    "count": 12,
+                    "cycle": 0,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 6
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 1,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 9
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 2,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 12
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 12,
+                    "cycle": 3,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 12,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 15
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 0,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 21
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 1,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 24
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 2,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 27
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  },
+                  {
+                    "count": 192,
+                    "cycle": 3,
+                    "reservations": {
+                      "limit": 536870912,
+                      "shadowBytes": 0,
+                      "categoryBytes": {
+                        "cluster": 0,
+                        "sceneColor": 0,
+                        "geometry": 0,
+                        "depth": 0,
+                        "postprocess": 0,
+                        "areaLight": 0
+                      },
+                      "sharedBytes": 0,
+                      "resourceBytes": 0,
+                      "pendingBytes": 0,
+                      "reservedBytes": 0
+                    },
+                    "owner": {
+                      "identityCount": 204,
+                      "sourceCount": 0,
+                      "instanceBufferBytes": 0,
+                      "instanceUploadCount": 30
+                    },
+                    "passes": {
+                      "drawingPassCount": 0,
+                      "renderRecordCount": 0
+                    }
+                  }
+                ],
+                "evidence": {
+                  "kind": "desktop-functional-only",
+                  "recordedAt": "2026-09-23T16:19:59.701Z",
+                  "buildRevision": "5fafa7b49cd6d7708dafa9b656b4447f6d5f89eb",
+                  "artifactSha256": "711adeac5f0ab4c37b9516ef8ebaabec7bd8c73064cdf94cacaa01ffba90338f",
+                  "sceneSource": "apps/editor/src/testing/shared-outline-cost-proof.ts",
+                  "sceneSourceSha256": "4019a76db779f18970f413e44362b8f07c0b08fc2a09a1aa72e737e116ec1636",
+                  "host": {
+                    "os": "win32",
+                    "osVersion": "10.0.19045",
+                    "arch": "x64",
+                    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+                  },
+                  "graphicsArguments": [
+                    "--use-angle=d3d11",
+                    "--ignore-gpu-blocklist",
+                    "--enable-gpu-rasterization",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding"
+                  ],
+                  "a16Acceptance": "deferred-by-user-unmeasured"
+                },
+                "errors": []
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "hostObservation": {
+    "method": "Read-only nvidia-smi samples every 500 ms during two unchanged WebGL2 cost cases. No clock/power policy override.",
+    "scope": "Host-wide telemetry, not per-scene GPU attribution.",
+    "samples": [
+      {
+        "localTimestamp": "2026/09/23 18:19:05.182",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 9,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:05.707",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 26,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:06.214",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 26,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:06.730",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 10,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:07.249",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 10,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:07.763",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 26,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:08.278",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 26,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:08.790",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:09.304",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:09.823",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 9,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:10.343",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 9,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:10.889",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 7,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:11.403",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 7,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:11.911",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 6,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:12.432",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 570,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 6,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:12.964",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 510,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:13.486",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:14.032",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 570,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:14.559",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:15.076",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 39,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:15.598",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 39,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:16.120",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:16.641",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 540,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:17.172",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 34,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:17.686",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 34,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:18.207",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 16,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:18.727",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 495,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 16,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:19.246",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 540,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 28,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:19.757",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 540,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 28,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:20.267",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 585,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:20.787",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 615,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:21.306",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 37,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:21.833",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:22.361",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:22.879",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 510,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:23.386",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 570,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:23.910",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 570,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 35,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:24.435",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 570,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 35,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:24.954",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 600,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:25.469",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 25,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:25.977",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 31,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:26.498",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 645,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 31,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:27.032",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 510,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:27.550",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 540,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:28.069",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 630,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 42,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:28.586",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 630,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 42,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:29.121",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 630,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:29.650",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 660,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:30.197",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 660,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 32,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:30.729",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 660,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 32,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:31.250",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 450,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:31.777",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 23,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:32.295",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:32.809",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:33.330",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:33.839",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:34.361",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:34.872",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:35.389",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 9,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:35.894",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 9,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:36.400",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 4,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:36.916",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 4,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:37.427",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 3,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:37.947",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P0",
+        "graphicsMHz": 1365,
+        "memoryMHz": 7000,
+        "gpuUtilizationPercent": 3,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:38.467",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P5",
+        "graphicsMHz": 435,
+        "memoryMHz": 810,
+        "gpuUtilizationPercent": 4,
+        "temperatureC": 36
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:38.989",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 12,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:39.513",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 12,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:40.034",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:40.550",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:41.057",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:41.568",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:42.080",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:42.607",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:43.117",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:43.635",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:44.159",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:44.675",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:45.192",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 19,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:45.726",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 19,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:46.234",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:46.753",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:47.262",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:47.774",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:48.286",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:48.811",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:49.323",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:49.846",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:50.357",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 19,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:50.888",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 19,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:51.414",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:51.927",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 20,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:52.451",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:52.976",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:53.488",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:54.012",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:54.534",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:55.042",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:55.562",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:56.072",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:56.613",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 18,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:57.164",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 18,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:57.721",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:58.246",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:58.769",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 21,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:59.276",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:19:59.809",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 22,
+        "temperatureC": 35
+      },
+      {
+        "localTimestamp": "2026/09/23 18:20:00.351",
+        "gpu": "NVIDIA GeForce RTX 2060",
+        "pstate": "P8",
+        "graphicsMHz": 435,
+        "memoryMHz": 405,
+        "gpuUtilizationPercent": 15,
+        "temperatureC": 35
+      }
+    ]
+  }
+}

@@ -14,6 +14,14 @@ function names(
 }
 
 describe("engine script API catalog", () => {
+  it("exposes authored outline state with a typed Color and explicit visibility control", () => {
+    expect(engineScriptApiFor("OutlineComponent")?.variables).toEqual([
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Render Through Meshes", typeId: "bool", propertyKey: "throughMeshes" },
+    ]);
+  });
   it("lists Collider overlap and hit events", () => {
     const events = engineScriptEventsFor("ColliderComponent");
     expect(events.map((event) => event.eventType)).toEqual([

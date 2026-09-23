@@ -86,6 +86,41 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   );
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sharedOutlineCostProof")
+) {
+  void import("./testing/shared-outline-cost-proof").then(({ runSharedOutlineCostProof }) => {
+    Object.assign(window, { __babylonslateSharedOutlineCostProof: runSharedOutlineCostProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sharedOutlineGeometryProof")
+) {
+  void import("./testing/shared-outline-geometry-proof").then(({ runSharedOutlineGeometryProof }) => {
+    Object.assign(window, { __babylonslateSharedOutlineGeometryProof: runSharedOutlineGeometryProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("sharedOutlineProof")
+) {
+  void import("./testing/shared-outline-proof").then(({ runSharedOutlineProof }) => {
+    Object.assign(window, { __babylonslateSharedOutlineProof: runSharedOutlineProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("nativeOutlineProof")
+) {
+  void import("./testing/native-outline-proof").then(({ runNativeOutlineProof }) => {
+    Object.assign(window, { __babylonslateNativeOutlineProof: runNativeOutlineProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("areaRectLightProof")
+) {
+  void import("./testing/area-rect-light-proof").then(({ runAreaRectLightProof }) => {
+    Object.assign(window, { __babylonslateAreaRectLightProof: runAreaRectLightProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphForwardProof")
 ) {
   void import("./testing/framegraph-forward-proof").then(

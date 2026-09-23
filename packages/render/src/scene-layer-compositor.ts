@@ -90,6 +90,8 @@ export class SceneLayerCompositor {
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
   private readonly retiredLayers = new PostProcessRetirement();
+  private outputWidth = 0;
+  private outputHeight = 0;
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -242,19 +244,28 @@ export class SceneLayerCompositor {
   }
 
   resize(): void {
+    const width = Math.max(1, this.engine.getRenderWidth(true));
+    const height = Math.max(1, this.engine.getRenderHeight(true));
+    if (width === this.outputWidth && height === this.outputHeight) return;
     for (const layer of this.byId.values()) {
       this.bindHudCamera(layer);
       if (layer.rtt) {
-        const width = Math.max(1, this.engine.getRenderWidth());
-        const height = Math.max(1, this.engine.getRenderHeight());
         const previous = layer.rtt.getSize();
         if (previous.width !== width || previous.height !== height)
           this.rebuildPostProcess(layer);
       }
     }
+    this.outputWidth = width;
+    this.outputHeight = height;
+  }
+
+  retainResources(): () => void {
+    const releases = [...this.byId.values()].map((layer) => layer.renderer.retainResources());
+    return () => { for (const release of releases) release(); };
   }
 
   async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
+    this.resize();
     const layer = this.byId.get(layerId);
     if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");
     this.bindHudCamera(layer);
@@ -264,6 +275,7 @@ export class SceneLayerCompositor {
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
+    this.resize();
     for (const layer of this.sortedLayers()) {
       if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
       const record = layer as LayerRecord;
@@ -540,8 +552,8 @@ export class SceneLayerCompositor {
       layer.scene.autoClearDepthAndStencil = true;
       return;
     }
-    const width = Math.max(1, this.engine.getRenderWidth());
-    const height = Math.max(1, this.engine.getRenderHeight());
+    const width = Math.max(1, this.engine.getRenderWidth(true));
+    const height = Math.max(1, this.engine.getRenderHeight(true));
     layer.rtt = new RenderTargetTexture(
       `sceneLayerRtt:${layer.layerId}`,
       { width, height },

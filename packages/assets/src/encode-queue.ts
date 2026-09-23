@@ -40,12 +40,14 @@ export interface EncodeQueueOptions {
   onError?: (assetGuid: string, error: unknown) => void;
 }
 
+type DerivedJob = { run: () => Promise<void> };
+
 /**
  * Main-thread encode scheduler: one job at a time, pauseable for Preview /
  * background, recycles after N jobs (engineplan §3.5).
  */
 export class EncodeQueue {
-  private readonly queue: EncodeJob[] = [];
+  private readonly queue: Array<EncodeJob | DerivedJob> = [];
   private readonly encode: EncodeFn;
   private readonly recycleAfter: number;
   private readonly jobTimeoutMs: number;
@@ -81,6 +83,38 @@ export class EncodeQueue {
       settings: { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...job.settings },
     });
     void this.pump();
+  }
+
+  /** Derived textures share the same one-job admission and Preview pause policy. */
+  enqueueDerived<T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const controller = new AbortController();
+      let started = false;
+      const cancel = () => {
+        controller.abort(signal?.reason ?? new Error("Asset processing cancelled."));
+        if (!started) {
+          const index = this.queue.indexOf(job);
+          if (index >= 0) this.queue.splice(index, 1);
+          signal?.removeEventListener("abort", cancel);
+          reject(controller.signal.reason);
+        }
+      };
+      const job: DerivedJob = { run: async () => {
+        started = true;
+        const timer = this.jobTimeoutMs > 0 ? setTimeout(() => controller.abort(new Error("Derived texture processing timed out.")), this.jobTimeoutMs) : undefined;
+        try {
+          controller.signal.throwIfAborted();
+          const value = await run(controller.signal);
+          controller.signal.throwIfAborted();
+          resolve(value);
+        } catch (error) { reject(error); }
+        finally { clearTimeout(timer); signal?.removeEventListener("abort", cancel); }
+      } };
+      if (signal?.aborted) { cancel(); return; }
+      signal?.addEventListener("abort", cancel, { once: true });
+      this.queue.push(job);
+      void this.pump();
+    });
   }
 
   pause(): void {
@@ -131,6 +165,11 @@ export class EncodeQueue {
     if (!job) return;
 
     this.running = true;
+    if ("run" in job) {
+      try { await job.run(); }
+      finally { this.running = false; void this.pump(); }
+      return;
+    }
     this.onState?.(job.assetGuid, "encoding");
     try {
       const { ktx2, wallMs } = await this.encodeWithTimeout(job);

@@ -414,7 +414,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: SCENE_GUID,
-      customResolution: manifestRender,
+      renderSettings: manifestRender,
       scripts: [],
       assets: [
         ...fixtureMaterials().map((material) => ({

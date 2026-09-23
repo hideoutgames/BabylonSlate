@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CommandMessage } from "@babylonslate/bridge";
 import {
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -55,6 +56,9 @@ describe("script compiler service", () => {
               classId: "MeshComponent",
               properties: { meshKind: "box" },
             },
+            { id: "pivot", classId: "ActorComponent", properties: {} },
+            { id: "emitter", classId: "AreaRectLightComponent", parentId: "pivot", properties: { width: 2, textureGuid: "pattern" } },
+            { id: "ink", classId: "OutlineComponent", properties: { color: [0.2, 0.4, 0.6], width: 3, throughMeshes: true } },
           ],
         },
       },
@@ -69,13 +73,37 @@ describe("script compiler service", () => {
       "Parent",
       "Child",
     ]);
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts(scripts);
-      const actor = runtime.spawnScriptedActor({ classId: "Child" });
-      expect(actor?.components.map((component) => component.classId)).toEqual([
-        "MeshComponent",
+      runtime.start();
+      const actor = runtime.spawnScriptedActor({ classId: "Child" })!;
+      const sibling = runtime.spawnScriptedActor({ classId: "Child" })!;
+      expect(actor.components.map((component) => component.classId)).toEqual([
+        "MeshComponent", "ActorComponent", "AreaRectLightComponent", "OutlineComponent",
       ]);
+      const latest = new Map(commands.filter((command) => command.type === "setAreaLights").map((command) => [command.slotId, command.lights]));
+      expect(latest.size).toBe(2);
+      const groups = [...latest.values()];
+      for (const lights of groups) {
+        expect(lights).toHaveLength(1);
+        expect(lights[0]!.properties).toMatchObject({ enabled: true, width: 2, textureGuid: "pattern" });
+        expect(lights[0]!.transforms).toHaveLength(2);
+        expect(lights[0]!.error).toBeUndefined();
+      }
+      expect(groups[0]![0]!.id).not.toBe(groups[1]![0]!.id);
+      const outlines = new Map(commands.filter((command) => command.type === "setActorOutlines").map((command) => [command.actorId, command.outlines]));
+      expect([...outlines.keys()].sort()).toEqual([actor.guid, sibling.guid].sort());
+      for (const values of outlines.values()) expect(values).toMatchObject([{ enabled: true, color: [0.2, 0.4, 0.6], width: 3, throughMeshes: true }]);
+      expect(outlines.get(actor.guid)![0]!.id).not.toBe(outlines.get(sibling.guid)![0]!.id);
+      runtime.getWorld().destroyActor(actor.guid);
+      runtime.tick();
+      expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).toContain(actor.guid);
+      expect(commands.filter((command) => command.type === "despawn").map((command) => command.actorGuid)).not.toContain(sibling.guid);
+      expect(runtime.getWorld().findActor(sibling.guid)).toBe(sibling);
+      expect(sibling.components.find((component) => component.sourceId === "emitter")?.getVariable("width")).toBe(2);
+      expect(sibling.components.find((component) => component.sourceId === "ink")?.getVariable("width")).toBe(3);
     } finally {
       runtime.stop();
     }

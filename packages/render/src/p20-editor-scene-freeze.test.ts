@@ -50,8 +50,12 @@ class FakeCanvas {
 }
 
 function activeMeshesOf(scene: {
+  render: () => void;
   getActiveMeshes: () => { data: unknown[]; length: number };
 }): unknown[] {
+  // The coordinated editor collects each presented frame; loading alone no
+  // longer manufactures a frozen list containing off-frustum geometry.
+  scene.render();
   const active = scene.getActiveMeshes();
   return active.data.slice(0, active.length);
 }
@@ -130,11 +134,10 @@ describe("p20-editor-scene-freeze", () => {
     expect(editor.scheduler.shouldRender(0)).toBe(true);
   });
 
-  it("freezes idle active meshes after editor load and unfreezes on structural change", () => {
+  it("collects structural edits without freezing the coordinated editor's active queue", () => {
     const handle = editorHandle();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
 
-    const unfreeze = vi.spyOn(handle.scene, "unfreezeActiveMeshes");
     const freeze = vi.spyOn(handle.scene, "freezeActiveMeshes");
     const base = createDefaultScene();
     const actor = base.actors.find((entry) => entry.id === "actor-1");
@@ -143,24 +146,22 @@ describe("p20-editor-scene-freeze", () => {
       ...actor!.transform,
       position: [3, 0, 0],
     };
-    unfreeze.mockClear();
     freeze.mockClear();
     handle.loadScene(base);
-    expect(freeze).toHaveBeenCalled();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
 
-    unfreeze.mockClear();
     freeze.mockClear();
     handle.loadScene({
       ...base,
-      actors: [...base.actors, createActor("extra", "Extra")],
+      actors: [...base.actors, createActor("extra", "Extra", { components: [createMeshComponent("extra-mesh", "box")] })],
     });
-    expect(unfreeze).toHaveBeenCalled();
-    expect(freeze).toHaveBeenCalled();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
+    expect(activeMeshesOf(handle.scene)).toContain(handle.editor!.sync.meshForActor("extra"));
   });
 
-  it("includes a box actor in the frozen active-mesh list", () => {
+  it("collects a visible box actor on the next editor frame", () => {
     const handle = editorHandle();
     handle.loadScene({
       ...createDefaultScene(),
@@ -172,11 +173,11 @@ describe("p20-editor-scene-freeze", () => {
     });
     const mesh = handle.editor?.sync.meshForActor("hero");
     expect(mesh).not.toBeNull();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(activeMeshesOf(handle.scene)).toContain(mesh);
   });
 
-  it("keeps an off-frustum box on the frozen active-mesh list", () => {
+  it("culls an off-frustum box without freezing the scene queue", () => {
     const handle = editorHandle();
     handle.loadScene({
       ...createDefaultScene(),
@@ -195,13 +196,12 @@ describe("p20-editor-scene-freeze", () => {
     expect(mesh).not.toBeNull();
     handle.scene.updateTransformMatrix();
     expect(mesh!.isInFrustum(handle.scene.frustumPlanes)).toBe(false);
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
-    expect(handle.scene._activeMeshesFrozenButKeepClipping).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(handle.scene.skipFrustumClipping).toBe(false);
-    expect(activeMeshesOf(handle.scene)).toContain(mesh);
+    expect(activeMeshesOf(handle.scene)).not.toContain(mesh);
   });
 
-  it("keeps an off-frustum box on the frozen list after camera move without apply", () => {
+  it("collects a formerly off-frustum box after a camera move without reapplying the scene", () => {
     const handle = editorHandle();
     handle.loadScene({
       ...createDefaultScene(),
@@ -223,7 +223,7 @@ describe("p20-editor-scene-freeze", () => {
     handle.editor!.camera.frame(mesh!.getAbsolutePosition(), 12);
     handle.scene.updateTransformMatrix();
     expect(freeze).not.toHaveBeenCalled();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(activeMeshesOf(handle.scene)).toContain(mesh);
   });
 
@@ -280,12 +280,12 @@ describe("p20-editor-scene-freeze", () => {
     expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(12);
   });
 
-  it("keeps the editor grid in the frozen active-mesh list after hide", () => {
+  it("removes a hidden editor grid from active drawing without discarding its mesh", () => {
     const handle = editorHandle();
     const grid = handle.editor?.grid.mesh;
     expect(grid?.name).toBe(GRID_MESH_NAME);
     expect(grid?.alwaysSelectAsActiveMesh).toBe(true);
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(activeMeshesOf(handle.scene)).toContain(grid);
 
     handle.editor?.grid.setVisible(false);
@@ -294,11 +294,11 @@ describe("p20-editor-scene-freeze", () => {
     expect(
       (grid?.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(0);
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
-    expect(activeMeshesOf(handle.scene)).toContain(grid);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
+    expect(activeMeshesOf(handle.scene)).not.toContain(grid);
   });
 
-  it("keeps 2D camera bounds in the frozen list after setGridSettings", () => {
+  it("collects 2D camera bounds after grid settings change", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -307,7 +307,7 @@ describe("p20-editor-scene-freeze", () => {
     });
     handles.push(handle);
     handle.loadScene(createDefaultScene("2d"));
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     handle.editor!.setGridSettings({
       tileSize: 1,
       tileSubdivisions: 4,
@@ -316,45 +316,20 @@ describe("p20-editor-scene-freeze", () => {
     });
     const bounds = handle.scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME);
     expect(bounds).not.toBeNull();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(activeMeshesOf(handle.scene)).toContain(bounds);
     expect(
       (bounds!.material as ShaderMaterial).serialize().floats.boundsVisible,
     ).toBe(1);
   });
 
-  it("keeps 2D camera bounds in the frozen list after setGridSettings", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      editor: true,
-      viewportMode: "2d",
-    });
-    handles.push(handle);
-    handle.loadScene(createDefaultScene("2d"));
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
-    handle.editor!.setGridSettings({
-      tileSize: 1,
-      tileSubdivisions: 4,
-      cameraBounds2D: { width: 32, height: 18 },
-      showGrid: false,
-    });
-    const bounds = handle.scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME);
-    expect(bounds).not.toBeNull();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
-    expect(activeMeshesOf(handle.scene)).toContain(bounds);
-    expect(
-      (bounds!.material as ShaderMaterial).serialize().floats.boundsVisible,
-    ).toBe(1);
-  });
-
-  it("keeps the editor grid in the frozen active list after hide then show", () => {
+  it("collects the editor grid after hide, reload and show", () => {
     const handle = editorHandle();
     const grid = handle.editor?.grid;
     expect(grid).toBeTruthy();
     grid!.setVisible(false);
     handle.loadScene(createDefaultScene());
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(grid!.mesh.isVisible).toBe(true);
     expect(grid!.mesh.visibility).toBe(0);
     expect(
@@ -366,9 +341,10 @@ describe("p20-editor-scene-freeze", () => {
     expect(
       (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(1);
+    expect(activeMeshesOf(handle.scene)).toContain(grid!.mesh);
   });
 
-  it("includes instantiated GLB parts in the frozen active-mesh list", async () => {
+  it("collects adopted GLB parts while retaining static world matrices", async () => {
     const handle = editorHandle();
     const mesh = createMeshComponent("c1", "box");
     mesh.properties.assetGuid = "model-1";
@@ -384,7 +360,7 @@ describe("p20-editor-scene-freeze", () => {
     expect(root).not.toBeNull();
     const parts = visualMeshes(root!).filter((part) => part.getTotalVertices() > 0);
     expect(parts.length).toBeGreaterThan(0);
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     const active = activeMeshesOf(handle.scene);
     expect(parts.some((part) => active.includes(part))).toBe(true);
     expect(root!.isWorldMatrixFrozen).toBe(true);
@@ -491,14 +467,14 @@ describe("p20-editor-scene-freeze", () => {
     expect(defaultWarm).toHaveBeenCalled();
   });
 
-  it("refreezes editor active meshes after shader warm", async () => {
+  it("keeps the editor queue unfrozen after shader warm", async () => {
     const handle = editorHandle();
     handle.loadScene(createDefaultScene());
     const freeze = vi.spyOn(handle.scene, "freezeActiveMeshes");
     freeze.mockClear();
     await handle.prewarmSceneMaterials();
-    expect(freeze).toHaveBeenCalled();
-    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(handle.scene.skipFrustumClipping).toBe(false);
   });
 

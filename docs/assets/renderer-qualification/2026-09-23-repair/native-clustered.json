@@ -1,0 +1,1234 @@
+{
+  "stats": {
+    "startTime": "2026-09-23T14:52:20.842Z",
+    "duration": 24301.427,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "cases": [
+    {
+      "title": "clustered point and spot contributions preserve native and graph PBR and CEL pixels on WebGPU",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 23177,
+          "reports": [
+            {
+              "name": "clustered-light-proof",
+              "data": {
+                "capabilities": {
+                  "supported": true,
+                  "backend": "webgpu",
+                  "batchSize": 32,
+                  "maxTextureSize": 8192
+                },
+                "captures": [
+                  {
+                    "name": "pbr-1",
+                    "count": 1,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 1,
+                      "conventional": 47,
+                      "estimatedBytes": 23040,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "68ebcc8e7a6becc79cea188acfe30ed1312e852fe270d40b7db0a60bb95806e2",
+                    "renderedSha256": "68ebcc8e7a6becc79cea188acfe30ed1312e852fe270d40b7db0a60bb95806e2"
+                  },
+                  {
+                    "name": "pbr-2",
+                    "count": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 2,
+                      "conventional": 46,
+                      "estimatedBytes": 23040,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "c002307df0ddba701ac4fb986bd8dfb364e0ec840dc80272cf071ba0c9e96c48",
+                    "renderedSha256": "c002307df0ddba701ac4fb986bd8dfb364e0ec840dc80272cf071ba0c9e96c48"
+                  },
+                  {
+                    "name": "pbr-24",
+                    "count": 24,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 24,
+                      "conventional": 24,
+                      "estimatedBytes": 23040,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "5d502f26bc8a863b3d921d16168a38f7a10f5fd5678209b643ccd75f3e34db86",
+                    "renderedSha256": "5d502f26bc8a863b3d921d16168a38f7a10f5fd5678209b643ccd75f3e34db86"
+                  },
+                  {
+                    "name": "pbr-48",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "54518e6604be488d8b1fa830b3989c4f086e76e3c6d63774febe525bfc2cbe80",
+                    "renderedSha256": "54518e6604be488d8b1fa830b3989c4f086e76e3c6d63774febe525bfc2cbe80"
+                  },
+                  {
+                    "name": "pbr-camera-switched",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "8154c98124a5085d28866bf15f5ae1d47bfa360190944ce8ab868cbd6a6912c4",
+                    "renderedSha256": "8154c98124a5085d28866bf15f5ae1d47bfa360190944ce8ab868cbd6a6912c4"
+                  },
+                  {
+                    "name": "pbr-camera-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "633b5b89cfefae6fbdbbb1eb0c224509cab5142240948bcc422d9fcc29a3e86b",
+                    "renderedSha256": "633b5b89cfefae6fbdbbb1eb0c224509cab5142240948bcc422d9fcc29a3e86b"
+                  },
+                  {
+                    "name": "pbr-lights-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "de5d0cabd5814097fe1c75f6d452cdce51f7d0413f51f67dda201e9b91dce9fb",
+                    "renderedSha256": "de5d0cabd5814097fe1c75f6d452cdce51f7d0413f51f67dda201e9b91dce9fb"
+                  },
+                  {
+                    "name": "pbr-resized",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "00ff1ce9110793e0053cfd360281c90e7528b6ff6cfa4563a6d7f0eea6bc811c",
+                    "renderedSha256": "00ff1ce9110793e0053cfd360281c90e7528b6ff6cfa4563a6d7f0eea6bc811c"
+                  },
+                  {
+                    "name": "pbr-after-sibling",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": [
+                        "Physical PBR retains unbounded attenuation; conservative cluster masks cover all camera tiles and slices."
+                      ]
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "00ff1ce9110793e0053cfd360281c90e7528b6ff6cfa4563a6d7f0eea6bc811c",
+                    "renderedSha256": "00ff1ce9110793e0053cfd360281c90e7528b6ff6cfa4563a6d7f0eea6bc811c"
+                  },
+                  {
+                    "name": "strongest-1",
+                    "count": 1,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 1,
+                      "conventional": 47,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "d3679d529bd65c61ef4831569d4aa106f16bb665ae14b6105fae128c7366c8dd",
+                    "renderedSha256": "d3679d529bd65c61ef4831569d4aa106f16bb665ae14b6105fae128c7366c8dd"
+                  },
+                  {
+                    "name": "strongest-2",
+                    "count": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 2,
+                      "conventional": 46,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc",
+                    "renderedSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc"
+                  },
+                  {
+                    "name": "strongest-24",
+                    "count": 24,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 24,
+                      "conventional": 24,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc",
+                    "renderedSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc"
+                  },
+                  {
+                    "name": "strongest-48",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc",
+                    "renderedSha256": "b4f25e0345a2df14daafd0681ca95f5983617cfa305b186773486e98a7c0a9dc"
+                  },
+                  {
+                    "name": "strongest-camera-switched",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "e586890c27c7f99d6301664bd92dcb6830a7befd2f5d2e5b8b3fabf315813083",
+                    "renderedSha256": "e586890c27c7f99d6301664bd92dcb6830a7befd2f5d2e5b8b3fabf315813083"
+                  },
+                  {
+                    "name": "strongest-camera-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "fb1c10af2b586d68d950eaff674e6530f34ca051b1d6efd520a78a6ff6429639",
+                    "renderedSha256": "fb1c10af2b586d68d950eaff674e6530f34ca051b1d6efd520a78a6ff6429639"
+                  },
+                  {
+                    "name": "strongest-lights-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "d2025cdf66b44f5704be8622cfceafae183aab9eb55fd4f6ac1daf6f5d2ecd2b",
+                    "renderedSha256": "d2025cdf66b44f5704be8622cfceafae183aab9eb55fd4f6ac1daf6f5d2ecd2b"
+                  },
+                  {
+                    "name": "strongest-resized",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "7212830b52abd3d6609c52e130f589469ec3729b5474b572d573d20a93eefde7",
+                    "renderedSha256": "7212830b52abd3d6609c52e130f589469ec3729b5474b572d573d20a93eefde7"
+                  },
+                  {
+                    "name": "strongest-after-sibling",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "7212830b52abd3d6609c52e130f589469ec3729b5474b572d573d20a93eefde7",
+                    "renderedSha256": "7212830b52abd3d6609c52e130f589469ec3729b5474b572d573d20a93eefde7"
+                  },
+                  {
+                    "name": "additive-1",
+                    "count": 1,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 1,
+                      "conventional": 47,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "2c1468117242b417556921d6923d014c7a1a5ed10310c99a015c59629cac4a4c",
+                    "renderedSha256": "2c1468117242b417556921d6923d014c7a1a5ed10310c99a015c59629cac4a4c"
+                  },
+                  {
+                    "name": "additive-2",
+                    "count": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 2,
+                      "conventional": 46,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "2c1468117242b417556921d6923d014c7a1a5ed10310c99a015c59629cac4a4c",
+                    "renderedSha256": "2c1468117242b417556921d6923d014c7a1a5ed10310c99a015c59629cac4a4c"
+                  },
+                  {
+                    "name": "additive-24",
+                    "count": 24,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 24,
+                      "conventional": 24,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "b0d73ccb3a871e584a9e6a653e55232df6c8fe0db88edfaba6899a2ae4ad2f8d",
+                    "renderedSha256": "b0d73ccb3a871e584a9e6a653e55232df6c8fe0db88edfaba6899a2ae4ad2f8d"
+                  },
+                  {
+                    "name": "additive-48",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "62ba80cc9bfc34a2d7d49a3d0a76a5d1fd5afdc8bd218597dae31b62b9288c2e",
+                    "renderedSha256": "62ba80cc9bfc34a2d7d49a3d0a76a5d1fd5afdc8bd218597dae31b62b9288c2e"
+                  },
+                  {
+                    "name": "additive-camera-switched",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "dc1c878cf6958e4e59abc2d2689fa56f3da24aef2f7d3e7e40e2d0d2a2774503",
+                    "renderedSha256": "dc1c878cf6958e4e59abc2d2689fa56f3da24aef2f7d3e7e40e2d0d2a2774503"
+                  },
+                  {
+                    "name": "additive-camera-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "3256d3b491de5baf3276195c117daa08615156cce0564fc84e38a87d4a1b754f",
+                    "renderedSha256": "3256d3b491de5baf3276195c117daa08615156cce0564fc84e38a87d4a1b754f"
+                  },
+                  {
+                    "name": "additive-lights-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "4e2205b7d3c5ad7ae5563d721f4796dd9786c72a1b9766bf941e4a7d65976e01",
+                    "renderedSha256": "4e2205b7d3c5ad7ae5563d721f4796dd9786c72a1b9766bf941e4a7d65976e01"
+                  },
+                  {
+                    "name": "additive-resized",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "07b42e4b2acad3cb2e8e2aaf7123aae692e78c5711364db6ee034afea822e9c7",
+                    "renderedSha256": "07b42e4b2acad3cb2e8e2aaf7123aae692e78c5711364db6ee034afea822e9c7"
+                  },
+                  {
+                    "name": "additive-after-sibling",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "07b42e4b2acad3cb2e8e2aaf7123aae692e78c5711364db6ee034afea822e9c7",
+                    "renderedSha256": "07b42e4b2acad3cb2e8e2aaf7123aae692e78c5711364db6ee034afea822e9c7"
+                  },
+                  {
+                    "name": "blend-1",
+                    "count": 1,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 1,
+                      "conventional": 47,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "d3679d529bd65c61ef4831569d4aa106f16bb665ae14b6105fae128c7366c8dd",
+                    "renderedSha256": "d3679d529bd65c61ef4831569d4aa106f16bb665ae14b6105fae128c7366c8dd"
+                  },
+                  {
+                    "name": "blend-2",
+                    "count": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 2,
+                      "conventional": 46,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c",
+                    "renderedSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c"
+                  },
+                  {
+                    "name": "blend-24",
+                    "count": 24,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 24,
+                      "conventional": 24,
+                      "estimatedBytes": 23040,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c",
+                    "renderedSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c"
+                  },
+                  {
+                    "name": "blend-48",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c",
+                    "renderedSha256": "4bb8703efd7ac1f53714ad21b4a88542c85e531b13a5fc3ddaabfcae3f24817c"
+                  },
+                  {
+                    "name": "blend-camera-switched",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "418ff0eedb7fd85620c4349a165375fbbfc09611d7de7542515647ee727c8438",
+                    "renderedSha256": "418ff0eedb7fd85620c4349a165375fbbfc09611d7de7542515647ee727c8438"
+                  },
+                  {
+                    "name": "blend-camera-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "dc3e5d9d03882c49402736d3353f6965eb5edc363fb5f41443a1576e812b996b",
+                    "renderedSha256": "dc3e5d9d03882c49402736d3353f6965eb5edc363fb5f41443a1576e812b996b"
+                  },
+                  {
+                    "name": "blend-lights-moved",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 96,
+                    "height": 72,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "0cc9790a4407ee58888d012624014519f7db8761d25b8e46853f12b2e0dc2e78",
+                    "renderedSha256": "0cc9790a4407ee58888d012624014519f7db8761d25b8e46853f12b2e0dc2e78"
+                  },
+                  {
+                    "name": "blend-resized",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "5a1e8857c1d9e41c77931cba435af349a90e84f0d462a4a0145c1637ed661944",
+                    "renderedSha256": "5a1e8857c1d9e41c77931cba435af349a90e84f0d462a4a0145c1637ed661944"
+                  },
+                  {
+                    "name": "blend-after-sibling",
+                    "count": 48,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "draws": 5,
+                    "status": {
+                      "clustered": 48,
+                      "conventional": 0,
+                      "estimatedBytes": 41984,
+                      "reasons": []
+                    },
+                    "width": 112,
+                    "height": 80,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "5a1e8857c1d9e41c77931cba435af349a90e84f0d462a4a0145c1637ed661944",
+                    "renderedSha256": "5a1e8857c1d9e41c77931cba435af349a90e84f0d462a4a0145c1637ed661944"
+                  }
+                ],
+                "ties": [
+                  {
+                    "name": "native-camera--3",
+                    "referenceOrder": [
+                      "tie-0",
+                      "tie-1"
+                    ],
+                    "centerHit": [
+                      -2.5757174171303632e-14,
+                      0,
+                      0
+                    ],
+                    "referenceDefines": [
+                      "#define LIGHTMAPDIRECTUV 0",
+                      "#define AREALIGHTSUPPORTED",
+                      "#define CLUSTLIGHT_SLICES 0",
+                      "#define CLUSTLIGHT_BATCH 0",
+                      "#define LIGHT0",
+                      "#define POINTLIGHT0",
+                      "#define LIGHT1",
+                      "#define POINTLIGHT1",
+                      "#define LIGHTCOUNT 2",
+                      "#define MAXLIGHTCOUNT 4"
+                    ],
+                    "positionProbePixel": [
+                      255,
+                      126,
+                      255,
+                      255
+                    ],
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "12347f2ff17170b969ecc1cbc9c1292b3542edb50369f31ae47b2d38116c0f72",
+                    "renderedSha256": "12347f2ff17170b969ecc1cbc9c1292b3542edb50369f31ae47b2d38116c0f72",
+                    "referenceSettledSha256": "12347f2ff17170b969ecc1cbc9c1292b3542edb50369f31ae47b2d38116c0f72",
+                    "referenceSettledMaxChannelDelta": 0
+                  },
+                  {
+                    "name": "native-camera-3",
+                    "referenceOrder": [
+                      "tie-0",
+                      "tie-1"
+                    ],
+                    "centerHit": [
+                      2.5757174171303632e-14,
+                      0,
+                      0
+                    ],
+                    "referenceDefines": [
+                      "#define LIGHTMAPDIRECTUV 0",
+                      "#define AREALIGHTSUPPORTED",
+                      "#define CLUSTLIGHT_SLICES 16",
+                      "#define CLUSTLIGHT_BATCH 32",
+                      "#define LIGHT0",
+                      "#define POINTLIGHT0",
+                      "#define LIGHTCOUNT 2",
+                      "#define MAXLIGHTCOUNT 4",
+                      "#define LIGHT1",
+                      "#define POINTLIGHT1"
+                    ],
+                    "positionProbePixel": [
+                      0,
+                      129,
+                      255,
+                      255
+                    ],
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "3dbf1d19d8678a515f2c5799debfb758087253af4901f9ffa8fd47b98a24a1ea",
+                    "renderedSha256": "3dbf1d19d8678a515f2c5799debfb758087253af4901f9ffa8fd47b98a24a1ea",
+                    "referenceSettledSha256": "3dbf1d19d8678a515f2c5799debfb758087253af4901f9ffa8fd47b98a24a1ea",
+                    "referenceSettledMaxChannelDelta": 0
+                  },
+                  {
+                    "name": "graph-camera--3",
+                    "referenceOrder": [
+                      "tie-0",
+                      "tie-1"
+                    ],
+                    "centerHit": [
+                      -2.5757174171303632e-14,
+                      0,
+                      0
+                    ],
+                    "referenceDefines": [
+                      "#define AREALIGHTSUPPORTED",
+                      "#define AREALIGHTNOROUGHTNESS",
+                      "#define LIGHT0",
+                      "#define POINTLIGHT0",
+                      "#define LIGHT1",
+                      "#define POINTLIGHT1",
+                      "#define LIGHTCOUNT 2",
+                      "#define MAXLIGHTCOUNT 4"
+                    ],
+                    "positionProbePixel": [
+                      255,
+                      126,
+                      255,
+                      255
+                    ],
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "7d87764b9774bc5902cee100097833a756deaec45e55f48aae0ed15abe2b6c34",
+                    "renderedSha256": "7d87764b9774bc5902cee100097833a756deaec45e55f48aae0ed15abe2b6c34",
+                    "referenceSettledSha256": "7d87764b9774bc5902cee100097833a756deaec45e55f48aae0ed15abe2b6c34",
+                    "referenceSettledMaxChannelDelta": 0
+                  },
+                  {
+                    "name": "graph-camera-3",
+                    "referenceOrder": [
+                      "tie-0",
+                      "tie-1"
+                    ],
+                    "centerHit": [
+                      2.5757174171303632e-14,
+                      0,
+                      0
+                    ],
+                    "referenceDefines": [
+                      "#define AREALIGHTSUPPORTED",
+                      "#define AREALIGHTNOROUGHTNESS",
+                      "#define LIGHT0",
+                      "#define POINTLIGHT0",
+                      "#define CLUSTLIGHT_BATCH 32",
+                      "#define CLUSTLIGHT_SLICES 16",
+                      "#define LIGHTCOUNT 2",
+                      "#define MAXLIGHTCOUNT 4",
+                      "#define LIGHT1",
+                      "#define POINTLIGHT1"
+                    ],
+                    "positionProbePixel": [
+                      0,
+                      129,
+                      255,
+                      255
+                    ],
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "8a542c502b5ddf7ad28d64e63ba0dc788725e2d120dddd01af3afdc367adc19e",
+                    "renderedSha256": "8a542c502b5ddf7ad28d64e63ba0dc788725e2d120dddd01af3afdc367adc19e",
+                    "referenceSettledSha256": "8a542c502b5ddf7ad28d64e63ba0dc788725e2d120dddd01af3afdc367adc19e",
+                    "referenceSettledMaxChannelDelta": 0
+                  },
+                  {
+                    "name": "native-mixed-camera--3",
+                    "referenceOrder": [
+                      "mixed-0",
+                      "mixed-1",
+                      "mixed-2"
+                    ],
+                    "positionProbePixel": null,
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "12347f2ff17170b969ecc1cbc9c1292b3542edb50369f31ae47b2d38116c0f72",
+                    "renderedSha256": "12347f2ff17170b969ecc1cbc9c1292b3542edb50369f31ae47b2d38116c0f72"
+                  },
+                  {
+                    "name": "native-mixed-camera-3",
+                    "referenceOrder": [
+                      "mixed-0",
+                      "mixed-1",
+                      "mixed-2"
+                    ],
+                    "positionProbePixel": null,
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "3dbf1d19d8678a515f2c5799debfb758087253af4901f9ffa8fd47b98a24a1ea",
+                    "renderedSha256": "3dbf1d19d8678a515f2c5799debfb758087253af4901f9ffa8fd47b98a24a1ea"
+                  },
+                  {
+                    "name": "graph-mixed-camera--3",
+                    "referenceOrder": [
+                      "mixed-0",
+                      "mixed-1",
+                      "mixed-2"
+                    ],
+                    "positionProbePixel": null,
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "7d87764b9774bc5902cee100097833a756deaec45e55f48aae0ed15abe2b6c34",
+                    "renderedSha256": "7d87764b9774bc5902cee100097833a756deaec45e55f48aae0ed15abe2b6c34"
+                  },
+                  {
+                    "name": "graph-mixed-camera-3",
+                    "referenceOrder": [
+                      "mixed-0",
+                      "mixed-1",
+                      "mixed-2"
+                    ],
+                    "positionProbePixel": null,
+                    "clusteredCount": 2,
+                    "prepared": {
+                      "path": "frameGraph"
+                    },
+                    "result": {
+                      "path": "frameGraph"
+                    },
+                    "readinessDraws": 0,
+                    "width": 97,
+                    "height": 73,
+                    "maxChannelDelta": 0,
+                    "referenceSha256": "8a542c502b5ddf7ad28d64e63ba0dc788725e2d120dddd01af3afdc367adc19e",
+                    "renderedSha256": "8a542c502b5ddf7ad28d64e63ba0dc788725e2d120dddd01af3afdc367adc19e"
+                  }
+                ],
+                "lifecycle": [
+                  {
+                    "mixing": "pbr",
+                    "sameMask": true,
+                    "liveLights": 48,
+                    "clusteredTextures": 0,
+                    "renderers": 0,
+                    "siblingBeforeSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingAfterSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingMaxChannelDelta": 0
+                  },
+                  {
+                    "mixing": "strongest",
+                    "sameMask": true,
+                    "liveLights": 48,
+                    "clusteredTextures": 0,
+                    "renderers": 0,
+                    "siblingBeforeSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingAfterSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingMaxChannelDelta": 0
+                  },
+                  {
+                    "mixing": "additive",
+                    "sameMask": true,
+                    "liveLights": 48,
+                    "clusteredTextures": 0,
+                    "renderers": 0,
+                    "siblingBeforeSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingAfterSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingMaxChannelDelta": 0
+                  },
+                  {
+                    "mixing": "blend",
+                    "sameMask": true,
+                    "liveLights": 48,
+                    "clusteredTextures": 0,
+                    "renderers": 0,
+                    "siblingBeforeSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingAfterSha256": "8fb6af46b0a0575c7fcf537f6a650f20f9fb892611c938cb6bc0be3750a61df3",
+                    "siblingMaxChannelDelta": 0
+                  }
+                ],
+                "graphics": {
+                  "requestedApi": "webgpu",
+                  "effectiveApi": "webgpu",
+                  "adapter": {
+                    "vendor": "nvidia",
+                    "renderer": "turing",
+                    "version": "unknown version"
+                  },
+                  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+                  "viewport": {
+                    "width": 1280,
+                    "height": 720
+                  },
+                  "drawingBuffer": {
+                    "width": 112,
+                    "height": 80
+                  },
+                  "devicePixelRatio": 1
+                },
+                "evidence": {
+                  "kind": "desktop-functional-only",
+                  "recordedAt": "2026-09-23T14:52:44.106Z",
+                  "buildRevision": "5135e6509ea1426ffc091a10872c067543f2def7",
+                  "artifactSha256": "93d22ab980348817d187f72be72a3416eca131e7cdfa93f03293af32d3c494da",
+                  "sceneSource": "apps/editor/src/testing/clustered-light-proof.ts",
+                  "sceneSourceSha256": "1ad9a8be17a33c518c9c1fc11eba298add7c9cf3c72146861b6a4067b19df8e0",
+                  "host": {
+                    "os": "win32",
+                    "osVersion": "10.0.19045",
+                    "arch": "x64",
+                    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+                  },
+                  "graphicsArguments": [
+                    "--use-angle=d3d11",
+                    "--ignore-gpu-blocklist",
+                    "--enable-gpu-rasterization",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding"
+                  ],
+                  "a16Acceptance": "deferred-by-user-unmeasured"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

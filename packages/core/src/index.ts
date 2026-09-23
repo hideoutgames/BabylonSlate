@@ -33,6 +33,7 @@ export * from "./default-input-assets";
 export * from "./sorting";
 
 export * from "./render-quality";
+export * from "./scalability";
 export * from "./render-setting-ownership";
 export * from "./render-path";
 export * from "./environment-lighting";
@@ -42,3 +43,5 @@ export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from
 export * from "./baked-lighting";
 export * from "./baked-geometry";
 export * from "./baking";
+export * from "./area-rect-light";
+export * from "./outline-component";

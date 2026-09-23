@@ -9,7 +9,7 @@ import {
   type Texture,
   type CubeTexture,
 } from "@babylonjs/core";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@babylonslate/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
@@ -20,6 +20,8 @@ import { skyboxMeshPreparation } from "./skybox";
 export interface MeshAssetContext {
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Validated native emission data, separate from original Texture bytes. */
+  areaEmissions?: ReadonlyMap<string, AreaEmissionPixels>;
   /** Authored Texture payload width/height (source pixels), not LOD GPU bytes. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
@@ -128,6 +130,7 @@ export function meshAssetFingerprint(
     `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
     `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
+    `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
     `texPx:${
       assets.texturePixelSizes
         ? [...assets.texturePixelSizes.entries()]
