@@ -140,7 +140,9 @@ the supported class hosts and asserts render-mode/preset choices and typed
 requested/effective snapshots alongside authored type overrides. Authored entries
 must still occur exactly once. This test-only correction retains the application
 build and Computer Use evidence above; the full unit job remains failed until a
-new exact-head Verify succeeds.
+new exact-head Verify succeeds. At `36f58100`, all 75 cases in the three affected
+files (`class-events`, `graph-inspector`, `logic-graph-document`) and their scoped
+lint pass; documentation links and evidence JSON also validate.
 
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
