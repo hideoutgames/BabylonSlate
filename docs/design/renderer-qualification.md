@@ -3,8 +3,8 @@
 ## Current continuation status — 23 September 2026
 
 Implementation and the Windows desktop browser routes below are qualified. The
-Linux software-renderer export transition remains under investigation after
-the `8f03f99f` Verify failure described below. At this
+Linux software-renderer export transition has a verified local repair awaiting
+fresh CI after the failures described below. At this
 evidence checkpoint PR #651 is unmerged; current-head Verify, required
 checks/reviews and guarded merge remain delivery gates. The
 [PR delivery record](https://github.com/hideoutgames/BabylonSlate/pull/651)
@@ -107,6 +107,32 @@ skipped and unfinished cases retain their prior weights. This changes grouping
 only, retaining every test, seven standard runners, one browser worker and the
 25-minute deadline. The flaky launcher reveal route now waits for the same COI
 bootstrap boundary as the other launcher helpers before observing its animation.
+
+The follow-up evidence separates [initial SwiftShader shadow / WARP export
+checks](../assets/renderer-qualification/2026-09-23-shadow-integration/completion-software-initial.json)
+at `4476e578`, [explicit WARP shadow checks and the launcher case](../assets/renderer-qualification/2026-09-23-shadow-integration/completion-warp.json)
+at `520aab68`, [native WebGL2/WebGPU area exports](../assets/renderer-qualification/2026-09-23-shadow-integration/completion-native-export.json)
+at `520aab68`, and [native WebGL2 shadow-host checks](../assets/renderer-qualification/2026-09-23-shadow-integration/completion-native-shadows.json)
+at `96a40632`. Respectively **3, 3, 2 and 2 cases pass**, without retries or
+skips. All six PBR/CEL shadow host comparisons on each qualified adapter retain
+scale 1 and zero false-dark samples, with the original contact assertions intact.
+The native export run initially selected only its two cases; the GPU config's
+file filter was then extended and the two native shadow-host cases ran separately.
+Two-file fixture lint, the GPU config lint and all three partition contracts pass.
+Discovery preserves all **438 browser cases exactly once**; refreshed estimates
+are 20.2 minutes per shard, not measurements of the next run's elapsed time.
+
+Computer Use Chrome 153 also passes a [six-step reopen/Play/Stop route](../assets/renderer-qualification/2026-09-23-shadow-integration/completion-computer-use.json)
+on `96a40632`, artifact `b97e3ef1b290bd9789034d5b79bc5d0a68636afad57a163b74082877ec34b0c3`.
+Normal settings controls select effective native NVIDIA WebGPU and WebGL2.
+Both present the saved CEL scene, authored outlines and area illumination; Play
+excludes editor selection and reaches the graph's actual 240×135 buffer. Stop
+restores 427×217 at scale 1, zero pending retirement and Save All disabled.
+Screenshots are retained in that record. HUD samples from this short route are
+not performance measurements. Earlier full authoring/export acceptance and fixed
+output cost evidence remain applicable to unchanged behavior. The imported
+historical shadow appendix's original-image investigation remains separate;
+physical A16 work is **DEFERRED**, not a merge gate for this delivery.
 
 The native command selects `shared-outline`, `shared-outline-geometry`,
 `shared-outline-cost`, `area-rect-light`, `area-light-export` and

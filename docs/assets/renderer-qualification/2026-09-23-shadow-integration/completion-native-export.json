@@ -1,0 +1,467 @@
+{
+  "scope": "Focused Windows browser checks; no Linux or physical-device performance claim.",
+  "cases": [
+    {
+      "title": "prepared rectangular emission survives standalone export and scene lifecycle on webgl2",
+      "project": "perf-gpu",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 7270,
+          "evidence": [
+            {
+              "name": "standalone-area-evidence",
+              "data": {
+                "evidence": {
+                  "kind": "desktop-functional-only",
+                  "recordedAt": "2026-09-23T16:57:37.814Z",
+                  "buildRevision": "520aab68394b2701f384540745eb9e152d9fa053",
+                  "artifactSha256": "beed2ab8d246e1607fad82209c67aeaebca3214649d610d07867f6ade577cfc4",
+                  "sceneSource": "e2e/area-light-export.spec.ts",
+                  "sceneSourceSha256": "dd712b5f0729eb85db86ebd31ebe67b66b5d2e0510cef603e88321a0a878bf4d",
+                  "host": {
+                    "os": "win32",
+                    "osVersion": "10.0.19045",
+                    "arch": "x64",
+                    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+                  },
+                  "graphicsArguments": [
+                    "--use-angle=d3d11",
+                    "--ignore-gpu-blocklist",
+                    "--enable-gpu-rasterization",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding"
+                  ],
+                  "a16Acceptance": "deferred-by-user-unmeasured"
+                },
+                "backend": "webgl2",
+                "textured": {
+                  "cpuMs": 1.0549999997019768,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": 0,
+                  "gpuStatus": "available",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 1.0549999997019768,
+                    "gpuMs": 0
+                  },
+                  "gpuAttribution": "view",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgl2",
+                    "vendor": "Google Inc. (NVIDIA)",
+                    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 14
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 5657940
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 27777108,
+                    "pendingBytes": 0,
+                    "reservedBytes": 27777108
+                  }
+                },
+                "uniform": {
+                  "cpuMs": 2.3399999998509884,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": 0,
+                  "gpuStatus": "available",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 2.3399999998509884,
+                    "gpuMs": 0.000032
+                  },
+                  "gpuAttribution": "view",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgl2",
+                    "vendor": "Google Inc. (NVIDIA)",
+                    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 13
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 65536
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 22184704,
+                    "pendingBytes": 0,
+                    "reservedBytes": 22184704
+                  }
+                },
+                "off": {
+                  "cpuMs": 2.7349999994039536,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgl2"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": 0,
+                  "gpuStatus": "available",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 2.7349999994039536,
+                    "gpuMs": 0
+                  },
+                  "gpuAttribution": "view",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgl2",
+                    "vendor": "Google Inc. (NVIDIA)",
+                    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 13
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 65536
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 22184704,
+                    "pendingBytes": 0,
+                    "reservedBytes": 22184704
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "prepared rectangular emission survives standalone export and scene lifecycle on webgpu",
+      "project": "perf-gpu",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 6600,
+          "evidence": [
+            {
+              "name": "standalone-area-evidence",
+              "data": {
+                "evidence": {
+                  "kind": "desktop-functional-only",
+                  "recordedAt": "2026-09-23T16:57:44.429Z",
+                  "buildRevision": "520aab68394b2701f384540745eb9e152d9fa053",
+                  "artifactSha256": "beed2ab8d246e1607fad82209c67aeaebca3214649d610d07867f6ade577cfc4",
+                  "sceneSource": "e2e/area-light-export.spec.ts",
+                  "sceneSourceSha256": "dd712b5f0729eb85db86ebd31ebe67b66b5d2e0510cef603e88321a0a878bf4d",
+                  "host": {
+                    "os": "win32",
+                    "osVersion": "10.0.19045",
+                    "arch": "x64",
+                    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz"
+                  },
+                  "graphicsArguments": [
+                    "--use-angle=d3d11",
+                    "--ignore-gpu-blocklist",
+                    "--enable-gpu-rasterization",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding"
+                  ],
+                  "a16Acceptance": "deferred-by-user-unmeasured"
+                },
+                "backend": "webgpu",
+                "textured": {
+                  "cpuMs": 1.5250000022351742,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": null,
+                  "gpuStatus": "unsupported",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 1.5250000022351742,
+                    "gpuMs": null
+                  },
+                  "gpuAttribution": "unavailable",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgpu",
+                    "vendor": "nvidia",
+                    "renderer": "turing",
+                    "version": "unknown version"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 14
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 5657940
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 27777108,
+                    "pendingBytes": 0,
+                    "reservedBytes": 27777108
+                  }
+                },
+                "uniform": {
+                  "cpuMs": 3.8150000013411045,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": null,
+                  "gpuStatus": "unsupported",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 3.8150000013411045,
+                    "gpuMs": null
+                  },
+                  "gpuAttribution": "unavailable",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgpu",
+                    "vendor": "nvidia",
+                    "renderer": "turing",
+                    "version": "unknown version"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 13
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 65536
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 22184704,
+                    "pendingBytes": 0,
+                    "reservedBytes": 22184704
+                  }
+                },
+                "off": {
+                  "cpuMs": 2.0450000017881393,
+                  "pipeline": {
+                    "requested": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "effective": {
+                      "renderPath": "forward",
+                      "gpuBackend": "webgpu"
+                    },
+                    "limits": []
+                  },
+                  "clusteredLights": 0,
+                  "readbackMs": null,
+                  "shadowDrawCalls": 0,
+                  "shadowTriangles": 0,
+                  "gpuMs": null,
+                  "gpuStatus": "unsupported",
+                  "pressure": {
+                    "presentationMs": null,
+                    "cpuMs": 2.0450000017881393,
+                    "gpuMs": null
+                  },
+                  "gpuAttribution": "unavailable",
+                  "width": 1280,
+                  "height": 720,
+                  "scalingLevel": 1,
+                  "samples": 1,
+                  "shadowPasses": 0,
+                  "shadowMapBytes": 0,
+                  "shadowLights": [],
+                  "qualityLimits": [],
+                  "adapter": {
+                    "api": "webgpu",
+                    "vendor": "nvidia",
+                    "renderer": "turing",
+                    "version": "unknown version"
+                  },
+                  "drawCalls": 3,
+                  "resources": {
+                    "meshes": 3,
+                    "materials": 5,
+                    "textures": 5,
+                    "cachedTextures": 13
+                  },
+                  "gpuReservations": {
+                    "limit": 536870912,
+                    "shadowBytes": 0,
+                    "categoryBytes": {
+                      "cluster": 0,
+                      "sceneColor": 0,
+                      "geometry": 0,
+                      "depth": 11059200,
+                      "postprocess": 11059968,
+                      "areaLight": 65536
+                    },
+                    "sharedBytes": 0,
+                    "resourceBytes": 22184704,
+                    "pendingBytes": 0,
+                    "reservedBytes": 22184704
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
