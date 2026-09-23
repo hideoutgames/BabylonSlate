@@ -645,9 +645,9 @@ also supplies Babylon 9.20's omitted array-texture argument.
 
 Other directional filters retain a half-world-texel base correction with
 Poisson's actual blur radius; PCSS tap count is not treated as a filter width.
-Babylon 9.20 GLSL/WGSL hardware comparison depth changes by `0.5 ? bias`, or
-`1.5 ? bias` for depth-clamped CSM PCF; color-depth comparison changes by
-`1 ? bias`. Reverse depth changes direction, not these magnitudes. PCSS has a
+Babylon 9.20 GLSL/WGSL hardware comparison depth changes by `0.5 * bias`, or
+`1.5 * bias` for depth-clamped CSM PCF; color-depth comparison changes by
+`1 * bias`. Reverse depth changes direction, not these magnitudes. PCSS has a
 separate blocker-search color metric. The native bias is limited to the 0.05
 input range for recovering projections, while authored floors remain intact.
 These numerical guards do not promise correctness for arbitrary thin geometry.

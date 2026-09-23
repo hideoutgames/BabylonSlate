@@ -286,180 +286,130 @@ These single-run timing distributions were collected while other development pro
 - The warmed measurement case was rerun with `--disableConsoleIntercept` to retain successful timing output; six unrelated cases in that measurement-only invocation were filtered out, not counted as new passes.
 - Browser: `pnpm --silent agent:wait local --script test:e2e -- e2e/scene-layer-rendering.spec.ts --project=desktop-chrome` passed both Play and exported Preview Build pixel cases at `2c1f29ae28c795acffe40cf4a78dbee94d3f5879`, with one browser worker. The earlier queued attempt was cancelled and is not counted. This fixture uses project-default rendering settings and does not independently qualify WebGPU or capture an adapter identity; dedicated WebGPU and sustained-device performance are not claimed.
 
-## Triangular-shadow investigation — 22 September 2026
+## Triangular-shadow qualification — 23 September 2026
 
-Checkpoint, 23 September: `b34c0f07` passed the three selected Low diagnostic
-pixel cases (WebGL2 PBR/CEL, actual software WebGPU PBR). A separate defect
-was isolated: material quality changed shadow RTT anisotropy from 1 to 4 on
-repeated settings updates. Excluding render targets restores the native PCF
-footprint and removes the grazing top-row failure. The native comparison's
-readiness probe now selects the correct shadow versus camera render-pass ID;
-its earlier seven sampler errors were a fixture defect. Those earlier errored
-native captures are not clean comparison evidence.
+**Original-image acceptance and native A16 qualification are BLOCKED.** The
+original project/model, screenshot-producing build and physical device were
+unavailable. The results below establish specific code defects and synthetic
+regressions; they do not establish the cause or resolution of the original image.
+The device waiver for the separate engine-ownership work above does not apply
+to this shadow qualification.
 
-The successful diagnostic combines receiver-plane correction with small caster
-offsets. Known lit interiors have no dark samples and both thin-contact edge
-masks retain 10/10 pixels at the two light angles. Genuine coarse filtered
-shadow boundaries remain; this does not prove the original image's cause.
-The next production candidate gates this receiver correction on directional
-Auto Bias and uses a quarter-texel PCF caster correction, the smallest tested
-depth-sweep value. Production matrix and cross-host checks are still pending.
-The selected WebGPU cascade test also reproduced Babylon 9.20's missing texture
-argument in the Low CSM blend call; its targeted adapter repair awaits rerun.
+Implementation started from `93638dde6993a8307254d70e96dbad9be42a9432` and includes
+main through `931d6ee17237ae7a97bc0f3e8c80625c60d8b953`. Babylon remains pinned to
+`9.20.0`. Rendering [PR #651](https://github.com/hideoutgames/BabylonSlate/pull/651)
+was rechecked at `2afbeaa230d190f22e69ef9fe186356e4b87fc0b`; its owner was notified
+of the controller overlap. Its sampler-budget work was not duplicated.
 
-**Not ready to merge:** the automatic-bias coverage gap is implemented, but the
-first synthetic browser regression still fails. The half-texel depth correction
-is a candidate policy, not the smallest visually validated correction. Do not
-report the triangular-shadow bug as fixed.
+### Confirmed defects and isolation
 
-Implementation base: `93638dde6993a8307254d70e96dbad9be42a9432`, Babylon
-`9.20.0`. Rendering PR #651 was rechecked at
-`6cc7cce3f552d40c15fd807eaadd9cc5b388a587` and its owner was notified of the
-controller overlap. Its sampler-budget and binding changes were not copied.
-
-The confirmed code defect is narrower than the reported image: automatic bias
-ran only inside the cascade callback. Single-map directional shadows, including
-Low and capability fallback, retained authored constants. The implementation now
-derives directional depth correction from the current native projection and
-admitted dimensions after native per-layer preparation and before caster
-uniform binding. It retains authored depth as a floor and authored world-space
-normal offset unchanged. Local spot/point adaptation is explicitly unsupported;
-their authored offsets remain exact. See [the bias contract](../architecture/render.md).
-
-No original `TestProject222` asset, screenshot-producing build, effective
-settings, or physical A16 capture was available. The added box character is a
-**synthetic reproduction**, not a replacement for original-asset acceptance.
-No controlled experiment has yet established the cause of the original image.
-No projection-fitting or geometry/shader change is justified by current evidence.
-
-The synthetic case **does** reproduce sawtooth shadow-map acne. At `d1469bf8`,
-turning off shadow contribution while retaining direct light removes the pattern.
-Independent depth sweeps reduce it; normal-offset sweeps from zero to 0.01 do
-not remove it. Windows Chromium executed actual WebGL2 on ANGLE / Microsoft
-Basic Render Driver (D3D11), 384×384 pixels, DPR 1, forward PBR, one 1024²
-directional PCF map, distance 80 and a 160-world-unit orthographic span/depth.
-This is desktop software-rendering evidence, not A16 evidence.
-
-| Synthetic capture | Native depth bias | False-dark head samples | False-dark torso samples |
-| --- | --- | --- | --- |
-| Authored manual (same values as the old single-map automatic path) | 0.0001 | 198 / 356 | 41 / 67 |
-| Candidate automatic, half-world-texel depth correction | 0.0009765625 | 65 / 356 | 14 / 67 |
-| Diagnostic three-quarter-world-texel correction | 0.00146484375 | 23 / 356 | 7 / 67 |
-
-The assertion requires less than 5% false-dark samples in each selected region.
-All three captures fail; none is a fixed image. Native PCF Low uses one linear
-comparison fetch, not point sampling. Its underlying texel support and surface
-depth gradients explain why a constant half-texel correction is insufficient.
-Increasing it without preserved contact-edge evidence is not an accepted fix.
-
-The synthetic browser specifications are
-`e2e/shadow-self-shadowing.spec.ts` (Low, forced cascade fallback, cascades,
-PBR/CEL and explicitly checked WebGL2/WebGPU) and
-`e2e/shadow-self-shadowing-hosts.spec.ts` (editor, Play and packed player,
-authored-settings round trip and updates). They attach regional visibility
-results, direct-light-only reference images, shadowed images and effective-state
-captures. The isolated fixture additionally captures independent depth/normal
-sweeps, a thin contact, another light angle and cascade camera motion. These
-assertions require both lit surfaces and retained occlusion; their presence is
-not a passing pixel result.
-
-The first thin-slab capture was invalid: Babylon's deferred mesh-added event had
-not registered its shadow participation. The fixture now awaits that event and
-checks both casting and receiving. Its second light angle was changed to retain
-analytically visible ground contacts. A separate ground-pixel strip near the
-thin slab's contact edge supplements the interior mask: the interior mask alone
-could tolerate a detached shadow. The edge strip's analytic negative control
-rejects a 0.4-world-unit caster lift at both angles. At `e9313484`, the real
-WebGL2 sweep retains 25/25 edge pixels at one world texel, but only 19/25 at
-1.25 texels and 12/25 at 1.5 and two texels. Visual inspection still finds
-low-contrast teeth at one and two texels. The lit-region cutoff is therefore
-tightened from 85% to 97% of the direct-light reference; the contact cutoff
-remains 85%. This strengthens the oracle instead of accepting a numerically
-passing but visibly broken result. A test-only raster-slope probe now isolates
-slope correction at fixed authored offsets and records actual caster draws and
-state restoration. It does not change production rendering and excludes clamped
-cascades, whose fragment-written depth cannot use this raster correction.
-Production geometry and projection fitting remain unchanged.
-
-The `90132d14` raster-slope experiment executed real caster draws and restored
-the original raster state. It also fails: factor 1 retains 21/25 thin edge
-pixels but leaves 52/356 head samples dark; factor 1.25 retains only 12/25 edge
-pixels and still leaves 24/356 head samples dark. A test-only receiver-plane
-experiment now adjusts comparison depth using each surface's projected
-gradient and fractional texel position, retaining native PCF fetches and CSM
-depth clamping. Its result is explicitly labeled diagnostic and uses fixed
-authored caster offsets; it is not the production automatic policy. A fresh
-native Babylon scene compares the same captured projection and light state.
-Host assertions now sample exact screenshot pixels without image resampling.
-
-At `4a41ecda`, the receiver-plane experiment removes the visible face bands,
-but the WebGL2 PBR head-top check still fails (56/356 samples, 36 unique grazing
-top-face pixels). Actual WebGPU executed on SwiftShader and has zero head
-failures at this pose; neither result qualifies A16. The matched native
-Babylon baseline has exactly matching camera/light matrices and decoded RGBA
-identical to the earlier managed authored baseline. This confirms that the
-synthetic acne does not require the FrameGraph bridge.
-
-Independent four-texel ray tests identified a test-oracle defect: several arm
-and leg samples are valid filtered transitions despite an unoccluded center
-ray. All 36 second-angle thin-edge pixels match ideal PCF shading within 0.8
-green levels; the old binary darkness gate wrongly rejects 13 valid partial
-shadows. Those raw counts above must not be interpreted alone as contact loss.
-The revised oracle uses the admitted projection's complete PCF footprint to
-separate known lit, strongly occluded and penumbra samples without relaxing
-the intensity thresholds. A separate, unqualified per-texel comparison probe
-is available to isolate the remaining grazing-face behavior; it preserves
-logical filter weights but increases comparison instructions and is not a
-production or A16 performance claim.
-
-Baseline instrumentation revision `d1d208eed3d753b2a47931828b183af759850b2b`
-retains the original bias policy. Its first selected WebGL2/Low/PBR attempt was
-cancelled while awaiting shared resource admission, before any build or browser
-execution. It produced no baseline image or test result. A red/green browser
-comparison remains required using the same final fixture/oracle on both policies.
-
-At `06de91a184ede3274c64fb4c964dc1323374dd4e`, the first focused unit run
-executed seven files: shadow bias, controller, managed FrameGraph shadows,
-diagnostics, refresh, player backend and player boot. It reported 74 passed and
-5 failed. Failures identified incomplete NullEngine array metadata, a settings
-replacement in test setup, Float32 extent precision, and signed-zero JSON
-comparison. Affected files were rerun after repair; the first run remains a
-failed result rather than being relabeled.
-
-| Check scope | Revision | Result |
+| Defect | Controlled evidence | Change |
 | --- | --- | --- |
-| `shadow-bias.test.ts`, `shadow-map-refresh.test.ts`, player `player-backend.test.ts` and `boot.test.ts` | `06de91a1` | 43 passed; unaffected results retained |
-| `framegraph-managed-shadows.test.ts`, `shadow-diagnostics.test.ts` | `469256c8` | 15 passed; unaffected results retained |
-| `shadow-controller.test.ts` | `d1469bf8` | 21 passed |
-| ESLint on changed TypeScript files | `469256c8` | Passed with two existing React-hook warnings; subsequent fixture edits require their own scoped check |
-| Render, player and editor package typechecks, serialized through shared admission | `d1469bf8` | Passed; subsequent editor fixture edits are not covered by this result |
-| Selected `shadow-self-shadowing.spec.ts`, desktop Chrome, `webgl2 low pbr` | `d1469bf8` | Failed the real pixel assertion; images and effective state retained locally |
-| Same selected browser case with extended depth/distance diagnostics and registered thin caster | `65faac7d` | Build passed; browser never started before the 900-second admission timeout |
-| ESLint on the three updated synthetic fixture/spec files and controller test | `8d69b890` | Never started before the 180-second shared-admission timeout; latest fixture static verification remains pending |
-| Selected WebGL2/Low/PBR browser, extended sweeps and registered thin caster | `e9313484` | Build passed; pixel test failed. Contact-edge data rejects the larger constants; no fixed image. |
+| Automatic bias covered cascades only | Low and capability fallback retain the original authored constant; restoring that policy fails the same synthetic pixel assertion | Derive directional bias after native projection/layer preparation from actual admitted dimensions and effective filter |
+| Constant PCF bias cannot account for receiver slope | Shadow contribution off removes the synthetic pattern; independent depth/normal sweeps fail either lit faces or contacts; matched native Babylon also reproduces acne | A quarter-texel caster correction plus a receiver-plane comparison at each existing native bilinear tap; normal offset stays authored |
+| Texture quality broadens native PCF sampling | Repeated settings updates change the shadow RTT's anisotropy from 1 to 4 and expose a grazing head-row failure | Exclude renderer-owned targets during settings updates, constructor notifications and graph-texture binding |
+| WGSL Low CSM blend call omits its array texture | Actual software WebGPU reports a shader parse failure at the native double comma | Checked adaptation supplies the missing Babylon 9.20 argument |
+| Reused FrameGraph warms the previous shadow layout | Live mirrored/instanced variants draw with `SHADOW0` while the light's shadows are disabled; WebGL reports unlike samplers on unit 0 | Refresh borrowed receiver bindings before readiness, preserving maps and graph ownership |
 
-Focused unit commands used `pnpm --silent agent:wait local --script test --`
-with only the named files. Browser commands used
-`pnpm --silent agent:wait local --script test:e2e -- e2e/shadow-self-shadowing.spec.ts --project=desktop-chrome --grep 'webgl2 low pbr'`.
-All checks kept `BL_TEST_PROFILE=shared`, one worker and the machine-wide
-resource policy. No full suite or coverage sweep ran. At the timeout another
-workload held the shared browser lease and available memory was below the
-browser-plus-headroom requirement. No other workload was stopped or bypassed.
+The final bias contract and opt-in diagnostic API are documented in
+[render architecture](../architecture/render.md#camera-relative-shadow-settings).
+Point/spot automatic adjustment remains explicitly unsupported; authored local
+bias and change-driven refresh remain intact. No geometry, normals, projection
+fitting, shadow distance, map size or cascade preset was changed to hide acne.
 
-Remaining local work: run the extended sweeps and contact-edge oracle, select
-and validate the correction, prove failure with the restored original policy
-using the same final fixture, then run the bounded backend/cascade/host matrix.
-There is no baseline-fail/fixed-pass evidence pair or passing cross-host result
-yet. No PR has been opened because selected verification is not passing.
+### Pixel evidence
 
-**BLOCKED qualification:** original-image acceptance and native A16 visual,
-motion, thermal, frame-time and repeated-open/play/close resource measurements.
-Desktop software pixels and NullEngine contracts cannot satisfy those gates.
-No measured speedup, GPU-memory result, or claim of meeting the 5% performance
-review threshold is made. The implementation requests no larger maps, additional
-cascades, extra scene passes, reduced coverage or production readbacks.
-### Repair checkpoint at `ec3f2f3b`
+Verified implementation: `9f3304ef89d55ae3fdc287595928f2f160101e35`.
+Negative-control commit: `843565fea02bef5a9dd65e5328d7ede6ce1cde16` (local experiment).
+The negative control restores the original CSM helper/callback and the original
+single-map authored-bias behavior, and disables the new receiver correction.
+It retains the anisotropy and readiness repairs to isolate bias policy. It is
+not an untouched historical app build. Fixture, cameras and assertions are
+identical to the verified implementation. The original policy fails the known-lit head assertion (93.56% false-dark; limit below 5%). The identical assertion passes with the corrected policy.
 
-Render and runtime package typechecks passed through shared admission. `resource-cache-texture.test.ts`, `resource-cache-upload.test.ts`, and `environment-lighting.test.ts` passed all **59** cases, covering intact KTX2 Blob URLs, pending successor readiness, failed preparation, and shared texture owners. Changed-file ESLint found two style errors (a never-reassigned timer and an unused test property read); both are corrected in the next commit. Three pre-existing React warnings remain warnings. Browser validation and hosted Verify are still running/pending; these local passes do not establish browser output.
+Windows Chromium, 384×384 render pixels, DPR 1, Low, distance 80 world units,
+one 1024² directional PCF map, fixed neutral material and oblique light:
 
-Second hosted unit execution passed **5,703 test assertions in 618 files**, but the job failed because `skybox.test.ts` left one NullEngine spherical-polynomial readback rejection. Its synthetic cube upload now supplies the matching synthetic polynomial, as the other native cube fixtures do. Hosted static checking and the local browser build also identified a constructor parameter property disallowed by the editor's `erasableSyntaxOnly` setting; it is replaced with an explicit field and assignment. These failures remain failures until their targeted reruns and required hosted checks pass.
+| Policy | Effective native depth / world normal bias | False-dark head / torso | Valid torso contacts |
+| --- | --- | --- | --- |
+| Restored original automatic policy | 0.0001 / 0.005 | 276/295 and 56/64 | 32/32 |
+| Corrected automatic policy | 0.00048828125 / 0.005 | 0/295 and 0/64 | 32/32 |
+
+The corrected thin-contact edge retains 10/10 distinct pixels at each of two
+light angles. An independent analytic control rejects a 0.4-world-unit caster
+lift. Lit samples must retain at least 97% of their shadow-off intensity;
+contacts require a separate 85% threshold and more than 80% retained coverage.
+Ray/box/ground intersections classify native filter footprints, separating
+penumbra from lit interiors. Medium/High use their expanded tent weights and
+denser unique-pixel sampling where the interiors become smaller.
+
+Rejected experiments remain failed evidence: larger constant offsets detach
+contacts; a common correction across an entire wide PCF kernel removes valid
+occlusion. The final correction preserves native tap positions, weights and
+fetch counts. Coarse legitimate shadow edges remain visible at Low's large
+coverage distance; their existence is not proof of original-image correctness.
+
+WebGL2 executed on ANGLE / Microsoft Basic Render Driver (D3D11 software).
+WebGPU executed through WebGPUEngine on SwiftShader, with actual backend checks;
+it was not a WebGL fallback. Reverse depth was disabled in these browser runs.
+The native comparison uses a fresh Babylon engine and matched camera/light
+matrices. No native A16, thermal or frame-time result is inferred from this data.
+
+Matched real captures and bounded state dumps:
+
+| Restored original policy | Corrected policy |
+| --- | --- |
+| ![Synthetic original-policy capture](./evidence/shadow-self-shadowing/original-policy.png) | ![Synthetic corrected capture](./evidence/shadow-self-shadowing/corrected.png) |
+| [Effective settings](./evidence/shadow-self-shadowing/original-policy.json) | [Effective settings and thin contacts](./evidence/shadow-self-shadowing/corrected.json) |
+
+The [negative-control patch](./evidence/shadow-self-shadowing/original-policy.patch)
+applies to verified commit `9f3304ef` and reproduces the isolated old policy.
+The experiment's first attempt (`58d1b2a7`) stopped at a diagnostics type error
+before browser execution; it is not counted as pixel evidence.
+
+### Targeted verification
+
+All local checks used the admitted runner, `BL_TEST_PROFILE=shared`, one worker
+and the per-user low-memory policy. Heavy stages ran sequentially; no full local
+suite, coverage sweep, broad preflight or paid runner was used.
+
+| Scope | Revision | Result |
+| --- | --- | --- |
+| `shadow-bias`, `shadow-controller`, `framegraph-managed-shadows`, `shadow-diagnostics`, `render-settings`, `texture-quality` unit files | `9f3304ef` | 56 passed |
+| `e2e/shadow-self-shadowing.spec.ts`, desktop Chrome | `9f3304ef` | 20 passed: Low, forced fallback, cascades/split motion, PBR/CEL, WebGL2/actual WebGPU, static and live mirrored/non-uniform/instanced cases, and selected wider PCF kernels |
+| `e2e/shadow-self-shadowing-hosts.spec.ts`, desktop Chrome | `9f3304ef` | 2 passed: editor, Play and locally exported player pixels, authored-settings round trip and runtime updates |
+| Selected `e2e/framegraph-shadows.spec.ts` cases | `9f3304ef` | 3 passed: WebGL2 backbuffer, WebGPU texture output, shared lighting reservations; point/spot/directional refresh, motion, reload and ownership |
+| Original-policy `webgl2 low pbr` negative control | `843565fe` | Failed as intended on false-dark head samples; no shader/backend error |
+| Scoped ESLint and render/player/editor typechecks | Pending current feature head | Pending scoped checks |
+
+Unit command: `pnpm --silent agent:wait local --script test --` followed by the
+six explicit `packages/render/src/*.test.ts` paths above. Browser command:
+`pnpm --silent agent:wait local --script test:e2e -- e2e/shadow-self-shadowing.spec.ts e2e/shadow-self-shadowing-hosts.spec.ts e2e/framegraph-shadows.spec.ts --project=desktop-chrome --grep 'synthetic|on webgl2 backbuffer|on webgpu texture|Shared managed lighting'`.
+The negative control selects only `e2e/shadow-self-shadowing.spec.ts` with
+`--grep 'webgl2 low pbr'`. Subsequent documentation-only updates retain these
+unchanged-runtime results. Required GitHub Verify remains a separate gate.
+
+Playwright attaches real PNGs, regional assertions and effective-state JSON to
+each selected case. Local evidence is retained under the ignored
+`.cache/shadow-fix/evidence/9f3304ef-verified` and
+`.cache/shadow-fix/evidence/843565fe-original-policy` directories, with the exact
+experiment patch/manifest alongside them. These artifacts record build SHA,
+backend/adapter, camera, transforms, requested/admitted settings, projections,
+per-layer bias and stable allocation identity. Existing FrameGraph proof data
+also records actual shadow draws/faces, zero readiness draws and ownership.
+
+### Remaining acceptance gates
+
+- **BLOCKED — original image:** obtain the original asset/project and producing
+  build, preserve its pose/settings, and repeat the shadow/material/geometry
+  isolation. Synthetic success cannot close that acceptance check.
+- **BLOCKED — physical A16:** capture matched before/after stills and motion on
+  the actual backend, then measure warmed CPU/GPU timing where supported,
+  attachment estimates, allocation churn and repeated open/play/close behavior
+  under matched thermal and resolution conditions. No performance measurement
+  or exact GPU-memory claim is made here. A repeatable regression above 5%
+  remains a review gate.
+
+Map/pass/sampler budgets and native PCF fetch counts are unchanged. No production
+readback or full-scene pass was added. These structural constraints protect the
+budget but do not waive physical-device timing and memory qualification.
