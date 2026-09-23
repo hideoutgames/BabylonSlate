@@ -1112,7 +1112,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const handle = engineRef.current;
         if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
         const result = (await import("../testing/mannequin-shadow-proof")).mannequinShadowProbe(handle.scene, neutral);
-        handle.scheduler.invalidate("material");
+        handle.scheduler.invalidate("manual");
         return result;
       },
       setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
