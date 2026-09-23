@@ -76,6 +76,13 @@ invalidation optimization. It does not dirty materials, rebuild shaders or
 allocate buffers; native camera/light/resize pixel parity remains the acceptance
 check for this repair.
 
+CEL's previous single authoring case is split into five independent color/Play,
+light-mixing, per-light, shadow-map and specular/mode cases. All pixel assertions,
+real saves and default global outlines are retained. The separate mannequin
+workflow has a bounded two-minute deadline; the prior one-minute deadline expired
+even after its save reported a clean completed document. This scopes deadlines
+to progressing workflows without changing production quality or CI gates.
+
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
 delete the blue model duplicate while the box remains selected: the orange model,
