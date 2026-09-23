@@ -87,6 +87,15 @@ time, graph build count, selected light and reserved bytes. Run the exact cases
 on the same native GPU and settings before comparing revisions; software rendering
 establishes correctness, not device performance.
 
+On the native RTX 2060 / ANGLE D3D11 WebGL2 fixture (96×72, one 256-pixel cube,
+4.5 MiB allocation ceiling), `47d945c7` rebuilt the graph on every handoff:
+first transitions took 221–342 ms, repeated transitions 56–84 ms. At `31f188d7`,
+stable graph tasks eliminated every handoff build; first transitions took
+128–157 ms and repeated transitions 23–28 ms. Both PBR and CEL retained exactly
+one allocation within the same ceiling. These are small-fixture preparation
+times, not a claim about frame times in a large saved scene; cold receiver
+compilation remains visible and needs separate treatment.
+
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
 
 | Fixture | Reference median / p95 / p99 (ms) | Cached median / p95 / p99 (ms) | Cached interval samples | Estimated shadow MiB |

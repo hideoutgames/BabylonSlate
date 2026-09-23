@@ -15,6 +15,7 @@ export function isOutlineOnlySceneEdit(previous: SerializedScene | null, next: S
   const otherState = (scene: SerializedScene) => {
     const cel = { ...scene.settings.celShading };
     delete cel.outlinesEnabled; delete cel.outlineColor; delete cel.outlineWidth;
+    delete cel.outlineDistanceFadeEnabled; delete cel.outlineFadeStart; delete cel.outlineFadeEnd;
     return { ...scene, settings: { ...scene.settings, celShading: cel }, actors: scene.actors.map((actor) => ({
       ...actor, components: actor.components.flatMap((component) => component.classId !== "OutlineComponent" ? [component]
         // A component can also be an attachment parent. Retain that structure
@@ -88,7 +89,7 @@ export class SceneOutlineHost {
   refreshSettings(): void {
     if (this.disposed) return;
     const { mode, cel } = sceneRenderingSettings(this.scene);
-    const key = `${mode}|${cel.outlinesEnabled}|${cel.outlineWidth}|${cel.outlineColor.join(",")}`;
+    const key = `${mode}|${cel.outlinesEnabled}|${cel.outlineWidth}|${cel.outlineColor.join(",")}|${cel.outlineDistanceFadeEnabled}|${cel.outlineFadeStart}|${cel.outlineFadeEnd}`;
     if (key === this.settingsKey) return;
     this.sync();
     this.settingsKey = key;
@@ -110,7 +111,8 @@ export class SceneOutlineHost {
       .map(([key, actor]) => ({ key, meshes: actor.meshes }));
     const contributions = new Map<string, SharedOutlineContribution>();
     if (mode === "cel" && cel.outlinesEnabled && targets.length) {
-      contributions.set("global", { kind: "global", targets, color: cel.outlineColor, width: cel.outlineWidth, throughMeshes: false });
+      contributions.set("global", { kind: "global", targets, color: cel.outlineColor, width: cel.outlineWidth, throughMeshes: false,
+        distanceFade: cel.outlineDistanceFadeEnabled ? { start: cel.outlineFadeStart, end: cel.outlineFadeEnd } : undefined });
     }
     for (const [actorId, actor] of actors) for (const binding of actor.bindings) {
       if (!binding.enabled || !actor.meshes.length) continue;

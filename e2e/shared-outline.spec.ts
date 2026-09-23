@@ -73,6 +73,26 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(original.lanes[0]!.red).toBeGreaterThan(0);
     expect(original.lanes[1]!.blue).toBeGreaterThan(0);
     expect(original.lanes[2]!.green).toBeGreaterThan(0);
+    const fadeNear = at("fade-near"), fadeMiddle = at("fade-middle"), fadeSubpixel = at("fade-subpixel"), fadeFar = at("fade-far");
+    expect(fadeNear.lanes).toEqual(original.lanes);
+    expect(fadeMiddle.redCoverage[0]).toBeLessThan(fadeNear.redCoverage[0]!);
+    expect(fadeSubpixel.redCoverage[0]).toBeGreaterThan(0);
+    expect(fadeSubpixel.redCoverage[0]).toBeLessThan(fadeMiddle.redCoverage[0]!);
+    expect(fadeFar.redCoverage).toEqual([0, 0, 0]);
+    expect(at("fade-return").lanes).toEqual(original.lanes);
+    expect(at("fade-disabled-far").lanes).toEqual(original.lanes);
+    for (const snapshot of [fadeMiddle, fadeSubpixel, fadeFar, at("fade-return")]) {
+      expect(snapshot.lanes[1]).toEqual(fadeNear.lanes[1]);
+      expect(snapshot.lanes[2]).toEqual(fadeNear.lanes[2]);
+      expect(snapshot.view).toEqual(fadeNear.view);
+      expect(snapshot.renderers).toEqual(fadeNear.renderers);
+      expect(snapshot.textures).toEqual(fadeNear.textures);
+    }
+    const quarter = at("fade-quarter-pixel-shrinking").redCoverage[0]!;
+    expect(quarter).toBeGreaterThan(0);
+    expect(quarter).toBeLessThan(at("fade-quarter-pixel-near").redCoverage[0]!);
+    expect(at("fade-perspective-near").redCoverage.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+    expect(at("fade-perspective-far").redCoverage).toEqual([0, 0, 0]);
     for (const name of ["identical-requests", "all-visibility-groups", "live-component-style-restored", "consumer-order-reversed", "sibling-view-selection-isolated", "sibling-view-disposed", "no-assigned-material-removed"])
       expect(at(name).lanes, name).toEqual(original.lanes);
     const defaultMaterial = at("no-assigned-material-selected");

@@ -23,6 +23,26 @@ function authored(actorId: string, width = 2) {
 }
 
 describe("authored scene outline host", () => {
+  it("applies live fade only to global CEL without camera-driven membership or style uploads", () => {
+    const { scene, host } = setup();
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -3), scene);
+    const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+    setSceneRenderSettings(scene, { mode: "cel" }, { outlineDistanceFadeEnabled: true, outlineFadeStart: 2, outlineFadeEnd: 5 });
+    host.replaceActors([{ id: "actor", meshes: [mesh], bindings: authored("actor") }]);
+    host.setSelection(["actor"]);
+    host.refreshSettings(); host.view.prepare();
+    expect(host.view.contributions.get("global")?.distanceFade).toEqual({ start: 2, end: 5 });
+    expect(host.view.contributions.get("component:actor:ink")?.distanceFade).toBeUndefined();
+    expect(host.view.contributions.get("selection")?.distanceFade).toBeUndefined();
+    const before = host.view.diagnostics();
+    camera.position.z = -10;
+    host.refreshSettings(); host.view.prepare();
+    expect(host.view.diagnostics()).toEqual(before);
+    setSceneRenderSettings(scene, { mode: "cel" }, { outlineDistanceFadeEnabled: false, outlineFadeStart: 2, outlineFadeEnd: 5 });
+    host.refreshSettings();
+    expect(host.view.contributions.get("global")?.distanceFade).toBeUndefined();
+    expect(host.view.contributions.get("component:actor:ink")?.width).toBe(2);
+  });
   it("selects triangle visuals without admitting line or wireframe topology", () => {
     const { scene, host } = setup();
     const solid = MeshBuilder.CreateBox("solid", {}, scene);
@@ -44,7 +64,8 @@ describe("authored scene outline host", () => {
     previous.actors = [actor];
     const next = structuredClone(previous);
     next.actors[0]!.components.push({ id: "ink", classId: "OutlineComponent", properties: { width: 3 } });
-    next.settings.celShading = { outlinesEnabled: false, outlineWidth: 4 };
+    next.settings.celShading = { outlinesEnabled: false, outlineWidth: 4,
+      outlineDistanceFadeEnabled: true, outlineFadeStart: 20, outlineFadeEnd: 60 };
     expect(isOutlineOnlySceneEdit(previous, next)).toBe(true);
     next.actors[0]!.transform.position[0] = 3;
     expect(isOutlineOnlySceneEdit(previous, next)).toBe(false);

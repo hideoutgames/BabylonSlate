@@ -1,7 +1,7 @@
 import { normalizePlayFrameCap, normalizeRenderProjectSettings, type RenderProjectSettings } from "./project";
 import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, type QualityGroup, type QualityOverrides } from "./render-quality";
 import type { ShadowOverrides } from "./shadows";
-import { normalizeCelShadingOverrides, type CelShadingOverrides } from "./cel-shading";
+import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import type { ResolvedRenderingPipeline } from "./render-path";
 
@@ -50,6 +50,7 @@ const LIVE_FIELDS = new Set([
   "frameCap", "cel.shadowBands", "cel.shadowThreshold", "cel.shadowStrength", "cel.specularStrength",
   "cel.specularSize", "cel.lightColorInfluence", "shadows.distance", "shadows.fadeFraction",
   "cel.outlinesEnabled", "cel.outlineColor", "cel.outlineWidth",
+  "cel.outlineDistanceFadeEnabled", "cel.outlineFadeStart", "cel.outlineFadeEnd",
   "shadows.softness", "shadows.autoBias", "shadows.depthBias", "shadows.normalBias",
   "quality.textures.anisotropy", "quality.textures.byteBudget", "quality.resolution.targetFps",
   "environmentLighting.enabled", "environmentLighting.intensity", "environmentLighting.rotationYDegrees",
@@ -143,7 +144,8 @@ export class ScalabilitySession {
   get requested(): RuntimeRenderingSettings {
     const { shadows, ...quality } = this.quality.effective();
     const inherited = mergeRenderSettings(this.project.render, { cel: normalizeCelShadingOverrides(this.scene.celShading), environmentLighting: normalizeEnvironmentLightingOverrides(this.scene.environmentLighting) });
-    return { render: { ...mergeRenderSettings(inherited, this.visualOverrides), shadows, quality },
+    const render = mergeRenderSettings(inherited, this.visualOverrides);
+    return { render: { ...render, cel: normalizeCelShadingSettings(render.cel), shadows, quality },
       frameCap: this.frameCapOverride ?? this.project.frameCap };
   }
   snapshot(): ScalabilitySnapshot {

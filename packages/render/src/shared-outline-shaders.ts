@@ -210,13 +210,26 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
         if (id > 0.0 && id != center) {
           vec4 style = texture2D(${group}Style, idUV(id));
           float distance = length(delta);
+          float width = style.a;
+          float coverage = 1.0;
           bool visible = true;
           ${group === "strict" ? `float candidateDepth = texture2D(strictDepth, uv).r;
           float destinationDepth = texture2D(strictDepth, vUV).r;
-          visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;` : ""}
-          float score = distance / max(style.a, 0.25);
-          if (visible && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
-            stroke = vec4(style.rgb, 1.0); best = score; chosen = id;
+          visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;
+          vec4 fade = texture2D(strictStyle, idUV(id) + vec2(0.0, 0.5));
+          if (fade.x > 0.5) {
+            vec4 position = inverseProjection * vec4(uv * 2.0 - 1.0, candidateDepth * depthRange.x + depthRange.y, 1.0);
+            float cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
+            width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
+            // Preserve the authored footprint at full width. As it shrinks, the
+            // outer samples lose coverage first; the first pixel survives all
+            // the way to width zero, including authored subpixel widths.
+            float edge = max(0.0, distance - 1.0);
+            coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+          }` : ""}
+          float score = distance / max(width, 1e-4);
+          if (visible && coverage > 0.0 && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
+            stroke = vec4(style.rgb, coverage); best = score; chosen = id;
           }
         }
       }`).join("\n")}
@@ -230,6 +243,8 @@ uniform vec2 tableSize;
 uniform float maximumWidth;
 uniform float reverseDepth;
 uniform vec3 activeGroups;
+uniform mat4 inverseProjection;
+uniform vec2 depthRange;
 uniform sampler2D strictDepth;
 ${groups.map((group) => `uniform sampler2D ${group}Mask; uniform sampler2D ${group}Style;`).join("\n")}
 float decodeId(vec3 value) { return dot(floor(value * 255.0 + 0.5), vec3(1.0, 256.0, 65536.0)); }
@@ -250,13 +265,23 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
         if (id > 0.0 && id != center) {
           let style = textureSampleLevel(${group}Style, ${group}StyleSampler, idUV(id), 0.0);
           let distance = length(delta);
+          var width = style.a;
+          var coverage = 1.0;
           var visible = true;
           ${group === "strict" ? `let candidateDepth = textureSampleLevel(strictDepth, strictDepthSampler, uv, 0.0).r;
           let destinationDepth = textureSampleLevel(strictDepth, strictDepthSampler, fragmentInputs.vUV, 0.0).r;
-          visible = select(candidateDepth <= destinationDepth, candidateDepth >= destinationDepth, uniforms.reverseDepth > 0.5);` : ""}
-          let score = distance / max(style.a, 0.25);
-          if (visible && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
-            stroke = vec4f(style.rgb, 1.0); best = score; chosen = id;
+          visible = select(candidateDepth <= destinationDepth, candidateDepth >= destinationDepth, uniforms.reverseDepth > 0.5);
+          let fade = textureSampleLevel(strictStyle, strictStyleSampler, idUV(id) + vec2f(0.0, 0.5), 0.0);
+          if (fade.x > 0.5) {
+            let position = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, candidateDepth * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
+            let cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
+            width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
+            let edge = max(0.0, distance - 1.0);
+            coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+          }` : ""}
+          let score = distance / max(width, 1e-4);
+          if (visible && coverage > 0.0 && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
+            stroke = vec4f(style.rgb, coverage); best = score; chosen = id;
           }
         }
       }`).join("\n")}
@@ -270,6 +295,8 @@ uniform tableSize: vec2f;
 uniform maximumWidth: f32;
 uniform reverseDepth: f32;
 uniform activeGroups: vec3f;
+uniform inverseProjection: mat4x4f;
+uniform depthRange: vec2f;
 var strictDepthSampler: sampler; var strictDepth: texture_2d<f32>;
 ${groups.map((group) => `var ${group}MaskSampler: sampler; var ${group}Mask: texture_2d<f32>; var ${group}StyleSampler: sampler; var ${group}Style: texture_2d<f32>;`).join("\n")}
 fn decodeId(value: vec3f) -> f32 { return dot(floor(value * 255.0 + 0.5), vec3f(1.0, 256.0, 65536.0)); }

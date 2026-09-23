@@ -51,6 +51,21 @@ const fields: {
     description: "Default silhouette width in output pixels.",
   },
   {
+    key: "outlineDistanceFadeEnabled",
+    label: "Outline Distance Fade",
+    description: "Shrink global CEL outlines smoothly to zero with distance. Outline components and editor selection keep their own style.",
+  },
+  {
+    key: "outlineFadeStart",
+    label: "Outline Fade Start",
+    description: "Camera distance in scene units where outlines begin shrinking.",
+  },
+  {
+    key: "outlineFadeEnd",
+    label: "Outline Fade End",
+    description: "Camera distance in scene units where outlines reach zero width. Must be greater than Fade Start.",
+  },
+  {
     key: "lightMixing",
     label: "Light Mixing",
     description:
@@ -141,7 +156,7 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                   </Button>
                 ) : null}
               </div>
-              {key === "specularEnabled" || key === "outlinesEnabled" ? (
+              {key === "specularEnabled" || key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" ? (
                 <Switch
                   id={id}
                   aria-describedby={`${id}-description`}
@@ -195,14 +210,14 @@ export function CelShadingFields({ project, overrides, onChange, hideTitle = fal
                   value={effective[key]}
                   min={CEL_SHADING_LIMITS[key][0]}
                   max={CEL_SHADING_LIMITS[key][1]}
-                  step={key === "shadowBands" ? 1 : 0.01}
+                  step={key === "shadowBands" || key === "outlineFadeStart" || key === "outlineFadeEnd" ? 1 : 0.01}
                   disabled={scene && !overridden}
                   onChange={(value) => patch(key, value)}
                 />
               )}
               <FieldDescription id={`${id}-description`}>
                 {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" || key === "outlinesEnabled" ? project[key] ? "On" : "Off" : key === "outlineColor" ? colorToHex(project[key]) : project[key]}. `
+                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${key === "lightMixing" ? lightMixingLabels[project[key]] : key === "specularEnabled" || key === "outlinesEnabled" || key === "outlineDistanceFadeEnabled" ? project[key] ? "On" : "Off" : key === "outlineColor" ? colorToHex(project[key]) : project[key]}. `
                   : ""}
                 {description}
               </FieldDescription>

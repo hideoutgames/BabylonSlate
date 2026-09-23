@@ -93,7 +93,8 @@ describe("exportGame", () => {
     expect(parseGameManifest(JSON.stringify(legacy)).inputMappings).toBeUndefined();
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
-    const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend" });
+    const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend",
+      outlineDistanceFadeEnabled: true, outlineFadeStart: 30, outlineFadeEnd: 90 });
     const shadows = normalizeShadowSettings({ distance: 350, profile: "high" });
     const quality = normalizeRenderingQuality({
       textures: { anisotropy: 8 },

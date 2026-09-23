@@ -13,6 +13,7 @@ describe("CEL settings persistence and inheritance", () => {
     expect(normalizeCelShadingSettings({})).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
     const project = normalizeProjectSettings({ render: { mode: "cel", cel: normalizeCelShadingSettings({
       outlinesEnabled: false, outlineColor: [0.25, 0.5, 0.75], outlineWidth: 2.25,
+      outlineDistanceFadeEnabled: true, outlineFadeStart: 25, outlineFadeEnd: 80,
     }) } });
     const low = applyProjectQualityPatch(project.render, qualityPresetPatch("low"));
     const restored = normalizeProjectSettings(JSON.parse(JSON.stringify({ ...project, render: { ...low, mode: "pbr" } })));
@@ -25,6 +26,18 @@ describe("CEL settings persistence and inheritance", () => {
     expect(resolveCelShadingSettings({ ...restored.render.cel, outlineWidth: 4 }, scene.celShading).outlineWidth).toBe(4);
     expect(normalizeCelShadingOverrides({ outlineWidth: 99, outlineColor: [-1, 0.123456, 2] })).toEqual({ outlineWidth: 8, outlineColor: [0, 0.123456, 1] });
     expect(normalizeCelShadingOverrides({ outlinesEnabled: "false", outlineWidth: NaN, outlineColor: [1, Infinity, 0] })).toEqual({});
+  });
+  it("resolves a finite increasing fade range after independent scene inheritance", () => {
+    expect(normalizeCelShadingSettings({})).toMatchObject({ outlineDistanceFadeEnabled: false, outlineFadeStart: 50, outlineFadeEnd: 100 });
+    const overrides = normalizeCelShadingOverrides({ outlineFadeEnd: 10 });
+    expect(resolveCelShadingSettings({ outlineFadeStart: 20 }, overrides)).toMatchObject({ outlineFadeStart: 20, outlineFadeEnd: 20.01 });
+    expect(overrides).toEqual({ outlineFadeEnd: 10 });
+    expect(resolveCelShadingSettings({ outlineFadeStart: 5 }, overrides)).toMatchObject({ outlineFadeStart: 5, outlineFadeEnd: 10 });
+    expect(normalizeCelShadingOverrides({ outlineFadeStart: NaN, outlineFadeEnd: Infinity, outlineDistanceFadeEnabled: "true" })).toEqual({});
+    expect(normalizeCelShadingSettings({ outlineFadeStart: -20, outlineFadeEnd: -5 })).toMatchObject({ outlineFadeStart: 0, outlineFadeEnd: 0.01 });
+    const bounded = normalizeCelShadingSettings({ outlineFadeStart: 1e20, outlineFadeEnd: 1e20 });
+    expect(bounded.outlineFadeEnd).toBeLessThanOrEqual(1_000_000);
+    expect(bounded.outlineFadeEnd).toBeGreaterThan(bounded.outlineFadeStart);
   });
   it("keeps legacy and new projects in PBR, and preserves CEL settings while inactive", () => {
     expect(normalizeProjectSettings({}).render.mode).toBe("pbr");

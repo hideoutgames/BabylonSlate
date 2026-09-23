@@ -1,5 +1,5 @@
 import {
-  Color4, Constants, EffectWrapper, ShaderLanguage, Texture, type Camera,
+  Color4, Constants, EffectWrapper, Matrix, ShaderLanguage, Texture, type Camera,
 } from "@babylonjs/core";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -40,6 +40,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   readonly view: SharedOutlineView;
   private readonly masks: MaskRecord[] = [];
   private readonly compose: OutlineCompose;
+  private readonly inverseProjection = Matrix.Identity();
   private composePass: FrameGraphRenderPass | undefined;
   private lease: ManagedRenderLease | undefined;
   private width = 0;
@@ -60,7 +61,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     this.compose = new OutlineCompose({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,
-      uniformNames: ["screenSize", "tableSize", "maximumWidth", "reverseDepth", "activeGroups"],
+      uniformNames: ["screenSize", "tableSize", "maximumWidth", "reverseDepth", "activeGroups", "inverseProjection", "depthRange"],
       samplerNames: ["strictDepth", ...SHARED_OUTLINE_GROUPS.flatMap((group) => [`${group}Mask`, `${group}Style`])],
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
     });
@@ -129,6 +130,9 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
         effect.setFloat("maximumWidth", this.view.maximumWidth);
         effect.setFloat("reverseDepth", graph.engine.useReverseDepthBuffer ? 1 : 0);
+        this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
+        effect.setMatrix("inverseProjection", this.inverseProjection);
+        effect.setFloat2("depthRange", graph.engine.isNDCHalfZRange ? 1 : 2, graph.engine.isNDCHalfZRange ? 0 : -1);
         effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => this.view.groupActive(group) ? 1 : 0) as [number, number, number]);
         for (const record of this.masks) {
           context.bindTextureHandle(effect, `${record.group}Mask`, record.mask);

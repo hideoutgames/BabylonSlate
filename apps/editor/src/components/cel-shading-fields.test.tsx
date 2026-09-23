@@ -32,11 +32,13 @@ function SceneFields({
   mixing = "strongest",
   outlineWidth = 1,
   outlineColor = [0.03, 0.03, 0.03],
+  outlineFadeStart = 50,
 }: {
   bands?: number;
   mixing?: CelShadingSettings["lightMixing"];
   outlineWidth?: number;
   outlineColor?: CelShadingSettings["outlineColor"];
+  outlineFadeStart?: number;
 }) {
   const [overrides, setOverrides] = useState<CelShadingOverrides>({});
   return (
@@ -46,12 +48,31 @@ function SceneFields({
         lightMixing: mixing,
         outlineWidth,
         outlineColor,
+        outlineFadeStart,
       })}
       overrides={overrides}
       onChange={setOverrides}
     />
   );
 }
+
+it("overrides distance fade fields independently and retains distances while disabled", () => {
+  const view = render(<SceneFields />);
+  const fade = screen.getByRole("switch", { name: "Outline Distance Fade" });
+  expect(fade.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Override Outline Fade Start" }));
+  fireEvent.change(screen.getByLabelText("Outline Fade Start"), { target: { value: "20" } });
+  fireEvent.click(screen.getByRole("button", { name: "Override Outline Distance Fade" }));
+  fireEvent.click(fade);
+  expect(fade.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(fade);
+  view.rerender(<SceneFields outlineFadeStart={30} />);
+  expect((screen.getByLabelText("Outline Fade Start") as HTMLInputElement).value).toBe("20");
+  expect((screen.getByLabelText("Outline Fade End") as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Reset Outline Fade Start To Project Settings" }));
+  expect((screen.getByLabelText("Outline Fade Start") as HTMLInputElement).value).toBe("30");
+  expect(fade.getAttribute("aria-checked")).toBe("false");
+});
 
 it("edits outline color and width independently, preserves appearance while disabled, and resets to live project values", () => {
   const view = render(<SceneFields />);
