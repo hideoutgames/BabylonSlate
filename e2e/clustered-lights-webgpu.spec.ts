@@ -1,28 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { runClusteredLightProof } from "../apps/editor/src/testing/clustered-light-proof";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { renderingEvidence } from "./rendering-evidence";
 
-test.use({
-  launchOptions: {
-    args: [
-      "--enable-unsafe-webgpu",
-      // Dawn's Windows decoder needs the D3D11 device exposed by ANGLE.
-      process.platform === "win32"
-        ? "--use-angle=d3d11-warp"
-        : "--use-angle=swiftshader",
-      "--use-webgpu-adapter=swiftshader",
-      // Linux canvas presentation must use Chromium's Vulkan SwiftShader path
-      // as well as Dawn. Its GPU pixel tests use this combination so shared
-      // images do not cross an incompatible GL compositor during readback.
-      ...(process.platform === "linux"
-        ? [
-            "--enable-features=Vulkan",
-            "--use-vulkan=swiftshader",
-            "--disable-vulkan-surface",
-          ]
-        : []),
-    ],
-  },
-});
+// CI retains its deterministic software adapter; hardware qualification opts in.
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 test("clustered point and spot contributions preserve native and graph PBR and CEL pixels on WebGPU", async ({
   page,
@@ -55,7 +38,7 @@ test("clustered point and spot contributions preserve native and graph PBR and C
     ).__babylonslateClusteredLightProof(),
   );
   await testInfo.attach("clustered-light-proof", {
-    body: JSON.stringify(result),
+    body: JSON.stringify({ ...result, evidence: renderingEvidence("apps/editor/src/testing/clustered-light-proof.ts") }),
     contentType: "application/json",
   });
   expect(errors).toEqual([]);

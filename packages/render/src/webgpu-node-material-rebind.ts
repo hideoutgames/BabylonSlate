@@ -19,20 +19,18 @@ export function rebindEmptiedDrawContexts(material: NodeMaterial): void {
     const buffers = (
       wrapper.drawContext as { buffers?: Record<string, unknown> } | undefined
     )?.buffers;
-    if (
-      effect &&
-      buffers &&
-      material.isFrozen &&
-      (Object.keys(effect._uniformBuffersNames).some(
-        (name) => !(name in buffers),
-      ) || mesh.lightSources.some((light, index) => {
+    if (effect && buffers && material.isFrozen) {
+      if (Object.keys(effect._uniformBuffersNames).some((name) => !(name in buffers)))
+        wrapper._forceRebindOnNextCall = true;
+      // Match Babylon's BindLights prefix; unbound scene lights add no work.
+      const count = Math.min(mesh.lightSources.length, material.maxSimultaneousLights);
+      for (let index = 0; !wrapper._forceRebindOnNextCall && index < count; index++) {
         const name = `Light${index}`;
-        return index < material.maxSimultaneousLights &&
-          name in effect._uniformBuffersNames &&
-          buffers[name] !== light._uniformBuffer.getBuffer();
-      }))
-    )
-      wrapper._forceRebindOnNextCall = true;
+        if (name in effect._uniformBuffersNames &&
+          buffers[name] !== mesh.lightSources[index]!._uniformBuffer.getBuffer())
+          wrapper._forceRebindOnNextCall = true;
+      }
+    }
     original(world, mesh, subMesh);
   };
 }
