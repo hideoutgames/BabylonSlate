@@ -213,19 +213,6 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     camera.position.z = -5;
     camera.getProjectionMatrix(true);
-    // One actor identity can span very different camera distances. Fade must
-    // use the surface depth, not an actor/source center or per-ID distance.
-    for (const instance of instances) instance.setEnabled(false);
-    const thin = MeshBuilder.CreateBox("Thin Fade Distances", { size: 0.8 }, scene);
-    thin.material = material;
-    const matrices = new Float32Array(32);
-    Matrix.Translation(-1.5, 0, 0).copyToArray(matrices, 0);
-    Matrix.Translation(1.5, 0, 6).copyToArray(matrices, 16);
-    thin.thinInstanceSetBuffer("matrix", matrices, 16);
-    mount("global", { ...contributions.global!, targets: [{ key: "thin-fade", meshes: [thin] }], distanceFade: { start: 6, end: 10 } });
-    await capture("fade-thin-near-and-far");
-    thin.dispose();
-    for (const instance of instances) instance.setEnabled(true);
     mount("global");
     mount("component", { ...contributions.component!, color: [1, 0, 0], width: 4 });
     await capture("live-component-color-and-width");
@@ -245,6 +232,21 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     await capture("sibling-view-selection-isolated");
     siblingView.dispose();
     await capture("sibling-view-disposed");
+
+    // One actor identity can span very different camera distances. Fade must
+    // use the surface depth, not an actor/source center or per-ID distance.
+    for (const instance of instances) instance.setEnabled(false);
+    const thin = MeshBuilder.CreateBox("Thin Fade Distances", { size: 0.8 }, scene);
+    thin.material = material;
+    const matrices = new Float32Array(32);
+    Matrix.Translation(-1.5, 0, 0).copyToArray(matrices, 0);
+    Matrix.Translation(1.5, 0, 6).copyToArray(matrices, 16);
+    thin.thinInstanceSetBuffer("matrix", matrices, 16);
+    mount("global", { ...contributions.global!, targets: [{ key: "thin-fade", meshes: [thin] }], distanceFade: { start: 6, end: 10 } });
+    await capture("fade-thin-near-and-far");
+    thin.dispose();
+    for (const instance of instances) instance.setEnabled(true);
+    mount("global");
 
     const defaultMaterialMesh = MeshBuilder.CreateBox("No Assigned Material", { size: 0.35 }, scene);
     defaultMaterialMesh.position.set(0, 1.05, 0);
