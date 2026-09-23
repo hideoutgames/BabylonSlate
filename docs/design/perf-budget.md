@@ -96,6 +96,12 @@ one allocation within the same ceiling. These are small-fixture preparation
 times, not a claim about frame times in a large saved scene; cold receiver
 compilation remains visible and needs separate treatment.
 
+The staged-handoff route subsequently records total activation time, frame count,
+maximum preparation time and maximum CPU render duration while continuing to draw
+the incumbent. This route omits synchronous pixel readback during timing; the
+separate parity cases retain the native pixel oracle. Preparation latency and
+blocking frame work are distinct measurements.
+
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
 
 | Fixture | Reference median / p95 / p99 (ms) | Cached median / p95 / p99 (ms) | Cached interval samples | Estimated shadow MiB |

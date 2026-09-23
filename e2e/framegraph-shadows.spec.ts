@@ -10,6 +10,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     test.setTimeout(150_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error" || /GPUValidationError|validation error|WebGL.*INVALID_|shader.*(?:error|failed)/i.test(message.text())) errors.push(message.text());
+    });
     await page.goto("/?test=1&framegraphShadowProof=1");
     await page.waitForFunction(() => typeof (window as unknown as {
       __babylonslateFrameGraphShadowProof?: unknown;
@@ -27,6 +30,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(step.active).toEqual([step.index % 2 === 0 ? "incoming" : "key"]);
       expect(step.allocations).toBe(1);
       expect(step.resources.reservedBytes).toBeLessThanOrEqual(step.resources.limit);
+      expect(step.frames).toBeGreaterThan(1);
     }
   });
 }

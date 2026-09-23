@@ -1276,6 +1276,25 @@ light setting changes. The targeted regression detects this redundant per-frame
 invalidation; browser shadow parity and desktop profiling are recorded in
 [renderer qualification](../design/renderer-qualification.md).
 
+### Camera-driven shadow handoffs
+
+Compatible local-light handoffs keep eligible incumbents while one prospective
+receiver layout warms after rendered frames. The warmer dispatches at most eight
+probes and two milliseconds of work per frame (a single driver call cannot be
+preempted). Detached submeshes cover camera/Forward passes and instancing variants;
+temporary shadow lookups borrow compatible generator definitions without changing
+live maps, frozen receiver wrappers or shadow flags. Successful effects remain
+referenced until the actual layout passes strict readiness. There is no extra RTT
+or all-light-combinations cache, including when the shadow budget is full.
+
+Changed winners or readiness invalidate pending work. Authored disable/priority,
+camera possession, lost eligibility, resource/settings changes, incompatible
+light types and unqualified material callbacks use immediate normal admission.
+First activation without a compatible incumbent still uses ordinary preparation.
+Context recovery, graph retirement and scene disposal release pending probes.
+The existing dispose-before-allocate commit and first-map readiness checks remain
+authoritative; shader warmup does not authorize sampling an unrendered map.
+
 ### Shared outline candidate (22 September 2026)
 
 Strict material readiness resolves Babylon's lazy morph influence and texture
