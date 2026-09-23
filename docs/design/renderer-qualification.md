@@ -67,6 +67,28 @@ before/after comparison; no speedup or A16 headroom is claimed. WebGPU direct GP
 timings remain unavailable. The report retains CPU, cadence, tails and geometry
 upper bounds rather than treating capped cadence as a GPU measurement.
 
+Two bounded WebGL2 repeats at `5fafa7b4` retain the same artifact, content and
+quality. Combined median GPU samples vary between 0.279–0.448 ms (12 instances)
+and 0.418–0.496 ms (192); all pass/retirement invariants pass. The
+[repeat record](../assets/renderer-qualification/2026-09-23-shadow-integration/native-cost-repeat.json)
+includes 107 read-only host telemetry samples, with graphics clocks ranging
+435–1365 MHz and no power-policy override. Host telemetry is not per-scene GPU
+attribution. These unchanged-code samples demonstrate variability; they do not
+prove a before/after gain or regression, and do not replace the higher sample.
+
+Verify `35887663686` at `5fafa7b4` passes static and unit, but again fails WebGL2
+area export on Linux. All three attempts now identify the exact boundary:
+ready=true, draws=1, rendered=true, copied=true, GPU pending=true when the old
+four-second deadline expires. The
+[sanitized failure record](../assets/renderer-qualification/2026-09-23-shadow-integration/linux-first-frame-failure.json)
+preserves this failure separately from Windows passes. Two focused regressions
+fail at `a22e4355` because a still-pending GPU submission is rejected too early.
+The repair preserves the initial readiness deadline and starts a separate bounded
+15-second completion budget only after an actual valid draw. It still waits for
+the owner's GPU completion and copy, cancels a stalled submission, and retains
+replacement/disposal/error handling. The new Linux result remains required;
+this deadline repair is not itself evidence that the export case passes.
+
 The native command selects `shared-outline`, `shared-outline-geometry`,
 `shared-outline-cost`, `area-rect-light`, `area-light-export` and
 `clustered-lights-webgpu` under `test:e2e`, `playwright.perf.config.ts`, `perf-gpu`

@@ -623,7 +623,7 @@ describe("Play createEngine view", () => {
     }
   });
 
-  it.each(["completed", "stalled"] as const)("waits for a slow owned GPU frame beyond shader readiness, with bounded %s completion", async (completion) => {
+  it.each(["completed", "stalled"] as const)("waits beyond shader readiness for a slow owned GPU frame that is %s", async (completion) => {
     const engine = sharedEngine();
     const loops = vi.spyOn(engine, "runRenderLoop");
     const { handle } = playHandle(engine);

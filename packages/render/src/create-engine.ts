@@ -847,6 +847,11 @@ function initializeEngine(
       pending.reject(error);
     }
   };
+  const expirePresentation = (key: string) => {
+    const pending = pendingPresentations.get(key);
+    if (!pending) return;
+    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}.`), key);
+  };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
       throw new Error("Scene loading was superseded or disposed.");
@@ -2192,6 +2197,16 @@ function initializeEngine(
           pending.rendered = rendered && presentationReady(pending);
         });
         pending.submission = submission;
+        if (pending.rendered) {
+          // A validated draw is progress beyond shader readiness. Observed
+          // software-GL completion can outlast that earlier budget even after
+          // the canvas copy. Give completion its own bounded budget, without
+          // acknowledging before both this owner's fence and copy finish.
+          clearTimeout(pending.timer);
+          pending.timer = setTimeout(() => {
+            if (pendingPresentations.get(key) === pending) expirePresentation(key);
+          }, 15_000);
+        }
         void submission.completed.then(() => {
           if (pending.submission !== submission) return;
           pending.submission = null;
@@ -3032,10 +3047,7 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => {
-        const pending = pendingPresentations.get(key);
-        cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending?.ready}; draws: ${pending?.attempts}; rendered: ${pending?.rendered}; GPU pending: ${Boolean(pending?.submission)}; copied: ${pending?.copied}.`), key);
-      }, SCENE_SHADER_WARM_TIMEOUT_MS);
+      const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
       pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false });
       return promise;
     },
