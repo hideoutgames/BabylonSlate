@@ -2,7 +2,9 @@
 
 ## Current continuation status — 23 September 2026
 
-Implementation and the desktop browser routes below are qualified. At this
+Implementation and the Windows desktop browser routes below are qualified. The
+Linux software-renderer export transition remains under investigation after
+the `8f03f99f` Verify failure described below. At this
 evidence checkpoint PR #651 is unmerged; current-head Verify, required
 checks/reviews and guarded merge remain delivery gates. The
 [PR delivery record](https://github.com/hideoutgames/BabylonSlate/pull/651)
@@ -143,6 +145,30 @@ build and Computer Use evidence above; the full unit job remains failed until a
 new exact-head Verify succeeds. At `36f58100`, all 75 cases in the three affected
 files (`class-events`, `graph-inspector`, `logic-graph-document`) and their scoped
 lint pass; documentation links and evidence JSON also validate.
+
+That Verify run passes five browser shards, including the repaired clustered
+WebGPU pixel oracle, but shards 3 and 6 reach the unchanged 25-minute job limit.
+WebGL2 area export fails all three attempts at the uniform-scene first frame;
+WebGPU area export passes. The CEL shadow case reaches its 15-second save limit
+while the current invocation is progressing through project/journal writes, and
+the sRGB case exhausts its 60-second total workflow. Preview Build's texture
+import reports a missing file during the registry refresh and passes on retry;
+the separate bake/reopen case also passes on retry. Neither is recorded as a
+clean first-attempt pass, and cancelled shards do not satisfy Verify.
+
+The four selected Windows SwiftShader cases at `b55fc7dc` reproduce an area
+first-frame failure on a later empty-scene transition; both CEL cases and the
+textured Preview Build pass. At `43adf890`, the two CEL workflows pass with a
+bounded 30-second save / 120-second mode-cycle budget and unchanged pixel/save
+assertions. The area lifecycle passes once alongside them and in three further
+bounded repeats. These passes do not resolve the prior Linux failure. First-frame
+errors now retain readiness, attempted draws, GPU completion and canvas-copy
+state; the export fixture attaches that diagnostic on failure. Five selected
+presentation ownership/copy/error unit cases and three-file lint pass, as do the
+editor/player build typechecks. Earlier native output and Computer Use evidence
+remain applicable: this batch changes test budgets/catalog expectations and
+failure reporting, not rendering behavior. Fresh exact-head Verify remains
+required.
 
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations
