@@ -1111,7 +1111,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       mannequinShadowProbe: async (neutral, modelOnly) => {
         const handle = engineRef.current;
         if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
-        const result = (await import("../testing/mannequin-shadow-proof")).mannequinShadowProbe(handle.scene, neutral, modelOnly);
+        const result = await (await import("../testing/mannequin-shadow-proof")).mannequinShadowProbe(handle.scene, neutral, modelOnly);
         handle.scheduler.invalidate("manual");
         return result;
       },

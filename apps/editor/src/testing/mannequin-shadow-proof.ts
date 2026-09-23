@@ -5,7 +5,7 @@ const names = new Set(["head", "torso", "arm-left", "arm-right", "leg-left", "le
 const originals = new WeakMap<Scene, Map<string, Material | null>>();
 
 /** Explicit test-build probe of the six real starter meshes, never a frame hook. */
-export function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly = false) {
+export async function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly = false) {
   const meshes = scene.meshes.filter(mesh => names.has(mesh.name));
   if (meshes.length !== 6) throw new Error(`Expected six mannequin parts, got ${meshes.length}`);
   let saved = originals.get(scene);
@@ -18,9 +18,9 @@ export function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly =
     material.roughness = 1;
   }
   for (const mesh of scene.meshes) {
-    if (!names.has(mesh.name)) sceneShadowController(scene).setParticipation(mesh, { castShadows: !modelOnly });
+    sceneShadowController(scene).setParticipation(mesh, { castShadows: names.has(mesh.name) || !modelOnly });
   }
-  return meshes.map(mesh => {
+  const result = meshes.map(mesh => {
     const source = mesh.material;
     const effect = mesh.subMeshes[0]?.effect;
     mesh.material = neutral ? material : saved!.get(mesh.id)!;
@@ -36,4 +36,6 @@ export function mannequinShadowProbe(scene: Scene, neutral: boolean, modelOnly =
     });
     return { name: mesh.name, vertices, indices: Array.from(mesh.getIndices()!), material: source?.getClassName(), defines: effect?.defines, fragment: effect?.fragmentSourceCode };
   });
+  if (neutral) await Promise.all(meshes.map(mesh => material!.forceCompilationAsync(mesh)));
+  return result;
 }

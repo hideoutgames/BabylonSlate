@@ -20,6 +20,9 @@ test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => {
+    if (["warning", "error"].includes(message.type()) && /shader|ERROR: 0:|GL_INVALID|GL_OUT_OF_MEMORY|context lost/i.test(message.text())) errors.push(message.text());
+  });
   await page.goto("/?test=1");
   await page.waitForFunction(() => crossOriginIsolated);
   await expect(page.getByTestId("homepage")).toBeVisible();
