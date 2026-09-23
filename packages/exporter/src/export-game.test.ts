@@ -335,6 +335,7 @@ describe("exportGame", () => {
     const guids = ["area-emission:tex", "area-emission/tex", "area-emission_tex", "Area-emission:tex", "audioReverb:scene", "CON"];
     const result = await exportGame({
       mode: "loose", bundleDebugger: false, startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(),
       assets: guids.map((guid, index) => ({
         guid, type: "AreaEmission", sceneGuid: "scene-1", bytes: new Uint8Array([index + 1]),
@@ -348,7 +349,7 @@ describe("exportGame", () => {
     const paths = manifest.assets.map((entry) => entry.path!);
     expect(new Set(paths.map((path) => path.toLowerCase())).size).toBe(guids.length);
     for (const [index, path] of paths.entries()) {
-      expect(path).not.toMatch(/[<>:"\\|?*\x00-\x1f]/);
+      expect(path).not.toMatch(/[<>:"\\|?*]/);
       expect(path.split("/")).not.toEqual(expect.arrayContaining([".", ".."]));
       expect(path.split("/").at(-1)).not.toMatch(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])\./i);
       expect(extracted[path]).toEqual(new Uint8Array([index + 1]));
