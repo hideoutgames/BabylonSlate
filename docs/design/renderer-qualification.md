@@ -2,11 +2,95 @@
 
 ## Current continuation status — 23 September 2026
 
-The same PR remains draft and unmerged. Current acceptance uses the verified
-`f61ff565` application artifact (SHA-256
-`506efc43871906d4c7a08acab673959cc77ce5f656907cfe94df93dfbcc3203f`);
-application code is unchanged through `9a2e4fd2`. The newer reporting-only
-changes do not invalidate the retained native rendering results.
+Implementation and the desktop browser routes below are qualified. PR #651 is
+still unmerged; current-head Verify, required checks/reviews and guarded merge
+remain delivery gates. Physical A16 qualification remains **DEFERRED**.
+
+Final hands-on acceptance uses application revision
+`5d0f9a916e07dc97674efa2346cb99fee60eb40b`, artifact SHA-256
+`0a47744c69aa4bfc59bd96778c23af078af9cc0c4a9abd2f60b6e993f6f0e993`.
+The server checked artifact integrity and identified the source build. Earlier
+captures below retain their own revision; they are not retagged as current-head
+tests. Later documentation/evidence changes do not alter application behavior.
+
+| Requirement | Implementation and acceptance evidence | Status / limits |
+| --- | --- | --- |
+| Coordinated editor/component/CEL outlines | Native survivor, overlap, ordering, high-ID and strict-occlusion pixels on both APIs at `f39b1803`; Chrome Route A and later T3 removal/undo observations | **PASS** within the documented material/capacity contract |
+| Geometry and ownership | Native regular/thin groups, LOD, skeletal/morph, transforms, cutouts, opacity and Material Graph cases; UI-authored grouped-model duplication, animation, removal, reopen and independent exports at `5d0f9a91` | **PASS**; no new per-thin-index authoring API; unknown custom shaders remain unsupported |
+| Authored/runtime state | Existing normalization, Class inheritance, compiler, lifecycle and export/hydration regressions; normal UI history/save/reopen and runtime-only settings checks | **PASS**; editor selection remains view-local and absent from players |
+| Area lights/emission | Native PBR/CEL/graph receivers and unlit control; Chrome/T3 add/edit/gizmo/parent/prepare/cancel/replace/clear/duplicate routes; independently served packed/loose outputs with attribution | **PASS**; intentionally unshadowed/through-walls |
+| Scalability/output | Saved UI graph with preset, scale, changed event, effective readback and reset; actual 384×216 / 240×135 / 480×270 output; native compiled-graph cases and Play Stop restoration at `5d0f9a91` | **PASS**; unavailable-adapter injection is separate fallback evidence |
+| Cost/lifetime | Fixed-output native off/individual/all modes, 12/192 instances, direct WebGL GPU queries and eight retirement cycles; manual selection/gizmo-tool activity, resize, transitions and repeated Play Stop | **PASS** for the recorded desktop scope; WebGPU direct timings unavailable |
+| Computer Use | Chrome 153 on Windows for both APIs; authorized T3 Chromium 150 fallback for texture/model file setup and subsequent normal UI authoring | **PASS** for recorded routes; Chrome native file selection **BLOCKED** (`Not allowed`), not counted as a picker pass |
+| Physical/other hosts | No physical iPad A16, thermal/input-latency/headroom, Safari/WebKit or native mobile-host measurement | **DEFERRED / unavailable**, not a desktop-derived pass |
+| Delivery | Same branch and PR retained; selected local checks pass with revision-scoped reuse | **PENDING** exact-head CI/reviews/merge |
+
+### Final model, lifecycle and interaction route
+
+After deterministic file-input setup imported the repository's existing Kenney
+Mannequin model and texture, normal UI placed two actors sharing that asset and
+authored independent orange width-3
+and blue width-2 OutlineComponents. An `OutlineWalk` Animation Graph uses the
+existing `mannequin_walk` clip on the duplicate. This is hierarchy animation;
+the native geometry fixture separately covers skeletal and morph deformation.
+[Two actual poses](../assets/renderer-qualification/2026-09-23-computer-use/animated-play-webgl2-pose1.png)
+([second](../assets/renderer-qualification/2026-09-23-computer-use/animated-play-webgl2-pose2.png))
+and the [actual screen recording](../assets/renderer-qualification/2026-09-23-computer-use/animated-play-webgl2.mp4)
+retain the WebGL2 observation. Deleting the duplicate preserved
+[the orange model and other consumers](../assets/renderer-qualification/2026-09-23-computer-use/model-delete-survivors.png);
+undo restored it. Save, Close Project and Open Project retained the assets,
+components and graph. Native WebGPU presented the
+[animated duplicate](../assets/renderer-qualification/2026-09-23-computer-use/animated-play-webgpu.png)
+and [returned editor](../assets/renderer-qualification/2026-09-23-computer-use/model-reopened-webgpu.png).
+
+The [portable source backup](../assets/renderer-qualification/2026-09-23-computer-use/animated-project.zip)
+extends the earlier textured fixture. Import it through Projects, open Main Scene,
+then Play: the saved graph selects Low and scale 0.5, retains artistic CEL values,
+and resets to project defaults after 60 seconds. The backup requests WebGL2;
+Project Settings → Rendering → GPU Backend selects native WebGPU at the Engine
+restart boundary. No generated artwork was used.
+
+Actual UI Export Game produced fresh packed WebGL2 and loose WebGPU archives,
+both extracted normally on Windows and served on independent origins. Chrome
+confirmed the requested **effective** API, no fallback, 1280×565 CSS viewport,
+DPR 1 and 240×135 output, with both model styles, animation, prepared asymmetric
+emission and no editor guides/selection:
+[packed WebGL2](../assets/renderer-qualification/2026-09-23-computer-use/animated-packed-webgl2.png),
+[loose WebGPU](../assets/renderer-qualification/2026-09-23-computer-use/animated-loose-webgpu.png).
+[Archive identities](../assets/renderer-qualification/2026-09-23-computer-use/final-exports.json)
+and adjacent DOM diagnostics identify these captures. Build ZIPs remain local;
+the source fixture is the portable reproduction. Earlier Chrome packed/loose
+reset/reload captures and native automated external-request/transition assertions
+remain valid for unchanged player behavior.
+
+At `5d0f9a91`, two selected `create-engine.play.test.ts` cases, three-file lint,
+and both native `scalability-play.spec.ts` cases passed; the admitted build also
+passed editor/player TypeScript checks. Hands-on WebGL2 Stop twice restored
+427×295 at scale 1 from 240×135 Play, retaining 11 editor meshes, 12 materials,
+18 cached textures and 8,681,868 accounted bytes with zero pending bytes.
+Resize to 1440×800 and back restored that same allocation and output boundary.
+The expanded WebGPU scene also restored 427×295 after stopping at scale 0.5;
+Save All remained disabled. The [diagnostics](../assets/renderer-qualification/2026-09-23-computer-use/final-model-lifecycle-interaction.json)
+include these states and the earlier editor interaction samples.
+
+Two 15-second native WebGL2 observations held 427×295, scale 1, dynamic resolution
+off and 8,681,868 accounted bytes. Idle / selection-and-gizmo-tool activity had
+render CPU median 1.075 / 1.120 ms and p95 3.325 / 4.695 ms. rAF cadence median
+was 16.720 / 16.720 ms, p99 17.010 / 17.025 ms and maximum 17.155 / 33.255 ms;
+neither interval recorded a Long Task. Percentiles select the sorted sample at
+`floor(sampleCount × quantile)`. Actions selected box/emitter/neighbor,
+activated Move/Rotate, changed Position X and undid it.
+These are sampled CPU and presentation observations, not direct GPU timings,
+pointer-drag latency or A16 headroom. The isolated native cost reports below
+provide the controlled off/consumer comparisons. Three manual scene reloads
+retained settled owner/resource counts; the graph's delayed reset explains the
+later return from the initial frame-cap override to project defaults.
+
+### Retained 23 September authoring and export checkpoints
+
+The initial graph/texture route used the verified `f61ff565` artifact
+(`506efc43871906d4c7a08acab673959cc77ce5f656907cfe94df93dfbcc3203f`),
+unchanged in application behavior through `9a2e4fd2`.
 
 **Computer Use C, Chrome:** the saved Class was extended through the graph UI
 with Scalability Changed → Print, Get Effective Scalability Ready → Print Value,
@@ -71,9 +155,8 @@ at scale 0.5 left the editor at 213×147 instead of its prior 427×295 even thou
 its saved scale remained 1. Play now restores its borrowed Engine scale before
 readmitting editor views. Focused two-cycle coverage also exercises synchronous
 resize notifications; the compiled graph browser cases check actual editor
-buffer restoration. Verification and hands-on rerun of this repair are pending.
-Remaining work includes lifecycle/interaction evidence, review and exact-head CI.
-Physical A16 remains deferred.
+buffer restoration. The `5d0f9a91` checks and hands-on rerun above supersede
+that failure; its original capture remains retained. Physical A16 remains deferred.
 
 ## Earlier continuation checkpoints — 22 September 2026
 
@@ -349,9 +432,13 @@ cost case could not obtain an adapter. The import repair also passed scoped lint
 at this revision. Hands-on acceptance, real-GPU cost, export/settings acceptance
 and required current-head CI remain pending. PR #651 remains draft and unmerged.
 
-The shared renderer, editor selection host, authored OutlineComponent, default CEL
-outlines, typed settings/Graph controls and runtime/export wiring are implemented
-on PR #651 but **not accepted**. Earlier tables below describe their recorded
+The following table records the earlier 22 September checkpoint. Its pending
+items are superseded by the current inventory and dated results above.
+
+At that checkpoint, the shared renderer, editor selection host, authored
+OutlineComponent, default CEL outlines, typed settings/Graph controls and
+runtime/export wiring were implemented on PR #651 but **not accepted**.
+Earlier tables below describe their recorded
 revisions, not the current implementation. Following the two-API ownership and
 geometry fixtures and the native WebGL2/WebGPU manual survivor checks, the old
 selection renderer and its implementation-specific tests are retired. The shared
@@ -673,7 +760,11 @@ Targeted local verification (no full suite or coverage sweep):
 
 Earlier fixture failures (material-name assumptions, reading the cleared canvas, including the live HUD in screenshots, and assuming a console test-hook member) were corrected before the recorded browser pass. They are not evidence of passing player behavior. Required CI has not certified this incomplete handoff.
 
-### Remaining handoff work and release gates
+### Historical 21 September handoff gates
+
+This table preserves the state before the authorized extension and later browser
+acceptance. It is not the current requirement inventory; use the 23 September
+status above. Historical stock failures remain evidence for the extension.
 
 The stricter output-size regression at `96b2331a` passed all three standalone
 settings cases above. Earlier readback established the requested scaling level
@@ -964,9 +1055,10 @@ passed at `74766aa0`; three selected render-path/construction-rollback cases in
 `packages/render/src/create-engine.play.test.ts` passed at `686dc574` (118 other
 cases were not selected). Render, editor and runtime package typechecks passed,
 and eight changed TypeScript files passed ESLint with one existing Play-overlay
-hook-dependency warning. These results do not cover outline settings, which are
-not implemented, or establish physical-device performance. Computer Use still
-has no connected browser; these are automated browser tests.
+hook-dependency warning. At that revision, outline settings were not implemented
+and Computer Use had no connected browser; these were automated tests only.
+The later implementation and hands-on records above supersede those omissions,
+without turning this historical run into outline or physical-device evidence.
 
 ## Desktop CPU profiling: redundant shadow invalidation
 

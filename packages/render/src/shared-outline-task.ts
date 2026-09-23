@@ -32,7 +32,7 @@ type MaskRecord = {
   drawPass?: FrameGraphRenderPass;
 };
 
-/** Bounded production task candidate. Qualification gates adoption by editor UI. */
+/** Shared outline masks and composition with a bounded per-view pass budget. */
 export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   camera!: Camera;
   targetTexture!: FrameGraphTextureHandle;

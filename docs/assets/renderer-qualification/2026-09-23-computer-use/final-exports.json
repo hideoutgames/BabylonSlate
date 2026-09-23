@@ -1,0 +1,38 @@
+{
+  "build": "5d0f9a916e07dc97674efa2346cb99fee60eb40b",
+  "artifact": "0a47744c69aa4bfc59bd96778c23af078af9cc0c4a9abd2f60b6e993f6f0e993",
+  "sourceBackup": {
+    "path": "animated-project.zip",
+    "sha256": "b5467ebeb401b00553c2559c2f466100873a30e19fd78d5808c3d810b1a64eb6",
+    "bytes": 497614
+  },
+  "packedWebgl2": {
+    "sha256": "3f3587dcaf878d5e450d23e1b82dd7766f8d879110017ef9ae59b82f493bb7f6",
+    "bytes": 7550952,
+    "files": 53,
+    "uncompressedBytes": 26506272,
+    "windowsExtraction": "PASS",
+    "computerUse": "PASS"
+  },
+  "looseWebgpu": {
+    "sha256": "7f5bc308095fd3aee8948c8acaa943b6d12c8dec603d31b91bd2a1c63256444e",
+    "bytes": 7553737,
+    "files": 88,
+    "uncompressedBytes": 26500956,
+    "windowsExtraction": "PASS",
+    "computerUse": "PASS"
+  },
+  "checks": [
+    "Actual UI Export Game, separate extracted local origins independent of editor assets.",
+    "Chrome 153 confirmed effective requested API without fallback, 1280x565 DPR1.",
+    "Both shared-source model actors present, independent orange/blue outlines; animated duplicate changes pose.",
+    "Strict global and authored outline visibility remains; magenta intentional through-mesh contribution remains separate.",
+    "Prepared asymmetric emitter, saved Class scale-0.5 chain, 240x135 pixels; no editor selection or guides.",
+    "Build ZIPs are retained locally only. Portable source backup and real presented screenshots/video are repository evidence."
+  ],
+  "limitations": [
+    "Background-controlled Chrome HUD cadence is functional evidence, not representative performance.",
+    "Native file-picker remains unavailable in Chrome; T3 deterministic file injection was setup, normal UI authoring followed.",
+    "Hierarchical clip in manual Kenney model is not a new manual skeletal/morph qualification; the native geometry fixtures cover those."
+  ]
+}

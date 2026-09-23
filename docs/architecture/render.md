@@ -1105,8 +1105,12 @@ or newly active morph can first dirty defines during drawing, allowing an older
 WebGL hot-swap effect into a frame reported ready. This work occurs during the
 existing invalidated readiness probes, not on unchanged steady-state frames.
 
-The continuation authorizes a bounded shared extension after reproducing the
-pinned native failure. This is a design checkpoint, **not production acceptance**.
+The continuation authorized a bounded shared extension after reproducing the
+pinned native failure. The design below is now the production path for editor,
+component and global CEL outlines. Its revision-scoped native pixels, Computer
+Use routes, desktop cost and deferred hosts are recorded in
+[renderer qualification](../design/renderer-qualification.md#current-continuation-status-23-september-2026);
+that evidence is separate from PR CI and merge approval.
 The stock fixture again reproduced removal of another consumer's regular-instance
 buffer on both APIs and loss of its pixels on effective WebGPU. Stock layers also
 overwrite mesh-owned selection IDs; reference counting alone cannot isolate
@@ -1164,19 +1168,16 @@ These properties do not meet independent styles and strict CEL visibility.
   after native retirement (WebGPU's next end-frame drain). With every consumer
   inactive, retire all outline-only allocations and execute no outline passes.
 
-The first production slice is regular meshes and three independently removable
-same-source instance consumers, including overlapping membership and order
-changes, on actual WebGL2 and effective WebGPU. Keep the old editor selection
-path until replacement survivor-pixel tests and hands-on acceptance pass. LOD,
-thin index mappings, animated/alpha/custom receivers, depth reuse, complete
-authoring/runtime/export wiring and cost qualification are subsequent acceptance
-requirements, not claims established by this design note. Repository search at
-this checkpoint found thin-instance proof code but no authored thin-instance
-mapping API; the implementation must define that boundary explicitly.
+The first slice qualified three independently removable same-source instance
+consumers, overlapping membership and order changes on native WebGL2 and WebGPU.
+The old editor selection renderer was retired after survivor pixels and hands-on
+acceptance passed. Later native fixtures cover LOD, whole-actor thin groups,
+animation, alpha/custom graph coverage, runtime/export integration and cost.
+There is no authored per-thin-index mapping API; a thin mesh remains one actor
+identity and style. See the qualification report for exact cases and limitations.
 
-The next implementation slice, still requiring its own pixel acceptance, uses
-native ObjectRenderer custom submission per submesh. Original materials and
-MultiMaterial lookup remain intact; each mask pass owns its actual DrawWrappers
+Mask drawing uses native ObjectRenderer custom submission per submesh. Original
+materials and MultiMaterial lookup remain intact; each mask pass owns its actual DrawWrappers
 and retires replaced Effects. Native bone, position/UV morph, clip-plane and
 instance helpers preserve coverage; unused color morph attributes are omitted.
 Cutouts use the material's requested UV1 or UV2 set and live texture transforms/cutoffs;
@@ -1193,9 +1194,9 @@ Unknown custom shaders, opacity Fresnel and alpha UV sets beyond UV2 remain
 explicitly unsupported. Transparent coverage is conservative: positive supported
 opacity blocks strict outlines, zero coverage does not; identity masks never
 alpha-blend. Native opacity textures (including their independent UV transform),
-vertex alpha and thin-instance alpha are implemented but require the new pixel
-qualification. Whole-mesh thin groups are supported by the
-candidate; independent index authoring is not provided. The glTF GPU-instancing
+vertex alpha and thin-instance alpha are covered by the native geometry
+qualification. Whole-mesh thin groups are supported;
+independent index authoring is not provided. The glTF GPU-instancing
 extension is not newly enabled by this renderer change.
 
 ### Authored outline integration
@@ -1228,8 +1229,9 @@ World rendering now uses the existing coordinator for editor and RTT views as
 well as Play. Hosted editor synchronization keeps world-matrix freezing but
 disables the classic active-mesh queue freeze, which conflicts with FrameGraph
 object collection. RTT outputs own sampleable depth through the existing target
-lifetime. This scheduling change requires a fresh equal-output CPU comparison;
-the historical shadow optimization profile is not evidence of its cost.
+lifetime. Current equal-output off/consumer costs and ordinary editor activity
+observations are retained in the qualification report; the historical shadow
+optimization profile is not evidence of this scheduling change's cost.
 
 In test builds only, `?test=1&renderDiagnostics=1` publishes a throttled read-only
 `data-render-diagnostics` snapshot on the ready viewport after its own presented
