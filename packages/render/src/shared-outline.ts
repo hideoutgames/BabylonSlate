@@ -478,7 +478,8 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
     throw new Error("Shared outline contribution has invalid identity, color, or width (0.25–8 pixels).");
   if (input.distanceFade && (input.kind !== "global" || input.throughMeshes ||
     !Number.isFinite(input.distanceFade.start) || !Number.isFinite(input.distanceFade.end) ||
-    input.distanceFade.start < 0 || input.distanceFade.end <= input.distanceFade.start))
+    input.distanceFade.start < 0 || !Number.isFinite(Math.fround(input.distanceFade.end)) ||
+    Math.fround(input.distanceFade.end) <= Math.fround(input.distanceFade.start)))
     throw new Error("Only global outlines accept a finite increasing distance fade range.");
   return { ...input, distanceFade: input.distanceFade ? { ...input.distanceFade } : undefined,
     color: [...input.color], targets: [...input.targets]

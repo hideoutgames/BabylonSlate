@@ -1408,8 +1408,9 @@ Global **Outline Distance Fade** is off by default. **Outline Fade Start** and
 **Outline Fade End** default to 50 and 100 scene units. Width follows a smoothstep
 from its authored value to exactly zero; moving closer restores it. These three
 fields inherit independently and persist through save/export and session settings.
-Finite distances clamp to 0–1,000,000; the start is limited to 999,999.99 and the
-effective end is raised to at least start + 0.01 after inheritance. Invalid sparse
+Finite distances clamp to 0–1,000,000; the start leaves one GPU float step below
+the upper limit. After inheritance, the effective end is raised to at least
+start + 0.01 (or one GPU float step at large distances). Invalid sparse
 values inherit. Disabling fade retains its distances and the previous appearance.
 
 The shared compose shader reconstructs each candidate surface's camera distance

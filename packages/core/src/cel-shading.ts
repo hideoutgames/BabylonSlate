@@ -50,7 +50,7 @@ export const CEL_SHADING_LIMITS = {
   specularSize: [0.01, 1],
   lightColorInfluence: [0, 1],
   outlineWidth: OUTLINE_WIDTH_LIMITS,
-  outlineFadeStart: [0, 999_999.99],
+  outlineFadeStart: [0, 999_999.9375],
   outlineFadeEnd: [0.01, 1_000_000],
 } as const;
 
@@ -111,6 +111,9 @@ export function resolveCelShadingSettings(
 
 /** Validate the pair after inheritance without inventing sparse override keys. */
 function resolveOutlineFadeRange(settings: CelShadingSettings): CelShadingSettings {
-  settings.outlineFadeEnd = Math.max(settings.outlineFadeEnd, settings.outlineFadeStart + 0.01);
+  // At large distances a 0.01 range can collapse to equal float32 shader
+  // endpoints. Keep at least one representable step, including at the cap.
+  const step = 2 ** (Math.floor(Math.log2(Math.max(1, settings.outlineFadeStart))) - 23);
+  settings.outlineFadeEnd = Math.max(settings.outlineFadeEnd, settings.outlineFadeStart + Math.max(0.01, step));
   return settings;
 }
