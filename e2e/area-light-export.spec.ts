@@ -16,6 +16,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     test.setTimeout(120_000);
     const errors: string[] = [], external: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    const presentationErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && message.text().includes("Scene loading failed")) presentationErrors.push(message.text());
+    });
     await page.route("https://**", async (route) => { external.push(route.request().url()); await route.abort(); });
     const source = await encodeRgbaPng(1, 1, new Uint8Array([48, 220, 72, 255]));
     const rgba = new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4);
@@ -95,6 +99,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect((await capture("reload", 65_536 + 5_592_404)).pixels === textured.pixels).toBe(true);
       expect(errors).toEqual([]); expect(external).toEqual([]);
       await testInfo.attach("standalone-area-evidence", { body: JSON.stringify({ evidence: renderingEvidence("e2e/area-light-export.spec.ts"), backend, textured: textured.report, uniform: uniform.report, off: off.report }), contentType: "application/json" });
-    } finally { await server.close(); }
+    } finally {
+      if (presentationErrors.length) await testInfo.attach("scene-presentation-errors", { body: JSON.stringify(presentationErrors), contentType: "application/json" });
+      await server.close();
+    }
   });
 }

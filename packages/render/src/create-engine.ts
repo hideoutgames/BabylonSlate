@@ -829,6 +829,8 @@ function initializeEngine(
     resolve: () => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    ready: boolean;
+    attempts: number;
     rendered: boolean;
     owner?: SceneLayerLoadIdentity;
     submission: ReturnType<typeof submitPresentedFrame> | null;
@@ -2024,7 +2026,8 @@ function initializeEngine(
   };
   const presentationReady = (pending: PendingPresentation) => {
     try {
-      return pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      return pending.ready;
     } catch (error) {
       cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
       return false;
@@ -2184,6 +2187,7 @@ function initializeEngine(
         if (pending.rendered || pending.submission) { draw(); return; }
         pending.copied = false;
         const submission = submitPresentedFrame(engine, () => {
+          pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         });
@@ -3029,9 +3033,10 @@ function initializeEngine(
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
       const timer = setTimeout(() => {
-        cancelPresentation(new Error("The scene did not present a frame before the loading deadline."), key);
+        const pending = pendingPresentations.get(key);
+        cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending?.ready}; draws: ${pending?.attempts}; rendered: ${pending?.rendered}; GPU pending: ${Boolean(pending?.submission)}; copied: ${pending?.copied}.`), key);
       }, SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, rendered: false, owner, submission: null, copied: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
