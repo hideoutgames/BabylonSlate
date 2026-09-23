@@ -2481,6 +2481,12 @@ function initializeEngine(
       if (registeredView) {
         engine.unRegisterView(canvas);
         if (options.playMode) {
+          // Play borrows the Engine-wide scale while sibling views are held.
+          // Restore it before admitting their next native resize/copy. Their
+          // unchanged quality snapshots otherwise leave Play's scale installed.
+          if (engine.getHardwareScalingLevel() !== previousScaling) {
+            engine.setHardwareScalingLevel(previousScaling);
+          }
           setOtherEngineViewsEnabled(engine, canvas, true);
         }
       }

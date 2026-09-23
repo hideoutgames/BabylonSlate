@@ -749,6 +749,8 @@ Runtime `quality` queries requested settings and provenance; Stats/light diagnos
 
 Local editor rendering preferences are opt-in through **Override Project Rendering**. With it off, resolution and texture budgets inherit the project. With it on, local preferences overlay authored values; explicit runtime quality commands have higher priority. Disabling it restores inheritance. Editor texture downsampling is a separate opt-in source-size optimization and defaults off. Texture quality mip bias affects sampling bandwidth; it does not shrink already resident mip chains. Memory budgets reclaim unreferenced representations and never dispose textures still leased by a preview or scene.
 
+Overlay Play temporarily owns the shared Engine's hardware scale while editor views are held. Stop restores the scale captured before Play before readmitting those views, so an unchanged editor quality snapshot cannot inherit a runtime-only resolution override. The next Play session resolves its own project defaults.
+
 | Quality | Resolution / Dynamic Minimum | Texture Mip Bias | Anisotropy | Texture Budget | Eligible Post-process Scale |
 | --- | --- | --- | --- | --- | --- |
 | Low | 0.75 / 0.5 | 1 | 2 | 256 MiB | 0.5 |

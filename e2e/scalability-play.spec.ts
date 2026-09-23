@@ -92,6 +92,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000002", type: "Class", name: "Main", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "Actor" }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
+  const editorSize = await page.getByTestId("viewport-canvas").evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
   expect((await read(page)).rendering?.pipeline.effective.gpuBackend).toBe(backend);
@@ -131,8 +132,11 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
   await command("qual_cluster");
   await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
+  await command("quality resolution scale 0.5");
+  await expect.poll(async () => (await read(page)).rendering?.width).toBe(240);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await expect.poll(() => page.getByTestId("viewport-canvas").evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height])).toEqual(editorSize);
   await expect(page.getByTestId("save-all-project")).toBeDisabled();
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);

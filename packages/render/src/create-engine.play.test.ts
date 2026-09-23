@@ -470,6 +470,45 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
+  it("restores the editor scale before readmitting shared views when Play stops", async () => {
+    const engine = sharedEngine();
+    let hardwareScaling = 1;
+    let restoring = false;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => {
+      hardwareScaling = level;
+      if (restoring) {
+        // WebGPU resizing can synchronously re-enter native view admission.
+        expect(engine.views.every((view) => !view.enabled)).toBe(true);
+        engine.onBeginFrameObservable.notifyObservers(engine);
+      }
+    });
+    const { handle: editor } = editorHandle(engine);
+    editor.setRenderSettings(normalizeRenderProjectSettings({
+      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+    }));
+    await editor.prewarmSceneMaterials();
+    expect(hardwareScaling).toBe(1.25);
+    const editorView = engine.views[0]!;
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const { handle: play } = playHandle(engine);
+      play.setRenderSettings(normalizeRenderProjectSettings({
+        quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
+      }));
+      await play.prewarmSceneMaterials();
+      expect(hardwareScaling).toBe(2);
+      expect(editorView.enabled).toBe(false);
+      restoring = true;
+      play.dispose();
+      restoring = false;
+      await play.whenReleased();
+      expect(engine.getHardwareScalingLevel()).toBe(1.25);
+      expect(editor.scaling.getLevel()).toBe(1.25);
+      expect(engine.views).toEqual([editorView]);
+      expect(editorView.enabled).toBe(true);
+    }
+  });
+
   it("draws an RTT preview once while every registered canvas retains its paused bitmap", async () => {
     const engine = sharedEngine();
     const nativeDispatch = engine._renderViews;

@@ -58,9 +58,21 @@ is portable; exported player builds stay local. Actual UI Export Game produced
 packed and loose ZIPs. Windows extraction of the loose ZIP **failed** because
 namespaced emission/audio IDs became filenames containing colons. The exporter
 now preserves IDs in the manifest and assigns portable ordinal filenames.
-The focused regression and repaired independent-player acceptance are pending;
-the original loose archive is not a pass. Remaining work includes independent
-output, additional lifecycle/interaction evidence, review and exact-head CI.
+At `a4439e5c`, all 31 exporter tests, the two changed-file lint checks, exporter
+typecheck, and both selected native-WebGPU loose export cases passed. A fresh UI
+loose export from that build extracted successfully with Windows Expand-Archive.
+Computer Use Chrome confirmed effective WebGPU in both independently served
+packed and loose players, with authored outlines/emission, no editor selection,
+240×135 graph output and 480×270 reset. The loose player also reloaded successfully.
+The original loose archive remains a historical failure.
+
+The subsequent WebGL2 Play lifecycle route exposed a separate failure: stopping
+at scale 0.5 left the editor at 213×147 instead of its prior 427×295 even though
+its saved scale remained 1. Play now restores its borrowed Engine scale before
+readmitting editor views. Focused two-cycle coverage also exercises synchronous
+resize notifications; the compiled graph browser cases check actual editor
+buffer restoration. Verification and hands-on rerun of this repair are pending.
+Remaining work includes lifecycle/interaction evidence, review and exact-head CI.
 Physical A16 remains deferred.
 
 ## Earlier continuation checkpoints — 22 September 2026

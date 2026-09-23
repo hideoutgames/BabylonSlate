@@ -1,0 +1,22 @@
+{
+  "canvas": [
+    {
+      "height": 270,
+      "width": 480
+    }
+  ],
+  "root": {
+    "backendFallback": "",
+    "booted": "true",
+    "effectiveBackend": "webgpu",
+    "requestedBackend": "webgpu",
+    "sceneLoadId": "1",
+    "sceneLoadPhase": "Presenting First Frame",
+    "sceneLoadProgress": "90",
+    "sceneLoading": "false",
+    "startupScene": "2f6c3c3c-1f00-4c3a-ae06-f18385f08d6d",
+    "testid": "player-root",
+    "ticks": "8655"
+  },
+  "text": "fps 1 script 0.07ms phys 0.19ms actors 7/256 draws 12 geo 0.0MB js 35.9MB ticks 8655"
+}
