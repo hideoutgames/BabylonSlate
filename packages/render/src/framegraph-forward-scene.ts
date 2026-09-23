@@ -921,6 +921,7 @@ export class ForwardSceneFrameGraph {
 
   private isReady(): boolean {
     this.strictChecks += 1;
+    findSceneShadowController(this.scene)?.setReceiverRenderPass(this.objects!.objectRenderer.renderPassId);
     const cameras = this.scene.activeCameras;
     const shadowFlags = this.scene.lights.map(
       (light) => [light, light.shadowEnabled] as const,
