@@ -360,7 +360,7 @@ it("retains binding observers on settled frames and refreshes them for camera an
 });
 
 it("prepares replacement shadow maps without retiring the live object pass", async () => {
-  const { scene, camera, light, controller, graph, render } = await fixture("spot");
+  const { scene, camera, light, controller, graph, render, framebuffer } = await fixture("spot");
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   render();
   const renderer = scene.objectRenderers.find((entry) => entry.name === "Forward objects")!;
@@ -371,7 +371,10 @@ it("prepares replacement shadow maps without retiring the live object pass", asy
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     expect(scene.objectRenderers).toContain(renderer);
     expect(renderer.renderPassId).toBe(pass);
-    expect(render()).toBe(enabled ? 1 : 0);
+    const target = controller.generator(light)?.getShadowMap()?.renderTarget;
+    framebuffer.mockClear();
+    render();
+    expect(framebuffer.mock.calls.filter(([bound]) => target && bound === target)).toHaveLength(enabled ? 1 : 0);
   }
 });
 
