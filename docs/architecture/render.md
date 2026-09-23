@@ -143,7 +143,7 @@ The Basic 3D template recalculates the bundled Mannequin's normals from its exis
 - `settings.render.mode` / `settings.render.cel` persist in the project and player manifest. Optional `scene.settings.celShading` keys are normalized and resolved independently. Missing/invalid values inherit; finite values are bounded before shader binding.
 - `setSceneRenderSettings` is scene-local. Authored material graphs switch their surface output in place, preserving parameter bindings, textures, deformation and freeze policy. Imported PBR/Standard surfaces use native CEL adapters, including MultiMaterial slots; original materials and borrowed textures remain available for PBR restoration. Scene disposal releases adapters and listeners. The replacement pass is event-driven rather than per-frame: a settings call marks it dirty, as do `onNewMeshAddedObservable`/`onMeshRemovedObservable`, `onNewMaterialAddedObservable`/`onMaterialRemovedObservable`, each mesh's `onMaterialChangedObservable`, and a `scene.defaultMaterial` identity check; the `onBeforeRenderObservable` entry only consumes that flag and returns on clean frames, so `scene.meshes` is never scanned when nothing changed. Scene readiness is invalidated only when the pass actually replaces a material, swaps `scene.defaultMaterial`, or changes a MultiMaterial child list, and `syncSceneLighting` runs on those frames only — unchanged CEL frames do not defeat the strict readiness cache.
 - Scene viewport rendering changes recreate the GPU scene, recollect saved assets and warm shaders before revealing it. Camera pose, selection and unsaved scene content survive; inactive CEL settings do not reload PBR. **Reload Scene** uses the same full reload path.
-- CEL directional shadows scale depth bias with the shadow projection texel size to avoid self-shadow speckling on curved and flat surfaces with large receivers; PBR retains its existing bias.
+- Directional Auto Bias adapts both PBR and CEL shadow maps to the current projection and admitted resolution. Manual mode retains authored offsets.
 - Mode switches invalidate inherited default-material shader caches and refresh the editor's frozen active meshes after material readiness. Rapid graph switches coalesce while shader blocks load, so an open scene follows the latest mode without reopening it.
 - Scene/Prefab viewports, Material/Model/Animation/Skeleton previews, Play and the player share this policy. Scene overrides apply to world scenes; asset previews use project defaults.
 
@@ -659,7 +659,51 @@ per-submesh shadow culling retains upstream casters for depth-clamped PCF.
 Skinned, morphing and instanced geometry is not automatically partitioned.
 Skinned/morphing casters and materials with deformation padding bypass static
 bounds rejection; a bind-pose AABB cannot certify their animated shadow extent.
-Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle. Automatic cascade depth and normal bias derive from texel size and filter footprint; disabling automatic bias uses the authored offsets directly.
+Project Rendering edits remain in a modal draft until Done or another close path commits them together, followed by a full scene reload and shader warm-up. Unchanged/reverted edits do not reload; only changed leaves merge into the latest project. Exports use an explicit draft snapshot without updating the running scene. Camera/session state and unsaved documents remain owned by the existing viewport/document lifecycle.
+
+Directional **Auto Bias** covers single maps, cascades and capability fallback.
+It reads each current orthographic projection and actual allocated dimensions
+after Babylon's native preparation, before caster uniforms bind. Depth Bias is
+an authored floor in native Babylon units; derived values never enter project,
+scene or runtime serialization. Normal Bias is a world-space inset and remains
+exactly authored: automatic mode adds no displacement at split-normal edges.
+Manual mode uses both authored values exactly after input normalization.
+
+Directional PCF combines a quarter-world-texel caster correction with a
+receiver-plane correction derived from the current fragment's light-space depth
+slope at each existing native bilinear PCF tap. A common shift for the whole
+1/3/5 kernel removes valid contacts with wider filters, so each tap follows the
+receiver plane before applying only its own bilinear-support correction. Native
+sample counts, positions and filter weights remain unchanged. All cascade
+derivatives execute before cascade selection/blending.
+The receiver's comparison-depth shift is derived from its projected depth
+gradient and actual map dimensions. A 0.05 normalized-depth ceiling guards
+numerical extremes; it is not a world-space displacement policy. Singular
+derivatives use the caster correction alone. No model or scene bounding box
+sets the offset. Manual
+mode bypasses the receiver correction. The pinned WGSL Low CSM blend adapter
+also supplies Babylon 9.20's omitted array-texture argument.
+
+Other directional filters retain a half-world-texel base correction with
+Poisson's actual blur radius; PCSS tap count is not treated as a filter width.
+Babylon 9.20 GLSL/WGSL hardware comparison depth changes by `0.5 * bias`, or
+`1.5 * bias` for depth-clamped CSM PCF; color-depth comparison changes by
+`1 * bias`. Reverse depth changes direction, not these magnitudes. PCSS has a
+separate blocker-search color metric. The native bias is limited to the 0.05
+input range for recovering projections, while authored floors remain intact.
+These numerical guards do not promise correctness for arbitrary thin geometry.
+
+Point and spot **automatic adjustment remains unsupported**. Their perspective
+and radial depth paths retain authored offsets, reported as `local-authored` in
+detailed diagnostics. Local cache invalidation still observes authored bias
+edits before its draw decision. This change does not alter shadow coverage,
+map/pass/sampler budgets, ownership or the borrowed FrameGraph textures.
+
+The managed shadow bridge refreshes receiver bindings before readiness as well
+as before drawing. A shadow-enabled toggle on a reused graph must warm its new
+material layout; compiling the previous layout can otherwise present a stale
+shadow shader after a transform or instance change. This updates binding hooks
+only on state changes and does not redraw or replace the borrowed maps.
 
 The single-map fallback also follows the camera with texel-snapped XY coverage;
 only relevant upstream caster bounds extend its depth. Directional generators
@@ -670,6 +714,21 @@ the sun keeps a regular single-map shadow with one-pass accounting and an explic
 diagnostic; authored cascade settings and global engine state remain unchanged.
 Stats distinguish actual shadow draw calls and triangles from allocated cascade/cube passes
 and report completed RTT readback-plus-copy duration separately.
+
+`captureShadowDiagnostics(scene, options)` is an explicit, bounded CPU snapshot for
+shadow investigations. Call it after the relevant view draw and supply the build SHA,
+host/OS, backend fallback reason and project unit convention when known. It reuses
+the existing shadow owner and render-path diagnostics; no observers, shadow draws,
+texture readbacks or logging are added. The snapshot keeps the authored request
+separate from admitted map dimensions, effective filters, current native bias and
+the most recent per-layer drawn bias. Cached projection matrices expose each
+directional map's actual footprint/depth interval without recomputing it. Point
+maps label their matrix as the last rendered cube face. Capture is limited to 32
+lights and 256 explicitly selected model meshes, with truncation counts; unknown
+provenance remains null and NullEngine is identified as `null`, not a GPU backend.
+Pass selected meshes to record their current world bounds/transforms without a
+full-scene geometry scan. These dumps document effective state; they do not prove
+the original asset is fixed or qualify native A16 pixels, timing or memory.
 
 Local shadow allocation follows authored priority, then nearest relevant camera
 distance; brightness does not displace a nearer light. Maps have a 250 ms minimum
@@ -853,6 +912,8 @@ Overlay Play temporarily owns the shared Engine's hardware scale while editor vi
 Dynamic resolution targets 60 FPS with hysteresis. Texture anisotropy is limited only by the actual backend capability. Budgets are estimates of resident texture allocations, including distinct cached sampling representations; they are not total GPU memory limits. Ultra is an optional high-end target, not a restriction on individual authored settings.
 
 Shared engine texture caches honor the largest budget requested by a live view, independent of settings-update order. Releasing a view removes its budget request. Graph-bound cache textures apply anisotropy at binding because engine-owned wrappers need not appear in a Scene texture list.
+
+Material texture quality excludes render targets, including during their construction notifications and graph-material binding. Shadow maps retain Babylon's anisotropy of 1: applying material anisotropy changes the hardware PCF footprint and can introduce shadow bands after settings updates. Opt-in shadow diagnostics include the map's anisotropy.
 
 CEL hard thresholds include a small numerical tie tolerance. Without it, an exactly flat face at a band boundary (for example a 45-degree white directional light) can alternate bands from floating-point interpolation round-off, even with shadows disabled. The tolerance does not blend the boundary. Nearly tied strongest lights likewise retain stable scene order.
 

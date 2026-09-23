@@ -1,7 +1,7 @@
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
-import { lightsDebugText } from "@babylonslate/render";
+import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { snapshotFloatCount, type ControlMessage } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
@@ -90,6 +90,7 @@ export type PlayerBootHandle = {
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
   scalability: () => ScalabilityAcknowledgement | undefined;
+  shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
   bakedSession: () => ReturnType<
@@ -110,7 +111,7 @@ export type PlayerBootHandle = {
 
 /** Browser qualification surface installed only in test-mode player builds. */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "bakedSession" |
+  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" | "bakedSession" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 >;
 
@@ -756,7 +757,8 @@ function initializePlayer(
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
       scalability: () => handle.scalabilityStatus?.(),
-    visuals: () => handle.playVisualStates(),
+      shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
+      visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
       bakedSession: () =>
         halted ? null : handle.bakedSessionDiagnostics(),

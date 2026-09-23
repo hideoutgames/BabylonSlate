@@ -1,6 +1,8 @@
 import {
   DirectionalLight,
+  Effect,
   FreeCamera,
+  Matrix,
   MeshBuilder,
   NullEngine,
   PointLight,
@@ -14,7 +16,8 @@ import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/R
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { sceneShadowController } from "./shadow-controller";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { captureShadowDiagnostics } from "./shadow-diagnostics";
+import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -154,6 +157,92 @@ it.each(["point", "spot", "sun"] as const)(
     const previous = faces();
     scene.render(false);
     expect(faces() - previous).toBe(count);
+  },
+);
+
+it("binds current directional projection bias before the managed caster draw without replacing resources", async () => {
+  const { engine, scene, camera, light, controller, generator, map, texture, graph, render } =
+    await fixture("sun");
+  expect(light).toBeInstanceOf(DirectionalLight);
+  const sun = light as DirectionalLight;
+  let span = 16;
+  sun.customProjectionMatrixBuilder = (_view, _casters, result) => {
+    Matrix.OrthoOffCenterLHToRef(-span / 2, span / 2, -span / 2, span / 2, 0, 80, result, engine.isNDCHalfZRange);
+  };
+  sun.forceProjectionMatrixCompute();
+  const authored = structuredClone(sceneRenderingSettings(scene).shadows);
+  const uniforms: Array<[number, number]> = [];
+  const setFloat3 = Effect.prototype.setFloat3;
+  vi.spyOn(Effect.prototype, "setFloat3").mockImplementation(function (this: Effect, name, x, y, z) {
+    if (name === "biasAndScaleSM") uniforms.push([x, y]);
+    return setFloat3.call(this, name, x, y, z);
+  });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  uniforms.length = 0;
+  expect(render()).toBe(1);
+  expect(uniforms.length).toBeGreaterThan(0);
+  // NullEngine's actual Poisson fallback has a two-texel radius. At a 16-world-
+  // unit footprint / 256 texels / 80-depth interval this needs 0.0015625.
+  for (const [bias, normalBias] of uniforms) {
+    expect(bias).toBeCloseTo(0.0015625, 8);
+    expect(normalBias).toBe(0.005);
+  }
+  const previousDraw = captureShadowDiagnostics(scene).lights[0].generator!.lastDrawBias;
+  expect(previousDraw).toHaveLength(1);
+  span = 32;
+  scene.incrementRenderId();
+  sun.forceProjectionMatrixCompute();
+  expect(map.isReadyForRendering()).toBe(true);
+  expect(generator.bias).toBeCloseTo(0.003125, 8);
+  // Native readiness runs the projection/bias callback but never changes the
+  // map's texels; it must not replace the provenance of the previous real draw.
+  expect(captureShadowDiagnostics(scene).lights[0].generator!.lastDrawBias).toEqual(previousDraw);
+  uniforms.length = 0;
+  expect(render()).toBe(1);
+  expect(uniforms.length).toBeGreaterThan(0);
+  for (const [bias] of uniforms) expect(bias).toBeCloseTo(0.003125, 8);
+  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.125, 8);
+  expect(controller.effectiveBias(light)[0].renderId).toBeGreaterThan(previousDraw[0].renderId);
+  expect(controller.generator(light)).toBe(generator);
+  expect(generator.getShadowMap()).toBe(map);
+  expect(map.getInternalTexture()).toBe(texture);
+  expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
+  graph.dispose();
+});
+
+it.each(["point", "spot"] as const)(
+  "keeps %s bias authored and refreshes a cached map exactly once after bias edits",
+  async (kind) => {
+    const { scene, camera, light, controller, generator, map, texture, graph, render } =
+      await fixture(kind);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const count = kind === "point" ? 6 : 1;
+    expect(render()).toBe(count);
+    expect(render()).toBe(0);
+    updateSceneRenderingSettings(scene, {
+      ...sceneRenderingSettings(scene).project,
+      shadows: {
+        ...sceneRenderingSettings(scene).shadows,
+        autoBias: true,
+        depthBias: 0.002,
+        normalBias: 0.015,
+      },
+    });
+    expect(render()).toBe(count);
+    expect(generator.bias).toBe(0.002);
+    expect(generator.normalBias).toBe(0.015);
+    expect(controller.effectiveBias(light)).toHaveLength(count);
+    expect(controller.effectiveBias(light).every((entry) => entry.mode === "local-authored"))
+      .toBe(true);
+    expect(render()).toBe(0);
+    expect(render()).toBe(0);
+    expect(controller.generator(light)).toBe(generator);
+    expect(generator.getShadowMap()).toBe(map);
+    expect(map.getInternalTexture()).toBe(texture);
+    expect(sceneRenderingSettings(scene).shadows).toMatchObject({
+      autoBias: true, depthBias: 0.002, normalBias: 0.015,
+    });
+    graph.dispose();
   },
 );
 
@@ -323,6 +412,34 @@ it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
   expect(scene.textures).not.toContain(secondMap);
   expect(second.getShadowGenerator()).not.toBe(secondGenerator);
   expect(engine._currentRenderTarget).toBeNull();
+  graph.dispose();
+});
+
+it("warms the current shadow-enabled receiver layout before drawing a reused graph", async () => {
+  const { scene, engine, camera, mesh, light, map, graph, faces, render } = await fixture("sun");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const renderer = scene.objectRenderers.find((entry) => entry.name === "Forward objects")!;
+  const material = mesh.material!;
+  const ready = material.isReadyForSubMesh.bind(material);
+  const observed: boolean[] = [];
+  vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+    if (engine.currentRenderPassId === renderer.renderPassId) observed.push(light.shadowEnabled);
+    return ready(...args);
+  });
+  for (const enabled of [false, true]) {
+    light.shadowEnabled = enabled;
+    observed.length = 0;
+    const before = faces();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(observed.length).toBeGreaterThan(0);
+    expect(observed.every((value) => value === enabled)).toBe(true);
+    expect(light.shadowEnabled).toBe(enabled);
+    expect(faces()).toBe(before);
+    expect(scene.objectRenderers).toContain(renderer);
+    expect(light.getShadowGenerator()!.getShadowMap()).toBe(map);
+    expect(render()).toBe(enabled ? 1 : 0);
+  }
   graph.dispose();
 });
 

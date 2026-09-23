@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import { RenderTargetTexture, type BaseTexture, type Scene } from "@babylonjs/core";
 import {
   mergeRenderSettings,
   type RenderSettingsPatch,
@@ -58,6 +58,14 @@ type SceneRendering = {
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
 
+/** Render targets own their sampling contract (notably hardware shadow PCF). */
+export function applyMaterialTextureAnisotropy(texture: BaseTexture, level: number): void {
+  // addTexture notifies inside BaseTexture's constructor, before an RTT sets
+  // isRenderTarget. The prototype guard also covers that notification window.
+  if (texture.isRenderTarget || texture instanceof RenderTargetTexture) return;
+  texture.anisotropicFilteringLevel = level;
+}
+
 export function sceneRenderingSettings(scene: Scene): SceneRendering {
   let state = scenes.get(scene);
   if (!state) {
@@ -113,7 +121,7 @@ export function updateSceneRenderingSettings(
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
-  for (const texture of scene.textures) texture.anisotropicFilteringLevel = state.textureAnisotropy;
+  for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(resolveCelShadingSettings(state.project.cel, state.overrides), state.runtimeOverrides.cel);
   state.effects = normalizeRenderEffectsSettings(resolved.effects);

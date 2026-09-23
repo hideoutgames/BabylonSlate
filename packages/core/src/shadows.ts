@@ -12,8 +12,11 @@ export interface ShadowSettings {
   filter: "pcf" | "pcss";
   filterQuality: "low" | "medium" | "high";
   softness: number;
+  /** Adapt directional maps/cascades. Point and spot lights use authored offsets. */
   autoBias: boolean;
+  /** Native Babylon bias units; a floor in directional automatic mode. */
   depthBias: number;
+  /** World-space normal inset, retained exactly in both automatic and manual modes. */
   normalBias: number;
   localLightMode: "auto" | "manual";
   maxLocalLights: number;

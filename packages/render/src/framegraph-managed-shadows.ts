@@ -360,6 +360,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
   }
 
   override isReady(): boolean {
+    // A persistent graph can keep its maps while a light toggles shadows.
+    // Install the current receiver binding before ObjectRenderer probes its
+    // material variants; updating only at draw time warms the previous layout.
+    this.bind();
     // isReadyForRendering does not consume _shouldRender; a readiness probe must
     // never turn a render-once map into an uninitialized cached allocation.
     for (const generator of this.generators()) {

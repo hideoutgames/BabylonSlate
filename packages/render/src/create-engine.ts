@@ -31,7 +31,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
+import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import type {
   BakeRuntimeAssetReader,
@@ -1237,7 +1237,7 @@ function initializeEngine(
   let appliedLocalOverrides: unknown;
   const applyTextureAnisotropy = (texture: BaseTexture) => {
     const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
-    texture.anisotropicFilteringLevel = Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1);
+    applyMaterialTextureAnisotropy(texture, Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1));
   };
   const applyRenderingQuality = () => {
     const state = sceneRenderingSettings(scene);

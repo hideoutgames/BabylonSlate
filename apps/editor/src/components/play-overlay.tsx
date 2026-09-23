@@ -1,5 +1,5 @@
 import { useAppSettings } from "../context/app-settings-context";
-import { lightsDebugText } from "@babylonslate/render";
+import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
@@ -697,6 +697,8 @@ export function PlayOverlay({
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
+        shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
+        setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         bakedSession: () => ReturnType<PlaySession["handle"]["bakedSessionDiagnostics"]> | null;
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
       };
@@ -706,6 +708,11 @@ export function PlayOverlay({
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
       renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
+      shadowDiagnostics: () => {
+        const handle = sessionRef.current?.handle;
+        return handle ? captureShadowDiagnostics(handle.scene, { host: "play", meshes: handle.scene.meshes }) : null;
+      },
+      setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       bakedSession: () => sessionRef.current?.handle.bakedSessionDiagnostics() ?? null,
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
