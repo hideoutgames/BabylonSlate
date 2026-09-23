@@ -1,0 +1,58 @@
+import { execFileSync } from "node:child_process";
+import { expect, test } from "@playwright/test";
+import { normalizeRenderingQuality } from "../packages/core/src/index";
+import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
+import { openMainScene, waitForEditorInteractive } from "./open-test-project";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+
+if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+
+type Viewport = {
+  shadowDiagnostics(): ShadowDiagnostics | null;
+  setRenderSettings(settings: RenderShadingSettings): void;
+  setShadowCaptureView(position: number[], target: number[], fov: number): void;
+};
+declare global { interface Window { __babylonslateViewportTest: Viewport } }
+
+test("Basic 3D mannequin exposed shadow faces", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/?test=1");
+  await page.waitForFunction(() => crossOriginIsolated);
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  // The browser context owns fresh OPFS. Never reopen a previously edited model.
+  await expect(page.getByTestId("open-listed-project-TestProject")).toHaveCount(0);
+  await page.getByTestId("create-project").click();
+  await page.getByTestId("create-project-empty").click();
+  await page.getByTestId("create-project-submit").click();
+  await waitForEditorInteractive(page);
+  await openMainScene(page);
+  const canvas = page.getByTestId("viewport-canvas");
+  await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.lights.some(light => light.generator))).toBe(true);
+  const initial = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
+  await testInfo.attach("initial-settings", { body: JSON.stringify(initial, null, 2), contentType: "application/json" });
+  await testInfo.attach("initial-view", { body: await canvas.screenshot(), contentType: "image/png" });
+  const settings: RenderShadingSettings = {
+    mode: "pbr", shadows: initial.requestedShadows,
+    quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
+  };
+  const captures = [];
+  for (const position of [[3, 2, 4], [-3, 2, -4], [3, 2, -4], [-3, 2, 4]]) {
+    await page.evaluate(position => window.__babylonslateViewportTest.setShadowCaptureView(position, [0, 0.8, 0], 0.55), position);
+    for (const enabled of [true, false]) {
+      await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), {
+        ...settings, shadows: { ...settings.shadows!, enabled },
+      });
+      const id = await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId);
+      await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId)).toBeGreaterThan(id + 2);
+      const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
+      const name = `${position.join("_")}-${enabled ? "shadows" : "direct-only"}`;
+      await testInfo.attach(name, { body: await canvas.screenshot(), contentType: "image/png" });
+      captures.push({ name, state });
+    }
+  }
+  await testInfo.attach("effective-settings", { body: JSON.stringify({ buildSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), os: process.platform, captures }, null, 2), contentType: "application/json" });
+  expect(errors).toEqual([]);
+});
