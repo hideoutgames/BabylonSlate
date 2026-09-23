@@ -13,8 +13,9 @@ const unit = (v: V) => v.map(x => x / Math.hypot(...v));
 export function mannequinShadowSamples(geometry: MannequinGeometry, state: ShadowDiagnostics, width: number, height: number) {
   const triangles = geometry.flatMap(part => {
     const result = [];
-    for (let i = 0; i < part.indices.length; i += 3) {
-      const vertices = part.indices.slice(i, i + 3).map(index => part.vertices[index]!);
+    const indices = part.indices.length ? part.indices : part.vertices.map((_, i) => i);
+    for (let i = 0; i < indices.length; i += 3) {
+      const vertices = indices.slice(i, i + 3).map(index => part.vertices[index]!);
       result.push({ name: part.name, a: vertices[0]!.position, b: vertices[1]!.position, c: vertices[2]!.position, normal: vertices[0]!.normal });
     }
     return result;
