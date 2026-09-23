@@ -208,7 +208,7 @@ test("world-space material inputs remain anchored when the editor camera moves",
 
 // Keep the color/shadow workflows bounded independently; every case still runs
 // with the project's default global CEL outlines and the real authoring/save path.
-async function setupCelColorFixture(page: Page) {
+async function setupCelColorFixture(page: Page, saveTimeout?: number) {
   const shaderErrors: string[] = [];
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -228,7 +228,7 @@ async function setupCelColorFixture(page: Page) {
     .locator('.react-flow__node[data-id="baseColor"]')
     .click();
   await page.getByTestId("property-color").fill("#33994d");
-  await saveAllIfEnabled(page);
+  await saveAllIfEnabled(page, saveTimeout);
   const materialGuid = await guidForPath(page, materialPath);
   expect(materialGuid).not.toBe("");
   await projectMode(page, "CEL", true);
@@ -269,7 +269,7 @@ async function setupCelColorFixture(page: Page) {
   });
   scene.actors = [...subjects, fill];
   await openMainScene(page);
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, saveTimeout);
   const viewport = page.getByTestId("viewport-canvas");
   const authored = [51, 153, 77];
   await projectMode(page, "CEL");
@@ -526,7 +526,9 @@ test("CEL applies directional, point and spot colors and neutral influence", asy
 
 test("CEL preserves surface color while casting shadows across local and large maps", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
-  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page);
+  // The Linux trace reaches the project/journal phase after 15 seconds while
+  // saving. Keep the full clean-state assertion with a bounded save deadline.
+  const { scene, subjects, viewport, authored, verifyErrors } = await setupCelColorFixture(page, 30_000);
   // Keep both primitives in contact with the receiver: sphere radius 1.875,
   // box half-height 1.5. Intersections must not masquerade as shadow artifacts.
   subjects[0]!.transform.position[1] = 0.375;
@@ -543,13 +545,13 @@ test("CEL preserves surface color while casting shadows across local and large m
     components: [createMeshComponent("receiver-mesh", "ground")],
   })];
   scene.settings.celShading = { specularEnabled: false, shadowStrength: 0.65 };
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, 30_000);
   await expect.poll(() => pixelsNear(viewport, authored)).toBeGreaterThan(100);
   const withoutShadows = await framePixels(viewport);
   const frameSize = await viewport.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-unshadowed.png") });
   sun.components[0]!.properties.castShadows = true;
-  await setPreviewScene(page, scene);
+  await setPreviewScene(page, scene, 30_000);
   await viewport.screenshot({ path: testInfo.outputPath("cel-shadow-receiver-shadowed.png") });
   await expect.poll(async () => {
     const withShadows = await framePixels(viewport);
@@ -662,6 +664,9 @@ test("CEL applies live specular controls and restores PBR surface response", asy
 test("CEL preserves sRGB image pixels on a native glTF surface", async ({
   page,
 }) => {
+  // Three mode round-trips plus saved Play take 47 seconds on local SwiftShader;
+  // allow the same complete workflow on the slower hosted software adapter.
+  test.setTimeout(120_000);
   // A numeric texture fixture exercises Babylon's automatic hardware sRGB decode.
   const uri = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
