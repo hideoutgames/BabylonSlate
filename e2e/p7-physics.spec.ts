@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openMainScene } from "./open-test-project";
+import { openMinimalTestProject } from "./minimal-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 
 test.describe("P7 Play physics timings", () => {
@@ -7,7 +8,9 @@ test.describe("P7 Play physics timings", () => {
     page,
   }) => {
     test.setTimeout(120_000);
-    await openTestProject(page);
+    // This test authors a 2D body. The full 3D scaffold includes a Mannequin
+    // capsule, which is intentionally rejected by the 2D native shape contract.
+    await openMinimalTestProject(page);
     await openMainScene(page);
 
     await expect(page.getByTestId("scene-settings-grid")).toBeVisible();

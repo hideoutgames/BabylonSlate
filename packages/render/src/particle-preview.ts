@@ -1,5 +1,5 @@
+import type { ResourceLease } from "./resource-cache";
 import {
-  NodeMaterialModes,
   type AbstractEngine,
   type NodeMaterial,
   type Scene,
@@ -13,10 +13,9 @@ import {
   createMaterialPreviewScene,
   type MaterialPreviewScene,
 } from "./material-preview";
-import {
-  MaterialLibrary,
-  materialUnavailable,
-} from "./material-library";
+import { MaterialLibrary } from "./material-library";
+import { acquireParticleMaterial } from "./particle-material";
+import type { ParticleMaterialOwner } from "./particle-service";
 import { installPreviewEnvironment } from "./preview-environment";
 
 /**
@@ -44,26 +43,23 @@ export function createParticleMaterialResolver(options: {
   documents: ReadonlyMap<string, MaterialDocument>;
   functions?: ReadonlyMap<string, MaterialFunctionDocument>;
   resolveTexture?: (guid: string) => Texture | null;
+  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
 }): {
-  resolve: (guid: string) => NodeMaterial | null;
+  acquire: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   dispose: () => void;
 } {
   const library = new MaterialLibrary({
     resolveTexture: options.resolveTexture,
+    acquireTexture: options.acquireTexture,
     functions: () =>
       Object.fromEntries(options.functions ?? new Map()),
   });
-  const particleMaterial = (material: NodeMaterial): NodeMaterial | null =>
-    material.mode === NodeMaterialModes.Particle ? material : null;
   return {
-    resolve: (guid) => {
-      const live = library.materialFor(options.scene, guid);
-      if (live) return particleMaterial(live);
+    acquire: (guid, owner) => {
+      if (owner.scene !== options.scene) throw new Error("Particle preview material requested from another scene.");
       const document = options.documents.get(guid);
       if (!document) return null;
-      const acquired = library.acquire(options.scene, guid, document);
-      if (materialUnavailable(acquired)) return null;
-      return particleMaterial(acquired.material);
+      return acquireParticleMaterial(library, guid, document, owner);
     },
     dispose: () => library.dispose(),
   };

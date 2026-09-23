@@ -4,6 +4,7 @@ import {
   NodeMaterialModes,
   ParticleSystem,
   Vector3,
+  type AbstractEngine,
   type IParticleSystem,
   type NodeMaterial,
   type Scene,
@@ -13,7 +14,7 @@ import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Part
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import {
   applyParticleEmitterPayload,
   resolveParticleEmitterCapacity,
@@ -22,8 +23,36 @@ import {
   type ParticleSystemPayload,
 } from "@babylonslate/assets";
 
-export function gpuParticlesSupported(requested = true): boolean {
-  return requested && GPUParticleSystem.IsSupported === true;
+export function gpuParticlesSupported(engine: AbstractEngine, requested = true): boolean {
+  const caps = engine.getCaps();
+  return requested && (caps.supportTransformFeedbacks === true || caps.supportComputeShaders === true);
+}
+
+/** Babylon 9.20's animate clock, including prewarm. No private native fields. */
+class OwnedGPUParticleSystem extends GPUParticleSystem {
+  simulationDelta = 0;
+
+  override animate(preWarm = false): void {
+    super.animate(preWarm);
+    this.simulationDelta = this.updateSpeed *
+      (preWarm ? this.preWarmStepOffset : this.getScene()?.getAnimationRatio() || 1);
+  }
+}
+
+/** Read on the draw observable, after Babylon has submitted this GPU update. */
+export function particleSimulationDelta(system: IParticleSystem): number {
+  return system instanceof OwnedGPUParticleSystem ? system.simulationDelta : 0;
+}
+
+/** Historical maxima also cover particles emitted before a lifetime edit. */
+export function particleLifetimeBound(system: IParticleSystem): number {
+  let lifetime = Math.max(system.minLifeTime, system.maxLifeTime);
+  for (const gradient of system.getLifeTimeGradients() ?? []) {
+    // Babylon's GPU update shaders use these values as absolute lifetimes.
+    lifetime = Math.max(lifetime, gradient.factor1, gradient.factor2 ?? gradient.factor1);
+  }
+  if (!Number.isFinite(lifetime) || lifetime < 0) throw new Error("Particle lifetime must be finite and nonnegative.");
+  return lifetime;
 }
 
 export function createBabylonParticleSystem(
@@ -33,7 +62,7 @@ export function createBabylonParticleSystem(
   gpu: boolean,
 ): IParticleSystem {
   if (gpu) {
-    return new GPUParticleSystem(name, { capacity }, scene);
+    return new OwnedGPUParticleSystem(name, { capacity, emitRateControl: true }, scene);
   }
   return new ParticleSystem(name, capacity, scene);
 }
@@ -201,7 +230,7 @@ export function applyParticleLook(options: {
   gpu: boolean;
   texture: Texture | null;
   material: NodeMaterial | null;
-}): void {
+}): Promise<void> | null {
   const applied = applyParticleEmitterPayload(
     options.emitter,
     bindParticleApplyTarget(options.system),
@@ -217,33 +246,44 @@ export function applyParticleLook(options: {
     options.system.particleTexture = options.texture;
   }
   pendingParticleMaterials.get(options.system)?.();
-  if (options.material && options.material.mode === NodeMaterialModes.Particle) {
+  if (options.material) {
+    const materialScene = options.system.getScene();
+    if (!materialScene || options.material.mode !== NodeMaterialModes.Particle || isDisposedNodeMaterial(options.material, materialScene)) {
+      throw new Error("Particle material must be a live particle-domain instance in the system's owning scene.");
+    }
     if (options.texture) {
       bindParticleTextureBlocks(options.material, options.texture);
     }
-    bindReadyParticleMaterial(options.system, options.material);
+    const ready = bindReadyParticleMaterial(options.system, options.material);
     if (options.texture) {
       options.system.particleTexture = options.texture;
     }
+    return ready;
   }
+  return null;
 }
 
 const pendingParticleMaterials = new WeakMap<IParticleSystem, () => void>();
 
-function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMaterial): void {
+function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMaterial): Promise<void> {
   const scene = system.getScene();
   if (!scene) throw new Error("Particle materials require an owning scene.");
-  let failure: unknown;
-  let failed = false;
-  const readiness = { isReady: () => {
-    if (failed) throw failure;
-    return false;
-  } };
+  if (isDisposedNodeMaterial(material, scene)) throw new Error("Particle material requires its live owning scene.");
+  const readiness = { isReady: () => false };
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  // Existing standalone factory consumers may leave preparation to scene readiness.
+  // The returned promise still rejects for an owning service to diagnose and retire.
+  void ready.catch(() => {});
   const cancel = () => {
     if (pendingParticleMaterials.get(system) !== cancel) return;
     pendingParticleMaterials.delete(system);
     scene.removeIsReadyCheck(readiness);
     system.onDisposeObservable.remove(disposeObserver);
+    if (timer !== undefined) clearTimeout(timer);
+    markSceneReadinessDirty(scene);
+    resolve();
   };
   const disposeObserver = system.onDisposeObservable.addOnce(cancel);
   pendingParticleMaterials.set(system, cancel);
@@ -251,6 +291,12 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   // Custom checks join strict readiness without a Scene observable; admit the
   // new check by invalidating the coordinator's cached readiness result.
   markSceneReadinessDirty(scene);
+  const fail = (error: unknown) => {
+    if (pendingParticleMaterials.get(system) !== cancel) return;
+    reject(error);
+    cancel();
+  };
+  const timer = setTimeout(() => fail(new Error("Particle material preparation timed out.")), SCENE_SHADER_WARM_TIMEOUT_MS);
   // Babylon's first NodeMaterial build can finish asynchronously. Creating the
   // particle effect before then registers no fragment source and fetches a .fx URL.
   void prewarmMaterial(material, null).then(() => {
@@ -259,11 +305,8 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     prepareNodeMaterialParticleBindings(material);
     material.createEffectForParticles(system);
     cancel();
-  }).catch((error: unknown) => {
-    if (pendingParticleMaterials.get(system) !== cancel || scene.isDisposed) return;
-    failure = error;
-    failed = true;
-  });
+  }).catch(fail);
+  return ready;
 }
 
 function bindParticleTextureBlocks(

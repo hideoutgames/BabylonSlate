@@ -187,7 +187,7 @@ export const structNodes: NodeDefinition[] = [
     pins: () => [
       pin("location", "Location", "in", VEC3),
       pin("rotation", "Rotation", "in", ROTATOR),
-      pin("scale", "Scale", "in", VEC3),
+      pin("scale", "Scale", "in", VEC3, "data", true, { x: 1, y: 1, z: 1 }),
       pin("out", "Out", "out", TRANSFORM),
     ],
     codegen: (ctx) => ({

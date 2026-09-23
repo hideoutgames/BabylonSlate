@@ -3,6 +3,7 @@ import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 
 export type MaterialViewportTestSnapshot = {
   meshUniqueId: number;
+  diagnostic: unknown;
   materialUniqueId: number | null;
   materialInputs: Record<string, number[]>;
 };
@@ -18,6 +19,16 @@ export function materialViewportTestSnapshot(
       : [];
   return {
     meshUniqueId: visual.uniqueId,
+    diagnostic: {
+      enabled: visual.isEnabled(), visible: visual.isVisible, visibility: visual.visibility,
+      vertices: visual.getTotalVertices(), world: Array.from(visual.getWorldMatrix().asArray()),
+      bounds: [visual.getBoundingInfo().boundingBox.minimumWorld.asArray(), visual.getBoundingInfo().boundingBox.maximumWorld.asArray()],
+      material: material ? { backFaceCulling: material.backFaceCulling,
+        alpha: material.alpha, textures: material.getActiveTextures().map(texture => ({
+          name: texture.name, ready: texture.isReady(), size: texture.getSize(), alpha: texture.hasAlpha,
+          disposed: !texture.getInternalTexture(),
+        })) } : null,
+    },
     materialUniqueId: material?.uniqueId ?? null,
     materialInputs: Object.fromEntries(
       blocks.flatMap((block) => {

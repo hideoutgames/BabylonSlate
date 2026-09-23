@@ -1,3 +1,4 @@
+import { installTextureBytes } from "@babylonslate/render";
 import { useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
 import {
@@ -75,7 +76,7 @@ export function SkyboxCreatorPreviewCanvas({
         "skybox-creator-preview",
         faces,
         DEFAULT_SKYBOX_SIZE,
-        { textureBytes, resourceCache: cache },
+        { textureBytes: installTextureBytes(textureBytes), resourceCache: cache },
       );
     } catch {
       presenter?.dispose();

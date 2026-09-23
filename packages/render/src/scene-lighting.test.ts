@@ -1,3 +1,4 @@
+import { installAssetBytes } from "@babylonslate/assets";
 import {
   isForwardLightExcluded,
   setAuthoredLightEnabled,
@@ -374,7 +375,7 @@ describe("scene material lighting", () => {
       createSnapshotSceneBinding(),
       1,
       "model",
-      encodeUvHierarchyGlb({ separateMaterials: true }),
+      installAssetBytes(encodeUvHierarchyGlb({ separateMaterials: true })),
       root,
     );
     const parts = visualMeshes(root);

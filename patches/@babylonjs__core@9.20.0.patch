@@ -1,3 +1,35 @@
+diff --git a/Physics/v2/Plugins/havokPlugin.js b/Physics/v2/Plugins/havokPlugin.js
+--- a/Physics/v2/Plugins/havokPlugin.js
++++ b/Physics/v2/Plugins/havokPlugin.js
+@@ -918,11 +918,15 @@ export class HavokPlugin {
+      */
+     setShape(body, shape) {
+-        const shapeHandle = shape && shape._pluginData ? shape._pluginData : BigInt(0);
++        // Havok 1.3.14 binds HP_ShapeId as a one-element tuple, including null.
++        // Keep public setShape(body, null) usable for final collider detachment.
++        const shapeHandle = shape && shape._pluginData ? shape._pluginData : [BigInt(0)];
+         if (!(body.transformNode instanceof Mesh) || !body.transformNode._thinInstanceDataStorage?.matrixData) {
+-            this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle);
++            if (this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle) !== this._hknp.Result.RESULT_OK) {
++                throw new Error("Havok native shape attachment failed");
++            }
+             this._internalUpdateMassProperties(body._pluginData);
+             return;
+         }
+         const m = body.transformNode;
+         const instancesCount = m._thinInstanceDataStorage?.instancesCount ?? 0;
+         for (let i = 0; i < instancesCount; i++) {
+@@ -1386,7 +1392,9 @@ export class HavokPlugin {
+                 }
+                 // Set transform using the (possibly updated) region offset
+                 const offset = body._pluginData.worldRegion.floatingOrigin;
+-                this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset));
++                if (this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset)) !== this._hknp.Result.RESULT_OK) {
++                    throw new Error("Havok native body teleport failed");
++                }
+             }
+         }
+         else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
 diff --git a/Engines/WebGPU/webgpuCacheRenderPipeline.js b/Engines/WebGPU/webgpuCacheRenderPipeline.js
 index fbd0488aa52e990f2d15e846eb48c28062308f9e..d36af217d52ef58c1a5c811a86f3c6ce67aca8e9 100644
 --- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
@@ -354,3 +386,39 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
      }
      /**
       * Encode the texture to RGBD if possible.
+diff --git a/assetContainer.js b/assetContainer.js
+--- a/assetContainer.js
++++ b/assetContainer.js
+@@ -202,7 +202,7 @@
+         }
+         this.scene = scene;
+         this["proceduralTextures"] = [];
+-        scene.onDisposeObservable.add(() => {
++        this._onSceneDisposeObserver = scene.onDisposeObservable.add(() => {
+             if (!this._wasAddedToScene) {
+                 this.dispose();
+             }
+@@ -849,6 +849,11 @@
+      * Disposes all the assets in the container
+      */
+     dispose() {
++        // BabylonSlate: retired model generations must not retain Scene observers.
++        if (this._onSceneDisposeObserver) {
++            this.scene.onDisposeObservable.remove(this._onSceneDisposeObserver);
++            this._onSceneDisposeObserver = null;
++        }
+         const cameras = this.cameras.slice(0);
+         for (const camera of cameras) {
+             camera.dispose();
+diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.pure.js
+--- a/Materials/Node/nodeMaterial.pure.js
++++ b/Materials/Node/nodeMaterial.pure.js
+@@ -1109,7 +1109,7 @@
+                         Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
+                         effect = this.getScene()
+                             .getEngine()
+-                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem);
++                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem, this.shaderLanguage);
+                         particleSystem.setCustomEffect(effect, blendMode);
+                         this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
+                         return;

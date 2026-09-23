@@ -13,6 +13,9 @@ export type PhysicsTransform = {
   rotation: Quat;
 };
 
+/** Teleports preserve both velocities unless the caller explicitly resets them. */
+export type TeleportOptions = { velocity?: "preserve" | "reset" };
+
 export type ColliderShape3D =
   | { kind: "box"; halfExtents: Vec3 }
   | { kind: "sphere"; radius: number }
@@ -63,6 +66,12 @@ export type ColliderDesc = {
   translation?: Vec3;
   /** Local rotation relative to the rigid body (component transform rotation). */
   rotation?: Quat;
+};
+
+/** A body's collider mutation is prepared and published as one transaction. */
+export type ColliderChanges = {
+  upsert: readonly ColliderDesc[];
+  remove: readonly string[];
 };
 
 /** Mid-Play collider knobs (trigger, material, filters). */

@@ -43,6 +43,7 @@ import type {
   LineTraceOptions,
   OverlapResult,
   PhysicsTransform,
+  TeleportOptions,
   Vec3,
 } from "@babylonslate/physics";
 import type {
@@ -139,6 +140,8 @@ export interface ScriptHostServices {
     dt: number,
     offset?: number,
   ): void;
+  /** Publish an explicit authored transform to its owning physics world. */
+  teleportActor?(actor: Actor, options?: TeleportOptions): void;
   changeScene?(scene: string): void;
   createSceneLayer?(
     assetGuid: string,
@@ -247,6 +250,7 @@ export interface ScriptContext {
       rotation?: { x: number; y: number; z: number; w: number };
       scale?: { x: number; y: number; z: number };
     } | null | undefined,
+    options?: TeleportOptions,
   ): void;
   rotatorToQuat(
     rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
@@ -1001,6 +1005,7 @@ export class ScriptHost {
         target.transform.position.x = Number(location.x ?? 0);
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
+        services.teleportActor?.(target);
       },
       addActorWorldOffset: (actor, offset) => {
         const target = asActor(actor ?? self);
@@ -1008,6 +1013,7 @@ export class ScriptHost {
         target.transform.position.x += Number(offset.x ?? 0);
         target.transform.position.y += Number(offset.y ?? 0);
         target.transform.position.z += Number(offset.z ?? 0);
+        services.teleportActor?.(target);
       },
       setActorRotation: (actor, rotation) => {
         const target = asActor(actor ?? self);
@@ -1017,6 +1023,7 @@ export class ScriptHost {
         target.transform.rotation.y = quat.y;
         target.transform.rotation.z = quat.z;
         target.transform.rotation.w = quat.w;
+        services.teleportActor?.(target);
       },
       setActorScale: (actor, scale) => {
         const target = asActor(actor ?? self);
@@ -1024,8 +1031,9 @@ export class ScriptHost {
         target.transform.scale.x = Number(scale.x ?? 1);
         target.transform.scale.y = Number(scale.y ?? 1);
         target.transform.scale.z = Number(scale.z ?? 1);
+        services.teleportActor?.(target);
       },
-      setActorTransform: (actor, transform) => {
+      setActorTransform: (actor, transform, options) => {
         const target = asActor(actor ?? self);
         if (!target || !transform) return;
         if (transform.position) {
@@ -1044,6 +1052,7 @@ export class ScriptHost {
           target.transform.scale.y = Number(transform.scale.y ?? 1);
           target.transform.scale.z = Number(transform.scale.z ?? 1);
         }
+        services.teleportActor?.(target, options);
       },
       rotatorToQuat,
       quatToRotator,

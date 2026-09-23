@@ -1,6 +1,7 @@
 import type {
   CharacterControllerDesc,
   ColliderDesc,
+  ColliderChanges,
   ColliderTuning,
   HitResult,
   LineTraceOptions,
@@ -8,6 +9,7 @@ import type {
   PhysicsBackendOptions,
   PhysicsContactEvent,
   PhysicsTransform,
+  TeleportOptions,
   PhysicsWorldKind,
   RigidBodyDesc,
   RigidBodyTuning,
@@ -28,7 +30,8 @@ export interface PhysicsBackend {
 
   createBody(desc: RigidBodyDesc): void;
   destroyBody(bodyId: string): void;
-  setBodyTransform(bodyId: string, transform: PhysicsTransform): void;
+  teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
+  setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
@@ -40,6 +43,7 @@ export interface PhysicsBackend {
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
 
   createCollider(desc: ColliderDesc): void;
+  applyColliderChanges(bodyId: string, changes: ColliderChanges): void;
   destroyCollider(colliderId: string): void;
   updateCollider(colliderId: string, tuning: ColliderTuning): void;
 

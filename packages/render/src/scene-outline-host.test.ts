@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Material, MeshBuilder, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Material, MeshBuilder, NullEngine, Scene, StandardMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { createActor, createDefaultScene, createMeshComponent, outlineBindings } from "@babylonslate/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { GRID_MESH_NAME } from "./editor-grid";
+import { encodeTriangleGlb } from "./model-mesh";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
@@ -85,6 +86,35 @@ describe("authored scene outline host", () => {
     expect(host.view.contributions.has("selection")).toBe(false);
     expect(host.view.owner.identityFor(second)).toBe(identity);
     expect(part.renderOutline).toBeFalsy();
+  });
+
+  it("publishes staged editor model outlines without freezing the FrameGraph active queue", async () => {
+    const { scene, host } = setup();
+    new UniversalCamera("camera", new Vector3(0, 0, -3), scene);
+    const sync = new EditorSceneSync(scene, undefined, {
+      freezeActiveMeshes: false,
+      onAfterApply: () => host.setActor("model", sync.visualMeshesForActor("model"), authored("model")),
+    });
+    try {
+      sync.setMeshAssets({ modelBytes: new Map([
+        ["model-a", encodeTriangleGlb()], ["model-b", encodeTriangleGlb()],
+      ]) });
+      let document = createDefaultScene();
+      document.actors = [createActor("model", "Model", { components: [createMeshComponent("mesh")] })];
+      sync.apply(document);
+      host.setSelection(["model"]);
+      for (const assetGuid of ["model-a", "model-b"]) {
+        const previous = sync.meshForActor("model")!;
+        document = structuredClone(document);
+        document.actors[0]!.components[0]!.properties.assetGuid = assetGuid;
+        sync.apply(document);
+        await sync.whenEditorModelsReady();
+        expect(previous.isDisposed()).toBe(true);
+        expect(scene._activeMeshesFrozen).toBe(false);
+        expect(host.selection.selected().map((mesh) => mesh.getTotalVertices())).toEqual([3]);
+        expect(host.view.contributions.get("component:model:ink")).toMatchObject({ color: [1, 0, 0], width: 2 });
+      }
+    } finally { sync.dispose(); }
   });
 
   it("updates a late replacement without touching another actor and leaves repeated snapshots unchanged", () => {

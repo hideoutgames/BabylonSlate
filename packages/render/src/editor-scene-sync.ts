@@ -8,13 +8,15 @@ import type {
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
+  ownedVisualTexturePreparation,
+  installModelSources,
+  installTextureBytes,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, isEditorModelPlaceholder, type ModelAnimLoadBinding } from "./glb-anim";
-import { isGltfModelBytes } from "./model-mesh";
 import {
   actorIdFromMeshName,
   actorVisualFingerprint,
@@ -40,6 +42,8 @@ import {
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
+import { BitmapAllocationLimitError } from "./text2d-bitmap";
+import { text2DBitmapBytes } from "./text2d-mesh";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
@@ -62,6 +66,9 @@ export type EditorSceneSyncOptions = {
 export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
   private readonly meshKinds = new Map<string, string | null>();
+  private readonly rejectedVisuals = new Map<string, string>();
+  private readonly pendingVisuals = new Map<string, Mesh>();
+  private readonly pendingTextureLoads = new Set<Promise<void>>();
   private applyGeneration = 0;
   private pendingApply: AbortController | null = null;
   private realization: Promise<void> | null = null;
@@ -130,6 +137,12 @@ export class EditorSceneSync {
   }
 
   private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {
+    if (assets) assets = {
+      ...assets,
+      modelSources: installModelSources(assets),
+      textureBytes: installTextureBytes(assets.textureBytes),
+      fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
+    };
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = meshAssetFingerprintWithoutModels(this.assets) === meshAssetFingerprintWithoutModels(assets);
@@ -273,26 +286,92 @@ export class EditorSceneSync {
     index = 0;
     for (const actor of sceneData.actors) {
       let mesh = this.meshes.get(actor.id);
-      if (mesh && (retired.has(actor.id) || mesh.isDisposed())) {
-        mesh.dispose();
-        this.meshes.delete(actor.id);
-        this.meshKinds.delete(actor.id);
-        mesh = undefined;
+      let prepared = false;
+      const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}|${this.scene.getEngine().getCaps().maxTextureSize}`;
+      if ((!mesh || retired.has(actor.id) || mesh.isDisposed()) && this.rejectedVisuals.get(actor.id) !== descriptor) {
+        let replacement: Mesh | undefined;
+        try {
+          replacement = createActorMesh(this.scene, actor, {
+            ...assets, retainedTextBitmapBytes: text2DBitmapBytes(mesh),
+          }, sceneData.actors);
+          const previous = mesh;
+          this.prepareActorVisual(actor, replacement);
+          const modelGuid = this.meshComponentAssetGuid(actor);
+          const textureReady = ownedVisualTexturePreparation(replacement);
+          if (previous && !previous.isDisposed() && (modelGuid || textureReady)) {
+            // Exact texture preparation includes upload and budget admission.
+            // Models keep their existing material/animation transaction too.
+            replacement.setEnabled(false);
+            const candidate = replacement;
+            const generation = this.applyGeneration;
+            const signal = this.pendingApply?.signal;
+            if (modelGuid && !this.assets?.modelSources?.has(modelGuid)) {
+              candidate.dispose();
+              void textureReady?.catch(() => {});
+            } else {
+              this.pendingVisuals.set(actor.id, candidate);
+              const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
+                !this.disposed && !this.scene.isDisposed && !candidate.isDisposed() &&
+                this.pendingVisuals.get(actor.id) === candidate && this.meshes.get(actor.id) === previous;
+              const onAdopted = () => {
+                if (!ownsLoad()) return;
+                candidate.parent = previous.parent;
+                for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
+                this.meshes.set(actor.id, candidate);
+                this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
+                this.rejectedVisuals.delete(actor.id);
+                this.pendingVisuals.delete(actor.id);
+                candidate.setEnabled(true);
+                previous.dispose();
+                freezeStaticActorWorldMatrix(candidate);
+                if (!this.applyingScene) {
+                  this.freezeActiveQueue();
+                  this.scheduler?.invalidate("asset");
+                  this.onAfterApply?.();
+                }
+              };
+              const load = (textureReady ?? Promise.resolve()).then(async () => {
+                if (!ownsLoad()) return;
+                if (modelGuid) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
+                else onAdopted();
+              }, () => {
+                if (ownsLoad()) this.rejectedVisuals.set(actor.id, descriptor);
+                // The exact texture owner reports preparation failure once.
+              }).finally(() => {
+                if (this.pendingVisuals.get(actor.id) === candidate) this.pendingVisuals.delete(actor.id);
+                if (this.meshes.get(actor.id) !== candidate) candidate.dispose();
+                this.pendingTextureLoads.delete(load);
+              });
+              this.pendingTextureLoads.add(load);
+              void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
+            }
+            applyActorTransform(previous, actor);
+            yield 0.2 + 0.3 * ++index / actorCount;
+            continue;
+          }
+          // Initial creation retains the existing immediate placeholder path.
+          // Factories own failure cleanup; this observer prevents an abandoned aggregate.
+          void textureReady?.catch(() => {});
+          mesh = replacement;
+          prepared = true;
+          this.meshes.set(actor.id, mesh);
+          this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
+          this.rejectedVisuals.delete(actor.id);
+          previous?.dispose();
+        } catch (error) {
+          if (replacement && replacement !== this.meshes.get(actor.id)) replacement.dispose();
+          const ownsTexture = actor.components.some((component) =>
+            component.classId === "SkyboxComponent" || component.classId === "SpriteComponent" || component.classId === "TilemapComponent");
+          if ((!ownsTexture && !(error instanceof BitmapAllocationLimitError)) || !mesh || mesh.isDisposed()) throw error;
+          this.rejectedVisuals.set(actor.id, descriptor);
+          console.warn(error instanceof BitmapAllocationLimitError
+            ? `[render] ${error.code}: ${error.message}`
+            : `[render] Visual replacement failed: ${String(error)}`);
+        }
       }
-      if (!mesh) {
-        mesh = createActorMesh(this.scene, actor, assets, sceneData.actors);
-        this.meshes.set(actor.id, mesh);
-        this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
-      }
+      if (!mesh) continue;
       this.beginEditorModelLoad(actor, mesh);
-      applyActorTransform(mesh, actor);
-      applyComponentChildTransforms(mesh, actor);
-      applyEditorBillboardFromActor(mesh, actor);
-      for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
-      applyActorComponentSorting(mesh, actor, this.sortingLayers);
-      this.restoreMeshComponentConstruction(actor, mesh);
-      this.applyModelSlots(actor, mesh);
-      this.bindActorMeshMaterials(actor, mesh);
+      if (!prepared) this.prepareActorVisual(actor, mesh);
       yield 0.2 + 0.3 * ++index / actorCount;
     }
     index = 0;
@@ -301,6 +380,7 @@ export class EditorSceneSync {
         mesh.dispose();
         this.meshes.delete(actorId);
         this.meshKinds.delete(actorId);
+        this.rejectedVisuals.delete(actorId);
       }
       yield 0.5 + 0.1 * ++index / Math.max(1, oldMeshes.length);
     }
@@ -432,7 +512,7 @@ export class EditorSceneSync {
 
   async whenEditorModelsReady(): Promise<void> {
     await this.realization;
-    const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? [])];
+    const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? []), ...this.pendingTextureLoads];
     if (loads.length === 0) return Promise.resolve();
     return Promise.all(loads).then(() => undefined);
   }
@@ -442,6 +522,20 @@ export class EditorSceneSync {
     // own submissions. Generation ownership prevents obsolete adoption.
     this.modelLoadBinding.slotAnimLoads?.clear();
     this.modelLoadBinding.slotAnimEpoch?.clear();
+    for (const candidate of this.pendingVisuals.values()) candidate.dispose();
+    this.pendingVisuals.clear();
+    this.pendingTextureLoads.clear();
+  }
+
+  private prepareActorVisual(actor: SerializedActor, mesh: Mesh): void {
+    applyActorTransform(mesh, actor);
+    applyComponentChildTransforms(mesh, actor);
+    applyEditorBillboardFromActor(mesh, actor);
+    for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
+    applyActorComponentSorting(mesh, actor, this.sortingLayers);
+    this.restoreMeshComponentConstruction(actor, mesh);
+    this.applyModelSlots(actor, mesh);
+    this.bindActorMeshMaterials(actor, mesh);
   }
 
   pendingModelLoadCount(): number {
@@ -561,12 +655,16 @@ export class EditorSceneSync {
     );
   }
 
-  private beginEditorModelLoad(actor: SerializedActor, root: Mesh): void {
+  private beginEditorModelLoad(actor: SerializedActor, root: Mesh, publication?: {
+    ownsLoad: () => boolean;
+    onAdopted: () => void;
+  }): Promise<void> | undefined {
     const guid = this.meshComponentAssetGuid(actor);
-    const bytes = guid ? this.assets?.modelBytes?.get(guid) : undefined;
-    if (!guid || !bytes || !isGltfModelBytes(bytes)) return;
+    const bytes = guid ? this.assets?.modelSources?.get(guid) : undefined;
+    if (!guid || !bytes) return;
     const slotId = ++this.modelLoadSlot;
     this.modelLoadBinding.modelBytes = this.assets?.modelBytes;
+    this.modelLoadBinding.modelSources = this.assets?.modelSources;
     this.modelLoadBinding.modelPayloads = this.assets?.modelPayloads;
     this.modelLoadBinding.modelClipAnimationGuids =
       this.assets?.modelClipAnimationGuids;
@@ -581,8 +679,8 @@ export class EditorSceneSync {
     const generation = this.applyGeneration;
     const signal = this.pendingApply?.signal;
     const ownsLoad = () => generation === this.applyGeneration && !signal?.aborted &&
-      !root.isDisposed() && !placeholder.isDisposed() && this.meshes.get(actor.id) === root;
-    void beginSlotModelAnimLoad(
+      !root.isDisposed() && !placeholder.isDisposed() && (publication ? publication.ownsLoad() : this.meshes.get(actor.id) === root);
+    return beginSlotModelAnimLoad(
       this.scene,
       this.modelLoadBinding,
       slotId,
@@ -591,13 +689,11 @@ export class EditorSceneSync {
       placeholder,
       () => {
         if (!ownsLoad()) return;
+        publication?.onAdopted();
         const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
         if (!current) return;
         const wasFrozen = root.isWorldMatrixFrozen;
         applyActorTransform(root, current);
-        this.restoreMeshComponentConstruction(current, root);
-        this.applyModelSlots(current, root);
-        this.bindActorMeshMaterials(current, root);
         // Adoption may land at a yield after this actor's final freeze step.
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
@@ -608,6 +704,13 @@ export class EditorSceneSync {
         }
       },
       ownsLoad,
+      (prepared) => {
+        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+        if (!current || !ownsLoad()) return;
+        this.restoreMeshComponentConstruction(current, prepared);
+        this.applyModelSlots(current, prepared);
+        this.bindActorMeshMaterials(current, prepared);
+      },
     );
   }
 
@@ -707,6 +810,7 @@ export class EditorSceneSync {
     this.realization = null;
     ++this.applyGeneration;
     this.applyingScene = null;
+    this.resetModelReadiness();
     for (const mesh of this.meshes.values()) {
       mesh.dispose();
     }
