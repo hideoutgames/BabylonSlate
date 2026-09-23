@@ -565,6 +565,7 @@ describe("Play createEngine view", () => {
     const preview = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" });
     handles.push(main, preview);
     main.setPaused(true);
+    await preview.prewarmSceneMaterials();
     const mainDraw = vi.fn();
     const previewDraw = vi.fn();
     main.scene.onAfterRenderObservable.add(mainDraw);
@@ -593,6 +594,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
     handles.push(handle);
     handle.setPaused(true);
+    await handle.prewarmSceneMaterials();
     let resolve!: (pixels: Uint8Array) => void;
     const pixels = new Promise<Uint8Array>((done) => { resolve = done; });
     const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
