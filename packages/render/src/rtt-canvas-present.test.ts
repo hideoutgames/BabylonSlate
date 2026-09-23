@@ -7,6 +7,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { mockDepthTextureIO } from "./texture-test-fixtures";
 
 class FakeCanvas {
   clientWidth = 128;
@@ -38,6 +39,7 @@ describe("createRttCanvasPresent", () => {
 
   function host() {
     const engine = new NullEngine();
+    mockDepthTextureIO(engine);
     engines.push(engine);
     const scene = new Scene(engine);
     const camera = new ArcRotateCamera(

@@ -2,9 +2,12 @@
 
 ## Current continuation status — 23 September 2026
 
-Implementation and the desktop browser routes below are qualified. PR #651 is
-still unmerged; current-head Verify, required checks/reviews and guarded merge
-remain delivery gates. Physical A16 qualification remains **DEFERRED**.
+Implementation and the desktop browser routes below are qualified. At this
+evidence checkpoint PR #651 is unmerged; current-head Verify, required
+checks/reviews and guarded merge remain delivery gates. The
+[PR delivery record](https://github.com/hideoutgames/BabylonSlate/pull/651)
+is authoritative for the subsequent merge result. Physical A16 qualification
+remains **DEFERRED**.
 
 Main advanced to `931d6ee1` after readiness admission. The normal integration
 merge retains its immutable texture/model sources and staged visual ownership,
@@ -51,6 +54,19 @@ evidence changes do not alter application behavior.
 | Delivery | Same branch and PR retained; selected local checks pass with revision-scoped reuse | **PENDING** exact-head CI/reviews/merge |
 
 ### Integration acceptance after main #663
+
+The first integrated Verify run at `2afbeaa2` failed static checking and 30 unit
+cases. The selected repair updates the CEL fixture's complete typed input,
+scene-loading checks to allow the preceding Scalability transaction, and engine
+type lookups to tolerate the added registry entries. Editor collection tests now
+exercise dynamic culling, camera movement, grid visibility and adopted models
+without requiring the retired frozen queue. NullEngine fixtures supply its absent
+depth allocator while retaining real texture/RTT ownership; post-process tests
+wait for coordinator preparation before asserting native fallback lifetime.
+The full 1024-square offline emission test retains all output-byte assertions
+with a bounded 30-second deadline for coverage instrumentation. Production code
+and the browser evidence below are unchanged by these test repairs; targeted
+reruns and a new exact-head Verify remain required.
 
 The saved nine-actor model project reopens with independent model outlines and
 prepared emission on the integrated build. Normal pointer/keyboard operations

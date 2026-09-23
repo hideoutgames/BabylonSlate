@@ -50,9 +50,10 @@ describe("runtime departing Scene loading", () => {
       chunks.hold();
       runtime.executeConsoleCommand("changescene world");
       const loading = runtime.realizePlayWorld();
-      await vi.waitFor(() => expect(commands[0]?.type).toBe("sceneLoading"));
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLoading" && command.sceneLoadId === 2)).toBe(true));
       expect(exit).not.toHaveBeenCalled();
       expect(previous.every((actor) => !actor.destroyed)).toBe(true);
+      expect(commands.some((command) => command.type === "despawn")).toBe(false);
       runtime.tick();
       expect(gameTick).toHaveBeenCalledOnce();
       expect(actorTick).not.toHaveBeenCalled();

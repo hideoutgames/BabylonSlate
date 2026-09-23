@@ -11,7 +11,9 @@ import {
 describe("CEL settings persistence and inheritance", () => {
   it("preserves authored outlines through save, PBR switches, quality presets and scene inheritance", () => {
     expect(normalizeCelShadingSettings({})).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
-    const project = normalizeProjectSettings({ render: { mode: "cel", cel: { outlinesEnabled: false, outlineColor: [0.25, 0.5, 0.75], outlineWidth: 2.25 } } });
+    const project = normalizeProjectSettings({ render: { mode: "cel", cel: normalizeCelShadingSettings({
+      outlinesEnabled: false, outlineColor: [0.25, 0.5, 0.75], outlineWidth: 2.25,
+    }) } });
     const low = applyProjectQualityPatch(project.render, qualityPresetPatch("low"));
     const restored = normalizeProjectSettings(JSON.parse(JSON.stringify({ ...project, render: { ...low, mode: "pbr" } })));
     expect(restored.render.cel).toEqual(project.render.cel);

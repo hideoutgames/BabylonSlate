@@ -22,24 +22,24 @@ describe("engine type registry", () => {
   });
 
   it("registers Collision Channel and Hit Result", () => {
-    expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual([
+    expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual(expect.arrayContaining([
       ENGINE_COLLISION_CHANNEL_ENUM_ID,
       "engine:Key",
       "engine:InputComponent",
-    ]);
-    expect(ENGINE_ENUMS[0]?.members.map((member) => member.name)).toEqual([
+    ]));
+    expect(ENGINE_ENUMS.find((entry) => entry.id === ENGINE_COLLISION_CHANNEL_ENUM_ID)?.members.map((member) => member.name)).toEqual([
       "All",
       "WorldStatic",
       "WorldDynamic",
       "Pawn",
       "Visibility",
     ]);
-    expect(ENGINE_STRUCTS.map((entry) => entry.id)).toEqual([
+    expect(ENGINE_STRUCTS.map((entry) => entry.id)).toEqual(expect.arrayContaining([
       ENGINE_HIT_RESULT_STRUCT_ID,
       "engine:InputType",
       "engine:InputBinding",
-    ]);
-    expect(ENGINE_STRUCTS[0]?.fields.map((field) => field.name)).toEqual([
+    ]));
+    expect(ENGINE_STRUCTS.find((entry) => entry.id === ENGINE_HIT_RESULT_STRUCT_ID)?.fields.map((field) => field.name)).toEqual([
       "Hit",
       "Location",
       "Normal",

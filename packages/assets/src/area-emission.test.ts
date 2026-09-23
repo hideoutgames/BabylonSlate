@@ -26,7 +26,9 @@ describe("derived rectangular emission", () => {
         throw new Error(`Minified uniform average changed at pixel ${i / 4}: ${result.slice(i, i + 4)}`);
     expect(progress).toEqual([...progress].sort((a, b) => a - b));
     expect(progress.at(-1)).toBe(1);
-  });
+  // Exercise the full 1024-square offline filter, including every output byte.
+  // Instrumented hosted CI takes longer than the default 5-second test deadline.
+  }, 30_000);
 
   it("round-trips its versioned encoding and rejects corruption or a replaced source", async () => {
     const pixels = new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(97);
