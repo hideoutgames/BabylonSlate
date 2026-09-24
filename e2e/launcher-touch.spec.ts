@@ -25,14 +25,11 @@ async function openLauncher(page: Page) {
       root: `opfs:${name}`.replaceAll(" ", "_"),
       name,
     })),
-    {
-      root: "opfs:__slate_templates__/Touch Starter One",
-      name: "Touch Starter One",
-    },
-    {
-      root: "opfs:__slate_templates__/Touch Starter Two",
-      name: "Touch Starter Two",
-    },
+    // Enough installed templates to paginate the tablet template gallery.
+    ...Array.from({ length: 6 }, (_, index) => ({
+      root: `opfs:__slate_templates__/Touch Starter ${index + 1}`,
+      name: `Touch Starter ${index + 1}`,
+    })),
   ].map(({ root, name }) => ({
     root,
     files: createEmptyProjectFiles({ guid: name, name }).map(
