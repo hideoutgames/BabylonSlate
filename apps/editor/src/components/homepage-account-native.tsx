@@ -129,7 +129,7 @@ export default function HomepageNativeAccount({
         <Alert variant="destructive">
           <AlertDescription>{restoreError}</AlertDescription>
         </Alert>
-        <Button size="touch" onClick={onRetry}>
+        <Button onClick={onRetry}>
           Try Again
         </Button>
       </Frame>
@@ -264,7 +264,6 @@ export default function HomepageNativeAccount({
         {status && <p role="status">{status}</p>}
         <Button
           type="submit"
-          size="touch"
           disabled={busy || !(challenge ? code.trim() : email.trim())}
         >
           {busy
@@ -280,7 +279,6 @@ export default function HomepageNativeAccount({
           <>
             <Button
               variant="ghost"
-              size="touch"
               disabled={busy}
               onClick={() => {
                 void run(async () => {
@@ -296,7 +294,6 @@ export default function HomepageNativeAccount({
             </Button>
             <Button
               variant="ghost"
-              size="touch"
               disabled={busy}
               onClick={() => {
                 setChallenge(null);
@@ -311,7 +308,6 @@ export default function HomepageNativeAccount({
         ) : (
           <Button
             variant="ghost"
-            size="touch"
             disabled={busy}
             onClick={() => {
               setMode(mode === "sign-in" ? "sign-up" : "sign-in");

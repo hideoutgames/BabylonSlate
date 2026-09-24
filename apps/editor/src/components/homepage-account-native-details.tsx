@@ -27,7 +27,6 @@ export function NativeAccountDetails({
       ) : null}
       <Button
         variant="outline"
-        size="touch"
         disabled={busy}
         onClick={() => {
           setBusy(true);
