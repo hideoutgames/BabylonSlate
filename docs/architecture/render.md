@@ -574,6 +574,11 @@ The viewport reload key includes effective shadow settings alongside CEL setting
 `SceneShadowController` owns authored-light shadow resources in both editor and
 Play. Mesh additions/removals update caster membership, disabled lights release
 allocation, and local lights have a separate budget from the directional light.
+Collider display roots and their individual dash meshes carry the editor-helper
+marker and never enter shadow maps. The exclusion applies to each marked mesh,
+not its entire subtree: authored model components beneath a collider still cast
+and receive shadows. Guide movement/visibility does not invalidate cached local
+maps; real caster movement still does.
 Supported directional rendering uses stabilized cascades without a depth-reduction
 pass. Quality presets select Auto local capacity; Manual remains an authored upper
 limit subject to effective resource admission. Neither mode changes authored
@@ -682,7 +687,14 @@ receiver-plane correction derived from the current fragment's light-space depth
 slope at each existing native bilinear PCF tap. A common shift for the whole
 1/3/5 kernel removes valid contacts with wider filters, so each tap follows the
 receiver plane before applying only its own bilinear-support correction. Native
-sample counts, positions and filter weights remain unchanged. All cascade
+Medium/High sample counts, positions and filter weights remain unchanged. Low
+uses four texel-center comparisons with the original bilinear weights. Sharing
+one conservative reference depth across those four texels erased real contacts
+on the Basic 3D mannequin at its imported scale. Per-texel receiver depths restore
+those contacts without increasing caster bias, blur or coverage. This adds three
+comparison fetches for automatic directional Low PCF, reported by opt-in shadow
+diagnostics; map/pass/sampler budgets remain unchanged. Native A16 timing remains
+an outstanding qualification gate. All cascade
 derivatives execute before cascade selection/blending.
 The receiver's comparison-depth shift is derived from its projected depth
 gradient and actual map dimensions. Finite offsets retain their full magnitude:

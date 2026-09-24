@@ -125,6 +125,9 @@ function addDashedEdge(
       scene,
     );
     dash.parent = parent;
+    // Mark the actual renderable segments, not an entire subtree: authored
+    // component meshes can also be parented beneath a collider visual root.
+    dash.metadata = { ...dash.metadata, editorColliderVisual: true };
     dash.position.copyFrom(mid);
     dash.rotationQuaternion = rotation.clone();
     dash.material = material;

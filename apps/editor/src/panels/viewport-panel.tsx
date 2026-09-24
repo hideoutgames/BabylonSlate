@@ -948,6 +948,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         postProcessPassCount: () => number | null;
         renderingBaseline: () => Record<string, unknown> | null;
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
+        mannequinShadowProbe: (modelOnly?: boolean) => Promise<unknown>;
+        mannequinShadowVisibility: (points: { worldPosition: number[]; region: string }[]) => Promise<boolean[]>;
         setRenderSettings: EngineHandle["setRenderSettings"];
         setShadowCaptureView: (position: [number, number, number], target: [number, number, number], fov: number) => void;
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
@@ -1106,6 +1108,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       shadowDiagnostics: () => {
         const handle = engineRef.current;
         return handle ? captureShadowDiagnostics(handle.scene, { host: "editor", meshes: handle.scene.meshes }) : null;
+      },
+      mannequinShadowProbe: async (modelOnly) => {
+        const handle = engineRef.current;
+        if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
+        const result = (await import("../testing/mannequin-shadow-proof")).mannequinShadowProbe(handle.scene, modelOnly);
+        handle.scheduler.invalidate("manual");
+        return result;
+      },
+      mannequinShadowVisibility: async (points) => {
+        const handle = engineRef.current;
+        if (!handle || import.meta.env.VITE_TEST_MODE !== "true") throw new Error("No test viewport");
+        return (await import("../testing/mannequin-shadow-proof")).mannequinShadowVisibility(handle.scene, points);
       },
       setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
       setShadowCaptureView: (position, target, fov) => {

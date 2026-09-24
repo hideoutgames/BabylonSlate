@@ -1,5 +1,113 @@
 # Renderer qualification
 
+## Basic 3D mannequin: 24 September 2026
+
+This continuation uses a freshly created **Basic 3D** project and its actual
+bundled Kenney mannequin, imported through the production asset/hierarchy/material
+path. It is not the earlier synthetic box fixture or the unavailable
+TestProject222. The captured model is 2.7 world units tall; no meter convention
+is assumed. Its imported source SHA-256 and revision-scoped effective states are
+in the [evidence record](../assets/renderer-qualification/2026-09-24-mannequin-shadows/effective-settings.json).
+
+Two separate causes were reproduced:
+
+| Path | Isolation and defect | Correction |
+| --- | --- | --- |
+| Default Medium, editor | Shadow-off removed the triangular marks. Retaining all six mannequin casters while excluding nonmodel casters removed them too. Collider roots were marked as helpers, but renderable dash children were not; the shadow policy also omitted the collider marker. | Mark each dash and exclude marked meshes from shadow participation. Authored model children beneath a collider remain eligible. |
+| Low directional automatic PCF | With guides already excluded, known lit pixels passed but valid contacts failed. The one bilinear comparison used a conservative reference for four texels at different receiver depths. Independent triangle rays found blockers at all four texel centers while the shared reference rejected some of them. | Compare each texel against its own receiver-plane depth, then apply the original bilinear weights. Preserve map size, distance, caster bias, material and hard CEL bands. |
+
+The collider regression failed at `45770150`: 87 sampled head pixels changed
+when helper casting was isolated, including 58 incorrectly dark lit-face samples.
+At `2ca6c04d` all sampled helper differences were zero and all 123 visible
+contact samples remained shadowed. These matched Medium captures retain the same
+camera, materials, light, two 2048 maps and authored settings:
+
+![Medium before: collider dashes cast triangular marks](../assets/renderer-qualification/2026-09-24-mannequin-shadows/medium-before.png)
+![Medium fixed: clear head and retained self-shadowing](../assets/renderer-qualification/2026-09-24-mannequin-shadows/medium-fixed.png)
+
+The independent oracle samples actual imported triangles at native pixel centers,
+checks camera visibility, and retains shadow-boundary samples in the paired
+helper comparison. Low classification uses its actual four texel centers rather
+than sparse world offsets. Foreground guides and authored dark texture pixels
+without useful lighting signal are excluded only from lit/contact classification.
+The shadow-difference comparison still includes them. No global image-difference
+percentage, substituted character, disabled shadows, or relaxed darkness threshold
+is used as an acceptance result.
+
+The final Low assertion failed on both APIs at `10afa5ac`, even with helpers
+excluded: the WebGL2 CEL case retained 7/20 left-leg and 0/7 torso contacts.
+At `0bc933c7` the identical population retains 20/20 and 7/7, with zero false-dark
+lit samples and no changes caused by helper participation. The maps remain
+1024 square, one cascade, distance 80, normal bias 0.005:
+
+![Low before: missing contacts with the conservative comparison](../assets/renderer-qualification/2026-09-24-mannequin-shadows/low-before.png)
+![Low fixed: restored contacts with unchanged coverage](../assets/renderer-qualification/2026-09-24-mannequin-shadows/low-fixed.png)
+
+### Scoped verification record
+
+- `8bcbaabd`: 30 unit cases across `shadow-controller.test.ts`,
+  `collider-visual.test.ts` and `shadow-diagnostics.test.ts` pass. The collider
+  membership regression fails before the fix (`2f630056`).
+- `8b2c21aa`: `framegraph-managed-shadows.test.ts` passes, including guide
+  movement/visibility, unchanged local cache/allocation and real-caster refresh.
+- `10afa5ac`: three selected Medium editor cases pass: WebGL2 PBR, WebGPU CEL,
+  and a reversed light/view angle. The Low failures above are not counted as passes.
+- `c6237b11`: the real-model Play/packed-player case passes in PBR and CEL;
+  `slomo 0` freezes animation for pixel pairs, then `slomo 1` verifies it resumes.
+  The saved camera exposes the model while preserving the template clipping,
+  light and imported asset. [Play](../assets/renderer-qualification/2026-09-24-mannequin-shadows/play-pbr.png)
+  and [packed player](../assets/renderer-qualification/2026-09-24-mannequin-shadows/packed-player-cel.png)
+  use the existing production hosts.
+- `0bc933c7`: both Low real-model cases pass (WebGL2 CEL / WebGPU PBR).
+  Four selected existing synthetic cases also pass: WebGL2 cascade fallback PBR,
+  WebGPU cascaded CEL, and transformed/instanced fixtures on both APIs.
+- `87374e9e`: all **71 cases** in the six explicit unit files pass:
+  shadow bias, controller, managed FrameGraph shadows, collider visuals,
+  diagnostics and viewport shading. Changed-file ESLint has no errors (one
+  existing `viewport-panel.tsx` hook warning); the render package typecheck passes.
+  The earlier admitted editor/player builds include their TypeScript checks.
+- `a94676b1`: Play/player and the four default-light editor cases pass. The
+  alternate view exposed a capture race: scene render IDs advanced during shadow
+  preparation while diagnostics still held the previous view matrix. At
+  `e8f83217`, two consecutive alternate-view runs pass after waiting for presented
+  viewport frames and verifying camera/view consistency. This is a fixture repair,
+  not a changed darkness threshold or an additional renderer workaround.
+- `215db04d`: all four remaining editor matrix cases pass with the corrected
+  capture wait. Together with the repeated alternate view, real Play/player and
+  four selected synthetic cases, all **10 distinct browser cases** are covered.
+  Documentation-only updates preserve these results; no exhaustive local suite ran.
+- `a5e4f649`: the two existing `shadow-self-shadowing-hosts.spec.ts` cases pass
+  for PBR and CEL, exercising Low in the editor, Play and an independently served
+  exported player, including authored settings round-trip. This brings the selected
+  browser coverage to **12 distinct cases**. Command: the same admitted browser
+  entry point with that explicit spec and
+  `--grep 'synthetic self-shadowing retains authored Low'`.
+
+All runs use `BL_TEST_PROFILE=shared` and `pnpm --silent agent:wait local --script
+test` with explicit unit paths, or `--script test:e2e` with explicit specs and
+`--project=desktop-chrome`. The new specs are
+`e2e/basic-3d-mannequin-shadows.spec.ts` and
+`e2e/basic-3d-mannequin-shadow-hosts.spec.ts`. Existing shader coverage selects
+`e2e/shadow-self-shadowing.spec.ts` with
+`--grep 'synthetic.*(webgl2 cascade-fallback pbr|webgpu cascades cel|webgl2 transformed pbr|webgpu transformed cel)'`.
+Windows WARP/SwiftShader are functional browser results, not native A16 proof.
+
+### Outstanding qualification
+
+**BLOCKED — physical A16:** no device was available. Low now performs four depth
+comparisons instead of one; this cost is explicit, not a claimed free correction.
+No map, cascade, sampler, render-pass or production-readback budget increased.
+Matched warmed device timings, GPU timing where supported, attachment estimates,
+allocation churn, motion and repeated open/play/close qualification remain required.
+A repeatable frame-time regression over 5% remains a failure/review gate.
+
+**BLOCKED — original TestProject222:** that project and its producing build remain
+unavailable. The actual Basic 3D reproduction closes only the bundled-mannequin
+browser checks above. No claim is made about every patch in the original image.
+Local point/spot automatic adaptation remains explicitly unsupported; this change
+does not alter their authored bias or native perspective/cube comparison paths.
+Current-head CI, review and merge remain delivery gates.
+
 ## Current continuation status — 23 September 2026
 
 Implementation and the Windows desktop browser routes below are qualified. The

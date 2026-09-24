@@ -26,6 +26,7 @@ import {
 import { normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
 import { otherShadowReservations } from "./shadow-admission";
 import { retainAreaLightLookup } from "./area-light-resources";
+import { createColliderVisualMesh } from "./collider-visual";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -115,6 +116,31 @@ function enableHeadlessCascades(scene: Scene): void {
 }
 
 describe("shared shadow lifecycle", () => {
+  it("excludes collider display segments without excluding authored meshes below the collider", () => {
+    const { scene, controller } = fixture();
+    const sun = new DirectionalLight("sun", new Vector3(0.35, -1, 0.2), scene);
+    const collider = createColliderVisualMesh(scene, "mannequin-collider", {
+      kind: "capsule", radius: 0.5, halfHeight: 1,
+    });
+    const dashes = collider.getChildMeshes();
+    const model = MeshBuilder.CreateBox("authored-child", {}, scene);
+    model.parent = collider;
+    controller.setParticipation(collider, { castShadows: true, receiveShadows: true });
+    controller.register(sun, true);
+    controller.sync();
+    const generator = controller.generator(sun)!;
+    expect(dashes.length).toBeGreaterThan(8);
+    expect(generator.getShadowMap()!.renderList).toContain(model);
+    expect(dashes.filter(dash => generator.getShadowMap()!.renderList!.includes(dash))).toEqual([]);
+    // Showing/hiding selection helpers must not recreate a map or drop the model.
+    for (const visible of [false, true]) {
+      for (const dash of dashes) dash.setEnabled(visible);
+      controller.sync();
+      expect(controller.generator(sun)).toBe(generator);
+      expect(generator.getShadowMap()!.renderList).toContain(model);
+      expect(dashes.some(dash => generator.getShadowMap()!.renderList!.includes(dash))).toBe(false);
+    }
+  });
   it("downsizes an oversized Ultra sun within conservative memory admission while retaining requested settings", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
