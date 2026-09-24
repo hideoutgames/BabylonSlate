@@ -88,7 +88,7 @@ describe("Plugin version warnings", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Enable Beta Plugin" });
     expect(dialog.textContent).toContain("Pack is marked Beta");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(harness.overrides.pack).toEqual({ enabled: false });
   });
