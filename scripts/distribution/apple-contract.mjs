@@ -3,7 +3,8 @@ export const APPLE_BUNDLE_ID = "no.hideout.babylonslate";
 export function archiveArguments(identity, archivePath, { teamId, signingIdentity, profileUuid }) {
   if (!/^[A-Z0-9]{10}$/.test(teamId) || !/^[A-Fa-f0-9]{40}$/.test(signingIdentity) || !/^[A-Fa-f0-9-]{36}$/.test(profileUuid)) throw new Error("Validated manual signing assets are required for the archive");
   // The profile selector belongs only to the App target, not CocoaPods frameworks.
-  return ["-workspace", "ios/App/App.xcworkspace", "-scheme", "App", "-configuration", "Release", "-destination", "generic/platform=iOS", "-archivePath", archivePath, `MARKETING_VERSION=${identity.appleMarketingVersion}`, `CURRENT_PROJECT_VERSION=${identity.appleBuildNumber}`, "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_STYLE=Manual", `DEVELOPMENT_TEAM=${teamId}`, `CODE_SIGN_IDENTITY=${signingIdentity}`, `BABYLONSLATE_PROVISIONING_PROFILE_SPECIFIER=${profileUuid}`, "archive"];
+  const settings = { MARKETING_VERSION: identity.appleMarketingVersion, CURRENT_PROJECT_VERSION: identity.appleBuildNumber, CODE_SIGNING_ALLOWED: "YES", CODE_SIGN_STYLE: "Manual", DEVELOPMENT_TEAM: teamId, CODE_SIGN_IDENTITY: signingIdentity, BABYLONSLATE_PROVISIONING_PROFILE_SPECIFIER: profileUuid };
+  return ["-workspace", "ios/App/App.xcworkspace", "-scheme", "App", "-configuration", "Release", "-destination", "generic/platform=iOS", "-archivePath", archivePath, ...Object.entries(settings).map(([name, value]) => `${name}=${value}`), "archive"];
 }
 
 export function exportOptions(teamId, profileUuid) {

@@ -104,9 +104,10 @@ export const contentRules = [
   {
     id: "apple-signing-identity",
     // A team ID or profile UUID identifies the developer account and is never
-    // needed for a simulator build; see SECURITY.md.
+    // needed for a simulator build; see SECURITY.md. A complete quoted Xcode
+    // variable reference carries no identifier; literal prefixes/suffixes do.
     regex:
-      /\b(?:DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PROVISIONING_PROFILE_SPECIFIER)\b\s*=\s*(?!""|"";|;)\S/,
+      /\b(?:DEVELOPMENT_TEAM|PROVISIONING_PROFILE|PROVISIONING_PROFILE_SPECIFIER)\b\s*=\s*(?!""|;|"\$\([A-Za-z_][A-Za-z0-9_]*\)"\s*(?:;|$))\S/,
     hint: "Keep signing identifiers in a local, gitignored .xcconfig.",
   },
 ];

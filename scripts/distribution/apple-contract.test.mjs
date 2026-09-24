@@ -22,9 +22,10 @@ test("archive targets Release generic iOS devices and export never changes the a
   assert.ok(args.includes("CODE_SIGNING_ALLOWED=YES"));
   assert.ok(args.includes("CODE_SIGN_STYLE=Manual"));
   assert.ok(args.includes("CODE_SIGN_IDENTITY=0123456789abcdef0123456789abcdef01234567"));
-  assert.ok(args.includes("DEVELOPMENT_TEAM=TEAM123456"));
+  const settings = Object.fromEntries(args.filter(arg => /^[A-Z_]+=/.test(arg)).map(arg => arg.split("=")));
+  assert.equal(settings.DEVELOPMENT_TEAM, "TEAM123456");
   assert.ok(args.includes("BABYLONSLATE_PROVISIONING_PROFILE_SPECIFIER=12345678-1234-1234-1234-123456789abc"));
-  assert.ok(args.every(arg => !arg.startsWith("PROVISIONING_PROFILE_SPECIFIER=")));
+  assert.equal(Object.hasOwn(settings, "PROVISIONING_PROFILE_SPECIFIER"), false);
   assert.ok(!args.join(" ").includes("simulator"));
   const options = exportOptions("TEAM123456", "profile-uuid");
   assert.equal(options.method, "app-store-connect");

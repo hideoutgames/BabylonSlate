@@ -124,6 +124,26 @@ describe("public repository hygiene", () => {
     ).toEqual([]);
   });
 
+  it("accepts Xcode variable references but rejects literal signing identifiers beside them", () => {
+    for (const text of [
+      'PROVISIONING_PROFILE_SPECIFIER = "$(BABYLONSLATE_PROVISIONING_PROFILE_SPECIFIER)";',
+      'DEVELOPMENT_TEAM = "$(APPLE_TEAM_ID)";',
+    ]) {
+      expect(scanText("App.pbxproj", text)).toEqual([]);
+    }
+
+    for (const text of [
+      'PROVISIONING_PROFILE_SPECIFIER = "12345678-1234-1234-1234-123456789abc";',
+      'DEVELOPMENT_TEAM = "$(PREFIX)ABCDE12345";',
+      'DEVELOPMENT_TEAM = "ABCDE12345$(SUFFIX)";',
+      'DEVELOPMENT_TEAM = "$(APPLE_TEAM_ID)"; PROVISIONING_PROFILE = "12345678-1234-1234-1234-123456789abc";',
+    ]) {
+      expect(scanText("App.pbxproj", text)).toMatchObject([
+        { rule: "apple-signing-identity" },
+      ]);
+    }
+  });
+
   it("rejects sensitive paths regardless of contents", () => {
     expect(scanPath("certs/dist.p12")).toMatchObject([
       { rule: "signing-material" },
