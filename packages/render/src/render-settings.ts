@@ -3,6 +3,7 @@ import {
   mergeRenderSettings,
   type RenderSettingsPatch,
   normalizeCelShadingSettings,
+  normalizeCelShadingOverrides,
   resolveRenderingQuality,
   resolveLocalLightBudget,
   mergeRenderingQualityOverrides,
@@ -123,7 +124,10 @@ export function updateSceneRenderingSettings(
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";
-  state.cel = resolveCelShadingSettings(resolveCelShadingSettings(state.project.cel, state.overrides), state.runtimeOverrides.cel);
+  state.cel = resolveCelShadingSettings(state.project.cel, {
+    ...normalizeCelShadingOverrides(state.overrides),
+    ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
+  });
   state.effects = normalizeRenderEffectsSettings(resolved.effects);
   if (mode !== state.mode) {
     state.mode = mode;

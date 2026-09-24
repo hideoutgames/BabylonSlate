@@ -17,6 +17,7 @@ import {
   type RenderTargetWrapper,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
@@ -48,7 +49,7 @@ import {
 export async function runFrameGraphShadowProof(
   backend: "webgl2" | "webgpu" = "webgl2",
   output: "backbuffer" | "texture" = "backbuffer",
-  options: { clustered?: boolean; constrainedResources?: boolean } = {},
+  options: { clustered?: boolean; constrainedResources?: boolean; handoffs?: boolean } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -88,6 +89,15 @@ export async function runFrameGraphShadowProof(
   type Kind = "point" | "spot" | "sun";
   const captures = [];
   const lifecycle = [];
+  const handoffs = [];
+  let shaderCompilations = 0;
+  engine.onBeforeShaderCompilationObservable.add(() => shaderCompilations++);
+  let graphBuilds = 0;
+  const build = FrameGraph.prototype.buildAsync;
+  FrameGraph.prototype.buildAsync = function (...args) {
+    graphBuilds++;
+    return build.apply(this, args);
+  };
   const fixture = async (mode: "pbr" | "cel", kind: Kind) => {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.04, 0.07, 0.12, 1);
@@ -232,7 +242,7 @@ export async function runFrameGraphShadowProof(
     const prepared = await graph.prepare(camera);
     if (prepared.path !== "frameGraph") throw new Error(prepared.reason);
     const map = () => light.getShadowGenerator()?.getShadowMap() ?? null;
-    const render = async (path: "graph" | "classic", force = false) => {
+    const render = async (path: "graph" | "classic", force = false, readPixels = true) => {
       // Graph readiness warms its own ObjectRenderer render-pass variants. The
       // independent classic oracle must also be ready on the camera's pass.
       const classicReadyBefore =
@@ -258,6 +268,7 @@ export async function runFrameGraphShadowProof(
       const after = target?.onAfterUnbindObservable.add(() => {
         shadowDraws += readEngineDrawCalls(engine) - shadowBefore;
       });
+      const frameStarted = performance.now();
       engine.beginFrame();
       let result;
       try {
@@ -268,6 +279,7 @@ export async function runFrameGraphShadowProof(
       } finally {
         engine.endFrame();
       }
+      const cpuMs = performance.now() - frameStarted;
       const draws = readEngineDrawCalls(engine);
       if (before) target?.onBeforeBindObservable.remove(before);
       if (after) target?.onAfterUnbindObservable.remove(after);
@@ -276,7 +288,8 @@ export async function runFrameGraphShadowProof(
       ).length;
       const active = scene.getActiveMeshes();
       return {
-        pixels: await read(outputTarget),
+        pixels: readPixels ? await read(outputTarget) : [],
+        cpuMs,
         draws,
         faces,
         shadowDraws,
@@ -293,7 +306,10 @@ export async function runFrameGraphShadowProof(
       boundTargets.length = 0;
       beginEngineDrawCallFrame(engine);
       readinessDrawStacks = [];
+      const buildsBefore = graphBuilds;
+      const preparationStarted = performance.now();
       const prepared = await graph.prepare(camera);
+      const preparationMs = performance.now() - preparationStarted;
       const readinessStacks = readinessDrawStacks;
       readinessDrawStacks = undefined;
       const readinessDraws = readEngineDrawCalls(engine);
@@ -309,6 +325,8 @@ export async function runFrameGraphShadowProof(
       captures.push({
         name: `${mode}-${kind}-${pose}`,
         prepared,
+        preparationMs,
+        graphBuilds: graphBuilds - buildsBefore,
         readinessDraws,
         readinessStacks,
         readinessFaces,
@@ -360,6 +378,51 @@ export async function runFrameGraphShadowProof(
     };
   };
   try {
+    if (options.handoffs) {
+      for (const mode of ["pbr", "cel"] as const) {
+        const host = await fixture(mode, "point");
+        const origin = host.camera.position.clone();
+        const incoming = new PointLight("incoming", new Vector3(40, 4, -2), host.scene);
+        applyAuthoredLightProperties(incoming, { intensity: 8, range: 100, castShadows: true });
+        await host.capture("handoff-initial");
+        // The incoming cube must fit the same shared allowance as the current
+        // cube; preparation cannot hide over-budget temporary allocations.
+        limitManagedLightingBytes(engine, managedLightingReservations(engine).reservedBytes);
+        for (const [index, x] of [40, origin.x, 40, origin.x].entries()) {
+          // Respect the production residency interval before each real handoff.
+          await new Promise<void>((resolve) => setTimeout(resolve, 300));
+          host.camera.position.x = x;
+          host.camera.setTarget(new Vector3(0, 0.3, 0));
+          const expected = index % 2 === 0 ? incoming : host.light;
+          const started = performance.now(), beforeBuilds = graphBuilds;
+          let preparationMs = 0, maximumPreparationMs = 0, maximumFrameMs = 0, frames = 0;
+          let preparationCompilations = 0, frameCompilations = 0;
+          do {
+            const beforePrepare = performance.now();
+            const beforePreparationCompilations = shaderCompilations;
+            await host.graph.prepare(host.camera);
+            preparationCompilations += shaderCompilations - beforePreparationCompilations;
+            const preparation = performance.now() - beforePrepare;
+            preparationMs += preparation; maximumPreparationMs = Math.max(maximumPreparationMs, preparation);
+            const beforeFrameCompilations = shaderCompilations;
+            const frame = await host.render("graph", false, false);
+            frameCompilations += shaderCompilations - beforeFrameCompilations;
+            if (frame.result.path !== "frameGraph") throw new Error("A warming shadow handoff lost the prepared graph.");
+            maximumFrameMs = Math.max(maximumFrameMs, frame.cpuMs); frames++;
+            if (performance.now() - started > 10_000) throw new Error("Shadow handoff did not finish warming.");
+            if (!expected.getShadowGenerator()) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          } while (!expected.getShadowGenerator());
+          handoffs.push({ mode, index, preparationMs, maximumPreparationMs, maximumFrameMs, frames, preparationCompilations, frameCompilations,
+            activationMs: performance.now() - started, graphBuilds: graphBuilds - beforeBuilds,
+            active: host.scene.lights.filter((light) => light.getShadowGenerator()).map((light) => light.name),
+            allocations: host.scene.textures.filter((texture) => texture.isRenderTarget && texture !== host.outputTarget).length,
+            resources: managedLightingReservations(engine) });
+        }
+        host.graph.dispose(); host.scene.dispose();
+      }
+      return { backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(),
+        webGLVersion: engine instanceof Engine ? engine.webGLVersion : null, captures, lifecycle, handoffs };
+    }
     if (options.constrainedResources) {
       const first = await fixture("pbr", "spot");
       await first.capture("reserved");
@@ -517,6 +580,7 @@ export async function runFrameGraphShadowProof(
       resourceProof: undefined,
     };
   } finally {
+    FrameGraph.prototype.buildAsync = build;
     engine.dispose();
     canvas.remove();
   }

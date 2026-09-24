@@ -16,6 +16,10 @@ export interface CelShadingSettings {
   outlineColor: [number, number, number];
   /** Strictly occluded global outlines, measured in output pixels. */
   outlineWidth: number;
+  /** Shrink global CEL outlines between the two camera distances in scene units. */
+  outlineDistanceFadeEnabled: boolean;
+  outlineFadeStart: number;
+  outlineFadeEnd: number;
 }
 
 /** Missing scene keys inherit independently, including after project edits. */
@@ -33,6 +37,9 @@ export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   outlinesEnabled: true,
   outlineColor: [...DEFAULT_OUTLINE_PROPERTIES.color],
   outlineWidth: DEFAULT_OUTLINE_PROPERTIES.width,
+  outlineDistanceFadeEnabled: false,
+  outlineFadeStart: 50,
+  outlineFadeEnd: 100,
 };
 
 export const CEL_SHADING_LIMITS = {
@@ -43,6 +50,8 @@ export const CEL_SHADING_LIMITS = {
   specularSize: [0.01, 1],
   lightColorInfluence: [0, 1],
   outlineWidth: OUTLINE_WIDTH_LIMITS,
+  outlineFadeStart: [0, 999_999.9375],
+  outlineFadeEnd: [0.01, 1_000_000],
 } as const;
 
 /** Invalid override values inherit; finite out-of-range values are clamped. */
@@ -54,6 +63,8 @@ export function normalizeCelShadingOverrides(
   const result: CelShadingOverrides = {};
   if (typeof source.outlinesEnabled === "boolean")
     result.outlinesEnabled = source.outlinesEnabled;
+  if (typeof source.outlineDistanceFadeEnabled === "boolean")
+    result.outlineDistanceFadeEnabled = source.outlineDistanceFadeEnabled;
   const outlineColor = normalizeOutlineColor(source.outlineColor);
   if (outlineColor) result.outlineColor = outlineColor;
   if (typeof source.specularEnabled === "boolean")
@@ -81,19 +92,28 @@ export function normalizeCelShadingOverrides(
 export function normalizeCelShadingSettings(
   value: unknown,
 ): CelShadingSettings {
-  return {
+  return resolveOutlineFadeRange({
     ...DEFAULT_CEL_SHADING_SETTINGS,
     outlineColor: [...DEFAULT_CEL_SHADING_SETTINGS.outlineColor],
     ...normalizeCelShadingOverrides(value),
-  };
+  });
 }
 
 export function resolveCelShadingSettings(
   project: unknown,
   overrides?: unknown,
 ): CelShadingSettings {
-  return {
+  return resolveOutlineFadeRange({
     ...normalizeCelShadingSettings(project),
     ...normalizeCelShadingOverrides(overrides),
-  };
+  });
+}
+
+/** Validate the pair after inheritance without inventing sparse override keys. */
+function resolveOutlineFadeRange(settings: CelShadingSettings): CelShadingSettings {
+  // At large distances a 0.01 range can collapse to equal float32 shader
+  // endpoints. Keep at least one representable step, including at the cap.
+  const step = 2 ** (Math.floor(Math.log2(Math.max(1, Math.fround(settings.outlineFadeStart)))) - 23);
+  settings.outlineFadeEnd = Math.max(settings.outlineFadeEnd, settings.outlineFadeStart + Math.max(0.01, step));
+  return settings;
 }

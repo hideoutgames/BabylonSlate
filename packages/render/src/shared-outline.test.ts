@@ -21,6 +21,15 @@ function setup() {
 const style = { kind: "component", color: [1, 0, 0], width: 2 } as const;
 
 describe("shared outline admission", () => {
+  it("rejects collapsed GPU fade ranges without replacing the accepted global style", () => {
+    const { view } = setup();
+    const global: SharedOutlineContribution = { ...style, kind: "global", targets: [{ key: "actor", meshes: [] }], distanceFade: { start: 50, end: 100 } };
+    view.setContribution("global", global);
+    const revision = view.revision;
+    expect(() => view.setContribution("global", { ...global, distanceFade: { start: 500_000, end: 500_000.01 } })).toThrow(/distance fade range/);
+    expect(view.revision).toBe(revision);
+    expect(view.contributions.get("global")?.distanceFade).toEqual({ start: 50, end: 100 });
+  });
   it("rejects identity overflow without replacing the accepted contribution", () => {
     const { owner, view } = setup();
     const accepted: SharedOutlineContribution = {

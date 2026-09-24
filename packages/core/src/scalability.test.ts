@@ -7,6 +7,22 @@ function session() {
   return { settings, transactions };
 }
 describe("runtime scalability session", () => {
+  it("keeps live CEL fade overrides sparse and resolves their range after scene transitions", () => {
+    const { settings } = session();
+    settings.setScene({ celShading: { outlineFadeStart: 5, outlineFadeEnd: 20 } });
+    settings.request({ kind: "patch", render: { cel: { outlineDistanceFadeEnabled: true, outlineFadeStart: 25 } } });
+    expect(settings.requested.render.cel).toMatchObject({ outlineDistanceFadeEnabled: true, outlineFadeStart: 25, outlineFadeEnd: 25.01 });
+    expect(settings.overrides.cel).toEqual({ outlineDistanceFadeEnabled: true, outlineFadeStart: 25 });
+    settings.setScene({ celShading: { outlineFadeStart: 10, outlineFadeEnd: 70 } });
+    expect(settings.requested.render.cel).toMatchObject({ outlineFadeStart: 25, outlineFadeEnd: 70 });
+    const before = settings.requested;
+    expect(settings.request({ kind: "patch", render: { cel: { outlineFadeEnd: NaN } } }).status).toBe("failed");
+    expect(settings.requested).toEqual(before);
+    settings.request({ kind: "reset" });
+    expect(settings.requested.render.cel).toMatchObject({ outlineDistanceFadeEnabled: false, outlineFadeStart: 10, outlineFadeEnd: 70 });
+    for (const field of ["outlineDistanceFadeEnabled", "outlineFadeStart", "outlineFadeEnd"])
+      expect(renderingApplicationPolicy(`cel.${field}`)).toBe("live");
+  });
   it("validates outline transactions atomically and preserves their style across presets and scene changes", () => {
     const { settings, transactions } = session();
     const before = settings.requested;

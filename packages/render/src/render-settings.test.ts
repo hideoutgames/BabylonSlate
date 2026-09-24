@@ -3,8 +3,8 @@ import {
   DirectionalLight, NullEngine, RawTexture, RenderTargetTexture,
   Scene, ShadowGenerator, Vector3,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
-import { applyMaterialTextureAnisotropy, updateSceneRenderingSettings } from "./render-settings";
+import { normalizeRenderingQuality, qualityPresetPatch, ScalabilitySession } from "@babylonslate/core";
+import { applyMaterialTextureAnisotropy, sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
@@ -14,6 +14,18 @@ function fixture() {
   engine.getCaps().maxAnisotropy = 16;
   return new Scene(engine);
 }
+
+it("renders the same CEL fade range as session readback after a runtime override lowers an inherited start", () => {
+  const scene = fixture();
+  const session = new ScalabilitySession({ mode: "cel" }, 60, { celShading: { outlineFadeStart: 200 } });
+  updateSceneRenderingSettings(scene, { mode: "cel" }, { outlineFadeStart: 200 });
+  expect(sceneRenderingSettings(scene).cel.outlineFadeEnd).toBe(200.01);
+  session.request({ kind: "patch", render: { cel: { outlineFadeStart: 25 } } });
+  sceneRenderingSettings(scene).runtimeOverrides = session.overrides;
+  updateSceneRenderingSettings(scene);
+  expect(sceneRenderingSettings(scene).cel).toEqual(session.requested.render.cel);
+  expect(sceneRenderingSettings(scene).cel.outlineFadeEnd).toBe(100);
+});
 
 it("changes authored texture quality without broadening an existing shadow map's sampling", () => {
   const scene = fixture();

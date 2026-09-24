@@ -5,6 +5,37 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`Shadow activation handoff keeps the full-budget camera route usable on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(150_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error" || /GPUValidationError|validation error|WebGL.*INVALID_|shader.*(?:error|failed)/i.test(message.text())) errors.push(message.text());
+    });
+    await page.goto("/?test=1&framegraphShadowProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __babylonslateFrameGraphShadowProof?: unknown;
+    }).__babylonslateFrameGraphShadowProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __babylonslateFrameGraphShadowProof: typeof runFrameGraphShadowProof;
+    }).__babylonslateFrameGraphShadowProof(backend, "backbuffer", { handoffs: true }), backend);
+    const handoffs = result.handoffs!;
+    await testInfo.attach("shadow-handoff-timing", { body: JSON.stringify({ backend, info: result.info, handoffs }), contentType: "application/json" });
+    console.log(`[shadow-handoff] ${JSON.stringify({ backend, info: result.info, handoffs })}`);
+    expect(errors).toEqual([]);
+    expect(handoffs).toHaveLength(8);
+    for (const step of handoffs) {
+      expect(step.graphBuilds).toBe(0);
+      expect(step.active).toEqual([step.index % 2 === 0 ? "incoming" : "key"]);
+      expect(step.allocations).toBe(1);
+      expect(step.resources.reservedBytes).toBeLessThanOrEqual(step.resources.limit);
+      expect(step.frames).toBeGreaterThan(1);
+      expect(step.preparationCompilations).toBe(0);
+    }
+  });
+}
+
 const configurations = [
   ...(["webgl2", "webgpu"] as const).flatMap((backend) =>
     (["backbuffer", "texture"] as const).map((output) => ({

@@ -1,5 +1,12 @@
 # Render sync and resource cache (P4)
 
+Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings
+and receiver readiness in place. The ordered shadow pass renders these RTTs
+unmanaged before the object pass; their native samplers need no graph texture
+imports. Replacing a map preserves the object render-pass ID, effects and outline
+tasks, avoiding unrelated shader preparation and resource churn. Revocation and
+first-map readiness guards still apply before either drawing or sampling a map.
+
 Editor gizmo utility layers belong to their viewport, independently of graph
 rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
 the final world output on graph and classic paths, before the host copies the
@@ -45,7 +52,7 @@ are ready; see the typed session contract below.
 | Scene environment texture and authored post-process asset references | Asset/resource rebuild | Existing scene/asset owners; not cheap quality switches |
 | Rectangular-light dimensions, color, intensity and enabled state | Live component state | Per-actor light owner; admission shares the global lighting budget |
 | Rectangular-light Texture reference | Prepared resource replacement | Requires versioned emission data; shares uploads and retains other owners |
-| `cel.outlinesEnabled`, `outlineColor`, `outlineWidth` | Live contribution/style state; activation/retirement owns graph resources | Shared world-outline host; artistic settings survive quality presets and PBR/CEL switches |
+| `cel.outlinesEnabled`, `outlineColor`, `outlineWidth`, `outlineDistanceFadeEnabled`, `outlineFadeStart`, `outlineFadeEnd` | Live contribution/style state; activation/retirement owns graph resources | Shared world-outline host; artistic settings survive quality presets and PBR/CEL switches |
 | `OutlineComponent.enabled`, `color`, `width`, `throughMeshes` | Live per-actor contribution/style state | Actor lifetime and view membership; no mesh reassignment for style edits |
 
 Physical A16 budgets and outline acceptance are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This application inventory does not itself certify outline coverage, area lights or device performance.
@@ -95,7 +102,7 @@ Loading warms each mesh/material variant and acknowledges presentation only afte
 
 The opt-in `framegraph-forward-scene` coordinator proves a backbuffer or explicit single-sample 2D color/depth target path using official Clear Texture, Cull Objects and Object Renderer tasks. Its owner awaits `prepare(camera)` and substitutes `render(camera)` for exactly one existing `Scene.render` call; preparation never draws. Tasks persist across frames, resizing requires preparation, and disposal explicitly releases their ObjectRenderer/OIT resources. Readiness warms every scene candidate on both the selected camera pass and the graph object pass; both must use the requested material variant instead of an older hot-swap shader. Neither readiness path draws or waits for unrelated Engine effects. The Babylon 9.20 boundary restores the selected camera before existing lighting and floating-origin observers and avoids the graph callback's second camera update. Each result reports graph use or an explicit classic fallback. Invalid or disposed camera requests return without changing either scene or advancing a frame. Readiness reuses the scene guard for floating-origin context, camera matrices, UBO and shared Engine state, including thrown material callbacks. Unmanaged or camera-specific shadow generators, multisampled/cube/array or depth-renderbuffer targets, caller-bound targets, camera post-processing, custom scene render ownership, rig/multiple cameras and frozen active-mesh lists remain on the classic path. Per-mesh frozen world matrices and frozen materials are admitted. The test-build-only `framegraphForwardProof` fixture compares real classic/graph pixels and draw counts for native and compiled CEL/PBR, alpha-tested and transparent surfaces, offscreen culling, frozen geometry/materials, camera changes, resizing and sequential sibling-scene isolation. Both WebGL2 and WebGPU execute the same surface and managed-shadow pixel oracles, with explicit Engine frame boundaries and external shader translation blocked. This proof does not select the production renderer or establish complete viewport, post-process stack, overlay or device performance parity.
 
-The opt-in managed-shadow bridge orders one borrowed-shadow pass before the official clear/cull/object tasks. The existing scene ShadowController retains allocation, budget membership, caster lists, dirty refresh and disposal; imported External textures never become graph-owned maps. The Babylon 9.20 adapter supplies only the official object task's generator/camera/class-name binding contract and invokes its protected binding hook. It consumes each RTT refresh gate only during actual rendering, keeps directional cascades live, and refreshes caster transforms after the graph scene update. Readiness probes never consume the first map render. Admission changes during scene callbacks are rechecked before touching borrowed resources and bound before object rendering; the following frame requires explicit preparation to discard obsolete External handles. Graph disposal or build failure releases only graph tasks, leaving admitted generators and their registration keys intact. The `framegraphShadowProof` primitive oracle compares native/compiled CEL/PBR point, spot and cascaded sun pixels, real target binds and draw counts, static reuse, caster/light/camera motion, resize, shadow disable, scene reconstruction and sibling scenes on one Engine. This bounded proof does not qualify editor saved-project reload, shared-view RTTs, overlays, particles, complete authored post-processing or default viewport rollout.
+The managed-shadow bridge orders one borrowed-shadow pass before the official clear/cull/object tasks. The existing scene ShadowController retains allocation, budget membership, caster lists, dirty refresh and disposal. Its RTTs render through the unmanaged bridge and bind through native generator samplers, without graph texture imports. The Babylon 9.20 adapter supplies only the official object task's generator/camera/class-name binding contract and invokes its protected binding hook. It consumes each RTT refresh gate only during actual rendering, keeps directional cascades live, and refreshes caster transforms after the graph scene update. Readiness probes never consume the first map render. Admission changes during scene callbacks are rechecked before touching borrowed resources and require fresh readiness; the graph tasks and render-pass IDs survive generator replacement. Graph disposal or build failure releases only graph tasks, leaving admitted generators and their registration keys intact. The `framegraphShadowProof` primitive oracle compares native/compiled CEL/PBR point, spot and cascaded sun pixels, real target binds and draw counts, static reuse, caster/light/camera motion, resize, shadow disable, scene reconstruction and sibling scenes on one Engine.
 
 The opt-in `framegraph-post-process` adapter is an M4b proof, separate from renderer selection. Each enabled task owns a compiled Material instance and a camera-less Babylon `PostProcess`; FrameGraph owns its targets. Drawing invokes the real NodeMaterial apply bindings, then injects the preceding logical Scene Color texture. Disabled or failed tasks copy that input into their output so later passes retain their order. Disabled entries acquire no material or effect and emit no missing-asset diagnostic; disabling detaches them immediately, while re-enabling compiles again and replays root parameter overrides. A last owned WebGL Effect reference whose program is still compiling retires after native completion or terminal compilation failure, outside the native callback stack; ready or shared references use normal native reference counting. The shared `OwnedPostProcess` handles native camera or graph binding, detaches registered passes synchronously, and also retires overwritten Effect references during queued defines changes. Completed ownership records are pruned during native rebuilds. Task/stack `whenDisposed()` reports bounded cleanup; `whenReleased()` confirms actual CPU/native and MaterialLibrary reference release, and only its successful completion permits host Scene/MaterialLibrary disposal. Both promises exclude the separate managed GPU lease drain. A 15-second retirement deadline or context loss reports uncertain cleanup and retains the material reference until eventual native release; it does not certify safe budget release. Replacement generations use separate library keys so delayed cleanup cannot release a replacement. This is a bounded Babylon 9.20 mitigation, without a global patch, extra render, or claim that driver-origin warnings have been identified. Readiness includes the attached GPU effect and sampled textures; graph revisions replace the binding owner. The owner calls the returned stack disposer before clearing or disposing FrameGraph (Babylon resets tasks without disposing them); this releases material references, callbacks, queued effect updates, and only the shader-source entries registered by that task. Resolved Scene Depth/Normal requirements are rejected before compilation until logical buffer injection and encoding conversion are implemented. GLSL/WebGL is the only admitted backend. Full-stack parity, shared-view graph presentation, and default migration remain outstanding. The test-build-only `framegraphProof` fixture compares real compiled legacy and graph pixels for float/texture/time inputs, nested functions, pass order, disabled and failed middle passes, disable/re-enable resource ownership, hot replacement, resizing, half-resolution targets, and resource release; it does not establish device performance.
 The blocking viewport paints its Presenting First Frame phase before permitting that frame, including when cached resources finish readiness within one microtask batch.
@@ -1281,6 +1288,30 @@ light setting changes. The targeted regression detects this redundant per-frame
 invalidation; browser shadow parity and desktop profiling are recorded in
 [renderer qualification](../design/renderer-qualification.md).
 
+### Camera-driven shadow handoffs
+
+Compatible local-light handoffs keep eligible incumbents while one prospective
+receiver layout warms after rendered frames. The warmer dispatches at most eight
+probes and two milliseconds of work per frame (a single driver call cannot be
+preempted). Detached submeshes cover camera/Forward passes and instancing variants;
+temporary shadow lookups borrow compatible generator definitions without changing
+live maps, frozen receiver wrappers or shadow flags. Successful effects remain
+referenced until the actual layout passes strict readiness. There is no extra RTT
+or all-light-combinations cache, including when the shadow budget is full.
+Detached probes preserve each live pass's define ordering so activation reuses
+the prepared shader instead of compiling an equivalent variant under a new key.
+
+Changed winners or readiness invalidate pending work. Authored disable/priority,
+camera possession, lost eligibility, resource/settings changes, incompatible
+light types and unqualified material callbacks use immediate normal admission.
+First activation without a compatible incumbent still uses ordinary preparation.
+Context recovery, graph retirement and scene disposal release pending probes.
+Cancelled WebGL programs retain their last reference until native compilation
+settles. Further speculation uses normal admission while that release is pending,
+so rapid camera changes cannot accumulate abandoned warmup layouts.
+The existing dispose-before-allocate commit and first-map readiness checks remain
+authoritative; shader warmup does not authorize sampling an unrendered map.
+
 ### Shared outline candidate (22 September 2026)
 
 Strict material readiness resolves Babylon's lazy morph influence and texture
@@ -1408,6 +1439,32 @@ use the same transaction service; Graph Color is the native `{x,y,z,w}` structur
 (RGB is used). Presets preserve these artistic values, scene transitions retain
 session overrides, and Reset/new Play/player sessions restore project defaults.
 Editor selection stays separate and never enters exported component data.
+
+Global **Outline Distance Fade** is off by default. **Outline Fade Start** and
+**Outline Fade End** default to 50 and 100 scene units. Width follows a smoothstep
+from its authored value to exactly zero; moving closer restores it. These three
+fields inherit independently and persist through save/export and session settings.
+Finite distances clamp to 0–1,000,000; the start leaves one GPU float step below
+the upper limit. After inheritance, the effective end is raised to at least
+start + 0.01 (or one GPU float step at large distances). Invalid sparse
+values inherit. Disabling fade retains its distances and the previous appearance.
+
+The shared compose shader reconstructs each candidate surface's camera distance
+from strict-mask depth and inverse projection on GLSL/WGSL. Fractional coverage
+keeps widths below one pixel continuous down to zero. Fade metadata occupies a
+second half of each existing style texture, with its bytes included in the Engine
+ledger; it adds no sampler or shader variant. Camera movement only updates camera
+uniforms, without membership changes, table uploads or graph rebuilds. Explicit
+Outline components and editor selection override the global style and do not
+inherit its fade. Distant geometry remains in masks/depth so it still occludes;
+this removes visible strokes, not the fixed mask rendering cost.
+
+Composition samples the eight directions in one bounded loop. Its nearest,
+non-mipmapped mask, depth and style reads use explicit level zero on both backends,
+avoiding implicit derivatives and duplicated fade code on software GPU drivers.
+A live uniform bypasses fade metadata reads and distance calculations when no
+resolved strict style uses fading; toggling it does not rebuild shaders or passes.
+Material coverage sampling retains its normal mip selection.
 
 Model publication refreshes outline membership after the winning single-model
 or multipart hierarchy is installed. Provisional meshes cannot enter the mask;

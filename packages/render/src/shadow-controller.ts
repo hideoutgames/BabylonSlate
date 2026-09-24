@@ -26,7 +26,8 @@ import {
   type ShadowSettings,
 } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-perf";
+import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
 import {
   authoredShadowParticipation,
   hasDeformingShadowBounds,
@@ -64,6 +65,7 @@ export type EffectiveShadowBias = {
 };
 export type ShadowLightStatus =
   | "active"
+  | "warming"
   | "disabled"
   | "not-requested"
   | "non-illuminating"
@@ -146,6 +148,10 @@ export class SceneShadowController {
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
+  private receiverPass: number | undefined;
+  private readonly receiverWarmup: ShadowReceiverWarmup;
+  private authoredRevision = 0;
+  private appliedAuthoredRevision = 0;
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
@@ -160,8 +166,12 @@ export class SceneShadowController {
   private readonly scene: Scene;
   constructor(scene: Scene) {
     this.scene = scene;
+    this.receiverWarmup = new ShadowReceiverWarmup(scene);
+    const stopReadiness = onSceneReadinessDirty(scene, () => this.receiverWarmup.cancelPending());
+    scene.onAfterRenderObservable.add(() => this.receiverWarmup.advance());
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
+      this.receiverWarmup.cancel();
       for (const entry of this.entries.values()) {
         entry.failedKey = "";
         entry.recovery = null;
@@ -192,6 +202,7 @@ export class SceneShadowController {
       this.refreshShadowMaps();
     });
     scene.onDisposeObservable.addOnce(() => {
+      stopReadiness(); this.receiverWarmup.cancel();
       engine.onContextRestoredObservable.remove(restored);
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear();
@@ -211,6 +222,10 @@ export class SceneShadowController {
     ))
       return;
     let entry = this.entries.get(light);
+    if (!entry || entry.requested !== requested || entry.priority !== priority) {
+      this.authoredRevision++;
+      this.receiverWarmup.cancelPending();
+    }
     if (!entry) {
       entry = {
         light,
@@ -260,6 +275,13 @@ export class SceneShadowController {
   generator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
+  /** The prepared Forward renderer supplies its stable receiver pass. */
+  setReceiverRenderPass(pass: number | undefined): void {
+    if (this.receiverPass === pass) return;
+    this.receiverPass = pass;
+    this.receiverWarmup.cancel();
+  }
+  receiversReady(): void { this.receiverWarmup.releaseCommitted(); }
   /** Last completed map pass, bounded to the admitted faces/cascades. */
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {
     return this.entries.get(light)?.effectiveBias ?? [];
@@ -604,6 +626,40 @@ export class SceneShadowController {
       admitted.samplers += samplers;
       if (!directional) local++;
     }
+    const owners = [...this.entries.values()].filter((entry) => entry.generator);
+    const winners = [...this.entries.values()].filter((entry) => entry.status === "active");
+    const incoming = winners.filter((entry) => !entry.generator);
+    const outgoing = owners.filter((entry) => entry.status !== "active");
+    // Only a compatible camera-ranked handoff can retain the incumbent. Authored
+    // disable/priority, camera possession, lost eligibility and settings changes
+    // still take effect immediately through normal admission.
+    const canWarm = this.receiverPass !== undefined && camera && !cameraChanged &&
+      this.authoredRevision === this.appliedAuthoredRevision && incoming.length > 0 && incoming.length === outgoing.length &&
+      owners.every((entry) => candidates.includes(entry) && !entry.resetAllocation &&
+        entry.key === JSON.stringify([entry.mapSize, entry.light.needCube(), entry.light instanceof DirectionalLight ? settings.cascades : 1]) &&
+        entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
+      outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
+    const layout = new Map<Light, ShadowGenerator | null>();
+    const donors = [...outgoing];
+    if (canWarm) for (const entry of incoming) {
+      const index = donors.findIndex((donor) => donor.light.getTypeID() === entry.light.getTypeID() &&
+        donor.light.needCube() === entry.light.needCube() && donor.mapSize === entry.mapSize);
+      if (index < 0) break;
+      layout.set(entry.light, donors.splice(index, 1)[0]!.generator);
+    }
+    if (canWarm && !donors.length) {
+      for (const entry of outgoing) layout.set(entry.light, null);
+      const originals = owners.map((entry) => [entry.light, entry.generator] as const);
+      const key = JSON.stringify([camera.uniqueId, this.receiverPass, settings, winners.map((entry) => entry.light.uniqueId)]);
+      if (!this.receiverWarmup.ready(key, layout, [camera.renderPassId, this.receiverPass!],
+        () => originals.every(([light, generator]) => this.entries.get(light)?.generator === generator && light.isEnabled()))) {
+        for (const entry of incoming) { entry.status = "warming"; entry.reason = "preparing shadow receiver shaders"; }
+        for (const entry of owners) { entry.status = "active"; entry.reason = null; this.refresh.apply(entry.generator!); }
+        return;
+      }
+      this.receiverWarmup.commit();
+    } else this.receiverWarmup.cancelPending();
+    this.appliedAuthoredRevision = this.authoredRevision;
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
     for (const entry of this.entries.values()) {

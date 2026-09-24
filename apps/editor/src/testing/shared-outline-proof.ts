@@ -1,5 +1,6 @@
 /** Pixel qualification of the production coordinator; no fixture-owned renderer. */
-import { Camera, Color3, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Camera, Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
@@ -89,12 +90,14 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     context.drawImage(canvas, 0, 0);
     const pixels = context.getImageData(0, 0, captureWidth, captureHeight).data;
     const lanes = Array.from({ length: 3 }, () => ({ red: 0, green: 0, blue: 0 }));
+    const redCoverage = [0, 0, 0];
     let coveredPartialRed = 0;
     let coveredBoundaryRed = 0;
     for (let y = 0; y < captureHeight; y++) for (let x = 0; x < captureWidth; x++) {
       const offset = (y * captureWidth + x) * 4;
       const r = pixels[offset]!, g = pixels[offset + 1]!, b = pixels[offset + 2]!;
       const lane = lanes[Math.min(2, Math.floor(x / (captureWidth / 3)))]!;
+      redCoverage[Math.min(2, Math.floor(x / (captureWidth / 3)))]! += Math.max(0, r - Math.max(g, b)) / 255;
       if (r > 200 && g < 40 && b < 40) {
         lane.red++;
         // Right half of the middle receiver, well inside the nearer occluder.
@@ -107,7 +110,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
       if (b > 200 && r < 40 && g < 40) lane.blue++;
     }
     const snapshot = {
-      name, image: copy.toDataURL("image/png"), lanes, coveredPartialRed, coveredBoundaryRed,
+      name, image: copy.toDataURL("image/png"), lanes, redCoverage, coveredPartialRed, coveredBoundaryRed,
       drawingBuffer: { width: captureWidth, height: captureHeight },
       draws: readEngineDrawCalls(engine), tasks: renderer.taskNames(),
       outline: renderer.sharedOutlineDiagnostics(),
@@ -177,6 +180,40 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     for (let repeat = 0; repeat < 8; repeat++)
       for (const key of ["global", "component", "selection"]) mount(key);
     await capture("identical-requests");
+    mount("global", { ...contributions.global!, targets, distanceFade: { start: 6, end: 10 } });
+    await capture("fade-near");
+    camera.position.z = -8;
+    await capture("fade-middle");
+    camera.position.z = -9.5;
+    await capture("fade-subpixel");
+    camera.position.z = -11;
+    await capture("fade-far");
+    camera.position.z = -5;
+    await capture("fade-return");
+    mount("global", { ...contributions.global!, targets, width: 0.25, distanceFade: { start: 6, end: 10 } });
+    await capture("fade-quarter-pixel-near");
+    camera.position.z = -9.5;
+    await capture("fade-quarter-pixel-shrinking");
+    camera.position.z = -11;
+    mount("global");
+    await capture("fade-disabled-far");
+    mount("global", { ...contributions.global!, distanceFade: { start: 6, end: 10 } });
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.position.z = -5;
+    await capture("fade-perspective-near");
+    camera.position.z = -11;
+    await capture("fade-perspective-far");
+    engine.useReverseDepthBuffer = true;
+    camera.position.z = -5;
+    camera.getProjectionMatrix(true);
+    await capture("fade-reverse-depth-near");
+    camera.position.z = -11;
+    await capture("fade-reverse-depth-far");
+    engine.useReverseDepthBuffer = false;
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.position.z = -5;
+    camera.getProjectionMatrix(true);
+    mount("global");
     mount("component", { ...contributions.component!, color: [1, 0, 0], width: 4 });
     await capture("live-component-color-and-width");
     mount("component");
@@ -195,6 +232,21 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     await capture("sibling-view-selection-isolated");
     siblingView.dispose();
     await capture("sibling-view-disposed");
+
+    // One actor identity can span very different camera distances. Fade must
+    // use the surface depth, not an actor/source center or per-ID distance.
+    for (const instance of instances) instance.setEnabled(false);
+    const thin = MeshBuilder.CreateBox("Thin Fade Distances", { size: 0.8 }, scene);
+    thin.material = material;
+    const matrices = new Float32Array(32);
+    Matrix.Translation(-1.5, 0, 0).copyToArray(matrices, 0);
+    Matrix.Translation(1.5, 0, 6).copyToArray(matrices, 16);
+    thin.thinInstanceSetBuffer("matrix", matrices, 16);
+    mount("global", { ...contributions.global!, targets: [{ key: "thin-fade", meshes: [thin] }], distanceFade: { start: 6, end: 10 } });
+    await capture("fade-thin-near-and-far");
+    thin.dispose();
+    for (const instance of instances) instance.setEnabled(true);
+    mount("global");
 
     const defaultMaterialMesh = MeshBuilder.CreateBox("No Assigned Material", { size: 0.35 }, scene);
     defaultMaterialMesh.position.set(0, 1.05, 0);

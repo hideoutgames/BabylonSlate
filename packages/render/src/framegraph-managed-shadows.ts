@@ -19,7 +19,6 @@ type BorrowedMap = {
   generator: ShadowGenerator;
   map: RenderTargetTexture;
   texture: InternalTexture;
-  handle: FrameGraphTextureHandle;
 };
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
@@ -172,8 +171,9 @@ export function unsupportedManagedShadows(scene: Scene): string | undefined {
 /**
  * An ordered, external-resource bridge, not an allocator. The controller owns
  * generators, caster lists, refresh policy and disposal. FrameGraph only borrows
- * their textures; importing External resources never increments or releases the
- * Babylon texture reference count.
+ * their RTTs through renderUnmanaged. These textures are bound by the generator,
+ * never by a graph texture handle. Ordered tasks retain the shadow-before-object
+ * dependency without importing obsolete maps or rebuilding unrelated passes.
  */
 export class ManagedShadowsTask extends FrameGraphTask {
   private borrowed: BorrowedMap[] = [];
@@ -192,7 +192,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.objects = objects;
   }
 
-  /** Allocation changes are rebuilt explicitly; compatible motion needs no build. */
+  /** Changed bindings require readiness, not new graph tasks or render-pass IDs. */
   needsPreparation(): boolean {
     if (this.changedDuringFrame) return true;
     const current = this.generators();
@@ -236,18 +236,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
             generator,
             map,
             texture,
-            handle: this._frameGraph.textureManager.importTexture(
-              `Admitted shadow ${generator.getLight().uniqueId}`,
-              texture,
-            ),
           }
         );
       });
       this.changedDuringFrame ||= this.recorded;
-      this.objects.setOwnedTextureDependencies(
-        "shadows",
-        this.borrowed.map((entry) => entry.handle),
-      );
     }
     this.objects.bindManagedShadows(current, this.objects.camera);
   }
@@ -260,8 +252,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
       // target observable. Refresh again here, before consuming the RTT gate.
       findSceneShadowController(this.scene)?.refreshShadowMaps();
       // onBeforeRender can change admission after render's preflight. External
-      // handles do not alias graph allocations: import the live maps, bind them
-      // now, then request a fresh graph build on the following frame.
+      // RTTs do not alias graph allocations: bind the live maps now, then warm
+      // the changed receiver layout before the following presented frame.
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
@@ -374,6 +366,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
       )
         return false;
     }
+    this.changedDuringFrame = false;
     return true;
   }
 

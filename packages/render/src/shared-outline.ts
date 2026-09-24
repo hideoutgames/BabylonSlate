@@ -25,6 +25,8 @@ export interface SharedOutlineContribution {
   /** Actual output pixels; independent of DPR and dynamic-resolution requests. */
   width: number;
   throughMeshes?: boolean;
+  /** Global CEL only. Camera-to-surface distances, evaluated per mask sample. */
+  distanceFade?: { start: number; end: number };
 }
 type BufferRecord = { buffer: VertexBuffer; data: Float32Array; length: number; lease: ManagedRenderLease };
 type SourceRecord = {
@@ -303,6 +305,7 @@ export class SharedOutlineView {
   tableWidth = 1;
   tableHeight = 1;
   maximumWidth = 0;
+  distanceFadeEnabled = false;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
   get active(): boolean { return !this.isDisposed && [...this.contributions.values()].some((entry) => entry.targets.length > 0); }
   /** Hosts supply authored world occluders, excluding editor helpers and guides. */
@@ -362,7 +365,10 @@ export class SharedOutlineView {
     if (this.preparedRevision === this.revision) return;
     const count = 2 ** Math.ceil(Math.log2(Math.max(16, this.owner.maximumIdentity + 1)));
     const maxSize = this.scene.getEngine().getCaps().maxTextureSize;
-    const width = Math.min(256, count, maxSize), height = Math.ceil(count / width);
+    // Second half stores fade metadata in the same sampler. Keeping this layout
+    // fixed makes toggling fade a table update, without reallocations or defines.
+    const width = Math.min(256, count, maxSize), height = 2 * Math.ceil(count / width);
+    const metadataOffset = width * height * 2;
     if (height > maxSize) throw new Error("Shared outline style table exceeds texture capacity.");
     const arrays = new Map(SHARED_OUTLINE_GROUPS.map((group) => [group, new Float32Array(width * height * 4)]));
     const priority = { global: 0, component: 1, selection: 2 };
@@ -371,8 +377,13 @@ export class SharedOutlineView {
       const group: SharedOutlineGroup = entry.kind === "selection" ? "selection" : entry.throughMeshes && entry.kind === "component" ? "through" : "strict";
       for (const target of entry.targets) {
         const offset = this.owner.identityForKey(target.key) * 4;
-        if (entry.kind === "component") { arrays.get("strict")!.fill(0, offset, offset + 4); arrays.get("through")!.fill(0, offset, offset + 4); }
+        if (entry.kind === "component") {
+          arrays.get("strict")!.fill(0, offset, offset + 4);
+          arrays.get("strict")!.fill(0, metadataOffset + offset, metadataOffset + offset + 4);
+          arrays.get("through")!.fill(0, offset, offset + 4);
+        }
         arrays.get(group)!.set([...entry.color, entry.width], offset);
+        arrays.get(group)!.set(entry.distanceFade ? [1, entry.distanceFade.start, entry.distanceFade.end, 0] : [0, 0, 0, 0], metadataOffset + offset);
       }
       maximumWidth = Math.max(maximumWidth, entry.width);
     }
@@ -417,6 +428,13 @@ export class SharedOutlineView {
       }
     }
     this.maximumWidth = maximumWidth;
+    this.distanceFadeEnabled = false;
+    const strict = arrays.get("strict")!;
+    for (let offset = 0; offset < metadataOffset; offset += 4) {
+      if (strict[offset + 3]! > 0 && strict[metadataOffset + offset]! > 0) {
+        this.distanceFadeEnabled = true; break;
+      }
+    }
     this.activeGroups.clear();
     for (const group of SHARED_OUTLINE_GROUPS) {
       const data = arrays.get(group)!;
@@ -449,7 +467,7 @@ export class SharedOutlineView {
     record.texture.dispose();
     this.owner.trackRelease(releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), record.lease));
   }
-  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.preparedRevision = -1; }
+  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.distanceFadeEnabled = false; this.preparedRevision = -1; }
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
@@ -457,6 +475,7 @@ export class SharedOutlineView {
 }
 function sameContribution(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.kind === b.kind && a.width === b.width && !!a.throughMeshes === !!b.throughMeshes &&
+    a.distanceFade?.start === b.distanceFade?.start && a.distanceFade?.end === b.distanceFade?.end &&
     a.color.every((value, index) => value === b.color[index]) && sameTargets(a, b);
 }
 function normalizedContribution(key: string, input: SharedOutlineContribution): SharedOutlineContribution {
@@ -465,7 +484,13 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
     input.color.length !== 3 || input.color.some((value) => !Number.isFinite(value) || value < 0 || value > 1) ||
     input.targets.some((target) => !target.key))
     throw new Error("Shared outline contribution has invalid identity, color, or width (0.25–8 pixels).");
-  return { ...input, color: [...input.color], targets: [...input.targets]
+  if (input.distanceFade && (input.kind !== "global" || input.throughMeshes ||
+    !Number.isFinite(input.distanceFade.start) || !Number.isFinite(input.distanceFade.end) ||
+    input.distanceFade.start < 0 || !Number.isFinite(Math.fround(input.distanceFade.end)) ||
+    Math.fround(input.distanceFade.end) <= Math.fround(input.distanceFade.start)))
+    throw new Error("Only global outlines accept a finite increasing distance fade range.");
+  return { ...input, distanceFade: input.distanceFade ? { ...input.distanceFade } : undefined,
+    color: [...input.color], targets: [...input.targets]
     .map((target) => ({ key: target.key, meshes: [...target.meshes] })).sort((a, b) => a.key.localeCompare(b.key)) };
 }
 function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {

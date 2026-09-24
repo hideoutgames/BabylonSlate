@@ -370,6 +370,67 @@ it("retains binding observers on settled frames and refreshes them for camera an
   graph.dispose();
 });
 
+it("prepares replacement shadow maps without retiring the live object pass", async () => {
+  const { scene, camera, light, controller, graph, render, framebuffer } = await fixture("spot");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  render();
+  const renderer = scene.objectRenderers.find((entry) => entry.name === "Forward objects")!;
+  const pass = renderer.renderPassId;
+  for (const enabled of [false, true, false, true]) {
+    controller.register(light, enabled);
+    controller.sync();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(scene.objectRenderers).toContain(renderer);
+    expect(renderer.renderPassId).toBe(pass);
+    const target = controller.generator(light)?.getShadowMap()?.renderTarget;
+    framebuffer.mockClear();
+    render();
+    expect(framebuffer.mock.calls.filter(([bound]) => target && bound === target)).toHaveLength(enabled ? 1 : 0);
+  }
+});
+
+it("keeps the admitted map while a compatible camera handoff warms, then commits without extra maps", async () => {
+  const { engine, scene, camera, light, controller, graph } = await fixture("spot");
+  const incoming = new SpotLight("incoming", new Vector3(40, 3, -2), Vector3.Down(), Math.PI / 2, 1, scene);
+  incoming.range = light.range = 100;
+  controller.register(incoming, true); controller.sync();
+  await graph.prepare(camera);
+  const previous = controller.generator(light);
+  const bytes = controller.metrics().bytes;
+  const now = performance.now();
+  vi.spyOn(performance, "now").mockReturnValue(now + 500);
+  camera.position.x = 40;
+  controller.sync();
+  expect(controller.status(incoming)).toBe("warming");
+  expect(controller.generator(light)).toBe(previous);
+  expect(controller.generator(incoming)).toBeNull();
+  for (let frame = 0; frame < 20 && !controller.generator(incoming); frame++) {
+    await graph.prepare(camera);
+    engine.beginFrame(); graph.render(camera, false); engine.endFrame();
+    expect(controller.metrics().bytes).toBe(bytes);
+  }
+  expect(controller.generator(incoming)).not.toBeNull();
+  expect(controller.generator(light)).toBeNull();
+  expect(scene.lights.filter((light) => light.getShadowGenerator())).toEqual([incoming]);
+});
+
+it("uses normal preparation when a point-light handoff changes cube layout", async () => {
+  const { scene, camera, light, controller, graph } = await fixture("point");
+  const incoming = new PointLight("directed point", new Vector3(40, 3, -2), scene);
+  incoming.direction = Vector3.Down();
+  incoming.range = light.range = 100;
+  controller.register(incoming, true); controller.sync();
+  await graph.prepare(camera);
+  const now = performance.now();
+  vi.spyOn(performance, "now").mockReturnValue(now + 500);
+  camera.position.x = 40;
+  controller.sync();
+  expect(controller.status(incoming)).toBe("active");
+  expect(controller.generator(light)).toBeNull();
+  expect(controller.generator(incoming)?.getShadowMap()?.isCube).toBe(false);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+});
+
 it("settles the material shadow layout before readiness instead of invalidating the first presented frame", async () => {
   const { scene, camera, mesh, graph } = await fixture("spot");
   const dirty = vi.spyOn(mesh.material!, "markDirty");

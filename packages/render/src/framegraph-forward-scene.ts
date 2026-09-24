@@ -674,6 +674,7 @@ export class ForwardSceneFrameGraph {
       this.setActiveCamera(camera);
       // Admit the conventional prefix before shadows spend shared texture units.
       syncSceneLighting(this.scene);
+      controller?.setReceiverRenderPass(this.objects?.objectRenderer.renderPassId);
       controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
@@ -689,7 +690,7 @@ export class ForwardSceneFrameGraph {
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
-        this.shadows?.needsPreparation() || this.clustered?.needsPreparation(camera) ||
+        this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
@@ -920,6 +921,7 @@ export class ForwardSceneFrameGraph {
 
   private isReady(): boolean {
     this.strictChecks += 1;
+    findSceneShadowController(this.scene)?.setReceiverRenderPass(this.objects!.objectRenderer.renderPassId);
     const cameras = this.scene.activeCameras;
     const shadowFlags = this.scene.lights.map(
       (light) => [light, light.shadowEnabled] as const,
@@ -940,6 +942,7 @@ export class ForwardSceneFrameGraph {
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const cameraReady = isSceneFrameReady(this.scene);
         const graphReady = this.graph!.isReady();
+        if (cameraReady && graphReady) findSceneShadowController(this.scene)?.receiversReady();
         return cameraReady && graphReady;
       });
     } finally {
@@ -988,6 +991,7 @@ export class ForwardSceneFrameGraph {
   }
 
   private releaseGraphResources(): void {
+    findSceneShadowController(this.scene)?.setReceiverRenderPass(undefined);
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();

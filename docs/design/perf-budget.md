@@ -78,6 +78,41 @@ Revision `e6d008c3`, Windows Chromium 151.0.7922.34, WebGL2 through ANGLE/SwiftS
 
 Software rendering stayed far below the viewport cap. Scene-render CPU medians were 3.2/2.1/3.1 ms; that counter does not measure total presentation time. Each sample observed zero texture/render-target churn and one live Engine scene. Engine texture counts were 23/30/24 across fixtures, so this is not proof of constant total resource use. Non-shadow byte counters omit this fixture's runtime primitives and default textures. Setup, including persisted saves, took 35.7/12.9/21.6 seconds before sampling. A16/Safari performance, total GPU residency and sustained thermal behavior remain unmeasured.
 
+### Camera-driven shadow activation
+
+The targeted `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
+measure first and repeated camera-driven point-shadow promotions in PBR and CEL
+with the shared allocation ceiling fixed to one cube. Reports include preparation
+time, graph build count, selected light and reserved bytes. Run the exact cases
+on the same native GPU and settings before comparing revisions; software rendering
+establishes correctness, not device performance.
+
+On the native RTX 2060 / ANGLE D3D11 WebGL2 fixture (96×72, one 256-pixel cube,
+4.5 MiB allocation ceiling), `47d945c7` rebuilt the graph on every handoff:
+first transitions took 221–342 ms, repeated transitions 56–84 ms. At `31f188d7`,
+stable graph tasks eliminated every handoff build; first transitions took
+128–157 ms and repeated transitions 23–28 ms. Both PBR and CEL retained exactly
+one allocation within the same ceiling. These are small-fixture preparation
+times, not a claim about frame times in a large saved scene; cold receiver
+compilation remains visible and needs separate treatment.
+
+The staged-handoff route subsequently records total activation time, frame count,
+maximum preparation time and maximum CPU render duration while continuing to draw
+the incumbent. This route omits synchronous pixel readback during timing; the
+separate parity cases retain the native pixel oracle. Preparation latency and
+blocking frame work are distinct measurements.
+
+At `27b2d432` on the same native GPU, staged PBR/CEL WebGL2 activation completed
+over 12/10 rendered frames (231/176 ms total). Their longest preparation calls
+were 25.6/22.5 ms and longest CPU render calls 29.8/8.0 ms. Other handoffs spent
+23–38 ms in their longest preparation call. Native WebGPU's first PBR/CEL handoffs
+took four rendered frames, with longest preparation calls of 24.1/22.0 ms and
+CPU render calls of 21.7/10.3 ms. Both backends compiled their two cold receiver
+variants during warmup, with zero compilations during activation preparation or
+subsequent handoffs. All handoffs retained zero graph rebuilds and one allocation
+within the same ceiling. A driver call can exceed the dispatch time budget; these
+small-scene measurements do not establish large-scene or mobile frame-time bounds.
+
 ### Static shadow reuse comparison
 
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
