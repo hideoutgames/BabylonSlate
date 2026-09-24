@@ -1,4 +1,5 @@
 /** Test-build-only primitive pixel oracle; no production renderer is selected. */
+export { runCameraLightMotionProof } from "./camera-light-motion-proof";
 import {
   Color3,
   Color4,
