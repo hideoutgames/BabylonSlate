@@ -102,6 +102,17 @@ the incumbent. This route omits synchronous pixel readback during timing; the
 separate parity cases retain the native pixel oracle. Preparation latency and
 blocking frame work are distinct measurements.
 
+At `27b2d432` on the same native GPU, staged PBR/CEL WebGL2 activation completed
+over 12/10 rendered frames (231/176 ms total). Their longest preparation calls
+were 25.6/22.5 ms and longest CPU render calls 29.8/8.0 ms. Other handoffs spent
+23–38 ms in their longest preparation call. Native WebGPU's first PBR/CEL handoffs
+took four rendered frames, with longest preparation calls of 24.1/22.0 ms and
+CPU render calls of 21.7/10.3 ms. Both backends compiled their two cold receiver
+variants during warmup, with zero compilations during activation preparation or
+subsequent handoffs. All handoffs retained zero graph rebuilds and one allocation
+within the same ceiling. A driver call can exceed the dispatch time budget; these
+small-scene measurements do not establish large-scene or mobile frame-time bounds.
+
 ### Static shadow reuse comparison
 
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
