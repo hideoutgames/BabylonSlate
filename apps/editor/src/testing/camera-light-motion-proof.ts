@@ -66,16 +66,18 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu", sh
           setSceneRenderSettings(scene, { mode });
           await scene.whenReadyAsync();
           for (const mesh of scene.meshes) mesh.material?.freeze();
-          const graph = floating ? new ForwardSceneFrameGraph(scene) : null;
-          if (graph && (await graph.prepare(camera)).path !== "frameGraph") throw new Error("Light-motion graph was not ready");
-          return { scene, camera, light, graph };
+          // Prepare both camera and object passes, including shadow variants,
+          // before comparing the first submitted frame at each camera pose.
+          const graph = new ForwardSceneFrameGraph(scene);
+          if ((await graph.prepare(camera)).path !== "frameGraph") throw new Error("Light-motion graph was not ready");
+          return { scene, camera, light, graph, floating };
         };
         const reference = await makeScene(false);
         const subject = await makeScene(true);
         const draw = async (host: typeof subject) => {
           engine.beginFrame();
           try {
-            if (host.graph) {
+            if (host.floating) {
               const result = host.graph.render(host.camera);
               if (result.path !== "frameGraph") throw new Error(`Light-motion graph fell back: ${result.reason}`);
             } else host.scene.render();
@@ -101,6 +103,7 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu", sh
           }
         } finally {
           subject.graph?.dispose();
+          reference.graph.dispose();
           subject.scene.dispose();
           reference.scene.dispose();
         }
