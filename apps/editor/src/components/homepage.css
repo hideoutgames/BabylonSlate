@@ -874,7 +874,7 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.homepage-template-import {
+.homepage-template-sidebar > .homepage-template-import {
   margin-top: auto;
   width: 100%;
 }
@@ -1567,7 +1567,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-template-results-header > :not([data-slot="dropdown-menu-trigger"]) {
     display: none;
   }
-  .homepage-template-import {
+  .homepage-template-sidebar > .homepage-template-import {
     margin-top: 0;
     width: auto;
   }
