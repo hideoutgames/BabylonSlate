@@ -12,6 +12,9 @@ At `cf345961`, all 175 cases in `create-engine.play.test.ts`,
 The three new late-light-admission/render-callback cases fail against the original
 `225d55b8` renderer. Earlier passing registered-view, viewport asset-refresh and
 RTT-copy checks remain applicable to their unchanged code.
+At `df306d7a`, all 18 cases in `framegraph-managed-shadows.test.ts` also pass:
+revocation during a draw retains the previous image, never rebinds a revoked
+map, and resumes presentation after preparation.
 
 At `6061fb2b`, four selected browser cases pass: cached/fresh shadow parity after
 caster/light movement, resize and reload; intermediate-frame retention on desktop
