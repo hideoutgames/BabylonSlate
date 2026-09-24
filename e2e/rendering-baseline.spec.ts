@@ -340,13 +340,15 @@ test("scene viewport light-edit performance measurement", async ({ page }, testI
   await expect.poll(async () => (await baseline(page)).frameCount, { timeout: 30_000 }).toBeGreaterThan(initial.frameCount + 5);
   const idle = await measure(page);
   const editMeasurement = measure(page);
-  const edits = [];
-  for (let i = 0; i < 16; i++) {
+  const editingStarted = Date.now();
+  const edits: Array<{ startedMs: number; durationMs: number }> = [];
+  for (let i = 0; Date.now() - editingStarted < 30_000; i++) {
     const start = Date.now();
     await page.getByTestId("property-actor-position-x").fill(String((i % 5) - 2));
     await page.getByTestId("property-actor-position-x").press("Tab");
-    edits.push(Date.now() - start);
-    // Fixed input cadence; these samples deliberately include the edit work.
+    edits.push({ startedMs: start - editingStarted, durationMs: Date.now() - start });
+    // Keep editing throughout the timing window even when inputs become faster.
+    // The same 500 ms pause follows each committed edit on both revisions.
     await page.waitForTimeout(500);
   }
   const editing = await editMeasurement;
@@ -359,7 +361,8 @@ test("scene viewport light-edit performance measurement", async ({ page }, testI
       viewportCss: page.viewportSize(),
       fixture: { lights: 4, shadows: scene.settings.shadowOverrides },
       idle: { summary: summarize(idle), samples: idle },
-      editing: { summary: summarize(editing), samples: editing, inputMs: distribution(edits) },
+      editing: { summary: summarize(editing), samples: editing,
+        inputMs: distribution(edits.map((edit) => edit.durationMs)), inputOperations: edits },
       capture,
     }, null, 2), contentType: "application/json",
   });
