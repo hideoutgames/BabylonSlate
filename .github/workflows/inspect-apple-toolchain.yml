@@ -2,10 +2,6 @@ name: Inspect Apple toolchain
 
 on:
   workflow_dispatch:
-  # Temporary qualification trigger; remove after inspecting the pinned runner.
-  push:
-    branches: [zeron/babylonslate-testflight-signing-plan]
-    paths: [.github/workflows/inspect-apple-toolchain.yml, scripts/distribution/apple-toolchain.mjs]
 
 permissions:
   contents: read

@@ -91,6 +91,8 @@ Review the pinned standard runner's installed Xcode before toolchain upgrades. X
 
 The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, then reads public `xcodebuild -help` on a standard `macos-26` runner. It needs no dependencies beyond Node/Xcode, has no Apple credentials or distribution environment, and performs no archive, export or upload. Its result verifies the installed command interface only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
 
+After this workflow is on the default branch, run the inspection with `gh workflow run inspect-apple-toolchain.yml --ref main`. The shared inspection script [passed on a second fresh hosted runner](https://github.com/hideoutgames/BabylonSlate/actions/runs/36042593306). Neither inspection exercised signing or upload.
+
 ## Invoking an authorized operation
 
 Only use these commands after an explicit request for the stated channel and platforms. Replace `SOURCE_SHA` with the exact 40-character source on protected `main` and assert its checked-in version. The workflow definition always runs from `main`; omitted source uses the dispatch commit. A dry run validates source/checks/versions/destinations without a native build or Apple authentication, so it does not certify signing credentials or TestFlight availability.
