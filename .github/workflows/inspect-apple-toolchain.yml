@@ -1,0 +1,25 @@
+name: Inspect Apple toolchain
+
+on:
+  workflow_dispatch:
+  # Temporary qualification trigger; remove after inspecting the pinned runner.
+  push:
+    branches: [zeron/babylonslate-testflight-signing-plan]
+    paths: [.github/workflows/inspect-apple-toolchain.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: macos-26
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Read installed Xcode version, SDK and public command help
+        shell: bash
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcodebuild -help

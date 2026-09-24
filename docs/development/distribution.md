@@ -69,6 +69,8 @@ Before the first Apple upload, replace the Capacitor placeholder with an existin
 
 Review the pinned standard runner's installed Xcode before toolchain upgrades. Xcode/SDK requirements are independent of the deployment target. Install dependencies with `pnpm install --frozen-lockfile` and the checked-in Ruby bundle; keep CocoaPods and its lockfile. Do not add native packaging to recursive workspace `build` or ordinary Verify.
 
+The separate **Inspect Apple toolchain** workflow reads the pinned Xcode version, iPhoneOS SDK version and public `xcodebuild -help` on a standard `macos-26` runner. It has no credentials or distribution environment and performs no archive, export or upload. Its result verifies the installed command interface only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
+
 ## Invoking an authorized operation
 
 Only use these commands after an explicit request for the stated channel and platforms. Replace `SOURCE_SHA` with the exact 40-character source on protected `main` and assert its checked-in version. The workflow definition always runs from `main`; omitted source uses the dispatch commit. A dry run validates source/checks/versions/destinations without a native build or Apple authentication, so it does not certify signing credentials or TestFlight availability.
