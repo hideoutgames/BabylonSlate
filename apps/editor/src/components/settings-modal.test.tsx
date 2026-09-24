@@ -251,6 +251,18 @@ describe("SettingsModal project authoring", () => {
     await waitFor(() => expect(document.activeElement).toBe(field));
     expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("true");
   });
+  it.each([
+    ["render width", /Render Width/, "Resolution", "setting-render-width"],
+    ["play frame cap", /Play Frame Cap/, "Play Preview", "setting-play-frame-cap"],
+    ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
+    ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
+  ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: query } });
+    fireEvent.click(screen.getByRole("button", { name: result }));
+    await waitFor(() => expect(document.activeElement?.id).toBe(targetId));
+    expect(screen.getByRole("button", { name: section }).getAttribute("aria-expanded")).toBe("true");
+  });
   it("starts post processing closed and stages its settings until Done", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
@@ -436,6 +448,10 @@ describe("SettingsModal project authoring", () => {
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    const resolution = screen.getByRole("button", { name: "Resolution" });
+    expect(resolution.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("setting-render-custom")).toBeNull();
+    fireEvent.click(resolution);
     expect(screen.getByTestId("setting-render-custom")).toBeTruthy();
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
@@ -496,9 +512,11 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
     await selectMode("CEL");
+    fireEvent.click(screen.getByRole("button", { name: "CEL Shading" }));
     fireEvent.change(screen.getByLabelText("Shadow Bands"), { target: { value: "6" } });
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     await selectMode("PBR");
+    expect(screen.queryByRole("button", { name: "CEL Shading" })).toBeNull();
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
     expect(lastProjectRender.current).toBeNull();
     await selectMode("CEL");
@@ -521,16 +539,17 @@ describe("SettingsModal project authoring", () => {
   });
 
   it.each([
-    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/],
-    ["twoD", "settings-pixel-perfect", /Keeps pixels sharp/],
-    ["twoD", "settings-integer-zoom", /Applies to game cameras/],
-    ["audio", "settings-audio-occlusion", /Wall muffling/],
-    ["rendering", "setting-render-custom", /Sets the design size/],
-    ["rendering", "setting-render-black-bars", /Adds bars to preserve/],
-    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/],
-  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText) => {
+    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
+    ["twoD", "settings-pixel-perfect", /Keeps pixels sharp/, null],
+    ["twoD", "settings-integer-zoom", /Applies to game cameras/, null],
+    ["audio", "settings-audio-occlusion", /Wall muffling/, null],
+    ["rendering", "setting-render-custom", /Sets the design size/, "Resolution"],
+    ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "Resolution"],
+    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/, "Play Preview"],
+  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText, section) => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId(`settings-modal-category-${category}`));
+    if (section) fireEvent.click(screen.getByRole("button", { name: section }));
     const control = screen.getByTestId(controlId);
     const description = screen.getByText(descriptionText);
     expect(control.closest('[data-slot="field"]')?.contains(description)).toBe(true);

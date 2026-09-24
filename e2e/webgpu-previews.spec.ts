@@ -360,9 +360,11 @@ async function projectMode(page: Page, mode: "PBR" | "CEL") {
   await page.getByTestId("settings-modal-category-rendering").click();
   await page.getByTestId("setting-render-mode").click();
   await page.getByRole("option", { name: mode, exact: true }).click();
-  await expect(page.getByTestId("project-cel-settings")).toHaveCount(
-    mode === "CEL" ? 1 : 0,
-  );
+  await expect(
+    page
+      .getByTestId("settings-modal")
+      .getByRole("button", { name: "CEL Shading", exact: true }),
+  ).toHaveCount(mode === "CEL" ? 1 : 0);
   await page
     .getByTestId("settings-modal")
     .getByRole("button", { name: "Done", exact: true })

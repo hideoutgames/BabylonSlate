@@ -4,6 +4,39 @@ export type SettingSearchField = {
   targetId?: string;
 };
 
+/** Collapsible groups on Project Settings > Rendering. */
+export type RenderingSectionId =
+  | "scalability"
+  | "shadows"
+  | "environment"
+  | "postProcessing"
+  | "cel"
+  | "resolution"
+  | "playPreview";
+
+const RENDERING_SECTION_PREFIXES: readonly (readonly [string, RenderingSectionId])[] = [
+  ["quality-", "scalability"],
+  ["project-shadow-", "shadows"],
+  ["project-environment-", "environment"],
+  ["project-effects-", "postProcessing"],
+  ["project-cel-", "cel"],
+  ["setting-render-custom", "resolution"],
+  ["setting-render-width", "resolution"],
+  ["setting-render-height", "resolution"],
+  ["setting-render-black-bars", "resolution"],
+  ["setting-play-", "playPreview"],
+];
+
+/** The Rendering section that must be open for a search result's control to exist. */
+export function renderingSectionForTarget(
+  targetId: string | undefined,
+): RenderingSectionId | null {
+  if (!targetId) return null;
+  return (
+    RENDERING_SECTION_PREFIXES.find(([prefix]) => targetId.startsWith(prefix))?.[1] ?? null
+  );
+}
+
 function fields(
   rows: readonly (readonly [string, string, string?])[],
 ): SettingSearchField[] {

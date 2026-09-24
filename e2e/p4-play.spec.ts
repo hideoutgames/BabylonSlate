@@ -433,6 +433,10 @@ test.describe("P4 Play overlay and session report", () => {
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-rendering").click();
+    await page
+      .getByTestId("settings-modal")
+      .getByRole("button", { name: "Resolution", exact: true })
+      .click();
     await expect(page.getByTestId("setting-render-custom")).toBeVisible();
     await expect(page.getByTestId("setting-render-width")).toBeVisible();
     await expect(page.getByTestId("setting-render-height")).toBeVisible();

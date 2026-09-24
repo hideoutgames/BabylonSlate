@@ -20,6 +20,15 @@ async function openRendering(page: Page) {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
+  await openSection(page, "Scalability");
+  await openSection(page, "Shadows");
+}
+async function openSection(page: Page, title: string) {
+  const toggle = page
+    .getByTestId("settings-modal")
+    .getByRole("button", { name: title, exact: true });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
 }
 async function choose(page: Page, label: string, option: string) {
   await page.getByLabel(label, { exact: true }).click();
