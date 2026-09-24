@@ -51,6 +51,7 @@ test("Preview Build launches with an unknown plugin engine version and logs a wa
   await waitForPreviewBuildBoot(page);
   await expect(page.getByTestId("preparing-preview-dialog")).toHaveCount(0);
   await page.getByTestId("preview-build-close").click();
+  await page.getByRole("tab", { name: "Output Log", exact: true }).click();
   await expect(page.getByTestId("output-log-line").filter({ hasText: 'Preview Build warning: "Legacy Content" was created with engine Unknown' })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Preview Build Failed" })).toHaveCount(0);
 });
