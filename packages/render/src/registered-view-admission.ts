@@ -60,11 +60,11 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         if (current.clearBeforeCopy) context.clearRect(0, 0, source.width, source.height);
         context.drawImage(source, 0, 0);
         host.copied(performance.now() - started);
-        this.onAfterViewRenderObservable.notifyObservers(current);
         return true;
       } finally {
         if (scene) { scene.activeCamera = previousCamera ?? null; scene.activeCameras = previousCameras ?? null; }
-        this.activeView = previousView;
+        try { this.onAfterViewRenderObservable.notifyObservers(current); }
+        finally { this.activeView = previousView; }
       }
     };
     engine._renderViewStep = renderView;

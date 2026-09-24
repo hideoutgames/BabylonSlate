@@ -838,6 +838,7 @@ function initializeEngine(
     copied: boolean;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
+  const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
   const cancelPresentation = (error: Error, key?: string) => {
     for (const [id, pending] of pendingPresentations) {
@@ -922,6 +923,7 @@ function initializeEngine(
 
   const scheduler = new RenderScheduler();
   let frameCopyReady = false;
+  let frameWasLoading = false;
   const presentationStats = {
     attempted: 0, drawn: 0, copied: 0, held: 0,
     preparationMs: 0, copyMs: 0,
@@ -941,7 +943,7 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
+  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.copied && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
   const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
@@ -968,8 +970,8 @@ function initializeEngine(
       begin: () => { frameCopyReady = false; },
       canCopy: () => frameCopyReady && !disposed && !contextLost,
       copied: (milliseconds) => {
-        presentationStats.copied += 1;
         presentationStats.copyMs = milliseconds;
+        acknowledgeFrameCopy();
       },
     }) : null;
   onRollback(() => releaseViewAdmission?.());
@@ -1585,6 +1587,7 @@ function initializeEngine(
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
+    appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
     load.signal.throwIfAborted();
@@ -1620,6 +1623,7 @@ function initializeEngine(
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
+    appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
@@ -2090,6 +2094,15 @@ function initializeEngine(
     } else worldLoading = false;
     pending.resolve();
   };
+  function acknowledgeFrameCopy(owners = [...frameOwners]) {
+    presentationStats.copied += 1;
+    if (!frameWasLoading) framePresented = true;
+    for (const [key, pending] of owners) {
+      if (pendingPresentations.get(key) !== pending) continue;
+      pending.copied = true;
+      finishPresentation(key, pending);
+    }
+  }
   const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
     const sampled = interpolator.sample(interpAlpha);
@@ -2201,6 +2214,7 @@ function initializeEngine(
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     frameCopyReady = false;
+    frameOwners.clear();
     const preparationStart = captureFramePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
@@ -2212,6 +2226,7 @@ function initializeEngine(
     if (!shouldRenderFrame(frameStart)) {
       return;
     }
+    frameWasLoading = loadingFrame;
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
     // between frames, and feeding that gap to the scaling valve would read
@@ -2236,7 +2251,10 @@ function initializeEngine(
           fallback?.();
           return;
         }
-        if (pending.rendered || pending.submission) { draw(); return; }
+        if (pending.rendered || pending.submission) {
+          if (draw() && pending.rendered) frameOwners.set(key, pending);
+          return;
+        }
         pending.copied = false;
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
@@ -2245,6 +2263,7 @@ function initializeEngine(
         });
         pending.submission = submission;
         if (pending.rendered) {
+          frameOwners.set(key, pending);
           // A validated draw is progress beyond shader readiness. Observed
           // software-GL completion can outlast that earlier budget even after
           // the canvas copy. Give completion its own bounded budget, without
@@ -2270,7 +2289,7 @@ function initializeEngine(
         }
         scene.render();
         return true;
-      });
+      }, () => engine.clear(scene.clearColor, true, true, true));
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (!coherentFrame) {
@@ -2278,13 +2297,9 @@ function initializeEngine(
         return;
       }
       if (rttPresent) {
-        const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
+        const owners = [...frameOwners];
         void rttPresent.blit().then(() => {
-          presentationStats.copied += 1;
-          for (const [key, pending] of owners) {
-            pending.copied = true;
-            finishPresentation(key, pending);
-          }
+          acknowledgeFrameCopy(owners);
         }, (error: unknown) => {
           if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
           for (const [key, pending] of owners) {
@@ -2303,9 +2318,10 @@ function initializeEngine(
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
-    if (!loadingFrame) framePresented = true;
+    if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
       if (runtimeScalability && !worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability.presented();
       const presentedAt = performance.now();
@@ -2336,12 +2352,7 @@ function initializeEngine(
     }
     previousFramePresented = framePresented;
     framePresented = false;
-    if (rttPresent) return;
-    for (const [key, pending] of pendingPresentations) {
-      if (!pending.rendered) continue;
-      pending.copied = true;
-      finishPresentation(key, pending);
-    }
+    frameCopyReady = false;
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));

@@ -20,8 +20,9 @@ import {
   waitForSceneViewportReady,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 
-async function fixture() {
+async function fixture(environmentColor: [number, number, number] = [0, 0, 0]) {
   const files = await minimalProjectFiles();
   const project = JSON.parse(
     new TextDecoder().decode(files.get(PROJECT_FILE)!),
@@ -42,7 +43,7 @@ async function fixture() {
     }),
   );
   const scene = createDefaultScene();
-  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.environmentColor = environmentColor;
   scene.settings.grid.showGrid = false;
   scene.settings.celShading = {
     specularEnabled: false,
@@ -385,4 +386,74 @@ test("cached local shadows match fresh maps after caster and light motion, resiz
     body: JSON.stringify(evidence, null, 2),
     contentType: "application/json",
   });
+});
+
+test("scene viewport retains intermediate frames during light edits and resize", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const sample = document.createElement("canvas");
+    sample.width = sample.height = 32;
+    const context = sample.getContext("2d", { willReadFrequently: true })!;
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    const stats = { copies: 0, samples: 0, black: 0, transparent: 0, missingReceiver: 0 };
+    let watching = false;
+    const inspect = (canvas: HTMLCanvasElement) => {
+      context.clearRect(0, 0, 32, 32);
+      Reflect.apply(draw, context, [canvas, 0, 0, 32, 32]);
+      const data = context.getImageData(0, 0, 32, 32).data;
+      let lit = 0, opaque = 0, green = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! + data[i + 1]! + data[i + 2]! > 10) lit++;
+        if (data[i + 3]! > 0) opaque++;
+        if (data[i + 1]! > 20 && data[i + 1]! > data[i]! * 1.5 && data[i + 1]! > data[i + 2]! * 1.25) green++;
+      }
+      stats.samples++;
+      if (!lit) stats.black++;
+      if (!opaque) stats.transparent++;
+      if (green < 3) stats.missingReceiver++;
+    };
+    CanvasRenderingContext2D.prototype.drawImage = function (image: CanvasImageSource, ...coordinates: number[]) {
+      Reflect.apply(draw, this, [image, ...coordinates]);
+      if (watching && this.canvas.dataset.testid === "viewport-canvas") {
+        stats.copies++;
+        inspect(this.canvas);
+      }
+    };
+    const observe = () => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="viewport-canvas"]');
+      if (watching && canvas) inspect(canvas);
+      requestAnimationFrame(observe);
+    };
+    requestAnimationFrame(observe);
+    Object.assign(window, { __viewportFrames: {
+      start: () => { watching = true; },
+      read: () => ({ ...stats }),
+      stop: () => { watching = false; return { ...stats }; },
+    } });
+  });
+  await openMinimalTestProject(page, await fixture([0.12, 0.02, 0.16]));
+  await openMainScene(page);
+  await waitForSceneViewportReady(page);
+  await pixels(page);
+  type Monitor = { __viewportFrames: { start(): void; read(): { copies: number }; stop(): Record<string, number> } };
+  await page.evaluate(() => (window as unknown as Monitor).__viewportFrames.start());
+  await page.getByTestId("tree-row-actor:key").click();
+  for (const position of ["-2", "0", "2", "4", "1", "-4"]) {
+    const before = await page.evaluate(() => (window as unknown as Monitor).__viewportFrames.read().copies);
+    await page.getByTestId("property-actor-position-x").fill(position);
+    await page.getByTestId("property-actor-position-x").press("Tab");
+    await expect.poll(() => page.evaluate(() => (window as unknown as Monitor).__viewportFrames.read().copies)).toBeGreaterThan(before + 2);
+  }
+  await page.setViewportSize({ width: 1100, height: 820 });
+  await waitForSceneViewportReady(page);
+  const before = await page.evaluate(() => (window as unknown as Monitor).__viewportFrames.read().copies);
+  await expect.poll(() => page.evaluate(() => (window as unknown as Monitor).__viewportFrames.read().copies)).toBeGreaterThan(before + 2);
+  const result = await page.evaluate(() => (window as unknown as Monitor).__viewportFrames.stop());
+  await testInfo.attach("viewport-intermediate-frames", { body: JSON.stringify(result), contentType: "application/json" });
+  expect(result.copies).toBeGreaterThan(20);
+  expect(result.samples).toBeGreaterThan(result.copies!);
+  expect(result).toMatchObject({ black: 0, transparent: 0, missingReceiver: 0 });
+  expect(errors).toEqual([]);
 });
