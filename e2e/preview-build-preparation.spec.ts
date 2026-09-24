@@ -4,7 +4,7 @@ import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { waitForPreviewBuildBoot } from "./play";
+import { waitForPlayOverlay, waitForPreviewBuildBoot } from "./play";
 
 async function enablePreviewBuild(page: Page) {
   await page.getByTestId("debug-menu").click();
@@ -106,19 +106,26 @@ test("a cancelled Preview Build cannot dismiss or fail the next preparation", as
   await page.getByTestId("preview-build-close").click();
 });
 
-test("Preview Build requests migration approval and launches after approval", async ({ page }) => {
-  const files = await minimalProjectFiles();
-  const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
-  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: 2 }));
-  await openMinimalTestProject(page, files);
-  await openMainScene(page);
-  await enablePreviewBuild(page);
-  await page.getByTestId("play-preview").click();
-  const migration = page.getByTestId("migrate-on-save-dialog");
-  await expect(migration).toBeVisible();
-  await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
-  await migration.getByTestId("migrate-approve").click();
-  await waitForPreviewBuildBoot(page);
-  await page.getByTestId("preview-build-close").click();
-  await expect(page.getByTestId("play-preview")).toBeEnabled();
-});
+for (const previewBuild of [false, true]) {
+  test(`${previewBuild ? "Preview Build" : "Play"} requests migration approval and launches after approval`, async ({ page }) => {
+    const files = await minimalProjectFiles();
+    const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
+    files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: 2 }));
+    await openMinimalTestProject(page, files);
+    await openMainScene(page);
+    if (previewBuild) await enablePreviewBuild(page);
+    await page.getByTestId("play-preview").click();
+    const migration = page.getByTestId("migrate-on-save-dialog");
+    await expect(migration).toBeVisible();
+    await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
+    await migration.getByTestId("migrate-approve").click();
+    if (previewBuild) {
+      await waitForPreviewBuildBoot(page);
+      await page.getByTestId("preview-build-close").click();
+    } else {
+      await waitForPlayOverlay(page);
+      await page.getByTestId("play-overlay-close").click();
+    }
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
+  });
+}
