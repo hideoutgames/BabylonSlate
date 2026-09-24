@@ -107,7 +107,10 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
             if (motion === "strafe") controller.fly(0, 0.25);
             if (motion === "forward") controller.fly(0.3, 0);
             if (motion === "look") controller.look(0.03, -0.04);
-            if (motion === "orbit") controller.orbit(0.04, 0.01);
+            if (motion === "orbit") {
+              controller.setPivotAroundCenter(true);
+              controller.orbit(0.04, 0.01);
+            }
             if (motion === "zoom") controller.zoom(1.1);
             const pixels = await draw();
             let difference = 0;
