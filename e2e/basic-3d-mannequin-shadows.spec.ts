@@ -16,6 +16,7 @@ type Viewport = {
   mannequinShadowVisibility(points: { worldPosition: number[]; region: string }[]): Promise<boolean[]>;
   setRenderSettings(settings: RenderShadingSettings): void;
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
+  renderingBaseline(): { frameCount: number };
 };
 declare global { interface Window { __babylonslateViewportTest: Viewport } }
 
@@ -75,8 +76,15 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   })).toEqual([variant.mode, variant.profile, variant.profile === "low" ? 1024 : 2048]);
   const geometry = await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
   const frames = async () => {
-    const id = await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId);
-    await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()!.provenance.renderId)).toBeGreaterThan(id + 2);
+    const id = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount);
+    // Scene render IDs also count shadow/preparation draws. Wait for presented
+    // viewport frames, then require the captured view to belong to this camera.
+    await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount), { timeout: 30_000 }).toBeGreaterThan(id + 2);
+    await expect.poll(() => page.evaluate(() => {
+      const camera = window.__babylonslateViewportTest.shadowDiagnostics()!.camera!;
+      const p = camera.position!, m = camera.view!;
+      return Math.max(...[0, 1, 2].map(i => Math.abs(p[0]! * m[i]! + p[1]! * m[i + 4]! + p[2]! * m[i + 8]! + m[i + 12]!)));
+    })).toBeLessThan(1e-5);
   };
   await frames();
   const state = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
