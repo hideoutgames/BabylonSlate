@@ -322,7 +322,9 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
     controller.register(light, false);
     controller.sync();
   });
-  expect(render()).toBe(0);
+  // Revocation remains safe inside the draw, but that candidate must not
+  // replace the last coherent viewport image.
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", rendered: false });
   expect(faces()).toBe(0);
   expect(controller.generator(light)).toBeNull();
   expect(light.getShadowGenerator()).not.toBe(generator);
@@ -362,11 +364,13 @@ it("retains binding observers on settled frames and refreshes them for camera an
     controller.register(light, false);
     controller.sync();
   });
-  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph", rendered: false });
   expect(renderer.onBeforeRenderObservable.observers).not.toEqual(
     changedCamera,
   );
   expect(light.getShadowGenerator()).toBeNull();
+  expect(await graph.prepare(second)).toEqual({ path: "frameGraph" });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
 
@@ -478,12 +482,15 @@ it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
       controller.sync();
     }
   });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", rendered: false });
   expect(revoked).toBe(true);
   expect(secondBinds).toBe(0);
   expect(scene.textures).not.toContain(secondMap);
   expect(second.getShadowGenerator()).not.toBe(secondGenerator);
   expect(engine._currentRenderTarget).toBeNull();
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(secondBinds).toBe(0);
   graph.dispose();
 });
 
