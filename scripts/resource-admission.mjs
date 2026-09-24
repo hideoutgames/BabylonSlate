@@ -421,7 +421,20 @@ export async function acquireResources(request, options = {}) {
       },
     };
   } catch (error) {
-    await rm(ticket, { force: true });
+    // A queue scan must not lose a ticket between readdir and readJson.
+    // Cleanup needs its own deadline because acquisition may already be cancelled.
+    const cleanupDeadline = Date.now() + 10_000;
+    await locked(
+      directory,
+      () => {
+        if (Date.now() > cleanupDeadline)
+          throw new Error(
+            "Resource wait cleanup deadline expired; ticket retained",
+            { cause: error },
+          );
+      },
+      () => rm(ticket, { force: true }),
+    );
     throw error;
   }
 }
