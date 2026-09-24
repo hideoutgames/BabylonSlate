@@ -27,16 +27,25 @@ class Canvas extends EventTarget {
   clientWidth = 256;
   clientHeight = 256;
   style = { cursor: "", touchAction: "" };
+  readonly drawImage = vi.fn();
   getBoundingClientRect() {
     return { left: 0, top: 0, width: 256, height: 256 };
   }
   getContext(kind: string) {
-    return kind === "2d" ? { clearRect() {}, drawImage() {} } : null;
+    return kind === "2d" ? { clearRect() {}, drawImage: this.drawImage } : null;
   }
 }
 
 it("applies compiled gameplay entry reads, setters and resets through Play load metadata and the real renderer", async () => {
   const engine = new NullEngine();
+  // Drive complete native frames explicitly, including the visible canvas copy.
+  engine.customAnimationFrameRequester = {
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
+  };
+  vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(
+    new Canvas() as unknown as HTMLCanvasElement,
+  );
   const upload = engine.createRawTexture.bind(engine);
   vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
     const texture = upload(...args);
@@ -54,7 +63,6 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
   vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(
     () => {},
   );
-  const loop = vi.spyOn(engine, "runRenderLoop");
   const material = createDefaultMaterialDocument("Gain", "postProcess");
   material.nodes.push(
     {
@@ -110,12 +118,14 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
     { id: "disabled", materialGuid: "post", enabled: false },
   ];
   const before = structuredClone({ scene, material });
-  const handle = createEngine(new Canvas() as unknown as HTMLCanvasElement, {
+  const canvas = new Canvas();
+  const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
     sharedEngine: engine,
     playMode: true,
     materialDocuments: materials,
     postProcessStack: scene.settings.postProcessStack,
   });
+  handle.setPaused(true);
   const commands: CommandMessage[] = [];
   const load = playLoadControl({
     sceneAssetGuid: "world",
@@ -203,10 +213,15 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
         (command) => command.type === "setPostProcessMaterialParameter",
       ),
     ).toEqual([]);
+    handle.resize();
     await handle.prewarmSceneMaterials();
     const presentation = handle.presentFirstFrame();
-    loop.mock.calls[0]![0]();
-    engine.onEndFrameObservable.notifyObservers(engine);
+    await vi.waitFor(() => {
+      engine.beginFrame();
+      engine._renderViews();
+      engine.endFrame();
+      expect(canvas.drawImage).toHaveBeenCalledOnce();
+    });
     await presentation;
     runtime.notifySceneModelsReady("world", 1);
     const values = () =>
