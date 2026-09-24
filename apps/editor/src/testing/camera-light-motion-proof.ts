@@ -1,14 +1,14 @@
 /** Camera-motion oracle against an absolute-coordinate scene on the same GPU. */
 import {
-  Color3, Color4, Engine, FreeCamera, MeshBuilder, PBRMaterial, PointLight,
+  Color3, Color4, DirectionalLight, Engine, FreeCamera, MeshBuilder, PBRMaterial, PointLight,
   Scene, SpotLight, Vector3, WebGPUEngine,
 } from "@babylonjs/core";
-import { compileMaterialPlan, setSceneRenderSettings } from "@babylonslate/render";
-import { normalizeCelShadingSettings } from "@babylonslate/core";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@babylonslate/render";
+import { normalizeCelShadingSettings, normalizeShadowSettings } from "@babylonslate/core";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 
-export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
+export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu", shadows = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 72;
@@ -21,7 +21,7 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
   try {
     if (engine instanceof WebGPUEngine) await engine.initAsync();
     for (const mode of ["pbr", "cel"] as const) {
-      for (const kind of ["point", "spot"] as const) {
+      for (const kind of shadows ? ["point", "spot", "sun"] as const : ["point", "spot"] as const) {
         const makeScene = async (floating: boolean) => {
           const scene = new Scene(engine, { useFloatingOrigin: floating });
           scene.clearColor = new Color4(0, 0, 0, 1);
@@ -30,16 +30,21 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
           const position = new Vector3(0.7, 0.4, -2);
           const light = kind === "point"
             ? new PointLight("stationary", position, scene)
-            : new SpotLight("stationary", position, new Vector3(-0.1, -0.1, 1).normalize(), Math.PI / 2, 1, scene);
+            : kind === "spot"
+              ? new SpotLight("stationary", position, new Vector3(-0.1, -0.1, 1).normalize(), Math.PI / 2, 1, scene)
+              : new DirectionalLight("stationary", new Vector3(-0.6, -0.4, 1).normalize(), scene);
+          light.position.copyFromFloats(0.7, 0.4, -2);
           light.range = 12;
-          light.intensity = 8;
+          light.intensity = kind === "sun" ? 1 : 8;
+          if (shadows) applyAuthoredLightProperties(light, { castShadows: true, intensity: light.intensity, range: 12, outerAngle: 90, innerAngle: 60 });
           light.specular = Color3.Black();
           light.diffuse = new Color3(1, 0.6, 0.3);
           const native = new PBRMaterial("native", scene);
           native.albedoColor = new Color3(0.65, 0.65, 0.65);
           native.metallic = 0;
           native.roughness = 1;
-          setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({ specularEnabled: false, outlinesEnabled: false }) });
+          setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({ specularEnabled: false, outlinesEnabled: false }),
+            shadows: normalizeShadowSettings({ cascades: 2, mapSize: 256, localMapSize: 256, maxLocalLights: 1, autoBias: false, normalBias: 0.01, depthBias: 0.0001, distance: 15 }) });
           const document = createDefaultMaterialDocument("stationary graph");
           const lowered = lowerMaterialDocument(document);
           if (!lowered.ok) throw new Error("Light-motion material did not lower");
@@ -51,6 +56,12 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
             receiver.position.x = x;
             receiver.material = material;
             receiver.freezeWorldMatrix();
+            if (shadows) {
+              const caster = MeshBuilder.CreateBox(`caster ${x}`, { size: 0.55 }, scene);
+              caster.position.set(x, 0, -0.65);
+              caster.material = material;
+              caster.freezeWorldMatrix();
+            }
           }
           setSceneRenderSettings(scene, { mode });
           await scene.whenReadyAsync();
@@ -95,7 +106,7 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
         }
       }
     }
-    return { backend, captures };
+    return { backend, shadows, captures };
   } finally {
     engine.dispose();
     canvas.remove();
