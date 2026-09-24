@@ -13,6 +13,9 @@ import {
   Viewport,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
@@ -659,4 +662,70 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
   graph.dispose();
+});
+
+it("gives the settings effect chain's offscreen scene color a real depth attachment", async () => {
+  const { scene, camera } = host();
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      colorPipeline: { version: 1, mode: "sceneLinear" },
+    },
+  });
+  const captured: { graph: FrameGraph; task: FrameGraphTask }[] = [];
+  const addTask = FrameGraph.prototype.addTask;
+  vi.spyOn(FrameGraph.prototype, "addTask").mockImplementation(function (
+    this: FrameGraph,
+    task: FrameGraphTask,
+  ) {
+    captured.push({ graph: this, task });
+    return addTask.call(this, task);
+  });
+  const latestObjects = () => {
+    const record = captured
+      .filter((entry) => entry.task.name === "Forward objects")
+      .at(-1);
+    expect(record?.task).toBeInstanceOf(FrameGraphObjectRendererTask);
+    return record! as {
+      graph: FrameGraph;
+      task: FrameGraphObjectRendererTask;
+    };
+  };
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    const objects = latestObjects();
+    const manager = objects.graph.textureManager;
+    const target = objects.task.targetTexture as FrameGraphTextureHandle;
+    const depth = objects.task.depthTexture!;
+    // A view on the backbuffer holds no depth texture to lend: without an
+    // owned depth target the object pass draws into a depth-less target.
+    expect(manager.isBackbufferColor(target)).toBe(false);
+    expect(manager.isBackbufferDepthStencil(depth)).toBe(false);
+    expect(manager.getTextureFromHandle(depth)).not.toBeNull();
+    expect(manager.getTextureDescription(depth).size).toEqual(
+      manager.getTextureDescription(target).size,
+    );
+    // Without an effect chain the object pass draws the backbuffer again.
+    updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: DEFAULT_RENDER_EFFECTS,
+    });
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const restored = latestObjects();
+    expect(
+      restored.graph.textureManager.isBackbufferColor(
+        restored.task.targetTexture as FrameGraphTextureHandle,
+      ),
+    ).toBe(true);
+    expect(
+      restored.graph.textureManager.isBackbufferDepthStencil(
+        restored.task.depthTexture!,
+      ),
+    ).toBe(true);
+  } finally {
+    graph.dispose();
+  }
 });
