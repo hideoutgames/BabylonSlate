@@ -90,6 +90,8 @@ export async function runFrameGraphShadowProof(
   const captures = [];
   const lifecycle = [];
   const handoffs = [];
+  let shaderCompilations = 0;
+  engine.onBeforeShaderCompilationObservable.add(() => shaderCompilations++);
   let graphBuilds = 0;
   const build = FrameGraph.prototype.buildAsync;
   FrameGraph.prototype.buildAsync = function (...args) {
@@ -394,18 +396,23 @@ export async function runFrameGraphShadowProof(
           const expected = index % 2 === 0 ? incoming : host.light;
           const started = performance.now(), beforeBuilds = graphBuilds;
           let preparationMs = 0, maximumPreparationMs = 0, maximumFrameMs = 0, frames = 0;
+          let preparationCompilations = 0, frameCompilations = 0;
           do {
             const beforePrepare = performance.now();
+            const beforePreparationCompilations = shaderCompilations;
             await host.graph.prepare(host.camera);
+            preparationCompilations += shaderCompilations - beforePreparationCompilations;
             const preparation = performance.now() - beforePrepare;
             preparationMs += preparation; maximumPreparationMs = Math.max(maximumPreparationMs, preparation);
+            const beforeFrameCompilations = shaderCompilations;
             const frame = await host.render("graph", false, false);
+            frameCompilations += shaderCompilations - beforeFrameCompilations;
             if (frame.result.path !== "frameGraph") throw new Error("A warming shadow handoff lost the prepared graph.");
             maximumFrameMs = Math.max(maximumFrameMs, frame.cpuMs); frames++;
             if (performance.now() - started > 10_000) throw new Error("Shadow handoff did not finish warming.");
             if (!expected.getShadowGenerator()) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           } while (!expected.getShadowGenerator());
-          handoffs.push({ mode, index, preparationMs, maximumPreparationMs, maximumFrameMs, frames,
+          handoffs.push({ mode, index, preparationMs, maximumPreparationMs, maximumFrameMs, frames, preparationCompilations, frameCompilations,
             activationMs: performance.now() - started, graphBuilds: graphBuilds - beforeBuilds,
             active: host.scene.lights.filter((light) => light.getShadowGenerator()).map((light) => light.name),
             allocations: host.scene.textures.filter((texture) => texture.isRenderTarget && texture !== host.outputTarget).length,
