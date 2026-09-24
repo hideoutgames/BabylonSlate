@@ -38,7 +38,10 @@ import {
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
-import { ProjectIdentityBadge } from "./homepage-project-identity";
+import {
+  ProjectCover,
+  ProjectIdentityBadge,
+} from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
   PROJECT_ICON_PRESETS,
@@ -280,10 +283,12 @@ export function HomepageCreateDialog({
               className="homepage-composer-preview"
               data-testid="project-identity-preview"
             >
-              <div className="homepage-composer-preview-stage">
-                <ProjectIdentityBadge appearance={appearance} />
+              <div className="homepage-composer-preview-card">
+                <ProjectCover appearance={appearance} />
+                <span className="homepage-composer-preview-name">
+                  {name.trim() || "Untitled"}
+                </span>
               </div>
-              <span>{name.trim() || "Untitled"}</span>
             </aside>
             <div
               className="homepage-composer-details"

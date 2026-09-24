@@ -68,28 +68,21 @@ async function expectContainedCards(browser: Locator) {
         const bounds = (selector: string) =>
           element.querySelector(selector)!.getBoundingClientRect();
         const toolbar = bounds(".homepage-template-toolbar");
-        const pages = bounds(".homepage-pages");
-        const pagination = bounds(".homepage-pagination");
-        const cards = [
-          ...element.querySelectorAll(
-            ".homepage-gallery-page:not([inert]) .homepage-template-card",
-          ),
-        ];
+        const scroller = bounds(".homepage-gallery-scroll");
+        const cards = [...element.querySelectorAll(".homepage-template-card")];
         return (
           cards.length > 0 &&
-          pages.height > 0 &&
-          pages.top >= toolbar.bottom - 1 &&
-          pagination.top >= pages.bottom - 1 &&
+          scroller.height > 0 &&
+          scroller.top >= toolbar.bottom - 1 &&
           cards.every((card) => {
             const rect = card.getBoundingClientRect();
             const caption = card
               .querySelector('[data-slot="card-header"]')!
               .getBoundingClientRect();
             return (
-              rect.top >= pages.top - 1 &&
-              rect.bottom <= pages.bottom + 1 &&
-              rect.left >= pages.left - 1 &&
-              rect.right <= pages.right + 1 &&
+              rect.top >= scroller.top - 1 &&
+              rect.left >= scroller.left - 1 &&
+              rect.right <= scroller.right + 1 &&
               caption.top >= rect.top &&
               caption.bottom <= rect.bottom + 1 &&
               rect.height > caption.height

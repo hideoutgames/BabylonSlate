@@ -11,7 +11,10 @@ import {
 } from "@babylonslate/ui/components/card";
 import type { ListedProject } from "../lib/listed-projects";
 import { displayProjectName } from "../lib/display-project-name";
-import { ProjectIdentityBadge } from "./homepage-project-identity";
+import {
+  ProjectCover,
+  ProjectIdentityBadge,
+} from "./homepage-project-identity";
 import { describeProjectActivity } from "../lib/project-activity";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
@@ -93,7 +96,11 @@ export function HomepageProjectCard({
       }}
     >
       <CardContent className="homepage-project-well">
-        <ProjectIdentityBadge appearance={project.appearance} />
+        {layout === "list" ? (
+          <ProjectIdentityBadge appearance={project.appearance} />
+        ) : (
+          <ProjectCover appearance={project.appearance} />
+        )}
       </CardContent>
       <CardHeader className="homepage-project-caption">
         <CardTitle>{name}</CardTitle>

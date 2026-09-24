@@ -10,13 +10,7 @@ import {
   PROJECT_ICON_PRESETS,
 } from "./homepage-project-appearance";
 
-export function ProjectIdentityBadge({
-  appearance,
-  className,
-}: {
-  appearance?: ProjectAppearance;
-  className?: string;
-}) {
+function useProjectIdentity(appearance?: ProjectAppearance) {
   const identity =
     normalizeProjectAppearance(appearance) ?? DEFAULT_PROJECT_APPEARANCE;
   const icon =
@@ -26,26 +20,57 @@ export function ProjectIdentityBadge({
     PROJECT_COLOR_PRESETS.find((preset) => preset.id === identity.color)?.id ??
     DEFAULT_PROJECT_APPEARANCE.color;
   const [failedImage, setFailedImage] = useState<string | undefined>();
+  const image =
+    identity.image && identity.image !== failedImage
+      ? identity.image
+      : undefined;
   const Icon = icon.icon;
+  return {
+    attributes: {
+      "aria-hidden": true,
+      "data-color": color,
+      "data-project-icon": icon.id,
+      "data-has-image": Boolean(image),
+    },
+    content: image ? (
+      <img src={image} alt="" onError={() => setFailedImage(image)} />
+    ) : (
+      <Icon />
+    ),
+  };
+}
+
+/** Compact flat chip for list rows and inline previews. */
+export function ProjectIdentityBadge({
+  appearance,
+  className,
+}: {
+  appearance?: ProjectAppearance;
+  className?: string;
+}) {
+  const { attributes, content } = useProjectIdentity(appearance);
   return (
     <span
-      aria-hidden="true"
+      {...attributes}
       className={cn("homepage-project-badge", className)}
-      data-color={color}
-      data-project-icon={icon.id}
-      data-has-image={Boolean(identity.image && identity.image !== failedImage)}
     >
-      <span className="homepage-project-badge-face">
-        {identity.image && identity.image !== failedImage ? (
-          <img
-            src={identity.image}
-            alt=""
-            onError={() => setFailedImage(identity.image)}
-          />
-        ) : (
-          <Icon />
-        )}
-      </span>
+      {content}
+    </span>
+  );
+}
+
+/** Card thumbnail: the picture edge to edge, or the icon on a tinted field. */
+export function ProjectCover({
+  appearance,
+  className,
+}: {
+  appearance?: ProjectAppearance;
+  className?: string;
+}) {
+  const { attributes, content } = useProjectIdentity(appearance);
+  return (
+    <span {...attributes} className={cn("homepage-project-cover", className)}>
+      {content}
     </span>
   );
 }

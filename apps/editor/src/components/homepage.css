@@ -267,67 +267,47 @@
   display: flex;
   flex-direction: column;
 }
-.homepage-pages {
+.homepage-gallery-scroll {
   display: flex;
+  flex-direction: column;
   flex: 1 1 0px;
   min-height: 0;
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-  touch-action: pan-x pan-y;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
   outline-offset: -3px;
 }
-.homepage-pages::-webkit-scrollbar {
-  display: none;
-}
-.homepage-gallery-page {
-  width: 100%;
-  flex: 0 0 100%;
+.homepage-gallery-grid {
+  --gallery-min: 240px;
   display: grid;
-  min-height: 0;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gallery-min), 1fr));
   align-content: start;
   gap: 12px;
   padding: 12px;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
-/* The gallery sizes its grid rows from the available height. */
+.homepage-gallery[data-layout="small"] .homepage-gallery-grid {
+  --gallery-min: 168px;
+  gap: 10px;
+}
+.homepage-gallery[data-layout="list"] .homepage-gallery-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
 .homepage-gallery-item {
   min-width: 0;
-  min-height: 0;
-  height: 100%;
+  /* Off-screen cards skip rendering in long libraries. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
   animation: launcher-card-in 420ms var(--launcher-ease) both;
   animation-delay: calc(var(--item-index, 0) * 35ms);
 }
-.homepage-gallery[data-layout="small"] .homepage-gallery-page,
-.homepage-gallery[data-layout="list"] .homepage-gallery-page {
-  align-content: stretch;
+.homepage-gallery[data-layout="small"] .homepage-gallery-item {
+  contain-intrinsic-size: auto 150px;
 }
-.homepage-gallery[data-layout="list"] .homepage-gallery-page {
-  gap: 6px;
-}
-.homepage-pagination {
-  height: 32px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
-}
-.homepage-pagination[data-visible="false"] {
-  visibility: hidden;
-}
-.homepage-pagination > span {
-  font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-}
-.homepage-pagination > span > span {
-  color: var(--muted-foreground);
+.homepage-gallery[data-layout="list"] .homepage-gallery-item {
+  contain-intrinsic-size: auto 48px;
 }
 
 /* -------------------------------------------------------- Project cards */
@@ -335,7 +315,6 @@
 .homepage-template-card {
   position: relative;
   width: 100%;
-  height: 100%;
   padding: 0;
   gap: 0;
   display: flex;
@@ -346,65 +325,26 @@
   background: var(--card);
   box-shadow: none;
   transition:
-    transform 260ms var(--launcher-ease),
+    transform 220ms var(--launcher-ease),
     border-color 160ms ease,
-    box-shadow 260ms var(--launcher-ease);
+    box-shadow 220ms var(--launcher-ease);
 }
 .homepage-project-well,
 .homepage-card-well {
   position: relative;
-  flex: 1;
+  aspect-ratio: 16 / 10;
   min-height: 0;
   display: grid;
-  place-items: center;
   padding: 0;
   overflow: hidden;
   isolation: isolate;
 }
-/* Badge-colored light over an inverted dot vignette. */
-.homepage-project-well {
-  background: radial-gradient(
-    ellipse at 50% 62%,
-    color-mix(in oklch, var(--project-badge-color) 12%, transparent),
-    transparent 68%
-  );
-  transition: background 260ms ease;
-}
-.homepage-project-well::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(
-    circle,
-    color-mix(in oklch, var(--project-badge-color) 16%, transparent) 0.8px,
-    transparent 1px
-  );
-  background-size: 7px 7px;
-  mask-image: radial-gradient(
-    ellipse at center,
-    transparent 14%,
-    #000 70%,
-    transparent 100%
-  );
-}
-.homepage-project-well::after {
-  content: "";
-  position: absolute;
-  width: 46%;
-  height: 12%;
-  bottom: 14%;
-  border-radius: 50%;
-  pointer-events: none;
-  background: radial-gradient(ellipse, var(--launcher-shadow), transparent 70%);
-  transition: transform 320ms var(--launcher-ease), opacity 320ms ease;
-}
 .homepage-card-well {
+  place-items: center;
   background: linear-gradient(
     160deg,
-    color-mix(in oklch, var(--foreground) 4%, var(--card)),
-    var(--card)
+    color-mix(in oklch, var(--foreground) 5%, var(--card)),
+    color-mix(in oklch, var(--foreground) 2%, var(--card))
   );
 }
 .homepage-card-well img {
@@ -413,11 +353,11 @@
   object-fit: cover;
 }
 .homepage-card-well > svg {
-  width: 36px;
-  height: 36px;
-  stroke-width: 1.1;
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.2;
   color: var(--muted-foreground);
-  transition: transform 320ms var(--launcher-ease), color 160ms ease;
+  transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
 .homepage-project-caption,
 .homepage-template-card [data-slot="card-header"] {
@@ -427,8 +367,8 @@
   align-items: stretch;
   gap: 2px;
   flex-shrink: 0;
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 44px;
+  padding: 7px 10px;
   border-top: 1px solid var(--border);
   border-radius: 0;
   background: var(--card);
@@ -474,8 +414,8 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--card) 80%, transparent);
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
   backdrop-filter: blur(4px);
 }
 .homepage-template-card {
@@ -490,53 +430,95 @@
   border-color: var(--ring);
   transition-duration: 0ms;
 }
+.homepage-gallery[data-layout="small"] .homepage-project-caption,
+.homepage-gallery[data-layout="small"] .homepage-template-card [data-slot="card-header"] {
+  min-height: 38px;
+  padding-block: 5px;
+}
 
-/* Small cards and list rows. */
-.homepage-gallery[data-layout="small"] .homepage-project-badge {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+/* A flat thumbnail: tinted field with a faint scene grid, or the picture. */
+.homepage-project-cover {
+  --project-badge-color: var(--homepage-badge-stone);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: color-mix(in oklch, var(--project-badge-color) 78%, var(--foreground));
+  background:
+    radial-gradient(
+      ellipse 80% 90% at 50% 100%,
+      color-mix(in oklch, var(--project-badge-color) 30%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in oklch, var(--project-badge-color) 16%, var(--card)),
+      color-mix(in oklch, var(--project-badge-color) 6%, var(--card))
+    );
 }
-.homepage-gallery[data-layout="small"] .homepage-project-badge svg {
-  width: 26px;
-  height: 26px;
+.homepage-project-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      color-mix(in oklch, var(--project-badge-color) 16%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--project-badge-color) 16%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 20px 20px;
+  background-position: center;
+  mask-image: radial-gradient(ellipse at center, #000 10%, transparent 72%);
 }
-.homepage-gallery[data-layout="small"] .homepage-project-caption {
-  min-height: 42px;
-  padding-block: 6px;
+.homepage-project-cover > svg {
+  position: relative;
+  width: 30%;
+  max-width: 64px;
+  height: auto;
+  aspect-ratio: 1;
+  stroke-width: 1.25;
+  filter: drop-shadow(
+    0 6px 14px color-mix(in oklch, var(--project-badge-color) 40%, transparent)
+  );
+  transition: transform 320ms var(--launcher-ease);
 }
+.homepage-project-cover > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 420ms var(--launcher-ease);
+}
+
+/* List rows use the compact chip. */
 .homepage-project-card[data-layout="list"] {
   flex-direction: row;
   align-items: center;
+  min-height: 44px;
   border-radius: var(--radius-md);
 }
 .homepage-project-card[data-layout="list"] .homepage-project-well {
-  flex: 0 0 56px;
-  align-self: stretch;
-  border-right: 1px solid var(--border);
-}
-.homepage-project-card[data-layout="list"] .homepage-project-well::before,
-.homepage-project-card[data-layout="list"] .homepage-project-well::after {
-  display: none;
-}
-.homepage-project-card[data-layout="list"] .homepage-project-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  transform: none;
-}
-.homepage-project-card[data-layout="list"] .homepage-project-badge svg {
-  width: 17px;
-  height: 17px;
+  aspect-ratio: auto;
+  flex: 0 0 auto;
+  place-items: center;
+  padding-left: 8px;
 }
 .homepage-project-card[data-layout="list"] .homepage-project-caption {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  height: 100%;
   border: 0;
   background: transparent;
-  padding: 0 44px 0 12px;
+  padding: 5px 44px 5px 10px;
 }
 .homepage-project-card[data-layout="list"] .homepage-project-actions {
   top: 50%;
@@ -547,44 +529,20 @@
 .homepage-project-badge {
   --project-badge-color: var(--homepage-badge-stone);
   display: grid;
-  position: relative;
   place-items: center;
   flex-shrink: 0;
-  width: 84px;
-  height: 84px;
-  border-radius: 24px;
-  color: var(--homepage-badge-ink);
-  overflow: visible;
-  background: linear-gradient(
-    100deg,
-    color-mix(in srgb, var(--project-badge-color) 72%, #111728),
-    color-mix(in srgb, var(--project-badge-color) 52%, #111728)
-  );
-  transform: translateY(-6px);
-  transition: transform 380ms var(--launcher-ease);
-}
-.homepage-project-badge-face {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  width: 28px;
+  height: 28px;
   overflow: hidden;
-  border-radius: inherit;
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--project-badge-color) 87%, white),
-    var(--project-badge-color) 58%
-  );
-  box-shadow:
-    inset 0 1px 1px #ffffff66,
-    inset 0 -1px 1px #0000001a;
-  transform: translateY(-6%);
+  border-radius: var(--radius-md);
+  color: var(--homepage-badge-ink);
+  background: var(--project-badge-color);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, #000 14%, transparent);
 }
 .homepage-project-badge svg {
-  width: 38px;
-  height: 38px;
-  stroke-width: 1.4;
-  shape-rendering: geometricPrecision;
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.6;
 }
 .homepage-project-badge img {
   width: 100%;
@@ -620,26 +578,19 @@
 @media (hover: hover) and (pointer: fine) {
   .homepage-project-card:not([data-touch-input="true"]):hover,
   .homepage-template-card:not([data-touch-input="true"]):hover {
-    transform: translateY(-3px);
+    transform: translateY(-2px);
     border-color: color-mix(in oklch, var(--ring) 70%, var(--border));
-    box-shadow: 0 14px 28px -18px var(--launcher-shadow);
+    box-shadow: 0 12px 24px -16px var(--launcher-shadow);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
-    .homepage-project-well {
-    background: radial-gradient(
-      ellipse at 50% 62%,
-      color-mix(in oklch, var(--project-badge-color) 22%, transparent),
-      transparent 70%
-    );
+    .homepage-project-cover
+    > svg {
+    transform: translateY(-3px) scale(1.06);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
-    .homepage-project-badge {
-    transform: translateY(-11px) rotate(-3deg);
-  }
-  .homepage-project-card:not([data-touch-input="true"]):hover
-    .homepage-project-well::after {
-    transform: scale(0.85);
-    opacity: 0.7;
+    .homepage-project-cover
+    > img {
+    transform: scale(1.04);
   }
   .homepage-template-card:not([data-touch-input="true"]):hover
     .homepage-card-well
@@ -663,12 +614,7 @@
       [data-touch-input="true"]
     ):hover {
     transform: none;
-  }
-  .homepage-project-card[data-layout="list"]:not(
-      [data-touch-input="true"]
-    ):hover
-    .homepage-project-badge {
-    transform: translateY(-2px);
+    background: var(--accent);
   }
 }
 
@@ -778,7 +724,7 @@
   width: 100%;
 }
 .homepage-template-browser .homepage-gallery,
-.homepage-template-browser .homepage-pages {
+.homepage-template-browser .homepage-gallery-scroll {
   /* A definite remaining-height allocation keeps nested grids bounded in Safari. */
   flex: 1 1 0px;
 }
@@ -846,7 +792,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 16px;
   padding: 24px;
   overflow: hidden;
   isolation: isolate;
@@ -872,28 +818,27 @@
     0 0 / 14px 14px;
   mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
 }
-.homepage-composer-preview-stage {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 180px;
+.homepage-composer-preview-card {
+  width: min(100%, 260px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: 0 18px 36px -24px var(--launcher-shadow);
+  animation: launcher-arrive 360ms var(--launcher-ease) both;
 }
-.homepage-composer-preview-stage .homepage-project-badge {
-  width: 128px;
-  height: 128px;
-  border-radius: 34px;
-  transform: none;
-  animation: launcher-badge-float 4.5s ease-in-out infinite alternate;
+.homepage-composer-preview-card .homepage-project-cover {
+  aspect-ratio: 16 / 10;
+  height: auto;
 }
-.homepage-composer-preview-stage .homepage-project-badge svg {
-  width: 56px;
-  height: 56px;
-}
-.homepage-composer-preview > span {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  text-align: center;
-  font-size: 14px;
+.homepage-composer-preview-name {
+  display: block;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
   font-weight: 600;
 }
 .homepage-composer-details {
@@ -1312,10 +1257,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-project-card[data-layout="list"] .homepage-project-caption {
     padding-right: 52px;
   }
-  .homepage-pagination {
-    height: auto;
-    min-height: 48px;
-  }
   .homepage-statusbar {
     height: 26px;
   }
@@ -1367,9 +1308,13 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     flex: 1;
     justify-content: center;
   }
-  .homepage-gallery-page {
+  .homepage-gallery-grid {
+    --gallery-min: 200px;
     gap: 10px;
     padding: 10px;
+  }
+  .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
+    --gallery-min: 140px;
   }
   .homepage-composer {
     width: 100vw;
@@ -1393,14 +1338,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   }
   .homepage-composer-inline-preview {
     display: grid;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    transform: none;
-  }
-  .homepage-composer-inline-preview svg {
-    width: 20px;
-    height: 20px;
   }
   .homepage-composer-footer {
     padding: 10px 16px max(10px, var(--safe-bottom));
@@ -1423,17 +1360,8 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-statusbar {
     display: none;
   }
-  .homepage-gallery-page {
+  .homepage-gallery-grid {
     padding-block: 8px;
-  }
-  .homepage-project-badge {
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
-  }
-  .homepage-project-badge svg {
-    width: 26px;
-    height: 26px;
   }
   .homepage-project-caption,
   .homepage-template-card [data-slot="card-header"] {
@@ -1451,21 +1379,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     height: 150px;
   }
 }
-@media (max-height: 600px) {
-  .homepage-gallery[data-layout="small"] .homepage-project-badge {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-  }
-  .homepage-gallery[data-layout="small"] .homepage-project-badge svg {
-    width: 18px;
-    height: 18px;
-  }
-  .homepage-gallery[data-layout="small"] .homepage-project-caption {
-    min-height: 34px;
-  }
-}
-
 /* ---------------------------------------------------------------- Motion */
 @keyframes launcher-arrive {
   from {
@@ -1490,14 +1403,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
 @keyframes launcher-floor-drift {
   to {
     background-position: 0 32px;
-  }
-}
-@keyframes launcher-badge-float {
-  from {
-    transform: translateY(0) rotate(-2deg);
-  }
-  to {
-    transform: translateY(-8px) rotate(2deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
