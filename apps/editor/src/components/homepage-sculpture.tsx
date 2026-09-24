@@ -76,10 +76,10 @@ export default function HomepageSculpture({
     camera.position.set(0, 0, 9.2);
     const pivot = new Group();
     scene.add(pivot, new AmbientLight(0xffffff, 1.2));
-    const key = new DirectionalLight(0xdce5ff, 4);
+    const key = new DirectionalLight(0xfff4e8, 4);
     key.position.set(-3, 5, 6);
     scene.add(key);
-    const rim = new DirectionalLight(0x8c9abe, 3);
+    const rim = new DirectionalLight(0xb3aca3, 3);
     rim.position.set(4, -1, 2);
     scene.add(rim);
     const pmrem = new PMREMGenerator(renderer);

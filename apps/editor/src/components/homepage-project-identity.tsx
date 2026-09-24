@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ShapesIcon } from "lucide-react";
 import {
   normalizeProjectAppearance,
   type ProjectAppearance,
@@ -7,9 +8,39 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import {
   DEFAULT_PROJECT_APPEARANCE,
   PROJECT_COLOR_PRESETS,
-  PROJECT_ICON_PRESETS,
 } from "./homepage-project-appearance";
 
+/** The user's picture always wins; the placeholder only fills an empty thumbnail. */
+function useProjectThumbnail(appearance?: ProjectAppearance) {
+  const identity =
+    normalizeProjectAppearance(appearance) ?? DEFAULT_PROJECT_APPEARANCE;
+  const [failedImage, setFailedImage] = useState<string | undefined>();
+  const image =
+    identity.image && identity.image !== failedImage
+      ? identity.image
+      : undefined;
+  return {
+    attributes: {
+      "aria-hidden": true,
+      "data-has-image": Boolean(image),
+    },
+    content: image ? (
+      <img src={image} alt="" onError={() => setFailedImage(image)} />
+    ) : (
+      <ShapesIcon data-placeholder="" />
+    ),
+  };
+}
+
+function projectColor(appearance?: ProjectAppearance): string {
+  const color = normalizeProjectAppearance(appearance)?.color;
+  return (
+    PROJECT_COLOR_PRESETS.find((preset) => preset.id === color)?.id ??
+    DEFAULT_PROJECT_APPEARANCE.color
+  );
+}
+
+/** Compact tile for list rows and inline previews. */
 export function ProjectIdentityBadge({
   appearance,
   className,
@@ -17,35 +48,41 @@ export function ProjectIdentityBadge({
   appearance?: ProjectAppearance;
   className?: string;
 }) {
-  const identity =
-    normalizeProjectAppearance(appearance) ?? DEFAULT_PROJECT_APPEARANCE;
-  const icon =
-    PROJECT_ICON_PRESETS.find((preset) => preset.id === identity.icon) ??
-    PROJECT_ICON_PRESETS[0];
-  const color =
-    PROJECT_COLOR_PRESETS.find((preset) => preset.id === identity.color)?.id ??
-    DEFAULT_PROJECT_APPEARANCE.color;
-  const [failedImage, setFailedImage] = useState<string | undefined>();
-  const Icon = icon.icon;
+  const { attributes, content } = useProjectThumbnail(appearance);
+  return (
+    <span {...attributes} className={cn("homepage-project-badge", className)}>
+      {content}
+    </span>
+  );
+}
+
+/** Card thumbnail: the picture edge to edge, or a neutral placeholder. */
+export function ProjectCover({
+  appearance,
+  className,
+}: {
+  appearance?: ProjectAppearance;
+  className?: string;
+}) {
+  const { attributes, content } = useProjectThumbnail(appearance);
+  return (
+    <span {...attributes} className={cn("homepage-project-cover", className)}>
+      {content}
+    </span>
+  );
+}
+
+/** The project color, shown as a small accent next to the name. */
+export function ProjectColorDot({
+  appearance,
+}: {
+  appearance?: ProjectAppearance;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={cn("homepage-project-badge", className)}
-      data-color={color}
-      data-project-icon={icon.id}
-      data-has-image={Boolean(identity.image && identity.image !== failedImage)}
-    >
-      <span className="homepage-project-badge-face">
-        {identity.image && identity.image !== failedImage ? (
-          <img
-            src={identity.image}
-            alt=""
-            onError={() => setFailedImage(identity.image)}
-          />
-        ) : (
-          <Icon />
-        )}
-      </span>
-    </span>
+      className="homepage-project-color"
+      data-color={projectColor(appearance)}
+    />
   );
 }

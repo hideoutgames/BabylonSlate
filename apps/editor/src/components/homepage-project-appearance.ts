@@ -1,41 +1,13 @@
 import {
-  BoxIcon,
-  CastleIcon,
-  CompassIcon,
-  FlameIcon,
-  Gamepad2Icon,
-  GemIcon,
-  LeafIcon,
-  MountainIcon,
-  OrbitIcon,
-  RocketIcon,
-  SparklesIcon,
-  WavesIcon,
-} from "lucide-react";
-import {
   MAX_PROJECT_IMAGE_DATA_URL_LENGTH,
   type ProjectAppearance,
 } from "@babylonslate/core";
 
+/** The launcher does not display `icon`; the stored format still requires it. */
 export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearance = {
   icon: "box",
   color: "sky",
 };
-
-export const PROJECT_ICON_PRESETS = [
-  { id: "box", label: "Box", icon: BoxIcon },
-  { id: "gamepad", label: "Gamepad", icon: Gamepad2Icon },
-  { id: "rocket", label: "Rocket", icon: RocketIcon },
-  { id: "orbit", label: "Orbit", icon: OrbitIcon },
-  { id: "gem", label: "Gem", icon: GemIcon },
-  { id: "sparkles", label: "Sparkles", icon: SparklesIcon },
-  { id: "mountain", label: "Mountain", icon: MountainIcon },
-  { id: "castle", label: "Castle", icon: CastleIcon },
-  { id: "compass", label: "Compass", icon: CompassIcon },
-  { id: "leaf", label: "Leaf", icon: LeafIcon },
-  { id: "waves", label: "Waves", icon: WavesIcon },
-  { id: "flame", label: "Flame", icon: FlameIcon },
-] as const;
 
 export const PROJECT_COLOR_PRESETS = [
   { id: "coral", label: "Crimson" },

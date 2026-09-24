@@ -1,152 +1,175 @@
-﻿.slate-loading {
+/* Keep in sync with the boot splash in apps/editor/index.html. Literal values
+ * mirror the Graphite tokens because the boot copy renders before globals.css. */
+.slate-loading {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #000;
-  color: #eef0f6;
+  background: oklch(0.19 0.003 75);
+  color: oklch(0.92 0.003 85);
   will-change: opacity;
   opacity: 1;
   transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
   font:
-    400 13px system-ui,
+    400 12px "Geist Variable",
+    system-ui,
     sans-serif;
 }
 .slate-loading[data-scheme="light"] {
-  background: #000;
-  color: #1a1e2a;
+  background: oklch(0.885 0.005 85);
+  color: oklch(0.3 0.006 70);
 }
 .slate-loading[data-leaving="true"] {
   opacity: 0;
   pointer-events: none;
 }
 .slate-splash-card {
-  width: min(680px, 100%);
+  width: min(560px, 100%);
   overflow: hidden;
-  border-radius: 20px;
-  border: 1px solid #a6b4e022;
-  background: #151820;
+  border-radius: 11px;
+  border: 1px solid oklch(0.43 0 0 / 80%);
+  background: oklch(0.3 0.003 75);
   box-shadow:
-    0 40px 120px #0008,
-    0 8px 24px #0005;
+    0 30px 80px oklch(0 0 0 / 45%),
+    0 6px 18px oklch(0 0 0 / 30%);
 }
+.slate-splash-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid oklch(0.43 0 0 / 80%);
+  background: oklch(0.264 0.003 75);
+  font-size: 12px;
+  font-weight: 600;
+}
+.slate-splash-titlebar img {
+  width: 12px;
+  height: 16px;
+  object-fit: contain;
+}
+.slate-splash-titlebar img[data-scheme="light"],
+.slate-loading[data-scheme="light"] .slate-splash-titlebar img[data-scheme="dark"] {
+  display: none;
+}
+.slate-loading[data-scheme="light"] .slate-splash-titlebar img[data-scheme="light"] {
+  display: block;
+}
+.slate-splash-version {
+  margin-left: auto;
+  color: oklch(0.745 0.005 85);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+/* Decorative viewports stay dark in both themes, like editor canvases. */
 .slate-splash-art {
-  height: 270px;
+  height: 210px;
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 78% 45%, #555b8d55, transparent 65%),
-    linear-gradient(135deg, #141824, #1e2333 62%, #171b28);
+    radial-gradient(ellipse 55% 75% at 72% 40%, oklch(0.34 0.004 75), transparent 70%),
+    oklch(0.2 0.003 75);
 }
-.slate-splash-art::after {
-  content: "";
+.slate-splash-floor {
   position: absolute;
-  inset: 0;
-  background-image: radial-gradient(#c4cff414 0.7px, transparent 0.8px);
-  background-size: 7px 7px;
-  mask-image: linear-gradient(100deg, transparent, #000);
-  pointer-events: none;
-}
-.slate-splash-brand {
-  position: absolute;
-  top: 28px;
-  left: 30px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #f1f3fa;
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -0.8px;
-}
-.slate-splash-brand img {
-  width: 25px;
-  height: 32px;
-  object-fit: contain;
+  left: -50%;
+  right: -50%;
+  bottom: -2%;
+  height: 60%;
+  transform-origin: 50% 100%;
+  transform: perspective(240px) rotateX(60deg);
+  background-image:
+    linear-gradient(oklch(0.42 0.004 75) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.42 0.004 75) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(to top, #000, transparent 90%);
+  opacity: 0.45;
+  animation: slate-splash-floor 6s linear infinite;
 }
 .slate-splash-caption {
   position: absolute;
-  bottom: 28px;
-  left: 30px;
-  color: #b5bfd2;
-  font-size: 12px;
-  letter-spacing: 0.02em;
+  bottom: 14px;
+  left: 16px;
+  padding: 2px 6px;
+  border: 1px solid oklch(1 0 0 / 10%);
+  border-radius: 5px;
+  background: oklch(0 0 0 / 35%);
+  color: oklch(0.85 0.004 85);
+  font-size: 11px;
 }
 .slate-splash-planes {
   position: absolute;
-  width: 280px;
-  height: 310px;
-  right: 36px;
-  top: -24px;
+  width: 250px;
+  height: 280px;
+  right: 40px;
+  top: -30px;
   transform: rotate(-25deg);
 }
 .slate-splash-planes i {
   position: absolute;
-  width: 180px;
-  height: 240px;
+  width: 150px;
+  height: 200px;
   top: 40px;
   left: 20px;
-  border-radius: 30px;
-  border: 1px solid #b6c5fa66;
-  background: linear-gradient(130deg, #8d9aba55, #30374e 38%, #161c2a 82%);
+  border-radius: 26px;
+  border: 1px solid oklch(0.82 0.004 85 / 35%);
+  background: linear-gradient(
+    130deg,
+    oklch(0.62 0.004 80 / 35%),
+    oklch(0.32 0.003 75) 40%,
+    oklch(0.22 0.003 75) 85%
+  );
   box-shadow:
-    12px 18px 30px #070b1770,
-    inset 0 1px 0 #dce4ff80;
+    12px 18px 30px oklch(0 0 0 / 40%),
+    inset 0 1px 0 oklch(0.95 0.003 85 / 45%);
   will-change: transform;
   animation: slate-splash-drift 5s ease-in-out infinite alternate;
 }
 .slate-splash-planes i:nth-child(2) {
-  left: 64px;
-  top: 68px;
-  opacity: 0.8;
+  left: 58px;
+  top: 64px;
+  opacity: 0.85;
   animation-delay: -1.6s;
 }
 .slate-splash-planes i:nth-child(3) {
-  left: 108px;
-  top: 96px;
+  left: 96px;
+  top: 88px;
   background: linear-gradient(
     125deg,
-    #b7c2e8,
-    #79839f 37%,
-    #434d67 72%,
-    #262f46
+    oklch(0.88 0.004 85),
+    oklch(0.64 0.004 80) 37%,
+    oklch(0.42 0.003 75) 72%,
+    oklch(0.28 0.003 75)
   );
   animation-delay: -3.2s;
 }
 .slate-splash-planes i::after {
   content: "";
   position: absolute;
-  inset: 24px;
-  border: 1px solid #c9d5ff24;
-  border-radius: 18px;
+  inset: 20px;
+  border: 1px solid oklch(0.95 0.003 85 / 16%);
+  border-radius: 14px;
 }
 .slate-splash-info {
-  padding: 26px 30px 28px;
+  padding: 14px 16px 16px;
 }
 .slate-splash-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 26px;
+  margin-bottom: 4px;
 }
 .slate-loading-label {
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: -0.5px;
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.slate-splash-version {
-  color: #949eaf;
-  font-size: 11px;
-  white-space: nowrap;
-}
 .slate-splash-status {
-  color: #aab2c2;
+  color: oklch(0.745 0.005 85);
   font-size: 12px;
   margin-bottom: 12px;
 }
@@ -155,38 +178,45 @@
   height: 2px;
   width: 100%;
   overflow: hidden;
-  background: #a9b5d01a;
+  background: oklch(0.43 0 0 / 60%);
   border-radius: 2px;
 }
 .slate-loading-track > span {
   display: block;
   width: 40%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, #c3ccec, transparent);
+  background: linear-gradient(90deg, transparent, oklch(0.92 0.003 85), transparent);
   will-change: transform;
   animation: slate-load-travel 1.8s ease-in-out infinite;
 }
 .slate-loading-track[data-ready="true"] > span {
   width: 100%;
-  background: #c3ccec;
+  background: oklch(0.92 0.003 85);
   animation: none;
 }
 .slate-loading[data-scheme="light"] .slate-splash-card {
-  background: #f9fafc;
-  border-color: #fff9;
+  border-color: oklch(0.878 0.005 85);
+  background: oklch(0.972 0.003 85);
   box-shadow:
-    0 40px 100px #222a4140,
-    0 8px 24px #222a4120;
+    0 30px 70px oklch(0.3 0.006 70 / 22%),
+    0 6px 18px oklch(0.3 0.006 70 / 12%);
+}
+.slate-loading[data-scheme="light"] .slate-splash-titlebar {
+  border-color: oklch(0.878 0.005 85);
+  background: oklch(0.953 0.005 85);
 }
 .slate-loading[data-scheme="light"] .slate-splash-version,
 .slate-loading[data-scheme="light"] .slate-splash-status {
-  color: #657086;
+  color: oklch(0.465 0.008 70);
 }
 .slate-loading[data-scheme="light"] .slate-loading-track {
-  background: #dfe3ed;
+  background: oklch(0.878 0.005 85);
 }
 .slate-loading[data-scheme="light"] .slate-loading-track > span {
-  background: #6a789d;
+  background: linear-gradient(90deg, transparent, oklch(0.3 0.006 70), transparent);
+}
+.slate-loading[data-scheme="light"] .slate-loading-track[data-ready="true"] > span {
+  background: oklch(0.3 0.006 70);
 }
 @keyframes slate-load-travel {
   from {
@@ -201,49 +231,32 @@
     transform: translate3d(0, -10px, 0);
   }
 }
+@keyframes slate-splash-floor {
+  to {
+    background-position: 0 30px;
+  }
+}
 @media (max-width: 520px) {
   .slate-loading {
-    padding: 20px;
+    padding: 16px;
   }
   .slate-splash-art {
-    height: 230px;
+    height: 180px;
   }
   .slate-splash-planes {
-    right: -105px;
-    opacity: 0.65;
-  }
-  .slate-splash-brand {
-    left: 22px;
-    top: 24px;
-  }
-  .slate-splash-caption {
-    left: 22px;
-  }
-  .slate-splash-info {
-    padding: 24px 22px;
-  }
-  .slate-splash-heading {
-    align-items: start;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 22px;
-  }
-  .slate-loading-label {
-    max-width: 100%;
+    right: -80px;
+    opacity: 0.7;
   }
 }
 @media (max-height: 520px) {
   .slate-splash-art {
-    height: 140px;
+    height: 120px;
   }
   .slate-splash-caption {
     display: none;
   }
   .slate-splash-info {
-    padding: 16px 24px;
-  }
-  .slate-splash-heading {
-    margin-bottom: 16px;
+    padding: 10px 16px 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

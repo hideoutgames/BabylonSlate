@@ -25,14 +25,11 @@ async function openLauncher(page: Page) {
       root: `opfs:${name}`.replaceAll(" ", "_"),
       name,
     })),
-    {
-      root: "opfs:__slate_templates__/Touch Starter One",
-      name: "Touch Starter One",
-    },
-    {
-      root: "opfs:__slate_templates__/Touch Starter Two",
-      name: "Touch Starter Two",
-    },
+    // Enough installed templates to overflow the tablet template gallery.
+    ...Array.from({ length: 12 }, (_, index) => ({
+      root: `opfs:__slate_templates__/Touch Starter ${index + 1}`,
+      name: `Touch Starter ${index + 1}`,
+    })),
   ].map(({ root, name }) => ({
     root,
     files: createEmptyProjectFiles({ guid: name, name }).map(
@@ -202,23 +199,38 @@ for (const device of [
         name: "Templates",
         exact: true,
       });
-      const firstPage = region.locator(".homepage-gallery-page:not([inert])");
-      const card = firstPage.locator(".homepage-template-card").last();
-      await expect(card).toBeVisible();
+      const cards = region.locator(".homepage-template-card");
+      await expect(cards.first()).toBeVisible();
+      const fullyVisibleCard = async (lowest: boolean) => {
+        const index = await region.evaluate((element, lowest) => {
+          const bounds = element.getBoundingClientRect();
+          const visible = [
+            ...element.querySelectorAll(".homepage-template-card"),
+          ].flatMap((card, index) => {
+            const rect = card.getBoundingClientRect();
+            return rect.top >= bounds.top && rect.bottom <= bounds.bottom
+              ? [index]
+              : [];
+          });
+          return lowest ? visible.at(-1)! : visible[0]!;
+        }, lowest);
+        return cards.nth(index);
+      };
+      const card = await fullyVisibleCard(true);
       const bounds = (await region.boundingBox())!;
       const cardBounds = (await card.boundingBox())!;
       const start = {
-        x: cardBounds.x + cardBounds.width - 24,
+        x: cardBounds.x + cardBounds.width / 2,
         y: cardBounds.y + cardBounds.height / 2,
       };
-      const endX = bounds.x + 24;
+      const endY = bounds.y + 24;
       const templateIdle = await appearance(card);
       await touch(session, "touchStart", start);
       const templatePressed = await appearance(card);
       for (let step = 1; step <= 12; step++) {
         await touch(session, "touchMove", {
-          x: start.x + ((endX - start.x) * step) / 12,
-          y: start.y,
+          x: start.x,
+          y: start.y + ((endY - start.y) * step) / 12,
         });
         await page.evaluate(
           () =>
@@ -235,20 +247,15 @@ for (const device of [
         .soft(templatePressed, "template contact should visibly respond")
         .not.toEqual(templateIdle);
       await expect
-        .poll(() => region.evaluate((element) => element.scrollLeft))
-        .toBeGreaterThan(bounds.width / 2);
-      await expect(
-        region.locator(".homepage-gallery-page:not([inert])"),
-      ).toHaveAttribute("aria-label", /Page [2-9] of/);
+        .poll(() => region.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(40);
+      await expect(region).not.toHaveAttribute("data-scrolling", "true");
       await expect(region.locator('[data-touch-pressed="true"]')).toHaveCount(
         0,
       );
       await expect(page.getByTestId("create-project-dialog")).toHaveCount(0);
 
-      const freshCard = region
-        .locator(".homepage-gallery-page:not([inert]) .homepage-template-card")
-        .first();
-      await freshCard.tap();
+      await (await fullyVisibleCard(false)).tap();
       await expect(page.getByTestId("create-project-name")).toBeVisible();
       await expect(page.getByTestId("create-project-name")).not.toBeFocused();
     });
@@ -281,15 +288,10 @@ for (const device of [
       await expect(name).not.toBeFocused();
       await name.tap();
       await name.fill("Touch Draft");
-      const rocket = dialog.getByRole("button", {
-        name: "Rocket",
-        exact: true,
-      });
       const violet = dialog.getByRole("button", {
         name: "Violet",
         exact: true,
       });
-      await rocket.tap();
       await violet.tap();
       await dialog
         .getByRole("button", { name: "Choose Template", exact: true })
@@ -297,12 +299,10 @@ for (const device of [
       await dialog.getByTestId("homepage-template-search").fill("Basic 3D");
       await dialog.getByTestId("create-project-empty").tap();
       await expect(name).toHaveValue("Touch Draft");
-      await expect(rocket).toHaveAttribute("aria-pressed", "true");
       await expect(violet).toHaveAttribute("aria-pressed", "true");
 
       const controls = dialog.locator(
         [
-          ".homepage-icon-choice",
           ".homepage-color-choice",
           'button[aria-label="Choose Template"]',
           '[data-slot="dialog-close"]',

@@ -45,7 +45,7 @@ export function HomepageProfileMenu({
         render={
           <Button
             variant="ghost"
-            size="touch-icon"
+            size="icon-sm"
             className="homepage-account"
             aria-label="Profile"
             data-testid="homepage-account"

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowUpRightIcon,
   ArrowLeftIcon,
   CheckIcon,
   ImagePlusIcon,
@@ -39,10 +38,13 @@ import {
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
-import { ProjectIdentityBadge } from "./homepage-project-identity";
+import {
+  ProjectColorDot,
+  ProjectCover,
+  ProjectIdentityBadge,
+} from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
-  PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
@@ -230,7 +232,7 @@ export function HomepageCreateDialog({
           {!editing && step === "details" && (
             <Button
               variant="ghost"
-              size="touch-icon"
+              size="icon-sm"
               className="homepage-composer-back"
               aria-label="Choose Template"
               disabled={busy}
@@ -281,10 +283,13 @@ export function HomepageCreateDialog({
               className="homepage-composer-preview"
               data-testid="project-identity-preview"
             >
-              <div className="homepage-composer-preview-stage">
-                <ProjectIdentityBadge appearance={appearance} />
+              <div className="homepage-composer-preview-card">
+                <ProjectCover appearance={appearance} />
+                <span className="homepage-composer-preview-name">
+                  <ProjectColorDot appearance={appearance} />
+                  <span>{name.trim() || "Untitled"}</span>
+                </span>
               </div>
-              <span>{name.trim() || "Untitled"}</span>
             </aside>
             <div
               className="homepage-composer-details"
@@ -328,51 +333,24 @@ export function HomepageCreateDialog({
                       className="homepage-badge-legend"
                       variant="label"
                     >
-                      <span>Icon</span>
+                      <span>Color</span>
                       <ProjectIdentityBadge
                         appearance={appearance}
                         className="homepage-composer-inline-preview"
                       />
                     </FieldLegend>
-                    <div
-                      className="homepage-composer-icon-grid"
-                      role="group"
-                      aria-label="Project Icon"
-                    >
-                      {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
-                        <Button
-                          key={id}
-                          type="button"
-                          variant="ghost"
-                          size="touch-icon"
-                          className="homepage-icon-choice"
-                          aria-label={label}
-                          aria-pressed={
-                            !appearance.image && appearance.icon === id
-                          }
-                          onClick={() =>
-                            changeAppearance({
-                              icon: id,
-                              color: appearance.color,
-                            })
-                          }
-                        >
-                          <Icon />
-                        </Button>
-                      ))}
-                    </div>
                     <div className="homepage-composer-color-row">
                       <div
                         className="homepage-composer-color-grid"
                         role="group"
-                        aria-label="Badge Color"
+                        aria-label="Project Color"
                       >
                         {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
                           <Button
                             key={id}
                             type="button"
                             variant="ghost"
-                            size="touch-icon"
+                            size="icon-sm"
                             className="homepage-color-choice"
                             aria-label={label}
                             aria-pressed={appearance.color === id}
@@ -407,6 +385,7 @@ export function HomepageCreateDialog({
                         <Button
                           type="button"
                           variant="outline"
+                          size="sm"
                           disabled={busy || imageBusy}
                           onClick={() => fileInput.current?.click()}
                         >
@@ -426,7 +405,7 @@ export function HomepageCreateDialog({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="touch-icon"
+                            size="icon-sm"
                             aria-label="Remove Picture"
                             disabled={busy || imageBusy}
                             onClick={() =>
@@ -567,7 +546,6 @@ export function HomepageCreateDialog({
                     />
                   )}
                   {editing ? "Save" : "Create"}
-                  <ArrowUpRightIcon data-icon="inline-end" />
                 </Button>
               </DialogFooter>
             </div>

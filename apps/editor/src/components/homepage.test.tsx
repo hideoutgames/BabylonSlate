@@ -32,6 +32,7 @@ vi.mock("./homepage-empty-art", () => ({ HomepageEmptyArt: () => null }));
 
 beforeEach(() => {
   localStorage.clear();
+  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
     matches: false,
     media,
@@ -196,14 +197,14 @@ describe("Slate project browser", () => {
       fireEvent.change(screen.getByTestId("create-project-name"), {
         target: { value: "Orbit" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Rocket" }));
+      fireEvent.click(screen.getByRole("button", { name: "Violet" }));
       fireEvent.click(screen.getByTestId("create-project-submit"));
       await waitFor(() =>
         expect(onCreateEmpty).toHaveBeenCalledWith(
           "Orbit",
           expect.objectContaining({
             kind,
-            appearance: expect.objectContaining({ icon: "rocket" }),
+            appearance: expect.objectContaining({ color: "violet" }),
           }),
         ),
       );
@@ -379,11 +380,29 @@ describe("Slate project browser", () => {
     },
   );
 
+  it("shows a project's picture instead of the placeholder thumbnail", () => {
+    const image = "data:image/png;base64,AAAA";
+    renderHomepage({
+      projects: [
+        {
+          ...listedProject("Painted", "opfs"),
+          appearance: { icon: "rocket", color: "violet", image },
+        },
+        listedProject("Plain", "opfs"),
+      ],
+    });
+    const painted = screen.getByTestId("open-listed-project-Painted");
+    expect(painted.querySelector("img")?.getAttribute("src")).toBe(image);
+    expect(painted.querySelector("[data-placeholder]")).toBeNull();
+    const plain = screen.getByTestId("open-listed-project-Plain");
+    expect(plain.querySelector("img")).toBeNull();
+    expect(plain.querySelector("[data-placeholder]")).not.toBeNull();
+  });
+
   it("searches projects without changing the stored library", () => {
     renderHomepage({
       projects: [listedProject("Orbit", "opfs"), listedProject("Tide", "opfs")],
     });
-    fireEvent.click(screen.getByRole("button", { name: "Search Projects" }));
     fireEvent.change(screen.getByTestId("homepage-project-search"), {
       target: { value: "Tide" },
     });

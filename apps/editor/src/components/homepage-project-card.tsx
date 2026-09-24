@@ -1,16 +1,22 @@
 import { useEffect, useRef } from "react";
-import { ArrowUpRightIcon, MoreHorizontalIcon } from "lucide-react";
+import { MoreHorizontalIcon } from "lucide-react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
 import type { ListedProject } from "../lib/listed-projects";
 import { displayProjectName } from "../lib/display-project-name";
-import { ProjectIdentityBadge } from "./homepage-project-identity";
+import {
+  ProjectColorDot,
+  ProjectCover,
+  ProjectIdentityBadge,
+} from "./homepage-project-identity";
+import { describeProjectActivity } from "../lib/project-activity";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export function HomepageProjectCard({
@@ -31,6 +37,7 @@ export function HomepageProjectCard({
   onRemove: () => void;
 }) {
   const name = displayProjectName(project.label);
+  const activity = describeProjectActivity(project);
   const holding = useRef(false);
   const { menu, closeMenu, bind, openMenuAt } = useContextMenu({
     enabled: !busy,
@@ -90,11 +97,18 @@ export function HomepageProjectCard({
       }}
     >
       <CardContent className="homepage-project-well">
-        <ProjectIdentityBadge appearance={project.appearance} />
+        {layout === "list" ? (
+          <ProjectIdentityBadge appearance={project.appearance} />
+        ) : (
+          <ProjectCover appearance={project.appearance} />
+        )}
       </CardContent>
       <CardHeader className="homepage-project-caption">
-        <CardTitle>{name}</CardTitle>
-        <ArrowUpRightIcon aria-hidden="true" />
+        <CardTitle>
+          <ProjectColorDot appearance={project.appearance} />
+          <span>{name}</span>
+        </CardTitle>
+        {activity && <CardDescription>{activity}</CardDescription>}
       </CardHeader>
       <Button
         className="homepage-card-open"
@@ -112,7 +126,7 @@ export function HomepageProjectCard({
       />
       <Button
         variant="ghost"
-        size="touch-icon"
+        size="icon-sm"
         className="homepage-project-actions"
         aria-label={`Project Actions for ${name}`}
         disabled={busy}

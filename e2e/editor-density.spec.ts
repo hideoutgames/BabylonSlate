@@ -252,10 +252,10 @@ test.describe("Editor density and IA", () => {
   }) => {
     await openTestProject(page);
     await saveAllIfEnabled(page);
-    // Keep the real entrance transform active so menu hit testing is deterministic.
+    // Settle launcher entrance motion so menu hit testing is deterministic.
     await page.addStyleTag({
       content:
-        ".homepage-library { animation-play-state: paused; animation-delay: -0.325s; }",
+        ".homepage-library-view, .homepage-gallery-item { animation: none !important; }",
     });
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
@@ -280,11 +280,10 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("homepage-rename-dialog")).toBeVisible();
     await expect(page.getByTestId("create-project-empty")).toHaveCount(0);
     await page.getByTestId("homepage-rename-input").fill("Renamed Game");
-    await page.getByRole("button", { name: "Orbit", exact: true }).click();
     await page.getByRole("button", { name: "Violet", exact: true }).click();
     await page.getByTestId("homepage-rename-confirm").click();
     await expect(listed).toContainText("Renamed Game");
-    await expect(listed.locator("[data-project-icon='orbit']")).toHaveAttribute(
+    await expect(listed.locator(".homepage-project-color")).toHaveAttribute(
       "data-color",
       "violet",
     );
@@ -303,7 +302,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.locator("[data-slate-home-styles]")).toHaveCount(0);
     await closeProjectViaSettings(page);
     await expect(listed).toContainText("Renamed Game");
-    await expect(listed.locator("[data-project-icon='orbit']")).toHaveAttribute(
+    await expect(listed.locator(".homepage-project-color")).toHaveAttribute(
       "data-color",
       "violet",
     );

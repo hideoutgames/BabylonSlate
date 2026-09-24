@@ -16,7 +16,7 @@ afterEach(cleanup);
 function card(kind: "project" | "template", scrolling = false) {
   const activate = vi.fn();
   render(
-    <div className="homepage-pages" data-scrolling={scrolling}>
+    <div className="homepage-gallery-scroll" data-scrolling={scrolling}>
       {kind === "project" ? (
         <HomepageProjectCard
           project={{

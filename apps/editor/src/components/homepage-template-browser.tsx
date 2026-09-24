@@ -48,12 +48,31 @@ export function recordTemplateUse(id: string) {
 }
 export function homepageTemplates(templates: HomepageTemplate[]) {
   return [
-    { id: "blank", name: "Blank", icon: FileIcon, imageUrl: undefined },
-    { id: "empty", name: "Basic 3D", icon: BoxIcon, imageUrl: undefined },
-    { id: "2d", name: "Basic 2D", icon: Grid2x2Icon, imageUrl: undefined },
+    {
+      id: "blank",
+      name: "Blank",
+      description: "Empty Project",
+      icon: FileIcon,
+      imageUrl: undefined,
+    },
+    {
+      id: "empty",
+      name: "Basic 3D",
+      description: "Starter 3D Scene",
+      icon: BoxIcon,
+      imageUrl: undefined,
+    },
+    {
+      id: "2d",
+      name: "Basic 2D",
+      description: "Starter 2D Scene",
+      icon: Grid2x2Icon,
+      imageUrl: undefined,
+    },
     ...templates.map((template) => ({
       ...template,
       id: `template:${template.id}`,
+      description: "Installed Template",
       icon: LayoutTemplateIcon,
     })),
   ];
@@ -94,20 +113,22 @@ export function HomepageTemplateBrowser({
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search Templates"
+          placeholder="Search Templates…"
+          aria-label="Search Templates"
           data-testid="homepage-template-search"
         />
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
-                variant="ghost"
-                size="touch-icon"
+                variant="outline"
+                size="sm"
                 aria-label="Sort Templates"
               />
             }
           >
-            <ArrowUpDownIcon />
+            <ArrowUpDownIcon data-icon="inline-start" />
+            <span className="homepage-optional-label">Sort</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="homepage-theme" align="end">
             <DropdownMenuGroup>
@@ -124,13 +145,14 @@ export function HomepageTemplateBrowser({
         </DropdownMenu>
         {onImport && (
           <Button
-            variant="ghost"
-            size="touch-icon"
+            variant="outline"
+            size="sm"
             aria-label="Add Template"
             disabled={disabled}
             onClick={onImport}
           >
-            <PlusIcon />
+            <PlusIcon data-icon="inline-start" />
+            <span className="homepage-optional-label">Add Template</span>
           </Button>
         )}
       </div>
@@ -141,6 +163,7 @@ export function HomepageTemplateBrowser({
           content: (
             <TemplatePickCard
               title={choice.name}
+              description={choice.description}
               icon={choice.icon}
               imageUrl={choice.imageUrl}
               selected={choice.id === selected}
