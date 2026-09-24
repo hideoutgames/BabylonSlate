@@ -31,7 +31,7 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
         const controller = createEditorCamera(scene);
         // The editor draws gizmos after its world pass, leaving Babylon's
         // floating-origin context on the utility scene before the timer fires.
-        const utility = new UtilityLayerRenderer(scene, false);
+        const utility = new UtilityLayerRenderer(scene, false, true);
         utility.setRenderCamera(controller.camera);
         controller.camera.alpha = -Math.PI / 2;
         controller.camera.beta = Math.PI / 2;
@@ -72,6 +72,15 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
           components: [{ id: "camera", classId: "CameraComponent", properties: { fieldOfView: 60, nearClip: 0.1, farClip: 50 } }],
         })];
         try {
+          // Selection follows an already presented editor frame.
+          const sceneDeadline = performance.now() + 10_000;
+          while (!withSceneReadinessState(scene, () => scene.isReady(true))) {
+            if (performance.now() > sceneDeadline) throw new Error("Editor scene did not become ready");
+            await new Promise<void>((resolve) => setTimeout(resolve, 16));
+          }
+          engine.beginFrame();
+          try { scene.render(); utility.render(); }
+          finally { engine.endFrame(); }
           overlay.sync({ sceneData, selectedActorIds: ["camera"] });
           const target = overlay.previewTexture!;
           const deadline = performance.now() + 10_000;
