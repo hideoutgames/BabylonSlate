@@ -113,6 +113,14 @@ for (const previewBuild of [false, true]) {
     files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: 2 }));
     await openMinimalTestProject(page, files);
     await openMainScene(page);
+    // Migration approval is needed when Play saves authored changes.
+    expect(await page.evaluate(async () => {
+      const host = globalThis as unknown as {
+        __babylonslateTest: { nudgeActiveSceneActor(): Promise<boolean> };
+      };
+      return host.__babylonslateTest.nudgeActiveSceneActor();
+    })).toBe(true);
+    await expect(page.getByTestId("save-all-project")).toBeEnabled();
     if (previewBuild) await enablePreviewBuild(page);
     await page.getByTestId("play-preview").click();
     const migration = page.getByTestId("migrate-on-save-dialog");

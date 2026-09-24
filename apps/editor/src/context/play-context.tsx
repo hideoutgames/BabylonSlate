@@ -731,7 +731,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       return;
     }
     setPreviewPreparationError(null);
-    if (migrationPending.length > 0) {
+    const needsSave = dirtyDocuments.length > 0 || projectDirty;
+    if (needsSave && migrationPending.length > 0) {
       setPlayAwaitingMigration(true);
       return;
     }
@@ -748,7 +749,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setPreviewCanCancel(true);
     setPreviewPhase("Saving");
     try {
-      if (dirtyDocuments.length > 0 || projectDirty) {
+      if (needsSave) {
         const saved = await saveAll();
         if (!isCurrentRequest()) return;
         if (!saved) {
