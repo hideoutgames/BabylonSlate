@@ -121,6 +121,13 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("cameraPreviewLightMotionProof")
+) {
+  void import("./testing/camera-preview-light-motion-proof").then(({ runCameraPreviewLightMotionProof }) => {
+    Object.assign(window, { __babylonslateCameraPreviewLightMotionProof: runCameraPreviewLightMotionProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("framegraphForwardProof")
 ) {
   void import("./testing/framegraph-forward-proof").then(
