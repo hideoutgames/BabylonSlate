@@ -54,6 +54,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   const geometry = await page.evaluate(() => (window as unknown as { __babylonslateViewportTest: { mannequinShadowProbe(): Promise<MannequinGeometry> } }).__babylonslateViewportTest.mannequinShadowProbe());
   const sourceSha256 = await page.evaluate(async () => {
     const bytes = await (window as unknown as { __babylonslateTest: { readAssetChunk(path: string, id: string): Promise<Uint8Array> } }).__babylonslateTest.readAssetChunk("assets/Mannequin/mannequin.babasset", "source");
+    if (!bytes?.byteLength) throw new Error("Missing imported mannequin source bytes");
     return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))), value => value.toString(16).padStart(2, "0")).join("");
   });
   const evidence: unknown[] = [];

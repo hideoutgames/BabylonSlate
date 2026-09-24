@@ -3,7 +3,9 @@ import { checkedShader } from "./checked-shader";
 /**
  * Directional PCF receiver-plane correction for Babylon 9.20. Each native
  * bilinear tap compares against the receiver plane at its own sample position.
- * It adds no fetches, samplers or caster displacement. Automatic mode only;
+ * Low reconstructs its bilinear footprint with four texel-center comparisons
+ * so a conservative shared depth cannot erase nearby contacts. Other qualities
+ * keep native tap counts. No extra samplers or caster displacement. Automatic mode only;
  * manual and perspective/cube lights retain the native path. The correction
  * includes the current projection depth interval and actual
  * allocation through the UV/depth gradient. Valid finite plane offsets must
@@ -118,6 +120,13 @@ fn slatePcfDepth(tap: vec2f, origin: vec3f, plane: vec3f)->f32 {
 #endif
   return origin.z + offset;
 }
+fn slatePcfPointDepth(tap: vec2f, origin: vec3f, plane: vec3f)->f32 {
+  var offset = dot(plane.xy, (tap - origin.xy) * plane.z);
+#ifdef USE_REVERSE_DEPTHBUFFER
+  offset = -offset;
+#endif
+  return origin.z + offset;
+}
 ` : `
 #ifdef USE_REVERSE_DEPTHBUFFER
 #define SLATE_PCF_MIN_DEPTH 1.1754943508e-38
@@ -130,6 +139,13 @@ float slatePcfDepth(vec2 tap, vec3 origin, vec3 plane) {
   vec2 phase = fract(tap * plane.z - vec2(0.5));
   float bound = dot(max(plane.xy, vec2(0.0)), phase) + dot(max(-plane.xy, vec2(0.0)), vec2(1.0) - phase);
   float offset = dot(plane.xy, (tap - origin.xy) * plane.z) - bound;
+#ifdef USE_REVERSE_DEPTHBUFFER
+  offset = -offset;
+#endif
+  return origin.z + offset;
+}
+float slatePcfPointDepth(vec2 tap, vec3 origin, vec3 plane) {
+  float offset = dot(plane.xy, (tap - origin.xy) * plane.z);
 #ifdef USE_REVERSE_DEPTHBUFFER
   offset = -offset;
 #endif
@@ -152,9 +168,8 @@ float slatePcfDepth(vec2 tap, vec3 origin, vec3 plane) {
       }
       if (nesting) throw new Error(`Unclosed Babylon PCF function ${name}`);
       const original = source.slice(start, end);
-      const tap = kernel === 1 ? "uvDepth.xy" : wgsl ? "base_uv.xy+ vec2f(u[$1],v[$2])" : "base_uv.xy+vec2(u[$1],v[$2])";
-      const depth = (uv: string) => {
-        const corrected = `slatePcfDepth(${uv},uvDepth,slatePlane)`;
+      const depth = (uv: string, point = false) => {
+        const corrected = `slatePcf${point ? "Point" : ""}Depth(${uv},uvDepth,slatePlane)`;
         // Retain native CSM depth-clamp behavior after the correction.
         return cascaded
           ? wgsl ? `clamp(${corrected},0.0,0.99999994)` : `clamp(${corrected},SLATE_PCF_MIN_DEPTH,SLATE_PCF_MAX_DEPTH)`
@@ -167,17 +182,40 @@ float slatePcfDepth(vec2 tap, vec3 origin, vec3 plane) {
           wgsl ? "frustumEdgeFalloff: f32,slatePlane: vec3f)" : "float frustumEdgeFalloff,vec3 slatePlane)",
         );
       const samples = kernel === 1 ? 1 : kernel === 3 ? 4 : 9;
-      if (wgsl) {
+      if (kernel === 1) {
+        const v2 = wgsl ? "vec2f" : "vec2";
+        const declaration = (type: string, name: string, value: string) => wgsl ? `var ${name}: ${type}=${value};` : `${type} ${name}=${value};`;
+        const sample = (uv: string) => wgsl
+          ? `textureSampleCompareLevel(shadowTexture,shadowSampler,${uv},${cascaded ? "layer," : ""}${depth(uv, true)})`
+          : cascaded ? `texture2D(shadowSampler,vec4(${uv},layer,${depth(uv, true)}))`
+            : `TEXTUREFUNC(shadowSampler,vec3(${uv},${depth(uv, true)}),0.)`;
+        // A hardware bilinear comparison accepts only one reference depth.
+        // Preserve its four weights, but evaluate the plane at each center.
+        // Clamp coordinates before the depth evaluation to match edge sampling.
+        const taps = [
+          [0, 0, "(1.-rpPhase.x)*(1.-rpPhase.y)"],
+          [1, 0, "rpPhase.x*(1.-rpPhase.y)"],
+          [0, 1, "(1.-rpPhase.x)*rpPhase.y"],
+          [1, 1, "rpPhase.x*rpPhase.y"],
+        ].map(([x, y, weight], index) => {
+          const uv = `rpTap${index}`;
+          return `${declaration(v2, uv, `(clamp(rpBase+${v2}(${x}.,${y}.),${v2}(0.),${v2}(slatePlane.z-1.))+${v2}(0.5))/slatePlane.z`)}shadow+=${weight}*${sample(uv)};`;
+        }).join("\n");
+        adapted.replace(
+          wgsl ? /var shadow: f32=textureSampleCompare(?:Level)?\([^;]+\);/ : /float shadow=(?:TEXTUREFUNC|texture2D)\([^;]+\);/,
+          `${declaration(v2, "rpTexel", `uvDepth.xy*slatePlane.z-${v2}(0.5)`)}
+${declaration(v2, "rpPhase", "fract(rpTexel)")}
+${declaration(v2, "rpBase", "floor(rpTexel)")}
+${declaration(wgsl ? "f32" : "float", "shadow", "0.")}
+${taps}`,
+        );
+      } else if (wgsl) {
         const uvPattern = kernel === 1 ? "uvDepth\\.xy" : "base_uv\\.xy\\+ vec2f\\(u\\[(\\d)\\],v\\[(\\d)\\]\\)";
         adapted.replace(
           new RegExp(`(${uvPattern}),${cascaded ? "layer," : ""}uvDepth\\.z`, "g"),
           (_match, uv) => `${uv},${cascaded ? "layer," : ""}${depth(uv)}`,
           samples,
         );
-      } else if (kernel === 1 && cascaded) {
-        adapted.replace("layer,uvDepth.z", `layer,${depth(tap)}`);
-      } else if (kernel === 1) {
-        adapted.replace("shadowSampler,uvDepth,0.", `shadowSampler,vec3(uvDepth.xy,${depth(tap)}),0.`);
       } else {
         adapted.replace(
           /base_uv\.xy\+vec2\(u\[(\d)\],v\[(\d)\]\),(layer,)?uvDepth\.z/g,

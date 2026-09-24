@@ -234,7 +234,7 @@ export function captureShadowDiagnostics(
               filteringQuality: generator.filteringQuality,
               autoBias: state.shadows.autoBias,
               receiverCorrection: state.shadows.autoBias && light instanceof DirectionalLight && generator.usePercentageCloserFiltering
-                ? { method: "pcf-receiver-plane", extraTextureFetches: 0 }
+                ? { method: "pcf-receiver-plane", extraTextureFetches: generator.filteringQuality === ShadowGenerator.QUALITY_LOW ? 3 : 0 }
                 : null,
               // For CSM these scalars may be restored after drawing; never label
               // them as the value that was used by every cascade.
