@@ -13,6 +13,8 @@ import { HomepageAccount } from "./homepage-account";
 const clerk = vi.hoisted(() => ({
   provider: vi.fn(),
   openSignIn: vi.fn(),
+  openUserProfile: vi.fn(),
+  signOut: vi.fn(() => Promise.resolve()),
   signedIn: false,
   failed: false,
 }));
@@ -34,27 +36,24 @@ vi.mock("@clerk/react", () => ({
       ? {
           fullName: "Ada Lovelace",
           primaryEmailAddress: { emailAddress: "ada@example.test" },
+          hasImage: true,
+          imageUrl: "https://img.example.test/ada.png",
         }
       : null,
   }),
-  useClerk: () => ({ openSignIn: clerk.openSignIn }),
-  UserButton: Object.assign(
-    ({ children }: { children: ReactNode }) => (
-      <div data-testid="clerk-user-button">{children}</div>
-    ),
-    {
-      MenuItems: ({ children }: { children: ReactNode }) => children,
-      Action: ({ label, onClick }: { label: string; onClick?: () => void }) => (
-        <button onClick={onClick}>{label}</button>
-      ),
-    },
-  ),
+  useClerk: () => ({
+    openSignIn: clerk.openSignIn,
+    openUserProfile: clerk.openUserProfile,
+    signOut: clerk.signOut,
+  }),
 }));
 
 afterEach(() => {
   cleanup();
   clerk.provider.mockClear();
   clerk.openSignIn.mockClear();
+  clerk.openUserProfile.mockClear();
+  clerk.signOut.mockClear();
   clerk.signedIn = false;
   clerk.failed = false;
   vi.unstubAllEnvs();
@@ -113,19 +112,52 @@ describe("Homepage account", () => {
     );
   });
 
-  it("uses Clerk account controls with a subscription action for signed-in users", async () => {
+  it("drives signed-in Clerk accounts from the launcher profile menu", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.signedIn = true;
-    const { unmount } = render(<HomepageAccount />);
-    const controls = await screen.findByTestId("clerk-user-button");
-    expect(
-      within(controls).getByRole("button", { name: "manageAccount" }),
-    ).toBeTruthy();
-    expect(
-      within(controls).getByRole("button", { name: "signOut" }),
-    ).toBeTruthy();
+    const onApplicationSettings = vi.fn();
+    const onEngineSettings = vi.fn();
+    const { unmount } = render(
+      <HomepageAccount
+        onApplicationSettings={onApplicationSettings}
+        onEngineSettings={onEngineSettings}
+      />,
+    );
+    const trigger = await screen.findByRole("button", { name: "Profile" });
+    expect(trigger.querySelector("img")?.getAttribute("src")).toBe(
+      "https://img.example.test/ada.png",
+    );
+    const open = async () => {
+      fireEvent.click(trigger);
+      return screen.findByRole("menu");
+    };
+    let menu = await open();
+    expect(within(menu).getByText("Ada Lovelace")).toBeTruthy();
+    expect(within(menu).getByText("ada@example.test")).toBeTruthy();
+    expect(within(menu).queryByRole("menuitem", { name: "Sign In" })).toBeNull();
     fireEvent.click(
-      within(controls).getByRole("button", { name: "Manage Subscription" }),
+      within(menu).getByRole("menuitem", { name: "Account Settings" }),
+    );
+    expect(clerk.openUserProfile).toHaveBeenCalledOnce();
+
+    menu = await open();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Application Settings" }),
+    );
+    expect(onApplicationSettings).toHaveBeenCalledOnce();
+    menu = await open();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Engine Settings" }),
+    );
+    expect(onEngineSettings).toHaveBeenCalledOnce();
+
+    menu = await open();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign Out" }));
+    await waitFor(() => expect(clerk.signOut).toHaveBeenCalledOnce());
+
+    menu = await open();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Manage Subscription" }),
     );
     expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
     unmount();

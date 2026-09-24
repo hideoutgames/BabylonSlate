@@ -236,9 +236,16 @@ describe("Slate project browser", () => {
     );
   });
 
-  it("rejects empty or duplicate project names", () => {
+  it("suggests a free random name and rejects empty or duplicate names", () => {
     renderHomepage({ projects: [listedProject("Orbit", "opfs")] });
     createDialog();
+    const name = screen.getByTestId("create-project-name") as HTMLInputElement;
+    expect(name.value).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
+      "disabled",
+      false,
+    );
+    fireEvent.change(name, { target: { value: "" } });
     expect(screen.getByTestId("create-project-submit")).toHaveProperty(
       "disabled",
       true,
@@ -458,5 +465,29 @@ describe("Slate project browser", () => {
     expect(
       screen.getByTestId("homepage").getAttribute("data-slate-theme"),
     ).toBe("light");
+  });
+
+  it("keeps Auto-Update in Application Settings from the profile menu", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const openApplicationSettings = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "Application Settings" }),
+      );
+      return screen.findByRole("switch", { name: "Auto-Update" });
+    };
+    const { unmount } = renderHomepage();
+    let autoUpdate = await openApplicationSettings();
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(autoUpdate);
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Off")).toBeTruthy();
+    unmount();
+
+    renderHomepage();
+    autoUpdate = await openApplicationSettings();
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    vi.unstubAllEnvs();
   });
 });
