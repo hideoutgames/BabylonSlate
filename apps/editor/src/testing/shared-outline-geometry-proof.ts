@@ -91,20 +91,40 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     // readiness without replacing the graph or its live mask programs, so a
     // native hot-swapped material cannot become a stale silhouette oracle.
     coordinator.invalidate();
-    const prepared = await coordinator.prepare();
-    for (let frame = 0; frame < 3; frame++) {
+    let prepared = await coordinator.prepare();
+    const deadline = performance.now() + 5_000;
+    let coherentFrames = 0, heldCandidates = 0;
+    let result: ReturnType<SceneRenderCoordinator["render"]> | undefined;
+    const assertDeadline = () => {
+      if (performance.now() >= deadline)
+        throw new Error(`${name}: production frames did not settle ${JSON.stringify({ prepared, result, heldCandidates })}`);
+    };
+    while (coherentFrames < 3) {
+      if (heldCandidates) assertDeadline();
       engine.beginFrame();
+      let ready = false;
       try {
-        const result = coordinator.render();
-        if (!result.rendered || !result.readyForPresentation || result.path !== "frameGraph" || prepared.path !== result.path)
+        result = coordinator.render();
+        if (result.path !== "frameGraph" || prepared.path !== result.path)
           throw new Error(`${name}: production frame not ready ${JSON.stringify({ prepared, result })}`);
+        ready = result.rendered && result.readyForPresentation;
+        if (!ready || heldCandidates) assertDeadline();
       } finally { engine.endFrame(); }
-      if (frame < 2) await waitFrame();
+      if (ready) coherentFrames++;
+      else {
+        // Native skeletons can allocate their bone texture during the first draw.
+        // Retry rejected candidates like the viewport; only capture after three
+        // consecutive coherent draws, preserving the native silhouette oracle.
+        coherentFrames = 0; heldCandidates++;
+        prepared = await coordinator.prepare(assertDeadline);
+        assertDeadline();
+      }
+      if (coherentFrames < 3) await waitFrame();
     }
     const copy = document.createElement("canvas"); copy.width = WIDTH; copy.height = HEIGHT;
     const context = copy.getContext("2d")!; context.drawImage(canvas, 0, 0);
     const pixels = context.getImageData(0, 0, WIDTH, HEIGHT).data;
-    const data = { name, ...pixelSummary(pixels), tasks: coordinator.taskNames(), outline: coordinator.sharedOutlineDiagnostics(),
+    const data = { name, heldCandidates, ...pixelSummary(pixels), tasks: coordinator.taskNames(), outline: coordinator.sharedOutlineDiagnostics(),
       owner: owner.diagnostics(), reservations: managedRenderReservations(engine) };
     captures.push(data);
     await onProgress?.({ stage: name, state: "captured", data, image: copy.toDataURL("image/png") });
@@ -327,7 +347,7 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("authored-parameters-reset", [contribution([authored])]);
     clear();
     await capture("all-geometry-removed");
-    return { ...metadata, cases, captures, warmup: "Three production coordinator draws after prepare per captured state" };
+    return { ...metadata, cases, captures, warmup: "Three consecutive coherent coordinator draws per captured state; rejected candidates reprepare within five seconds" };
   } finally {
     detach(); await renderer.retire(); await referenceRenderer.retire(); view.dispose(); disposeAuthored?.(); scene.dispose(); engine.dispose(); canvas.remove();
   }

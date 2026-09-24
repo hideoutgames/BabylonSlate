@@ -201,11 +201,12 @@ test("lightweight work can bypass blocked older work only three times across pro
   // Keep rejection handled if a failed assertion cancels the queued owner.
   older.catch(() => {});
   const moduleUrl = new URL("./resource-admission.mjs", import.meta.url).href;
+  // Match both simulated memory bounds in fixture(), including in child processes.
   const script = `import {acquireResources} from ${JSON.stringify(moduleUrl)};
     try {
       const lease = await acquireResources(
         {workers:1,browsers:0,memoryGiB:0.75},
-        {directory:process.argv[1],env:${JSON.stringify(options.env)},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3});
+        {directory:process.argv[1],env:${JSON.stringify(options.env)},pollMs:5,timeoutMs:1000,freeMemory:()=>16*1024**3,memoryLimit:()=>16*1024**3});
       await lease.release();
       process.stdout.write('admitted');
     } catch (error) {

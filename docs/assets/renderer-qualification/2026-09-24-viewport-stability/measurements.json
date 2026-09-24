@@ -1,0 +1,1588 @@
+{
+  "date": "2026-09-24",
+  "protocol": "Each revision uses the same four-point-light room, two 512-pixel local shadow maps, 30 fps editor cap, 720x464 drawing buffer and 1280x720 CSS viewport. Measure 30 seconds idle, then 30 seconds of real Details X commits cycling -2,-1,0,1,2 with a 500 ms pause after each. Edits continue for the whole window; faster hosts complete more inputs. Tracing/video off. Correctness pixel reads run separately.",
+  "qualification": "Single local runs on Windows Chromium, not iPad Safari/PWA or thermal qualification. Engine end-frame intervals are a presentation proxy, not display timestamps. The original counter includes draw attempts that the fixed version can hold. CPU/copy values are synchronous elapsed times that can include driver waits. GPU readings are shared Engine diagnostics and are not used for a GPU performance claim. Resource churn is sampled every 250 ms and is a lower bound.",
+  "reproduction": {
+    "script": "pnpm --silent agent:wait local --script test:e2e -- e2e/rendering-baseline.spec.ts -g \"scene viewport light-edit performance measurement\"",
+    "software": "--project=desktop-chrome",
+    "native": "--config playwright.perf.config.ts --project=perf-gpu",
+    "baseline": "225d55b8 production source plus the same measurement test and local performance configuration; isolated temporary worktree."
+  },
+  "software": {
+    "before": {
+      "revision": "225d55b82f2cb02ad4e4d05fed7b717a1ccbe642",
+      "harnessRevision": "742b6cd28d54e42ad4fb953d8770e244425ac083",
+      "browserVersion": "151.0.7922.34",
+      "project": "desktop-chrome",
+      "viewportCss": {
+        "width": 1280,
+        "height": 720
+      },
+      "fixture": {
+        "lights": 4,
+        "shadows": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        }
+      },
+      "idle": {
+        "requestedMs": 30000,
+        "elapsedMs": 30112.775,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 429,
+          "medianMs": 68.94,
+          "p95Ms": 81.65,
+          "p99Ms": 85.855,
+          "longestMs": 94.27
+        },
+        "viewportRenderCpu": {
+          "samples": 430,
+          "medianMs": 1.805,
+          "p95Ms": 2.705,
+          "p99Ms": 3.37,
+          "longestMs": 27.035
+        },
+        "preparationCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "copyCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 69.45,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 2.665,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 30110.9,
+            "intervalMs": 65.015,
+            "frameDelta": 1,
+            "cpuMs": 1.485,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "unsupported"
+          ],
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 109,
+          "peakEstimatedTextureBytes": 0,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 37748736,
+          "peakSharedEngineTextures": 10,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30112.775,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        }
+      },
+      "editing": {
+        "requestedMs": 30000,
+        "elapsedMs": 30072.42,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 409,
+          "medianMs": 71.135,
+          "p95Ms": 85.09,
+          "p99Ms": 130.37,
+          "longestMs": 148.07
+        },
+        "viewportRenderCpu": {
+          "samples": 410,
+          "medianMs": 1.83,
+          "p95Ms": 3.24,
+          "p99Ms": 5.33,
+          "longestMs": 8.96
+        },
+        "preparationCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "copyCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 77.61,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 1.79,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 30070.745,
+            "intervalMs": 70.47,
+            "frameDelta": 1,
+            "cpuMs": 1.795,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "unsupported"
+          ],
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 106,
+          "peakEstimatedTextureBytes": 0,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 37748736,
+          "peakSharedEngineTextures": 10,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30072.42,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        },
+        "inputMs": {
+          "samples": 12,
+          "medianMs": 1953,
+          "p95Ms": 4247,
+          "p99Ms": 4247,
+          "longestMs": 4247
+        }
+      },
+      "capture": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+        "backend": "webgl2",
+        "engineCount": 1,
+        "webGLVersion": 2,
+        "glInfo": {
+          "vendor": "Google Inc. (Google)",
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "gpuInfo": {
+          "vendor": "Google Inc. (Google)",
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "render": {
+          "cpuMs": 1.84,
+          "pipeline": {
+            "requested": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "effective": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "limits": []
+          },
+          "clusteredLights": 0,
+          "readbackMs": null,
+          "shadowDrawCalls": 0,
+          "shadowTriangles": 0,
+          "gpuMs": null,
+          "gpuStatus": "unsupported",
+          "pressure": {
+            "presentationMs": null,
+            "cpuMs": 1.84,
+            "gpuMs": null
+          },
+          "gpuAttribution": "unavailable",
+          "width": 720,
+          "height": 464,
+          "scalingLevel": 1,
+          "samples": 1,
+          "shadowPasses": 12,
+          "shadowMapBytes": 37748736,
+          "shadowLights": [],
+          "qualityLimits": [
+            "local light capacity",
+            "point shadows: Poisson filter fallback"
+          ],
+          "adapter": {
+            "api": "webgl2",
+            "vendor": "Google Inc. (Google)",
+            "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "drawCalls": 25,
+          "resources": {
+            "meshes": 22,
+            "materials": 15,
+            "textures": 4,
+            "cachedTextures": 10
+          },
+          "gpuReservations": {
+            "limit": 536870912,
+            "shadowBytes": 37748736,
+            "categoryBytes": {
+              "cluster": 0,
+              "sceneColor": 0,
+              "geometry": 0,
+              "depth": 0,
+              "postprocess": 0,
+              "areaLight": 0
+            },
+            "sharedBytes": 0,
+            "resourceBytes": 0,
+            "pendingBytes": 0,
+            "reservedBytes": 37748736
+          }
+        },
+        "frameCount": 1083,
+        "viewportFrameCap": 30,
+        "drawCalls": 25,
+        "liveObjects": {
+          "meshes": 22,
+          "textures": 10
+        },
+        "engineScenes": 1,
+        "estimatedTextureBytes": 0,
+        "estimatedGeometryBytes": 0,
+        "ktx2Uploads": [],
+        "sceneOverrides": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        },
+        "capabilities": {
+          "maxTextureSize": 8192,
+          "maxCubemapTextureSize": 16384,
+          "maxTexturesImageUnits": 32,
+          "textureFloatRender": true,
+          "textureHalfFloatRender": true,
+          "timerQuery": false
+        }
+      }
+    },
+    "after": {
+      "revision": "6061fb2bfe6bcdbc50772ae7364710afb4a1bfb2",
+      "browserVersion": "151.0.7922.34",
+      "project": "desktop-chrome",
+      "viewportCss": {
+        "width": 1280,
+        "height": 720
+      },
+      "fixture": {
+        "lights": 4,
+        "shadows": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        }
+      },
+      "idle": {
+        "requestedMs": 30000,
+        "elapsedMs": 30086.525,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 439,
+          "medianMs": 67.27,
+          "p95Ms": 77.87,
+          "p99Ms": 82.24,
+          "longestMs": 100.205
+        },
+        "viewportRenderCpu": {
+          "samples": 440,
+          "medianMs": 1.965,
+          "p95Ms": 2.96,
+          "p99Ms": 3.66,
+          "longestMs": 27.29
+        },
+        "preparationCpu": {
+          "samples": 440,
+          "medianMs": 0.015,
+          "p95Ms": 0.02,
+          "p99Ms": 0.05,
+          "longestMs": 0.08
+        },
+        "copyCpu": {
+          "samples": 440,
+          "medianMs": 63.115,
+          "p95Ms": 71.905,
+          "p99Ms": 77.575,
+          "longestMs": 85.605
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 67.475,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 3.055,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "preparationMs": 0.01,
+            "copyMs": 63.61,
+            "held": 2,
+            "graphBuilds": 2,
+            "shadowAdmissions": 36,
+            "shadowAdmissionMs": 7.01,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 30084.045,
+            "intervalMs": 68.48,
+            "frameDelta": 1,
+            "cpuMs": 1.76,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "preparationMs": 0.01,
+            "copyMs": 64.435,
+            "held": 2,
+            "graphBuilds": 2,
+            "shadowAdmissions": 1353,
+            "shadowAdmissionMs": 225.505,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "unsupported"
+          ],
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 112,
+          "peakEstimatedTextureBytes": 0,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 37748736,
+          "peakSharedEngineTextures": 10,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30086.525,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        }
+      },
+      "editing": {
+        "requestedMs": 30000,
+        "elapsedMs": 30111.54,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 397,
+          "medianMs": 70.22,
+          "p95Ms": 133.21,
+          "p99Ms": 156.735,
+          "longestMs": 248.52
+        },
+        "viewportRenderCpu": {
+          "samples": 398,
+          "medianMs": 1.67,
+          "p95Ms": 3.435,
+          "p99Ms": 5.535,
+          "longestMs": 176
+        },
+        "preparationCpu": {
+          "samples": 398,
+          "medianMs": 0.01,
+          "p95Ms": 0.02,
+          "p99Ms": 0.035,
+          "longestMs": 0.115
+        },
+        "copyCpu": {
+          "samples": 398,
+          "medianMs": 65.785,
+          "p95Ms": 79.43,
+          "p99Ms": 83.245,
+          "longestMs": 96.255
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 65.685,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 1.405,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "preparationMs": 0.015,
+            "copyMs": 62.21,
+            "held": 2,
+            "graphBuilds": 2,
+            "shadowAdmissions": 1371,
+            "shadowAdmissionMs": 227.56,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 30109.98,
+            "intervalMs": 66.075,
+            "frameDelta": 1,
+            "cpuMs": 1.68,
+            "gpuMs": null,
+            "gpuStatus": "unsupported",
+            "preparationMs": 0.01,
+            "copyMs": 62.85,
+            "held": 44,
+            "graphBuilds": 2,
+            "shadowAdmissions": 2562,
+            "shadowAdmissionMs": 548.445,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "unsupported"
+          ],
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 105,
+          "peakEstimatedTextureBytes": 0,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 37748736,
+          "peakSharedEngineTextures": 10,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30111.54,
+            "estimatedTextureBytes": 0,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 10,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        },
+        "inputMs": {
+          "samples": 21,
+          "medianMs": 799,
+          "p95Ms": 1401,
+          "p99Ms": 1637,
+          "longestMs": 1637
+        }
+      },
+      "capture": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+        "backend": "webgl2",
+        "engineCount": 1,
+        "webGLVersion": 2,
+        "glInfo": {
+          "vendor": "Google Inc. (Google)",
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "gpuInfo": {
+          "vendor": "Google Inc. (Google)",
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "render": {
+          "cpuMs": 1.77,
+          "pipeline": {
+            "requested": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "effective": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "limits": []
+          },
+          "clusteredLights": 0,
+          "readbackMs": null,
+          "shadowDrawCalls": 0,
+          "shadowTriangles": 0,
+          "gpuMs": null,
+          "gpuStatus": "unsupported",
+          "pressure": {
+            "presentationMs": null,
+            "cpuMs": 1.77,
+            "gpuMs": null
+          },
+          "gpuAttribution": "unavailable",
+          "width": 720,
+          "height": 464,
+          "scalingLevel": 1,
+          "samples": 1,
+          "shadowPasses": 12,
+          "shadowMapBytes": 37748736,
+          "shadowLights": [],
+          "qualityLimits": [
+            "local light capacity",
+            "point shadows: Poisson filter fallback"
+          ],
+          "adapter": {
+            "api": "webgl2",
+            "vendor": "Google Inc. (Google)",
+            "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "drawCalls": 25,
+          "resources": {
+            "meshes": 22,
+            "materials": 15,
+            "textures": 4,
+            "cachedTextures": 10
+          },
+          "gpuReservations": {
+            "limit": 536870912,
+            "shadowBytes": 37748736,
+            "categoryBytes": {
+              "cluster": 0,
+              "sceneColor": 0,
+              "geometry": 0,
+              "depth": 0,
+              "postprocess": 0,
+              "areaLight": 0
+            },
+            "sharedBytes": 0,
+            "resourceBytes": 0,
+            "pendingBytes": 0,
+            "reservedBytes": 37748736
+          },
+          "presentation": {
+            "attempted": 1033,
+            "drawn": 989,
+            "copied": 989,
+            "held": 44,
+            "preparationMs": 0.01,
+            "copyMs": 79.415,
+            "contextLosses": 0,
+            "contextRestorations": 0
+          },
+          "rendererWork": {
+            "graphBuilds": 2,
+            "shadowAdmissions": 2586,
+            "shadowAdmissionMs": 551.28,
+            "strictReadinessChecks": 92
+          }
+        },
+        "frameCount": 989,
+        "viewportFrameCap": 30,
+        "drawCalls": 25,
+        "liveObjects": {
+          "meshes": 22,
+          "textures": 10
+        },
+        "engineScenes": 1,
+        "estimatedTextureBytes": 0,
+        "estimatedGeometryBytes": 0,
+        "ktx2Uploads": [],
+        "sceneOverrides": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        },
+        "capabilities": {
+          "maxTextureSize": 8192,
+          "maxCubemapTextureSize": 16384,
+          "maxTexturesImageUnits": 32,
+          "textureFloatRender": true,
+          "textureHalfFloatRender": true,
+          "timerQuery": false
+        }
+      }
+    }
+  },
+  "native": {
+    "before": {
+      "revision": "225d55b82f2cb02ad4e4d05fed7b717a1ccbe642",
+      "harnessRevision": "164f6af06d7f39638d069e54add1dfb80c347135",
+      "browserVersion": "151.0.7922.34",
+      "project": "perf-gpu",
+      "viewportCss": {
+        "width": 1280,
+        "height": 720
+      },
+      "fixture": {
+        "lights": 4,
+        "shadows": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        }
+      },
+      "idle": {
+        "requestedMs": 30000,
+        "elapsedMs": 30005.11,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 899,
+          "medianMs": 33.44,
+          "p95Ms": 34.12,
+          "p99Ms": 34.915,
+          "longestMs": 41.565
+        },
+        "viewportRenderCpu": {
+          "samples": 900,
+          "medianMs": 1.435,
+          "p95Ms": 2.175,
+          "p99Ms": 2.67,
+          "longestMs": 3.245
+        },
+        "preparationCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "copyCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 8.515,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 2.96,
+            "gpuMs": 0,
+            "gpuStatus": "available",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 29984.175,
+            "intervalMs": 33.455,
+            "frameDelta": 1,
+            "cpuMs": 1.11,
+            "gpuMs": 0.734,
+            "gpuStatus": "available",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "available"
+          ],
+          "samples": 900,
+          "medianMs": 0.747,
+          "p95Ms": 6.957,
+          "p99Ms": 7.653,
+          "longestMs": 8.571
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 114,
+          "peakEstimatedTextureBytes": 33554400,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 71303136,
+          "peakSharedEngineTextures": 11,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30005.11,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        }
+      },
+      "editing": {
+        "requestedMs": 30000,
+        "elapsedMs": 30000.13,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 880,
+          "medianMs": 33.41,
+          "p95Ms": 44.22,
+          "p99Ms": 63.365,
+          "longestMs": 88.615
+        },
+        "viewportRenderCpu": {
+          "samples": 881,
+          "medianMs": 1.52,
+          "p95Ms": 4.085,
+          "p99Ms": 5.42,
+          "longestMs": 8.67
+        },
+        "preparationCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "copyCpu": {
+          "samples": 0,
+          "medianMs": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "longestMs": null
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 63.565,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 1.91,
+            "gpuMs": 0.755,
+            "gpuStatus": "available",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 29973.805,
+            "intervalMs": 32.69,
+            "frameDelta": 1,
+            "cpuMs": 1.095,
+            "gpuMs": 0.649,
+            "gpuStatus": "available",
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "available"
+          ],
+          "samples": 881,
+          "medianMs": 0.707,
+          "p95Ms": 7.037,
+          "p99Ms": 12.183,
+          "longestMs": 22.161
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 113,
+          "peakEstimatedTextureBytes": 33554400,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 71303136,
+          "peakSharedEngineTextures": 11,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30000.13,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        },
+        "inputMs": {
+          "samples": 53,
+          "medianMs": 58,
+          "p95Ms": 120,
+          "p99Ms": 135,
+          "longestMs": 135
+        }
+      },
+      "capture": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+        "backend": "webgl2",
+        "engineCount": 1,
+        "webGLVersion": 2,
+        "glInfo": {
+          "vendor": "Google Inc. (NVIDIA)",
+          "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "gpuInfo": {
+          "vendor": "Google Inc. (NVIDIA)",
+          "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "render": {
+          "cpuMs": 1.395,
+          "pipeline": {
+            "requested": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "effective": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "limits": []
+          },
+          "clusteredLights": 0,
+          "readbackMs": null,
+          "shadowDrawCalls": 0,
+          "shadowTriangles": 0,
+          "gpuMs": 0,
+          "gpuStatus": "available",
+          "pressure": {
+            "presentationMs": null,
+            "cpuMs": 1.395,
+            "gpuMs": null
+          },
+          "gpuAttribution": "view",
+          "width": 720,
+          "height": 464,
+          "scalingLevel": 1,
+          "samples": 1,
+          "shadowPasses": 12,
+          "shadowMapBytes": 37748736,
+          "shadowLights": [],
+          "qualityLimits": [
+            "local light capacity",
+            "point shadows: Poisson filter fallback"
+          ],
+          "adapter": {
+            "api": "webgl2",
+            "vendor": "Google Inc. (NVIDIA)",
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "drawCalls": 25,
+          "resources": {
+            "meshes": 22,
+            "materials": 15,
+            "textures": 4,
+            "cachedTextures": 11
+          },
+          "gpuReservations": {
+            "limit": 536870912,
+            "shadowBytes": 37748736,
+            "categoryBytes": {
+              "cluster": 0,
+              "sceneColor": 0,
+              "geometry": 0,
+              "depth": 0,
+              "postprocess": 0,
+              "areaLight": 0
+            },
+            "sharedBytes": 0,
+            "resourceBytes": 0,
+            "pendingBytes": 0,
+            "reservedBytes": 37748736
+          }
+        },
+        "frameCount": 1841,
+        "viewportFrameCap": 30,
+        "drawCalls": 25,
+        "liveObjects": {
+          "meshes": 22,
+          "textures": 11
+        },
+        "engineScenes": 1,
+        "estimatedTextureBytes": 33554400,
+        "estimatedGeometryBytes": 0,
+        "ktx2Uploads": [],
+        "sceneOverrides": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        },
+        "capabilities": {
+          "maxTextureSize": 16384,
+          "maxCubemapTextureSize": 16384,
+          "maxTexturesImageUnits": 16,
+          "textureFloatRender": true,
+          "textureHalfFloatRender": true,
+          "timerQuery": true
+        }
+      }
+    },
+    "after": {
+      "revision": "2c0866f6fd101d447c81dade8d77147a0c0003aa",
+      "browserVersion": "151.0.7922.34",
+      "project": "perf-gpu",
+      "viewportCss": {
+        "width": 1280,
+        "height": 720
+      },
+      "fixture": {
+        "lights": 4,
+        "shadows": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        }
+      },
+      "idle": {
+        "requestedMs": 30000,
+        "elapsedMs": 30001.435,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 899,
+          "medianMs": 33.445,
+          "p95Ms": 35.27,
+          "p99Ms": 38.045,
+          "longestMs": 52.31
+        },
+        "viewportRenderCpu": {
+          "samples": 900,
+          "medianMs": 1.615,
+          "p95Ms": 3.14,
+          "p99Ms": 5.13,
+          "longestMs": 6.42
+        },
+        "preparationCpu": {
+          "samples": 900,
+          "medianMs": 0.01,
+          "p95Ms": 0.02,
+          "p99Ms": 0.03,
+          "longestMs": 0.17
+        },
+        "copyCpu": {
+          "samples": 900,
+          "medianMs": 0.075,
+          "p95Ms": 0.165,
+          "p99Ms": 0.31,
+          "longestMs": 0.57
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 3.545,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 2.7,
+            "gpuMs": 0,
+            "gpuStatus": "available",
+            "preparationMs": 0.005,
+            "copyMs": 0.08,
+            "held": 3,
+            "graphBuilds": 2,
+            "shadowAdmissions": 39,
+            "shadowAdmissionMs": 7,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 29979.915,
+            "intervalMs": 33.485,
+            "frameDelta": 1,
+            "cpuMs": 1.53,
+            "gpuMs": 0.781,
+            "gpuStatus": "available",
+            "preparationMs": 0.01,
+            "copyMs": 0.085,
+            "held": 3,
+            "graphBuilds": 2,
+            "shadowAdmissions": 2736,
+            "shadowAdmissionMs": 358.33,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "available"
+          ],
+          "samples": 900,
+          "medianMs": 0.754,
+          "p95Ms": 7.555,
+          "p99Ms": 15.944,
+          "longestMs": 19.696
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 114,
+          "peakEstimatedTextureBytes": 33554400,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 71303136,
+          "peakSharedEngineTextures": 11,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30001.435,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        }
+      },
+      "editing": {
+        "requestedMs": 30000,
+        "elapsedMs": 30001.49,
+        "cancelled": null,
+        "droppedSamples": 0,
+        "viewportFrameCaps": [
+          30
+        ],
+        "hiddenFrameSamples": 0,
+        "coalescedFrameSamples": 0,
+        "presentedIntervals": {
+          "method": "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
+          "samples": 849,
+          "medianMs": 33.435,
+          "p95Ms": 52.625,
+          "p99Ms": 85.355,
+          "longestMs": 105.495
+        },
+        "viewportRenderCpu": {
+          "samples": 850,
+          "medianMs": 1.34,
+          "p95Ms": 3.625,
+          "p99Ms": 4.725,
+          "longestMs": 6.535
+        },
+        "preparationCpu": {
+          "samples": 850,
+          "medianMs": 0.01,
+          "p95Ms": 0.02,
+          "p99Ms": 0.03,
+          "longestMs": 0.115
+        },
+        "copyCpu": {
+          "samples": 850,
+          "medianMs": 0.065,
+          "p95Ms": 0.145,
+          "p99Ms": 0.18,
+          "longestMs": 0.395
+        },
+        "renderingWork": {
+          "first": {
+            "atMs": 3.8,
+            "intervalMs": null,
+            "frameDelta": 1,
+            "cpuMs": 1.615,
+            "gpuMs": 0.777,
+            "gpuStatus": "available",
+            "preparationMs": 0.01,
+            "copyMs": 0.09,
+            "held": 3,
+            "graphBuilds": 2,
+            "shadowAdmissions": 2751,
+            "shadowAdmissionMs": 360.255,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          },
+          "last": {
+            "atMs": 29998.185,
+            "intervalMs": 34.185,
+            "frameDelta": 1,
+            "cpuMs": 1.87,
+            "gpuMs": 0,
+            "gpuStatus": "available",
+            "preparationMs": 0.015,
+            "copyMs": 0.09,
+            "held": 129,
+            "graphBuilds": 2,
+            "shadowAdmissions": 5298,
+            "shadowAdmissionMs": 637.785,
+            "viewportFrameCap": 30,
+            "documentVisible": true
+          }
+        },
+        "sharedEngineGpu": {
+          "method": "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
+          "statuses": [
+            "available"
+          ],
+          "samples": 850,
+          "medianMs": 0.726,
+          "p95Ms": 6.841,
+          "p99Ms": 12.987,
+          "longestMs": 16.503
+        },
+        "resources": {
+          "method": "Estimated cache textures plus viewport geometry/shadows; incomplete resource accounting, not measured GPU residency. Sampled every 250 ms plus boundaries; churn is an observed lower bound and misses objects created/released between samples.",
+          "samples": 110,
+          "peakEstimatedTextureBytes": 33554400,
+          "peakEstimatedGeometryBytes": 0,
+          "peakEstimatedShadowBytes": 37748736,
+          "peakEstimatedTrackedBytes": 71303136,
+          "peakSharedEngineTextures": 11,
+          "peakSharedEngineRenderTargets": 2,
+          "peakViewportMeshes": 22,
+          "first": {
+            "atMs": 0,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "last": {
+            "atMs": 30001.49,
+            "estimatedTextureBytes": 33554400,
+            "estimatedGeometryBytes": 0,
+            "estimatedShadowBytes": 37748736,
+            "sceneMeshes": 22,
+            "engineScenes": 1,
+            "engineTextures": 11,
+            "engineRenderTargets": 2,
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          },
+          "sharedEngineChurn": {
+            "texturesAdded": 0,
+            "texturesRemoved": 0,
+            "targetsAdded": 0,
+            "targetsRemoved": 0
+          }
+        },
+        "inputMs": {
+          "samples": 53,
+          "medianMs": 54,
+          "p95Ms": 119,
+          "p99Ms": 201,
+          "longestMs": 201
+        }
+      },
+      "capture": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+        "backend": "webgl2",
+        "engineCount": 1,
+        "webGLVersion": 2,
+        "glInfo": {
+          "vendor": "Google Inc. (NVIDIA)",
+          "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "gpuInfo": {
+          "vendor": "Google Inc. (NVIDIA)",
+          "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+        },
+        "render": {
+          "cpuMs": 1.375,
+          "pipeline": {
+            "requested": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "effective": {
+              "renderPath": "forward",
+              "gpuBackend": "webgl2"
+            },
+            "limits": []
+          },
+          "clusteredLights": 0,
+          "readbackMs": null,
+          "shadowDrawCalls": 0,
+          "shadowTriangles": 0,
+          "gpuMs": 0,
+          "gpuStatus": "available",
+          "pressure": {
+            "presentationMs": null,
+            "cpuMs": 1.375,
+            "gpuMs": null
+          },
+          "gpuAttribution": "view",
+          "width": 720,
+          "height": 464,
+          "scalingLevel": 1,
+          "samples": 1,
+          "shadowPasses": 12,
+          "shadowMapBytes": 37748736,
+          "shadowLights": [],
+          "qualityLimits": [
+            "local light capacity",
+            "point shadows: Poisson filter fallback"
+          ],
+          "adapter": {
+            "api": "webgl2",
+            "vendor": "Google Inc. (NVIDIA)",
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001F08) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+          },
+          "drawCalls": 25,
+          "resources": {
+            "meshes": 22,
+            "materials": 15,
+            "textures": 4,
+            "cachedTextures": 11
+          },
+          "gpuReservations": {
+            "limit": 536870912,
+            "shadowBytes": 37748736,
+            "categoryBytes": {
+              "cluster": 0,
+              "sceneColor": 0,
+              "geometry": 0,
+              "depth": 0,
+              "postprocess": 0,
+              "areaLight": 0
+            },
+            "sharedBytes": 0,
+            "resourceBytes": 0,
+            "pendingBytes": 0,
+            "reservedBytes": 37748736
+          },
+          "presentation": {
+            "attempted": 1939,
+            "drawn": 1810,
+            "copied": 1810,
+            "held": 129,
+            "preparationMs": 0.01,
+            "copyMs": 0.065,
+            "contextLosses": 0,
+            "contextRestorations": 0
+          },
+          "rendererWork": {
+            "graphBuilds": 2,
+            "shadowAdmissions": 5316,
+            "shadowAdmissionMs": 639.635,
+            "strictReadinessChecks": 250
+          }
+        },
+        "frameCount": 1810,
+        "viewportFrameCap": 30,
+        "drawCalls": 25,
+        "liveObjects": {
+          "meshes": 22,
+          "textures": 11
+        },
+        "engineScenes": 1,
+        "estimatedTextureBytes": 33554400,
+        "estimatedGeometryBytes": 0,
+        "ktx2Uploads": [],
+        "sceneOverrides": {
+          "enabled": true,
+          "localMapSize": 512,
+          "localLightMode": "manual",
+          "maxLocalLights": 2
+        },
+        "capabilities": {
+          "maxTextureSize": 16384,
+          "maxCubemapTextureSize": 16384,
+          "maxTexturesImageUnits": 16,
+          "textureFloatRender": true,
+          "textureHalfFloatRender": true,
+          "timerQuery": true
+        }
+      }
+    }
+  },
+  "correctness": {
+    "revision": "6061fb2bfe6bcdbc50772ae7364710afb4a1bfb2",
+    "method": "32x32 inspection after every observed viewport drawImage plus requestAnimationFrame sampling, during six light edits and resize; nonblack background and green receiver.",
+    "desktop": {
+      "copies": 88,
+      "samples": 196,
+      "black": 0,
+      "transparent": 0,
+      "missingReceiver": 0
+    },
+    "ipadChromiumTouchEmulation": {
+      "copies": 260,
+      "samples": 543,
+      "black": 0,
+      "transparent": 0,
+      "missingReceiver": 0
+    },
+    "shadowParity": "Cached local maps match fresh maps after caster/light motion, resize and reload."
+  }
+}

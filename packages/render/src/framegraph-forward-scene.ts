@@ -63,6 +63,13 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
  * prepare only builds/probes effects; it never presents or consumes a frame.
  */
 export class ForwardSceneFrameGraph {
+  private measureWork = false;
+  private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+
+  diagnostics() {
+    this.measureWork = true;
+    return { ...this.work, strictReadinessChecks: this.strictReadinessChecks };
+  }
   private graph: FrameGraph | undefined;
   private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
   private postProcessOwner: ScenePostProcessOwner | undefined;
@@ -96,6 +103,7 @@ export class ForwardSceneFrameGraph {
   private renderingCamera: Camera | undefined;
   private suppressCameraMark = 0;
   private readinessDirtyFlag = true;
+  private readinessRevision = 0;
   private membership: number[] | undefined;
   private strictChecks = 0;
   private readonly readinessDetach: (() => void)[] = [];
@@ -293,6 +301,7 @@ export class ForwardSceneFrameGraph {
 
   markReadinessDirty(): void {
     this.readinessDirtyFlag = true;
+    this.readinessRevision += 1;
   }
 
   /** Strict scene/graph probe invocations; steady-state frames add none. */
@@ -421,7 +430,7 @@ export class ForwardSceneFrameGraph {
   /** Build or resize the persistent tasks and await actual object/effect readiness. */
   prepare(camera: Camera, assertCurrent: () => void = () => {}): Promise<ForwardSceneGraphResult> {
     assertCurrent();
-    this.readinessDirtyFlag = true;
+    this.markReadinessDirty();
     if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
     if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
     this.refreshFailure(camera);
@@ -488,7 +497,7 @@ export class ForwardSceneFrameGraph {
   /** Render one scene frame, with an explicit, observable classic fallback. */
   render(camera: Camera, updateCameras = true): ForwardSceneGraphResult & { rendered?: boolean } {
     const unavailable = this.unavailable(camera);
-    if (unavailable) return { path: "classic", reason: unavailable };
+    if (unavailable) return { path: "classic", reason: unavailable, rendered: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
@@ -526,9 +535,8 @@ export class ForwardSceneFrameGraph {
             !this.sceneStrictlyReady(camera)));
       if (blocked)
         return { path: "classic", reason, rendered: false };
-      if (!this.disposed && !this.scene.isDisposed)
-        this.scene.render(updateCameras);
-      return { path: "classic", reason };
+      const rendered = this.renderNativeFrame(updateCameras);
+      return { path: "classic", reason, ...(rendered ? {} : { rendered: false }) };
     }
 
     const graph = this.graph!;
@@ -536,11 +544,12 @@ export class ForwardSceneFrameGraph {
     this.cull!.camera = camera;
     this.syncSceneInputs();
     if (this.readinessDirty) {
-      if (!this.isReady()) {
+      const readiness = this.probeReadiness();
+      if (!readiness.ready) {
         if (this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries || this.outlineView?.active)
           return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
-        this.scene.render(updateCameras);
-        return { path: "classic", reason: "FrameGraph effects are not ready." };
+        const rendered = this.renderNativeFrame(updateCameras, readiness);
+        return { path: "classic", reason: "FrameGraph effects are not ready.", ...(rendered ? {} : { rendered: false }) };
       }
       this.readinessDirtyFlag = false;
     }
@@ -561,8 +570,10 @@ export class ForwardSceneFrameGraph {
       // function would update every scene camera a second time if passed true.
       this.scene.customRenderFunction = (_update, ignoreAnimations) =>
         graphRender.call(this.scene, false, ignoreAnimations);
+      const revision = this.readinessRevision;
       this.scene.render(updateCameras);
-      return { path: "frameGraph" };
+      this.syncMembership();
+      return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
     } finally {
       this.scene.frameGraph = null;
       this.scene.activeCamera = camera;
@@ -574,6 +585,29 @@ export class ForwardSceneFrameGraph {
       for (const [light, enabled] of shadowFlags) light.shadowEnabled = enabled;
       this.renderingCamera = undefined;
     }
+  }
+
+  private renderNativeFrame(updateCameras: boolean, checked?: { nativeReady: boolean; revision: number }): boolean {
+    if (this.disposed || this.scene.isDisposed) return false;
+    // Admission may dirty shaders after the coordinator's initial probe. A
+    // graph still warming is allowed to use a complete native frame, but graph
+    // readiness and native readiness are different contracts.
+    if (this.readinessDirty) {
+      // Reuse this attempt's native probe, including an unready result. A later
+      // attempt or an intervening invalidation must probe again.
+      if (checked?.revision === this.readinessRevision) {
+        if (!checked.nativeReady) return false;
+      } else {
+        this.strictChecks += 1;
+        if (!isSceneFrameReady(this.scene)) return false;
+      }
+    }
+    const revision = this.readinessRevision;
+    this.scene.render(updateCameras);
+    this.syncMembership();
+    // A successful probe after drawing cannot prove a mesh was not skipped.
+    // Hold a candidate dirtied by render callbacks and retry on the next frame.
+    return revision === this.readinessRevision;
   }
 
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
@@ -669,6 +703,8 @@ export class ForwardSceneFrameGraph {
   }
 
   private syncShadowAdmission(camera: Camera): void {
+    const started = this.measureWork ? performance.now() : 0;
+    if (this.measureWork) this.work.shadowAdmissions += 1;
     const controller = findSceneShadowController(this.scene);
     withSceneReadinessState(this.scene, () => {
       this.setActiveCamera(camera);
@@ -681,6 +717,7 @@ export class ForwardSceneFrameGraph {
       // invalidate the variants we just declared ready for the first frame.
       syncSceneLighting(this.scene);
     });
+    if (this.measureWork) this.work.shadowAdmissionMs += performance.now() - started;
   }
 
   private async prepareGraph(camera: Camera, assertCurrent: () => void): Promise<ForwardSceneGraphResult> {
@@ -849,7 +886,7 @@ export class ForwardSceneFrameGraph {
           task.record = guarded;
           return () => { if (task.record === guarded) task.record = record; };
         });
-        try { await this.graph.buildAsync(false); }
+        try { this.work.graphBuilds += 1; await this.graph.buildAsync(false); }
         finally { for (const action of restore) action(); }
         assertCurrent();
         this.postProcessGraph?.reconcile();
@@ -920,6 +957,10 @@ export class ForwardSceneFrameGraph {
   }
 
   private isReady(): boolean {
+    return this.probeReadiness().ready;
+  }
+
+  private probeReadiness(): { ready: boolean; nativeReady: boolean; revision: number } {
     this.strictChecks += 1;
     findSceneShadowController(this.scene)?.setReceiverRenderPass(this.objects!.objectRenderer.renderPassId);
     const cameras = this.scene.activeCameras;
@@ -940,10 +981,11 @@ export class ForwardSceneFrameGraph {
         // own render-pass variants, without waiting on unrelated Engine effects.
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
+        const revision = this.readinessRevision;
         const cameraReady = isSceneFrameReady(this.scene);
         const graphReady = this.graph!.isReady();
         if (cameraReady && graphReady) findSceneShadowController(this.scene)?.receiversReady();
-        return cameraReady && graphReady;
+        return { ready: cameraReady && graphReady, nativeReady: cameraReady, revision };
       });
     } finally {
       this.objects!.objectList = objectList;

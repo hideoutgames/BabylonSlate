@@ -1,5 +1,37 @@
 # Renderer qualification
 
+## Editor viewport frame retention and transform edits
+
+The viewport now holds its previous visible image when an admitted draw becomes
+unready, including after private-buffer resize or sibling-view activity. Pose-only
+scene edits retain prepared rendering resources and skip unchanged asset
+collection. Diagnostics distinguish attempts, successful draws and actual copies.
+
+At `cf345961`, all 175 cases in `create-engine.play.test.ts`,
+`scene-render-coordinator.test.ts` and `framegraph-forward-scene.test.ts` pass.
+The three new late-light-admission/render-callback cases fail against the original
+`225d55b8` renderer. Earlier passing registered-view, viewport asset-refresh and
+RTT-copy checks remain applicable to their unchanged code.
+At `df306d7a`, all 18 cases in `framegraph-managed-shadows.test.ts` also pass:
+revocation during a draw retains the previous image, never rebinds a revoked
+map, and resumes presentation after preparation.
+
+At `6061fb2b`, four selected browser cases pass: cached/fresh shadow parity after
+caster/light movement, resize and reload; intermediate-frame retention on desktop
+and Chromium iPad touch emulation; and the light-edit measurement. The frame
+monitor observed 88 copies/196 samples on desktop and 260 copies/543 samples in
+touch emulation, with zero black, transparent or missing-receiver samples. These
+are separate from the timing runs. Native-GPU measurement also passes at
+`2c0866f6`; see the [matched performance comparison](perf-budget.md#viewport-light-edit-comparison)
+and [measurement record](../assets/renderer-qualification/2026-09-24-viewport-stability/measurements.json).
+
+Physical iPad qualification remains pending. No Safari/PWA flash-elimination or
+iPad performance claim follows from the local checks.
+Device acceptance must record model/iPadOS, PWA revision, effective backend, frame
+cap and quality, then exercise continuous light drag/release, Details scrubbing,
+idle selection, sibling views, resize/orientation and background/resume. Collect
+pixel correctness separately from timing and compare the same scene/settings.
+
 ## Basic 3D mannequin: 24 September 2026
 
 This continuation uses a freshly created **Basic 3D** project and its actual

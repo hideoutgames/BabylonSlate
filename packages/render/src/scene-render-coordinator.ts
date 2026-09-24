@@ -162,6 +162,8 @@ export class SceneRenderCoordinator {
     return this.graph.strictReadinessChecks;
   }
 
+  diagnostics() { return this.graph.diagnostics(); }
+
   /** Loading owners require the prepared selected path, including after resize. */
   isReady(): boolean {
     this.refreshOutline();

@@ -2,7 +2,10 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
+import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
+import { normalizeRenderingQuality } from "@babylonslate/core";
+import { updateSceneRenderingSettings } from "./render-settings";
+import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
@@ -363,6 +366,45 @@ it("caches strict readiness on unchanged frames and re-probes once after a scene
   MeshBuilder.CreateBox("added", {}, scene);
   expect(renderer.isReady()).toBe(true);
   expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
+it("holds native fallback when light admission invalidates its cached shader readiness", async () => {
+  const { scene, camera, renderer } = host();
+  const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } });
+  updateSceneRenderingSettings(scene, { quality });
+  // A depthless caller output takes the supported native fallback path.
+  camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
+  const first = new PointLight("first", new Vector3(0, 0, -3), scene);
+  const second = new PointLight("second", new Vector3(100, 0, -3), scene);
+  let secondReady = false;
+  scene.addIsReadyCheck({ isReady: () => !second.isEnabled() || secondReady });
+  await renderer.prepare();
+  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true });
+  const draws = vi.fn();
+  scene.onAfterRenderObservable.add(draws);
+  first.position.x = 100;
+  second.position.x = 0;
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(second.isEnabled()).toBe(true);
+  expect(draws).not.toHaveBeenCalled();
+  secondReady = true;
+  expect(renderer.render()).toMatchObject({ rendered: true });
+  expect(draws).toHaveBeenCalledOnce();
+  renderer.dispose();
+});
+
+it.each(["classic", "frameGraph"] as const)("holds a %s candidate invalidated during its render callbacks", async (path) => {
+  const { scene, camera, renderer } = host();
+  if (path === "classic") camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
+  await renderer.prepare();
+  let ready = true;
+  scene.addIsReadyCheck({ isReady: () => ready });
+  expect(renderer.render()).toMatchObject({ path, rendered: true });
+  scene.onBeforeRenderObservable.addOnce(() => { ready = false; markSceneReadinessDirty(scene); });
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  ready = true;
+  expect(renderer.render()).toMatchObject({ path, rendered: true });
   renderer.dispose();
 });
 

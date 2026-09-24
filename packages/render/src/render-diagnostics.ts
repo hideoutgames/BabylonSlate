@@ -18,6 +18,16 @@ const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
+  /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
+   * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
+  presentation?: {
+    attempted: number; drawn: number; copied: number; held: number;
+    preparationMs: number; copyMs: number;
+    contextLosses: number; contextRestorations: number;
+  };
+  rendererWork?: {
+    graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number; strictReadinessChecks: number;
+  };
   cpuMs: number;
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";

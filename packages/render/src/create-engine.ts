@@ -9,9 +9,10 @@ import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
+import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
-import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -835,8 +836,10 @@ function initializeEngine(
     owner?: SceneLayerLoadIdentity;
     submission: ReturnType<typeof submitPresentedFrame> | null;
     copied: boolean;
+    completionStarted: boolean;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
+  const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
   const cancelPresentation = (error: Error, key?: string) => {
     for (const [id, pending] of pendingPresentations) {
@@ -920,6 +923,14 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  let frameCopyReady = false;
+  let frameWasLoading = false;
+  const presentationStats = {
+    attempted: 0, drawn: 0, copied: 0, held: 0,
+    preparationMs: 0, copyMs: 0,
+    contextLosses: 0, contextRestorations: 0,
+  };
+  let captureFramePhases = false;
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
@@ -933,7 +944,7 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.rendered && !pending.submission && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
+  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.copied && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
   const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
@@ -956,6 +967,13 @@ function initializeEngine(
       }
       prepareSnapshot();
       return shouldRenderFrame(performance.now());
+    }, {
+      begin: () => { frameCopyReady = false; },
+      canCopy: () => frameCopyReady && !disposed && !contextLost,
+      copied: (milliseconds) => {
+        presentationStats.copyMs = milliseconds;
+        acknowledgeFrameCopy();
+      },
     }) : null;
   onRollback(() => releaseViewAdmission?.());
   if (options.editor) {
@@ -1174,6 +1192,10 @@ function initializeEngine(
   );
   const postProcessParameters = new PostProcessParameterState();
   let attachedStack: AttachedPostProcessStack | null = null;
+  let materialDocumentsKey = "";
+  let materialRevision = 0;
+  let appliedPostProcessKey: string | undefined;
+  let appliedPostProcessCamera: Camera | null = null;
   // Every retired native stack generation stays tracked until actual release,
   // not just the one current at teardown.
   const nativeRetirement = new PostProcessRetirement();
@@ -1201,13 +1223,19 @@ function initializeEngine(
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
+    const camera = scene.activeCamera;
+    const stack = postProcessParameters.effective(postProcessStack);
+    const resolutionScale = resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
+    const key = JSON.stringify([postProcessingEnabled, stack, resolutionScale, materialRevision]);
+    if (key === appliedPostProcessKey && camera === appliedPostProcessCamera) return;
     retireAttachedStack();
+    appliedPostProcessKey = key;
+    appliedPostProcessCamera = camera;
     lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled) {
       if (!worldRenderer) sceneEffectsOwner.useGraph();
       return;
     }
-    const camera = scene.activeCamera;
     if (!camera) {
       if (!worldRenderer) sceneEffectsOwner.useGraph();
       return;
@@ -1219,9 +1247,9 @@ function initializeEngine(
       scene,
       camera,
       library: materialLibrary,
-      stack: postProcessParameters.effective(postProcessStack),
+      stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
-      resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
+      resolutionScale,
       ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
@@ -1528,6 +1556,13 @@ function initializeEngine(
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => {
+      const key = JSON.stringify([
+        [...documents].sort(([a], [b]) => a.localeCompare(b)),
+        [...(functions ?? materialFunctions)].sort(([a], [b]) => a.localeCompare(b)),
+      ]);
+      if (key === materialDocumentsKey) return false;
+      materialDocumentsKey = key;
+      materialRevision += 1;
       materialDocuments.clear();
       for (const [guid, document] of documents) {
         materialDocuments.set(guid, document);
@@ -1539,6 +1574,7 @@ function initializeEngine(
           materialFunctions.set(guid, document);
         }
       }
+      return true;
   };
 
   const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
@@ -1552,6 +1588,7 @@ function initializeEngine(
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
+    appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
     load.signal.throwIfAborted();
@@ -1569,6 +1606,13 @@ function initializeEngine(
   ) => {
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      editorSync.apply(sceneData);
+      // Poses change bake validity even while rendering topology stays stable.
+      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
+      return;
+    }
+    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       editorSync.apply(sceneData);
@@ -1580,6 +1624,7 @@ function initializeEngine(
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
+    appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
@@ -1966,8 +2011,6 @@ function initializeEngine(
         registeredView.customResize = () => {
           const size = scaledLockedViewSize();
           if (!size) return;
-          if (canvas.width !== size.width) canvas.width = size.width;
-          if (canvas.height !== size.height) canvas.height = size.height;
           engine.setSize(size.width, size.height);
         };
       } else if (options.sharedEngine && !presentRtt) {
@@ -2012,10 +2055,13 @@ function initializeEngine(
   };
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
-  const renderDiagnostics = () => (readDiagnostics ??= createRenderDiagnostics(
-    scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
-    () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-  ))();
+  const renderDiagnostics = () => {
+    captureFramePhases = true;
+    return { ...(readDiagnostics ??= createRenderDiagnostics(
+      scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
+      () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
+    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics() };
+  };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
     const layer = owner ? layerLoads.get(owner.layerId) : undefined;
@@ -2049,6 +2095,15 @@ function initializeEngine(
     } else worldLoading = false;
     pending.resolve();
   };
+  function acknowledgeFrameCopy(owners = [...frameOwners]) {
+    presentationStats.copied += 1;
+    if (!frameWasLoading) framePresented = true;
+    for (const [key, pending] of owners) {
+      if (pendingPresentations.get(key) !== pending) continue;
+      pending.copied = true;
+      finishPresentation(key, pending);
+    }
+  }
   const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
     const sampled = interpolator.sample(interpAlpha);
@@ -2159,6 +2214,9 @@ function initializeEngine(
     // Babylon invokes all render callbacks for each registered view. A loading
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    frameCopyReady = false;
+    frameOwners.clear();
+    const preparationStart = captureFramePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
@@ -2169,11 +2227,15 @@ function initializeEngine(
     if (!shouldRenderFrame(frameStart)) {
       return;
     }
+    frameWasLoading = loadingFrame;
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
     // between frames, and feeding that gap to the scaling valve would read
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
+    presentationStats.attempted += 1;
+    if (captureFramePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    let coherentFrame = true;
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
@@ -2190,7 +2252,10 @@ function initializeEngine(
           fallback?.();
           return;
         }
-        if (pending.rendered || pending.submission) { draw(); return; }
+        if (pending.rendered || pending.submission) {
+          if (draw() && pending.rendered) frameOwners.set(key, pending);
+          return;
+        }
         pending.copied = false;
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
@@ -2199,37 +2264,62 @@ function initializeEngine(
         });
         pending.submission = submission;
         if (pending.rendered) {
+          frameOwners.set(key, pending);
           // A validated draw is progress beyond shader readiness. Observed
           // software-GL completion can outlast that earlier budget even after
           // the canvas copy. Give completion its own bounded budget, without
           // acknowledging before both this owner's fence and copy finish.
-          clearTimeout(pending.timer);
-          pending.timer = setTimeout(() => {
-            if (pendingPresentations.get(key) === pending) expirePresentation(key);
-          }, 15_000);
+          if (!pending.completionStarted) {
+            pending.completionStarted = true;
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(() => {
+              if (pendingPresentations.get(key) === pending) expirePresentation(key);
+            }, 15_000);
+          }
         }
         void submission.completed.then(() => {
           if (pending.submission !== submission) return;
           pending.submission = null;
           finishPresentation(key, pending);
         }, (error: unknown) => {
+          if (pending.submission !== submission) return;
           if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        if (worldRenderer) return worldRenderer.render().readyForPresentation;
+        if (worldRenderer) {
+          const result = worldRenderer.render();
+          coherentFrame = result.rendered;
+          return result.readyForPresentation;
+        }
         scene.render();
         return true;
+      }, () => {
+        // A newly bound output may invalidate admission between scheduling and
+        // drawing. Only explicit world loading may present ready layers over a
+        // clear; an active world must retain its last complete image.
+        if (worldLoading) engine.clear(scene.clearColor, true, true, true);
+        else coherentFrame = false;
       });
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
+      if (!coherentFrame) {
+        for (const pending of frameOwners.values()) {
+          if (pending.copied) continue;
+          // This candidate never reached the canvas. Its fence cannot certify
+          // a later retry, which needs its own validation scope and submission.
+          pending.rendered = false;
+          const submission = pending.submission;
+          pending.submission = null;
+          submission?.cancel();
+        }
+        presentationStats.held += 1;
+        return;
+      }
       if (rttPresent) {
-        const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
+        const owners = [...frameOwners];
         void rttPresent.blit().then(() => {
-          for (const [key, pending] of owners) {
-            pending.copied = true;
-            finishPresentation(key, pending);
-          }
+          acknowledgeFrameCopy(owners);
         }, (error: unknown) => {
           if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
           for (const [key, pending] of owners) {
@@ -2243,14 +2333,17 @@ function initializeEngine(
       return;
     }
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
+    frameCopyReady = true;
+    presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
-    if (!loadingFrame) framePresented = true;
+    if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
-      if (!worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability?.presented();
+      if (runtimeScalability && !worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability.presented();
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
@@ -2279,12 +2372,7 @@ function initializeEngine(
     }
     previousFramePresented = framePresented;
     framePresented = false;
-    if (rttPresent) return;
-    for (const [key, pending] of pendingPresentations) {
-      if (!pending.rendered) continue;
-      pending.copied = true;
-      finishPresentation(key, pending);
-    }
+    frameCopyReady = false;
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));
@@ -2303,6 +2391,7 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    presentationStats.contextLosses += 1;
     loadGeneration += 1;
     cancelPresentation(new Error("Rendering context was lost during scene loading."));
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
@@ -2311,6 +2400,7 @@ function initializeEngine(
   const contextRestoredObserver = engine.onContextRestoredObservable.add(() => {
     if (disposed) return;
     contextLost = false;
+    presentationStats.contextRestorations += 1;
     engineCommandBus.dispatch({
       type: "log",
       message: "WebGL context restored",
@@ -2988,7 +3078,7 @@ function initializeEngine(
       documents: ReadonlyMap<string, MaterialDocument>,
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
-      installMaterialDocuments(documents, functions);
+      if (!installMaterialDocuments(documents, functions)) return;
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
@@ -3049,7 +3139,7 @@ function initializeEngine(
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
       const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
