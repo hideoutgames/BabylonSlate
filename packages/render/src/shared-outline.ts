@@ -305,6 +305,7 @@ export class SharedOutlineView {
   tableWidth = 1;
   tableHeight = 1;
   maximumWidth = 0;
+  distanceFadeEnabled = false;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
   get active(): boolean { return !this.isDisposed && [...this.contributions.values()].some((entry) => entry.targets.length > 0); }
   /** Hosts supply authored world occluders, excluding editor helpers and guides. */
@@ -427,6 +428,13 @@ export class SharedOutlineView {
       }
     }
     this.maximumWidth = maximumWidth;
+    this.distanceFadeEnabled = false;
+    const strict = arrays.get("strict")!;
+    for (let offset = 0; offset < metadataOffset; offset += 4) {
+      if (strict[offset + 3]! > 0 && strict[metadataOffset + offset]! > 0) {
+        this.distanceFadeEnabled = true; break;
+      }
+    }
     this.activeGroups.clear();
     for (const group of SHARED_OUTLINE_GROUPS) {
       const data = arrays.get(group)!;
@@ -459,7 +467,7 @@ export class SharedOutlineView {
     record.texture.dispose();
     this.owner.trackRelease(releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), record.lease));
   }
-  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.preparedRevision = -1; }
+  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.distanceFadeEnabled = false; this.preparedRevision = -1; }
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;

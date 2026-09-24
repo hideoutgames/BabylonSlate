@@ -218,16 +218,18 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
           ${group === "strict" ? `float candidateDepth = texture2DLodEXT(strictDepth, uv, 0.0).r;
           float destinationDepth = texture2DLodEXT(strictDepth, vUV, 0.0).r;
           visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;
-          vec4 fade = texture2DLodEXT(strictStyle, idUV(id) + vec2(0.0, 0.5), 0.0);
-          if (fade.x > 0.5) {
-            vec4 position = inverseProjection * vec4(uv * 2.0 - 1.0, candidateDepth * depthRange.x + depthRange.y, 1.0);
-            float cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
-            width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
-            // Preserve the authored footprint at full width. As it shrinks, the
-            // outer samples lose coverage first; the first pixel survives all
-            // the way to width zero, including authored subpixel widths.
-            float edge = max(0.0, distance - 1.0);
-            coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+          if (distanceFadeEnabled > 0.5) {
+            vec4 fade = texture2DLodEXT(strictStyle, idUV(id) + vec2(0.0, 0.5), 0.0);
+            if (fade.x > 0.5) {
+              vec4 position = inverseProjection * vec4(uv * 2.0 - 1.0, candidateDepth * depthRange.x + depthRange.y, 1.0);
+              float cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
+              width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
+              // Preserve the authored footprint at full width. As it shrinks, the
+              // outer samples lose coverage first; the first pixel survives all
+              // the way to width zero, including authored subpixel widths.
+              float edge = max(0.0, distance - 1.0);
+              coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+            }
           }` : ""}
           float score = distance / max(width, 1e-4);
           if (visible && coverage > 0.0 && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
@@ -243,6 +245,7 @@ varying vec2 vUV;
 uniform vec2 screenSize;
 uniform vec2 tableSize;
 uniform float maximumWidth;
+uniform float distanceFadeEnabled;
 uniform float reverseDepth;
 uniform vec3 activeGroups;
 uniform mat4 inverseProjection;
@@ -274,13 +277,15 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
           ${group === "strict" ? `let candidateDepth = textureSampleLevel(strictDepth, strictDepthSampler, uv, 0.0).r;
           let destinationDepth = textureSampleLevel(strictDepth, strictDepthSampler, fragmentInputs.vUV, 0.0).r;
           visible = select(candidateDepth <= destinationDepth, candidateDepth >= destinationDepth, uniforms.reverseDepth > 0.5);
-          let fade = textureSampleLevel(strictStyle, strictStyleSampler, idUV(id) + vec2f(0.0, 0.5), 0.0);
-          if (fade.x > 0.5) {
-            let position = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, candidateDepth * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
-            let cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
-            width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
-            let edge = max(0.0, distance - 1.0);
-            coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+          if (uniforms.distanceFadeEnabled > 0.5) {
+            let fade = textureSampleLevel(strictStyle, strictStyleSampler, idUV(id) + vec2f(0.0, 0.5), 0.0);
+            if (fade.x > 0.5) {
+              let position = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, candidateDepth * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
+              let cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
+              width *= 1.0 - smoothstep(fade.y, fade.z, cameraDistance);
+              let edge = max(0.0, distance - 1.0);
+              coverage = clamp((width - edge) / max(clamp(style.a - edge, 0.0, 1.0), 1e-4), 0.0, 1.0);
+            }
           }` : ""}
           let score = distance / max(width, 1e-4);
           if (visible && coverage > 0.0 && distance <= style.a + 0.75 && (score < best || (score == best && id < chosen))) {
@@ -296,6 +301,7 @@ varying vUV: vec2f;
 uniform screenSize: vec2f;
 uniform tableSize: vec2f;
 uniform maximumWidth: f32;
+uniform distanceFadeEnabled: f32;
 uniform reverseDepth: f32;
 uniform activeGroups: vec3f;
 uniform inverseProjection: mat4x4f;

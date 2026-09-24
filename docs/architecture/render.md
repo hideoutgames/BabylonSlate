@@ -1450,6 +1450,8 @@ this removes visible strokes, not the fixed mask rendering cost.
 Composition samples the eight directions in one bounded loop. Its nearest,
 non-mipmapped mask, depth and style reads use explicit level zero on both backends,
 avoiding implicit derivatives and duplicated fade code on software GPU drivers.
+A live uniform bypasses fade metadata reads and distance calculations when no
+resolved strict style uses fading; toggling it does not rebuild shaders or passes.
 Material coverage sampling retains its normal mip selection.
 
 Model publication refreshes outline membership after the winning single-model

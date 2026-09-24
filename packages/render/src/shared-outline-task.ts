@@ -61,7 +61,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     this.compose = new OutlineCompose({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,
-      uniformNames: ["screenSize", "tableSize", "maximumWidth", "reverseDepth", "activeGroups", "inverseProjection", "depthRange"],
+      uniformNames: ["screenSize", "tableSize", "maximumWidth", "reverseDepth", "activeGroups", "inverseProjection", "depthRange", "distanceFadeEnabled"],
       samplerNames: ["strictDepth", ...SHARED_OUTLINE_GROUPS.flatMap((group) => [`${group}Mask`, `${group}Style`])],
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
     });
@@ -129,6 +129,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         effect.setFloat2("screenSize", this.width, this.height);
         effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
         effect.setFloat("maximumWidth", this.view.maximumWidth);
+        effect.setFloat("distanceFadeEnabled", this.view.distanceFadeEnabled ? 1 : 0);
         effect.setFloat("reverseDepth", graph.engine.useReverseDepthBuffer ? 1 : 0);
         this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
         effect.setMatrix("inverseProjection", this.inverseProjection);
