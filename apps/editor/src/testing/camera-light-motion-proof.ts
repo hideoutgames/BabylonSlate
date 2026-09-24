@@ -4,6 +4,7 @@ import {
   Scene, SpotLight, Vector3, WebGPUEngine,
 } from "@babylonjs/core";
 import { compileMaterialPlan, setSceneRenderSettings } from "@babylonslate/render";
+import { normalizeCelShadingSettings } from "@babylonslate/core";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 
@@ -38,7 +39,7 @@ export async function runCameraLightMotionProof(backend: "webgl2" | "webgpu") {
           native.albedoColor = new Color3(0.65, 0.65, 0.65);
           native.metallic = 0;
           native.roughness = 1;
-          setSceneRenderSettings(scene, { mode, cel: { specularEnabled: false, outlinesEnabled: false } });
+          setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({ specularEnabled: false, outlinesEnabled: false }) });
           const document = createDefaultMaterialDocument("stationary graph");
           const lowered = lowerMaterialDocument(document);
           if (!lowered.ok) throw new Error("Light-motion material did not lower");
