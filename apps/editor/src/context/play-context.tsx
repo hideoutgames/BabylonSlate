@@ -200,6 +200,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
+  const [playResumeRequested, setPlayResumeRequested] = useState(false);
   const [prepareState, setPrepareState] = useState<{
     phase: PlayPreparePhase;
     dirtyNames: string[];
@@ -248,10 +249,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewPreparationError, setPreviewPreparationError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
-  const previewCancelledRef = useRef(false);
+  const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
   playingRef.current = playing;
@@ -728,61 +730,79 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setStartupAlertOpen(true);
       return;
     }
-    previewCancelledRef.current = false;
+    setPreviewPreparationError(null);
+    const needsSave = dirtyDocuments.length > 0 || projectDirty;
+    if (needsSave && migrationPending.length > 0) {
+      setPlayAwaitingMigration(true);
+      return;
+    }
+    const requestId = ++previewRequestRef.current;
+    const isCurrentRequest = () => previewRequestRef.current === requestId;
+    const fail = (message: string) => {
+      const reason = message || "Preview Build could not prepare the game.";
+      setPreviewPreparationError(reason);
+      appendLog(`Preview Build failed: ${reason}`);
+    };
     previewClosingRef.current = false;
     preparingRef.current = true;
     setPreparing(true);
     setPreviewCanCancel(true);
     setPreviewPhase("Saving");
     try {
-      if (dirtyDocuments.length > 0 || projectDirty) {
+      if (needsSave) {
         const saved = await saveAll();
-        if (!saved) return;
+        if (!isCurrentRequest()) return;
+        if (!saved) {
+          setPlayAwaitingMigration(true);
+          return;
+        }
       }
-      if (previewCancelledRef.current) return;
+      if (!isCurrentRequest()) return;
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
-      if (previewCancelledRef.current) return;
+      if (!isCurrentRequest()) return;
       const packed = await exportGameArtifact({
         previewBuild: true,
         playerFiles,
         startupSceneGuid: effectiveStartup,
         transcoderAvailable: shouldPackKtx2ForPreviewBuild(),
         onPhase: (phase) => {
-          if (!previewCancelledRef.current) setPreviewPhase(phase);
+          if (isCurrentRequest()) setPreviewPhase(phase);
         },
       });
+      if (!isCurrentRequest()) return;
       if (isErr(packed)) {
         if (packed.error === MISSING_STARTUP_SCENE_MESSAGE) {
           setStartupAlertOpen(true);
         } else {
-          appendLog(`Preview Build failed: ${packed.error}`);
+          fail(packed.error);
         }
         return;
       }
-      if (previewCancelledRef.current) {
-        previewFilesRef.current = null;
-        return;
+      for (const warning of packed.value.warnings) {
+        appendLog(`Preview Build warning: ${warning}`);
       }
+      const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
       previewFilesRef.current = packed.value.files;
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
       setPlaying(true);
       setPreviewError(null);
-      const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
       previewOriginRef.current = previewTarget.origin;
       setPreviewSrc(previewTarget.src);
       setPreviewOpen(true);
     } catch (error) {
-      previewFilesRef.current = null;
-      appendLog(
-        `Preview Build failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      if (isCurrentRequest()) {
+        previewFilesRef.current = null;
+        fail(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      preparingRef.current = false;
-      setPreparing(false);
-      setPreviewPhase(null);
+      if (isCurrentRequest()) {
+        preparingRef.current = false;
+        setPreparing(false);
+        setPreviewPhase(null);
+      }
     }
   }, [
     appendLog,
@@ -790,6 +810,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     dirtyDocuments.length,
     projectDirty,
     exportGameArtifact,
+    migrationPending.length,
     openPlaySceneGuid,
     playFromScene,
     playing,
@@ -1284,11 +1305,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   const resumePlayAfterMigration = useCallback(async () => {
     setPlayAwaitingMigration(false);
-    await requestPlay(pendingPlayOptionsRef.current);
-  }, [requestPlay]);
+    setPlayResumeRequested(true);
+  }, []);
+
+  useEffect(() => {
+    if (!playResumeRequested || migrationPending.length > 0) return;
+    // The approval dialog holds a callback from before the save. Resume only
+    // after the cleared migrations and current project reach this render.
+    setPlayResumeRequested(false);
+    void requestPlay(pendingPlayOptionsRef.current);
+  }, [migrationPending.length, playResumeRequested, requestPlay]);
 
   const cancelPlayMigration = useCallback(() => {
     setPlayAwaitingMigration(false);
+    setPlayResumeRequested(false);
     pendingPlayOptionsRef.current = undefined;
   }, []);
 
@@ -1417,14 +1447,17 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
             onDismiss={() => setRenderingFailureDismissed(true)} />
         ) : null}
-        {previewPhase ? (
+        {previewPhase || previewPreparationError ? (
           <PreparingPreviewDialog
             open
             phase={previewPhase}
+            error={previewPreparationError}
             canCancel={previewCanCancel}
+            onRetry={() => { void requestPreviewBuild(); }}
             onCancel={() => {
-              previewCancelledRef.current = true;
+              previewRequestRef.current += 1;
               setPreviewPhase(null);
+              setPreviewPreparationError(null);
               preparingRef.current = false;
               setPreparing(false);
             }}

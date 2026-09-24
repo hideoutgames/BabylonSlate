@@ -1747,10 +1747,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectPluginOverrides,
         preset,
       );
-      if (pluginGraph.diagnostics.length > 0) {
+      const pluginErrors = pluginGraph.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+      if (pluginErrors.length > 0) {
         return {
           ok: false as const,
-          error: pluginGraph.diagnostics
+          error: pluginErrors
             .map((diagnostic) => diagnostic.message)
             .join("\n"),
         };

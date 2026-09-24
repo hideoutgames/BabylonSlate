@@ -240,7 +240,7 @@ export interface SourceControlProjectSettings {
 
 export interface PluginEnableOverride {
   enabled: boolean;
-  /** Exact compatibility context explicitly accepted with Try Enable Anyway. */
+  /** Legacy acknowledgement of version warnings; never required for enablement. */
   acceptedCompatibility?: string;
 }
 

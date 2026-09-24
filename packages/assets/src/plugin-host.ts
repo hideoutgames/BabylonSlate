@@ -23,6 +23,7 @@ export type PluginDiagnosticCode =
 
 export interface PluginDiagnostic {
   code: PluginDiagnosticCode;
+  severity: "warning" | "error";
   message: string;
   pluginGuid?: string;
   plugins?: string[];
@@ -47,7 +48,7 @@ export type PluginGraphInput = Pick<
   "pluginGuid" | "settings"
 >;
 
-/** A consent token is invalidated by any recorded or installed version change. */
+/** Legacy warning acknowledgement, invalidated by any recorded or installed version change. */
 export function pluginCompatibilityKey(
   plugin: PluginGraphInput,
   plugins: readonly PluginGraphInput[],
@@ -77,6 +78,7 @@ export function pluginCompatibilityDiagnostics(
   if (engineVersion !== plugin.settings.engineVersion) {
     diagnostics.push({
       code: "plugin.engine_unsatisfiable",
+      severity: "warning",
       pluginGuid: plugin.pluginGuid,
       recordedVersion: plugin.settings.engineVersion,
       foundVersion: engineVersion,
@@ -88,6 +90,7 @@ export function pluginCompatibilityDiagnostics(
     if (!found || found.settings.version === dependency.version) continue;
     diagnostics.push({
       code: "plugin.unsatisfiable",
+      severity: "warning",
       pluginGuid: plugin.pluginGuid,
       dependencyGuid: dependency.guid,
       recordedVersion: dependency.version,
@@ -261,7 +264,6 @@ export function resolvePluginGraph(
     const accepted = overrides[plugin.pluginGuid]?.acceptedCompatibility ===
       pluginCompatibilityKey(plugin, plugins, engineVersion);
     if (compatibility.length > 0 && !accepted) {
-      blocked.add(plugin.pluginGuid);
       diagnostics.push(...compatibility);
     }
     for (const dep of plugin.settings.pluginDependencies) {
@@ -270,6 +272,7 @@ export function resolvePluginGraph(
         blocked.add(plugin.pluginGuid);
         diagnostics.push({
           code: "plugin.missing",
+          severity: "error",
           pluginGuid: plugin.pluginGuid,
           dependencyGuid: dep.guid,
           recordedVersion: dep.version,
@@ -294,6 +297,7 @@ export function resolvePluginGraph(
       blocked.add(plugin.pluginGuid);
       diagnostics.push({
         code: "plugin.dependency_blocked",
+        severity: "error",
         pluginGuid: plugin.pluginGuid,
         dependencyGuid: dependency.guid,
         message: `Plugin ${plugin.pluginGuid} depends on blocked plugin ${dependency.guid}`,
@@ -339,6 +343,7 @@ export function resolvePluginGraph(
       .filter((id) => !orderIds.includes(id));
     diagnostics.push({
       code: "plugin.cycle",
+      severity: "error",
       plugins: cycle,
       message: `Plugin dependency cycle: ${cycle.join(" -> ")}`,
     });

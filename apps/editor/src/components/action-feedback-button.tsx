@@ -23,6 +23,7 @@ export function ActionFeedbackButton({
   onAction,
   feedback: controlledFeedback,
   iconOnly = false,
+  showSuccessIcon = true,
   disabled,
   className,
   children,
@@ -33,6 +34,7 @@ export function ActionFeedbackButton({
   onAction: () => ActionResult | Promise<ActionResult>;
   feedback?: ActionFeedback;
   iconOnly?: boolean;
+  showSuccessIcon?: boolean;
 }) {
   const [localFeedback, setLocalFeedback] = useState<ActionFeedback>(IDLE);
   const pending = useRef(false);
@@ -59,7 +61,7 @@ export function ActionFeedbackButton({
           : "");
   const FeedbackIcon = busy
     ? LoaderCircleIcon
-    : feedback.status === "success"
+    : feedback.status === "success" && showSuccessIcon
       ? CheckIcon
       : feedback.status === "error"
         ? CircleAlertIcon

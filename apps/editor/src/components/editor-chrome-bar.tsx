@@ -625,6 +625,7 @@ export function EditorChromeBar({
             key={`undo:${activeDocumentId}`}
             icon={Undo2Icon}
             iconOnly
+            showSuccessIcon={false}
             label="Undo"
             data-testid="undo-document"
             className="chrome-icon-button"
@@ -635,6 +636,7 @@ export function EditorChromeBar({
             key={`redo:${activeDocumentId}`}
             icon={Redo2Icon}
             iconOnly
+            showSuccessIcon={false}
             label="Redo"
             data-testid="redo-document"
             className="chrome-icon-button"
