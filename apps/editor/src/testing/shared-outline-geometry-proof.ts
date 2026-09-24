@@ -94,16 +94,21 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     let prepared = await coordinator.prepare();
     const deadline = performance.now() + 5_000;
     let coherentFrames = 0, heldCandidates = 0;
+    let result: ReturnType<SceneRenderCoordinator["render"]> | undefined;
+    const assertDeadline = () => {
+      if (performance.now() >= deadline)
+        throw new Error(`${name}: production frames did not settle ${JSON.stringify({ prepared, result, heldCandidates })}`);
+    };
     while (coherentFrames < 3) {
+      if (heldCandidates) assertDeadline();
       engine.beginFrame();
       let ready = false;
       try {
-        const result = coordinator.render();
+        result = coordinator.render();
         if (result.path !== "frameGraph" || prepared.path !== result.path)
           throw new Error(`${name}: production frame not ready ${JSON.stringify({ prepared, result })}`);
         ready = result.rendered && result.readyForPresentation;
-        if (!ready && performance.now() >= deadline)
-          throw new Error(`${name}: production frames did not settle ${JSON.stringify({ prepared, result, heldCandidates })}`);
+        if (!ready || heldCandidates) assertDeadline();
       } finally { engine.endFrame(); }
       if (ready) coherentFrames++;
       else {
@@ -111,7 +116,8 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
         // Retry rejected candidates like the viewport; only capture after three
         // consecutive coherent draws, preserving the native silhouette oracle.
         coherentFrames = 0; heldCandidates++;
-        prepared = await coordinator.prepare();
+        prepared = await coordinator.prepare(assertDeadline);
+        assertDeadline();
       }
       if (coherentFrames < 3) await waitFrame();
     }
