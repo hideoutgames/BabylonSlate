@@ -2,8 +2,6 @@ name: Inspect Apple toolchain
 
 on:
   workflow_dispatch:
-  push:
-    branches: [zeron/babylonslate-testflight-signing-plan]
 
 permissions:
   contents: read
