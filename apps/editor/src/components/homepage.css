@@ -532,6 +532,70 @@
   transform: translateY(-50%);
 }
 
+/* Storage and source-control status, left of the actions button. */
+.homepage-project-badges {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  pointer-events: none;
+}
+.homepage-project-badges [data-slot="badge"] {
+  height: 18px;
+  gap: 3px;
+  padding-inline: 6px;
+  font-size: 10px;
+  box-shadow: 0 1px 2px color-mix(in oklch, #000 20%, transparent);
+}
+.homepage-project-badges .homepage-project-badge-secondary {
+  border-color: var(--border);
+  background: color-mix(in oklch, var(--foreground) 10%, var(--card));
+}
+/* Small cards and phone rows have room for one labelled badge; the secondary one keeps only its icon. */
+.homepage-project-card[data-layout="small"] .homepage-project-badges {
+  flex-wrap: nowrap;
+}
+.homepage-project-card[data-layout="small"] .homepage-project-badge-secondary {
+  padding-inline: 4px;
+}
+.homepage-project-card[data-layout="small"] .homepage-project-badge-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .homepage-project-card[data-layout="list"] .homepage-project-badge-secondary {
+    padding-inline: 4px;
+  }
+  .homepage-project-card[data-layout="list"] .homepage-project-badge-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.homepage-project-card[data-layout="list"] .homepage-project-caption {
+  padding-right: 8px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badges {
+  position: static;
+  flex: none;
+  flex-direction: row-reverse;
+  flex-wrap: nowrap;
+  margin-right: 40px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badges [data-slot="badge"] {
+  box-shadow: none;
+}
+
 /* ------------------------------------------------------------ Badges */
 .homepage-project-badge {
   display: grid;
@@ -1384,8 +1448,8 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-template-categories {
     gap: 12px;
   }
-  .homepage-project-card[data-layout="list"] .homepage-project-caption {
-    padding-right: 48px;
+  .homepage-project-card[data-layout="list"] .homepage-project-badges {
+    margin-right: 48px;
   }
   .homepage-statusbar {
     height: 26px;

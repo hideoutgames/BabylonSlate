@@ -101,15 +101,19 @@ describe("recentProjectsWithOpenedProject", () => {
         appearance: { icon: "mountain", color: "mint" },
       },
       "2026-09-09T12:00:00.000Z",
+      true,
     );
     expect(result).toEqual([{
       id: "opfs:Original", name: "Edited Name", tier: "opfs", bookmark: null,
       createdAt: "2026-09-01", lastOpenedAt: "2026-09-09T12:00:00.000Z",
-      appearance: { icon: "mountain", color: "mint" },
+      appearance: { icon: "mountain", color: "mint" }, sourceControl: true,
     }]);
     expect(listedProjectsFromRecents(result, [
       { id: "opfs:Original", name: "Original", tier: "opfs" },
-    ])[0]).toMatchObject({ name: "Original", label: "Edited Name", appearance: { icon: "mountain", color: "mint" } });
+    ])[0]).toMatchObject({
+      name: "Original", label: "Edited Name", appearance: { icon: "mountain", color: "mint" },
+      sourceControl: true,
+    });
   });
 });
 

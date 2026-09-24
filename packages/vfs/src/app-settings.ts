@@ -60,6 +60,8 @@ export const engineSettingsSchema = z.object({
         createdAt: z.string().optional(),
         bookmark: z.string().nullable().optional(),
         appearance: z.unknown().transform(normalizeProjectAppearance).optional(),
+        /** Cached `settings.sourceControl.enabled` so Homepage need not open the folder. */
+        sourceControl: z.boolean().optional().catch(undefined),
       }),
     )
     .default([]),

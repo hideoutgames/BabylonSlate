@@ -5,6 +5,7 @@ import {
   openMainScene,
   openTestProject,
 } from "./open-test-project";
+import { closeProjectViaSettings } from "./close-project";
 
 const SCENE_PATH = "assets/main.scene.babasset";
 const CLASS_PATH = "assets/Mannequin.class.babasset";
@@ -152,5 +153,27 @@ test.describe("P15 source-control locking", () => {
     );
     await page.getByTestId("external-change-keep-edits").click();
     await expect(page.getByTestId("external-change-dirty-disk")).toHaveCount(0);
+  });
+
+  test("badges source-controlled projects in the Project Browser", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await closeProjectViaSettings(page);
+    const card = page.getByTestId("open-listed-project-TestProject");
+    await expect(card.getByTestId("homepage-project-local")).toHaveText("Local");
+    await expect(card.getByTestId("homepage-project-source-control")).toHaveCount(0);
+
+    await card.click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await enableSourceControl(page);
+    await closeProjectViaSettings(page);
+    await page.reload();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await expect(
+      page
+        .getByTestId("open-listed-project-TestProject")
+        .getByTestId("homepage-project-source-control"),
+    ).toHaveText("Source Control");
   });
 });
