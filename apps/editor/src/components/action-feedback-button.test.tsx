@@ -100,6 +100,7 @@ describe("ActionFeedbackButton", () => {
         <ActionFeedbackButton
           icon={Undo2Icon}
           iconOnly
+          showSuccessIcon={false}
           label="Undo"
           onAction={undo}
         />
