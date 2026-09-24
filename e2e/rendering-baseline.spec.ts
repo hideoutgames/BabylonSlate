@@ -100,6 +100,12 @@ type FrameSample = {
   gpuStatus: string;
   viewportFrameCap: number | null;
   documentVisible: boolean;
+  preparationMs?: number;
+  copyMs?: number;
+  held?: number;
+  graphBuilds?: number;
+  shadowAdmissions?: number;
+  shadowAdmissionMs?: number;
 };
 type ResourceSample = {
   atMs: number;
@@ -171,7 +177,7 @@ function summarize(measurement: Measurement) {
       .length,
     presentedIntervals: {
       method:
-        "Engine end-frame time when this viewport scheduler advances; presentation proxy, not hardware display timestamps",
+        "Engine end-frame time after this viewport copies a frame (older revisions use successful draws); not hardware display timestamps",
       ...distribution(
         frames.flatMap((frame) =>
           frame.intervalMs === null ? [] : [frame.intervalMs],
@@ -179,6 +185,12 @@ function summarize(measurement: Measurement) {
       ),
     },
     viewportRenderCpu: distribution(frames.map((frame) => frame.cpuMs)),
+    preparationCpu: distribution(frames.flatMap((frame) => frame.preparationMs === undefined ? [] : [frame.preparationMs])),
+    copyCpu: distribution(frames.flatMap((frame) => frame.copyMs === undefined ? [] : [frame.copyMs])),
+    renderingWork: {
+      first: frames[0],
+      last: frames.at(-1),
+    },
     sharedEngineGpu: {
       method:
         "Shared Engine diagnostic readings; may repeat the last completed query and include sibling views; not viewport GPU timing",
@@ -314,4 +326,45 @@ test("local renderer baseline bounds sixteen eligible point and spot shadow ligh
     ),
     contentType: "application/json",
   });
+});
+
+test("scene viewport light-edit performance measurement", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  const scene = localLightRoom("point", 4);
+  scene.settings.shadowOverrides = { enabled: true, localMapSize: 512, localLightMode: "manual", maxLocalLights: 2 };
+  await setPreviewScene(page, scene, 60_000);
+  await page.getByTestId("tree-row-actor:light-0").click();
+  const initial = await baseline(page);
+  await expect.poll(async () => (await baseline(page)).frameCount, { timeout: 30_000 }).toBeGreaterThan(initial.frameCount + 5);
+  const idle = await measure(page);
+  const editMeasurement = measure(page);
+  const edits = [];
+  for (let i = 0; i < 16; i++) {
+    const start = Date.now();
+    await page.getByTestId("property-actor-position-x").fill(String((i % 5) - 2));
+    await page.getByTestId("property-actor-position-x").press("Tab");
+    edits.push(Date.now() - start);
+    // Fixed input cadence; these samples deliberately include the edit work.
+    await page.waitForTimeout(500);
+  }
+  const editing = await editMeasurement;
+  const capture = await baseline(page);
+  await testInfo.attach("viewport-light-edit-measurement", {
+    body: JSON.stringify({
+      qualification: "Local Chromium measurement, not physical iPad/Safari qualification. No pixel readback in timing windows.",
+      browserProject: testInfo.project.name,
+      browserVersion: page.context().browser()?.version(),
+      viewportCss: page.viewportSize(),
+      fixture: { lights: 4, shadows: scene.settings.shadowOverrides },
+      idle: { summary: summarize(idle), samples: idle },
+      editing: { summary: summarize(editing), samples: editing, inputMs: distribution(edits) },
+      capture,
+    }, null, 2), contentType: "application/json",
+  });
+  expect(idle.cancelled).toBeNull();
+  expect(editing.cancelled).toBeNull();
+  expect(idle.frameSamples.length).toBeGreaterThan(1);
+  expect(editing.frameSamples.length).toBeGreaterThan(1);
 });
