@@ -595,7 +595,7 @@ describe("Play createEngine view", () => {
   });
 
   it("waits for the exact RTT canvas copy after engine end-frame", async () => {
-    const engine = sharedEngine();
+    const engine = postProcessGraphEngine();
     const loops = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     let copied = false;

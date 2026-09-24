@@ -1040,6 +1040,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           }> = [];
           const resourceSamples: Array<Record<string, number>> = [];
           let lastFrame = handle.renderDiagnostics().presentation?.copied ?? handle.scheduler.stats().renderedFrames;
+          let lastDraw = handle.scheduler.stats().renderedFrames;
           let lastPresented: number | null = null;
           let lastResourceAt = -250;
           let droppedSamples = 0;
@@ -1090,6 +1091,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               cancel();
               return;
             }
+            // Scene viewport copies finish inside the native view step. Avoid
+            // scanning resources on shared Engine ticks that did not draw it.
+            const draw = handle.scheduler.stats().renderedFrames;
+            if (draw === lastDraw) return;
+            lastDraw = draw;
             const diagnostics = handle.renderDiagnostics();
             const frame = diagnostics.presentation?.copied ?? handle.scheduler.stats().renderedFrames;
             // Shared Engine end-frame notifications from sibling views are not
