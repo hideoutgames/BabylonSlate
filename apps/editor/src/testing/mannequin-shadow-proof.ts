@@ -7,6 +7,7 @@ const originals = new WeakMap<Scene, Map<AbstractMesh, ShadowParticipation | und
 
 /** Explicit test-build probe of the six real starter meshes, never a frame hook. */
 export function mannequinShadowProbe(scene: Scene, modelOnly = false) {
+  if (scene.meshes.length > 512) throw new Error("Mannequin scene probe limit exceeded");
   const meshes = scene.meshes.filter(mesh => names.has(mesh.name));
   if (meshes.length !== 6) throw new Error(`Expected six mannequin parts, got ${meshes.length}`);
   let saved = originals.get(scene);

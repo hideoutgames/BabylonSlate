@@ -60,6 +60,7 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   }
   const canvas = page.getByTestId("viewport-canvas");
   await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.lights.some(light => light.generator))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
   const initial = (await page.evaluate(() => window.__babylonslateViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
     gpuBackend: variant.backend,

@@ -61,6 +61,11 @@ lit samples and no changes caused by helper participation. The maps remain
 - `0bc933c7`: both Low real-model cases pass (WebGL2 CEL / WebGPU PBR).
   Four selected existing synthetic cases also pass: WebGL2 cascade fallback PBR,
   WebGPU cascaded CEL, and transformed/instanced fixtures on both APIs.
+- `87374e9e`: all **71 cases** in the six explicit unit files pass:
+  shadow bias, controller, managed FrameGraph shadows, collider visuals,
+  diagnostics and viewport shading. Changed-file ESLint has no errors (one
+  existing `viewport-panel.tsx` hook warning); the render package typecheck passes.
+  The earlier admitted editor/player builds include their TypeScript checks.
 
 All runs use `BL_TEST_PROFILE=shared` and `pnpm --silent agent:wait local --script
 test` with explicit unit paths, or `--script test:e2e` with explicit specs and
