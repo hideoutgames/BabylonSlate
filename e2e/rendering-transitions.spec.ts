@@ -8,6 +8,10 @@ async function openRenderingSettings(page: Page) {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
+  for (const title of ["Scalability", "Shadows"]) {
+    const toggle = page.getByTestId("settings-modal").getByRole("button", { name: title, exact: true });
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  }
 }
 
 async function select(page: Page, label: string, value: string) {
