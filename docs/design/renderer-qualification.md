@@ -66,6 +66,12 @@ lit samples and no changes caused by helper participation. The maps remain
   diagnostics and viewport shading. Changed-file ESLint has no errors (one
   existing `viewport-panel.tsx` hook warning); the render package typecheck passes.
   The earlier admitted editor/player builds include their TypeScript checks.
+- `a94676b1`: Play/player and the four default-light editor cases pass. The
+  alternate view exposed a capture race: scene render IDs advanced during shadow
+  preparation while diagnostics still held the previous view matrix. At
+  `e8f83217`, two consecutive alternate-view runs pass after waiting for presented
+  viewport frames and verifying camera/view consistency. This is a fixture repair,
+  not a changed darkness threshold or an additional renderer workaround.
 
 All runs use `BL_TEST_PROFILE=shared` and `pnpm --silent agent:wait local --script
 test` with explicit unit paths, or `--script test:e2e` with explicit specs and
