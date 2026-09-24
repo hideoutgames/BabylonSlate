@@ -18,13 +18,15 @@ export function validateAppleProvisioningProfile(profile, teamId, now = Date.now
   const expires = new Date(profile.ExpirationDate).getTime();
   if (!/^[A-Fa-f0-9-]{36}$/.test(profile.UUID) || profile.TeamIdentifier?.[0] !== teamId || profile.Entitlements?.["application-identifier"] !== `${teamId}.${APPLE_BUNDLE_ID}` || profile.Entitlements?.["get-task-allow"] !== false || profile.ProvisionedDevices || profile.ProvisionsAllDevices || !Number.isFinite(expires) || expires <= now) throw new Error("App Store provisioning profile is invalid or expired");
   validateAppleMemoryEntitlements(profile.Entitlements);
+  if (profile.Entitlements["aps-environment"] !== "production") throw new Error("App Store provisioning profile must enable production push notifications");
 }
 
 export function validateAppleBundle(identity, info, entitlements, teamId) {
   if (info.CFBundleIdentifier !== APPLE_BUNDLE_ID || info.CFBundleShortVersionString !== identity.appleMarketingVersion || info.CFBundleVersion !== identity.appleBuildNumber || JSON.stringify(info.UIDeviceFamily) !== "[1,2]" || info.CFBundleDisplayName !== "BabylonSlate" || !/^iphoneos(?:2[6-9]|[3-9]\d)\./.test(info.DTSDKName) || typeof info.ITSAppUsesNonExemptEncryption !== "boolean") throw new Error("Exported Apple bundle identity, target, SDK or encryption declaration is invalid");
   if (entitlements["application-identifier"] !== `${teamId}.${APPLE_BUNDLE_ID}` || entitlements["com.apple.developer.team-identifier"] !== teamId || entitlements["get-task-allow"] !== false || entitlements["beta-reports-active"] !== true) throw new Error("Exported Apple distribution entitlements are invalid");
   validateAppleMemoryEntitlements(entitlements);
-  const allowed = new Set(["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "beta-reports-active", "keychain-access-groups", "com.apple.developer.kernel.increased-memory-limit", "com.apple.developer.kernel.extended-virtual-addressing"]);
+  if (entitlements["aps-environment"] !== "production") throw new Error("Exported Apple push entitlement must use the production APNs environment");
+  const allowed = new Set(["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "beta-reports-active", "keychain-access-groups", "aps-environment", "com.apple.developer.kernel.increased-memory-limit", "com.apple.developer.kernel.extended-virtual-addressing"]);
   if (Object.keys(entitlements).some(key => !allowed.has(key))) throw new Error("Unexpected entitlement; audit it before distribution");
   if (entitlements["keychain-access-groups"]?.some(group => group !== `${teamId}.${APPLE_BUNDLE_ID}`)) throw new Error("Unexpected keychain access group");
 }

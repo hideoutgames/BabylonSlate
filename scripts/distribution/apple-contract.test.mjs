@@ -9,6 +9,7 @@ const entitlements = {
   "com.apple.developer.team-identifier": "TEAM123456",
   "get-task-allow": false,
   "beta-reports-active": true,
+  "aps-environment": "production",
   "com.apple.developer.kernel.increased-memory-limit": true,
   "com.apple.developer.kernel.extended-virtual-addressing": true,
 };
@@ -69,6 +70,18 @@ test("manual signing requires a current App Store profile with the requested mem
     const previous = { ...entitlements };
     delete previous[key];
     assert.throws(() => validateAppleProvisioningProfile({ ...profile, Entitlements: previous }, "TEAM123456", now), /memory entitlements/);
+  }
+  for (const value of [undefined, "development", true]) {
+    assert.throws(() => validateAppleProvisioningProfile({ ...profile, Entitlements: { ...entitlements, "aps-environment": value } }, "TEAM123456", now), /production push/);
+  }
+});
+
+test("both TestFlight channels require production push signing before upload", () => {
+  for (const channel of ["test", "release"]) {
+    assert.doesNotThrow(() => validateAppleBundle({ ...identity, channel }, info, entitlements, "TEAM123456"));
+    for (const value of [undefined, "development", true]) {
+      assert.throws(() => validateAppleBundle({ ...identity, channel }, info, { ...entitlements, "aps-environment": value }, "TEAM123456"), /production APNs/);
+    }
   }
 });
 
