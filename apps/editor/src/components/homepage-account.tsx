@@ -42,14 +42,19 @@ class AccountErrorBoundary extends Component<
 export function HomepageAccount({
   disabled = false,
   onOpenChange,
+  onApplicationSettings,
+  onEngineSettings,
 }: {
   disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onApplicationSettings?: () => void;
+  onEngineSettings?: () => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
   const [desktopAccount, setDesktopAccount] =
     useState<NativeHomepageAccount | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [clerkOverlayOpen, setClerkOverlayOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const host = getHostPlatform();
@@ -117,8 +122,8 @@ export function HomepageAccount({
     };
   }, [desktopClient, acceptDesktopSession]);
   useEffect(() => {
-    onOpenChange?.(menuOpen || subscriptionOpen || authOpen);
-  }, [menuOpen, subscriptionOpen, authOpen, onOpenChange]);
+    onOpenChange?.(menuOpen || clerkOverlayOpen || subscriptionOpen || authOpen);
+  }, [menuOpen, clerkOverlayOpen, subscriptionOpen, authOpen, onOpenChange]);
   const account = nativeAccount ?? desktopAccount;
   const openSubscription = () => setSubscriptionOpen(true);
   const fallback = (
@@ -134,6 +139,8 @@ export function HomepageAccount({
           : undefined
       }
       onSubscription={openSubscription}
+      onApplicationSettings={onApplicationSettings}
+      onEngineSettings={onEngineSettings}
       onOpenChange={setMenuOpen}
     />
   );
@@ -146,7 +153,10 @@ export function HomepageAccount({
               publishableKey={publishableKey}
               disabled={disabled}
               onSubscription={openSubscription}
+              onApplicationSettings={onApplicationSettings}
+              onEngineSettings={onEngineSettings}
               onOpenChange={setMenuOpen}
+              onOverlayChange={setClerkOverlayOpen}
               fallback={fallback}
             />
           </Suspense>

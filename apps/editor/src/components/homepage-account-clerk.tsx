@@ -3,72 +3,48 @@ import {
   ClerkFailed,
   ClerkLoaded,
   ClerkLoading,
-  UserButton,
   useClerk,
   useUser,
 } from "@clerk/react";
-import { CreditCardIcon } from "lucide-react";
 import { HomepageClerkProvider } from "./homepage-account-provider";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 
 type Props = {
   disabled?: boolean;
   onSubscription: () => void;
+  onApplicationSettings?: () => void;
+  onEngineSettings?: () => void;
   onOpenChange: (open: boolean) => void;
+  onOverlayChange: (open: boolean) => void;
 };
-function AccountButton({ disabled, onSubscription, onOpenChange }: Props) {
-  const { isSignedIn } = useUser();
+function AccountButton({ onOverlayChange, ...props }: Props) {
+  const { isSignedIn, user } = useUser();
   const clerk = useClerk();
   useEffect(() => {
     const update = () =>
-      onOpenChange(
-        Boolean(
-          document.querySelector(
-            ".slate-clerk-overlay, [data-testid=homepage-profile-menu]",
-          ),
-        ),
-      );
+      onOverlayChange(Boolean(document.querySelector(".slate-clerk-overlay")));
     const observer = new MutationObserver(update);
     observer.observe(document.body, { childList: true, subtree: true });
     update();
     return () => {
       observer.disconnect();
-      onOpenChange(false);
+      onOverlayChange(false);
     };
-  }, [onOpenChange]);
-  if (!isSignedIn)
+  }, [onOverlayChange]);
+  if (!isSignedIn || !user)
     return (
-      <HomepageProfileMenu
-        disabled={disabled}
-        onSubscription={onSubscription}
-        onOpenChange={onOpenChange}
-        onSignIn={() => clerk.openSignIn()}
-      />
+      <HomepageProfileMenu {...props} onSignIn={() => clerk.openSignIn()} />
     );
+  const email = user.primaryEmailAddress?.emailAddress;
   return (
-    <div className="homepage-clerk-trigger" inert={disabled}>
-      <UserButton
-        appearance={{
-          elements: {
-            avatarBox: "homepage-profile-avatar",
-            userButtonTrigger: "homepage-clerk-avatar-button",
-            userButtonPopoverCard: "slate-clerk-overlay",
-            modalContent: "slate-clerk-overlay",
-          },
-        }}
-        userProfileMode="modal"
-      >
-        <UserButton.MenuItems>
-          <UserButton.Action label="manageAccount" />
-          <UserButton.Action
-            label="Manage Subscription"
-            labelIcon={<CreditCardIcon size={16} />}
-            onClick={onSubscription}
-          />
-          <UserButton.Action label="signOut" />
-        </UserButton.MenuItems>
-      </UserButton>
-    </div>
+    <HomepageProfileMenu
+      {...props}
+      name={user.fullName || user.username || email || "Your Account"}
+      email={email}
+      imageUrl={user.hasImage ? user.imageUrl : undefined}
+      onManageAccount={() => clerk.openUserProfile()}
+      onSignOut={() => clerk.signOut()}
+    />
   );
 }
 export default function HomepageClerkAccount({
