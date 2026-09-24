@@ -117,6 +117,19 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
               lightPosition: light.position.asArray(),
             });
           }
+          // A stable but unlit/blank preview must not satisfy the motion test.
+          light.position.x += 2;
+          const movedLight = await draw();
+          const lightResponse = [0, 0];
+          for (let i = 0; i < movedLight.length; i++) {
+            if (i % 4 === 3) continue;
+            const half = Math.floor(i / 4) % target.getSize().width < target.getSize().width / 2 ? 0 : 1;
+            lightResponse[half] = Math.max(lightResponse[half]!, Math.abs(movedLight[i]! - baseline[i]!));
+          }
+          captures.push({ mode, kind, motion: "light moved", difference: Math.min(...lightResponse),
+            litPixels: movedLight.filter((value, index) => index % 4 !== 3 && value > 30).length,
+            lightPosition: light.position.asArray(),
+          });
         } finally {
           overlay.dispose();
           utility.dispose();

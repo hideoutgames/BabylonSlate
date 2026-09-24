@@ -18,12 +18,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }).__babylonslateCameraPreviewLightMotionProof(backend), backend);
     await testInfo.attach("camera-preview-light-motion", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
-    expect(result.captures).toHaveLength(20);
+    expect(result.captures).toHaveLength(24);
     for (const capture of result.captures) {
       const label = `${capture.mode} ${capture.kind} ${capture.motion}`;
       expect(capture.litPixels, label).toBeGreaterThan(100);
-      expect(capture.lightPosition, label).toEqual([0.7, 0.4, -2]);
-      expect(capture.difference, label).toBeLessThanOrEqual(1);
+      if (capture.motion === "light moved") {
+        expect(capture.difference, label).toBeGreaterThan(10);
+      } else {
+        expect(capture.lightPosition, label).toEqual([0.7, 0.4, -2]);
+        expect(capture.difference, label).toBeLessThanOrEqual(1);
+      }
     }
   });
 }

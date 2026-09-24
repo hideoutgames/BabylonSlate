@@ -596,6 +596,12 @@ Authored World Position and Camera Position graph inputs add the render origin
 back; lighting and view-direction calculations remain camera-relative. Moving
 the camera therefore does not move world-space procedural material coordinates.
 
+The selected-camera preview establishes its own floating-origin scope and
+refreshes camera-dependent light data for every timed RTT draw. Editor camera
+navigation and the preceding gizmo pass therefore cannot shift lighting in a
+stationary preview. The preview restores the caller's camera, matrices, uniform
+buffer, framebuffer and viewport even when a draw fails.
+
 All Scene, Play and preview controllers share a 512 MiB managed lighting texture
 reservation ceiling; shadows also retain their 64-face/pass ceiling and lower
 per-quality scene limits. Shadow maps are admitted before construction, including

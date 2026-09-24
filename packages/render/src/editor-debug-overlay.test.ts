@@ -2,14 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FreeCamera,
   MeshBuilder,
+  NullEngine,
   Quaternion,
   RenderTargetTexture,
+  Scene,
   TransformNode,
   Vector3,
   VertexBuffer,
+  Viewport,
   type Camera,
   type LinesMesh,
 } from "@babylonjs/core";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
   createDefaultAudioPayload,
   createDefaultSoundAttenuationPayload,
@@ -174,6 +178,49 @@ describe("EditorDebugOverlay", () => {
       5,
     );
     overlay.dispose();
+  });
+
+  it("restores the editor and shared render state when a camera preview draw throws", () => {
+    const engine = new NullEngine();
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
+    const scene = new Scene(engine);
+    handles.push({ scene, engine });
+    const camera = scene.activeCamera = new FreeCamera("editor", new Vector3(2000, 3, -10), scene);
+    scene.render();
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    overlay.sync({ sceneData: sceneWith([cameraActor()]), selectedActorIds: ["cam"] });
+    const sibling = new Scene(engine);
+    sibling.activeCamera = new FreeCamera("sibling", new Vector3(5, 2, -8), sibling);
+    sibling.render();
+    const previousScene = FloatingOriginCurrentScene.getScene;
+    const sceneUbo = scene.getSceneUniformBuffer();
+    const view = Array.from(scene.getViewMatrix().asArray());
+    const projection = Array.from(scene.getProjectionMatrix().asArray());
+    const viewport = new Viewport(0.2, 0.1, 0.5, 0.7);
+    engine.setViewport(viewport);
+    engine.currentRenderPassId = 42;
+    const failure = new Error("preview draw failed");
+    overlay.previewTexture!.onBeforeRenderObservable.addOnce(() => {
+      expect(scene.activeCamera).not.toBe(camera);
+      expect(scene.getSceneUniformBuffer()).not.toBe(sceneUbo);
+      throw failure;
+    });
+    try {
+      expect(() => overlay.tick(1000)).toThrow(failure);
+      expect(scene.activeCamera).toBe(camera);
+      expect(scene.getSceneUniformBuffer()).toBe(sceneUbo);
+      expect(Array.from(scene.getViewMatrix().asArray())).toEqual(view);
+      expect(Array.from(scene.getProjectionMatrix().asArray())).toEqual(projection);
+      expect(engine.currentViewport).toEqual(viewport);
+      expect(engine.currentRenderPassId).toBe(42);
+      expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
+      expect(() => overlay.tick(2000)).not.toThrow();
+      expect(() => scene.render()).not.toThrow();
+    } finally {
+      overlay.dispose();
+      sibling.dispose();
+    }
   });
 
   it("sizes the frustum and ortho preview to the 16:9 PIP, not the engine canvas", () => {

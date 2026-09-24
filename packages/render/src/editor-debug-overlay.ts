@@ -27,6 +27,7 @@ import {
 } from "./scene-illumination";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { withSceneReadinessState } from "./scene-perf";
 import type { AudioLibrary } from "./audio-service";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
@@ -245,7 +246,25 @@ export class EditorDebugOverlay {
         CAMERA_PREVIEW_ASPECT,
       );
     }
-    this.previewTexture.render(false);
+    const engine = this.scene.getEngine();
+    const target = engine._currentRenderTarget;
+    withSceneReadinessState(this.scene, () => {
+      // A timed RTT is a separate camera pass. The preceding gizmo draw can
+      // leave Babylon's floating origin on its utility scene, and a 2D RTT
+      // does not advance the render ID used to cache origin-relative lights.
+      this.scene.incrementRenderId();
+      this.scene.resetCachedMaterial();
+      try {
+        this.previewTexture!.render(false);
+      } finally {
+        // The caller must not reuse the preview camera's cached light data.
+        this.scene.incrementRenderId();
+        if (engine._currentRenderTarget !== target) {
+          if (target) engine.bindFramebuffer(target);
+          else engine.restoreDefaultFramebuffer(true);
+        }
+      }
+    });
     this.previewRenderCount += 1;
     void this.blitPreview();
   }
