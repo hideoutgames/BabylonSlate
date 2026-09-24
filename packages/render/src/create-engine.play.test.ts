@@ -613,8 +613,11 @@ describe("Play createEngine view", () => {
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
     void presented.catch(() => {});
     try {
-      loops.mock.calls[0]![0]();
-      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.waitFor(() => {
+        loops.mock.calls[0]![0]();
+        engine.onEndFrameObservable.notifyObservers(engine);
+        expect(read).toHaveBeenCalledOnce();
+      });
       await Promise.resolve();
       expect(ready).toBe(false);
       expect(copied).toBe(false);
@@ -1329,6 +1332,13 @@ describe("Play createEngine view", () => {
     markSceneReadinessDirty(handle.scene);
     handle.setPaused(true);
     let presented = false;
+    const fences: Array<() => void> = [];
+    const submitted = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      let reject!: (error: Error) => void;
+      const completed = new Promise<void>((resolve, fail) => { fences.push(resolve); reject = fail; });
+      return { completed, cancel: () => reject(new Error("Discarded candidate")) };
+    });
     const pending = handle.presentFirstFrame(owner).then(() => { presented = true; });
     const copied = handle.renderDiagnostics().presentation!.copied;
     frame();
@@ -1337,9 +1347,14 @@ describe("Play createEngine view", () => {
     expect(handle.renderDiagnostics().presentation!.copied).toBe(copied);
     worldReady = true;
     frame();
+    await Promise.resolve();
+    expect(submitted).toHaveBeenCalledTimes(2);
+    expect(presented).toBe(false);
+    fences[1]!();
     await pending;
     expect(presented).toBe(true);
     expect(handle.renderDiagnostics().presentation!.copied).toBe(copied + 1);
+    submitted.mockRestore();
   });
 
   it("reports hidden pre-snapshot visuals and their published world positions", () => {
@@ -1578,6 +1593,8 @@ describe("Play createEngine view", () => {
         engine.onEndFrameObservable.notifyObservers(engine);
       };
       handle.pushSnapshot(actorSnapshot(1, 0));
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      await handle.prewarmSceneMaterials();
       frame();
       expect(listener).toHaveBeenCalledTimes(1);
       expect(handle.scheduler.stats().renderedFrames).toBe(1);
@@ -1604,6 +1621,7 @@ describe("Play createEngine view", () => {
     first.handle.setRegisterViewEnabled(true);
     first.handle.pushSnapshot(actorSnapshot(1, 0));
     engine.onBeginFrameObservable.notifyObservers(engine);
+    await first.handle.prewarmSceneMaterials();
     renderViews(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
     // Model a timer-capable driver for attribution only; NullEngine supplies no
@@ -2029,8 +2047,13 @@ describe("Play createEngine view", () => {
     expect(values(handle.scene)).toEqual([0.25, 0.5]);
     const present = async (owner?: { layerId: string; layerLoadId: number }) => {
       await handle.prewarmSceneMaterials(owner);
-      const frame = handle.presentFirstFrame(owner);
-      draw(); engine.onEndFrameObservable.notifyObservers(engine); await frame;
+      let presented = false;
+      const frame = handle.presentFirstFrame(owner).then(() => { presented = true; });
+      await vi.waitFor(() => {
+        draw(); engine.onEndFrameObservable.notifyObservers(engine);
+        expect(presented).toBe(true);
+      });
+      await frame;
     };
     await present();
     write(worldOwner, "first", 0.7); write(worldOwner, "disabled", 0.9);

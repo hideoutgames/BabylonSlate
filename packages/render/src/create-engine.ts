@@ -836,6 +836,7 @@ function initializeEngine(
     owner?: SceneLayerLoadIdentity;
     submission: ReturnType<typeof submitPresentedFrame> | null;
     copied: boolean;
+    completionStarted: boolean;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   const frameOwners = new Map<string, PendingPresentation>();
@@ -2268,16 +2269,20 @@ function initializeEngine(
           // software-GL completion can outlast that earlier budget even after
           // the canvas copy. Give completion its own bounded budget, without
           // acknowledging before both this owner's fence and copy finish.
-          clearTimeout(pending.timer);
-          pending.timer = setTimeout(() => {
-            if (pendingPresentations.get(key) === pending) expirePresentation(key);
-          }, 15_000);
+          if (!pending.completionStarted) {
+            pending.completionStarted = true;
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(() => {
+              if (pendingPresentations.get(key) === pending) expirePresentation(key);
+            }, 15_000);
+          }
         }
         void submission.completed.then(() => {
           if (pending.submission !== submission) return;
           pending.submission = null;
           finishPresentation(key, pending);
         }, (error: unknown) => {
+          if (pending.submission !== submission) return;
           if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
         });
       };
@@ -2293,6 +2298,15 @@ function initializeEngine(
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (!coherentFrame) {
+        for (const pending of frameOwners.values()) {
+          if (pending.copied) continue;
+          // This candidate never reached the canvas. Its fence cannot certify
+          // a later retry, which needs its own validation scope and submission.
+          pending.rendered = false;
+          const submission = pending.submission;
+          pending.submission = null;
+          submission?.cancel();
+        }
         presentationStats.held += 1;
         return;
       }
@@ -3119,7 +3133,7 @@ function initializeEngine(
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
       const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
