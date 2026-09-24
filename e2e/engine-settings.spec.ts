@@ -17,6 +17,11 @@ test("project settings keep descriptions below their controls and above separato
     ["rendering", "setting-render-custom"],
   ] as const) {
     await page.getByTestId(`settings-modal-category-${category}`).click();
+    if (controlId === "setting-render-custom")
+      await page
+        .getByTestId("settings-modal")
+        .getByRole("button", { name: "Resolution", exact: true })
+        .click();
     const control = page.getByTestId(controlId);
     await control.scrollIntoViewIfNeeded();
     const positions = await control.evaluate((element) => {

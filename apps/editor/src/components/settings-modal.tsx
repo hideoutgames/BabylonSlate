@@ -89,7 +89,12 @@ import {
 } from "./engine-settings-form";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
-import { ENGINE_SETTING_FIELDS, PROJECT_SETTING_FIELDS } from "../lib/settings-search";
+import {
+  ENGINE_SETTING_FIELDS,
+  PROJECT_SETTING_FIELDS,
+  renderingSectionForTarget,
+  type RenderingSectionId,
+} from "../lib/settings-search";
 
 export type SettingsScope = "project" | "engine";
 
@@ -331,8 +336,19 @@ export function SettingsModal({
     }
   }, [open, scope, projectGuid, commitRendering]);
   const [search, setSearch] = useState("");
-  const [environmentOpen, setEnvironmentOpen] = useState(false);
-  const [postProcessingOpen, setPostProcessingOpen] = useState(false);
+  const [openRenderingSections, setOpenRenderingSections] = useState<
+    ReadonlySet<RenderingSectionId>
+  >(() => new Set());
+  const renderingSection = (id: RenderingSectionId) => ({
+    open: openRenderingSections.has(id),
+    onOpenChange: (open: boolean) =>
+      setOpenRenderingSections((current) => {
+        const next = new Set(current);
+        if (open) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+  });
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
@@ -565,8 +581,8 @@ export function SettingsModal({
                 onClick={() => {
                   setActiveCategoryId(result.categoryId);
                   setSearch("");
-                  if (result.targetId?.startsWith("project-environment-")) setEnvironmentOpen(true);
-                  if (result.targetId?.startsWith("project-effects-")) setPostProcessingOpen(true);
+                  const section = renderingSectionForTarget(result.targetId);
+                  if (section) renderingSection(section).onOpenChange(true);
                   setPendingFocus({ targetId: result.targetId });
                 }}
               >
@@ -1062,38 +1078,29 @@ export function SettingsModal({
               </Select>
               <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
             </Field>
-<RenderQualityFields settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
-<ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
-            <DisclosureSection title="Environment Lighting" open={environmentOpen} onOpenChange={setEnvironmentOpen}>
+            <DisclosureSection title="Scalability" {...renderingSection("scalability")}>
+              <RenderQualityFields hideTitle settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
+            </DisclosureSection>
+            <DisclosureSection title="Shadows" {...renderingSection("shadows")}>
+              <ShadowSettingsFields hideTitle project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
+            </DisclosureSection>
+            <DisclosureSection title="Environment Lighting" {...renderingSection("environment")}>
               <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
             </DisclosureSection>
-            <DisclosureSection title="Post Processing" open={postProcessingOpen} onOpenChange={setPostProcessingOpen}>
+            <DisclosureSection title="Post Processing" {...renderingSection("postProcessing")}>
               <RenderEffectsFields hideTitle project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)} onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })} />
             </DisclosureSection>
             {projectDocument.settings.render.mode === "cel" ? (
-              <CelShadingFields
-                project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
-                onChange={(cel) => updateProjectSettings({ render: { ...projectDocument.settings.render, cel: normalizeCelShadingSettings(cel) } })}
-              />
+              <DisclosureSection title="CEL Shading" {...renderingSection("cel")}>
+                <CelShadingFields
+                  hideTitle
+                  project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
+                  onChange={(cel) => updateProjectSettings({ render: { ...projectDocument.settings.render, cel: normalizeCelShadingSettings(cel) } })}
+                />
+              </DisclosureSection>
             ) : null}
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-play-frame-cap">
-                  Play Frame Cap
-              </FieldLabel>
-              <NumberField
-                id="setting-play-frame-cap"
-                min={1}
-                  className="min-h-[var(--chrome-row,28px)]"
-                data-testid="setting-play-frame-cap"
-                value={projectDocument.settings.playFrameCap}
-                onChange={(playFrameCap) =>
-                  updateProjectSettings({ playFrameCap })
-                }
-              />
-              <FieldDescription>
-                  Applies to Play and Preview.
-              </FieldDescription>
-            </Field>
+            <DisclosureSection title="Resolution" {...renderingSection("resolution")}>
+            <FieldGroup className="gap-2">
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="setting-render-custom">
                 Custom Resolution
@@ -1181,12 +1188,36 @@ export function SettingsModal({
                 </FieldDescription>
               </FieldContent>
             </Field>
+            </FieldGroup>
+            </DisclosureSection>
+            <DisclosureSection title="Play Preview" {...renderingSection("playPreview")}>
+            <FieldGroup className="gap-2">
+              <Field className="settings-field">
+              <FieldLabel htmlFor="setting-play-frame-cap">
+                  Play Frame Cap
+              </FieldLabel>
+              <NumberField
+                id="setting-play-frame-cap"
+                min={1}
+                  className="min-h-[var(--chrome-row,28px)]"
+                data-testid="setting-play-frame-cap"
+                value={projectDocument.settings.playFrameCap}
+                onChange={(playFrameCap) =>
+                  updateProjectSettings({ playFrameCap })
+                }
+              />
+              <FieldDescription>
+                  Applies to Play and Preview.
+              </FieldDescription>
+            </Field>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}
               onChange={(playPreview) =>
                 updateProjectSettings({ playPreview })
               }
             />
+            </FieldGroup>
+            </DisclosureSection>
           </FieldSet>
         </FieldGroup>
       ) : null}

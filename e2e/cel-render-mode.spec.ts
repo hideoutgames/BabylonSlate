@@ -140,13 +140,16 @@ async function projectMode(page: Page, mode: "PBR" | "CEL", setup = false) {
   await page.getByTestId("settings-modal-category-rendering").click();
   await page.getByTestId("setting-render-mode").click();
   await page.getByRole("option", { name: mode, exact: true }).click();
+  const celSection = page
+    .getByTestId("settings-modal")
+    .getByRole("button", { name: "CEL Shading", exact: true });
+  await expect(celSection).toHaveCount(mode === "CEL" ? 1 : 0);
   if (setup) {
+    if ((await celSection.getAttribute("aria-expanded")) !== "true")
+      await celSection.click();
     await page.getByLabel("Specular Strength", { exact: true }).fill("0");
     await page.getByLabel("Specular Strength", { exact: true }).press("Tab");
   }
-  await expect(page.getByTestId("project-cel-settings")).toHaveCount(
-    mode === "CEL" ? 1 : 0,
-  );
   await page
     .getByTestId("settings-modal")
     .getByRole("button", { name: "Done", exact: true })
