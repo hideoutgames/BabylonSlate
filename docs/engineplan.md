@@ -1204,6 +1204,8 @@ The pack is in-memory (transferred into the iframe). It is not written into the 
 
 While the pack is preparing, a non-dismissible **Preparing Preview** `Dialog` blocks editor input and freezes viewports (the same overlay gate as other modals). It shows determinate `Progress` (`n / m` plus a phase): Saving, Collecting Assets, Compiling, Writing Pack, Launching. Cancel is offered only before the iframe exists; after launch, a labeled **Stop** (same 44px secondary control as overlay Play) sits above the iframe so the player cannot swallow the tap. Stop posts `PREVIEW_STOP_MESSAGE`, drops the pack immediately, and unmounts the overlay (destroying the iframe) on that click — not after a delay that would leave the packaged game on screen. Pack handshake replies are refused once Stop has started, so an iframe reload cannot relaunch. Diagnostics still open the existing Preview session report if the iframe posted any.
 
+Preparation failures stay visible in **Preview Build Failed**, with the error available to select and copy, **Retry** to build a fresh pack, and **Close** to return to the editor. The same error is recorded in Output Log. Pending asset migrations use Play's existing approval flow and resume Preview Build after approval. A cancelled preparation cannot launch a player, display an error, or clear the progress of a later attempt.
+
 Preview Build always bundles the debugger and keeps Development Only nodes (Print defaults on). Release zip still honours bundle-debugger / `compileGraphDocumentsForExport` from section 9.6.
 
 The unzip-serve-boot-tick smoke in 15 remains required. Preview Build is the editor-loop counterpart so the exporter is dogfooded before an itch upload.
