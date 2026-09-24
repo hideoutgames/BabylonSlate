@@ -1,8 +1,22 @@
 import type { ShadowDiagnostics } from "../packages/render/src/shadow-diagnostics";
 import type { mannequinShadowProbe } from "../apps/editor/src/testing/mannequin-shadow-proof";
+import type { Locator } from "@playwright/test";
 
 type V = number[];
 export type MannequinGeometry = Awaited<ReturnType<typeof mannequinShadowProbe>>;
+export async function captureMannequinPixels(canvas: Locator, points: ReturnType<typeof mannequinShadowSamples>) {
+  return canvas.evaluate((node: HTMLCanvasElement, points) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width; copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    const bytes = context.getImageData(0, 0, copy.width, copy.height).data;
+    return {
+      png: copy.toDataURL("image/png").split(",")[1]!,
+      pixels: points.flatMap(({ x, y }) => Array.from(bytes.slice((y * copy.width + x) * 4, (y * copy.width + x) * 4 + 3))),
+    };
+  }, points);
+}
 const dot = (a: V, b: V) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
 const sub = (a: V, b: V) => a.map((v, i) => v - b[i]!);
 const add = (a: V, b: V, scale: number) => a.map((v, i) => v + scale * b[i]!);

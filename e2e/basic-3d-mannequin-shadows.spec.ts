@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { lookAtRotation, normalizeRenderingQuality, normalizeShadowSettings, type SerializedScene } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive, waitForSceneViewportReady } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import { mannequinShadowMetrics, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
+import { captureMannequinPixels as capture, mannequinShadowMetrics, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -18,20 +18,6 @@ type Viewport = {
   setShadowCaptureView(position: number[], target: number[], fov: number): void;
 };
 declare global { interface Window { __babylonslateViewportTest: Viewport } }
-
-async function capture(canvas: Locator, points: ReturnType<typeof mannequinShadowSamples>) {
-  return canvas.evaluate((node: HTMLCanvasElement, points) => {
-    const copy = document.createElement("canvas");
-    copy.width = node.width; copy.height = node.height;
-    const context = copy.getContext("2d")!;
-    context.drawImage(node, 0, 0);
-    const bytes = context.getImageData(0, 0, copy.width, copy.height).data;
-    return {
-      png: copy.toDataURL("image/png").split(",")[1]!,
-      pixels: points.flatMap(({ x, y }) => Array.from(bytes.slice((y * copy.width + x) * 4, (y * copy.width + x) * 4 + 3))),
-    };
-  }, points);
-}
 
 const cases = [
   { backend: "webgl2", mode: "pbr", profile: "medium", alternate: false },
