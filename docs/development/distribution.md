@@ -66,6 +66,10 @@ The App target also requests Push Notifications: Debug uses `aps-environment=dev
 
 Enable both memory capabilities and Push Notifications for `no.hideout.babylonslate`, then regenerate its App Store provisioning profile and replace `APPLE_PROVISIONING_PROFILE_BASE64` in the `testflight` environment. The profile is checked before archiving, and the exported IPA must retain both boolean memory entitlements and production push signing before upload. Debug device signing likewise needs an updated development profile. No new secret is required.
 
+Associated Domains, iCloud/CloudKit, App Groups and shared Keychain groups are not requested. No website association or domain setup is needed. Leave Associated Domains disabled on the App ID when regenerating the profile.
+
+These capability changes add no paid infrastructure, provider subscription or domain registration. Push signing uses the existing [Apple Developer Program membership](https://developer.apple.com/programs/whats-included/), which includes push notifications; TestFlight still requires that membership (99 USD per year or local pricing). Standard GitHub-hosted runners are [free for this public repository](https://docs.github.com/en/billing/concepts/product-billing/github-actions). No notification delivery service is configured or billed by this change.
+
 These entitlements apply to the native host. The editor's JavaScript, WebAssembly and rendering run through WebKit processes; additional WebContent/GPU memory is not assumed. The existing memory plugin reports native-host/device counters, and existing editor asset budgets remain unchanged. Actual device memory benefits and signed export still require an explicitly authorized native distribution and real-device validation.
 
 ## Maintainer setup
@@ -99,7 +103,7 @@ Before the first Apple upload, replace the Capacitor placeholder with an existin
 
 Review the pinned standard runner's installed Xcode before toolchain upgrades. Xcode/SDK requirements are independent of the deployment target. Install dependencies with `pnpm install --frozen-lockfile` and the checked-in Ruby bundle; keep CocoaPods and its lockfile. Do not add native packaging to recursive workspace `build` or ordinary Verify.
 
-The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, then reads public `xcodebuild -help` on a standard `macos-26` runner. It needs no dependencies beyond Node/Xcode, has no Apple credentials or distribution environment, and performs no archive, export or upload. Its result verifies the installed command interface only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
+The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, checks the native project and entitlement property lists with `plutil`, then reads public `xcodebuild -help` on a standard `macos-26` runner. It needs no dependencies beyond Node/Xcode, has no Apple credentials or distribution environment, and performs no archive, export or upload. Its result verifies the installed command interface and property-list syntax only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
 
 After this workflow is on the default branch, run the inspection with `gh workflow run inspect-apple-toolchain.yml --ref main`. The shared inspection script [passed on a second fresh hosted runner](https://github.com/hideoutgames/BabylonSlate/actions/runs/36042593306). Neither inspection exercised signing or upload.
 
