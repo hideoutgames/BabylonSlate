@@ -485,7 +485,25 @@
     "[desktop-chrome] > webgpu-backend.spec.ts > project backend changes rebuild one Engine while preserving scene edits and Play": 47100,
     "[desktop-chrome] > webgpu-backend.spec.ts > WebGPU renders native and graph PBR and CEL using native shaders": 15100,
     "[ipad-landscape] > content-card-layout.spec.ts > Content Browser cards stay equal with padded status and lock overlays": 9000,
-    "[ipad-landscape] > editor-density.spec.ts > Editor density and IA > Add Node catalog focuses desktop search and preserves touch body focus": 8900
+    "[ipad-landscape] > editor-density.spec.ts > Editor density and IA > Add Node catalog focuses desktop search and preserves touch body focus": 8900,
+    "[desktop-chrome] > area-light-export.spec.ts > prepared rectangular emission survives standalone export and scene lifecycle on webgl2": 114000,
+    "[desktop-chrome] > basic-3d-mannequin-shadow-hosts.spec.ts > Basic 3D mannequin preserves real materials, contacts and animation in Play and packed player": 150000,
+    "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgl2 cel low keeps shadows with collider helpers visible": 54100,
+    "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgl2 pbr medium alternate light keeps shadows with collider helpers visible": 48600,
+    "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgl2 pbr medium keeps shadows with collider helpers visible": 44600,
+    "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgpu cel medium keeps shadows with collider helpers visible": 47900,
+    "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgpu pbr low keeps shadows with collider helpers visible": 43300,
+    "[desktop-chrome] > camera-preview-light-motion.spec.ts > camera preview lighting stays fixed while the editor camera moves on webgl2": 5300,
+    "[desktop-chrome] > camera-preview-light-motion.spec.ts > camera preview lighting stays fixed while the editor camera moves on webgpu": 6400,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Shadow activation handoff keeps the full-budget camera route usable on webgl2": 9000,
+    "[desktop-chrome] > framegraph-shadows.spec.ts > Shadow activation handoff keeps the full-budget camera route usable on webgpu": 8800,
+    "[desktop-chrome] > launcher-empty.spec.ts > Empty Project Browser on phone > loads the Metal 3D cards when there are no projects": 7300,
+    "[desktop-chrome] > shadow-self-shadowing-hosts.spec.ts > synthetic self-shadowing retains authored Low settings and contact pixels in editor, Play and packed player: cel": 78000,
+    "[desktop-chrome] > shadow-self-shadowing-hosts.spec.ts > synthetic self-shadowing retains authored Low settings and contact pixels in editor, Play and packed player: pbr": 56600,
+    "[desktop-chrome] > shadow-self-shadowing.spec.ts > grazing surfaces avoid self-shadow acne with Medium cascades: webgl2": 4700,
+    "[desktop-chrome] > shadow-self-shadowing.spec.ts > grazing surfaces avoid self-shadow acne with Medium cascades: webgpu": 4600,
+    "[desktop-chrome] > viewport-gizmos.spec.ts > selected objects show Move, Rotate, and Scale handles and a pointer drag is undoable": 41100,
+    "[ipad-landscape] > tileset-preview.spec.ts > Tileset Preview fills the dock and fits wide and tall atlases after resizing": 15800
   },
   "updates": [
     {
@@ -495,6 +513,14 @@
     {
       "source": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35887663686",
       "scope": "Successful first-attempt cases across seven shards; shard 5 timed out, so only its completed list records supply durations. Failed, retried, skipped and unfinished cases retain their previous weights."
+    },
+    {
+      "source": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35947353864",
+      "scope": "Previously unrecorded successful first-attempt cases; durations are rounded as reported in CI list output."
+    },
+    {
+      "source": "https://github.com/hideoutgames/BabylonSlate/actions/runs/35997246090/attempts/1",
+      "scope": "Previously unrecorded successful first-attempt cases, including camera-preview lighting. The real-model Play/player host case uses its successful 150-second retry as a conservative scheduling sample; its failed attempt is not a pass. Unfinished cases provide no measurement."
     }
   ]
 }
