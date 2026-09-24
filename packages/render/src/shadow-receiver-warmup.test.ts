@@ -27,6 +27,7 @@ async function fixture() {
 it("warms a future layout without changing live frozen receivers, shadow maps or real submeshes", async () => {
   const { scene, mesh, material, part, light, incoming, generator, warmer, layout, passes } = await fixture();
   const parts = [...mesh.subMeshes], effect = part.effect, textures = [...scene.textures];
+  const defines = part.materialDefines?.toString();
   const actual = material.isReadyForSubMesh.bind(material);
   let gpuReady = false;
   const observed: boolean[] = [];
@@ -44,6 +45,7 @@ it("warms a future layout without changing live frozen receivers, shadow maps or
   expect(incoming.getShadowGenerator()).toBeNull();
   expect(material.isFrozen).toBe(true);
   expect(part.effect).toBe(effect);
+  expect(part.materialDefines?.toString()).toBe(defines);
   expect(mesh.subMeshes).toEqual(parts);
   expect(scene.textures).toEqual(textures);
   gpuReady = true;
@@ -53,6 +55,7 @@ it("warms a future layout without changing live frozen receivers, shadow maps or
   expect(mesh.subMeshes).toEqual(parts);
   expect(part.effect).toBe(effect);
   expect(effect?.isReady()).toBe(true);
+  expect(part.materialDefines?.toString()).toBe(defines);
 });
 
 it("uses normal preparation for wrappers that retain temporary submeshes", async () => {

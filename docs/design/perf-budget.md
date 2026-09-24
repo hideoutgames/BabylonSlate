@@ -78,7 +78,7 @@ Revision `e6d008c3`, Windows Chromium 151.0.7922.34, WebGL2 through ANGLE/SwiftS
 
 Software rendering stayed far below the viewport cap. Scene-render CPU medians were 3.2/2.1/3.1 ms; that counter does not measure total presentation time. Each sample observed zero texture/render-target churn and one live Engine scene. Engine texture counts were 23/30/24 across fixtures, so this is not proof of constant total resource use. Non-shadow byte counters omit this fixture's runtime primitives and default textures. Setup, including persisted saves, took 35.7/12.9/21.6 seconds before sampling. A16/Safari performance, total GPU residency and sustained thermal behavior remain unmeasured.
 
-### Static shadow reuse comparison
+### Camera-driven shadow activation
 
 The targeted `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
 measure first and repeated camera-driven point-shadow promotions in PBR and CEL
@@ -101,6 +101,8 @@ maximum preparation time and maximum CPU render duration while continuing to dra
 the incumbent. This route omits synchronous pixel readback during timing; the
 separate parity cases retain the native pixel oracle. Preparation latency and
 blocking frame work are distinct measurements.
+
+### Static shadow reuse comparison
 
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.
 

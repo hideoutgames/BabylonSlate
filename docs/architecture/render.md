@@ -1286,6 +1286,8 @@ temporary shadow lookups borrow compatible generator definitions without changin
 live maps, frozen receiver wrappers or shadow flags. Successful effects remain
 referenced until the actual layout passes strict readiness. There is no extra RTT
 or all-light-combinations cache, including when the shadow budget is full.
+Detached probes preserve each live pass's define ordering so activation reuses
+the prepared shader instead of compiling an equivalent variant under a new key.
 
 Changed winners or readiness invalidate pending work. Authored disable/priority,
 camera possession, lost eligibility, resource/settings changes, incompatible
