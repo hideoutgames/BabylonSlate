@@ -252,10 +252,10 @@ test.describe("Editor density and IA", () => {
   }) => {
     await openTestProject(page);
     await saveAllIfEnabled(page);
-    // Keep the real entrance transform active so menu hit testing is deterministic.
+    // Settle launcher entrance motion so menu hit testing is deterministic.
     await page.addStyleTag({
       content:
-        ".homepage-library { animation-play-state: paused; animation-delay: -0.325s; }",
+        ".homepage-library-view, .homepage-gallery-item { animation: none !important; }",
     });
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();

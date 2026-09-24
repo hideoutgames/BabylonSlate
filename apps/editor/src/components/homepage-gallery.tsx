@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
@@ -23,9 +24,8 @@ export function HomepageGallery({
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(3);
-  const [listRows, setListRows] = useState(6);
+  const [rows, setRows] = useState(layout === "list" ? 6 : 1);
   const [width, setWidth] = useState(0);
-  const rows = layout === "list" ? listRows : layout === "small" ? 2 : 1;
   const pageSize = layout === "list" ? rows : columns * rows;
   const [page, setPage] = useState(0);
   const [visiblePage, setVisiblePage] = useState(0);
@@ -85,10 +85,35 @@ export function HomepageGallery({
       if (!width) return;
       setWidth(width);
       setColumns(
-        width >= 940 ? (layout === "small" ? 4 : 3) : width >= 600 ? 2 : 1,
+        layout === "small"
+          ? width >= 1240
+            ? 6
+            : width >= 900
+              ? 5
+              : width >= 560
+                ? 3
+                : 2
+          : width >= 1240
+            ? 4
+            : width >= 900
+              ? 3
+              : width >= 560
+                ? 2
+                : 1,
       );
-      setListRows(
-        Math.max(1, Math.min(10, Math.floor((element.clientHeight - 32) / 72))),
+      const height = element.clientHeight;
+      setRows(
+        layout === "list"
+          ? Math.max(1, Math.min(10, Math.floor((height - 32) / 72)))
+          : Math.max(
+              1,
+              Math.min(
+                layout === "small" ? 4 : 3,
+                Math.floor(
+                  (height - 12) / ((layout === "small" ? 170 : 260) + 12),
+                ),
+              ),
+            ),
       );
     };
     resize();
@@ -246,12 +271,8 @@ export function HomepageGallery({
                   gridTemplateColumns:
                     layout === "list"
                       ? "minmax(0, 1fr)"
-                      : `repeat(${layout === "small" ? columns : Math.min(columns, items.length - index * pageSize)}, minmax(0, 380px))`,
-                  gridTemplateRows:
-                    layout === "large"
-                      ? undefined
-                      : `repeat(${rows}, minmax(0, 1fr))`,
-                  justifyContent: "center",
+                      : `repeat(${columns}, minmax(0, 1fr))`,
+                  gridTemplateRows: `repeat(${rows}, minmax(0, ${layout === "large" ? "320px" : "1fr"}))`,
                 }}
                 role="group"
                 aria-label={`Page ${index + 1} of ${pages}`}
@@ -260,8 +281,14 @@ export function HomepageGallery({
                 {Math.abs(index - visiblePage) <= 1 &&
                   items
                     .slice(index * pageSize, (index + 1) * pageSize)
-                    .map((item) => (
-                      <div className="homepage-gallery-item" key={item.id}>
+                    .map((item, itemIndex) => (
+                      <div
+                        className="homepage-gallery-item"
+                        key={item.id}
+                        style={
+                          { "--item-index": itemIndex } as CSSProperties
+                        }
+                      >
                         {item.content}
                       </div>
                     ))}
@@ -272,7 +299,7 @@ export function HomepageGallery({
       <div className="homepage-pagination" data-visible={pages > 1}>
         <Button
           variant="ghost"
-          size="touch-icon"
+          size="icon-sm"
           aria-label="Previous Page"
           disabled={navigationPage === 0}
           onClick={() => move(-1)}
@@ -285,7 +312,7 @@ export function HomepageGallery({
         </span>
         <Button
           variant="ghost"
-          size="touch-icon"
+          size="icon-sm"
           aria-label="Next Page"
           disabled={navigationPage >= pages - 1}
           onClick={() => move(1)}

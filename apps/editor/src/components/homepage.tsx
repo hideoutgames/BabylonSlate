@@ -9,14 +9,15 @@ import {
 } from "react";
 import {
   ArrowUpDownIcon,
+  ChevronDownIcon,
   FolderOpenIcon,
   Grid2x2Icon,
   Grid3x3Icon,
+  LayoutTemplateIcon,
   ListIcon,
   LoaderCircleIcon,
   MoonIcon,
   PlusIcon,
-  SearchIcon,
   Settings2Icon,
   SunIcon,
   XIcon,
@@ -57,6 +58,8 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import {
   Empty,
+  EmptyContent,
+  EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
@@ -80,6 +83,8 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import { brandIconSrc } from "../lib/branding";
+import { getBuildLabel } from "../lib/build-identity";
+import { IconActionButton } from "./icon-action-button";
 import { HomepageAccount } from "./homepage-account";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageEmptyArt } from "./homepage-empty-art";
@@ -89,6 +94,7 @@ import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
 import { useHomepageScheme } from "./homepage-scheme";
 import {
   HomepageTemplateBrowser,
+  homepageTemplates,
   recordTemplateUse,
 } from "./homepage-template-browser";
 import { importTemplateArchive } from "../services/template-service";
@@ -100,6 +106,18 @@ const SettingsModal = lazy(() =>
     default: module.SettingsModal,
   })),
 );
+
+const PROJECT_LAYOUT_OPTIONS = [
+  { value: "large", label: "Large Cards", icon: Grid2x2Icon },
+  { value: "small", label: "Small Cards", icon: Grid3x3Icon },
+  { value: "list", label: "List", icon: ListIcon },
+] as const;
+
+function storageLocationLabel(hostPlatform: string) {
+  if (hostPlatform === "web") return "Browser Storage";
+  if (hostPlatform === "electron") return "Projects Folder";
+  return "App Documents";
+}
 
 interface HomepageProps {
   projects: ListedProject[];
@@ -211,7 +229,6 @@ export function Homepage({
     }
   };
 
-  const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<HomepageProjectSortMode>("last-opened-desc");
   const [error, setError] = useState<string | null>(null);
@@ -253,6 +270,10 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
+  const templateCount = homepageTemplates(templates).length;
+  const LayoutIcon =
+    PROJECT_LAYOUT_OPTIONS.find((option) => option.value === layout)?.icon ??
+    Grid2x2Icon;
 
   const run = async (
     action: () => void | Promise<void>,
@@ -304,6 +325,10 @@ export function Homepage({
       await importTemplateArchive(files[0].name, files[0].bytes);
       await onSettingsChanged();
     }, null);
+  const changeView = (next: string) => {
+    setView(next);
+    setSearch("");
+  };
 
   return (
     <div
@@ -312,7 +337,7 @@ export function Homepage({
       data-slate-theme={scheme}
     >
       <style data-slate-home-styles>{homepageStyles}</style>
-      <header className="homepage-header">
+      <header className="homepage-titlebar">
         <div className="homepage-brand">
           <img src={brandIconSrc(scheme)} alt="" />
           <h1>Slate</h1>
@@ -320,24 +345,97 @@ export function Homepage({
         <ToggleGroup
           className="homepage-navigation"
           aria-label="Library"
+          spacing={0}
           value={[view]}
           onValueChange={(values) => {
-            if (values[0]) {
-              setView(values[0]);
-              setSearch("");
-              setSearchOpen(false);
-            }
+            if (values[0]) changeView(values[0]);
           }}
           disabled={busy}
         >
-          <ToggleGroupItem value="projects">Projects</ToggleGroupItem>
-          <ToggleGroupItem value="templates">Templates</ToggleGroupItem>
+          <ToggleGroupItem value="projects">
+            <FolderOpenIcon data-icon="inline-start" />
+            Projects
+          </ToggleGroupItem>
+          <ToggleGroupItem value="templates">
+            <LayoutTemplateIcon data-icon="inline-start" />
+            Templates
+          </ToggleGroupItem>
         </ToggleGroup>
-        <div className="homepage-utilities">
+        <div className="homepage-titlebar-end">
+          <HomepageAccount disabled={busy} onOpenChange={setAccountOpen} />
+        </div>
+      </header>
+      <div className="homepage-toolbar" role="toolbar" aria-label="Launcher">
+        <div className="homepage-toolbar-start">
           <Button
+            size="sm"
+            className="homepage-new"
+            data-testid="create-project"
+            disabled={busy}
+            onClick={() => create()}
+          >
+            {busy ? (
+              <LoaderCircleIcon
+                className="animate-spin"
+                data-icon="inline-start"
+              />
+            ) : (
+              <PlusIcon data-icon="inline-start" />
+            )}
+            New Project
+          </Button>
+          {hostPlatform === "web" ? (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Open Folder"
+                    data-testid="open-project"
+                    disabled={busy}
+                  />
+                }
+              >
+                <FolderOpenIcon data-icon="inline-start" />
+                <span className="homepage-optional-label">Open</span>
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="homepage-theme" align="start">
+                <DropdownMenuItem
+                  onClick={() =>
+                    void run(() => launch(() => onOpenExternal("folder")))
+                  }
+                >
+                  Import Folder
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    void run(() => launch(() => onOpenExternal("zip")))
+                  }
+                >
+                  Import ZIP
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Open Folder"
+              data-testid="open-project"
+              disabled={busy}
+              onClick={() => void run(() => launch(onOpenExternal))}
+            >
+              <FolderOpenIcon data-icon="inline-start" />
+              <span className="homepage-optional-label">Open</span>
+            </Button>
+          )}
+        </div>
+        <div className="homepage-toolbar-end">
+          <IconActionButton
+            label={scheme === "dark" ? "Light Mode" : "Dark Mode"}
             variant="ghost"
-            size="touch-icon"
-            aria-label={scheme === "dark" ? "Light Mode" : "Dark Mode"}
             disabled={busy}
             onClick={() =>
               void run(
@@ -347,138 +445,27 @@ export function Homepage({
             }
           >
             {scheme === "dark" ? <SunIcon /> : <MoonIcon />}
-          </Button>
+          </IconActionButton>
           <Button
-            variant="ghost"
-            size="touch-icon"
+            variant="outline"
+            size="sm"
             aria-label="Engine Settings"
             data-testid="engine-settings"
             disabled={busy}
             onClick={() => setSettingsOpen(true)}
           >
-            <Settings2Icon />
+            <Settings2Icon data-icon="inline-start" />
+            <span className="homepage-optional-label">Engine Settings</span>
           </Button>
-          <HomepageAccount disabled={busy} onOpenChange={setAccountOpen} />
         </div>
-      </header>
+      </div>
       <main className="homepage-main">
-        {operation && (
-          <p role="status" className="shrink-0 text-sm text-muted-foreground">
-            {operation}…
-          </p>
-        )}
-        <div className="homepage-library-toolbar">
-          <div className="homepage-library-label">
-            <span>{view === "projects" ? "Projects" : "Templates"}</span>
-            <span>
-              {String(
-                view === "projects" ? projects.length : templates.length + 3,
-              ).padStart(2, "0")}
-            </span>
-          </div>
-          {view === "projects" && projects.length > 0 && (
-            <div className="homepage-search-tools">
-              {searchOpen && (
-                <SearchInput
-                  className="homepage-search"
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="Search"
-                  data-testid="homepage-project-search"
-                />
-              )}
-              <Button
-                variant="ghost"
-                size="touch-icon"
-                aria-label={searchOpen ? "Close Search" : "Search Projects"}
-                onClick={() => {
-                  setSearchOpen(!searchOpen);
-                  setSearch("");
-                }}
-              >
-                {searchOpen ? <XIcon /> : <SearchIcon />}
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="touch-icon"
-                      aria-label="Sort"
-                      data-testid="homepage-project-sort"
-                    />
-                  }
-                >
-                  <ArrowUpDownIcon />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="homepage-theme" align="end">
-                  <DropdownMenuGroup>
-                    <DropdownMenuRadioGroup
-                      value={sort}
-                      onValueChange={(value) =>
-                        setSort(value as HomepageProjectSortMode)
-                      }
-                    >
-                      {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
-                        <DropdownMenuRadioItem
-                          closeOnClick
-                          key={option.mode}
-                          value={option.mode}
-                        >
-                          {option.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="touch-icon"
-                      aria-label="Project View"
-                    />
-                  }
-                >
-                  {layout === "list" ? (
-                    <ListIcon />
-                  ) : layout === "small" ? (
-                    <Grid3x3Icon />
-                  ) : (
-                    <Grid2x2Icon />
-                  )}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="homepage-theme" align="end">
-                  <DropdownMenuGroup>
-                    <DropdownMenuRadioGroup
-                      value={layout}
-                      onValueChange={(value) =>
-                        changeLayout(value as typeof layout)
-                      }
-                    >
-                      <DropdownMenuRadioItem closeOnClick value="large">
-                        Large Cards
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem closeOnClick value="small">
-                        Small Cards
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem closeOnClick value="list">
-                        List
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-        </div>
         {needsReconnect && (
           <Alert className="homepage-notice">
             <AlertDescription>Reconnect Project</AlertDescription>
             <Button
               variant="outline"
+              size="sm"
               disabled={busy}
               onClick={() =>
                 void run(() => launch(onReconnect), "Reconnecting Project")
@@ -493,12 +480,18 @@ export function Homepage({
             <AlertDescription>Recover Previous Session?</AlertDescription>
             <Button
               variant="outline"
+              size="sm"
               disabled={busy}
               onClick={() => void run(onRecover, "Recovering Edits")}
             >
               Recover
             </Button>
-            <Button variant="ghost" disabled={busy} onClick={onDismissRecovery}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={onDismissRecovery}
+            >
               Dismiss
             </Button>
           </Alert>
@@ -518,76 +511,11 @@ export function Homepage({
                 ? ` This has happened ${uncleanExit.recentCount} times in the last 10 minutes.`
                 : ""}
             </AlertDescription>
-            <Button variant="ghost" onClick={onDismissUncleanExit}>
+            <Button variant="ghost" size="sm" onClick={onDismissUncleanExit}>
               Dismiss
             </Button>
           </Alert>
         )}
-        <div className="homepage-view">
-          <div className="homepage-library-view" hidden={view !== "projects"}>
-            <HomepageGallery
-              label="Projects"
-              layout={layout}
-              items={visibleProjects.map((project) => ({
-                id: project.id,
-                content: (
-                  <HomepageProjectCard
-                    project={project}
-                    layout={layout}
-                    busy={busy}
-                    deleting={shouldDeleteOpfsOnRemove(
-                      hostPlatform,
-                      project.tier,
-                    )}
-                    onOpen={() =>
-                      void run(() =>
-                        launch(() => onOpenProject(project), project.label),
-                      )
-                    }
-                    onEdit={() => edit(project)}
-                    onRemove={() => {
-                      setRemoveTarget(project);
-                      setRemoveOpen(true);
-                    }}
-                  />
-                ),
-              }))}
-              empty={
-                <Empty
-                  className="homepage-empty"
-                  data-testid="homepage-projects-empty"
-                >
-                  {!search && (
-                    <HomepageEmptyArt
-                      onReady={markArtReady}
-                      paused={
-                        busy ||
-                        transition.active ||
-                        createOpen ||
-                        settingsOpen ||
-                        accountOpen ||
-                        view !== "projects"
-                      }
-                    />
-                  )}
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {search ? "No Results" : "No Projects Yet"}
-                    </EmptyTitle>
-                  </EmptyHeader>
-                </Empty>
-              }
-            />
-          </div>
-          <div className="homepage-library-view" hidden={view !== "templates"}>
-            <HomepageTemplateBrowser
-              templates={templates}
-              disabled={busy}
-              onImport={importTemplate}
-              onSelect={(id) => create(id, false)}
-            />
-          </div>
-        </div>
         {error && !createOpen && (
           <Alert
             variant="destructive"
@@ -597,7 +525,7 @@ export function Homepage({
             <AlertDescription>{error}</AlertDescription>
             <Button
               variant="ghost"
-              size="touch-icon"
+              size="icon-sm"
               aria-label="Dismiss Error"
               onClick={() => setError(null)}
             >
@@ -605,68 +533,201 @@ export function Homepage({
             </Button>
           </Alert>
         )}
+        <div className="homepage-view">
+          <div className="homepage-library-view" hidden={view !== "projects"}>
+            <div className="homepage-panel">
+              {projects.length > 0 && (
+                <div className="homepage-panel-toolbar">
+                  <SearchInput
+                    className="homepage-search"
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search Projects…"
+                    aria-label="Search Projects"
+                    data-testid="homepage-project-search"
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Sort"
+                          data-testid="homepage-project-sort"
+                        />
+                      }
+                    >
+                      <ArrowUpDownIcon data-icon="inline-start" />
+                      <span className="homepage-optional-label">Sort</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="homepage-theme" align="end">
+                      <DropdownMenuGroup>
+                        <DropdownMenuRadioGroup
+                          value={sort}
+                          onValueChange={(value) =>
+                            setSort(value as HomepageProjectSortMode)
+                          }
+                        >
+                          {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              closeOnClick
+                              key={option.mode}
+                              value={option.mode}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Project View"
+                        />
+                      }
+                    >
+                      <LayoutIcon data-icon="inline-start" />
+                      <span className="homepage-optional-label">View</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="homepage-theme" align="end">
+                      <DropdownMenuGroup>
+                        <DropdownMenuRadioGroup
+                          value={layout}
+                          onValueChange={(value) =>
+                            changeLayout(value as typeof layout)
+                          }
+                        >
+                          {PROJECT_LAYOUT_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              closeOnClick
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
+              <HomepageGallery
+                label="Projects"
+                layout={layout}
+                items={visibleProjects.map((project) => ({
+                  id: project.id,
+                  content: (
+                    <HomepageProjectCard
+                      project={project}
+                      layout={layout}
+                      busy={busy}
+                      deleting={shouldDeleteOpfsOnRemove(
+                        hostPlatform,
+                        project.tier,
+                      )}
+                      onOpen={() =>
+                        void run(() =>
+                          launch(() => onOpenProject(project), project.label),
+                        )
+                      }
+                      onEdit={() => edit(project)}
+                      onRemove={() => {
+                        setRemoveTarget(project);
+                        setRemoveOpen(true);
+                      }}
+                    />
+                  ),
+                }))}
+                empty={
+                  <Empty
+                    className="homepage-empty"
+                    data-testid="homepage-projects-empty"
+                    data-search={search ? "true" : "false"}
+                  >
+                    {!search && (
+                      <HomepageEmptyArt
+                        onReady={markArtReady}
+                        paused={
+                          busy ||
+                          transition.active ||
+                          createOpen ||
+                          settingsOpen ||
+                          accountOpen ||
+                          view !== "projects"
+                        }
+                      />
+                    )}
+                    <EmptyHeader>
+                      <EmptyTitle>
+                        {search ? "No Results" : "No Projects Yet"}
+                      </EmptyTitle>
+                      {!search && (
+                        <EmptyDescription>
+                          Start from a template or open an existing project
+                          folder.
+                        </EmptyDescription>
+                      )}
+                    </EmptyHeader>
+                    {!search && (
+                      <EmptyContent className="homepage-empty-actions">
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => create()}
+                        >
+                          <PlusIcon data-icon="inline-start" />
+                          Create Project
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => changeView("templates")}
+                        >
+                          <LayoutTemplateIcon data-icon="inline-start" />
+                          Browse Templates
+                        </Button>
+                      </EmptyContent>
+                    )}
+                  </Empty>
+                }
+              />
+            </div>
+          </div>
+          <div className="homepage-library-view" hidden={view !== "templates"}>
+            <div className="homepage-panel">
+              <HomepageTemplateBrowser
+                templates={templates}
+                disabled={busy}
+                onImport={importTemplate}
+                onSelect={(id) => create(id, false)}
+              />
+            </div>
+          </div>
+        </div>
       </main>
-      <footer className="homepage-dock">
-        <Button
-          className="homepage-new"
-          data-testid="create-project"
-          disabled={busy}
-          onClick={() => create()}
-        >
-          {busy ? (
-            <LoaderCircleIcon
-              className="animate-spin"
-              data-icon="inline-start"
-            />
-          ) : (
-            <PlusIcon data-icon="inline-start" />
-          )}
-          New Project
-        </Button>
-        {hostPlatform === "web" ? (
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="touch-icon"
-                  aria-label="Open Folder"
-                  data-testid="open-project"
-                  disabled={busy}
-                />
-              }
-            >
-              <FolderOpenIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="homepage-theme" align="end">
-              <DropdownMenuItem
-                onClick={() =>
-                  void run(() => launch(() => onOpenExternal("folder")))
-                }
-              >
-                Import Folder
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() =>
-                  void run(() => launch(() => onOpenExternal("zip")))
-                }
-              >
-                Import ZIP
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      <footer className="homepage-statusbar">
+        {operation ? (
+          <p role="status" className="homepage-status-operation">
+            <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+            {operation}…
+          </p>
         ) : (
-          <Button
-            variant="ghost"
-            size="touch-icon"
-            aria-label="Open Folder"
-            data-testid="open-project"
-            disabled={busy}
-            onClick={() => void run(() => launch(onOpenExternal))}
-          >
-            <FolderOpenIcon />
-          </Button>
+          <p className="homepage-status-summary">
+            {view === "projects"
+              ? `${projects.length} ${projects.length === 1 ? "Project" : "Projects"}`
+              : `${templateCount} ${templateCount === 1 ? "Template" : "Templates"}`}
+            <span aria-hidden="true">·</span>
+            {storageLocationLabel(hostPlatform)}
+          </p>
         )}
+        <span className="homepage-status-version">{getBuildLabel()}</span>
       </footer>
       <HomepageCreateDialog
         open={createOpen}

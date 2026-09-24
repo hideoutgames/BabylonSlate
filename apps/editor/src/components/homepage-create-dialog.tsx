@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowUpRightIcon,
   ArrowLeftIcon,
   CheckIcon,
   ImagePlusIcon,
@@ -230,7 +229,7 @@ export function HomepageCreateDialog({
           {!editing && step === "details" && (
             <Button
               variant="ghost"
-              size="touch-icon"
+              size="icon-sm"
               className="homepage-composer-back"
               aria-label="Choose Template"
               disabled={busy}
@@ -344,7 +343,7 @@ export function HomepageCreateDialog({
                           key={id}
                           type="button"
                           variant="ghost"
-                          size="touch-icon"
+                          size="icon"
                           className="homepage-icon-choice"
                           aria-label={label}
                           aria-pressed={
@@ -372,7 +371,7 @@ export function HomepageCreateDialog({
                             key={id}
                             type="button"
                             variant="ghost"
-                            size="touch-icon"
+                            size="icon-sm"
                             className="homepage-color-choice"
                             aria-label={label}
                             aria-pressed={appearance.color === id}
@@ -407,6 +406,7 @@ export function HomepageCreateDialog({
                         <Button
                           type="button"
                           variant="outline"
+                          size="sm"
                           disabled={busy || imageBusy}
                           onClick={() => fileInput.current?.click()}
                         >
@@ -426,7 +426,7 @@ export function HomepageCreateDialog({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="touch-icon"
+                            size="icon-sm"
                             aria-label="Remove Picture"
                             disabled={busy || imageBusy}
                             onClick={() =>
@@ -567,7 +567,6 @@ export function HomepageCreateDialog({
                     />
                   )}
                   {editing ? "Save" : "Create"}
-                  <ArrowUpRightIcon data-icon="inline-end" />
                 </Button>
               </DialogFooter>
             </div>

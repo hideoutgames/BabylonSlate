@@ -32,6 +32,7 @@ vi.mock("./homepage-empty-art", () => ({ HomepageEmptyArt: () => null }));
 
 beforeEach(() => {
   localStorage.clear();
+  vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
     matches: false,
     media,
@@ -383,7 +384,6 @@ describe("Slate project browser", () => {
     renderHomepage({
       projects: [listedProject("Orbit", "opfs"), listedProject("Tide", "opfs")],
     });
-    fireEvent.click(screen.getByRole("button", { name: "Search Projects" }));
     fireEvent.change(screen.getByTestId("homepage-project-search"), {
       target: { value: "Tide" },
     });

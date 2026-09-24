@@ -214,11 +214,13 @@ export function LauncherTransitionProvider({
               }
             >
               <section className="slate-splash-card">
+                <div className="slate-splash-titlebar">
+                  <img src={brandIconSrc(scheme)} alt="" />
+                  <span>Slate</span>
+                  <span className="slate-splash-version">{version}</span>
+                </div>
                 <div className="slate-splash-art" aria-hidden="true">
-                  <div className="slate-splash-brand">
-                    <img src={brandIconSrc("dark")} alt="" />
-                    <span>Slate</span>
-                  </div>
+                  <div className="slate-splash-floor" />
                   <div className="slate-splash-planes">
                     <i />
                     <i />
@@ -235,7 +237,6 @@ export function LauncherTransitionProvider({
                     <span className="slate-loading-label">
                       {transition.label}
                     </span>
-                    <span className="slate-splash-version">{version}</span>
                   </div>
                   <div className="slate-splash-status">
                     <span>{transition.status}</span>
