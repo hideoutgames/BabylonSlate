@@ -149,7 +149,6 @@ jobs:
       BABYLONSLATE_DISTRIBUTION: 'true'
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
-      APPLE_TOOLCHAIN_FILE: ${{ runner.temp }}/apple-toolchains.json
       FASTLANE_SKIP_UPDATE_CHECK: 'true'
       FASTLANE_OPT_OUT_USAGE: 'true'
     steps:
@@ -172,11 +171,14 @@ jobs:
           bundle config set --local path vendor/bundle
           bundle install --jobs 4 --retry 3
       - name: Validate selected Xcode and locked tools
+        env:
+          APPLE_TOOLCHAIN_FILE: ${{ runner.temp }}/apple-toolchains.json
         run: node scripts/distribution/apple-toolchain.mjs
       - name: Generate actual iPadOS build identity
         id: metadata
         env:
           DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+          APPLE_TOOLCHAIN_FILE: ${{ runner.temp }}/apple-toolchains.json
         run: node scripts/distribution/generate-metadata.mjs ipados
       - name: Build editor/player and preserve custom Capacitor plugin registrations
         run: bundle exec pnpm --filter editor ios:sync

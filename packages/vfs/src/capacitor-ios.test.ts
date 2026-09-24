@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+// @ts-expect-error -- plain .mjs tooling script, intentionally untyped.
+import { scanText } from "../../../scripts/check-public-hygiene.mjs";
 
 const vfsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(vfsDir, "../../..");
@@ -274,8 +276,7 @@ describe("Capacitor 8 iOS host", () => {
         continue;
       }
       const text = readFileSync(file, "utf8");
-      expect(text).not.toContain("DEVELOPMENT_TEAM");
-      expect(text).not.toContain("PROVISIONING_PROFILE");
+      expect(scanText(file, text)).toEqual([]);
     }
   });
 

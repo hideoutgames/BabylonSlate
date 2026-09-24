@@ -33,6 +33,10 @@ plausibly end up in a working tree. None of it belongs in git:
 The same applies to commit messages, PR titles and descriptions, code comments,
 and test fixtures.
 
+Xcode build-setting variable references may be tracked when they contain no
+literal signing identifier. Supply the resolved IDs through CI configuration or
+local ignored files; never commit the resolved signing configuration.
+
 ## How this is enforced
 
 Three layers, all of which run on Linux and need no macOS or Xcode:

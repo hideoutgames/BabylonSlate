@@ -1,17 +1,33 @@
 export const APPLE_BUNDLE_ID = "no.hideout.babylonslate";
 
-export function archiveArguments(identity, archivePath) {
-  return ["-workspace", "ios/App/App.xcworkspace", "-scheme", "App", "-configuration", "Release", "-destination", "generic/platform=iOS", "-archivePath", archivePath, `MARKETING_VERSION=${identity.appleMarketingVersion}`, `CURRENT_PROJECT_VERSION=${identity.appleBuildNumber}`, "CODE_SIGNING_ALLOWED=NO", "archive"];
+export function archiveArguments(identity, archivePath, { teamId, signingIdentity, profileUuid }) {
+  if (!/^[A-Z0-9]{10}$/.test(teamId) || !/^[A-Fa-f0-9]{40}$/.test(signingIdentity) || !/^[A-Fa-f0-9-]{36}$/.test(profileUuid)) throw new Error("Validated manual signing assets are required for the archive");
+  // The profile selector belongs only to the App target, not CocoaPods frameworks.
+  const settings = { MARKETING_VERSION: identity.appleMarketingVersion, CURRENT_PROJECT_VERSION: identity.appleBuildNumber, CODE_SIGNING_ALLOWED: "YES", CODE_SIGN_STYLE: "Manual", DEVELOPMENT_TEAM: teamId, CODE_SIGN_IDENTITY: signingIdentity, BABYLONSLATE_PROVISIONING_PROFILE_SPECIFIER: profileUuid };
+  return ["-workspace", "ios/App/App.xcworkspace", "-scheme", "App", "-configuration", "Release", "-destination", "generic/platform=iOS", "-archivePath", archivePath, ...Object.entries(settings).map(([name, value]) => `${name}=${value}`), "archive"];
 }
 
 export function exportOptions(teamId, profileUuid) {
   return { method: "app-store-connect", destination: "export", signingStyle: "manual", signingCertificate: "Apple Distribution", teamID: teamId, provisioningProfiles: { [APPLE_BUNDLE_ID]: profileUuid }, manageAppVersionAndBuildNumber: false, testFlightInternalTestingOnly: false, uploadSymbols: false };
 }
 
+export function validateAppleMemoryEntitlements(entitlements) {
+  if (entitlements?.["com.apple.developer.kernel.increased-memory-limit"] !== true || entitlements?.["com.apple.developer.kernel.extended-virtual-addressing"] !== true) throw new Error("Apple memory entitlements are missing or invalid");
+}
+
+export function validateAppleProvisioningProfile(profile, teamId, now = Date.now()) {
+  const expires = new Date(profile.ExpirationDate).getTime();
+  if (!/^[A-Fa-f0-9-]{36}$/.test(profile.UUID) || profile.TeamIdentifier?.[0] !== teamId || profile.Entitlements?.["application-identifier"] !== `${teamId}.${APPLE_BUNDLE_ID}` || profile.Entitlements?.["get-task-allow"] !== false || profile.ProvisionedDevices || profile.ProvisionsAllDevices || !Number.isFinite(expires) || expires <= now) throw new Error("App Store provisioning profile is invalid or expired");
+  validateAppleMemoryEntitlements(profile.Entitlements);
+  if (profile.Entitlements["aps-environment"] !== "production") throw new Error("App Store provisioning profile must enable production push notifications");
+}
+
 export function validateAppleBundle(identity, info, entitlements, teamId) {
   if (info.CFBundleIdentifier !== APPLE_BUNDLE_ID || info.CFBundleShortVersionString !== identity.appleMarketingVersion || info.CFBundleVersion !== identity.appleBuildNumber || JSON.stringify(info.UIDeviceFamily) !== "[1,2]" || info.CFBundleDisplayName !== "BabylonSlate" || !/^iphoneos(?:2[6-9]|[3-9]\d)\./.test(info.DTSDKName) || typeof info.ITSAppUsesNonExemptEncryption !== "boolean") throw new Error("Exported Apple bundle identity, target, SDK or encryption declaration is invalid");
   if (entitlements["application-identifier"] !== `${teamId}.${APPLE_BUNDLE_ID}` || entitlements["com.apple.developer.team-identifier"] !== teamId || entitlements["get-task-allow"] !== false || entitlements["beta-reports-active"] !== true) throw new Error("Exported Apple distribution entitlements are invalid");
-  const allowed = new Set(["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "beta-reports-active", "keychain-access-groups"]);
+  validateAppleMemoryEntitlements(entitlements);
+  if (entitlements["aps-environment"] !== "production") throw new Error("Exported Apple push entitlement must use the production APNs environment");
+  const allowed = new Set(["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "beta-reports-active", "keychain-access-groups", "aps-environment", "com.apple.developer.kernel.increased-memory-limit", "com.apple.developer.kernel.extended-virtual-addressing"]);
   if (Object.keys(entitlements).some(key => !allowed.has(key))) throw new Error("Unexpected entitlement; audit it before distribution");
   if (entitlements["keychain-access-groups"]?.some(group => group !== `${teamId}.${APPLE_BUNDLE_ID}`)) throw new Error("Unexpected keychain access group");
 }

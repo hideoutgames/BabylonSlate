@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { APPLE_BUNDLE_ID, archiveArguments, exportOptions, validateAppleBundle, validateAppleConfiguration } from "../../../scripts/distribution/apple-contract.mjs";
+import { APPLE_BUNDLE_ID, archiveArguments, exportOptions, validateAppleBundle, validateAppleConfiguration, validateAppleProvisioningProfile } from "../../../scripts/distribution/apple-contract.mjs";
 import { appleClient } from "../../../scripts/distribution/apple-api.mjs";
 import { assertAppleBuildAvailable } from "../../../scripts/distribution/contract.mjs";
 import { allApplePages, validatePrivateGroups } from "../../../scripts/distribution/testflight.mjs";
@@ -45,13 +45,6 @@ try {
   const builds = await allApplePages(api, `/v1/builds?filter[app]=${process.env.ASC_APP_ID}&limit=200&sort=-uploadedDate`);
   assertAppleBuildAvailable(identity.appleBuildNumber, builds.map(build => build.attributes.version));
 
-  stage = "archive";
-  originalInfo = await readFile(infoPath);
-  const sourceInfo = await plist(infoPath, "source-info");
-  await run("plutil", [Object.hasOwn(sourceInfo, "ITSAppUsesNonExemptEncryption") ? "-replace" : "-insert", "ITSAppUsesNonExemptEncryption", "-bool", process.env.APPLE_USES_NON_EXEMPT_ENCRYPTION, infoPath], "encryption-declaration");
-  const archive = join(privateDir, "App.xcarchive");
-  await run("xcodebuild", [...archiveArguments(identity, archive), "-derivedDataPath", join(privateDir, "DerivedData")], "archive");
-
   stage = "signing";
   const keychain = join(privateDir, "distribution.keychain-db");
   const password = randomBytes(32).toString("hex");
@@ -63,7 +56,7 @@ try {
   const decodedProfile = join(privateDir, "profile.plist");
   await writeFile(decodedProfile, profileXml, { mode: 0o600 });
   const profileInfo = await plist(decodedProfile, "profile-info");
-  if (!/^[A-Fa-f0-9-]{36}$/.test(profileInfo.UUID) || profileInfo.TeamIdentifier?.[0] !== process.env.APPLE_TEAM_ID || profileInfo.Entitlements?.["application-identifier"] !== `${process.env.APPLE_TEAM_ID}.${APPLE_BUNDLE_ID}` || profileInfo.Entitlements?.["get-task-allow"] !== false || profileInfo.ProvisionedDevices || profileInfo.ProvisionsAllDevices || new Date(profileInfo.ExpirationDate).getTime() <= Date.now()) throw new Error("App Store provisioning profile is invalid or expired");
+  validateAppleProvisioningProfile(profileInfo, process.env.APPLE_TEAM_ID);
   const originalKeychains = (await run("security", ["list-keychains", "-d", "user"], "keychain-list")).match(/"([^"]+)"/g)?.map(value => value.slice(1, -1)) ?? [];
   await writeFile(join(privateDir, "original-keychains.json"), JSON.stringify(originalKeychains), { mode: 0o600 });
   await run("security", ["create-keychain", "-p", password, keychain], "create-keychain");
@@ -85,6 +78,14 @@ try {
     await writeFile(join(privateDir, "installed-profile-uuid"), profileInfo.UUID, { mode: 0o600 });
     await cp(profile, target);
   }
+
+  stage = "archive";
+  originalInfo = await readFile(infoPath);
+  const sourceInfo = await plist(infoPath, "source-info");
+  await run("plutil", [Object.hasOwn(sourceInfo, "ITSAppUsesNonExemptEncryption") ? "-replace" : "-insert", "ITSAppUsesNonExemptEncryption", "-bool", process.env.APPLE_USES_NON_EXEMPT_ENCRYPTION, infoPath], "encryption-declaration");
+  const archive = join(privateDir, "App.xcarchive");
+  await run("xcodebuild", [...archiveArguments(identity, archive, { teamId: process.env.APPLE_TEAM_ID, signingIdentity, profileUuid: profileInfo.UUID }), "-derivedDataPath", join(privateDir, "DerivedData")], "archive");
+
   const optionsPath = join(privateDir, "ExportOptions.plist");
   await writeFile(optionsPath, JSON.stringify({ ...exportOptions(process.env.APPLE_TEAM_ID, profileInfo.UUID), signingCertificate: signingIdentity }), { mode: 0o600 });
   await run("plutil", ["-convert", "xml1", optionsPath], "export-options");
