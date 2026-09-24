@@ -17,7 +17,8 @@ retain their existing owners.
 Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
 render-callback preparation time, context events, graph builds, strict readiness
 checks and aggregate shadow-admission work. Editor baseline samples use completed
-copies. Timing does not establish GPU cost, and pixel-readback correctness checks
+copies. Copy timing includes synchronous flush/driver waits, so it does not
+isolate CPU or GPU cost. Pixel-readback correctness checks
 must be collected separately from performance samples.
 
 Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings

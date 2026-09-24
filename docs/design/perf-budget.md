@@ -85,6 +85,50 @@ Revision `e6d008c3`, Windows Chromium 151.0.7922.34, WebGL2 through ANGLE/SwiftS
 
 Software rendering stayed far below the viewport cap. Scene-render CPU medians were 3.2/2.1/3.1 ms; that counter does not measure total presentation time. Each sample observed zero texture/render-target churn and one live Engine scene. Engine texture counts were 23/30/24 across fixtures, so this is not proof of constant total resource use. Non-shadow byte counters omit this fixture's runtime primitives and default textures. Setup, including persisted saves, took 35.7/12.9/21.6 seconds before sampling. A16/Safari performance, total GPU residency and sustained thermal behavior remain unmeasured.
 
+### Viewport light-edit comparison
+
+The `scene viewport light-edit performance measurement` case uses four point
+lights, two 512-pixel shadow maps and the unchanged 30 fps editor cap. Each run
+measures 30 seconds idle and 30 seconds of real Details X edits, with a 500 ms
+pause after each commit. Faster inputs therefore complete more edits. Pixel
+correctness runs separately. The local native adapter is available through
+`--config playwright.perf.config.ts --project=perf-gpu`; select this exact case
+in `e2e/rendering-baseline.spec.ts` through the resource-admitted test runner.
+
+On 24 September 2026, the original `225d55b8` production code and fixed
+`6061fb2b` (software) / `2c0866f6` (native) used Chromium 151.0.7922.34,
+1280×720 CSS, a 720×464 drawing buffer, WebGL2 and identical quality. Both
+revisions used the same measurement harness; tracing and video were off.
+
+| Adapter / workload | Original interval median / p95 / p99 (ms) | Fixed interval median / p95 / p99 (ms) |
+| --- | --- | --- |
+| RTX 2060, idle | 33.44 / 34.12 / 34.91 | 33.45 / 35.27 / 38.05 |
+| RTX 2060, editing | 33.41 / 44.22 / 63.36 | 33.44 / 52.63 / 85.36 |
+| SwiftShader, idle | 68.94 / 81.65 / 85.86 | 67.27 / 77.87 / 82.24 |
+| SwiftShader, editing | 71.13 / 85.09 / 130.37 | 70.22 / 133.21 / 156.73 |
+
+Native editing render-CPU median/p95 changed from 1.52/4.09 ms to 1.34/3.63 ms;
+idle median changed from 1.44 to 1.62 ms. Both native runs reached the idle cap
+and completed 53 edits; median automated fill-plus-Tab time was 58/54 ms.
+Software runs completed 12/21 edits with median input time 1953/799 ms. These
+automation timings include browser scheduling and are not direct touch latency.
+
+The fixed version held 126 native and 42 software candidates during editing,
+with zero graph builds in either timing window. Interval tails did not improve;
+the original draw counter includes candidates the fixed copy counter can reject.
+This is a frame-retention and redundant-work correction, not an overall FPS
+improvement claim. Synchronous flush/copy time in the fixed editing run was
+0.065 ms median on native GPU versus 65.78 ms in software rendering, explaining
+why the latter cannot isolate editor CPU performance. Native shadow-admission
+work totaled 278 ms over the 30-second edited window; it did not dominate that
+workload, so no further admission-cache policy was introduced.
+
+Both revisions retained one Engine scene, 22 meshes, two render targets and
+36 MiB of estimated shadow allocations, with zero sampled texture/target churn.
+The [measurement record](../assets/renderer-qualification/2026-09-24-viewport-stability/measurements.json)
+contains settings, counters and distributions. These single local observations
+do not establish iPad/Safari performance, isolated GPU time or thermal behavior.
+
 ### Camera-driven shadow activation
 
 The targeted `Shadow activation handoff` cases in `e2e/framegraph-shadows.spec.ts`
