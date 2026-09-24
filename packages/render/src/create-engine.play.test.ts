@@ -229,7 +229,7 @@ describe("Play createEngine view", () => {
     const engine = new NullEngine();
     // These tests drive frames explicitly; keep real loop registration without
     // a competing timer drawing while an async preparation assertion waits.
-    vi.spyOn(engine, "_queueNewFrame").mockReturnValue(0);
+    engine.customAnimationFrameRequester = { requestAnimationFrame: () => 0, cancelAnimationFrame: () => {} };
     mockCubeTextureIO(engine);
     mockDepthTextureIO(engine);
     // NullEngine stores raw bytes but never marks the upload complete. Model

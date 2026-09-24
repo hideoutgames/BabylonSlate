@@ -9,6 +9,7 @@ export function mockDepthTextureIO(engine: NullEngine): void {
     texture.width = texture.baseWidth = dimensions.width;
     texture.height = texture.baseHeight = dimensions.height;
     texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
+    texture.samples = options.samples ?? 1;
     texture.isReady = true;
     engine.getLoadedTexturesCache().push(texture);
     return texture;
