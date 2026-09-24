@@ -5,7 +5,7 @@ on:
   # Temporary qualification trigger; remove after inspecting the pinned runner.
   push:
     branches: [zeron/babylonslate-testflight-signing-plan]
-    paths: [.github/workflows/inspect-apple-toolchain.yml]
+    paths: [.github/workflows/inspect-apple-toolchain.yml, scripts/distribution/apple-toolchain.mjs]
 
 permissions:
   contents: read
@@ -17,6 +17,14 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - name: Validate the pinned Xcode and SDK without distribution dependencies
+        run: node scripts/distribution/apple-toolchain.mjs --inspect-xcode
       - name: Read installed Xcode version, SDK and public command help
         shell: bash
         run: |
