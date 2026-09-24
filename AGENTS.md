@@ -7,6 +7,9 @@ This is the entry point for every agent working in BabylonSlate. Paths below are
 - If the user's instructions are ambiguous, ask them to clarify before proceeding.
 - Treat requests for explanations, investigations, reviews, and plans as read-only unless the user explicitly requests changes. Planning may produce an implementation plan without authorizing implementation.
 - Reuse existing components and conventions, and preserve the project's established design.
+- Tautological tests considered harmful.  
+- Change-detector tests considered harmful.  
+- Do not create regression tests for bug fixes without a genuine gap in behavior testing.
 - Never report repository changes as finished or complete until the PR is confirmed merged into `main`. If ending work or a session with unmerged changes, prominently warn that unmerged work remains, identify the branch and PR (or state that no PR exists), and explain what remains before merge. See the workflow's completion reporting rules below.
 
 ## Required reading
