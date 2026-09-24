@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/ui/components/alert";
 import { ComponentGallery } from "../components/component-gallery";
 import { EditorChromeBar } from "../components/editor-chrome-bar";
+import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
@@ -282,6 +283,7 @@ function EditorLayout() {
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>
+      <EditorStatusBar />
       <DirtyCloseDialog
         dirtyNames={promptNames}
         open={

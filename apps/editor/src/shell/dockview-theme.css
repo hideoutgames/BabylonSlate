@@ -80,10 +80,31 @@
   border-radius: var(--radius-md);
 }
 
-.dockview-theme-babylonslate .dv-content-container {
+/* Docked groups read as separate panels over the app frame. */
+.dockview-frame {
+  padding: 4px;
   background: var(--background);
+}
+
+.dockview-frame .dockview-theme-babylonslate.dv-dockview {
+  background: var(--background);
+}
+
+.dockview-frame .dockview-theme-babylonslate .dv-groupview {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--sidebar);
+}
+
+.dockview-theme-babylonslate .dv-content-container {
+  background: var(--sidebar);
   outline: 1px solid var(--border);
   outline-offset: -1px;
+}
+
+.dockview-frame .dockview-theme-babylonslate .dv-content-container {
+  outline-color: transparent;
 }
 
 .dockview-theme-babylonslate .dv-active-tab {

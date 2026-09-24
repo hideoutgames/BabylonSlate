@@ -2305,14 +2305,18 @@ export function ContentBrowserWorkspace({
 
       <ResizablePanelGroup
         orientation="horizontal"
-        className="min-h-0 flex-1 overflow-hidden"
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden",
+          !phone && "content-browser-panes",
+        )}
       >
         {!phone ? (
           <>
             <ResizablePanel
               id="content-browser-folders"
               defaultSize="224px"
-              minSize="160px"
+              minSize="162px"
+              className="content-browser-pane"
               style={{ overflow: "hidden" }}
             >
               <aside
@@ -2329,7 +2333,7 @@ export function ContentBrowserWorkspace({
         <ResizablePanel
           id="content-browser-assets"
           minSize={phone ? 0 : "240px"}
-          className="flex h-full min-h-0 min-w-0 flex-col"
+          className="content-browser-pane flex h-full min-h-0 min-w-0 flex-col"
           style={{ overflow: "hidden" }}
         >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">

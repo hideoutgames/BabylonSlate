@@ -168,6 +168,8 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       timeout: 15_000,
     });
     await waitForSceneViewportReady(page);
+    // The loading overlay fades out after readiness and would intercept hit tests.
+    await expect(page.getByTestId("scene-loading-dialog")).toBeHidden();
     await test.step("chrome document tabs meet minimum touch target size", async () => {
       const tab = page
         .locator('[data-testid="document-tab"][data-document-kind="scene"]')

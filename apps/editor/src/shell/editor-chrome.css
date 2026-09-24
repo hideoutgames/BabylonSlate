@@ -30,14 +30,25 @@
   max-width: min(16rem, 35vw);
   flex-shrink: 0;
   align-items: center;
+  gap: 6px;
   overflow: hidden;
   border-right: 1px solid var(--border);
-  padding-inline: 0.5rem;
+  padding-inline: 8px 12px;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.editor-chrome-brand {
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.editor-chrome-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .editor-global-toolbar {
@@ -299,6 +310,92 @@
 
 .editor-chrome-shell[data-phone="true"] .chrome-optional-label {
   display: none;
+}
+
+.editor-statusbar {
+  display: flex;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-header);
+  padding-inline: 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.editor-status-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.editor-status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--success);
+}
+
+.editor-status-dot[data-dirty="true"] {
+  background: var(--destructive);
+}
+
+.editor-status-errors {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--destructive);
+}
+
+.editor-status-errors svg {
+  width: 12px;
+  height: 12px;
+}
+
+.editor-status-document {
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+}
+
+.editor-status-version {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Content Browser panes match the gutters and panel surfaces of docked layouts. */
+.content-browser-panes {
+  padding: 4px;
+  background: var(--background);
+}
+
+.content-browser-panes > [data-panel] > .content-browser-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--sidebar);
+}
+
+.content-browser-panes > [data-slot="resizable-handle"] {
+  width: 8px;
+  margin-inline: -2px;
+}
+
+.content-browser-panes > [data-slot="resizable-handle"]::after {
+  background: transparent;
+}
+
+@media (pointer: coarse) {
+  .content-browser-panes > [data-slot="resizable-handle"] {
+    width: var(--touch-target, 44px);
+    margin-inline: calc((var(--touch-target, 44px) - 4px) / -2);
+  }
 }
 
 .editor-tools-sheet-actions {

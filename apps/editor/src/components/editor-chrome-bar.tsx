@@ -63,6 +63,7 @@ import {
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
+import { BrandIcon } from "./brand-icon";
 import { DocumentSwitcher } from "./document-switcher";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
@@ -497,7 +498,10 @@ export function EditorChromeBar({
             data-testid="project-name"
             title={projectName ? displayProjectName(projectName) : undefined}
           >
-            {projectName ? displayProjectName(projectName) : ""}
+            <BrandIcon className="editor-chrome-brand" />
+            <span className="editor-chrome-project">
+              {projectName ? displayProjectName(projectName) : ""}
+            </span>
           </div>
         ) : null}
         {phone ? (
