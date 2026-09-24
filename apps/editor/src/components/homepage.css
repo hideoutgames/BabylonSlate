@@ -18,7 +18,6 @@
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
   /* Decorative viewports stay dark in both themes, like editor canvases. */
   --launcher-viewport: oklch(0.2 0.003 75);
-  --launcher-viewport-line: oklch(0.42 0.004 75);
   color: var(--foreground);
 }
 
@@ -670,27 +669,6 @@
     var(--launcher-viewport);
   box-shadow: 0 24px 48px -30px var(--launcher-shadow);
   animation: launcher-arrive 520ms var(--launcher-ease) both;
-}
-/* A receding scene grid, drifting toward the camera. */
-.homepage-viewport-floor {
-  position: absolute;
-  left: -50%;
-  right: -50%;
-  bottom: -2%;
-  height: 58%;
-  pointer-events: none;
-  transform-origin: 50% 100%;
-  transform: perspective(260px) rotateX(58deg);
-  background-image:
-    linear-gradient(var(--launcher-viewport-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--launcher-viewport-line) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(to top, #000 0%, transparent 92%);
-  opacity: 0.5;
-  animation: launcher-floor-drift 6s linear infinite;
-}
-.homepage-empty-art[data-paused="true"] .homepage-viewport-floor {
-  animation-play-state: paused;
 }
 .homepage-viewport-chips {
   position: absolute;
@@ -1593,11 +1571,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-@keyframes launcher-floor-drift {
-  to {
-    background-position: 0 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
