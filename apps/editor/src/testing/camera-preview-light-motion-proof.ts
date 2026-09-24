@@ -1,7 +1,7 @@
 /** A stationary authored camera preview must ignore editor camera navigation. */
 import {
   Color3, Color4, Engine, MeshBuilder, PBRMaterial, PointLight, Scene,
-  SpotLight, Vector3,
+  SpotLight, UtilityLayerRenderer, Vector3,
 } from "@babylonjs/core";
 import {
   compileMaterialPlan, createAppWebGpuEngine, createEditorCamera,
@@ -29,6 +29,10 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
         const scene = new Scene(engine);
         scene.clearColor = new Color4(0, 0, 0, 1);
         const controller = createEditorCamera(scene);
+        // The editor draws gizmos after its world pass, leaving Babylon's
+        // floating-origin context on the utility scene before the timer fires.
+        const utility = new UtilityLayerRenderer(scene, false);
+        utility.setRenderCamera(controller.camera);
         controller.camera.alpha = -Math.PI / 2;
         controller.camera.beta = Math.PI / 2;
         controller.camera.radius = 6;
@@ -80,6 +84,7 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
             engine.beginFrame();
             try {
               scene.render();
+              utility.render();
               now += 1000;
               overlay.tick();
             } finally { engine.endFrame(); }
@@ -105,6 +110,7 @@ export async function runCameraPreviewLightMotionProof(backend: "webgl2" | "webg
           }
         } finally {
           overlay.dispose();
+          utility.dispose();
           scene.dispose();
         }
       }
