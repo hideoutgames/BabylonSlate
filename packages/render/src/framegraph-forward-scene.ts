@@ -813,7 +813,7 @@ export class ForwardSceneFrameGraph {
           this.postProcessGraph?.sceneColorTexture ??
           this.effectsGraph?.sceneColorTexture ??
           color;
-        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? depth;
+        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? depth;
         this.cull = new CameraOutputCullTask(
           "Forward cull",
           this.graph,

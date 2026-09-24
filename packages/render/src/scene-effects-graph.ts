@@ -44,6 +44,9 @@ export interface SceneEffectsGraphOptions {
 export class SceneEffectsGraph {
   /** Declared only without an authored stack; the object renderer draws it. */
   readonly sceneColorTexture: FrameGraphTextureHandle | null = null;
+  /** Declared together with the scene color; an offscreen scene color cannot
+   * borrow the backbuffer depth. */
+  readonly depthTexture: FrameGraphTextureHandle | null = null;
   /** The last chain output; the caller's output copy is its only consumer. */
   readonly outputTexture: FrameGraphTextureHandle;
   readonly tasks: FrameGraphTask[] = [];
@@ -81,6 +84,20 @@ export class SceneEffectsGraph {
               },
             },
           );
+        this.depthTexture = graph.textureManager.createRenderTargetTexture(
+          "Scene Effects Scene Z",
+          {
+            size: { width: options.width, height: options.height },
+            sizeIsPercentage: false,
+            options: {
+              createMipMaps: false,
+              types: [Constants.TEXTURETYPE_FLOAT],
+              formats: [Constants.TEXTUREFORMAT_DEPTH32_FLOAT],
+              samples: 1,
+              useSRGBBuffers: [false],
+            },
+          },
+        );
         source = this.sceneColorTexture;
       }
       if (plan.bloom) {
