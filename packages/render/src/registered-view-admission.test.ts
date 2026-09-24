@@ -87,4 +87,38 @@ describe("registered view frame admission", () => {
       engine.endFrame();
     } finally { release(); engine.dispose(); vi.restoreAllMocks(); }
   });
+
+  it("retains pixels and dimensions when an admitted draw fails, then copies the recovered frame", () => {
+    const engine = new NullEngine();
+    const source = new PixelCanvas();
+    const target = new PixelCanvas();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(source as unknown as HTMLCanvasElement);
+    vi.spyOn(engine, "setSize").mockImplementation((width, height) => { source.width = width; source.height = height; return true; });
+    const view = engine.registerView(target as unknown as HTMLCanvasElement, undefined, true);
+    let ready = true;
+    let drawn = false;
+    let copies = 0;
+    const original = engine._renderViewStep;
+    const release = admitRegisteredViewFrames(engine, view, () => true, {
+      begin: () => { drawn = false; }, canCopy: () => drawn, copied: () => { copies++; },
+    });
+    engine.runRenderLoop(() => { if (ready) { source.pixel = 0xff8040; drawn = true; } });
+    const frame = () => { engine.beginFrame(); engine._renderViews(); engine.endFrame(); };
+    try {
+      frame();
+      ready = false;
+      target.clientWidth = 64;
+      source.pixel = 0x0000ff; // A sibling's private framebuffer is not our image.
+      frame();
+      expect([target.pixel, target.width, copies]).toEqual([0xff8040, 32, 1]);
+      source.pixel = 0x0000ff;
+      frame(); // The same-size failed draw must also retain the previous image.
+      expect([target.pixel, target.width, copies]).toEqual([0xff8040, 32, 1]);
+      ready = true;
+      frame();
+      expect([target.pixel, target.width, copies]).toEqual([0xff8040, 64, 2]);
+      release();
+      expect(engine._renderViewStep).toBe(original);
+    } finally { release(); engine.dispose(); vi.restoreAllMocks(); }
+  });
 });

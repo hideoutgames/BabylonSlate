@@ -64,6 +64,7 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
+import { sceneViewportAssetKey } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import {
   isSceneViewportRemountLoad,
@@ -85,6 +86,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
+  const appliedAssetsRef = useRef<{ key: string; handle: EngineHandle } | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
@@ -621,6 +623,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const viewportAssetsKey = JSON.stringify([
+    sceneViewportAssetKey(scene, assetRegistry?.list() ?? []), textureLodKey,
+    projectDocument?.settings.twoD, projectDocument?.settings.fonts,
+  ]);
 
   useEffect(() => {
     const handle = engineRef.current;
@@ -669,6 +675,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         appliedSceneRef.current = { scene, handle };
       };
       const applyCollectedAssets = async () => {
+        if (!blocking && appliedAssetsRef.current?.handle === handle &&
+          appliedAssetsRef.current.key === viewportAssetsKey) return;
         const sprites = await collectPlaySpritePayloads(scene);
         controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
@@ -745,6 +753,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           handle.setMaterialDocuments(materials.documents, materials.functions);
           handle.setMeshAssets(assets);
         }
+        if (isCurrent()) appliedAssetsRef.current = { key: viewportAssetsKey, handle };
       };
       try {
         if (blocking) {
@@ -811,6 +820,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
+    viewportAssetsKey,
     requestedRenderSettingsKey,
     renderSettingsKey,
     materialLibraryKey,
@@ -1024,10 +1034,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           const frameSamples: Array<{
             atMs: number; intervalMs: number | null; frameDelta: number;
             cpuMs: number; gpuMs: number | null; gpuStatus: string;
+            preparationMs: number; copyMs: number; held: number;
+            graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number;
             viewportFrameCap: number | null; documentVisible: boolean;
           }> = [];
           const resourceSamples: Array<Record<string, number>> = [];
-          let lastFrame = handle.scheduler.stats().renderedFrames;
+          let lastFrame = handle.renderDiagnostics().presentation?.copied ?? handle.scheduler.stats().renderedFrames;
           let lastPresented: number | null = null;
           let lastResourceAt = -250;
           let droppedSamples = 0;
@@ -1078,19 +1090,25 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               cancel();
               return;
             }
-            const frame = handle.scheduler.stats().renderedFrames;
+            const diagnostics = handle.renderDiagnostics();
+            const frame = diagnostics.presentation?.copied ?? handle.scheduler.stats().renderedFrames;
             // Shared Engine end-frame notifications from sibling views are not
-            // presentations of this viewport. Only its own scheduler advances.
+            // presentations of this viewport. Count completed view copies.
             if (frame === lastFrame) return;
             const now = performance.now();
             const atMs = now - started;
-            const diagnostics = handle.renderDiagnostics();
             if (frameSamples.length < 6_000) {
               frameSamples.push({
                 atMs, intervalMs: lastPresented === null ? null : now - lastPresented,
                 frameDelta: frame - lastFrame,
                 cpuMs: diagnostics.cpuMs, gpuMs: diagnostics.gpuMs,
                 gpuStatus: diagnostics.gpuStatus,
+                preparationMs: diagnostics.presentation?.preparationMs ?? 0,
+                copyMs: diagnostics.presentation?.copyMs ?? 0,
+                held: diagnostics.presentation?.held ?? 0,
+                graphBuilds: diagnostics.rendererWork?.graphBuilds ?? 0,
+                shadowAdmissions: diagnostics.rendererWork?.shadowAdmissions ?? 0,
+                shadowAdmissionMs: diagnostics.rendererWork?.shadowAdmissionMs ?? 0,
                 viewportFrameCap, documentVisible: document.visibilityState === "visible",
               });
             } else droppedSamples += 1;

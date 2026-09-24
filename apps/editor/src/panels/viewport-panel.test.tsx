@@ -790,6 +790,36 @@ describe("ViewportPanel engine", () => {
     expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
   });
 
+  it("updates transforms without collecting assets again and collects when a resource reference changes", async () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("light", "Light", { components: [{
+      id: "light-component", classId: "LightComponent", properties: { lightKind: "point" },
+    }] })];
+    const doc = { id: "scene:S", ref: { kind: "scene" as const, path: "assets/S.scene.babasset", label: "S" }, content: scene };
+    documents.openDocuments = [doc];
+    const { rerender } = renderViewport();
+    const refresh = () => rerender(<DocumentWorkspaceProvider documentId="scene:S">
+      <ViewportPanel {...({} as IDockviewPanelProps)} />
+    </DocumentWorkspaceProvider>);
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const collections = documents.collectPlayMaterialLibrary.mock.calls.length;
+    for (const x of [1, 2, 3, 0]) { // Includes undo back to the original pose.
+      const next = structuredClone(doc.content);
+      next.actors[0]!.transform.position[0] = x;
+      doc.content = next;
+      documents.openDocuments = [{ ...doc }];
+      refresh();
+      await waitFor(() => expect(handle.loadScene).toHaveBeenLastCalledWith(next, expect.anything()));
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    }
+    expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(collections);
+    const next = structuredClone(doc.content);
+    next.settings.environmentTextureGuid = "new-environment";
+    documents.openDocuments = [{ ...doc, content: next }];
+    refresh();
+    await waitFor(() => expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(collections + 1));
+  });
+
   it("refreshes a prepared emission asset without rebuilding the scene or reacting to unchanged registry content", async () => {
     const sourceHash = "a".repeat(64);
     const asset = {

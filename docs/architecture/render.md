@@ -1,5 +1,25 @@
 # Render sync and resource cache (P4)
 
+Registered Scene/Play views commit their visible canvas only after a coherent
+draw. Private-buffer resizing and shader preparation may continue while the
+previous visible image is held; unsuccessful draws neither copy nor advance
+rendered-frame statistics. Valid native fallback frames remain supported. The
+view adapter follows Babylon 9.20's camera/observable dispatch and restores its
+per-Engine hook when the last owner releases it.
+
+Editor transform commits preserve post-process and material ownership. Asset
+collection is keyed by referenced resources, saved resource revisions and
+relevant settings; pose edits and Scene autosaves do not reread model/texture
+containers. Changed resources still refresh, and pose edits still revalidate
+baked lighting. Equivalent material documents and effective post-process stacks
+retain their existing owners.
+
+Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
+render-callback preparation time, context events, graph builds, strict readiness
+checks and aggregate shadow-admission work. Editor baseline samples use completed
+copies. Timing does not establish GPU cost, and pixel-readback correctness checks
+must be collected separately from performance samples.
+
 Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings
 and receiver readiness in place. The ordered shadow pass renders these RTTs
 unmanaged before the object pass; their native samplers need no graph texture

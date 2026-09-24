@@ -9,6 +9,7 @@ import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
+import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
@@ -920,6 +921,13 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  let frameCopyReady = false;
+  const presentationStats = {
+    attempted: 0, drawn: 0, copied: 0, held: 0,
+    preparationMs: 0, copyMs: 0,
+    contextLosses: 0, contextRestorations: 0,
+  };
+  let captureFramePhases = false;
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
@@ -956,6 +964,13 @@ function initializeEngine(
       }
       prepareSnapshot();
       return shouldRenderFrame(performance.now());
+    }, {
+      begin: () => { frameCopyReady = false; },
+      canCopy: () => frameCopyReady && !disposed && !contextLost,
+      copied: (milliseconds) => {
+        presentationStats.copied += 1;
+        presentationStats.copyMs = milliseconds;
+      },
     }) : null;
   onRollback(() => releaseViewAdmission?.());
   if (options.editor) {
@@ -1174,6 +1189,10 @@ function initializeEngine(
   );
   const postProcessParameters = new PostProcessParameterState();
   let attachedStack: AttachedPostProcessStack | null = null;
+  let materialDocumentsKey = "";
+  let materialRevision = 0;
+  let appliedPostProcessKey: string | undefined;
+  let appliedPostProcessCamera: Camera | null = null;
   // Every retired native stack generation stays tracked until actual release,
   // not just the one current at teardown.
   const nativeRetirement = new PostProcessRetirement();
@@ -1201,13 +1220,19 @@ function initializeEngine(
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
+    const camera = scene.activeCamera;
+    const stack = postProcessParameters.effective(postProcessStack);
+    const resolutionScale = resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
+    const key = JSON.stringify([postProcessingEnabled, stack, resolutionScale, materialRevision]);
+    if (key === appliedPostProcessKey && camera === appliedPostProcessCamera) return;
     retireAttachedStack();
+    appliedPostProcessKey = key;
+    appliedPostProcessCamera = camera;
     lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled) {
       if (!worldRenderer) sceneEffectsOwner.useGraph();
       return;
     }
-    const camera = scene.activeCamera;
     if (!camera) {
       if (!worldRenderer) sceneEffectsOwner.useGraph();
       return;
@@ -1219,9 +1244,9 @@ function initializeEngine(
       scene,
       camera,
       library: materialLibrary,
-      stack: postProcessParameters.effective(postProcessStack),
+      stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
-      resolutionScale: resolveSceneRenderingQuality(scene).postprocessing.resolutionScale,
+      resolutionScale,
       ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
@@ -1528,6 +1553,13 @@ function initializeEngine(
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => {
+      const key = JSON.stringify([
+        [...documents].sort(([a], [b]) => a.localeCompare(b)),
+        [...(functions ?? materialFunctions)].sort(([a], [b]) => a.localeCompare(b)),
+      ]);
+      if (key === materialDocumentsKey) return false;
+      materialDocumentsKey = key;
+      materialRevision += 1;
       materialDocuments.clear();
       for (const [guid, document] of documents) {
         materialDocuments.set(guid, document);
@@ -1539,6 +1571,7 @@ function initializeEngine(
           materialFunctions.set(guid, document);
         }
       }
+      return true;
   };
 
   const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
@@ -1568,6 +1601,13 @@ function initializeEngine(
     loadOptions?: { sceneAssetGuid?: string },
   ) => {
     assertCurrent(loadGeneration);
+    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      editorSync.apply(sceneData);
+      // Poses change bake validity even while rendering topology stays stable.
+      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
+      return;
+    }
     if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
@@ -1966,8 +2006,6 @@ function initializeEngine(
         registeredView.customResize = () => {
           const size = scaledLockedViewSize();
           if (!size) return;
-          if (canvas.width !== size.width) canvas.width = size.width;
-          if (canvas.height !== size.height) canvas.height = size.height;
           engine.setSize(size.width, size.height);
         };
       } else if (options.sharedEngine && !presentRtt) {
@@ -2012,10 +2050,13 @@ function initializeEngine(
   };
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
-  const renderDiagnostics = () => (readDiagnostics ??= createRenderDiagnostics(
-    scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
-    () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-  ))();
+  const renderDiagnostics = () => {
+    captureFramePhases = true;
+    return { ...(readDiagnostics ??= createRenderDiagnostics(
+      scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
+      () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
+    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics() };
+  };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
     const layer = owner ? layerLoads.get(owner.layerId) : undefined;
@@ -2159,6 +2200,8 @@ function initializeEngine(
     // Babylon invokes all render callbacks for each registered view. A loading
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
+    frameCopyReady = false;
+    const preparationStart = captureFramePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
@@ -2174,6 +2217,9 @@ function initializeEngine(
     // between frames, and feeding that gap to the scaling valve would read
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
+    presentationStats.attempted += 1;
+    if (captureFramePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    let coherentFrame = true;
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
@@ -2217,15 +2263,24 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        if (worldRenderer) return worldRenderer.render().readyForPresentation;
+        if (worldRenderer) {
+          const result = worldRenderer.render();
+          coherentFrame = result.rendered;
+          return result.readyForPresentation;
+        }
         scene.render();
         return true;
       });
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
+      if (!coherentFrame) {
+        presentationStats.held += 1;
+        return;
+      }
       if (rttPresent) {
         const owners = [...pendingPresentations.entries()].filter(([, pending]) => pending.rendered);
         void rttPresent.blit().then(() => {
+          presentationStats.copied += 1;
           for (const [key, pending] of owners) {
             pending.copied = true;
             finishPresentation(key, pending);
@@ -2243,6 +2298,8 @@ function initializeEngine(
       return;
     }
     if (sampled) lastRenderedSnapshotFrame = sampled.frameId;
+    frameCopyReady = true;
+    presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
@@ -2250,7 +2307,7 @@ function initializeEngine(
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
     if (framePresented) {
-      if (!worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability?.presented();
+      if (runtimeScalability && !worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability.presented();
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
@@ -2303,6 +2360,7 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    presentationStats.contextLosses += 1;
     loadGeneration += 1;
     cancelPresentation(new Error("Rendering context was lost during scene loading."));
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
@@ -2311,6 +2369,7 @@ function initializeEngine(
   const contextRestoredObserver = engine.onContextRestoredObservable.add(() => {
     if (disposed) return;
     contextLost = false;
+    presentationStats.contextRestorations += 1;
     engineCommandBus.dispatch({
       type: "log",
       message: "WebGL context restored",
@@ -2988,7 +3047,7 @@ function initializeEngine(
       documents: ReadonlyMap<string, MaterialDocument>,
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
-      installMaterialDocuments(documents, functions);
+      if (!installMaterialDocuments(documents, functions)) return;
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);

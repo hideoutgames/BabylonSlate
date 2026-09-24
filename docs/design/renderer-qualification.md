@@ -1,5 +1,19 @@
 # Renderer qualification
 
+## Editor viewport frame retention and transform edits
+
+The viewport now holds its previous visible image when an admitted draw becomes
+unready, including after private-buffer resize or sibling-view activity. Pose-only
+scene edits retain prepared rendering resources and skip unchanged asset
+collection. Diagnostics distinguish attempts, successful draws and actual copies.
+
+Qualification is pending targeted local checks and device measurement. No iPad
+performance or Safari/PWA flash-elimination claim follows from this implementation.
+Device acceptance must record model/iPadOS, PWA revision, effective backend, frame
+cap and quality, then exercise continuous light drag/release, Details scrubbing,
+idle selection, sibling views, resize/orientation and background/resume. Collect
+pixel correctness separately from timing and compare the same scene/settings.
+
 ## Basic 3D mannequin: 24 September 2026
 
 This continuation uses a freshly created **Basic 3D** project and its actual

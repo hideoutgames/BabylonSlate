@@ -1260,6 +1260,54 @@ describe("Play createEngine view", () => {
     expect(canvas.height).toBe(256);
   });
 
+  it("holds an unready steady-state editor frame without copying or counting it and resumes automatically", async () => {
+    const engine = sharedEngine();
+    const source = new FakeCanvas() as unknown as HTMLCanvasElement;
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(source);
+    const canvas = new FakeCanvas();
+    const copy = vi.fn();
+    vi.spyOn(canvas, "getContext").mockReturnValue({ clearRect() {}, drawImage: copy });
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    await handle.prewarmSceneMaterials();
+    const frame = () => { engine.beginFrame(); engine._renderViews(); engine.endFrame(); };
+    frame();
+    expect(handle.scheduler.stats().renderedFrames).toBe(1);
+    let ready = false;
+    handle.scene.addIsReadyCheck({ isReady: () => ready });
+    markSceneReadinessDirty(handle.scene);
+    frame();
+    frame();
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(handle.scheduler.stats().renderedFrames).toBe(1);
+    expect(handle.renderDiagnostics().presentation).toMatchObject({ drawn: 1, copied: 1, held: 2 });
+    ready = true;
+    frame();
+    expect(copy).toHaveBeenCalledTimes(2);
+    expect(handle.scheduler.stats().renderedFrames).toBe(2);
+  });
+
+  it("retains prepared rendering and material ownership through transform commits and equivalent asset refreshes", async () => {
+    const { handle } = editorHandle(sharedEngine());
+    const mesh = createMeshComponent("mesh", "box");
+    const data = { ...createDefaultScene(), actors: [createActor("a", "A", { components: [mesh] })] };
+    handle.setMaterialDocuments(new Map());
+    handle.loadScene(data);
+    await handle.prewarmSceneMaterials();
+    const renderers = [...handle.scene.objectRenderers];
+    expect(renderers.length).toBeGreaterThan(0);
+    const visual = handle.editor!.sync.meshForActor("a")!;
+    const material = visual.material;
+    const next = structuredClone(data);
+    next.actors[0]!.transform.position = [3, 2, 1];
+    handle.loadScene(next);
+    handle.setMaterialDocuments(new Map());
+    expect(handle.scene.objectRenderers).toEqual(renderers);
+    expect(handle.editor!.sync.meshForActor("a")).toBe(visual);
+    expect(visual.material).toBe(material);
+    expect(visual.position.asArray()).toEqual([3, 2, 1]);
+  });
+
   it("reports hidden pre-snapshot visuals and their published world positions", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

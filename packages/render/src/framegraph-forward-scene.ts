@@ -63,6 +63,13 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
  * prepare only builds/probes effects; it never presents or consumes a frame.
  */
 export class ForwardSceneFrameGraph {
+  private measureWork = false;
+  private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+
+  diagnostics() {
+    this.measureWork = true;
+    return { ...this.work, strictReadinessChecks: this.strictReadinessChecks };
+  }
   private graph: FrameGraph | undefined;
   private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
   private postProcessOwner: ScenePostProcessOwner | undefined;
@@ -669,6 +676,8 @@ export class ForwardSceneFrameGraph {
   }
 
   private syncShadowAdmission(camera: Camera): void {
+    const started = this.measureWork ? performance.now() : 0;
+    if (this.measureWork) this.work.shadowAdmissions += 1;
     const controller = findSceneShadowController(this.scene);
     withSceneReadinessState(this.scene, () => {
       this.setActiveCamera(camera);
@@ -681,6 +690,7 @@ export class ForwardSceneFrameGraph {
       // invalidate the variants we just declared ready for the first frame.
       syncSceneLighting(this.scene);
     });
+    if (this.measureWork) this.work.shadowAdmissionMs += performance.now() - started;
   }
 
   private async prepareGraph(camera: Camera, assertCurrent: () => void): Promise<ForwardSceneGraphResult> {
@@ -849,7 +859,7 @@ export class ForwardSceneFrameGraph {
           task.record = guarded;
           return () => { if (task.record === guarded) task.record = record; };
         });
-        try { await this.graph.buildAsync(false); }
+        try { this.work.graphBuilds += 1; await this.graph.buildAsync(false); }
         finally { for (const action of restore) action(); }
         assertCurrent();
         this.postProcessGraph?.reconcile();

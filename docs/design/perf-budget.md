@@ -2,6 +2,13 @@
 
 Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds inherit headroom.
 
+Viewport stability measurements distinguish successful canvas copies from draw
+attempts. Record the selected frame cap, effective backend, dimensions, render
+CPU, preparation/copy time, held frames, graph rebuilds and shadow-admission work
+alongside resource churn. Compare identical scenes and quality settings; retain
+the existing 30 fps editor default. GPU timers that are unsupported or shared
+with another view are not per-viewport GPU measurements.
+
 ## Frame and tick
 
 | Metric | Budget | Notes |
