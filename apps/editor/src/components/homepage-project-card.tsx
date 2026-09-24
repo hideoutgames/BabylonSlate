@@ -12,6 +12,7 @@ import {
 import type { ListedProject } from "../lib/listed-projects";
 import { displayProjectName } from "../lib/display-project-name";
 import {
+  ProjectColorDot,
   ProjectCover,
   ProjectIdentityBadge,
 } from "./homepage-project-identity";
@@ -103,7 +104,10 @@ export function HomepageProjectCard({
         )}
       </CardContent>
       <CardHeader className="homepage-project-caption">
-        <CardTitle>{name}</CardTitle>
+        <CardTitle>
+          <ProjectColorDot appearance={project.appearance} />
+          <span>{name}</span>
+        </CardTitle>
         {activity && <CardDescription>{activity}</CardDescription>}
       </CardHeader>
       <Button

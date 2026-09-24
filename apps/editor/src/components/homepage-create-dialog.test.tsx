@@ -167,12 +167,11 @@ describe("Project Composer", () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
-  it("previews the entered project name and chosen badge without losing the template selection", () => {
+  it("previews the entered project name and chosen color without losing the template selection", () => {
     render(<Composer />);
     fireEvent.change(screen.getByTestId("create-project-name"), {
       target: { value: "Moon Garden" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Rocket" }));
     fireEvent.click(screen.getByRole("button", { name: "Cyan" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
     fireEvent.click(screen.getByTestId("create-project-template:island"));
@@ -180,9 +179,9 @@ describe("Project Composer", () => {
 
     const preview = screen.getByTestId("project-identity-preview");
     expect(within(preview).getByText("Moon Garden")).toBeTruthy();
-    const badge = preview.querySelector("[data-project-icon]");
-    expect(badge?.getAttribute("data-project-icon")).toBe("rocket");
-    expect(badge?.getAttribute("data-color")).toBe("mint");
+    expect(
+      preview.querySelector(".homepage-project-color")?.getAttribute("data-color"),
+    ).toBe("mint");
     fireEvent.click(screen.getByRole("button", { name: "Choose Template" }));
     expect(
       screen

@@ -436,9 +436,8 @@
   padding-block: 5px;
 }
 
-/* A flat thumbnail: tinted field with a faint scene grid, or the picture. */
+/* A neutral thumbnail: the user's picture, or a placeholder glyph. */
 .homepage-project-cover {
-  --project-badge-color: var(--homepage-badge-stone);
   position: relative;
   display: flex;
   align-items: center;
@@ -446,49 +445,36 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  color: color-mix(in oklch, var(--project-badge-color) 78%, var(--foreground));
-  background:
-    radial-gradient(
-      ellipse 80% 90% at 50% 100%,
-      color-mix(in oklch, var(--project-badge-color) 30%, transparent),
-      transparent 70%
-    ),
-    linear-gradient(
-      160deg,
-      color-mix(in oklch, var(--project-badge-color) 16%, var(--card)),
-      color-mix(in oklch, var(--project-badge-color) 6%, var(--card))
-    );
+  color: var(--muted-foreground);
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklch, var(--foreground) 5%, var(--card)),
+    color-mix(in oklch, var(--foreground) 2%, var(--card))
+  );
 }
 .homepage-project-cover::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(
-      color-mix(in oklch, var(--project-badge-color) 16%, transparent) 1px,
+  background: radial-gradient(
+      circle,
+      color-mix(in oklch, var(--foreground) 7%, transparent) 0.7px,
       transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--project-badge-color) 16%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 20px 20px;
-  background-position: center;
-  mask-image: radial-gradient(ellipse at center, #000 10%, transparent 72%);
+    )
+    center / 12px 12px;
+  mask-image: radial-gradient(
+    ellipse 75% 85% at center,
+    #000,
+    transparent 80%
+  );
 }
 .homepage-project-cover > svg {
   position: relative;
-  width: 30%;
-  max-width: 64px;
-  height: auto;
-  aspect-ratio: 1;
-  stroke-width: 1.25;
-  filter: drop-shadow(
-    0 6px 14px color-mix(in oklch, var(--project-badge-color) 40%, transparent)
-  );
-  transition: transform 320ms var(--launcher-ease);
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.2;
+  transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
 .homepage-project-cover > img {
   position: absolute;
@@ -497,6 +483,28 @@
   height: 100%;
   object-fit: cover;
   transition: transform 420ms var(--launcher-ease);
+}
+.homepage-project-color {
+  --project-badge-color: var(--homepage-badge-stone);
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--project-badge-color);
+  box-shadow: 0 0 0 1px color-mix(in oklch, #000 18%, transparent);
+}
+.homepage-project-caption [data-slot="card-title"],
+.homepage-composer-preview-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.homepage-project-caption [data-slot="card-title"] > span:last-child,
+.homepage-composer-preview-name > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* List rows use the compact chip. */
@@ -527,22 +535,21 @@
 
 /* ------------------------------------------------------------ Badges */
 .homepage-project-badge {
-  --project-badge-color: var(--homepage-badge-stone);
   display: grid;
   place-items: center;
   flex-shrink: 0;
   width: 28px;
   height: 28px;
   overflow: hidden;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  color: var(--homepage-badge-ink);
-  background: var(--project-badge-color);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, #000 14%, transparent);
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--foreground) 5%, var(--card));
 }
 .homepage-project-badge svg {
-  width: 16px;
-  height: 16px;
-  stroke-width: 1.6;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.4;
 }
 .homepage-project-badge img {
   width: 100%;
@@ -586,6 +593,7 @@
     .homepage-project-cover
     > svg {
     transform: translateY(-3px) scale(1.06);
+    color: var(--foreground);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
@@ -832,7 +840,6 @@
   height: auto;
 }
 .homepage-composer-preview-name {
-  display: block;
   padding: 8px 10px;
   border-top: 1px solid var(--border);
   overflow: hidden;
@@ -871,19 +878,6 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-}
-.homepage-composer-icon-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  gap: 4px;
-}
-.homepage-icon-choice {
-  width: 100%;
-  border: 1px solid var(--border);
-}
-.homepage-icon-choice[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--ring);
 }
 .homepage-composer-color-row {
   display: flex;
@@ -1267,9 +1261,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-composer [data-slot="dialog-close"] {
     top: 4px;
     right: 4px;
-  }
-  .homepage-composer-icon-grid {
-    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
   }
   .homepage-color-choice {
     width: var(--touch-target, 44px);

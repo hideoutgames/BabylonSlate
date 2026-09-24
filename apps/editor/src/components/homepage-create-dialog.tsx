@@ -39,12 +39,12 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
 import {
+  ProjectColorDot,
   ProjectCover,
   ProjectIdentityBadge,
 } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
-  PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
@@ -286,7 +286,8 @@ export function HomepageCreateDialog({
               <div className="homepage-composer-preview-card">
                 <ProjectCover appearance={appearance} />
                 <span className="homepage-composer-preview-name">
-                  {name.trim() || "Untitled"}
+                  <ProjectColorDot appearance={appearance} />
+                  <span>{name.trim() || "Untitled"}</span>
                 </span>
               </div>
             </aside>
@@ -332,44 +333,17 @@ export function HomepageCreateDialog({
                       className="homepage-badge-legend"
                       variant="label"
                     >
-                      <span>Icon</span>
+                      <span>Color</span>
                       <ProjectIdentityBadge
                         appearance={appearance}
                         className="homepage-composer-inline-preview"
                       />
                     </FieldLegend>
-                    <div
-                      className="homepage-composer-icon-grid"
-                      role="group"
-                      aria-label="Project Icon"
-                    >
-                      {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
-                        <Button
-                          key={id}
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="homepage-icon-choice"
-                          aria-label={label}
-                          aria-pressed={
-                            !appearance.image && appearance.icon === id
-                          }
-                          onClick={() =>
-                            changeAppearance({
-                              icon: id,
-                              color: appearance.color,
-                            })
-                          }
-                        >
-                          <Icon />
-                        </Button>
-                      ))}
-                    </div>
                     <div className="homepage-composer-color-row">
                       <div
                         className="homepage-composer-color-grid"
                         role="group"
-                        aria-label="Badge Color"
+                        aria-label="Project Color"
                       >
                         {PROJECT_COLOR_PRESETS.map(({ id, label }) => (
                           <Button

@@ -288,15 +288,10 @@ for (const device of [
       await expect(name).not.toBeFocused();
       await name.tap();
       await name.fill("Touch Draft");
-      const rocket = dialog.getByRole("button", {
-        name: "Rocket",
-        exact: true,
-      });
       const violet = dialog.getByRole("button", {
         name: "Violet",
         exact: true,
       });
-      await rocket.tap();
       await violet.tap();
       await dialog
         .getByRole("button", { name: "Choose Template", exact: true })
@@ -304,12 +299,10 @@ for (const device of [
       await dialog.getByTestId("homepage-template-search").fill("Basic 3D");
       await dialog.getByTestId("create-project-empty").tap();
       await expect(name).toHaveValue("Touch Draft");
-      await expect(rocket).toHaveAttribute("aria-pressed", "true");
       await expect(violet).toHaveAttribute("aria-pressed", "true");
 
       const controls = dialog.locator(
         [
-          ".homepage-icon-choice",
           ".homepage-color-choice",
           'button[aria-label="Choose Template"]',
           '[data-slot="dialog-close"]',
