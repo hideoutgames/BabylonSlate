@@ -68,6 +68,12 @@ test("a cancelled Preview Build cannot dismiss or fail the next preparation", as
     const digest = crypto.subtle.digest.bind(crypto.subtle);
     const pending: Array<{ resolve(): void; reject(): void }> = [];
     crypto.subtle.digest = async (...args) => {
+      // Let phase progress render, and hold only pack writes. Asset loading
+      // may share in-flight reads between attempts and must stay unblocked.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (!document.querySelector('[data-testid="preparing-preview-progress"]')?.textContent?.includes("Writing Pack")) {
+        return digest(...args);
+      }
       await new Promise<void>((resolve, reject) => {
         pending.push({ resolve, reject: () => reject(new Error("Cancelled pack failed.")) });
       });
@@ -83,10 +89,10 @@ test("a cancelled Preview Build cannot dismiss or fail the next preparation", as
     };
   });
   await page.getByTestId("play-preview").click();
-  await expect.poll(() => hashing.evaluate((hash) => hash.count())).toBe(1);
+  await expect.poll(() => hashing.evaluate((hash) => hash.count()), { timeout: 30_000 }).toBe(1);
   await page.getByTestId("preparing-preview-cancel").click();
   await page.getByTestId("play-preview").click();
-  await expect.poll(() => hashing.evaluate((hash) => hash.count())).toBe(2);
+  await expect.poll(() => hashing.evaluate((hash) => hash.count()), { timeout: 30_000 }).toBe(2);
   await hashing.evaluate(async (hash) => {
     hash.rejectFirst();
     // Allow the rejected attempt's catch/finally and React update to settle.

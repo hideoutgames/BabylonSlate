@@ -200,6 +200,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
+  const [playResumeRequested, setPlayResumeRequested] = useState(false);
   const [prepareState, setPrepareState] = useState<{
     phase: PlayPreparePhase;
     dirtyNames: string[];
@@ -1300,11 +1301,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   const resumePlayAfterMigration = useCallback(async () => {
     setPlayAwaitingMigration(false);
-    await requestPlay(pendingPlayOptionsRef.current);
-  }, [requestPlay]);
+    setPlayResumeRequested(true);
+  }, []);
+
+  useEffect(() => {
+    if (!playResumeRequested || migrationPending.length > 0) return;
+    // The approval dialog holds a callback from before the save. Resume only
+    // after the cleared migrations and current project reach this render.
+    setPlayResumeRequested(false);
+    void requestPlay(pendingPlayOptionsRef.current);
+  }, [migrationPending.length, playResumeRequested, requestPlay]);
 
   const cancelPlayMigration = useCallback(() => {
     setPlayAwaitingMigration(false);
+    setPlayResumeRequested(false);
     pendingPlayOptionsRef.current = undefined;
   }, []);
 
