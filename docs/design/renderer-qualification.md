@@ -1,6 +1,6 @@
 # Renderer qualification
 
-## Basic 3D mannequin — 24 September 2026
+## Basic 3D mannequin: 24 September 2026
 
 This continuation uses a freshly created **Basic 3D** project and its actual
 bundled Kenney mannequin, imported through the production asset/hierarchy/material
@@ -76,6 +76,12 @@ lit samples and no changes caused by helper participation. The maps remain
   capture wait. Together with the repeated alternate view, real Play/player and
   four selected synthetic cases, all **10 distinct browser cases** are covered.
   Documentation-only updates preserve these results; no exhaustive local suite ran.
+- `a5e4f649`: the two existing `shadow-self-shadowing-hosts.spec.ts` cases pass
+  for PBR and CEL, exercising Low in the editor, Play and an independently served
+  exported player, including authored settings round-trip. This brings the selected
+  browser coverage to **12 distinct cases**. Command: the same admitted browser
+  entry point with that explicit spec and
+  `--grep 'synthetic self-shadowing retains authored Low'`.
 
 All runs use `BL_TEST_PROFILE=shared` and `pnpm --silent agent:wait local --script
 test` with explicit unit paths, or `--script test:e2e` with explicit specs and
