@@ -1447,6 +1447,11 @@ Outline components and editor selection override the global style and do not
 inherit its fade. Distant geometry remains in masks/depth so it still occludes;
 this removes visible strokes, not the fixed mask rendering cost.
 
+Composition samples the eight directions in one bounded loop. Its nearest,
+non-mipmapped mask, depth and style reads use explicit level zero on both backends,
+avoiding implicit derivatives and duplicated fade code on software GPU drivers.
+Material coverage sampling retains its normal mip selection.
+
 Model publication refreshes outline membership after the winning single-model
 or multipart hierarchy is installed. Provisional meshes cannot enter the mask;
 failed or cancelled successors leave the retained visual and its outline intact.

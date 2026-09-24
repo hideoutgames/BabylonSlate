@@ -196,27 +196,29 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }`;
   const groups = ["strict", "through", "selection"];
   const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  // Keep one candidate body instead of eight copies of the fade calculation.
+  // These nearest, non-mipmapped buffers need no implicit texture derivatives.
   const glslCandidates = groups.map((group, groupIndex) => `if (activeGroups[${groupIndex}] > 0.5) {
-    float center = decodeId(texture2D(${group}Mask, vUV).rgb);
+    float center = decodeId(texture2DLodEXT(${group}Mask, vUV, 0.0).rgb);
     float best = 1e10;
     float chosen = 1e10;
     vec4 stroke = vec4(0.0);
     for (int radius = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; ++radius) {
       if (float(radius) > maximumWidth + 0.75) break;
-      ${offsets.map(([x, y]) => `{
-        vec2 delta = vec2(${x}.0, ${y}.0) * float(radius);
+      for (int direction = 0; direction < 8; ++direction) {
+        vec2 delta = outlineOffsets[direction] * float(radius);
         vec2 uv = vUV + delta / screenSize;
-        float id = decodeId(texture2D(${group}Mask, uv).rgb);
+        float id = decodeId(texture2DLodEXT(${group}Mask, uv, 0.0).rgb);
         if (id > 0.0 && id != center) {
-          vec4 style = texture2D(${group}Style, idUV(id));
+          vec4 style = texture2DLodEXT(${group}Style, idUV(id), 0.0);
           float distance = length(delta);
           float width = style.a;
           float coverage = 1.0;
           bool visible = true;
-          ${group === "strict" ? `float candidateDepth = texture2D(strictDepth, uv).r;
-          float destinationDepth = texture2D(strictDepth, vUV).r;
+          ${group === "strict" ? `float candidateDepth = texture2DLodEXT(strictDepth, uv, 0.0).r;
+          float destinationDepth = texture2DLodEXT(strictDepth, vUV, 0.0).r;
           visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;
-          vec4 fade = texture2D(strictStyle, idUV(id) + vec2(0.0, 0.5));
+          vec4 fade = texture2DLodEXT(strictStyle, idUV(id) + vec2(0.0, 0.5), 0.0);
           if (fade.x > 0.5) {
             vec4 position = inverseProjection * vec4(uv * 2.0 - 1.0, candidateDepth * depthRange.x + depthRange.y, 1.0);
             float cameraDistance = length(position.xyz) / max(abs(position.w), 1e-8);
@@ -232,7 +234,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
             stroke = vec4(style.rgb, coverage); best = score; chosen = id;
           }
         }
-      }`).join("\n")}
+      }
     }
     if (stroke.a > 0.0) result = stroke;
   }`).join("\n");
@@ -247,6 +249,7 @@ uniform mat4 inverseProjection;
 uniform vec2 depthRange;
 uniform sampler2D strictDepth;
 ${groups.map((group) => `uniform sampler2D ${group}Mask; uniform sampler2D ${group}Style;`).join("\n")}
+const vec2 outlineOffsets[8] = vec2[8](${offsets.map(([x, y]) => `vec2(${x}.0, ${y}.0)`).join(", ")});
 float decodeId(vec3 value) { return dot(floor(value * 255.0 + 0.5), vec3(1.0, 256.0, 65536.0)); }
 vec2 idUV(float id) { return (vec2(mod(id, tableSize.x), floor(id / tableSize.x)) + 0.5) / tableSize; }
 void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = result; }
@@ -258,8 +261,8 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
     var stroke = vec4f(0.0);
     for (var radius: i32 = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; radius = radius + 1) {
       if (f32(radius) > uniforms.maximumWidth + 0.75) { break; }
-      ${offsets.map(([x, y]) => `{
-        let delta = vec2f(${x}.0, ${y}.0) * f32(radius);
+      for (var direction: i32 = 0; direction < 8; direction = direction + 1) {
+        let delta = outlineOffsets[direction] * f32(radius);
         let uv = fragmentInputs.vUV + delta / uniforms.screenSize;
         let id = decodeId(textureSampleLevel(${group}Mask, ${group}MaskSampler, uv, 0.0).rgb);
         if (id > 0.0 && id != center) {
@@ -284,7 +287,7 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
             stroke = vec4f(style.rgb, coverage); best = score; chosen = id;
           }
         }
-      }`).join("\n")}
+      }
     }
     if (stroke.a > 0.0) { result = stroke; }
   }`).join("\n");
@@ -299,6 +302,7 @@ uniform inverseProjection: mat4x4f;
 uniform depthRange: vec2f;
 var strictDepthSampler: sampler; var strictDepth: texture_2d<f32>;
 ${groups.map((group) => `var ${group}MaskSampler: sampler; var ${group}Mask: texture_2d<f32>; var ${group}StyleSampler: sampler; var ${group}Style: texture_2d<f32>;`).join("\n")}
+const outlineOffsets = array<vec2f, 8>(${offsets.map(([x, y]) => `vec2f(${x}.0, ${y}.0)`).join(", ")});
 fn decodeId(value: vec3f) -> f32 { return dot(floor(value * 255.0 + 0.5), vec3f(1.0, 256.0, 65536.0)); }
 fn idUV(id: f32) -> vec2f { return (vec2f(id % uniforms.tableSize.x, floor(id / uniforms.tableSize.x)) + 0.5) / uniforms.tableSize; }
 @fragment
