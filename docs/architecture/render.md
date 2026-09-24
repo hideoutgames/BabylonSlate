@@ -1294,6 +1294,9 @@ camera possession, lost eligibility, resource/settings changes, incompatible
 light types and unqualified material callbacks use immediate normal admission.
 First activation without a compatible incumbent still uses ordinary preparation.
 Context recovery, graph retirement and scene disposal release pending probes.
+Cancelled WebGL programs retain their last reference until native compilation
+settles. Further speculation uses normal admission while that release is pending,
+so rapid camera changes cannot accumulate abandoned warmup layouts.
 The existing dispose-before-allocate commit and first-map readiness checks remain
 authoritative; shader warmup does not authorize sampling an unrendered map.
 

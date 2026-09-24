@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { FreeCamera, MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { FreeCamera, MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, StandardMaterial, Vector3, type Effect } from "@babylonjs/core";
 import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
 import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
 
@@ -67,18 +67,53 @@ it("uses normal preparation for wrappers that retain temporary submeshes", async
   expect(compile).not.toHaveBeenCalled();
 });
 
+it("retains a cancelled last WebGL program until its compiler finishes and bounds further speculation", async () => {
+  const { mesh, material, warmer, layout, passes } = await fixture();
+  const parts = [...mesh.subMeshes];
+  const actual = material.isReadyForSubMesh.bind(material);
+  let pending: Effect | undefined;
+  vi.spyOn(material, "isReadyForSubMesh").mockImplementation((mesh, probe, instances) => {
+    actual(mesh, probe, instances);
+    if (!pending && probe.effect) {
+      pending = probe.effect;
+      const pipeline = pending.getPipelineContext()!;
+      // NullEngine has no parallel WebGL compiler. Delay that boundary while
+      // retaining native shader generation, references and draw-wrapper disposal.
+      vi.spyOn(pending, "getPipelineContext").mockReturnValue(Object.create(pipeline, { isAsync: { value: true }, program: { value: {} } }));
+      vi.spyOn(pending, "isReady").mockReturnValue(false);
+    }
+    return false;
+  });
+  expect(warmer.ready("incoming", layout, [passes[0]!], () => true)).toBe(false);
+  warmer.advance();
+  expect(pending).toBeDefined();
+  warmer.cancel();
+  expect(pending!.isDisposed).toBe(false);
+  expect(warmer.ready("next", layout, [passes[0]!], () => true)).toBe(true);
+  pending!.onCompileObservable.notifyObservers(pending!);
+  expect(pending!.isDisposed).toBe(false);
+  await Promise.resolve(); await Promise.resolve();
+  expect(pending!.isDisposed).toBe(true);
+  expect(mesh.subMeshes).toEqual(parts);
+  expect(warmer.ready("next", layout, [passes[0]!], () => true)).toBe(false);
+  warmer.cancel();
+});
+
 it("restores lookups and flags when a probe revokes its pending owner and throws", async () => {
   const { mesh, material, light, incoming, generator, warmer, layout, passes } = await fixture();
   const ownLookup = () => generator;
   Object.defineProperty(light, "getShadowGenerator", { value: ownLookup, configurable: true, writable: false });
   const descriptor = Object.getOwnPropertyDescriptor(light, "getShadowGenerator");
   const parts = [...mesh.subMeshes];
+  let reentrantReady: boolean | undefined;
   vi.spyOn(material, "isReadyForSubMesh").mockImplementation(() => {
     warmer.cancel();
+    reentrantReady = warmer.ready("replacement", layout, passes, () => true);
     throw new Error("GPU compile revoked");
   });
   expect(warmer.ready("incoming", layout, passes, () => true)).toBe(false);
   warmer.advance();
+  expect(reentrantReady).toBe(true);
   expect(Object.getOwnPropertyDescriptor(light, "getShadowGenerator")).toEqual(descriptor);
   expect(Object.hasOwn(incoming, "getShadowGenerator")).toBe(false);
   expect(material.isFrozen).toBe(true);

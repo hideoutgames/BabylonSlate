@@ -1,6 +1,7 @@
 import { Mesh, SubMesh, type AbstractMesh, type Light, type Material, type MaterialDefines, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { withSceneReadinessState } from "./scene-perf";
+import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
 type Probe = { mesh: AbstractMesh; source: SubMesh; part?: SubMesh; material: Material; instances: boolean; pass: number; ready: boolean };
 type Work = {
@@ -21,12 +22,16 @@ export class ShadowReceiverWarmup {
   private work: Work | undefined;
   private probing = false;
   private readonly retired: Work[] = [];
+  private readonly releasing = new Set<OwnedEffectRetirement>();
   private readonly scene: Scene;
   constructor(scene: Scene) { this.scene = scene; }
 
   ready(key: string, layout: ReadonlyMap<Light, ShadowGenerator | null>, passes: readonly number[], current: () => boolean): boolean {
     if (this.work?.key === key) return this.work.remaining === 0 || this.work.failed;
     this.cancel();
+    // Do not accumulate speculative layouts behind an unfinished native
+    // compiler. Normal admission can still reuse any retained effect safely.
+    if (this.probing || this.retired.length || this.releasing.size) return true;
     // Reuse the engine's qualified native/compiled light-material contract.
     // Unknown shader callbacks and unsupported native extensions keep normal readiness.
     if (clusteredSceneMaterialReason(this.scene)) return true;
@@ -147,6 +152,15 @@ export class ShadowReceiverWarmup {
   private release(work: Work): void {
     // Babylon 9.20 SubMesh.dispose splices mesh.subMeshes even for detached
     // parts (index -1). Release only their owned draw contexts and effect refs.
-    for (const probe of work.probes) probe.part?.resetDrawCache(undefined, true);
+    for (const probe of work.probes) {
+      const wrapper = probe.part?._getDrawWrapper(probe.pass);
+      if (!wrapper) continue;
+      probe.part!._removeDrawWrapper(probe.pass, false);
+      const retirement = retireOwnedEffect(wrapper.effect, () => wrapper.dispose(true));
+      if (!retirement.isReleased()) {
+        this.releasing.add(retirement);
+        void retirement.released.then(() => this.releasing.delete(retirement));
+      }
+    }
   }
 }
