@@ -2294,7 +2294,13 @@ function initializeEngine(
         }
         scene.render();
         return true;
-      }, () => engine.clear(scene.clearColor, true, true, true));
+      }, () => {
+        // A newly bound output may invalidate admission between scheduling and
+        // drawing. Only explicit world loading may present ready layers over a
+        // clear; an active world must retain its last complete image.
+        if (worldLoading) engine.clear(scene.clearColor, true, true, true);
+        else coherentFrame = false;
+      });
       else engine.clear(scene.clearColor, true, true, true);
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (!coherentFrame) {

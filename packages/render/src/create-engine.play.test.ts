@@ -609,6 +609,8 @@ describe("Play createEngine view", () => {
     const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockReturnValue(pixels);
     const previousImageData = globalThis.ImageData;
     globalThis.ImageData = class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} } as unknown as typeof ImageData;
+    const drawn = vi.fn();
+    handle.scene.onAfterRenderObservable.add(drawn);
     let ready = false;
     const presented = handle.presentFirstFrame().then(() => { ready = true; });
     void presented.catch(() => {});
@@ -622,6 +624,7 @@ describe("Play createEngine view", () => {
       expect(ready).toBe(false);
       expect(copied).toBe(false);
       expect(read).toHaveBeenCalledOnce();
+      expect(drawn).toHaveBeenCalledOnce();
       resolve(new Uint8Array(256 * 256 * 4));
       await presented;
       expect(ready).toBe(true);

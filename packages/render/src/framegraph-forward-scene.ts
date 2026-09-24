@@ -544,10 +544,11 @@ export class ForwardSceneFrameGraph {
     this.cull!.camera = camera;
     this.syncSceneInputs();
     if (this.readinessDirty) {
-      if (!this.isReady()) {
+      const readiness = this.probeReadiness();
+      if (!readiness.ready) {
         if (this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries || this.outlineView?.active)
           return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
-        const rendered = this.renderNativeFrame(updateCameras);
+        const rendered = this.renderNativeFrame(updateCameras, readiness);
         return { path: "classic", reason: "FrameGraph effects are not ready.", ...(rendered ? {} : { rendered: false }) };
       }
       this.readinessDirtyFlag = false;
@@ -586,14 +587,20 @@ export class ForwardSceneFrameGraph {
     }
   }
 
-  private renderNativeFrame(updateCameras: boolean): boolean {
+  private renderNativeFrame(updateCameras: boolean, checked?: { nativeReady: boolean; revision: number }): boolean {
     if (this.disposed || this.scene.isDisposed) return false;
     // Admission may dirty shaders after the coordinator's initial probe. A
     // graph still warming is allowed to use a complete native frame, but graph
     // readiness and native readiness are different contracts.
     if (this.readinessDirty) {
-      this.strictChecks += 1;
-      if (!isSceneFrameReady(this.scene)) return false;
+      // Reuse this attempt's native probe, including an unready result. A later
+      // attempt or an intervening invalidation must probe again.
+      if (checked?.revision === this.readinessRevision) {
+        if (!checked.nativeReady) return false;
+      } else {
+        this.strictChecks += 1;
+        if (!isSceneFrameReady(this.scene)) return false;
+      }
     }
     const revision = this.readinessRevision;
     this.scene.render(updateCameras);
@@ -950,6 +957,10 @@ export class ForwardSceneFrameGraph {
   }
 
   private isReady(): boolean {
+    return this.probeReadiness().ready;
+  }
+
+  private probeReadiness(): { ready: boolean; nativeReady: boolean; revision: number } {
     this.strictChecks += 1;
     findSceneShadowController(this.scene)?.setReceiverRenderPass(this.objects!.objectRenderer.renderPassId);
     const cameras = this.scene.activeCameras;
@@ -970,10 +981,11 @@ export class ForwardSceneFrameGraph {
         // own render-pass variants, without waiting on unrelated Engine effects.
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
+        const revision = this.readinessRevision;
         const cameraReady = isSceneFrameReady(this.scene);
         const graphReady = this.graph!.isReady();
         if (cameraReady && graphReady) findSceneShadowController(this.scene)?.receiversReady();
-        return cameraReady && graphReady;
+        return { ready: cameraReady && graphReady, nativeReady: cameraReady, revision };
       });
     } finally {
       this.objects!.objectList = objectList;
