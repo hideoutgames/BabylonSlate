@@ -31,6 +31,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(step.allocations).toBe(1);
       expect(step.resources.reservedBytes).toBeLessThanOrEqual(step.resources.limit);
       expect(step.frames).toBeGreaterThan(1);
+      expect(step.preparationCompilations).toBe(0);
     }
   });
 }

@@ -1,4 +1,4 @@
-import { Mesh, SubMesh, type AbstractMesh, type Light, type Material, type Scene, type ShadowGenerator } from "@babylonjs/core";
+import { Mesh, SubMesh, type AbstractMesh, type Light, type Material, type MaterialDefines, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { withSceneReadinessState } from "./scene-perf";
 
@@ -84,6 +84,7 @@ export class ShadowReceiverWarmup {
     const material = probe.material;
     const source = probe.source;
     // Allocate each detached part inside the dispatch budget, not in sync().
+    const created = !probe.part;
     const part = probe.part ??= new SubMesh(source.materialIndex, source.verticesStart, source.verticesCount,
       source.indexStart, source.indexCount, probe.mesh, source.getRenderingMesh(), false, false);
     const flags = [material.allowShaderHotSwapping, material.checkReadyOnEveryCall, material.checkReadyOnlyOnce] as const;
@@ -104,6 +105,22 @@ export class ShadowReceiverWarmup {
       material.checkReadyOnlyOnce = false;
       return withSceneReadinessState(this.scene, () => {
         this.scene.getEngine().currentRenderPassId = probe.pass;
+        if (created) {
+          const defines = (source._drawWrapperOverride ?? source._getDrawWrapper(probe.pass))?.defines;
+          if (defines && typeof defines !== "string") {
+            // Babylon 9.20 keys effects by the ordered define string. Fresh
+            // defines can describe the same shader in a different order after
+            // light changes, missing the cache during actual admission. These
+            // qualified native defines are own data fields; isolate their arrays
+            // and preserve their prototype and historical property order.
+            const copy = Object.create(Object.getPrototypeOf(defines)) as MaterialDefines;
+            for (const [key, value] of Object.entries(defines))
+              Reflect.set(copy, key, Array.isArray(value) ? [...value] : value);
+            copy.markAllAsDirty();
+            copy._renderId = -1;
+            part.materialDefines = copy;
+          }
+        }
         const ready = material.isReadyForSubMesh(probe.mesh, part, probe.instances);
         if (part.effect?.getCompilationError()) throw new Error("Prospective shadow receiver compilation failed.");
         return ready;

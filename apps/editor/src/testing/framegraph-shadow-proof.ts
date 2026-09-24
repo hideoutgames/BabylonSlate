@@ -92,14 +92,6 @@ export async function runFrameGraphShadowProof(
   const handoffs = [];
   let shaderCompilations = 0;
   engine.onBeforeShaderCompilationObservable.add(() => shaderCompilations++);
-  let effectPhase: "preparation" | "frame" | undefined;
-  const effectRequests = { preparation: new Set<string>(), frame: new Set<string>() };
-  const createEffect = engine.createEffect.bind(engine);
-  engine.createEffect = (...args) => {
-    const effect = createEffect(...args);
-    if (effectPhase) effectRequests[effectPhase].add(effect.key);
-    return effect;
-  };
   let graphBuilds = 0;
   const build = FrameGraph.prototype.buildAsync;
   FrameGraph.prototype.buildAsync = function (...args) {
@@ -405,17 +397,14 @@ export async function runFrameGraphShadowProof(
           const started = performance.now(), beforeBuilds = graphBuilds;
           let preparationMs = 0, maximumPreparationMs = 0, maximumFrameMs = 0, frames = 0;
           let preparationCompilations = 0, frameCompilations = 0;
-          effectRequests.preparation.clear(); effectRequests.frame.clear();
           do {
             const beforePrepare = performance.now();
             const beforePreparationCompilations = shaderCompilations;
-            effectPhase = "preparation";
             await host.graph.prepare(host.camera);
             preparationCompilations += shaderCompilations - beforePreparationCompilations;
             const preparation = performance.now() - beforePrepare;
             preparationMs += preparation; maximumPreparationMs = Math.max(maximumPreparationMs, preparation);
             const beforeFrameCompilations = shaderCompilations;
-            effectPhase = "frame";
             const frame = await host.render("graph", false, false);
             frameCompilations += shaderCompilations - beforeFrameCompilations;
             if (frame.result.path !== "frameGraph") throw new Error("A warming shadow handoff lost the prepared graph.");
@@ -423,18 +412,7 @@ export async function runFrameGraphShadowProof(
             if (performance.now() - started > 10_000) throw new Error("Shadow handoff did not finish warming.");
             if (!expected.getShadowGenerator()) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           } while (!expected.getShadowGenerator());
-          effectPhase = undefined;
-          const variantDifferences = [...effectRequests.frame].filter((key) => !effectRequests.preparation.has(key)).map((key) => {
-            const shader = key.split("@")[0]!;
-            const candidates = [...effectRequests.preparation].filter((other) => other.startsWith(`${shader}@`));
-            const warmed = new Set(key.split("@").slice(1).join("@").split("\n"));
-            return candidates.map((candidate) => {
-              const prepared = new Set(candidate.split("@").slice(1).join("@").split("\n"));
-              return { shader, warmOnly: [...warmed].filter((line) => !prepared.has(line)), prepareOnly: [...prepared].filter((line) => !warmed.has(line)) };
-            }).sort((a, b) => a.warmOnly.length + a.prepareOnly.length - b.warmOnly.length - b.prepareOnly.length)[0];
-          }).filter(Boolean);
           handoffs.push({ mode, index, preparationMs, maximumPreparationMs, maximumFrameMs, frames, preparationCompilations, frameCompilations,
-            variantDifferences,
             activationMs: performance.now() - started, graphBuilds: graphBuilds - beforeBuilds,
             active: host.scene.lights.filter((light) => light.getShadowGenerator()).map((light) => light.name),
             allocations: host.scene.textures.filter((texture) => texture.isRenderTarget && texture !== host.outputTarget).length,
