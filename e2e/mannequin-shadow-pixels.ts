@@ -8,6 +8,27 @@ const sub = (a: V, b: V) => a.map((v, i) => v - b[i]!);
 const add = (a: V, b: V, scale: number) => a.map((v, i) => v + scale * b[i]!);
 const cross = (a: V, b: V) => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
 const unit = (v: V) => v.map(x => x / Math.hypot(...v));
+const solve = (a: V, b: V, c: V, rhs: V) => {
+  const determinant = dot(a, cross(b, c));
+  if (Math.abs(determinant) < 1e-12) throw new Error("Degenerate pixel/receiver plane");
+  return add(add(cross(b, c).map(v => v * rhs[0]!), cross(c, a), rhs[1]!), cross(a, b), rhs[2]!).map(v => v / determinant);
+};
+const transform = (point: V, matrix: V) => [0, 1, 2, 3].map(i => point[0]! * matrix[i]! + point[1]! * matrix[i + 4]! + point[2]! * matrix[i + 8]! + matrix[i + 12]!);
+
+/** Reuse the imported vertex bytes with each host's actual posed world matrix. */
+export function posedMannequin(geometry: MannequinGeometry, state: ShadowDiagnostics): MannequinGeometry {
+  return geometry.map(part => {
+    const matrix = state.models.find(mesh => mesh.name === part.name)?.worldMatrix as V | undefined;
+    if (!matrix) throw new Error(`Missing runtime mannequin part ${part.name}`);
+    const a = matrix.slice(0, 3), b = matrix.slice(4, 7), c = matrix.slice(8, 11);
+    const determinant = dot(a, cross(b, c));
+    return { ...part, vertices: part.vertices.map(vertex => ({
+      ...vertex,
+      position: transform(vertex.localPosition, matrix).slice(0, 3),
+      normal: unit(add(add(cross(b, c).map(v => v * vertex.localNormal[0]!), cross(c, a), vertex.localNormal[1]!), cross(a, b), vertex.localNormal[2]!).map(v => v / determinant)),
+    })) };
+  });
+}
 
 /** Independent triangle/ray geometry oracle; no renderer shadow code is used. */
 export function mannequinShadowSamples(geometry: MannequinGeometry, state: ShadowDiagnostics, width: number, height: number) {
@@ -39,6 +60,12 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
   const camera = state.camera!.position as V;
   const matrix = state.camera!.viewProjection as V;
   const texel = sun.generator!.lastDrawBias[0]!.worldTexelSize;
+  // Low is one hardware bilinear PCF tap. At this model scale the four
+  // contributing texels can span an entire limb, so sparse world offsets are
+  // not a valid lit/contact oracle. Intersect their exact centers with the face.
+  const low = sun.generator!.cascades === 1 && sun.generator!.filter === "pcf" && sun.generator!.filteringQuality === 2;
+  const shadowProjection = sun.generator!.projections[0]!;
+  const shadowClip = (point: V) => transform(transform(point, shadowProjection.view as V), shadowProjection.matrix as V);
   const points = new Map<string, { x: number; y: number; region: string; worldPosition: number[]; expected: "lit" | "contact" | "edge" }>();
   for (const tri of triangles) {
     const incidence = dot(tri.normal, toLight);
@@ -57,10 +84,34 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
       const py = (point[0]! * matrix[1]! + point[1]! * matrix[5]! + point[2]! * matrix[9]! + matrix[13]!) / w;
       const x = Math.floor((px * 0.5 + 0.5) * width), y = Math.floor((0.5 - py * 0.5) * height);
       if (w <= 0 || x < 0 || y < 0 || x >= width || y >= height) continue;
+      // Classify the center of the pixel we actually read, not the nearby
+      // barycentric seed (which can lie on another face or a foreground guide).
+      const cx = (x + 0.5) / width * 2 - 1, cy = 1 - (y + 0.5) / height * 2;
+      const center = solve(
+        [matrix[0]! - cx * matrix[3]!, matrix[4]! - cx * matrix[7]!, matrix[8]! - cx * matrix[11]!],
+        [matrix[1]! - cy * matrix[3]!, matrix[5]! - cy * matrix[7]!, matrix[9]! - cy * matrix[11]!],
+        tri.normal, [cx * matrix[15]! - matrix[12]!, cy * matrix[15]! - matrix[13]!, dot(tri.normal, point)],
+      );
+      const toCamera = sub(camera, center);
+      if (hit(center, unit(toCamera), Math.hypot(...toCamera))) continue;
       let blocked = 0;
-      for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1])
-        if (hit(add(add(point, tangent, radius * dx), bitangent, radius * dy), toLight)) blocked++;
-      points.set(`${x}:${y}`, { x, y, region: tri.name, worldPosition: point, expected: blocked === 0 ? "lit" : blocked === 9 ? "contact" : "edge" });
+      if (low) {
+        const clip = shadowClip(center), a = sub(shadowClip(add(center, tangent, 1)), clip), b = sub(shadowClip(add(center, bitangent, 1)), clip);
+        const map = sun.generator!.map!;
+        const sx = (clip[0]! * 0.5 + 0.5) * map.width - 0.5, sy = (clip[1]! * 0.5 + 0.5) * map.height - 0.5;
+        const ix = Math.floor(sx), iy = Math.floor(sy), fx = sx - ix, fy = sy - iy;
+        const determinant = a[0]! * b[1]! - a[1]! * b[0]!;
+        for (const dx of [0, 1]) for (const dy of [0, 1]) {
+          const u = (ix + dx + 0.5) / map.width * 2 - 1 - clip[0]!;
+          const v = (iy + dy + 0.5) / map.height * 2 - 1 - clip[1]!;
+          const receiver = add(add(center, tangent, (u * b[1]! - v * b[0]!) / determinant), bitangent, (a[0]! * v - a[1]! * u) / determinant);
+          if (hit(receiver, toLight)) blocked += (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
+        }
+      } else {
+        for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1])
+          if (hit(add(add(center, tangent, radius * dx), bitangent, radius * dy), toLight)) blocked += 1 / 9;
+      }
+      points.set(`${x}:${y}`, { x, y, region: tri.name, worldPosition: center, expected: blocked < 1e-6 ? "lit" : blocked > 1 - 1e-6 ? "contact" : "edge" });
     }
   }
   return [...points.values()];
