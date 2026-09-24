@@ -66,7 +66,7 @@ export function HomepageMobileAccountFailure({
         We could not connect to your account. Check your connection and try
         again.
       </p>
-      <Button size="touch" onClick={onRetry}>
+      <Button onClick={onRetry}>
         Try Again
       </Button>
     </HomepageMobileAccountFrame>
