@@ -779,6 +779,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
+      for (const warning of packed.value.warnings) {
+        appendLog(`Preview Build warning: ${warning}`);
+      }
       const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
       previewFilesRef.current = packed.value.files;
       setPreviewCanCancel(false);

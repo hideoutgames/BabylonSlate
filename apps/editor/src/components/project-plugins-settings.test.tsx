@@ -19,7 +19,11 @@ vi.mock("../context/document-context", () => ({
     return {
       projectDocument: project,
       pluginDescriptors: harness.plugins,
-      pluginDiagnostics: [],
+      pluginDiagnostics: resolvePluginGraph(
+        harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
+        undefined,
+        project.settings.pluginOverrides,
+      ).diagnostics,
       assetRegistry: null,
       showPluginContent: false,
       applyPluginOverrides: async () => {},
@@ -60,35 +64,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Plugin compatibility confirmation", () => {
-  it("keeps an outdated plugin disabled on dismissal or Disable, then enables only after explicit acceptance", async () => {
+describe("Plugin version warnings", () => {
+  it("enables an outdated plugin without a popup and shows the differences inline", async () => {
     render(<ProjectPluginsSettings />);
     fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Enable Outdated Plugin" });
-    expect(dialog.textContent).toContain("old-engine");
-    expect(dialog.textContent).toContain("Base Tools");
-    expect(dialog.textContent).toContain("2.7");
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(harness.overrides.pack).toBeUndefined();
-    fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
-    await waitFor(() => expect(harness.overrides.pack).toEqual({ enabled: false }));
-    fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Try Enable Anyway" }));
     await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Pack" }).getAttribute("aria-checked")).toBe("true"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const warning = screen.getByText(/Warning:.*old-engine/);
+    expect(warning.textContent).toContain("Base Tools");
+    expect(warning.textContent).toContain("2.7");
     expect(resolvePluginGraph(harness.plugins, undefined, harness.overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
     expect(screen.queryByRole("button", { name: "Review Pack Compatibility" })).toBeNull();
   });
 
-  it("offers compatibility review for an enabled plugin whose saved acceptance is stale", async () => {
+  it("keeps stale acknowledgements nonblocking and retains the separate Beta enable confirmation", async () => {
     harness.overrides = { pack: { enabled: true, acceptedCompatibility: "previous-context" } };
     harness.plugins[0]!.settings.beta = true;
     render(<ProjectPluginsSettings />);
-    fireEvent.click(screen.getByRole("button", { name: "Review Pack Compatibility" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Enable Outdated Plugin" });
-    expect(dialog.textContent).toContain("Beta");
-    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    expect(screen.getByText(/Warning:.*old-engine/)).toBeTruthy();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
     await waitFor(() => expect(harness.overrides.pack).toEqual({ enabled: false }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Pack" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Enable Beta Plugin" });
+    expect(dialog.textContent).toContain("Pack is marked Beta");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(harness.overrides.pack).toEqual({ enabled: false });
   });
 });

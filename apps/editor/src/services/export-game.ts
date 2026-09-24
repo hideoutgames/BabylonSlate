@@ -141,10 +141,10 @@ export function resolveExportPluginGraph(
           message = `Enable or install "${dependency}", required by "${plugin}", or disable "${plugin}" in the export preset.`;
           break;
         case "plugin.unsatisfiable":
-          message = `"${plugin}" recorded "${dependency}" ${diagnostic.recordedVersion} (installed ${diagnostic.foundVersion}). Enable it in Project Settings to review compatibility.`;
+          message = `"${plugin}" recorded "${dependency}" ${diagnostic.recordedVersion || "Unknown"} (installed ${diagnostic.foundVersion}). Compatibility has not been verified.`;
           break;
         case "plugin.engine_unsatisfiable":
-          message = `"${plugin}" was created with engine ${diagnostic.recordedVersion} (current ${diagnostic.foundVersion}). Enable it in Project Settings to review compatibility.`;
+          message = `"${plugin}" was created with engine ${diagnostic.recordedVersion || "Unknown"} (current ${diagnostic.foundVersion}). Compatibility has not been verified.`;
           break;
         case "plugin.dependency_blocked":
           message = `"${plugin}" depends on "${dependency}". Resolve its plugin errors or disable "${plugin}" in the export preset.`;
@@ -254,8 +254,9 @@ export async function collectAndExportGame(
     params.projectPluginOverrides,
     preset,
   );
-  if (pluginGraph.diagnostics.length > 0) {
-    return { ok: false, error: pluginGraph.diagnostics.map((diagnostic) => diagnostic.message).join("\n") };
+  const pluginErrors = pluginGraph.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (pluginErrors.length > 0) {
+    return { ok: false, error: pluginErrors.map((diagnostic) => diagnostic.message).join("\n") };
   }
   const pluginEnabledGuids = new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid));
   const closure = collectExportReachability({
@@ -462,6 +463,9 @@ export async function collectAndExportGame(
   });
   if (isOk(packed)) {
     packed.value.warnings.push(
+      ...pluginGraph.diagnostics
+        .filter((diagnostic) => diagnostic.severity === "warning")
+        .map((diagnostic) => diagnostic.message),
       ...packedMaterialTextureWarnings(
         params.assets,
         new Set(closure.value.guids),

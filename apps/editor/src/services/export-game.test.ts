@@ -13,7 +13,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { createDefaultPluginSettings, pluginCompatibilityKey } from "@babylonslate/assets";
+import { createDefaultPluginSettings } from "@babylonslate/assets";
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   parseScriptRegistry,
@@ -39,18 +39,19 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
-  it("honors reviewed plugin compatibility in exports while still rejecting missing dependencies", () => {
+  it("resolves plugins with version warnings while still rejecting missing dependencies", () => {
     const plugin = { pluginGuid: "pack", settings: createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" }) };
-    plugin.settings.engineVersion = "older";
-    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(plugin, [plugin]) } };
+    plugin.settings.engineVersion = "";
+    const overrides = { pack: { enabled: true } };
     const preset = defaultExportPreset();
     preset.pluginOverrides = { pack: { enabled: true } };
     expect(resolveExportPluginGraph([plugin], overrides, preset).order).toEqual([plugin]);
-    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toEqual([]);
+    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toEqual([
+      expect.objectContaining({ severity: "warning", message: expect.stringContaining("engine Unknown") }),
+    ]);
     plugin.settings.pluginDependencies = [{ guid: "missing", version: "0.1" }];
-    overrides.pack.acceptedCompatibility = pluginCompatibilityKey(plugin, [plugin]);
     expect(resolveExportPluginGraph([plugin], overrides, preset).order).toEqual([]);
-    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toContainEqual(expect.objectContaining({ code: "plugin.missing" }));
+    expect(resolveExportPluginGraph([plugin], overrides, preset).diagnostics).toContainEqual(expect.objectContaining({ code: "plugin.missing", severity: "error" }));
   });
 
   it.each(["Class variable", "Spawn Actor dropdown"])("packs the inherited prefab referenced only by a %s", async (source) => {
@@ -399,7 +400,7 @@ describe("collectAndExportGame", () => {
   });
 
   it.each([false, true])(
-    "export-preset layer 3 sets plugin enablement to %s independently of the editor",
+    "export-preset layer 3 sets plugin enablement to %s despite recorded version warnings",
     async (enabled) => {
       const scene = {
         ...createDefaultScene(),
@@ -426,6 +427,7 @@ describe("collectAndExportGame", () => {
                 displayName: "Starter",
               }),
               enabledByDefault: !enabled,
+              engineVersion: "",
             },
           },
         ],
@@ -453,6 +455,7 @@ describe("collectAndExportGame", () => {
           (entry) => entry.guid === "plug-class",
         ),
       ).toBe(enabled);
+      expect(result.value.warnings.some((warning) => warning.includes('"Starter" was created with engine Unknown'))).toBe(enabled);
     },
   );
 

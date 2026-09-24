@@ -7,7 +7,6 @@ import {
   encodeBabasset,
   encodeAssetDocument,
   encodePluginSettingsDocument,
-  pluginCompatibilityKey,
   inspectBabplugin,
   writeProjectPlugin,
   buildStarterContentFiles,
@@ -104,7 +103,7 @@ describe("ProjectService plugin roots", () => {
     expect(service.plugins.find((entry) => entry.pluginGuid === "pack")!.settings).toMatchObject({ version: "0.2", engineVersion: ENGINE_VERSION, pluginDependencies: [{ guid: "base", version: "2.7" }] });
   });
 
-  it("retains reviewed compatibility through remount and export, and blocks changed dependencies", async () => {
+  it("mounts and exports plugins with version warnings, including after a dependency version changes", async () => {
     const { storage, service } = await scaffolded();
     const base = createDefaultPluginSettings({ pluginGuid: "base", displayName: "Base" });
     base.enabledByDefault = true;
@@ -116,17 +115,16 @@ describe("ProjectService plugin roots", () => {
     await writeProjectPlugin(storage, "pack", pack);
     await writeClassAsset(storage, "plugins/pack/assets/Hero.class.babasset", { guid: "hero", name: "Hero" });
     await service.remountRegistry();
-    const overrides = { pack: { enabled: true, acceptedCompatibility: pluginCompatibilityKey(
-      service.plugins.find((entry) => entry.pluginGuid === "pack")!, service.plugins,
-    ) } };
+    const overrides = { pack: { enabled: true } };
     await service.applyPluginOverrides(overrides);
     expect(service.registry?.getRoot("plugin:pack")).toBeTruthy();
     await service.remountRegistry();
     expect(service.registry?.getRoot("plugin:pack")).toBeTruthy();
     expect((await service.listExportAssets(new Set(["base", "pack"]))).some((asset) => asset.header.guid === "hero")).toBe(true);
     await service.saveDocument("plugin-settings", "plugins/base/base.plugin.babasset", { ...base, version: "2.8" });
-    expect(service.registry?.getRoot("plugin:pack")).toBeUndefined();
-    expect(service.pluginGraphDiagnostics).toContainEqual(expect.objectContaining({ code: "plugin.unsatisfiable", pluginGuid: "pack" }));
+    expect(service.registry?.getByGuid("hero")?.rootId).toBe("plugin:pack");
+    expect((await service.listExportAssets(new Set(["base", "pack"]))).some((asset) => asset.header.guid === "hero")).toBe(true);
+    expect(service.pluginGraphDiagnostics).toContainEqual(expect.objectContaining({ code: "plugin.unsatisfiable", severity: "warning", pluginGuid: "pack", foundVersion: "2.8" }));
   });
 
   it("indexes export-enabled dependencies without changing the editor's disabled roots", async () => {
