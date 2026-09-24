@@ -18,7 +18,6 @@
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
   /* Decorative viewports stay dark in both themes, like editor canvases. */
   --launcher-viewport: oklch(0.2 0.003 75);
-  --launcher-viewport-line: oklch(0.42 0.004 75);
   color: var(--foreground);
 }
 
@@ -533,6 +532,70 @@
   transform: translateY(-50%);
 }
 
+/* Storage and source-control status, left of the actions button. */
+.homepage-project-badges {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  pointer-events: none;
+}
+.homepage-project-badges [data-slot="badge"] {
+  height: 18px;
+  gap: 3px;
+  padding-inline: 6px;
+  font-size: 10px;
+  box-shadow: 0 1px 2px color-mix(in oklch, #000 20%, transparent);
+}
+.homepage-project-badges .homepage-project-badge-secondary {
+  border-color: var(--border);
+  background: color-mix(in oklch, var(--foreground) 10%, var(--card));
+}
+/* Small cards and phone rows have room for one labelled badge; the secondary one keeps only its icon. */
+.homepage-project-card[data-layout="small"] .homepage-project-badges {
+  flex-wrap: nowrap;
+}
+.homepage-project-card[data-layout="small"] .homepage-project-badge-secondary {
+  padding-inline: 4px;
+}
+.homepage-project-card[data-layout="small"] .homepage-project-badge-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .homepage-project-card[data-layout="list"] .homepage-project-badge-secondary {
+    padding-inline: 4px;
+  }
+  .homepage-project-card[data-layout="list"] .homepage-project-badge-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.homepage-project-card[data-layout="list"] .homepage-project-caption {
+  padding-right: 8px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badges {
+  position: static;
+  flex: none;
+  flex-direction: row-reverse;
+  flex-wrap: nowrap;
+  margin-right: 40px;
+}
+.homepage-project-card[data-layout="list"] .homepage-project-badges [data-slot="badge"] {
+  box-shadow: none;
+}
+
 /* ------------------------------------------------------------ Badges */
 .homepage-project-badge {
   display: grid;
@@ -671,27 +734,6 @@
   box-shadow: 0 24px 48px -30px var(--launcher-shadow);
   animation: launcher-arrive 520ms var(--launcher-ease) both;
 }
-/* A receding scene grid, drifting toward the camera. */
-.homepage-viewport-floor {
-  position: absolute;
-  left: -50%;
-  right: -50%;
-  bottom: -2%;
-  height: 58%;
-  pointer-events: none;
-  transform-origin: 50% 100%;
-  transform: perspective(260px) rotateX(58deg);
-  background-image:
-    linear-gradient(var(--launcher-viewport-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--launcher-viewport-line) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(to top, #000 0%, transparent 92%);
-  opacity: 0.5;
-  animation: launcher-floor-drift 6s linear infinite;
-}
-.homepage-empty-art[data-paused="true"] .homepage-viewport-floor {
-  animation-play-state: paused;
-}
 .homepage-viewport-chips {
   position: absolute;
   top: 8px;
@@ -786,6 +828,80 @@
 }
 .homepage-template-step .homepage-gallery {
   flex: 1;
+}
+.homepage-template-browser[data-composing="true"] {
+  flex-direction: row;
+  animation: launcher-arrive 260ms var(--launcher-ease) both;
+}
+.homepage-template-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+}
+.homepage-template-sidebar > .editor-search-input {
+  flex: none;
+}
+.homepage-template-sidebar [data-slot="input"] {
+  height: var(--chrome-row, 28px);
+  font-size: 12px;
+}
+.homepage-template-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.homepage-template-category {
+  justify-content: flex-start;
+  width: 100%;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.homepage-template-category > span:first-of-type {
+  flex: 1;
+  text-align: left;
+}
+.homepage-template-category[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.homepage-template-category-count {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.homepage-template-import {
+  margin-top: auto;
+  width: 100%;
+}
+.homepage-template-results {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.homepage-template-results-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: calc(var(--chrome-row, 28px) + 8px);
+  padding: 4px 6px 4px 14px;
+}
+.homepage-template-results-header h3 {
+  font-size: 12px;
+  font-weight: 600;
+}
+.homepage-template-results-header [data-slot="dropdown-menu-trigger"],
+.homepage-template-results-header > button {
+  margin-left: auto;
+}
+.homepage-template-results .homepage-gallery-grid {
+  padding-top: 2px;
 }
 .homepage-composer-layout {
   display: flex;
@@ -978,6 +1094,10 @@
 }
 
 /* ------------------------------------------------- Profile and account */
+.catalog-dialog.homepage-application-settings {
+  width: min(720px, calc(100vw - 32px));
+  height: min(460px, calc(100dvh - 32px));
+}
 .homepage-profile {
   width: min(480px, calc(100vw - 32px));
   max-width: none;
@@ -1068,36 +1188,55 @@
   border-radius: 50%;
   object-fit: cover;
 }
-.homepage-clerk-trigger {
-  display: grid;
-  place-items: center;
-  min-width: var(--chrome-row, 28px);
-  height: 100%;
-}
-.homepage-clerk-avatar-button {
-  min-width: var(--chrome-row, 28px);
-  min-height: var(--chrome-row, 28px);
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
+.homepage-account svg.homepage-profile-avatar {
+  width: 18px;
+  height: 18px;
+  color: var(--muted-foreground);
 }
 .homepage-profile-menu {
-  width: 240px;
+  width: 248px;
   max-width: calc(100vw - 24px);
 }
+.homepage-profile-menu-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+}
+.homepage-profile-menu-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+svg.homepage-profile-menu-avatar {
+  padding: 5px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  stroke-width: 1.5;
+}
+.homepage-profile-menu-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.homepage-profile-menu-name,
+.homepage-profile-menu-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .homepage-profile-menu-name {
-  display: block;
   color: var(--foreground);
   font-size: 12px;
   font-weight: 600;
-  padding: 2px 0;
 }
 .homepage-profile-menu-email {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-bottom: 2px;
+  color: var(--muted-foreground);
   font-size: 11px;
+  font-weight: 400;
 }
 .homepage-clerk,
 .homepage-clerk-card {
@@ -1160,7 +1299,7 @@
   gap: 14px;
 }
 .homepage-native-auth-form input {
-  min-height: var(--touch-target, 44px);
+  min-height: 32px;
   font-size: 16px;
 }
 .homepage-native-auth-actions {
@@ -1211,13 +1350,71 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
 
 /* ---------------------------------------------------------------- Touch */
 @media (pointer: coarse) {
-  .homepage-theme [data-slot="button"]:not(.homepage-card-open),
-  .homepage-theme [data-slot="toggle-group-item"] {
-    min-height: var(--touch-target, 44px);
-    min-width: var(--touch-target, 44px);
+  /* Controls stay compact; an invisible ::before extends each hit area to the
+     touch target. Toolbar gaps keep neighboring hit areas from overlapping. */
+  .homepage-theme
+    :is(
+      [data-slot="button"],
+      [data-slot="dropdown-menu-trigger"],
+      [data-slot="dialog-close"],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
+      [data-slot="toggle-group-item"]
+    ):not(.homepage-card-open) {
+    min-height: 32px;
+    min-width: 0;
   }
   .homepage-theme
-    [data-slot="button"]:not(.homepage-card-open):not(:disabled):active,
+    :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
+      .homepage-card-open
+    ):is(:has(> svg:only-child), :has(> img:only-child)) {
+    min-width: 32px;
+  }
+  .homepage-theme
+    :is(
+      [data-slot="button"],
+      [data-slot="dropdown-menu-trigger"],
+      [data-slot="dialog-close"],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
+      [data-slot="toggle-group-item"]
+    ):not(.homepage-card-open, .homepage-project-actions, .absolute) {
+    position: relative;
+  }
+  .homepage-theme
+    :is(
+      [data-slot="button"],
+      [data-slot="dropdown-menu-trigger"],
+      [data-slot="dialog-close"],
+      [data-slot="alert-dialog-action"],
+      [data-slot="alert-dialog-cancel"],
+      [data-slot="toggle-group-item"]
+    ):not(.homepage-card-open)::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, var(--touch-target, 44px));
+    height: max(100%, var(--touch-target, 44px));
+    transform: translate(-50%, -50%);
+  }
+  .homepage-toolbar-start,
+  .homepage-toolbar-end,
+  .homepage-panel-toolbar,
+  .homepage-template-toolbar,
+  .homepage-composer-upload {
+    gap: 8px;
+  }
+  .homepage-theme [data-slot="dialog-close"] {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+  .homepage-theme
+    :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):not(
+      .homepage-card-open
+    ):not(:disabled):active,
   .homepage-theme [data-slot="toggle-group-item"]:not(:disabled):active {
     background: var(--accent);
     color: var(--accent-foreground);
@@ -1233,57 +1430,71 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-navigation [data-slot="toggle-group-item"] {
     padding: 0 16px;
   }
+  .homepage-titlebar-end {
+    padding-inline: 8px;
+  }
   .homepage-toolbar,
   .homepage-panel-toolbar,
   .homepage-template-toolbar {
-    padding-block: 4px;
+    padding-block: 6px;
   }
   .homepage-panel-toolbar [data-slot="input"],
   .homepage-template-toolbar [data-slot="input"],
+  .homepage-template-sidebar [data-slot="input"],
   .homepage-composer-form [data-slot="input"] {
-    min-height: var(--touch-target, 44px);
+    min-height: 32px;
     font-size: 16px;
   }
-  .homepage-project-actions {
-    top: 2px;
-    right: 2px;
+  .homepage-template-categories {
+    gap: 12px;
   }
-  .homepage-project-card[data-layout="list"] .homepage-project-caption {
-    padding-right: 52px;
+  .homepage-project-card[data-layout="list"] .homepage-project-badges {
+    margin-right: 48px;
   }
   .homepage-statusbar {
     height: 26px;
   }
   .homepage-composer-header {
-    min-height: 52px;
-    padding-right: 56px;
+    min-height: var(--touch-target, 44px);
+    padding-right: 48px;
   }
   .homepage-composer [data-slot="dialog-close"] {
-    top: 4px;
-    right: 4px;
+    top: 6px;
+    right: 6px;
+  }
+  .homepage-composer-color-row {
+    row-gap: 12px;
+  }
+  .homepage-composer-color-grid {
+    flex-basis: 100%;
+    gap: 12px;
+  }
+  .homepage-composer-upload {
+    margin-left: 0;
   }
   .homepage-color-choice {
-    width: var(--touch-target, 44px);
+    width: 32px;
+    height: 32px;
   }
   .homepage-color-blob {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
   }
   .homepage-project-options summary {
     min-height: var(--touch-target, 44px);
-  }
-  .homepage-clerk-trigger,
-  .homepage-clerk-avatar-button {
-    min-width: var(--touch-target, 44px);
-    min-height: var(--touch-target, 44px);
-  }
-  .homepage-profile-menu [role="menuitem"] {
-    min-height: 48px;
   }
 }
 
 /* ---------------------------------------------------------------- Phone */
 @media (max-width: 700px) {
+  /* Labels collapse to 32px icons here; 12px gaps keep 44px hit areas apart. */
+  .homepage-toolbar-start,
+  .homepage-toolbar-end,
+  .homepage-panel-toolbar,
+  .homepage-template-toolbar,
+  .homepage-template-sidebar {
+    gap: 12px;
+  }
   .homepage-brand h1,
   .homepage-optional-label,
   .homepage-statusbar {
@@ -1307,8 +1518,9 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
     --gallery-min: 140px;
   }
-  .homepage-composer {
+  .homepage-theme.homepage-composer {
     width: 100vw;
+    max-width: none;
     height: var(--homepage-visible-height, 100dvh);
     max-height: var(--homepage-visible-height, 100dvh);
     border: 0;
@@ -1316,13 +1528,48 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   }
   .homepage-composer-header {
     padding-top: var(--safe-top);
-    min-height: calc(52px + var(--safe-top));
+    min-height: calc(var(--touch-target, 44px) + var(--safe-top));
   }
   .homepage-composer [data-slot="dialog-close"] {
-    top: calc(var(--safe-top) + 4px);
+    top: calc(var(--safe-top) + 6px);
   }
   .homepage-template-step {
     padding-bottom: var(--safe-bottom);
+  }
+  .homepage-template-browser[data-composing="true"] {
+    flex-direction: column;
+  }
+  .homepage-template-sidebar {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .homepage-template-sidebar > .editor-search-input {
+    flex: 1 1 100%;
+  }
+  .homepage-template-categories {
+    flex: 1;
+    flex-direction: row;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+  }
+  .homepage-template-category {
+    width: auto;
+  }
+  .homepage-template-category svg,
+  .homepage-template-category .homepage-template-category-count,
+  .homepage-template-results-header > :not([data-slot="dropdown-menu-trigger"]) {
+    display: none;
+  }
+  .homepage-template-import {
+    margin-top: 0;
+    width: auto;
   }
   .homepage-composer-preview {
     display: none;
@@ -1339,7 +1586,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   }
   .homepage-composer-footer > button:last-child {
     flex: 1;
-    min-height: 48px;
   }
   .homepage-empty-art {
     height: 220px;
@@ -1389,11 +1635,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-@keyframes launcher-floor-drift {
-  to {
-    background-position: 0 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import type { ListedProject } from "../lib/listed-projects";
@@ -107,6 +108,23 @@ describe("Slate project browser", () => {
     for (const id of ["blank", "empty", "2d"])
       expect(screen.getByTestId(`create-project-${id}`)).toBeTruthy();
     expect(screen.getByTestId("engine-settings")).toBeTruthy();
+  });
+
+  it("marks every project Local and only source-controlled projects Source Control", () => {
+    renderHomepage({
+      projects: [
+        { ...listedProject("Tracked", "opfs"), sourceControl: true },
+        listedProject("Untracked", "opfs"),
+      ],
+    });
+    const tracked = screen.getByTestId("open-listed-project-Tracked");
+    const untracked = screen.getByTestId("open-listed-project-Untracked");
+    expect(within(tracked).getByTestId("homepage-project-local").textContent).toBe("Local");
+    expect(within(untracked).getByTestId("homepage-project-local").textContent).toBe("Local");
+    expect(
+      within(tracked).getByTestId("homepage-project-source-control").textContent,
+    ).toBe("Source Control");
+    expect(within(untracked).queryByTestId("homepage-project-source-control")).toBeNull();
   });
 
   it("opens web folder or ZIP imports explicitly", async () => {
@@ -236,9 +254,16 @@ describe("Slate project browser", () => {
     );
   });
 
-  it("rejects empty or duplicate project names", () => {
+  it("suggests a free random name and rejects empty or duplicate names", () => {
     renderHomepage({ projects: [listedProject("Orbit", "opfs")] });
     createDialog();
+    const name = screen.getByTestId("create-project-name") as HTMLInputElement;
+    expect(name.value).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
+      "disabled",
+      false,
+    );
+    fireEvent.change(name, { target: { value: "" } });
     expect(screen.getByTestId("create-project-submit")).toHaveProperty(
       "disabled",
       true,
@@ -458,5 +483,29 @@ describe("Slate project browser", () => {
     expect(
       screen.getByTestId("homepage").getAttribute("data-slate-theme"),
     ).toBe("light");
+  });
+
+  it("keeps Auto-Update in Application Settings from the profile menu", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const openApplicationSettings = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "Application Settings" }),
+      );
+      return screen.findByRole("switch", { name: "Auto-Update" });
+    };
+    const { unmount } = renderHomepage();
+    let autoUpdate = await openApplicationSettings();
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(autoUpdate);
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Off")).toBeTruthy();
+    unmount();
+
+    renderHomepage();
+    autoUpdate = await openApplicationSettings();
+    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    vi.unstubAllEnvs();
   });
 });

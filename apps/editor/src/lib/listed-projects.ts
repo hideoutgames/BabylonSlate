@@ -13,6 +13,8 @@ export type ListedProject = ProjectFolderHandle & {
   lastOpenedAt?: string;
   createdAt?: string;
   appearance?: ProjectAppearance;
+  /** Project settings enable source control (cached in recents). */
+  sourceControl?: boolean;
 };
 
 export type UpdateListedProjectOptions = {
@@ -27,6 +29,7 @@ export function recentProjectsWithOpenedProject(
   handle: ProjectFolderHandle,
   metadata: ProjectMetadata,
   lastOpenedAt: string,
+  sourceControl: boolean,
 ): EngineSettings["recents"] {
   return [
     {
@@ -37,6 +40,7 @@ export function recentProjectsWithOpenedProject(
       createdAt: metadata.createdAt,
       bookmark: handle.tier === "external" ? handle.id : null,
       ...(metadata.appearance ? { appearance: metadata.appearance } : {}),
+      sourceControl,
     },
     ...recents.filter((recent) => recent.id !== handle.id),
   ].slice(0, 20);
@@ -94,6 +98,7 @@ export function listedProjectsFromRecents(
     lastOpenedAt?: string;
     createdAt?: string;
     appearance?: ProjectAppearance;
+    sourceControl?: boolean;
   }>,
   stored: ProjectFolderHandle[],
 ): ListedProject[] {
@@ -110,6 +115,7 @@ export function listedProjectsFromRecents(
       ...(recent.lastOpenedAt ? { lastOpenedAt: recent.lastOpenedAt } : {}),
       ...(recent.createdAt ? { createdAt: recent.createdAt } : {}),
       ...(recent.appearance ? { appearance: recent.appearance } : {}),
+      ...(recent.sourceControl ? { sourceControl: true } : {}),
     };
   });
 }

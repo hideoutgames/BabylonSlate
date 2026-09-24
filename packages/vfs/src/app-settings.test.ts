@@ -20,6 +20,7 @@ describe("app settings", () => {
         {
           id: "new", name: "New", tier: "opfs", lastOpenedAt: "2026-09-09",
           appearance: { icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA" },
+          sourceControl: true,
         },
         { id: "old", name: "Old", tier: "documents", lastOpenedAt: "2026-09-08" },
       ];
@@ -29,6 +30,7 @@ describe("app settings", () => {
       icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
     });
     expect(loaded.recents[1]?.appearance).toBeUndefined();
+    expect(loaded.recents.map((recent) => recent.sourceControl)).toEqual([true, undefined]);
   });
 
   it("drops malformed recent badge images without discarding project recents", () => {

@@ -876,6 +876,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     secretStore,
   ]);
 
+  const sourceControlEnabled = projectDocument
+    ? projectDocument.settings.sourceControl?.enabled === true
+    : null;
+  useEffect(() => {
+    if (sourceControlEnabled === null) return;
+    const folder = projectService.storagePort.getCurrentFolder();
+    if (!folder) return;
+    void settingsStore.update((settings) => {
+      settings.recents = settings.recents.map((recent) =>
+        recent.id === folder.id && recent.sourceControl !== sourceControlEnabled
+          ? { ...recent, sourceControl: sourceControlEnabled }
+          : recent,
+      );
+    });
+  }, [projectService, settingsStore, sourceControlEnabled]);
+
   useEffect(() => {
     return attachLifecyclePause((paused) => {
       if (paused) {
@@ -910,7 +926,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const recordRecent = useCallback(
-    async (handle: ProjectFolderHandle | null, metadata: ProjectMetadata) => {
+    async (
+      handle: ProjectFolderHandle | null,
+      metadata: ProjectMetadata,
+      sourceControl: boolean,
+    ) => {
       if (!handle) return;
       await settingsStore.update((settings) => {
         settings.recents = recentProjectsWithOpenedProject(
@@ -918,6 +938,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           handle,
           metadata,
           new Date().toISOString(),
+          sourceControl,
         );
       });
     },
@@ -1286,6 +1307,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await recordRecent(
         projectService.storagePort.getCurrentFolder(),
         document.metadata,
+        document.settings.sourceControl?.enabled === true,
       );
       setRoute("editor");
       setAnimEditorModes({});

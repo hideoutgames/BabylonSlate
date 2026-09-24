@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AmbientLight,
+  Color,
   DirectionalLight,
   Group,
   Mesh,
   PerspectiveCamera,
+  PlaneGeometry,
   PMREMGenerator,
   Scene,
+  ShaderMaterial,
   Texture,
   WebGLRenderer,
   type Material,
@@ -32,6 +35,49 @@ function disposeObject(root: Object3D) {
     material.dispose();
   }
   for (const texture of textures) texture.dispose();
+}
+
+/*
+ * Screen-space anti-aliased lines that fade out before cells shrink below a
+ * pixel, so the receding grid neither shimmers nor forms moiré while drifting.
+ */
+function createFloor() {
+  const material = new ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      drift: { value: 0 },
+      lineColor: { value: new Color(0x6b6965) },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float drift;
+      uniform vec3 lineColor;
+      varying vec3 vWorld;
+      void main() {
+        vec2 coord = vWorld.xz / 0.6 - vec2(0.0, drift);
+        vec2 width = fwidth(coord);
+        vec2 grid = abs(fract(coord - 0.5) - 0.5) / width;
+        float line = 1.0 - min(min(grid.x, grid.y), 1.0);
+        float detail = 1.0 - smoothstep(0.25, 0.6, max(width.x, width.y));
+        float distance = length(vWorld - cameraPosition);
+        float fade = 1.0 - smoothstep(8.0, 24.0, distance);
+        float edge = 1.0 - smoothstep(6.0, 11.0, abs(vWorld.x));
+        gl_FragColor = vec4(lineColor, line * detail * fade * edge * 0.85);
+      }
+    `,
+  });
+  const floor = new Mesh(new PlaneGeometry(24, 30), material);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, -2, -6);
+  return { floor, material };
 }
 
 /** Decorative launcher canvas. No engine state or editor imports. */
@@ -75,7 +121,8 @@ export default function HomepageSculpture({
     const camera = new PerspectiveCamera(32, 1, 0.1, 40);
     camera.position.set(0, 0, 9.2);
     const pivot = new Group();
-    scene.add(pivot, new AmbientLight(0xffffff, 1.2));
+    const { floor, material: floorMaterial } = createFloor();
+    scene.add(floor, pivot, new AmbientLight(0xffffff, 1.2));
     const key = new DirectionalLight(0xfff4e8, 4);
     key.position.set(-3, 5, 6);
     scene.add(key);
@@ -123,6 +170,7 @@ export default function HomepageSculpture({
       pivot.rotation.y += (-0.28 + target.x * 0.3 - pivot.rotation.y) * 0.06;
       pivot.rotation.z = -0.1 + Math.sin(elapsed * 0.35) * 0.035;
       pivot.position.y = Math.sin(elapsed * 0.7) * 0.09;
+      floorMaterial.uniforms.drift.value = (elapsed * 0.16) % 1;
       renderer.render(scene, camera);
     };
     const motion = () => {
@@ -174,6 +222,7 @@ export default function HomepageSculpture({
       element.removeEventListener("pointermove", pointer);
       element.removeEventListener("pointerleave", leave);
       disposeObject(pivot);
+      disposeObject(floor);
       environment.dispose();
       renderer.dispose();
       renderer.forceContextLoss();

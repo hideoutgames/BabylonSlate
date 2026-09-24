@@ -11,18 +11,13 @@ export function HomepageEmptyArt({
   paused?: boolean;
 }) {
   return (
-    <div
-      className="homepage-empty-art"
-      data-paused={paused ? "true" : "false"}
-      aria-hidden="true"
-    >
-      <div className="homepage-viewport-floor" />
+    <div className="homepage-empty-art" aria-hidden="true">
       <Suspense fallback={null}>
         <Sculpture onReady={onReady} paused={paused} />
       </Suspense>
       <div className="homepage-viewport-chips">
         <span>Perspective</span>
-        <span>Lit</span>
+        <span>3D</span>
       </div>
     </div>
   );

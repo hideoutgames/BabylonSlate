@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { MoreHorizontalIcon } from "lucide-react";
+import { GitBranchIcon, HardDriveIcon, MoreHorizontalIcon } from "lucide-react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Card,
@@ -18,6 +19,27 @@ import {
 } from "./homepage-project-identity";
 import { describeProjectActivity } from "../lib/project-activity";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
+
+function ProjectBadges({ project }: { project: ListedProject }) {
+  return (
+    <div className="homepage-project-badges">
+      <Badge data-testid="homepage-project-local">
+        <HardDriveIcon data-icon="inline-start" />
+        Local
+      </Badge>
+      {project.sourceControl && (
+        <Badge
+          variant="secondary"
+          className="homepage-project-badge-secondary"
+          data-testid="homepage-project-source-control"
+        >
+          <GitBranchIcon data-icon="inline-start" />
+          <span className="homepage-project-badge-label">Source Control</span>
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 export function HomepageProjectCard({
   project,
@@ -102,6 +124,7 @@ export function HomepageProjectCard({
         ) : (
           <ProjectCover appearance={project.appearance} />
         )}
+        {layout !== "list" && <ProjectBadges project={project} />}
       </CardContent>
       <CardHeader className="homepage-project-caption">
         <CardTitle>
@@ -110,6 +133,7 @@ export function HomepageProjectCard({
         </CardTitle>
         {activity && <CardDescription>{activity}</CardDescription>}
       </CardHeader>
+      {layout === "list" && <ProjectBadges project={project} />}
       <Button
         className="homepage-card-open"
         variant="ghost"

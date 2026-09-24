@@ -3,12 +3,33 @@ import {
   createProjectNameIssue,
   defaultCreateProjectDisplayName,
   normalizeProjectFolderName,
+  randomProjectName,
 } from "./create-project";
 
 describe("defaultCreateProjectDisplayName", () => {
-  it("uses TestProject in test mode and leaves Name empty otherwise", () => {
+  it("keeps TestProject for automation and suggests a random name otherwise", () => {
     expect(defaultCreateProjectDisplayName(true)).toBe("TestProject");
-    expect(defaultCreateProjectDisplayName(false)).toBe("");
+    expect(defaultCreateProjectDisplayName(false, [], () => 0)).toBe(
+      "Amber Apple Arcade",
+    );
+    expect(defaultCreateProjectDisplayName(false, [], () => 0.999)).toBe(
+      "Walnut Waffle Workshop",
+    );
+  });
+});
+
+describe("randomProjectName", () => {
+  it("draws a new combination when the suggestion is already taken", () => {
+    const rolls = [0, 0, 0, 0.5, 0.5, 0.5];
+    const name = randomProjectName(["amber apple arcade"], () => rolls.shift() ?? 0);
+    expect(name).toBe("Maple Meadow Kingdom");
+    expect(createProjectNameIssue(name, ["Amber Apple Arcade"])).toBeNull();
+  });
+
+  it("numbers the name when every draw collides", () => {
+    expect(randomProjectName(["Amber Apple Arcade"], () => 0)).toBe(
+      "Amber Apple Arcade 2",
+    );
   });
 });
 

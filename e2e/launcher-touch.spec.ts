@@ -148,6 +148,47 @@ async function appearance(locator: Locator) {
   });
 }
 
+async function expectCompactTouchTargets(controls: Locator) {
+  await controls
+    .page()
+    .evaluate(() =>
+      Promise.all(
+        document.getAnimations().map((animation) => animation.finished),
+      ),
+    );
+  const targets = await controls.evaluateAll((elements) =>
+    elements.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.top < 0 || rect.bottom > innerHeight) return [];
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const reaches = (dx: number, dy: number) =>
+        element.contains(document.elementFromPoint(x + dx, y + dy));
+      return [
+        {
+          label: element.getAttribute("aria-label") ?? element.textContent,
+          height: rect.height,
+          hitArea: [
+            reaches(-21, 0),
+            reaches(21, 0),
+            reaches(0, -21),
+            reaches(0, 21),
+          ],
+        },
+      ];
+    }),
+  );
+  expect(targets.length).toBeGreaterThan(0);
+  for (const target of targets) {
+    expect
+      .soft(target.height, `${target.label} stays compact`)
+      .toBeLessThan(44);
+    expect
+      .soft(target.hitArea, `${target.label} 44px hit area`)
+      .toEqual([true, true, true, true]);
+  }
+}
+
 for (const device of [
   { name: "phone", viewport: { width: 390, height: 844 }, keyboardHeight: 420 },
   {
@@ -281,6 +322,15 @@ for (const device of [
         });
       });
       await openLauncher(page);
+      await expectCompactTouchTargets(
+        page.locator(
+          [
+            ".homepage-project-actions",
+            '[data-testid="homepage-account"]',
+            '[aria-label="Sort"]',
+          ].join(","),
+        ),
+      );
       await page.getByTestId("create-project").tap();
       const dialog = page.getByTestId("create-project-dialog");
       await dialog.getByTestId("create-project-blank").tap();
@@ -310,24 +360,7 @@ for (const device of [
           '[data-testid="create-project-submit"]',
         ].join(","),
       );
-      const sizes = await controls.evaluateAll((elements) =>
-        elements.map((element) => {
-          const rect = element.getBoundingClientRect();
-          return {
-            label: element.getAttribute("aria-label") ?? element.textContent,
-            width: rect.width,
-            height: rect.height,
-          };
-        }),
-      );
-      for (const size of sizes) {
-        expect
-          .soft(size.width, `${size.label} touch width`)
-          .toBeGreaterThanOrEqual(44);
-        expect
-          .soft(size.height, `${size.label} touch height`)
-          .toBeGreaterThanOrEqual(44);
-      }
+      await expectCompactTouchTargets(controls);
 
       await name.tap();
       await page.evaluate((height) => {

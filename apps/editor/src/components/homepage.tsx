@@ -86,6 +86,7 @@ import { brandIconSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { IconActionButton } from "./icon-action-button";
 import { HomepageAccount } from "./homepage-account";
+import { HomepageApplicationSettings } from "./homepage-application-settings";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageEmptyArt } from "./homepage-empty-art";
 import { HomepageGallery } from "./homepage-gallery";
@@ -237,6 +238,8 @@ export function Homepage({
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [applicationSettingsOpen, setApplicationSettingsOpen] =
+    useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
@@ -297,7 +300,12 @@ export function Homepage({
   const create = (id = "blank", choose = true) => {
     if (busyRef.current) return;
     setEditTarget(null);
-    setName(defaultCreateProjectDisplayName(isTestModeEnabled()));
+    setName(
+      defaultCreateProjectDisplayName(
+        isTestModeEnabled(),
+        projects.map((project) => project.name),
+      ),
+    );
     setAppearance(DEFAULT_PROJECT_APPEARANCE);
     setTemplateId(id);
     setChooseTemplate(choose);
@@ -362,7 +370,12 @@ export function Homepage({
           </ToggleGroupItem>
         </ToggleGroup>
         <div className="homepage-titlebar-end">
-          <HomepageAccount disabled={busy} onOpenChange={setAccountOpen} />
+          <HomepageAccount
+            disabled={busy}
+            onOpenChange={setAccountOpen}
+            onApplicationSettings={() => setApplicationSettingsOpen(true)}
+            onEngineSettings={() => setSettingsOpen(true)}
+          />
         </div>
       </header>
       <div className="homepage-toolbar" role="toolbar" aria-label="Launcher">
@@ -658,6 +671,7 @@ export function Homepage({
                           transition.active ||
                           createOpen ||
                           settingsOpen ||
+                          applicationSettingsOpen ||
                           accountOpen ||
                           view !== "projects"
                         }
@@ -839,6 +853,10 @@ export function Homepage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <HomepageApplicationSettings
+        open={applicationSettingsOpen}
+        onOpenChange={setApplicationSettingsOpen}
+      />
       {settingsOpen && (
         <Suspense fallback={null}>
           <SettingsModal
