@@ -72,6 +72,10 @@ lit samples and no changes caused by helper participation. The maps remain
   `e8f83217`, two consecutive alternate-view runs pass after waiting for presented
   viewport frames and verifying camera/view consistency. This is a fixture repair,
   not a changed darkness threshold or an additional renderer workaround.
+- `215db04d`: all four remaining editor matrix cases pass with the corrected
+  capture wait. Together with the repeated alternate view, real Play/player and
+  four selected synthetic cases, all **10 distinct browser cases** are covered.
+  Documentation-only updates preserve these results; no exhaustive local suite ran.
 
 All runs use `BL_TEST_PROFILE=shared` and `pnpm --silent agent:wait local --script
 test` with explicit unit paths, or `--script test:e2e` with explicit specs and
