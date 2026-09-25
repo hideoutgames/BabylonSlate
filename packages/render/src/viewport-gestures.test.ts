@@ -532,6 +532,17 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.beta).toBeCloseTo(beta, 6);
   });
 
+  it.each(["2d", "3d"] as const)("ignores horizontal-only wheel scrolling in %s", (mode) => {
+    const { controller } = attach(mode);
+    const radius = controller.camera.radius;
+    const halfHeight = controller.orthoHalfHeight();
+
+    canvas.emit("wheel", { deltaX: 40, deltaY: 0, clientX: 200, clientY: 150 });
+
+    expect(controller.camera.radius).toBe(radius);
+    expect(controller.orthoHalfHeight()).toBe(halfHeight);
+  });
+
   it("2D wheel zoom keeps the world point under the cursor", () => {
     const { controller } = attach("2d");
     controller.updateOrthoBounds(800 / 600);
