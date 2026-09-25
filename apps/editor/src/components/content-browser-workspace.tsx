@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRightIcon,
   ArrowUpDownIcon,
   ArrowUpRightIcon,
   BoneIcon,
   ChevronsUpDownIcon,
+  CircleCheckIcon,
   CopyIcon,
   CopyPlusIcon,
   FileInputIcon,
@@ -96,6 +98,7 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import { Badge } from "@babylonslate/ui/components/badge";
 import {
   Progress,
   ProgressLabel,
@@ -1259,6 +1262,25 @@ export function ContentBrowserWorkspace({
     }
     return contentBrowserDeleteListNames({ assetNames });
   }, [deleteTarget, resolveAssetName]);
+
+  const deleteListItems = useMemo(() => {
+    if (!deleteTarget) return [];
+    const folders = deleteTarget.kind === "folder" ? [deleteTarget.path]
+      : deleteTarget.kind === "selection" ? deleteTarget.folders : [];
+    return [
+      ...folders.map((path) => {
+        const count = containedAssetPaths(allAssets, path).length;
+        return { key: path, name: path.split("/").pop() || path, detail: path,
+          count: count === 1 ? "1 Asset" : `${count} Assets`,
+          visual: { ...resolveTypeVisual({ family: "folder" }), icon: FolderIcon, iconKey: "Folder" } };
+      }),
+      ...(deleteTarget.kind === "folder" ? [] : deleteTarget.guids).map((guid) => {
+        const asset = assetRegistry?.getByGuid(guid);
+        return { key: guid, name: resolveAssetName(guid), detail: asset?.path ?? guid,
+          count: null, visual: resolveTypeVisual({ assetType: asset?.header.type }) };
+      }),
+    ];
+  }, [allAssets, assetRegistry, deleteTarget, resolveAssetName]);
 
   const deleteLastSceneClassLines = useMemo(() => {
     if (!deleteTarget) return [];
@@ -2690,90 +2712,112 @@ export function ContentBrowserWorkspace({
               <Trash2Icon className="size-4" />
             </AlertDialogMedia>
             <div className="flex min-w-0 flex-col gap-1">
-              <AlertDialogTitle>
-                {deleteTarget?.kind === "folder"
-                  ? "Delete Folder"
+              <AlertDialogTitle className="break-words">
+                {deleteListItems.length === 1
+                  ? `Delete ${deleteListItems[0]!.name}?`
                   : deleteTarget?.kind === "selection" && deleteTarget.folders.length > 0
                     ? `Delete ${deleteListNames.length} Items`
-                    : deleteListNames.length === 1
-                      ? "Delete Asset"
-                      : `Delete ${deleteListNames.length} Assets`}
+                    : `Delete ${deleteListNames.length} Assets`}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {checkingDeleteReferences ? "Checking references…"
                   : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
-                  : hasReferencedClass ? "Pick a replacement for each referenced Class, or leave None to clear its usages."
+                  : hasReferencedClass ? "Choose a replacement for each referenced Class, or leave None to clear its usages. This cannot be undone."
                   : deleteInboundRefs.length > 0
-                  ? "The references below will break. This cannot be undone."
+                  ? `${deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`} will lose references. This cannot be undone.`
                   : "This cannot be undone."}
               </AlertDialogDescription>
             </div>
           </AlertDialogHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-y-contain px-4 py-3 touch-pan-y"
             tabIndex={0} role="region" aria-label="Assets And References"
             data-testid="content-browser-delete-body">
-            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => {
-              const usages = deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length;
-              return (
-                <Field key={asset.header.guid} orientation="horizontal" className="items-center border-b px-4 py-2.5">
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <FieldLabel htmlFor={`replace-class-${asset.header.guid}`} className="truncate">
-                      Replace {resolveAssetName(asset.header.guid)}
-                    </FieldLabel>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {usages === 1 ? "1 Usage" : `${usages} Usages`}
-                    </span>
-                  </div>
-                  <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
-                    className="min-h-[var(--touch-target,28px)] w-56 max-w-[50%] shrink-0 justify-between"
-                    onClick={() => setReplacementPicker(asset.header.guid)}>
-                    {classReplacementChoices[asset.header.guid]
-                      ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} />
-                      : <span className="text-muted-foreground">None</span>}
-                    <ChevronsUpDownIcon data-icon="inline-end" className="text-muted-foreground" />
-                  </Button>
-                </Field>
-              );
-            })}
-            <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
-              <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
-                <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
-                <ul className="mt-1 flex flex-col divide-y" data-testid="content-browser-delete-list">
-                  {deleteListNames.map((name) => (
-                    <li key={name} className="min-w-0 py-2 text-sm break-words">
-                      <SelectableText>{name}</SelectableText>
+            {deleteLastSceneClassLines.length > 0 && (
+              <Alert variant="destructive" className="bg-destructive/5">
+                <TriangleAlertIcon />
+                {deleteLastSceneClassLines.map((line) => (
+                  <AlertTitle key={line} data-testid="content-browser-delete-last-warning">{line}</AlertTitle>
+                ))}
+              </Alert>
+            )}
+            <section className="flex min-w-0 flex-col gap-1.5" aria-label="Selected For Deletion">
+              <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                Deleting <Badge variant="secondary" className="tabular-nums">{deleteListNames.length}</Badge>
+              </h3>
+              <ul className="flex flex-col divide-y rounded-md border" data-testid="content-browser-delete-list">
+                {deleteListItems.map((item) => (
+                  <li key={item.key} className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm">
+                    <TypeVisualIcon visual={item.visual} />
+                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                      <SelectableText className="font-medium break-words">{item.name}</SelectableText>
+                      <SelectableText className="text-xs text-muted-foreground break-all">{item.detail}</SelectableText>
+                    </div>
+                    {item.count ? <Badge variant="outline" className="tabular-nums">{item.count}</Badge> : null}
+                  </li>
+                ))}
+              </ul>
+              {deleteInboundRefs.length === 0 && !deleteBlocked && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CircleCheckIcon className="size-3.5 shrink-0" />
+                  Nothing else references {deleteListItems.length === 1 ? "this item" : "these items"}.
+                </p>
+              )}
+            </section>
+            {hasReferencedClass && (
+              <section className="flex min-w-0 flex-col gap-1.5" aria-label="Replace Class">
+                <h3 className="text-xs font-medium text-muted-foreground">Replace Class</h3>
+                <ul className="flex flex-col divide-y rounded-md border">
+                  {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => {
+                    const usages = deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length;
+                    return (
+                      <li key={asset.header.guid}>
+                        <Field orientation="horizontal" className="flex-wrap items-center gap-2 px-2.5 py-1.5">
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <TypeVisualIcon visual={resolveTypeVisual({ family: "class" })} />
+                            <FieldLabel htmlFor={`replace-class-${asset.header.guid}`} className="min-w-0 truncate">
+                              <span className="sr-only">Replace </span>{resolveAssetName(asset.header.guid)}
+                            </FieldLabel>
+                            <Badge variant="secondary" className="tabular-nums">{usages === 1 ? "1 Usage" : `${usages} Usages`}</Badge>
+                            <ArrowRightIcon className="ml-auto hidden size-3.5 shrink-0 text-muted-foreground sm:block" />
+                          </div>
+                          <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
+                            className="min-h-[var(--touch-target,28px)] w-full shrink-0 justify-between sm:w-48"
+                            onClick={() => setReplacementPicker(asset.header.guid)}>
+                            {classReplacementChoices[asset.header.guid]
+                              ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} />
+                              : <span className="text-muted-foreground">None</span>}
+                            <ChevronsUpDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                          </Button>
+                        </Field>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+            {deleteInboundRefs.length > 0 && (
+              <section className="flex min-w-0 flex-col gap-1.5" aria-label="Referenced By">
+                <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  Referenced By <Badge variant="secondary" className="tabular-nums">{deleteInboundRefs.length}</Badge>
+                </h3>
+                <ul className="flex min-w-0 flex-col divide-y rounded-md border bg-muted/20">
+                  {deleteInboundRefs.map((ref) => (
+                    <li key={ref.guid} className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm">
+                      <TypeVisualIcon visual={resolveTypeVisual({ assetType: ref.type })} />
+                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                        <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
+                        <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
+                      </div>
+                      {deleteListItems.length > 1 || ref.targets.length > 1 ? (
+                        <span className="max-w-[40%] shrink-0 text-right text-xs break-words">
+                          <span className="text-muted-foreground">Uses </span>{ref.targets.join(", ")}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
-                {deleteLastSceneClassLines.map((line) => (
-                  <p key={line} className="mt-2 flex items-start gap-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
-                    data-testid="content-browser-delete-last-warning">
-                    <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
-                    {line}
-                  </p>
-                ))}
-                {deleteInboundRefs.length === 0 && (
-                  <p className="mt-1 text-xs text-muted-foreground">No inbound references.</p>
-                )}
               </section>
-              {deleteInboundRefs.length > 0 && (
-                <section className="min-w-0 border-t bg-muted/20 px-4 py-3 md:border-t-0 md:border-l" aria-label="Referenced By">
-                  <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Referenced By <span className="tabular-nums">{deleteInboundRefs.length}</span></h3>
-                  <ul className="mt-1 flex min-w-0 flex-col divide-y">
-                    {deleteInboundRefs.map((ref) => (
-                      <li key={ref.guid} className="flex min-w-0 items-start gap-2 py-2">
-                        <TypeVisualIcon className="mt-0.5" visual={resolveTypeVisual({ assetType: ref.type })} />
-                        <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
-                          <SelectableText className="font-medium break-words">{ref.name}</SelectableText>
-                          <SelectableText className="text-xs text-muted-foreground break-all">{ref.path}</SelectableText>
-                          <span className="mt-1 text-xs break-words"><span className="text-muted-foreground">Uses </span>{ref.targets.join(", ")}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
+            )}
           </div>
           <AlertDialogFooter className="m-0 shrink-0">
             <AlertDialogCancel
