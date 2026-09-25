@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/assets";
 import {
   identitySerializedTransform,
+  springArmChildOffset,
   type SerializedScene,
   type SerializedTransform,
 } from "@babylonslate/core";
@@ -163,7 +164,7 @@ export function collisionSurfaces(
       if (!component || visiting.has(id)) return actorWorld;
       visiting.add(id);
       const parent = component.parentId
-        ? componentWorldFor(component.parentId)
+        ? attachWorldFor(component.parentId)
         : actorWorld;
       const world = composePose(
         component.transform ?? identitySerializedTransform(),
@@ -172,6 +173,14 @@ export function collisionSurfaces(
       visiting.delete(id);
       componentWorlds.set(id, world);
       return world;
+    };
+    const attachWorldFor = (id: string): ColliderPose => {
+      const world = componentWorldFor(id);
+      const parent = components.get(id);
+      const offset = parent ? springArmChildOffset(parent) : null;
+      return offset
+        ? composePose({ ...identitySerializedTransform(), position: offset }, world)
+        : world;
     };
     for (const component of actor.components) {
       const world = componentWorldFor(component.id);
@@ -182,7 +191,7 @@ export function collisionSurfaces(
         if (collider.shape.kind === "box2d" && spriteCollision) {
           const local = component.transform ?? identitySerializedTransform();
           const parent = component.parentId
-            ? componentWorldFor(component.parentId)
+            ? attachWorldFor(component.parentId)
             : actorWorld;
           const shifted = composePose(
             {
@@ -243,7 +252,7 @@ export function collisionSurfaces(
             composePose(component.transform ?? identitySerializedTransform()),
           );
           const parent = component.parentId
-            ? componentWorldFor(component.parentId)
+            ? attachWorldFor(component.parentId)
             : actorWorld;
           add(
             actor.id,
