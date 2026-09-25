@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getHostPlatform } from "@babylonslate/vfs";
 import { CatalogDialog } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -16,11 +17,7 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
-import {
-  readApplicationSettings,
-  writeApplicationSettings,
-  type ApplicationSettings,
-} from "../lib/application-settings";
+import { useAppSettings } from "../context/app-settings-context";
 
 const CATEGORIES = [{ id: "updates", label: "Updates", count: 1 }];
 
@@ -31,14 +28,10 @@ export function HomepageApplicationSettings({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [settings, setSettings] = useState(readApplicationSettings);
+  const { settings, hydrated, updateSettings } = useAppSettings();
   const [search, setSearch] = useState("");
-  const update = (patch: Partial<ApplicationSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    writeApplicationSettings(next);
-  };
-  const matches = "auto-update updates".includes(
+  const desktop = getHostPlatform() === "electron";
+  const matches = "auto-update automatic updates".includes(
     search.trim().toLocaleLowerCase(),
   );
   return (
@@ -72,18 +65,23 @@ export function HomepageApplicationSettings({
             <Field orientation="horizontal" className="settings-field">
               <FieldContent>
                 <FieldLabel htmlFor="application-auto-update">
-                  Auto-Update
+                  Automatic Updates
                 </FieldLabel>
                 <FieldDescription>
-                  {settings.autoUpdate ? "On" : "Off"}
+                  {desktop
+                    ? "Download new releases from GitHub and install them when you exit BabylonSlate. Also available in Engine Settings."
+                    : "Automatic updates are managed here in the Windows desktop app."}
                 </FieldDescription>
               </FieldContent>
               <Switch
                 id="application-auto-update"
                 data-testid="application-auto-update"
-                checked={settings.autoUpdate}
+                checked={settings.automaticUpdatesEnabled}
+                disabled={!desktop || !hydrated}
                 onCheckedChange={(checked) =>
-                  update({ autoUpdate: checked === true })
+                  void updateSettings(settings => {
+                    settings.automaticUpdatesEnabled = checked;
+                  })
                 }
               />
             </Field>

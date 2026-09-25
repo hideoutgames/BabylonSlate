@@ -15,7 +15,6 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-  identitySerializedTransform,
   parseAreaRectLightProperties,
   type SerializedActor,
   type SerializedComponent,
@@ -28,6 +27,7 @@ import {
   type AuthoredCameraProperties,
 } from "./scene-illumination";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
 import type { AudioLibrary } from "./audio-service";
@@ -314,7 +314,7 @@ export class EditorDebugOverlay {
     const root = new TransformNode(`debugFrustum:${actor.id}`, this.scene);
     const origin = this.scene.getMeshByName(editorMeshName(actor.id));
     if (origin) {
-      const local = component.transform ?? identitySerializedTransform();
+      const local = authoredComponentActorTransform(actor, component);
       root.parent = origin;
       root.position.set(local.position[0], local.position[1], local.position[2]);
       root.rotationQuaternion = new Quaternion(

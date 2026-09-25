@@ -1,6 +1,7 @@
 ﻿import { useState } from "react";
 import {
   AppWindowIcon,
+  NewspaperIcon,
   CircleUserRoundIcon,
   CreditCardIcon,
   LogInIcon,
@@ -50,6 +51,7 @@ export function HomepageProfileMenu({
   onSubscription,
   onApplicationSettings,
   onEngineSettings,
+  onChangelog,
   onOpenChange,
 }: {
   disabled?: boolean;
@@ -62,6 +64,7 @@ export function HomepageProfileMenu({
   onSubscription: () => void;
   onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
+  onChangelog?: () => void;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +138,17 @@ export function HomepageProfileMenu({
                   Engine Settings
                 </DropdownMenuItem>
               )}
+            </DropdownMenuGroup>
+          </>
+        )}
+        {onChangelog && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem onClick={onChangelog}>
+                <NewspaperIcon />
+                Changelog
+              </DropdownMenuItem>
             </DropdownMenuGroup>
           </>
         )}

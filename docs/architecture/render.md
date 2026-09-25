@@ -1413,6 +1413,35 @@ guides are excluded. SceneLayers do not support this world-outline component.
 Regular instances remain independent actors; one thin-instance mesh is one actor
 group. There is no authored per-thin-index style or selection API.
 
+### Spring arm
+
+`SpringArmComponent` (`@babylonslate/core` `spring-arm-component.ts`, render
+`spring-arm.ts`) holds its child components at a socket `armLength` behind its
+origin (local `[0, 0, -armLength]`).
+
+- **Editor**: an origin-root line visual (pivot cross, arm, socket cross). The
+  arm mesh owns a `:socket` `TransformNode`; `attachmentParentFor` parents child
+  component visuals to it, so moving or rotating the arm moves them. Authored
+  light/camera poses, the camera frustum overlay and drop collisions compose the
+  same socket offset (`authoredComponentActorTransform`). Prefab preview adds
+  the offset to child preview actors and removes it on gizmo commit.
+- **Play**: the driver emits spring arms as `springarm` parts with a
+  `springArm` payload, plus the first `CameraComponent` below an arm (with its
+  `camera` payload) even when the actor also has meshes. `createPlayVisual`
+  rigs each arm (parents first) and anchors the slot camera to that camera part.
+- **Lag** (Unreal-style): after bone attachments, each applied snapshot moves
+  the arm pivot's world pose toward its authored target with
+  `alpha = 1 - exp(-speed * dt)` (`dt` clamped to 0.1 s; frame-rate
+  independent), clamps location to `maxLocationLagDistance` when positive, and
+  slerps rotation. The socket and children follow through parenting. State is
+  keyed `slotId|componentId`, survives script-driven rebuilds, and is cleared on
+  slot retirement.
+- **Draw Debug Lag**: a world-space, unpickable line system per arm: target arm
+  (yellow), lagged arm (green), pivot/socket lag offsets (red), socket crosses,
+  and 48-sample socket trails for both.
+- Actor children are not socket-attached; only component children are. Spring
+  arms are denied in SceneLayers.
+
 CEL defaults to enabled dark 1-pixel outlines. Global enable/color/width are
 artistic settings, with independent scene inheritance and typed session overrides.
 Scalability **Set CEL Outlines**, **Set CEL**, effective readback and changed events

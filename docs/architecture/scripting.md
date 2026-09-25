@@ -361,6 +361,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `TilemapComponent` | Tilemap, Sorting Layer, Order In Layer | — | — |
 | `SkyboxComponent` | Size | — | — |
 | `CameraComponent` | Field Of View, Orthographic Size, Projection Mode, Near Clip, Far Clip | Possess | — |
+| `SpringArmComponent` | Arm Length, Enable Location Lag, Location Lag Speed, Max Location Lag Distance, Enable Rotation Lag, Rotation Lag Speed, Draw Debug Lag | — | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
 | `HemisphericFillLightComponent` | Enabled, Color, Ground Color, Intensity | — | — |
 | `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |

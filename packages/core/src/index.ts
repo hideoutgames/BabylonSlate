@@ -42,3 +42,4 @@ export * from "./render-effects";
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
 export * from "./area-rect-light";
 export * from "./outline-component";
+export * from "./spring-arm-component";
