@@ -311,7 +311,9 @@ numeric masks. Refract uses Vector 3 directions and scalar Eta. Split pads its
 numeric input to V4, so every missing channel returns `1`. World Tangent
 is transformed as a direction by the mesh world matrix.
 
-`MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
+Lowering is memoized per document, shading variant and functions-record
+identity, so material and function documents are replaced, never mutated in
+place. `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous

@@ -355,7 +355,8 @@ export type Text2DEffectContext = {
   last?: Text2DEffectSample;
 };
 
-/** Stack shake / wave / hover / rotate in world units; `out` is reused when given. */
+/** Stack shake / wave / hover / rotate in world units; `out` is filled and
+ * returned when given, except while paused, which returns `context.last`. */
 export function combineText2DEffects(
   effects: RichTextEffects,
   context: Text2DEffectContext,

@@ -97,6 +97,8 @@ export interface MaterialLibraryOptions {
   acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
   textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
+  /** Return a new record whenever a function document changes; lowering is
+   * memoized on the record's identity, so in-place mutation is not observed. */
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
   onMaterialReady?: (scene: Scene, assetGuid: string) => void;
@@ -158,7 +160,9 @@ export class MaterialLibrary {
     return created;
   }
 
-  /** Resolve the same function-aware plan as acquire, without taking GPU ownership. */
+  /** Resolve the same function-aware plan as acquire, without taking GPU ownership.
+   * Documents are immutable: an edit passes a new document, because the
+   * lowering is memoized on document and functions-record identity. */
   planFor(doc: MaterialDocument, unlit?: boolean): MaterialLowerResult {
     const functions = this.options.functions?.() ?? NO_FUNCTIONS;
     let slots = this.plans.get(doc);
