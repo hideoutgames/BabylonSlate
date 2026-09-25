@@ -1347,7 +1347,7 @@ describe("content-browser-helpers", () => {
       "AnimationGraph",
       "Material",
       "MaterialFunction",
-      "Water",      "Tileset",
+      "Tileset",
       "Tilemap",
       "BehaviourTree",
       "Blackboard",
@@ -1415,7 +1415,8 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
-      "Water",      "ParticleEmitter",
+      "Water",
+      "ParticleEmitter",
       "ParticleSystem",
       "SkyboxCreator",
     ]);

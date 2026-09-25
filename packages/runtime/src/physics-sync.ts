@@ -408,7 +408,7 @@ export class PhysicsWorldSync {
     this.syncFromWorld(world);
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
-      for (const [actorId, bodyId] of this.bodyByActor) {
+      if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
         const actor = this.actorById.get(actorId);
         const tuning = this.appliedBodyProperties.get(actorId)?.value;
         if (actor && tuning?.motionType === "dynamic")

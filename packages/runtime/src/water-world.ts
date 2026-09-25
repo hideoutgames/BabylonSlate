@@ -43,7 +43,7 @@ export class WaterWorld {
 
   update(actors: readonly Actor[], time: number): void {
     this.time = time;
-    this.transforms = actorWorldTransforms(actors);
+    let transforms: Map<string, Transform> | undefined;
     this.bodies = [];
     for (const actor of actors) {
       if (actor.destroyed || actor.sceneLayerId) continue;
@@ -53,12 +53,13 @@ export class WaterWorld {
         const body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
         if (!body.enabled) continue;
         const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
-        if (!definition) continue;
+        transforms ??= actorWorldTransforms(actors);
         this.bodies.push({ actorId: actor.guid, definition, body,
-          transform: componentWorldTransform(component, actor, this.transforms.get(actor.guid)!),
+          transform: componentWorldTransform(component, actor, transforms.get(actor.guid)!),
         });
       }
     }
+    this.transforms = transforms ?? new Map();
   }
 
   sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
