@@ -6,6 +6,7 @@ export interface LandscapeProperties {
   heights: number[];
   weights: number[];
   materialGuid: string | null;
+  collisionsEnabled: boolean;
 }
 
 export type LandscapeBrushTool = "raise" | "lower" | "smooth" | "flatten" | "paint";
@@ -46,7 +47,28 @@ export function parseLandscapeProperties(value: unknown): LandscapeProperties {
     heights: Array.from({ length: count }, (_, i) => finite(heights[i], 0, -10000, 10000)),
     weights: normalizedWeights,
     materialGuid: typeof p.materialGuid === "string" && p.materialGuid ? p.materialGuid : null,
+    collisionsEnabled: p.collisionsEnabled === true,
   };
+}
+
+/** Authored terrain triangles shared by runtime physics and editor Drop queries. */
+export function landscapeCollisionMesh(value: unknown) {
+  if (!value || typeof value !== "object" || (value as Record<string, unknown>).collisionsEnabled !== true) return null;
+  const data = parseLandscapeProperties(value);
+  const side = data.subdivisions + 1;
+  const vertices: Array<{ x: number; y: number; z: number }> = [];
+  const indices: number[] = [];
+  for (let z = 0; z < side; z++) for (let x = 0; x < side; x++) {
+    const a = z * side + x;
+    vertices.push({ x: x * data.width / data.subdivisions - data.width / 2,
+      y: data.heights[a]!, z: z * data.depth / data.subdivisions - data.depth / 2 });
+    if (x < data.subdivisions && z < data.subdivisions) {
+      const b = a + side;
+      // Match the rendered heightfield's diagonal and upward-facing winding.
+      indices.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  return { kind: "mesh" as const, vertices, indices };
 }
 
 /** Each dab is immutable, allowing an entire drag to share one undo entry. */

@@ -25,13 +25,15 @@ describe("landscape authoring", () => {
     expect(flat.heights[12]).toBe(6.5);
   });
   it("normalizes paint weights and persists them together with heights", () => {
-    const data = parseLandscapeProperties({ width: 4, depth: 4, subdivisions: 4 });
+    const data = parseLandscapeProperties({ width: 4, depth: 4, subdivisions: 4, collisionsEnabled: true });
     const painted = sculptLandscape(data, 0, 0, { ...brush, tool: "paint", strength: 0.25 });
     expect(painted.weights.slice(48, 52)).toEqual([0.75, 0, 0.25, 0]);
     const scene = normalizeScene(JSON.parse(JSON.stringify({ ...createDefaultScene(), actors: [createActor("terrain", "Terrain", { components: [{ id: "heightfield", classId: "LandscapeComponent", properties: { ...painted } }] })] })));
     expect(scene.actors[0]!.components[0]!.properties.weights).toEqual(painted.weights);
+    expect(scene.actors[0]!.components[0]!.properties.collisionsEnabled).toBe(true);
     const resized = resizeLandscape(painted, 8);
     expect(resized.weights.slice(160, 164)).toEqual([0.75, 0, 0.25, 0]);
+    expect(resized.collisionsEnabled).toBe(true);
   });
   it("resamples a planar heightfield and rejects nonfinite brush coordinates", () => {
     const data = parseLandscapeProperties({ width: 4, depth: 4, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => i % 5) });

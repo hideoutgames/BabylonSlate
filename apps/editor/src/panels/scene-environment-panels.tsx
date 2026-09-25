@@ -95,6 +95,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       { id: "width", label: "Width", kind: "number", value: data.width, min: 1, max: 4096, onChange: (width) => setData({ ...data, width }) },
       { id: "depth", label: "Depth", kind: "number", value: data.depth, min: 1, max: 4096, onChange: (depth) => setData({ ...data, depth }) },
       { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, onChange: (value) => setData(resizeLandscape(data, value)) },
+      { id: "landscape-collisions", label: "Landscape Collisions", kind: "boolean", value: data.collisionsEnabled, onChange: (collisionsEnabled) => setData({ ...data, collisionsEnabled }) },
       { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
     ]} /> : <Empty><EmptyDescription>Select a Landscape to edit its settings.</EmptyDescription></Empty>}
     <PropertyGrid rows={rows} />
