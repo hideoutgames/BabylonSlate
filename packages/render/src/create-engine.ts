@@ -1128,6 +1128,9 @@ function initializeEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  // The library memoizes lowered plans per functions record identity; every
+  // accepted installMaterialDocuments replaces it.
+  let materialFunctionRecord = Object.fromEntries(materialFunctions);
   binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
   const compiledMaterialGuids = new Set<string>();
@@ -1138,7 +1141,7 @@ function initializeEngine(
   };
   const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
-    functions: () => Object.fromEntries(materialFunctions),
+    functions: () => materialFunctionRecord,
     acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
@@ -1576,6 +1579,7 @@ function initializeEngine(
           materialFunctions.set(guid, document);
         }
       }
+      materialFunctionRecord = Object.fromEntries(materialFunctions);
       return true;
   };
 

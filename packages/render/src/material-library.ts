@@ -9,6 +9,7 @@ import {
   type MaterialDiagnostic,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialLowerResult,
 } from "@babylonslate/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
@@ -79,6 +80,10 @@ function cacheKey(
     : instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
+const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
+
+type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; result: MaterialLowerResult };
+
 function documentForPlan(
   doc: MaterialDocument,
   unlit?: boolean,
@@ -125,6 +130,9 @@ export class MaterialLibrary {
   private readonly pending = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly tracked = new Set<Scene>();
   private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
+  // Documents and lowered plans are immutable: reuse one lowering per document,
+  // shading variant and functions record identity.
+  private readonly plans = new WeakMap<MaterialDocument, { lit?: PlanSlot; unlit?: PlanSlot }>();
   private readonly options: MaterialLibraryOptions;
 
   constructor(options: MaterialLibraryOptions = {}) {
@@ -151,10 +159,16 @@ export class MaterialLibrary {
   }
 
   /** Resolve the same function-aware plan as acquire, without taking GPU ownership. */
-  planFor(doc: MaterialDocument, unlit?: boolean) {
-    return lowerMaterialDocument(documentForPlan(doc, unlit), {
-      functions: this.options.functions?.() ?? {},
-    });
+  planFor(doc: MaterialDocument, unlit?: boolean): MaterialLowerResult {
+    const functions = this.options.functions?.() ?? NO_FUNCTIONS;
+    let slots = this.plans.get(doc);
+    if (!slots) this.plans.set(doc, (slots = {}));
+    const variant = unlit ? "unlit" : "lit";
+    const cached = slots[variant];
+    if (cached?.functions === functions) return cached.result;
+    const result = lowerMaterialDocument(documentForPlan(doc, unlit), { functions });
+    slots[variant] = { functions, result };
+    return result;
   }
 
   isCompiled(
