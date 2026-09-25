@@ -58,14 +58,17 @@ export class SharedOutlineMaskRenderer {
   }
   /** Drop removed geometry without recompiling or rebuilding unchanged programs. */
   prune(): void {
+    let variants: AuthoredOutlineVariant[] | undefined;
     for (const [subMesh, program] of this.programs)
       // Regular instances own cloned submeshes but borrow source geometry.
       // Testing source membership retires their live asynchronous programs on
       // every readiness probe, preventing native WebGL compilation from settling.
       if (subMesh.getMesh().isDisposed() || subMesh.getRenderingMesh().isDisposed() ||
         !subMesh.getMesh().subMeshes?.includes(subMesh)) {
-        this.retire(subMesh, program); this.programs.delete(subMesh);
+        this.retireWrapper(subMesh, program); this.programs.delete(subMesh);
+        if (program.variant) (variants ??= []).push(program.variant);
       }
+    if (variants) this.releaseVariants(variants);
     for (let index = this.retirements.length - 1; index >= 0; index--)
       if (this.retirements[index]!.isReleased()) this.retirements.splice(index, 1);
   }
@@ -258,18 +261,27 @@ export class SharedOutlineMaskRenderer {
   }
   private retire(subMesh: SubMesh, program: MaskProgram): void {
     this.retireWrapper(subMesh, program);
-    if (program.variant) {
-      const pending = [...this.retirements];
-      let released = false;
-      const disposal = Promise.all(pending.map((entry) => entry.released)).then(() => program.variant!.release()).then(() => { released = true; });
-      const completion = Promise.all(pending.map((entry) => entry.completion)).then(() => disposal);
-      void completion.catch(() => {});
-      this.retirements.push({ completion, released: disposal, isReleased: () => released });
-    }
+    if (program.variant) this.releaseVariants([program.variant]);
+  }
+  /** One retirement per batch: shared variants release in order, once each,
+   * after every Effect retirement pending when the batch was retired. */
+  private releaseVariants(variants: readonly AuthoredOutlineVariant[]): void {
+    const pending = [...this.retirements];
+    let released = false;
+    const disposal = Promise.all(pending.map((entry) => entry.released))
+      .then(async () => { for (const variant of variants) await variant.release(); }).then(() => { released = true; });
+    const completion = Promise.all(pending.map((entry) => entry.completion)).then(() => disposal);
+    void completion.catch(() => {});
+    this.retirements.push({ completion, released: disposal, isReleased: () => released });
   }
   dispose(): void {
     if (this.disposed) return; this.disposed = true;
-    for (const [subMesh, program] of this.programs) this.retire(subMesh, program);
+    const variants: AuthoredOutlineVariant[] = [];
+    for (const [subMesh, program] of this.programs) {
+      this.retireWrapper(subMesh, program);
+      if (program.variant) variants.push(program.variant);
+    }
+    if (variants.length) this.releaseVariants(variants);
     this.programs.clear();
   }
   async whenDisposed(): Promise<void> { await Promise.all(this.retirements.map((entry) => entry.completion)); }

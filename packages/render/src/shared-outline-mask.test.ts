@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, RawTexture, Scene, StandardMaterial, Vector3, type SubMesh } from "@babylonjs/core";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
 import { SharedOutlineOwner } from "./shared-outline";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 import { registerSharedOutlineShaders } from "./shared-outline-shaders";
@@ -95,5 +98,48 @@ it("revalidates coverage edited after a drawn mask pass for readiness and the ne
     mask.dispose(); objects.dispose(); view.dispose();
     await owner.whenReleased();
     scene.dispose(); engine.dispose();
+  }
+});
+
+it("releases the authored coverage variants of pruned and disposed mask programs", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
+  scene.activeCamera = camera;
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const authored = compileMaterialPlan(lowered.plan, { scene, name: "authored" });
+  if (!authored.ok) throw new Error(JSON.stringify(authored.diagnostics));
+  expect(await authored.ready).toEqual([]);
+  const meshes = ["a", "b"].map((name) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.material = authored.material;
+    return mesh;
+  });
+  // A consumer outside the pass shares the same reference-counted variant.
+  const outside = acquireAuthoredOutlineVariant(authored.material)!;
+  expect(await outside.compiled.ready).toEqual([]);
+  const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
+  view.setContribution("actors", { kind: "component", targets: meshes.map((mesh) => ({ key: mesh.name, meshes: [mesh] })),
+    color: [1, 0, 0], width: 1 });
+  registerSharedOutlineShaders();
+  const objects = new ObjectRenderer("mask", scene);
+  objects.activeCamera = camera;
+  objects.renderList = meshes;
+  const mask = new SharedOutlineMaskRenderer(objects, view, "strict");
+  try {
+    // Readiness stops at the first pending mesh; ready means both programs exist.
+    expect(objects.isReadyForRendering(80, 64)).toBe(true);
+    meshes[0]!.dispose();
+    mask.prune();
+    mask.dispose();
+    await mask.whenReleased();
+    expect(isDisposedNodeMaterial(outside.compiled.material, scene)).toBe(false);
+    await outside.release();
+    expect(isDisposedNodeMaterial(outside.compiled.material, scene)).toBe(true);
+  } finally {
+    mask.dispose(); objects.dispose(); view.dispose();
+    await owner.whenReleased();
+    authored.dispose(); scene.dispose(); engine.dispose();
   }
 });
