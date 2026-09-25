@@ -174,6 +174,7 @@ export function physicsWorldTransforms(
             "WaterBuoyancyComponent",
             "ColliderComponent",
             "MeshComponent",
+            "LandscapeComponent",
             "BlockingVolumeComponent",
             "TilemapComponent",
           ].includes(component.classId),
