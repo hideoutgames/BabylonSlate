@@ -1059,6 +1059,7 @@ function initializeEngine(
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
+  onRollback(() => fontRegistry.dispose());
   binding.modelBytes = options.modelBytes;
   binding.modelSources = installModelSources(options);
   binding.modelPayloads = options.modelPayloads;
@@ -2559,6 +2560,8 @@ function initializeEngine(
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
+      // Document FontFaces are host state; sibling views keep their own faces.
+      fontRegistry.dispose();
       audioService?.dispose();
       const releaseSceneResources = () => {
         playFreeCam?.dispose();
