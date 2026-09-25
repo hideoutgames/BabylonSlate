@@ -100,4 +100,5 @@ export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from
 export * from "./shared-outline";
 export * from "./shared-outline-task";
 export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

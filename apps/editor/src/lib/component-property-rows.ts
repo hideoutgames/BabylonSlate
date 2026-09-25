@@ -486,12 +486,16 @@ export function componentPropertyRows(
       numeric(["resolution", "Surface Resolution", 8, 128]),
     ];
     if (waterKind === "river") {
-      rows.push({ kind: "number", id: rowId(actorId, component.id, "pointCount"), label: "Path Point Count", value: body.points.length, min: 2, max: 128, description: "Points run from upstream to downstream in local space. Y sets the water elevation.", onChange: (count) => {
+      rows.push({ kind: "number", id: rowId(actorId, component.id, "curvature"), label: "Curvature", value: body.curvature, defaultValue: 1, min: 0, max: 1, description: "0 joins points with straight reaches; 1 bends the river smoothly through every point.", onChange: (value) => update("curvature", value) });
+      rows.push({ kind: "number", id: rowId(actorId, component.id, "pointCount"), label: "Path Point Count", value: body.points.length, min: 2, max: 128, description: "Points run from upstream to downstream in local space. Y sets the water elevation. In the viewport, drag points, drag orange handles to change width, drag a midpoint to add a point, and double-click a point to remove it.", onChange: (count) => {
         const points = body.points.slice(0, Math.round(count));
         while (points.length < Math.round(count)) { const last = points[points.length - 1]!; points.push([last[0], last[1], last[2] + 5]); }
         update("points", points);
       } });
-      body.points.forEach((point, index) => rows.push({ kind: "vector3", id: rowId(actorId, component.id, "point-" + index), label: "Path Point " + (index + 1), value: point, onChange: (value) => update("points", body.points.map((p, i) => i === index ? value.slice(0, 3) : p)) }));
+      body.points.forEach((point, index) => rows.push(
+        { kind: "vector3", id: rowId(actorId, component.id, "point-" + index), label: "Path Point " + (index + 1), value: point, onChange: (value) => update("points", body.points.map((p, i) => i === index ? value.slice(0, 3) : p)) },
+        { kind: "number", id: rowId(actorId, component.id, "point-width-" + index), label: "Path Point " + (index + 1) + " Width Scale", value: body.widthScales[index]!, defaultValue: 1, min: 0.05, max: 20, description: "Multiplies Width at this point.", onChange: (value) => update("widthScales", body.widthScales.map((scale, i) => i === index ? value : scale)) },
+      ));
     }
     return rows;
   }

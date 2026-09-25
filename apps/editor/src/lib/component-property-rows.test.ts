@@ -87,6 +87,10 @@ it("edits a river path through typed vector rows and extends from its last point
   count.onChange(3);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
   expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+  const width = rows.find((row) => row.label === "Path Point 2 Width Scale");
+  if (width?.kind !== "number") throw new Error("River width control missing");
+  width.onChange(2.5);
+  expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
 });
 
 describe("componentPropertyRows", () => {
