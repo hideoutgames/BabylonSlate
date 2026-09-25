@@ -9,6 +9,7 @@ import {
 import type { OpenDocument } from "../services/document-service";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { DocumentSwitcher } from "./document-switcher";
+import { KeybindProvider } from "../context/keybind-context";
 
 afterEach(cleanup);
 
@@ -37,6 +38,31 @@ const documents: OpenDocument[] = [
 ];
 
 describe("DocumentSwitcher", () => {
+  it("cycles documents, opens Content Browser, and uses the existing close handlers", () => {
+    const close = vi.fn();
+    const closeAll = vi.fn();
+    function Workspace() {
+      const [active, setActive] = useState("scene");
+      return <KeybindProvider><DocumentSwitcher documents={documents} activeDocumentId={active}
+        onSelect={setActive} onClose={close} onCloseAll={closeAll} compact /></KeybindProvider>;
+    }
+    const view = render(<Workspace />);
+    fireEvent.keyDown(document.body, { key: "w", code: "KeyW", altKey: true });
+    expect(close).toHaveBeenCalledExactlyOnceWith("scene");
+    fireEvent.keyDown(document.body, { key: "PageDown", code: "PageDown", altKey: true });
+    expect(view.getByRole("button", { name: "Open Documents" }).textContent).toContain("Hero");
+    fireEvent.keyDown(document.body, { key: "PageDown", code: "PageDown", altKey: true });
+    expect(view.getByRole("button", { name: "Open Documents" }).textContent).toContain("Content Browser");
+    fireEvent.keyDown(document.body, { key: "w", code: "KeyW", altKey: true });
+    expect(close).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document.body, { key: "PageUp", code: "PageUp", altKey: true });
+    expect(view.getByRole("button", { name: "Open Documents" }).textContent).toContain("Hero");
+    fireEvent.keyDown(document.body, { key: "b", code: "KeyB", altKey: true });
+    expect(view.getByRole("button", { name: "Open Documents" }).textContent).toContain("Content Browser");
+    fireEvent.keyDown(document.body, { key: "W", code: "KeyW", altKey: true, shiftKey: true });
+    expect(closeAll).toHaveBeenCalledOnce();
+  });
+
   it("shows the inherited engine-class icon for a project Class", () => {
     const assets: IndexedAsset[] = [
       { name: "Hero", parentClass: "BaseHero" },

@@ -23,26 +23,36 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 | --- | --- | --- |
 | General | Save All, Undo, Redo | Mod+S; Mod+Z; Mod+Shift+Z or Mod+Y |
 | General | Search Project, Toggle Focus, Engine Settings | Mod+K; Mod+Shift+F; Mod+, |
-| General | Project Settings | Unassigned |
+| General | Project Settings, Content Browser | Mod+Shift+,; Alt+B |
+| Documents | Close Document, Close Open Tabs | Alt+W; Alt+Shift+W |
+| Documents | Next Document, Previous Document | Alt+PageDown; Alt+PageUp |
 | Play | Play, Compile | Alt+P; F7 |
 | Viewport | Move, Rotate, Scale Tool | 1, 2, 3 (W/A/S/D fly the camera) |
 | Viewport | Frame Selection | F |
+| Viewport | Snap Grid, Show Grid, Drag Select | G; Shift+G; Q |
+| Viewport | Show Collisions, Show Navmesh, Game Camera | Alt+C; Shift+N; Shift+C |
+| Viewport | Switch 2D / 3D, Drop Selection | Alt+V; End |
 | Editing | Duplicate, Rename, Delete | Mod+D; F2; Delete or Backspace |
+| Editing | Search Panel, New Folder, Place Actors | Mod+F; Alt+Shift+N; Shift+A |
+| Content Browser | New Asset, Import Assets, Show References | Alt+N; Alt+I; Alt+R |
 
 ## Dispatch rules
 
 - One window `keydown` listener. The newest enabled registration for the matched command runs and the event is `preventDefault`ed.
 - Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal dialog or alert dialog is open.
-- Text fields and `SelectableText` keep native editing. Only commands marked for text input (Save All, Search Project, Engine Settings) fire there.
+- Text fields and `SelectableText` keep native editing. Only commands marked for text input (Save All, Search Project, Engine Settings, Search Panel) fire there.
 - Menus, listboxes, comboboxes, and selects keep their own key navigation.
 - Held keys repeat only Undo and Redo.
 - `scopeRef` limits a handler to a visible surface (the active viewport). `focusWithinRef` also requires keyboard focus inside it; the outliner and Content Browser use it so Delete, Duplicate, and Rename act on the focused panel's selection.
+- Search Panel focuses and selects the search field in the focused outliner or Content Browser. New Folder uses that panel's existing creation flow; Place Actors requires outliner focus. Asset creation/import require a writable Content Browser folder, and Show References uses the selected asset.
+- Document navigation wraps through open documents, including the pinned Content Browser. Close commands use the same unsaved-change prompts as the menu; the Content Browser cannot be closed.
+- Viewport toggles use the same state and persistence paths as their buttons. Hidden or disabled controls do not register executable shortcuts.
 - Viewport fly keys ignore presses with Command, Control, or Option, so chords such as Mod+S never start flying.
 
 ## Display
 
 - Tooltips show the label and `ShortcutKeys` (`IconActionButton` `shortcut`, `ActionFeedbackButton` `command`).
-- `NestedMenu` items take `shortcut` and render it right-aligned; coarse-pointer context menus hide keycaps.
+- `NestedMenu` actions and checkboxes take `shortcut` and render it right-aligned. Dropdown, document, and pointer-anchored menus hide keycaps on coarse pointers, keeping touch rows compact and tappable.
 - Controls with a shortcut set `aria-keyshortcuts`; visual keycaps are decorative.
 
 ## Settings
