@@ -215,7 +215,7 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-settings"));
     const grid = screen.getByTestId("viewport-show-grid-toggle");
     expect(grid.getAttribute("aria-keyshortcuts")).toBe("Shift+J");
-    expect(grid.querySelectorAll("kbd")[1]?.textContent).toBe("J");
+    expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("J");
   });
 
   it("keeps unavailable viewport actions disabled when their keys are pressed", () => {

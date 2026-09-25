@@ -214,7 +214,7 @@ describe("NestedMenu context overlay", () => {
     const view = render(<GridMenu />);
     const grid = view.getByRole("menuitemcheckbox", { name: "Show Grid" });
     expect(grid.getAttribute("aria-keyshortcuts")).toBe("Shift+G");
-    expect(grid.querySelectorAll("kbd")).toHaveLength(2);
+    expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("G");
     fireEvent.click(grid);
     expect(grid.getAttribute("aria-checked")).toBe("true");
   });
