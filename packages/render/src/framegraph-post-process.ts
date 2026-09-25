@@ -51,6 +51,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
   private disposed = false;
   private failed = false;
   private generation = 0;
+  private outputWidth = 0;
+  private outputHeight = 0;
   private pending: Promise<void>;
   private document: MaterialDocument | null;
   private readonly options: AuthoredPostProcessOptions;
@@ -207,6 +209,9 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       width: Math.max(1, Math.round(size.width * scale)),
       height: Math.max(1, Math.round(size.height * scale)),
     };
+    // Every build and resize re-records; execution reuses this absolute size.
+    this.outputWidth = creation.size.width;
+    this.outputHeight = creation.size.height;
     creation.sizeIsPercentage = false;
     creation.options.samples = 1;
     manager.resolveDanglingHandle(
@@ -243,11 +248,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       context.copyTexture(this.options.sourceTexture);
       return;
     }
-    const size = this._frameGraph.textureManager.getTextureDescription(
-      this.outputTexture,
-    ).size;
-    postProcess.width = size.width;
-    postProcess.height = size.height;
+    postProcess.width = this.outputWidth;
+    postProcess.height = this.outputHeight;
     let bindingError: unknown;
     let bindingFailed = false;
     const applied = context.applyFullScreenEffect(
