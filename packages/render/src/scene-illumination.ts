@@ -4,7 +4,6 @@ import { authoredActorMatrices } from "./authored-transform-matrices";
 import {
   Camera,
   Color3,
-  Color4,
   DirectionalLight,
   HemisphericLight,
   PointLight,
@@ -30,18 +29,13 @@ import {
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
 import { applyEnvironmentLighting } from "./environment-lighting";
+import { sceneClearColor } from "./editor-clear-color";
 import { updateSceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
 export const HEMISPHERIC_FILL_LIGHT_CLASS_ID = "HemisphericFillLightComponent";
 export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
-
-
-
-export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
-
-
 
 export type AuthoredLightProperties = {
   color?: [number, number, number] | number[];
@@ -504,10 +498,7 @@ export function applySceneEnvironment(
   options: { applyClearColor?: boolean; assets?: MeshAssetContext } = {},
 ): void {
   const settings = sceneData.settings;
-  if (options.applyClearColor) {
-    const [r, g, b] = settings.environmentColor;
-    scene.clearColor = new Color4(r, g, b, 1);
-  }
+  if (options.applyClearColor) scene.clearColor = sceneClearColor(settings.environmentColor);
   if (settings.fogEnabled) {
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogEnabled = true;

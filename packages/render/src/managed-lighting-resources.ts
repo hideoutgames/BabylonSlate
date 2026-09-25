@@ -7,7 +7,6 @@ import {
 // Existing lighting callers share the generic Engine ledger and keep their
 // narrower category policy. No second ceiling or duplicate reservations.
 export {
-  MANAGED_RENDER_BYTE_LIMIT as MANAGED_LIGHTING_BYTE_LIMIT,
   availableManagedRenderBytes as availableManagedLightingBytes,
   limitManagedRenderBytes as limitManagedLightingBytes,
   reserveManagedShadowBytes,
