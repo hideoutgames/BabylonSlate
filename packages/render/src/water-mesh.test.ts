@@ -1,12 +1,50 @@
-import { describe, expect, it } from "vitest";
-import { FreeCamera, NullEngine, Quaternion, Scene, Vector3, VertexBuffer } from "@babylonjs/core";
+import { describe, expect, it, vi } from "vitest";
+import { CubeTexture, FreeCamera, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
+import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
+import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
+import { createSkyboxMesh } from "./skybox";
 
 describe("Water rendering", () => {
+  it("shares owned water reflection views without changing the skybox, and honors an explicit environment", () => {
+    const engine = new NullEngine(), scene = new Scene(engine), cache = resourceCacheForEngine(engine);
+    // Only native upload IO is substituted: keep real cube views, materials and cache leases.
+    vi.spyOn(engine, "createPrefilteredCubeTexture").mockImplementation((url) => {
+      const internal = engine.createTexture(url, false, false, null);
+      internal.isCube = true; internal._sphericalPolynomial = new SphericalPolynomial();
+      return internal;
+    });
+    try {
+      const lease = cache.acquireTexture("sky", engine, buildFloatDdsCubeFixture(), { isCube: true }) as ResourceLease<CubeTexture>;
+      const source = lease.resource, sky = createSkyboxMesh(scene, "sky", lease);
+      const a = createWaterMesh(scene, "a", normalizeWaterBody({ resolution: 8 }));
+      const b = createWaterMesh(scene, "b", normalizeWaterBody({ resolution: 8 }));
+      updateSceneWater(scene);
+      const material = a.material as PBRMaterial, other = b.material as PBRMaterial;
+      const view = material.reflectionTexture!;
+      expect(view).not.toBe(source);
+      expect(view).toBe(other.reflectionTexture);
+      expect(view.getInternalTexture()).toBe(source.getInternalTexture());
+      expect(source.coordinatesMode).toBe(Texture.SKYBOX_MODE);
+      expect(view.coordinatesMode).toBe(Texture.CUBIC_MODE);
+      scene.environmentTexture = source; updateSceneWater(scene);
+      expect(material.reflectionTexture).toBeNull();
+      expect(view.getInternalTexture()).toBeNull();
+      scene.environmentTexture = null; updateSceneWater(scene);
+      const replacement = other.reflectionTexture!;
+      a.dispose();
+      expect(replacement.isReady()).toBe(true);
+      b.dispose();
+      expect(replacement.getInternalTexture()).toBeNull();
+      expect(source.isReady()).toBe(true);
+      sky.dispose(); cache.flushUnreferenced();
+      expect(source.getInternalTexture()).toBeNull();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
   it("resizes tessellation with a stretched volume while rendered waves still match world-space queries", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 12, length: 10, waveScale: 1 }, "ocean");

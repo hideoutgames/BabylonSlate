@@ -2,6 +2,7 @@ import { CubeTexture, PBRMaterial, Texture, type Scene } from "@babylonjs/core";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { isSkyboxMesh } from "./skybox";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 /** A scene-owned view of its visible sky; explicit environment lighting takes precedence. */
 export class WaterReflection {
@@ -24,6 +25,7 @@ export class WaterReflection {
       this.materials.delete(material);
       if (!this.materials.size) this.clear();
     });
+    this.sync();
   }
   sync(): void {
     if (!this.materials.size) return;
@@ -42,9 +44,11 @@ export class WaterReflection {
           this.scene.removePendingData(this);
           this.pending = false;
           for (const material of this.materials) material.markAsDirty(PBRMaterial.TextureDirtyFlag);
+          markSceneReadinessDirty(this.scene);
         });
         for (const material of this.materials) material.reflectionTexture = this.view;
       }
+      markSceneReadinessDirty(this.scene);
     }
     if (this.irradiance && !this.irradiance.isReady() && !this.pending) {
       this.pending = true;
