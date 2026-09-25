@@ -391,11 +391,11 @@ export class ClusteredSceneLights {
           container._updateBatches(this.scene.activeCamera),
           unbounded,
         );
-        this.lightOrder ??= new ClusteredLightOrder(container);
-        this.lightOrder.sync(
-          container._updateBatches(this.scene.activeCamera),
-          this.authoredOrder,
+        this.lightOrder ??= new ClusteredLightOrder(
+          container,
+          this.compareAuthored,
         );
+        this.lightOrder.sync(container._updateBatches(this.scene.activeCamera));
         if (this.orderDirty) this.restoreAuthoredOrder(container);
       }
       const clustered = this.container?.lights.length ?? 0;
