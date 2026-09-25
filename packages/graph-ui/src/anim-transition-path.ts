@@ -106,14 +106,20 @@ export function animTransitionPath({
     targetX,
     targetY,
   );
-  const tangentX =
+  let tangentX =
     0.75 * (sourceControl.x - sourceX) +
     1.5 * (targetControl.x - sourceControl.x) +
     0.75 * (targetX - targetControl.x);
-  const tangentY =
+  let tangentY =
     0.75 * (sourceControl.y - sourceY) +
     1.5 * (targetControl.y - sourceControl.y) +
     0.75 * (targetY - targetControl.y);
+  // On a short hop the minimum stubs cross, so the curve doubles back at its
+  // midpoint while the wire still reads source-to-target.
+  if (tangentX * (targetX - sourceX) + tangentY * (targetY - sourceY) < 0) {
+    tangentX = -tangentX;
+    tangentY = -tangentY;
+  }
   return {
     path: `M ${sourceX},${sourceY} C ${sourceControl.x},${sourceControl.y} ${targetControl.x},${targetControl.y} ${targetX},${targetY}`,
     labelX: mid.x,
