@@ -7,10 +7,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   readonly water: WaterDefinition;
   readonly body: WaterBodyProperties;
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
-    super(material, "SlateWater", 180, { SLATE_WATER: true }, true, true);
+    super(material, "SlateWater", 180, { SLATE_WATER: true }, true, false);
     this.water = water;
     this.body = body;
     this.doNotSerialize = true;
+    this.registerForExtraEvents = true;
+    this._enable(true);
   }
   override isCompatible(): boolean { return true; }
   override getClassName(): string { return "WaterMaterialPlugin"; }
@@ -19,7 +21,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const names = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook"];
     return { ubo: names.map((name) => ({ name, size: 4, type: "vec4" })) };
   }
-  override bindForSubMesh(buffer: UniformBuffer): void {
+  override hardBindForSubMesh(buffer: UniformBuffer): void {
     const w = this.water, b = this.body;
     buffer.updateFloat4("slateWaterShallow", ...w.shallowColor, w.opacity);
     buffer.updateFloat4("slateWaterDeep", ...w.deepColor, w.waveHeight * b.waveScale);
