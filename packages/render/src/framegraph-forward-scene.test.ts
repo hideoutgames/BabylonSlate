@@ -3,6 +3,7 @@ import {
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
+  PassPostProcess,
   PointLight,
   RenderTargetTexture,
   RawTexture,
@@ -270,6 +271,13 @@ it("falls back before replacing unmanaged shadows or a shared-view target", asyn
   expect(light.getShadowGenerator()).toBe(shadow);
   expect(shadow.getShadowMap()).toBe(texture);
   shadow.dispose();
+  // An unowned native pass keeps classic rendering; its detached slot does not.
+  const external = new PassPostProcess("external", 1, camera);
+  expect(graph.render(camera)).toMatchObject({
+    path: "classic",
+    reason: expect.stringContaining("Scene post-processing"),
+  });
+  external.dispose(camera);
   const target = new RenderTargetTexture("shared view", 32, scene);
   camera.outputRenderTarget = target;
   expect(await graph.prepare(camera)).toMatchObject({

@@ -82,6 +82,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   ));
   const {
     collectPlaySpritePayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -334,12 +335,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       try {
         const sprites = await collectPlaySpritePayloads(scene);
         const tileContent = await collectPlayTilemapContent(scene);
+        const waters = await collectPlayWaterContent();
         const modelBytes = await collectPlayModelBytes(scene);
         const modelPayloads = await collectPlayModelPayloads(scene);
         const materials = await collectPlayMaterialLibrary(
           scene,
           [],
-          modelSlotMaterialGuidsFromPayloads(modelPayloads),
+          [...modelSlotMaterialGuidsFromPayloads(modelPayloads), ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
         );
         const extraTextureGuids = [
           ...materials.textureGuids,
@@ -371,6 +373,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
+          waters,
           tilesets: tileContent.tilesets,
           textureBytes,
           texturePixelSizes,
@@ -407,6 +410,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     prefabPhysicsWorld,
     sharedEngine,
     collectPlaySpritePayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,

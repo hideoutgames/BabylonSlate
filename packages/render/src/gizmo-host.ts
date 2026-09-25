@@ -13,7 +13,6 @@ import type { ViewportMode } from "@babylonslate/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";
-export { SELECTION_COLOR } from "./selection-style";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
@@ -554,9 +553,7 @@ export function createGizmoHost(
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       scene.pointerX = mapped.x;
       scene.pointerY = mapped.y;
-      const pick =
-        layer.utilityLayerScene.pick(mapped.x, mapped.y) ??
-        scene.pick(mapped.x, mapped.y);
+      const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
       const pointerEventInit = {
         pointerId: canvasSize?.pointerId ?? 1,
         button: 0,
@@ -586,5 +583,3 @@ export function createGizmoHost(
     },
   };
 }
-
-/** Selection outline colour, shared by the outline pass and the 2D bounds. */

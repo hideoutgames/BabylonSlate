@@ -4,7 +4,6 @@ import {
   RENDERING_GROUP,
   applySortingToMesh,
   applySortingToParticleSystem,
-  applySortingToSprite,
   clampOrderInLayer,
   computeSortKey,
   renderingGroupForLayer,
@@ -79,16 +78,5 @@ describe("applySorting", () => {
       resolveSortingLayer(["Background", "Default", "Foreground", "UI"], "UI", 4),
     );
     expect(system.renderingGroupId).toBe(RENDERING_GROUP.ui);
-  });
-
-  it("offsets a sprite's Z by a sub-pixel fraction of the sort key", () => {
-    const sprite = { position: { z: 0 } };
-    applySortingToSprite(
-      sprite,
-      resolveSortingLayer(["Default"], "Default", 1),
-      100,
-    );
-    expect(sprite.position.z).toBeLessThan(0);
-    expect(Math.abs(sprite.position.z)).toBeLessThan(1);
   });
 });

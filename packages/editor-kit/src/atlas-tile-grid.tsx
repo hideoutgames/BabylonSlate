@@ -3,8 +3,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+import { ImageIcon } from "lucide-react";
 import {
   applyPointerPan,
   atlasCellAt,
@@ -15,8 +18,10 @@ import {
 } from "@babylonslate/assets";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -32,6 +37,8 @@ export interface AtlasTileGridProps {
   /** Completed rectangular selection in Select mode; pinch/cancel never commits it. */
   onSelectionChange?: (tileIds: number[]) => void;
   emptyLabel?: string;
+  emptyDescription?: ReactNode;
+  emptyAction?: ReactNode;
   panZoom?: boolean;
   tool?: AtlasTileGridTool;
   onImageSize?: (width: number, height: number) => void;
@@ -79,6 +86,8 @@ export function AtlasTileGrid({
   onSelect,
   onSelectionChange,
   emptyLabel = "No Texture",
+  emptyDescription,
+  emptyAction,
   panZoom = false,
   tool: toolProp,
   onImageSize,
@@ -420,7 +429,7 @@ export function AtlasTileGrid({
         )}
         style={{
           backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+            "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
           backgroundSize: "16px 16px",
         }}
         data-testid={`${testId}-surface`}
@@ -436,13 +445,19 @@ export function AtlasTileGrid({
       >
         {!imageUrl ? (
           <Empty
-            className="pointer-events-none absolute inset-0 z-10 border-0 bg-transparent"
+            className="absolute inset-0 z-20 rounded-none border-0 bg-sidebar"
             data-testid={`${testId}-empty`}
           >
             <EmptyHeader>
-              <EmptyTitle>Tileset</EmptyTitle>
-              <EmptyDescription>{emptyLabel}</EmptyDescription>
+              <EmptyMedia variant="icon">
+                <ImageIcon />
+              </EmptyMedia>
+              {emptyLabel ? <EmptyTitle>{emptyLabel}</EmptyTitle> : null}
+              {emptyDescription ? (
+                <EmptyDescription>{emptyDescription}</EmptyDescription>
+              ) : null}
             </EmptyHeader>
+            {emptyAction ? <EmptyContent>{emptyAction}</EmptyContent> : null}
           </Empty>
         ) : null}
         <div
@@ -453,7 +468,8 @@ export function AtlasTileGrid({
             height: Math.max(1, filled.atlasHeight),
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: "0 0",
-          }}
+            "--atlas-zoom": panZoom ? zoom : 1,
+          } as CSSProperties}
         >
           {imageUrl ? (
             <img
@@ -481,8 +497,10 @@ export function AtlasTileGrid({
                 data-selected={selected ? "true" : "false"}
                 data-collision={collisionAttr(tile.collision)}
                 className={cn(
-                  "absolute box-border border border-foreground/60",
-                  selected ? "ring-2 ring-primary ring-inset" : null,
+                  "absolute box-border border-solid border-foreground/25 outline-none [border-width:calc(1px/var(--atlas-zoom,1))] hover:bg-foreground/10 focus-visible:z-10 focus-visible:shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--ring)]",
+                  selected
+                    ? "z-10 border-transparent shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--graph-state-selected),0_0_0_calc(1px/var(--atlas-zoom,1))_var(--background)]"
+                    : null,
                   tile.collision === "full"
                     ? "bg-primary/20 [background-image:repeating-linear-gradient(45deg,transparent,transparent_4px,oklch(0.65_0.12_250/0.4)_4px,oklch(0.65_0.12_250/0.4)_8px)]"
                     : null,

@@ -11,6 +11,9 @@ const scratchRotation = new Quaternion();
 const scratchPosition = new Vector3();
 const scratchLocal = Matrix.Identity();
 const scratchParentInverse = Matrix.Identity();
+const scratchInverseStart = Matrix.Identity();
+const scratchNewWorld = Matrix.Identity();
+const scratchDelta = Matrix.Identity();
 
 /**
  * Selected actors whose parent is not also selected. Gizmo group transforms
@@ -50,9 +53,10 @@ export function pickGizmoAttachActorId(
 export function worldDelta(
   startWorld: DeepImmutable<Matrix>,
   currentWorld: DeepImmutable<Matrix>,
+  result = new Matrix(),
 ): Matrix {
-  const inverseStart = Matrix.Invert(startWorld);
-  return inverseStart.multiply(currentWorld);
+  startWorld.invertToRef(scratchInverseStart);
+  return scratchInverseStart.multiplyToRef(currentWorld, result);
 }
 
 /**
@@ -64,7 +68,7 @@ export function applyWorldDeltaToMesh(
   delta: DeepImmutable<Matrix>,
 ): void {
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
-  const newWorld = startWorld.multiply(delta);
+  const newWorld = startWorld.multiplyToRef(delta, scratchNewWorld);
   let local: DeepImmutable<Matrix> = newWorld;
   const parent = mesh.parent;
   if (parent) {
@@ -110,7 +114,7 @@ export function applyGizmoMultiSelectDrag(
   attached: AbstractMesh,
 ): void {
   attached.computeWorldMatrix(true);
-  const delta = worldDelta(drag.pivotStartWorld, attached.getWorldMatrix());
+  const delta = worldDelta(drag.pivotStartWorld, attached.getWorldMatrix(), scratchDelta);
   for (const follower of drag.followers) {
     applyWorldDeltaToMesh(follower.mesh, follower.startWorld, delta);
   }

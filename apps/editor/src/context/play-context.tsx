@@ -105,7 +105,6 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
-  bakeRuntimeAssetReader,
   hydrateSpriteAnimationPixelSizes,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -273,6 +272,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
+  const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
   );
@@ -352,6 +352,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayBlackboards,
     collectPlaySpritePayloads,
     collectPlaySpriteAnimationPayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -1060,6 +1061,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         }
 
         try {
+          const waters = await collectPlayWaterContent();
+          setPlayWaters(waters);
           const particles = await collectPlayParticles();
           setPlayParticleLibrary(particles);
           const materials = await collectPlayMaterialLibrary(
@@ -1069,6 +1072,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...resourceScenes,
             ],
             [
+              ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : []),
               ...particleMaterialGuidsFromLibrary(particles),
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
               ...overlayGraphMaterials,
@@ -1109,6 +1113,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           appendLog(
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
+          setPlayWaters(new Map());
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyPlayParticleLibrary());
@@ -1262,7 +1267,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
-      collectPlayTilemapContent,
+      collectPlayWaterContent,
+    collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
@@ -1529,6 +1535,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             blackboards={playBlackboards}
             spritePayloads={playSpritePayloads}
             spriteAnimationPayloads={playSpriteAnimationPayloads}
+            waterPayloads={playWaters}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
@@ -1550,11 +1557,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
-            bakeAssetReader={
-              assetRegistry
-                ? bakeRuntimeAssetReader(assetRegistry)
-                : undefined
-            }
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

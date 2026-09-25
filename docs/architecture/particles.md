@@ -1,12 +1,14 @@
 # Particles
 
+Redesign in progress (`p-particle-*`): see the [particle emitters design note](../design/particle-emitters.md). This page describes the shipped P17 behaviour until `p-particle-basic` lands.
+
 P17 wraps Babylon `GPUParticleSystem` / `ParticleSystem` as **billboard quads only**. Spec: [engineplan.md](../engineplan.md) §2.7. Live Babylon docs: `/features/featuresDeepDive/particles`.
 
 ## Why wrap Babylon
 
 `GPUParticleSystem` (WebGL2 transform feedback; default on the A16 iPad) and `ParticleSystem` (CPU animate, GPU draw) already render plane particles: `particleTexture`, shape emitters, lifetime gradients, `isLocal`, pre-warm, `targetStopDuration`, `blendMode`, `billboardMode`. Look is `NodeMaterial.createEffectForParticles(system)` in **Particle** mode.
 
-Do **not** write a custom thin-instance simulator, Solid Particle System, points cloud, fluid renderer, mesh particles, or `MeshParticleEmitter`. Do **not** wrap Node Particle Editor or `ParticleHelper` snippets. Do **not** store Babylon `ParticleSystem.serialize()` as the `.babasset` payload. Own schema in `@babylonslate/assets`, then **apply** onto a live `IParticleSystem` in `@babylonslate/render`.
+Do **not** write a custom thin-instance simulator, Solid Particle System, points cloud, fluid renderer, mesh particles, or `MeshParticleEmitter`. Do **not** use the Node Particle Editor UI, snippets, `ParticleHelper` or Babylon JSON payloads; the planned Particle Graph lowers our own IR onto Node Particle blocks (design note). Do **not** store Babylon `ParticleSystem.serialize()` as the `.babasset` payload. Own schema in `@babylonslate/assets`, then **apply** onto a live `IParticleSystem` in `@babylonslate/render`.
 
 **Quads only.** `isBillboardBased = true`, `BILLBOARDMODE_ALL`. No second renderer.
 
@@ -83,7 +85,7 @@ Worker → main. Main thread resolves Emitter / System payloads from the Play pa
 
 ## Out of P17
 
-Mesh path, bursts, sub-emitters, noise, attractors, flow maps, ramps, sprite-sheet flipbooks, hemisphere/cylinder/custom emitters, NPE, fluid renderer, particle-age material node, any second renderer.
+Mesh path, bursts, sub-emitters, noise, attractors, flow maps, ramps, sprite-sheet flipbooks, hemisphere/cylinder/custom emitters, NPE, fluid renderer, particle-age material node, any second renderer. Bursts, hemisphere/cylinder emitters and a node-graph emitter are planned in `p-particle-*`.
 
 ## Component ownership and playback
 

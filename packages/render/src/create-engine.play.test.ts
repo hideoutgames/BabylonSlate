@@ -22,10 +22,9 @@ import {
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
-import { BakedSceneSession } from "./baked-scene-session";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
@@ -38,7 +37,6 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
-import * as sceneBakePreparation from "./scene-bake-preparation";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
@@ -901,7 +899,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(live.resourceCache, "releaseGpuTextures");
+    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
@@ -1941,79 +1939,6 @@ describe("Play createEngine view", () => {
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
     expect(retireTextures).toHaveBeenCalledOnce();
     expect(engine.isDisposed).toBe(false);
-  });
-
-  it("does not report a bake failure when a view is disposed during bake preparation", async () => {
-    const engine = sharedEngine();
-    // The bake Material closure admits only opaque two-sided surfaces.
-    const material = createDefaultMaterialDocument();
-    material.twoSided = true;
-    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: engine,
-      editor: true,
-      materialDocuments: new Map([["material-1", material]]),
-      bakeAssetReader: async () => undefined,
-    });
-    handles.push(handle);
-    const receiver = createMeshComponent("mesh", "ground");
-    receiver.properties.materialGuid = "material-1";
-    receiver.properties.bakeParticipation = "staticReceiver";
-    const document = createDefaultScene();
-    document.actors = [
-      createActor("receiver", "Ground", { components: [receiver] }),
-      createActor("lamp", "Lamp", {
-        transform: { position: [0, 2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-        components: [{ id: "light", classId: "LightComponent", properties: { mobility: "static", intensity: 4 } }],
-      }),
-    ];
-    document.settings.bakedLightingAssetGuid = "bake";
-    document.settings.bakeSettings = { resolution: 32, paddingTexels: 2, samples: 1, bounces: 2 };
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const preparation = vi.spyOn(sceneBakePreparation, "prepareSceneBake");
-    // Browsers confirm native release only after a frame drain; hold it so
-    // preparation settles while the Scene's deferred release is still pending.
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
-    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(function (this: SceneRenderCoordinator) {
-      return whenReleased.call(this).then(() => held);
-    });
-    try {
-      handle.loadScene(document, { sceneAssetGuid: "scene-1" });
-      expect(handle.bakedSessionDiagnostics().state).toBe("pending");
-      expect(preparation).toHaveBeenCalledOnce();
-      handle.dispose();
-      // Preparation hashes asynchronously; let it settle before checking reports.
-      await Promise.allSettled(preparation.mock.results.map((result) => result.value));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(handle.scene.isDisposed).toBe(false);
-      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
-      release();
-      await handle.whenReleased();
-      await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
-      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
-    } finally {
-      warn.mockRestore();
-      preparation.mockRestore();
-    }
-  });
-
-  it("still releases a shared view's Scene when restoring baked receivers fails", async () => {
-    const engine = sharedEngine();
-    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
-    handles.push(handle);
-    const failure = new AggregateError([new Error("Receiver restore failed.")], "Baked receiver material release failed.");
-    const restore = vi.spyOn(BakedSceneSession.prototype, "dispose").mockImplementation(() => { throw failure; });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      handle.dispose();
-      await handle.whenReleased();
-      await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining(failure.message));
-    } finally {
-      restore.mockRestore();
-      warn.mockRestore();
-    }
   });
 
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {

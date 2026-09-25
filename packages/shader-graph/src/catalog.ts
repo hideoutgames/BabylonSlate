@@ -1,10 +1,10 @@
 import type { MaterialValueType } from "./types";
 
 /** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
-export type MaterialDomain = "surface" | "postProcess" | "particle";
+export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle";
 
 export function parseMaterialDomain(value: unknown): MaterialDomain {
-  if (value === "postProcess" || value === "particle") {
+  if (value === "postProcess" || value === "particle" || value === "landscape") {
     return value;
   }
   return "surface";
@@ -241,6 +241,22 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 0,
     inputs: [],
     outputs: [{ id: "time", name: "Time", type: FLOAT }],
+  },
+  {
+    type: "input.waterSurface",
+    title: "Water Surface",
+    category: "Input",
+    searchAliases: ["water", "foam", "shore", "waves", "flow"],
+    domains: ["surface"],
+    inputs: [],
+    outputs: [
+      { id: "waveHeight", name: "Wave Height", type: FLOAT },
+      { id: "bankDistance", name: "Bank Distance", type: FLOAT },
+      { id: "waterDepth", name: "Water Depth", type: FLOAT },
+      { id: "time", name: "Simulation Time", type: FLOAT },
+      { id: "flow", name: "Local Flow", type: VEC3 },
+    ],
+    cost: 0,
   },
   {
     type: "input.vertexColor",
@@ -858,7 +874,23 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
   },
 ];
 
+const LANDSCAPE_NODES: MaterialNodeDefinition[] = [
+  { type: "landscape.uv", title: "Landscape Coordinates", category: "Landscape", domains: ["landscape"], cost: 1,
+    inputs: [{ id: "scale", name: "Tiling", type: FLOAT, defaultValue: [0.1] }], outputs: [{ id: "uv", name: "UV", type: VEC2 }] },
+  { type: "landscape.height", title: "Landscape Height", category: "Landscape", domains: ["landscape"], cost: 0,
+    inputs: [], outputs: [{ id: "height", name: "Height", type: FLOAT }] },
+  { type: "landscape.slope", title: "Landscape Slope", category: "Landscape", domains: ["landscape"], cost: 3,
+    inputs: [], outputs: [{ id: "slope", name: "Slope", type: FLOAT }] },
+  { type: "landscape.layers", title: "Landscape Paint Layers", category: "Landscape", domains: ["landscape"], cost: 0,
+    inputs: [], outputs: [1, 2, 3, 4].map((n) => ({ id: `layer${n}`, name: `Layer ${n}`, type: FLOAT })) },
+  { type: "landscape.blend", title: "Landscape Layer Blend", category: "Landscape", domains: ["landscape"], cost: 1,
+    inputs: [{ id: "base", name: "Base", type: VEC3, defaultValue: [0.3, 0.3, 0.3] },
+      { id: "layer", name: "Layer", type: VEC3, defaultValue: [0.8, 0.8, 0.8] },
+      { id: "weight", name: "Weight", type: FLOAT, defaultValue: [0] }], outputs: [{ id: "color", name: "Color", type: VEC3 }] },
+];
+
 export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
+  ...LANDSCAPE_NODES,
   ...CONSTANT_NODES,
   ...INPUT_NODES,
   ...MATH_NODES,
@@ -889,7 +921,7 @@ export function nodeIsLegalInDomain(
 ): boolean {
   const definition = BY_TYPE.get(type);
   if (!definition) return false;
-  return definition.domains ? definition.domains.includes(domain) : true;
+  return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
 }
 
 export function nodeIsLegalInStage(

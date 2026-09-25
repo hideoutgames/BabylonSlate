@@ -1,3 +1,4 @@
+import { SceneModeSelect } from "./scene-mode-select";
 import {
   DndContext,
   KeyboardSensor,
@@ -659,6 +660,7 @@ export function EditorChromeBar({
             disabled={!canRedoActiveDocument}
             onAction={() => redoActiveDocument()}
           />
+          {activeKind === "scene" ? <SceneModeSelect disabled={playing || preparing} /> : null}
           {activeKind === "graph" ? (
             <>
               <ActionFeedbackButton

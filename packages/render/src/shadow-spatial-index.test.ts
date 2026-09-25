@@ -77,6 +77,10 @@ describe("shadow caster spatial selection", () => {
         new Plane(0, 1, 0, 10),
       ];
       expect(index.queryPlanes(volume)).toEqual([upstream]);
+      // Per-frame callers reuse one list; an earlier query's casters must not remain.
+      const reused = [distant];
+      expect(index.queryPlanes(volume, reused)).toBe(reused);
+      expect(reused).toEqual([upstream]);
       distant.position.copyFrom(Vector3.Zero());
       distant.computeWorldMatrix(true);
       expect(index.queryPlanes(volume)).toContain(distant);

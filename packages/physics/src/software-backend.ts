@@ -365,6 +365,42 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.linearVelocity.z += this.kind === "2d" ? 0 : impulse.z * s;
   }
 
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    if (![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
+    this.addImpulse(bodyId, impulse);
+    // The software fallback uses unit diagonal inertia; native backends use collider inertia.
+    const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
+    const mass = Math.max(body.desc.mass, 1e-6);
+    if (this.kind === "3d") {
+      body.angularVelocity.x += (r.y * impulse.z - r.z * impulse.y) / mass;
+      body.angularVelocity.y += (r.z * impulse.x - r.x * impulse.z) / mass;
+    }
+    body.angularVelocity.z += (r.x * impulse.y - r.y * impulse.x) / mass;
+  }
+
+  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null {
+    const body = this.bodies.get(bodyId);
+    return body ? { linear: { ...body.linearVelocity }, angular: { ...body.angularVelocity } } : null;
+  }
+
+  getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return null;
+    const mass = Math.max(body.desc.mass, 1e-6);
+    const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
+    return {
+      linear: { x: impulse.x / mass, y: impulse.y / mass, z: this.kind === "3d" ? impulse.z / mass : 0 },
+      angular: {
+        x: this.kind === "3d" ? (r.y * impulse.z - r.z * impulse.y) / mass : 0,
+        y: this.kind === "3d" ? (r.z * impulse.x - r.x * impulse.z) / mass : 0,
+        z: (r.x * impulse.y - r.y * impulse.x) / mass,
+      },
+      centerOfMass: { ...body.transform.position },
+    };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;
@@ -568,6 +604,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         body.linearVelocity.z += this.gravity.z * gScale * dt;
       } else {
         body.linearVelocity.z = 0;
+      }
+      const angularDamp = Math.max(0, 1 - body.desc.angularDamping * dt);
+      const angular = body.angularVelocity;
+      angular.x *= angularDamp; angular.y *= angularDamp; angular.z *= angularDamp;
+      const speed = Math.hypot(angular.x, angular.y, angular.z);
+      if (speed > 1e-8) {
+        const half = speed * dt / 2, factor = Math.sin(half) / speed;
+        body.transform.rotation = multiplyQuat({ x: angular.x * factor, y: angular.y * factor, z: angular.z * factor, w: Math.cos(half) }, body.transform.rotation);
       }
       const damp = Math.max(0, 1 - body.desc.linearDamping * dt);
       body.linearVelocity.x *= damp;

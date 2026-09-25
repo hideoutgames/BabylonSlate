@@ -183,12 +183,10 @@ export async function runWebGpuProof() {
       for (const mode of ["pbr", "cel"] as const)
         shadows.push({ backend, mode, ...await captureSunShadows(engine, mode) });
       if (engine instanceof WebGPUEngine) {
-        const device = (
-          engine as unknown as { _device: GPUDevice }
-        )._device;
+        const deviceLimits = engine.currentLimits;
         limits = {
-          maxVertexBuffers: device.limits.maxVertexBuffers,
-          maxVertexAttributes: device.limits.maxVertexAttributes,
+          maxVertexBuffers: deviceLimits.maxVertexBuffers,
+          maxVertexAttributes: deviceLimits.maxVertexAttributes,
         };
       }
       vertexStreams.push(
