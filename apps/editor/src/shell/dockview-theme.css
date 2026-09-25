@@ -1,10 +1,11 @@
 .dockview-theme-babylonslate {
+  --dv-tabs-and-actions-container-height: 26px;
   --dv-group-view-background-color: var(--background);
   --dv-tabs-and-actions-container-background-color: var(--panel-header);
   --dv-tabs-and-actions-container-font-size: 11px;
-  --dv-activegroup-visiblepanel-tab-background-color: var(--sidebar);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
   --dv-activegroup-hiddenpanel-tab-background-color: transparent;
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--sidebar);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--card);
   --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
   --dv-activegroup-visiblepanel-tab-color: var(--foreground);
   --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
@@ -14,6 +15,7 @@
   --dv-tab-divider-color: var(--border);
   --dv-separator-border: 1px solid var(--border);
   --dv-paneview-header-border-color: var(--border);
+  --dv-icon-hover-background-color: var(--accent);
   --dv-drag-over-background-color: color-mix(
     in oklch,
     var(--chrome-tab-accent) 20%,
@@ -22,17 +24,72 @@
   --dv-drag-over-border-color: var(--chrome-tab-accent);
 }
 
-/* Preserve compact tab strips on fine pointers (mouse / trackpad). */
+/*
+ * Tabs are segments inside the strip: the visible tab is a raised card and
+ * hidden tabs stay flat until hovered. Wide minimums keep short titles easy to
+ * hit; the strip keeps compact heights.
+ */
+.dockview-theme-babylonslate .dv-tabs-and-actions-container {
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.dockview-theme-babylonslate .dv-tabs-container {
+  align-items: center;
+  padding-inline: 2px;
+}
+
 .dockview-theme-babylonslate .dv-tab {
-  min-height: 18px;
-  min-width: 56px;
-  padding-inline: 6px;
-  border-start-start-radius: var(--radius-sm);
-  border-start-end-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  height: 20px;
+  min-width: 96px;
+  max-width: 200px;
+  padding-inline: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   transition:
     background-color 120ms ease,
+    border-color 120ms ease,
     color 120ms ease;
+}
+
+.dockview-theme-babylonslate .dv-tab .dv-default-tab {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dockview-theme-babylonslate .dv-tab .dv-default-tab-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dockview-theme-babylonslate .dv-tab .dv-default-tab-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.dockview-theme-babylonslate .dv-tab .dv-default-tab-action .dv-svg {
+  width: 8px;
+  height: 8px;
+}
+
+.dockview-theme-babylonslate .dv-tab:is(:hover, :focus-visible, .dv-active-tab) .dv-default-tab-action {
+  opacity: 1;
 }
 
 .dockview-theme-babylonslate .dv-tab.dv-inactive-tab:hover {
@@ -42,26 +99,34 @@
   --dv-inactivegroup-hiddenpanel-tab-color: var(--foreground);
 }
 
-/* The visible tab shares the panel surface and covers the strip's bottom rule. */
-.dockview-theme-babylonslate .dv-tabs-and-actions-container {
-  min-height: 18px;
-  box-shadow: inset 0 -1px 0 var(--border);
+.dockview-theme-babylonslate .dv-active-tab {
+  border-color: var(--border);
+  color: var(--foreground);
+  font-weight: 500;
+  box-shadow: 0 1px 1px color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Coarse pointers retain their compact 26px strip and wider labels. */
+.dockview-theme-babylonslate .dv-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Coarse pointers get a taller strip, wider tabs, and always-visible close. */
 @media (pointer: coarse) {
   .dockview-theme-babylonslate {
-    --dv-tabs-and-actions-container-font-size: 11px;
+    --dv-tabs-and-actions-container-height: 30px;
   }
 
   .dockview-theme-babylonslate .dv-tab {
-    min-height: 26px;
-    min-width: 64px;
-    padding-inline: 8px;
+    height: 26px;
+    min-width: 128px;
+    padding-inline: 10px 4px;
   }
 
-  .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-    min-height: 26px;
+  .dockview-theme-babylonslate .dv-tab .dv-default-tab-action {
+    width: 22px;
+    height: 22px;
+    opacity: 1;
   }
 }
 
@@ -120,13 +185,9 @@
   outline-color: transparent;
 }
 
-.dockview-theme-babylonslate .dv-active-tab {
-  color: var(--foreground);
-  font-weight: 500;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .dockview-theme-babylonslate .dv-tab {
+  .dockview-theme-babylonslate .dv-tab,
+  .dockview-theme-babylonslate .dv-tab .dv-default-tab-action {
     transition: none;
   }
 }

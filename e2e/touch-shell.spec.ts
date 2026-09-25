@@ -188,8 +188,10 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       const coarse = await page.evaluate(
         () => window.matchMedia("(pointer: coarse)").matches,
       );
-      // Fine pointers use an 18px strip; coarse uses 26px.
-      expect(box!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
+      // Short titles still get wide targets; coarse pointers get taller tabs.
+      expect(box!.height).toBeGreaterThanOrEqual(coarse ? 26 : 20);
+      expect(box!.height).toBeLessThanOrEqual(coarse ? 30 : 26);
+      expect(box!.width).toBeGreaterThanOrEqual(coarse ? 128 : 96);
     });
     await test.step("dock sash exposes a widened hit area beyond its visual width", async () => {
       const sash = page
