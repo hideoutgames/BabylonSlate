@@ -2567,6 +2567,10 @@ function initializeEngine(
       editor?.grid.dispose();
       editor?.selection.dispose();
       editor?.sync.dispose();
+      // Host-side timers and DOM stop now; the preview RTT and meshes wait
+      // for native release with the Scene.
+      debugOverlay?.stop();
+      playCursor?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -2583,7 +2587,6 @@ function initializeEngine(
         playFreeCam?.dispose();
         playViz?.dispose();
         playDebugDraw?.dispose();
-        playCursor?.dispose();
         debugOverlay?.dispose();
         debugOverlay = null;
         disposeSnapshotBinding(binding);

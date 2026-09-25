@@ -1972,6 +1972,42 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("stops the camera preview timer and Play cursor at dispose while shared native release is held", async () => {
+    const engine = sharedEngine();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockReturnValue(held);
+    const previewRenders = vi.spyOn(RenderTargetTexture.prototype, "render");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+      handles.push(editor);
+      const camera = createActor("cam", "Camera", {
+        components: [{ id: "camera", classId: "CameraComponent", properties: { fieldOfView: 60 } }],
+      });
+      editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [camera] }, selectedActorIds: [camera.id] });
+      previewRenders.mockClear();
+      vi.advanceTimersByTime(1000);
+      expect(previewRenders).toHaveBeenCalledOnce();
+      const playCanvas = new FakeCanvas();
+      const play = createEngine(playCanvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(play);
+      expect(playCanvas.style.cursor).toBe("none");
+      editor.dispose();
+      play.dispose();
+      previewRenders.mockClear();
+      vi.advanceTimersByTime(3000);
+      expect(previewRenders).not.toHaveBeenCalled();
+      expect(playCanvas.style.cursor).toBe("");
+      expect(editor.scene.isDisposed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      previewRenders.mockRestore();
+      whenReleased.mockRestore();
+      release();
+    }
+  });
+
   it("awaits a rendering-quality replaced post-process generation at shared teardown", async () => {
     const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Blur", "postProcess");

@@ -163,6 +163,7 @@ export class EditorDebugOverlay {
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
   private audioDebug: Array<{
     root: TransformNode;
@@ -269,15 +270,24 @@ export class EditorDebugOverlay {
     void this.blitPreview();
   }
 
-  dispose(): void {
+  /**
+   * Stop host-side work (the preview timer, pose follow and canvas writes)
+   * while a shared Engine may still borrow the preview RTT and meshes.
+   */
+  stop(): void {
+    this.stopped = true;
     this.scene.onBeforeRenderObservable.remove(this.audioPoseObserver);
     this.clearTimer();
-    this.disposeVisuals();
     this.previewCanvas = null;
   }
 
+  dispose(): void {
+    this.stop();
+    this.disposeVisuals();
+  }
+
   private ensureTimer(): void {
-    if (this.useExternalClock || this.timer || !this.previewTexture) return;
+    if (this.stopped || this.useExternalClock || this.timer || !this.previewTexture) return;
     this.timer = setInterval(() => this.tick(), CAMERA_PREVIEW_INTERVAL_MS);
   }
 
@@ -496,7 +506,8 @@ export class EditorDebugOverlay {
     if (!canvas || !texture) return;
     try {
       const buffer = await texture.readPixels();
-      if (!buffer || !canvas.getContext) return;
+      // A stopped overlay or replaced canvas must not receive a late readback.
+      if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const { width, height } = texture.getSize();
