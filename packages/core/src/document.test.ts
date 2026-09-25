@@ -286,6 +286,19 @@ describe("Class and settings documents", () => {
     ).toBe("Fire Particle System");
   });
 
+  it("opens ParticleGraph as its own DockView document kind", () => {
+    expect(documentKindForAssetType("ParticleGraph")).toBe("particle-graph");
+    expect(assetTypeForDocumentKind("particle-graph")).toBe("ParticleGraph");
+    expect(documentKindLabel("particle-graph")).toBe("Particle Graph");
+    expect(isAssetDocumentKind("particle-graph")).toBe(true);
+    expect(labelFromPath("assets/embers.particlegraph.babasset")).toBe("Embers");
+    expect(
+      createDocumentRef("particle-graph", "assets/embers.particlegraph.babasset", {
+        name: "Embers",
+      }).label,
+    ).toBe("Embers Particle Graph");
+  });
+
   it("opens SkyboxCreator as its own DockView document kind", () => {
     expect(documentKindForAssetType("SkyboxCreator")).toBe("skybox-creator");
     expect(assetTypeForDocumentKind("skybox-creator")).toBe("SkyboxCreator");

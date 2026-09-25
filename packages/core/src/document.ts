@@ -26,6 +26,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "audio-channel",
   "sound-attenuation",
   "particle-emitter",
+  "particle-graph",
   "particle-system",
   "water",
   "model",
@@ -119,6 +120,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SoundAttenuation";
     case "particle-emitter":
       return "ParticleEmitter";
+    case "particle-graph":
+      return "ParticleGraph";
     case "particle-system":
       return "ParticleSystem";
     case "water":
@@ -212,6 +215,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sound-attenuation";
     case "ParticleEmitter":
       return "particle-emitter";
+    case "ParticleGraph":
+      return "particle-graph";
     case "ParticleSystem":
       return "particle-system";
     case "Water":
@@ -287,6 +292,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sound Attenuation";
     case "particle-emitter":
       return "Particle Emitter";
+    case "particle-graph":
+      return "Particle Graph";
     case "particle-system":
       return "Particle System";
     case "water":
@@ -396,7 +403,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")
