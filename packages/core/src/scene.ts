@@ -327,7 +327,7 @@ function normalizeComponent(
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
-      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
+      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
@@ -756,3 +756,4 @@ export function wouldCreateComponentCycle(
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { parseOutlineProperties } from "./outline-component";
+import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";

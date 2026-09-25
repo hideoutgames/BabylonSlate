@@ -45,3 +45,4 @@ export * from "./baked-geometry";
 export * from "./baking";
 export * from "./area-rect-light";
 export * from "./outline-component";
+export * from "./spring-arm-component";
