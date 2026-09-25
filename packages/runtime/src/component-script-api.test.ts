@@ -40,7 +40,7 @@ describe("component script API", () => {
   it("updates Water dimensions through normal component variables and queries the changed footprint", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      waters: new Map([["water", { ...createDefaultWaterDefinition(), waveHeight: 0 }]]),
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
       playScene: sceneOf([createActor("lake", "Lake", { classId: "Hero", components: [
         { id: "surface", classId: "WaterLakeComponent", properties: { assetGuid: "water", width: 20 } },
       ] })]), onCommand: (command) => commands.push(command),
