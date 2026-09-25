@@ -1,4 +1,4 @@
-import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
+import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
 import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
 import { freezeEditorActiveMeshes } from "./scene-perf";
@@ -15,6 +15,11 @@ export interface SceneBrushState {
   foliageBrush: { radius: number; density: number; spacing: number; maxSlope: number; alignToNormal: boolean; randomYaw: boolean };
   group: FoliageGroup | undefined;
 }
+
+const RING_SEGMENTS = 48;
+const RING_LIFT = 0.03;
+const RING_COLOR = new Color4(0.95, 0.65, 0.2, 1);
+const RING_INNER_COLOR = new Color4(0.95, 0.65, 0.2, 0.5);
 
 type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string; occupied: Map<string, Vector3[]> };
 
@@ -65,16 +70,25 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     freezeEditorActiveMeshes(handle.scene);
     handle.scheduler.invalidate("manual");
   };
-  const showRing = (point: Vector3, normal: Vector3, radius: number) => {
+  const showRing = (point: Vector3, normal: Vector3, state: SceneBrushState) => {
+    const radius = radiusOf(state);
     const rotation = Matrix.Identity();
     alignment(normal).toRotationMatrix(rotation);
-    const points = Array.from({ length: 49 }, (_, i) => {
-      const angle = i / 48 * Math.PI * 2;
-      return Vector3.TransformCoordinates(new Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius), rotation).add(point).add(normal.scale(0.025));
+    const lift = Math.max(1, radius);
+    const surface = predicate(state);
+    // The foreground group keeps world depth, so a flat circle would sink into sculpted relief.
+    const circle = (circleRadius: number) => Array.from({ length: RING_SEGMENTS + 1 }, (_, i) => {
+      const angle = i / RING_SEGMENTS * Math.PI * 2;
+      const planar = Vector3.TransformCoordinates(new Vector3(Math.cos(angle) * circleRadius, 0, Math.sin(angle) * circleRadius), rotation).add(point);
+      const hit = handle.scene.pickWithRay(new Ray(planar.add(normal.scale(lift)), normal.negate(), lift * 2), surface);
+      return (hit?.pickedPoint ?? planar).add(normal.scale(RING_LIFT));
     });
+    const inner = state.mode === "landscape" ? radius * (1 - state.landscapeBrush.falloff) : 0;
+    const lines = [circle(radius), inner > radius * 0.05 ? circle(inner) : Array.from({ length: RING_SEGMENTS + 1 }, () => point.add(normal.scale(RING_LIFT)))];
+    const colors = [lines[0]!.map(() => RING_COLOR), lines[1]!.map(() => RING_INNER_COLOR)];
     const created = !ring;
-    ring = MeshBuilder.CreateLines("sceneBrushPreview", { points, instance: ring ?? undefined, updatable: true }, handle.scene);
-    ring.color = new Color3(0.95, 0.65, 0.2); ring.isPickable = false;
+    ring = MeshBuilder.CreateLineSystem("sceneBrushPreview", { lines, colors, useVertexAlpha: true, instance: ring ?? undefined, updatable: true }, handle.scene);
+    ring.isPickable = false;
     ring.renderingGroupId = RENDERING_GROUP.foreground;
     if (created) freezeEditorActiveMeshes(handle.scene);
     handle.scheduler.invalidate("manual");
@@ -185,7 +199,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     const state = options.getState();
     if (!enabled(state)) { hideRing(); finish(true); return; }
     const hit = pick(event, state);
-    if (hit?.pickedPoint) showRing(hit.pickedPoint, hit.getNormal(true, true)?.normalize() ?? Vector3.Up(), radiusOf(state));
+    if (hit?.pickedPoint) showRing(hit.pickedPoint, hit.getNormal(true, true)?.normalize() ?? Vector3.Up(), state);
     else hideRing();
     if (!stroke || stroke.pointerId !== event.pointerId) return;
     consume(event);
