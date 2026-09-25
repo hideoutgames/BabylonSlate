@@ -33,6 +33,7 @@ import {
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
   type BitmapAllocationLimits,
+  type BitmapCanvasScratch,
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
 import {
@@ -40,7 +41,7 @@ import {
   layoutHasLetterEffects,
   layoutText2DFromProperties,
   type GlyphMetricsProvider,
-  type Text2DEffectSample,
+  type Text2DEffectContext,
   type Text2DLayout,
   type Text2DLayoutItem,
 } from "./text2d-layout";
@@ -87,6 +88,7 @@ export type MsdfAtlas = {
 const MSDF_SHADER = "text2dMsdf";
 const MSDF_ITALIC_SHEAR = -0.2;
 const loggedMsdfFallback = new Set<string>();
+let msdfShadersRegistered = false;
 
 function decodeJson(bytes: Uint8Array): unknown {
   try {
@@ -250,6 +252,8 @@ function unlitMaterial(
 }
 
 function ensureMsdfShaders(): void {
+  if (msdfShadersRegistered) return;
+  msdfShadersRegistered = true;
   ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}VertexShader`] = `
 attribute position: vec3f;
 attribute uv: vec2f;
@@ -422,21 +426,27 @@ function attachEffects(
   bundle: VisualBundle,
   isPaused?: () => boolean,
 ): void {
-  if (!glyphs.some((entry) => hasLetterEffects(entry.item))) return;
-  const last = new Map<Mesh, Text2DEffectSample>();
+  // Glyphs without effects (and underlines) already rest at their layout pose.
+  const animated = glyphs
+    .filter((entry) => hasLetterEffects(entry.item))
+    .map((entry) => ({ ...entry, sample: { x: 0, y: 0, rotation: 0 }, sampled: false }));
+  if (animated.length === 0) return;
+  // Per-frame tick: one reused context and a preallocated sample per glyph.
+  const context: Text2DEffectContext = { time: 0, index: 0, fontSize: 0, hoverPhase: 0, rotatePhase: 0 };
   const tick = (time: number) => {
     const paused = isPaused?.() === true;
-    for (const { mesh, item, restRotation } of glyphs) {
-      const sample = combineText2DEffects(item.effects, {
-        time,
-        index: item.index,
-        fontSize: item.height,
-        hoverPhase: item.hoverPhase,
-        rotatePhase: item.rotatePhase,
-        paused,
-        last: last.get(mesh),
-      });
-      last.set(mesh, sample);
+    context.time = time;
+    for (const entry of animated) {
+      const { mesh, item, restRotation, sample } = entry;
+      // A paused glyph holds its last sample once it has one.
+      if (!paused || !entry.sampled) {
+        context.index = item.index;
+        context.fontSize = item.height;
+        context.hoverPhase = item.hoverPhase;
+        context.rotatePhase = item.rotatePhase;
+        combineText2DEffects(item.effects, context, sample);
+        entry.sampled = true;
+      }
       mesh.position.x = item.x + sample.x;
       mesh.position.y = item.y + sample.y;
       mesh.rotation.z = restRotation + sample.rotation;
@@ -479,11 +489,13 @@ export function createText2DMesh(
   const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
   const measured = new Map<string, ReturnType<typeof measureBitmapGlyph>>();
   const requests = new Map<string, { ch: string; style: RichTextStyle }>();
+  // One canvas serves every unique glyph of this build (Play rebuilds on text edits).
+  const canvasScratch: BitmapCanvasScratch = {};
   const measure = (ch: string, style: RichTextStyle) => {
     const key = bitmapGlyphKey(ch, style, fontStack);
     let cell = measured.get(key);
     if (!cell) {
-      cell = measureBitmapGlyph(ch, style, fontStack);
+      cell = measureBitmapGlyph(ch, style, fontStack, canvasScratch);
       measured.set(key, cell);
       requests.set(key, { ch, style });
     }
@@ -507,7 +519,7 @@ export function createText2DMesh(
   };
   const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
   for (const [key, request] of requests) {
-    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key)));
+    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
   }
   // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
   if (!options.metrics) layout = layoutText2DFromProperties(properties, layoutOptions).layout;
@@ -560,6 +572,9 @@ export function createText2DMesh(
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
       [];
+    // MSDF uniforms depend only on these style fields; bold and italic are
+    // mesh transforms, so glyphs of one style share a bundle-owned material.
+    const msdfMaterials = new Map<string, Material>();
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
       const child = MeshBuilder.CreatePlane(
@@ -575,15 +590,21 @@ export function createText2DMesh(
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       child.rotation.z = restRotation;
       if (msdf) {
-        child.material = msdfGlyphMaterial(
-          scene,
-          `${name}:glyph:${index}`,
-          item.style.color,
-          item.style.outline,
-          item.style.outlineColor,
-          atlasTexture,
-          bundle,
-        );
+        const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
+        let material = msdfMaterials.get(styleKey);
+        if (!material) {
+          material = msdfGlyphMaterial(
+            scene,
+            `${name}:glyph:${index}`,
+            item.style.color,
+            item.style.outline,
+            item.style.outlineColor,
+            atlasTexture,
+            bundle,
+          );
+          msdfMaterials.set(styleKey, material);
+        }
+        child.material = material;
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
         child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);

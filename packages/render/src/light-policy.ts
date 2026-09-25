@@ -122,7 +122,7 @@ export function syncForwardLightPolicy(
   const samplerCapacity = lightingSamplerCapacity(scene);
   if (
     candidates.length > capacity ||
-    candidates.filter(local).length > localCapacity ||
+    countLights(candidates, local) > localCapacity ||
     lightSamplerCount(scene, candidates) > samplerCapacity
   )
     candidates.sort(compareLightAdmission(scene, candidates, previous));
@@ -151,11 +151,15 @@ export function syncForwardLightPolicy(
       if (authoredLocal) selectedLocals++;
     }
   }
+  // Test membership in the candidates snapshot rather than re-deriving it:
+  // applyEnabled can change a descendant light's eligibility mid-loop. Build
+  // the set once, and only when an eligible light went unselected.
+  let candidateSet: Set<Light> | undefined;
   for (const light of scene.lights) {
     const enabled = isAuthoredLightEnabled(light);
     if (eligible(light) && !selected.has(light)) {
       forwardExcluded.add(light);
-      if (!candidates.includes(light)) limited.push(light);
+      if (!(candidateSet ??= new Set(candidates)).has(light)) limited.push(light);
     } else forwardExcluded.delete(light);
     applyEnabled(light, enabled);
   }
@@ -167,6 +171,15 @@ export function syncForwardLightPolicy(
     samplerLimited,
     samplers,
   };
+}
+
+function countLights(
+  lights: readonly Light[],
+  predicate: (light: Light) => boolean,
+): number {
+  let count = 0;
+  for (const light of lights) if (predicate(light)) count++;
+  return count;
 }
 
 function isGlobalLight(light: Light): boolean {

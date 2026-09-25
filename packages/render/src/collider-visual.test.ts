@@ -1,4 +1,4 @@
-import { LinesMesh, Mesh, StandardMaterial } from "@babylonjs/core";
+import { LinesMesh, Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -6,6 +6,23 @@ import {
   isColliderVisualMesh,
 } from "./collider-visual";
 import { RENDERING_GROUP } from "./sorting";
+
+/** World-space dash centers of a visual at the origin; every dash is a 24-vertex box. */
+function dashCenters(mesh: Mesh): Vector3[] {
+  const centers: Vector3[] = [];
+  for (const child of mesh.getChildMeshes()) {
+    const world = child.computeWorldMatrix(true);
+    const positions = child.getVerticesData(VertexBuffer.PositionKind) ?? [];
+    for (let start = 0; start < positions.length; start += 24 * 3) {
+      const center = Vector3.Zero();
+      for (let i = start; i < start + 24 * 3; i += 3) {
+        center.addInPlaceFromFloats(positions[i]!, positions[i + 1]!, positions[i + 2]!);
+      }
+      centers.push(Vector3.TransformCoordinates(center.scaleInPlace(1 / 24), world));
+    }
+  }
+  return centers;
+}
 
 describe("collider visual", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -36,7 +53,7 @@ describe("collider visual", () => {
     expect(mesh.isPickable).toBe(false);
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
     const dashes = mesh.getChildMeshes().filter((child): child is Mesh => child instanceof Mesh);
-    expect(dashes.length).toBeGreaterThan(8);
+    expect(dashCenters(mesh).length).toBeGreaterThan(8);
     expect(dashes.some((child) => child instanceof LinesMesh)).toBe(false);
     const material = dashes[0]!.material as StandardMaterial;
     expect(material.disableDepthWrite).toBe(false);
@@ -50,7 +67,7 @@ describe("collider visual", () => {
       kind: "sphere",
       radius: 0.5,
     });
-    expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
+    expect(dashCenters(mesh).length).toBeGreaterThan(8);
   });
 
   it("draws both capsule hemispheres in the front and side planes", () => {
@@ -60,7 +77,7 @@ describe("collider visual", () => {
       radius: 0.5,
       halfHeight: 1,
     });
-    const centers = mesh.getChildMeshes().map((dash) => dash.position);
+    const centers = dashCenters(mesh);
     for (const sign of [-1, 1]) {
       const cap = centers.filter((point) => point.y * sign > 1.1);
       expect(cap.some((point) => Math.abs(point.x) > 0.1 && Math.abs(point.z) < 0.01)).toBe(true);
@@ -77,6 +94,6 @@ describe("collider visual", () => {
       height: 1,
     });
     expect(isColliderVisualMesh(mesh)).toBe(true);
-    expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
+    expect(dashCenters(mesh).length).toBeGreaterThan(8);
   });
 });

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
   type MaterialDocument,
+  type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
@@ -346,6 +348,52 @@ describe("material library", () => {
     const second = library.acquire(scene, "mat-1", tinted(0.25));
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
+    expect(second.material).not.toBe(first.material);
+  });
+
+  it("recompiles the same graph when its material functions change", () => {
+    const scene = host();
+    const boosted = createDefaultMaterialFunctionDocument("Tint");
+    boosted.nodes.push({ id: "boost", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} });
+    boosted.edges = [
+      { id: "e-in-boost", sourceNodeId: "inputs", sourcePinId: "in_value", targetNodeId: "boost", targetPinId: "a" },
+      { id: "e-boost-out", sourceNodeId: "boost", sourcePinId: "out", targetNodeId: "outputs", targetPinId: "out_value" },
+    ];
+    let functions: Record<string, MaterialFunctionDocument> = { tint: createDefaultMaterialFunctionDocument("Tint") };
+    const library = new MaterialLibrary({ functions: () => functions });
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "tint" } });
+    doc.edges = [
+      { id: "e-color-call", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" },
+      { id: "e-call-out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    const first = library.acquire(scene, "mat-1", doc);
+    if (!first.ok) throw new Error("Expected a compiled material");
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(true);
+    functions = { tint: boosted };
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(false);
+    const second = library.acquire(scene, "mat-1", doc);
+    if (!second.ok) throw new Error("Expected a compiled material");
+    expect(second.material).not.toBe(first.material);
+  });
+
+  it("recompiles a material document that was edited in place", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "tint", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [1, 0, 0] } });
+    const first = library.acquire(scene, "mat-1", doc);
+    if (!first.ok) throw new Error("Expected a compiled material");
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(true);
+    doc.edges = [
+      ...doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === "baseColor")),
+      { id: "e-tint-out", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(false);
+    const second = library.acquire(scene, "mat-1", doc);
+    if (!second.ok) throw new Error("Expected a compiled material");
     expect(second.material).not.toBe(first.material);
   });
 

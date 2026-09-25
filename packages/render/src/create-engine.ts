@@ -33,9 +33,7 @@ import type {
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
-import { SceneEffectsOwner } from "./scene-effects-owner";
 import type {
-  BakeRuntimeAssetReader,
   SpriteAnimationPayload,
   SpritePayload,
   TilemapPayload,
@@ -94,7 +92,6 @@ import {
 } from "./editor-clear-color";
 import {
   applySceneToBabylonScene,
-  editorComponentMeshName,
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
@@ -109,7 +106,6 @@ import {
 } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
-  AUTHORED_LIGHT_PREFIX,
   refreshAuthoredCameraLenses,
   syncAuthoredCamerasFromMeshes,
   syncAuthoredAreaLightsFromMeshes,
@@ -162,17 +158,11 @@ import {
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
-  playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
-import {
-  BakedSceneSession,
-  type BakedSceneHost,
-  type BakedSessionDiagnostics,
-} from "./baked-scene-session";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -194,9 +184,7 @@ import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
 import {
-  attachPostProcessStack,
   normalizePostProcessStack,
-  probePostProcessDeviceBuffers,
   type AttachedPostProcessStack,
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
@@ -215,8 +203,6 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
-  freezeEditorActiveMeshes,
-  isSceneFrameReady,
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
@@ -229,7 +215,7 @@ export interface EditorSceneLoadOptions {
   assets?: MeshAssetContext;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Project asset guid of the loaded Scene document (bake manifest `sceneGuid`). */
+  /** Project asset guid of the loaded Scene document. */
   sceneAssetGuid?: string;
   onProgress?: (progress: number) => void;
 }
@@ -294,17 +280,6 @@ export interface EngineHandle {
   }>;
   /** Material names on Play meshes and GLB descendants (Preview e2e). */
   playMeshMaterialNames: () => string[];
-  /** Baked-lighting session state for player/editor diagnostics. */
-  bakedSessionDiagnostics: () => BakedSessionDiagnostics;
-  /**
-   * Bind the baked-lighting session for an already-realized scene. Scene
-   * switches go through `loadScene`; hosts whose boot scene never reloads
-   * (the active-scene early return) call this so the bake still applies.
-   */
-  applyBakedSession: (
-    sceneData: SerializedScene,
-    sceneAssetGuid?: string,
-  ) => void;
   /** Compiled effect defines per Play mesh (e2e shader-state readout). */
   playMeshMaterialDefines: () => Array<{
     mesh: string;
@@ -486,12 +461,6 @@ export interface CreateEngineOptions {
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   /** Material Function documents keyed by asset guid. */
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /**
-   * Reads BakedLighting / BakedGeometry assets from this host's asset source
-   * (project registry, packed game container). Without it, assigned baked
-   * lighting releases instead of applying.
-   */
-  bakeAssetReader?: BakeRuntimeAssetReader;
   /** Authored scene post-process stack. */
   postProcessStack?: readonly PostProcessStackInput[];
   /**
@@ -837,7 +806,7 @@ function initializeEngine(
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   const worldRenderer = new SceneRenderCoordinator(scene);
-  onRollback(() => worldRenderer?.dispose());
+  onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
@@ -894,7 +863,7 @@ function initializeEngine(
   // A game-wide session render path request re-keys this view's shader and
   // presentation admission exactly like a project render-settings change.
   const unsubscribeRenderPathSession = subscribeRenderPathSession(engine, () => {
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     scheduler.invalidate("asset");
   });
   onRollback(unsubscribeRenderPathSession);
@@ -965,10 +934,20 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.copied && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
-  const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
+  const hasLoadingFrame = () => {
+    for (const pending of pendingPresentations.values()) {
+      if (!pending.copied && presentationReady(pending)) return scheduler.canPresentLoadingFrame();
+    }
+    return false;
+  };
+  const hasPendingOwners = () => {
+    if (worldLoading) return true;
+    for (const layer of layerLoads.values()) if (!layer.ready) return true;
+    return false;
+  };
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
-  const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
+  // renderLoop passes the loading permit it already evaluated for this frame.
+  const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
@@ -976,17 +955,16 @@ function initializeEngine(
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
-      if (worldRenderer) {
-        const css = cssCanvasPixelSize(canvas);
-        const scale = engine.getHardwareScalingLevel();
-        const size = scaledLockedViewSize() ?? {
-          width: Math.max(1, Math.floor(css.width / scale)),
-          height: Math.max(1, Math.floor(css.height / scale)),
-        };
-        if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
-          engine.setSize(size.width, size.height);
-      }
-      prepareSnapshot();
+      const css = cssCanvasPixelSize(canvas);
+      const scale = engine.getHardwareScalingLevel();
+      const size = scaledLockedViewSize() ?? {
+        width: Math.max(1, Math.floor(css.width / scale)),
+        height: Math.max(1, Math.floor(css.height / scale)),
+      };
+      if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
+        engine.setSize(size.width, size.height);
+      admittedSnapshot = prepareSnapshot();
+      snapshotAdmitted = true;
       return shouldRenderFrame(performance.now());
     }, {
       begin: () => { frameCopyReady = false; },
@@ -1124,6 +1102,9 @@ function initializeEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  // The library memoizes lowered plans per functions record identity; every
+  // accepted installMaterialDocuments replaces it.
+  let materialFunctionRecord = Object.fromEntries(materialFunctions);
   binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
   const compiledMaterialGuids = new Set<string>();
@@ -1134,7 +1115,7 @@ function initializeEngine(
   };
   const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
-    functions: () => Object.fromEntries(materialFunctions),
+    functions: () => materialFunctionRecord,
     acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
@@ -1232,16 +1213,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  // Native mirror of the settings-driven effect chain for hosts without a
-  // SceneRenderCoordinator; coordinator hosts drive their own copy.
-  const sceneEffectsOwner = new SceneEffectsOwner(scene);
-  onRollback(() => {
-    try {
-      sceneEffectsOwner.dispose();
-    } finally {
-      nativeRetirement.add(sceneEffectsOwner);
-    }
-  });
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
@@ -1254,33 +1225,19 @@ function initializeEngine(
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
     lastPostProcessDiagnostics = [];
-    if (!postProcessingEnabled) {
-      if (!worldRenderer) sceneEffectsOwner.useGraph();
-      return;
-    }
-    if (!camera) {
-      if (!worldRenderer) sceneEffectsOwner.useGraph();
-      return;
-    }
-    const attach = worldRenderer
-      ? worldRenderer.attachPostProcess.bind(worldRenderer)
-      : attachPostProcessStack;
-    attachedStack = attach({
+    if (!postProcessingEnabled || !camera) return;
+    attachedStack = worldRenderer.attachPostProcess({
       scene,
       camera,
       library: materialLibrary,
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
         options.onPostProcessDiagnostic?.(diagnostic);
       },
     });
-    // Coordinator hosts own effects inside the graph/classic decision; the
-    // pure-native path mirrors the same settings through this owner.
-    if (!worldRenderer) sceneEffectsOwner.useNative(camera);
   };
 
   let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
@@ -1320,7 +1277,7 @@ function initializeEngine(
     const effectsKey = state.effectsKey;
     if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
       rebuildPostProcessStack();
-      worldRenderer?.invalidate();
+      worldRenderer.invalidate();
     }
     appliedEffectsKey = effectsKey;
   };
@@ -1473,70 +1430,7 @@ function initializeEngine(
   };
   binding.onVisualChanged = refreshRuntimeOutline;
 
-  // One bake owner per world Scene. `apply` runs at the end of every scene
-  // load; receivers that have not spawned yet (Play command realization) keep
-  // the session pending, which withholds strict first-frame admission until
-  // the atlas and bindings are confirmed or the bake proves stale.
-  const bakedSession = new BakedSceneSession(scene);
-  onRollback(() => bakedSession.dispose());
-  let lastBakedSceneGuid: string | undefined;
-  const playSlotForActor = (actorId: string): number | null => {
-    for (const [slotId, sorting] of binding.meshSorting) {
-      if (sorting.actorGuid === actorId) return slotId;
-    }
-    return null;
-  };
-  const playMeshForComponent = (
-    actorId: string,
-    componentId: string,
-  ): Mesh | null => {
-    const slotId = playSlotForActor(actorId);
-    if (slotId === null) return null;
-    const root = binding.meshes.get(slotId);
-    if (!root || root.isDisposed()) return null;
-    const named = playComponentMeshName(slotId, componentId);
-    const target = [root, ...root.getChildMeshes()].find(
-      (mesh) => mesh.name === named,
-    );
-    if (target instanceof Mesh) return target;
-    return binding.primaryComponentIds.get(slotId) === componentId
-      ? root
-      : null;
-  };
-  const playLightForComponent = (actorId: string) => {
-    const slotId = playSlotForActor(actorId);
-    return slotId === null ? null : (binding.lights.get(slotId) ?? null);
-  };
-  const bakeHost = (
-    sceneAssetGuid: string | undefined,
-    signal?: AbortSignal,
-  ): BakedSceneHost | null => {
-    if (!sceneAssetGuid || !options.bakeAssetReader) return null;
-    return {
-      sceneAssetGuid,
-      readAsset: options.bakeAssetReader,
-      materials: materialDocuments,
-      functions: Object.fromEntries(materialFunctions),
-      projectEnvironment:
-        sceneRenderingSettings(scene).project.environmentLighting,
-      meshForComponent: editorSync
-        ? (actorId, componentId) =>
-            editorSync.meshForComponent(actorId, componentId)
-        : options.playMode
-          ? playMeshForComponent
-          : (actorId, componentId) =>
-              scene.getMeshByName(
-                editorComponentMeshName(actorId, componentId),
-              ) as Mesh | null,
-      lightForComponent: options.playMode
-        ? playLightForComponent
-        : (actorId) =>
-            scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}${actorId}`),
-      isCurrent: () => !disposed && !scene.isDisposed,
-      signal,
-    };
-  };
-
+  let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
@@ -1546,7 +1440,7 @@ function initializeEngine(
       for (const group of binding.areaLights.values())
         emissionChanged = group.refreshEmissions(assets.areaEmissions) || emissionChanged;
       if (emissionChanged) {
-        worldRenderer?.invalidate();
+        worldRenderer.invalidate();
         scheduler.invalidate("asset");
       }
       binding.texturePixelSizes = assets.texturePixelSizes;
@@ -1596,6 +1490,7 @@ function initializeEngine(
           materialFunctions.set(guid, document);
         }
       }
+      materialFunctionRecord = Object.fromEntries(materialFunctions);
       return true;
   };
 
@@ -1604,7 +1499,7 @@ function initializeEngine(
     assertCurrent(loadGeneration);
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
     const generation = ++loadGeneration;
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
@@ -1617,8 +1512,7 @@ function initializeEngine(
     assertCurrent(generation);
     freezeLibraryMaterials();
     rebuildPostProcessStack();
-    lastBakedSceneGuid = load.sceneAssetGuid;
-    bakedSession.apply(sceneData, bakeHost(load.sceneAssetGuid, load.signal));
+    lastSceneAssetGuid = load.sceneAssetGuid;
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
   };
 
@@ -1627,14 +1521,12 @@ function initializeEngine(
     loadOptions?: { sceneAssetGuid?: string },
   ) => {
     assertCurrent(loadGeneration);
-    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
       isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       editorSync.apply(sceneData);
-      // Poses change bake validity even while rendering topology stays stable.
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
-    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       editorSync.apply(sceneData);
@@ -1642,7 +1534,7 @@ function initializeEngine(
       return;
     }
     loadGeneration += 1;
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
@@ -1650,12 +1542,11 @@ function initializeEngine(
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
-    lastBakedSceneGuid = loadOptions?.sceneAssetGuid;
+    lastSceneAssetGuid = loadOptions?.sceneAssetGuid;
     if (editorSync) {
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     if (options.playMode) {
@@ -1675,13 +1566,11 @@ function initializeEngine(
       });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
-    bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
   };
 
   let editor: EditorTools | null = null;
@@ -1888,9 +1777,6 @@ function initializeEngine(
         if (typeof settings.showGrid === "boolean") {
           grid.setVisible(settings.showGrid);
         }
-        if (!worldRenderer && scene._activeMeshesFrozen) {
-          freezeEditorActiveMeshes(scene);
-        }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
@@ -2049,6 +1935,10 @@ function initializeEngine(
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
   let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
+  // renderLoop reuses admission's sample until end-frame unless a push or
+  // command invalidated the applied identity in between.
+  let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
+  let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
@@ -2100,7 +1990,7 @@ function initializeEngine(
   };
   const presentationReady = (pending: PendingPresentation) => {
     try {
-      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
       cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
@@ -2201,7 +2091,7 @@ function initializeEngine(
       },
       prepare: async (assertCurrent) => {
         assertCurrent();
-        await worldRenderer?.prepare(assertCurrent);
+        await worldRenderer.prepare(assertCurrent);
         for (const layer of sceneLayerCompositor?.layers() ?? []) {
           if (layerLoads.get(layer.layerId)?.ready !== false) await sceneLayerCompositor?.prepare(layer.layerId, assertCurrent);
         }
@@ -2224,9 +2114,9 @@ function initializeEngine(
       },
       invalidate: () => scheduler.invalidate("asset"),
       retainResources: () => {
-        const world = worldRenderer?.retainResources();
+        const world = worldRenderer.retainResources();
         const layers = sceneLayerCompositor?.retainResources();
-        return () => { try { world?.(); } finally { layers?.(); } };
+        return () => { try { world(); } finally { layers?.(); } };
       },
     });
     onRollback(() => runtimeScalability?.dispose());
@@ -2243,10 +2133,10 @@ function initializeEngine(
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
-    const sampled = prepareSnapshot();
+    const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart)) {
+    if (!shouldRenderFrame(frameStart, loadingFrame)) {
       return;
     }
     frameWasLoading = loadingFrame;
@@ -2309,13 +2199,9 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        if (worldRenderer) {
-          const result = worldRenderer.render();
-          coherentFrame = result.rendered;
-          return result.readyForPresentation;
-        }
-        scene.render();
-        return true;
+        const result = worldRenderer.render(pendingPresentations.has("world"));
+        coherentFrame = result.rendered;
+        return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
         // drawing. Only explicit world loading may present ready layers over a
@@ -2363,6 +2249,7 @@ function initializeEngine(
     if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    snapshotAdmitted = false;
     if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
       if (runtimeScalability && !worldLoading) {
@@ -2556,10 +2443,10 @@ function initializeEngine(
       track(bounded, () => retireAttachedStack());
       track(bounded, () => outlineHost.dispose());
       track(bounded, () => nativeRetirement.whenDisposed());
-      track(bounded, () => worldRenderer?.retire());
+      track(bounded, () => worldRenderer.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
       track(actual, () => nativeRetirement.whenReleased());
-      track(actual, () => worldRenderer?.whenReleased());
+      track(actual, () => worldRenderer.whenReleased());
       track(actual, () => outlineHost.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
       // Cancel graph preparation before restoring the editor's global request.
@@ -2576,8 +2463,6 @@ function initializeEngine(
       // Host-side timers and DOM stop now; the preview RTT and meshes wait
       // for native release with the Scene.
       debugOverlay?.stop();
-      // In-flight bake preparation stops now; receivers restore with the Scene.
-      bakedSession.cancel();
       playCursor?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -2603,11 +2488,6 @@ function initializeEngine(
         playDebugDraw?.dispose();
         debugOverlay?.dispose();
         debugOverlay = null;
-        // Rollback order: bake receivers restore before the library disposes.
-        // A failed receiver restore is reported; the remaining owners still release.
-        try { bakedSession.dispose(); } catch (error) {
-          console.warn(`[render] Baked lighting receiver restore failed during view disposal: ${String(error)}`);
-        }
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
@@ -2615,7 +2495,7 @@ function initializeEngine(
         rttPresent?.dispose();
         cacheBinding.dispose();
       };
-      if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
+      if (!ownsEngine) {
         // Pending native work may still borrow Scene, library and cache
         // resources. Stop the view immediately, but release these owners only
         // after actual release confirms; a rejected release quarantines them.
@@ -2698,11 +2578,6 @@ function initializeEngine(
           if (pendingWorld) {
             applyAssignMesh(scene, binding, pendingWorld);
             pendingOverlayAssign.delete(command.slotId);
-            // Same late-resolution as the direct assignMesh path below: a
-            // deferred `light:*` visual may be the baked source a receiver
-            // could not resolve at bind time.
-            if (pendingWorld.meshKind?.startsWith("light:"))
-              bakedSession.refresh();
           }
         }
       }
@@ -2723,7 +2598,7 @@ function initializeEngine(
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
         worldLoading = true;
-        worldRenderer?.invalidate();
+        worldRenderer.invalidate();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       if (command.type === "sceneLayerLoading") {
@@ -2784,7 +2659,7 @@ function initializeEngine(
         } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }
         if (changed) {
           appliedSnapshotIdentity = null;
-          worldRenderer?.invalidate();
+          worldRenderer.invalidate();
           scheduler.invalidate("asset");
         }
       }
@@ -2818,8 +2693,6 @@ function initializeEngine(
         } else {
           applyAssignMesh(scene, binding, command);
         }
-        // A spawned light can resolve a baked receiver's pending exclusion.
-        if (command.meshKind?.startsWith("light:")) bakedSession.refresh();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
           command.slotId,
@@ -3015,11 +2888,6 @@ function initializeEngine(
       }
       return [...names].sort();
     },
-    bakedSessionDiagnostics: () => bakedSession.diagnostics(),
-    applyBakedSession: (sceneData, sceneAssetGuid) => {
-      if (sceneAssetGuid !== undefined) lastBakedSceneGuid = sceneAssetGuid;
-      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
-    },
     playMeshMaterialDefines: () => {
       const rows: Array<{
         mesh: string;
@@ -3062,23 +2930,16 @@ function initializeEngine(
         applyClearColor: true,
         assets: binding,
       });
-      // Environment inputs are part of the bake's validity hash; revalidate.
-      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
-      const previousMode = sceneRenderingSettings(scene).mode;
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();
-      if (options.editor && !worldRenderer && previousMode !== sceneRenderingSettings(scene).mode)
-        freezeEditorActiveMeshes(scene);
       outlineHost.refreshSettings();
       scheduler.invalidate("asset");
     },
-    postProcessPassCount: () =>
-      worldRenderer?.postProcessPassCount() ??
-      (attachedStack?.passes.length ?? 0) + sceneEffectsOwner.passes.length,
-    renderTaskNames: () => worldRenderer?.taskNames() ?? [],
+    postProcessPassCount: () => worldRenderer.postProcessPassCount(),
+    renderTaskNames: () => worldRenderer.taskNames(),
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,
@@ -3138,10 +2999,9 @@ function initializeEngine(
       await warmSceneMaterials(scope.target, scope.assert);
       scope.assert();
       freezeLibraryMaterials();
-      if (options.editor && !owner && !worldRenderer) freezeEditorActiveMeshes(scene);
       outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-      else await worldRenderer?.prepare(scope.assert);
+      else await worldRenderer.prepare(scope.assert);
       scope.assert();
     },
     whenMaterialTexturesReady: async (owner) => {

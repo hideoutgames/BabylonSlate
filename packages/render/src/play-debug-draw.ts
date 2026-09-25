@@ -4,7 +4,6 @@ import {
   Quaternion,
   Vector3,
   type AbstractMesh,
-  type LinesMesh,
   type Material,
   type Observer,
   type Scene,
@@ -25,6 +24,9 @@ type DrawEntry = {
   remainingMs: number | null;
   presented: boolean;
 };
+
+/** Thin polylines of one draw command, grouped by kind and color. */
+type LineBatch = Map<string, { kind: string; color: Color3; lines: Vector3[][] }>;
 
 function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -109,40 +111,45 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
   const nextName = (kind: string): string =>
     `${PLAY_DEBUG_DRAW_PREFIX}${kind}:${seq++}`;
 
-  const addLines = (
-    kind: string,
-    points: Vector3[],
-    color: Color3,
-  ): LinesMesh | null => {
-    if (points.length < 2) return null;
-    const mesh = MeshBuilder.CreateLines(
-      nextName(kind),
-      { points, updatable: false },
-      scene,
-    );
-    mesh.color = color;
-    markOverlay(mesh);
-    return mesh;
-  };
-
   const addPolyline = (
     kind: string,
     points: Vector3[],
     color: Color3,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
-    const mesh = addLines(kind, points, color);
-    if (mesh) meshes.push(mesh);
+    if (points.length < 2) return;
+    const key = `${kind}|${color.r},${color.g},${color.b}`;
+    let group = lines.get(key);
+    if (!group) {
+      group = { kind, color, lines: [] };
+      lines.set(key, group);
+    }
+    group.lines.push(points);
+  };
+
+  // One line system (one mesh, material and draw) per color instead of per
+  // segment: duration-0 draws are rebuilt every sim tick.
+  const flushLines = (lines: LineBatch, meshes: AbstractMesh[]): void => {
+    for (const group of lines.values()) {
+      const mesh = MeshBuilder.CreateLineSystem(
+        nextName(group.kind),
+        { lines: group.lines, updatable: false },
+        scene,
+      );
+      mesh.color = group.color;
+      markOverlay(mesh);
+      meshes.push(mesh);
+    }
   };
 
   const addClosed = (
     kind: string,
     points: Vector3[],
     color: Color3,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     if (points.length < 2) return;
-    addPolyline(kind, [...points, points[0]!.clone()], color, meshes);
+    addPolyline(kind, [...points, points[0]!.clone()], color, lines);
   };
 
   const addCircle = (
@@ -152,7 +159,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     rotation: Quaternion,
     segments: number,
     color: Color3,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): Vector3[] => {
     const count = Math.max(3, Math.round(segments));
     const points: Vector3[] = [];
@@ -166,7 +173,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         ),
       );
     }
-    addClosed(kind, points, color, meshes);
+    addClosed(kind, points, color, lines);
     return points;
   };
 
@@ -175,7 +182,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     extent: Vector3,
     rotation: Quaternion,
     color: Color3,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     const corners: Vector3[] = [];
     for (const sx of [-1, 1]) {
@@ -206,7 +213,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       [3, 7],
     ];
     for (const [a, b] of edges) {
-      addPolyline("box", [corners[a]!, corners[b]!], color, meshes);
+      addPolyline("box", [corners[a]!, corners[b]!], color, lines);
     }
   };
 
@@ -215,7 +222,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     radius: number,
     segments: number,
     color: Color3,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     const rings = Math.max(4, Math.round(segments));
     for (let i = 1; i < rings; i++) {
@@ -233,7 +240,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           ),
         );
       }
-      addPolyline("sphere", points, color, meshes);
+      addPolyline("sphere", points, color, lines);
     }
     for (let i = 0; i < rings; i++) {
       const lon = (i / rings) * Math.PI * 2;
@@ -250,7 +257,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           ),
         );
       }
-      addPolyline("sphere", points, color, meshes);
+      addPolyline("sphere", points, color, lines);
     }
   };
 
@@ -258,6 +265,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     command: DebugDrawCommand,
     meshes: AbstractMesh[],
     materials: Material[],
+    lines: LineBatch,
   ): void => {
     const start = asVec3(command.start, { x: 0, y: 0, z: 0 });
     const end = asVec3(command.end, { x: 1, y: 0, z: 0 });
@@ -278,13 +286,13 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         meshes.push(mesh);
         return;
       } catch {
-        // NullEngine / missing plugins fall back to CreateLines.
+        // NullEngine / missing plugins fall back to a thin line.
       }
     }
-    addPolyline("line", [start, end], color, meshes);
+    addPolyline("line", [start, end], color, lines);
   };
 
-  const addPoint = (command: DebugDrawCommand, meshes: AbstractMesh[]): void => {
+  const addPoint = (command: DebugDrawCommand, lines: LineBatch): void => {
     const position = asVec3(command.position, { x: 0, y: 0, z: 0 });
     const size = Math.max(0.01, asNumber(command.size, 0.1));
     const color = asColor(command.color);
@@ -296,7 +304,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         position.add(new Vector3(half, 0, 0)),
       ],
       color,
-      meshes,
+      lines,
     );
     addPolyline(
       "point",
@@ -305,7 +313,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         position.add(new Vector3(0, half, 0)),
       ],
       color,
-      meshes,
+      lines,
     );
     addPolyline(
       "point",
@@ -314,11 +322,11 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         position.add(new Vector3(0, 0, half)),
       ],
       color,
-      meshes,
+      lines,
     );
   };
 
-  const addCone = (command: DebugDrawCommand, meshes: AbstractMesh[]): void => {
+  const addCone = (command: DebugDrawCommand, lines: LineBatch): void => {
     const origin = asVec3(command.origin, { x: 0, y: 0, z: 0 });
     const direction = asVec3(command.direction, { x: 0, y: 1, z: 0 });
     const length = Math.max(0.01, asNumber(command.length, 1));
@@ -339,15 +347,15 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         base.add(right.scale(Math.cos(t) * radius)).add(up.scale(Math.sin(t) * radius)),
       );
     }
-    addClosed("cone", rim, color, meshes);
+    addClosed("cone", rim, color, lines);
     for (const point of rim) {
-      addPolyline("cone", [origin.clone(), point], color, meshes);
+      addPolyline("cone", [origin.clone(), point], color, lines);
     }
   };
 
   const addCylinder = (
     command: DebugDrawCommand,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     const start = asVec3(command.start, { x: 0, y: 0, z: 0 });
     const end = asVec3(command.end, { x: 0, y: 1, z: 0 });
@@ -364,33 +372,33 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       bottom.push(start.add(offset));
       top.push(end.add(offset));
     }
-    addClosed("cylinder", bottom, color, meshes);
-    addClosed("cylinder", top, color, meshes);
+    addClosed("cylinder", bottom, color, lines);
+    addClosed("cylinder", top, color, lines);
     for (let i = 0; i < segments; i += 3) {
-      addPolyline("cylinder", [bottom[i]!, top[i]!], color, meshes);
+      addPolyline("cylinder", [bottom[i]!, top[i]!], color, lines);
     }
   };
 
-  const addArrow = (command: DebugDrawCommand, meshes: AbstractMesh[]): void => {
+  const addArrow = (command: DebugDrawCommand, lines: LineBatch): void => {
     const start = asVec3(command.start, { x: 0, y: 0, z: 0 });
     const end = asVec3(command.end, { x: 0, y: 1, z: 0 });
     const size = Math.max(0.01, asNumber(command.size, 0.2));
     const color = asColor(command.color);
-    addPolyline("arrow", [start, end], color, meshes);
+    addPolyline("arrow", [start, end], color, lines);
     const axis = end.subtract(start);
     if (axis.lengthSquared() < 1e-8) return;
     const dir = axis.normalize();
     const { right, up } = orthonormalBasis(dir);
     const neck = end.subtract(dir.scale(size));
-    addPolyline("arrow", [end, neck.add(right.scale(size * 0.4))], color, meshes);
-    addPolyline("arrow", [end, neck.subtract(right.scale(size * 0.4))], color, meshes);
-    addPolyline("arrow", [end, neck.add(up.scale(size * 0.4))], color, meshes);
-    addPolyline("arrow", [end, neck.subtract(up.scale(size * 0.4))], color, meshes);
+    addPolyline("arrow", [end, neck.add(right.scale(size * 0.4))], color, lines);
+    addPolyline("arrow", [end, neck.subtract(right.scale(size * 0.4))], color, lines);
+    addPolyline("arrow", [end, neck.add(up.scale(size * 0.4))], color, lines);
+    addPolyline("arrow", [end, neck.subtract(up.scale(size * 0.4))], color, lines);
   };
 
   const addFrustum = (
     command: DebugDrawCommand,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     const origin = asVec3(command.origin, { x: 0, y: 0, z: 0 });
     const rotation = asRotator(command.rotation);
@@ -429,13 +437,13 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     ];
     const color = asColor(command.color);
     for (const [a, b] of edges) {
-      addPolyline("frustum", [local[a]!, local[b]!], color, meshes);
+      addPolyline("frustum", [local[a]!, local[b]!], color, lines);
     }
   };
 
   const addCoordinateSystem = (
     command: DebugDrawCommand,
-    meshes: AbstractMesh[],
+    lines: LineBatch,
   ): void => {
     const origin = asVec3(command.origin, { x: 0, y: 0, z: 0 });
     const rotation = asRotator(command.rotation);
@@ -450,7 +458,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         "coordinateSystem",
         [origin.clone(), posePoint(axis.local, origin.clone(), rotation)],
         axis.color,
-        meshes,
+        lines,
       );
     }
   };
@@ -460,12 +468,13 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
   ): { meshes: AbstractMesh[]; materials: Material[] } => {
     const meshes: AbstractMesh[] = [];
     const materials: Material[] = [];
+    const lines: LineBatch = new Map();
     switch (command.kind) {
       case "line":
-        addLine(command, meshes, materials);
+        addLine(command, meshes, materials, lines);
         break;
       case "point":
-        addPoint(command, meshes);
+        addPoint(command, lines);
         break;
       case "box":
         addBox(
@@ -473,7 +482,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           asVec3(command.extent, { x: 0.5, y: 0.5, z: 0.5 }),
           asRotator(command.rotation),
           asColor(command.color),
-          meshes,
+          lines,
         );
         break;
       case "sphere":
@@ -482,7 +491,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           Math.max(0.01, asNumber(command.radius, 0.5)),
           asNumber(command.segments, 12),
           asColor(command.color),
-          meshes,
+          lines,
         );
         break;
       case "circle":
@@ -493,7 +502,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           asRotator(command.rotation),
           24,
           asColor(command.color),
-          meshes,
+          lines,
         );
         break;
       case "rectangle": {
@@ -507,7 +516,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           posePoint(new Vector3(halfW, halfH, 0), center, rotation),
           posePoint(new Vector3(-halfW, halfH, 0), center, rotation),
         ];
-        addClosed("rectangle", corners, asColor(command.color), meshes);
+        addClosed("rectangle", corners, asColor(command.color), lines);
         break;
       }
       case "square": {
@@ -520,27 +529,28 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           posePoint(new Vector3(half, half, 0), center, rotation),
           posePoint(new Vector3(-half, half, 0), center, rotation),
         ];
-        addClosed("square", corners, asColor(command.color), meshes);
+        addClosed("square", corners, asColor(command.color), lines);
         break;
       }
       case "cone":
-        addCone(command, meshes);
+        addCone(command, lines);
         break;
       case "cylinder":
-        addCylinder(command, meshes);
+        addCylinder(command, lines);
         break;
       case "arrow":
-        addArrow(command, meshes);
+        addArrow(command, lines);
         break;
       case "frustum":
-        addFrustum(command, meshes);
+        addFrustum(command, lines);
         break;
       case "coordinateSystem":
-        addCoordinateSystem(command, meshes);
+        addCoordinateSystem(command, lines);
         break;
       default:
         break;
     }
+    flushLines(lines, meshes);
     return { meshes, materials };
   };
 

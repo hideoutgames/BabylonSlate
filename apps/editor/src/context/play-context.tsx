@@ -105,7 +105,6 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
-  bakeRuntimeAssetReader,
   hydrateSpriteAnimationPixelSizes,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -1550,11 +1549,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
-            bakeAssetReader={
-              assetRegistry
-                ? bakeRuntimeAssetReader(assetRegistry)
-                : undefined
-            }
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

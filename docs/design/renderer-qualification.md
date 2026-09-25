@@ -1242,7 +1242,7 @@ Targeted local verification (no full suite or coverage sweep):
 | Scope | Recorded result |
 | --- | --- |
 | `packages/core/src/project.test.ts`, `packages/exporter/src/export-game.test.ts` | 64 passed at `48314f7f`; includes malformed frame caps, minimum dimensions, normalized export/boot defaults and editor-field exclusion |
-| Editor `export-game.test.ts`, `export-baked-lighting.test.ts`; player `artifact.test.ts`, `hydrate.test.ts`, `boot.test.ts`, `player-backend.test.ts` | 55 passed at `82e9aff3`; reused for the unchanged option rename and caller contracts; later normalization is covered by the row above and standalone cases |
+| Editor `export-game.test.ts`,  player `artifact.test.ts`, `hydrate.test.ts`, `boot.test.ts`, `player-backend.test.ts` | 55 passed at `82e9aff3`; reused for the unchanged option rename and caller contracts; later normalization is covered by the row above and standalone cases |
 | `packages/core/src/render-quality.test.ts`, `packages/runtime/src/execute-console.test.ts` | 46 passed at `d0e684a7`; unchanged since, including 80 repeated quality requests producing four renderer updates |
 | Typechecks | Core/exporter/editor at `48314f7f`; player at `02e08c9f`; runtime at `335a1d8c`; no workspace-wide typecheck |
 | Lint and diff | Changed-file lint plus scoped reruns for repaired files passed; `git diff --check` passed |
@@ -1313,7 +1313,7 @@ pnpm --silent agent:wait local --script test:e2e -- e2e/p7-physics.spec.ts --pro
 - At `ec3f2f3b`, the scoped render and runtime typechecks passed, and the selected cache/upload/environment files passed **59/59**. Subsequent scoped lint repairs passed for the particle factory/cache test and cache/skybox files. `skybox.test.ts` passed **7/7** at `3809c797`; the corrected editor material-byte fixture passed **12/12** at `5cf24e55`.
 - The two desktop KTX2/environment and Play material-assignment cases passed at `3809c797`. At `2a4c9d88`, both WebGL2 CPU/GPU particle cases and both Spawn Actor Play/Preview Build cases passed; the two WebGPU particle cases failed. At `1937a582`, CPU WebGPU particles and WebGPU model/rich-text generation cycles passed, while GPU WebGPU particles and the encoded tilemap case still failed. Failed mixed batches are not passes.
 - Native WGSL particle effect replacement was missing its shader-language argument. The isolated Babylon patch now preserves that argument (`0819c853`), with lockfile identity `913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa` at `876614a4`. The admitted installation succeeded; Babylon remains 9.20.0 and Havok 1.3.14. The Havok and earlier WebGPU attribute patch hunks remain unchanged.
-- Main through `20720743` is integrated at `99860d6d`, retaining late baked-light exclusions without restoring historical texture pinning. The changed native particle shader still requires browser verification. Existing physics evidence remains applicable because these native patch changes only affect NodeMaterial particle shaders.
+- Main through `20720743` is integrated at `99860d6d`, without restoring historical texture pinning. The changed native particle shader still requires browser verification. Existing physics evidence remains applicable because these native patch changes only affect NodeMaterial particle shaders.
 
 The GPU WebGPU retry at `876614a4` timed out after ten minutes **in admission**, before executing. A later four-case browser selection was cancelled while still queued; only its owned process tree was stopped and verified absent. The two-file inspector/physics selection at `a58b8216` timed out after two minutes in admission. Another owner's acceptance server held the shared root slot throughout; no other owner's processes, reservations or host configuration were changed. The initial attempt to pass a file filter to `test:editor-unit` was rejected by the runner; the corrected selection uses `test`.
 
@@ -1432,7 +1432,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Backend | Coverage |
 | --- | --- |
 | WebGL2 | Default for the whole suite; explicit packed/proof runs in `color-pipeline.spec.ts`, `framegraph-forward.spec.ts`, `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `player-backend.spec.ts`, `webgpu-backend.spec.ts` (transitions include WebGL2 legs) |
-| WebGPU | `color-pipeline.spec.ts`, `framegraph-forward.spec.ts`, `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `framegraph-shadows.spec.ts`, `scene-post-process-coordinator.spec.ts`, `player-backend.spec.ts`, `webgpu-backend.spec.ts`, `webgpu-previews.spec.ts`, `environment-lighting-webgpu.spec.ts`, `baked-parity.spec.ts` — all through software WebGPU on CI |
+| WebGPU | `color-pipeline.spec.ts`, `framegraph-forward.spec.ts`, `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `framegraph-shadows.spec.ts`, `scene-post-process-coordinator.spec.ts`, `player-backend.spec.ts`, `webgpu-backend.spec.ts`, `webgpu-previews.spec.ts`, `environment-lighting-webgpu.spec.ts` — all through software WebGPU on CI |
 
 ### Render path
 
@@ -1447,7 +1447,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Style | Coverage |
 | --- | --- |
 | PBR | Default everywhere |
-| CEL | `cel-render-mode.spec.ts`, `cel-hard-steps.spec.ts` (both backends), `cel-shadow-lifecycle.spec.ts`, `clustered-lights.spec.ts`, `clustered-lights-webgpu.spec.ts` (clustered CEL tie sequence under WGSL), `framegraph-forward.spec.ts` (pbr and cel captures), `baked-parity.spec.ts`, `webgpu-backend.spec.ts` (WebGPU CEL proof) |
+| CEL | `cel-render-mode.spec.ts`, `cel-hard-steps.spec.ts` (both backends), `cel-shadow-lifecycle.spec.ts`, `clustered-lights.spec.ts`, `clustered-lights-webgpu.spec.ts` (clustered CEL tie sequence under WGSL), `framegraph-forward.spec.ts` (pbr and cel captures), `webgpu-backend.spec.ts` (WebGPU CEL proof) |
 
 ### Features
 
@@ -1456,7 +1456,6 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Shadows | `shadow-refresh.spec.ts`, `cel-shadow-lifecycle.spec.ts`, `framegraph-shadows.spec.ts`, `webgpu-backend.spec.ts` (WebGPU shadow proof), `rendering-baseline.spec.ts` (shadow passes/bytes) |
 | Project post-processing effects | `color-pipeline.spec.ts` (bloom/effects chain in packed WebGL2 + WebGPU player and editor viewport) |
 | Authored post-process stack | `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `scene-post-process-coordinator.spec.ts`, `scene-post-process-host.spec.ts`, `post-process-owner-overrides.spec.ts` |
-| Baked lighting | `baked-parity.spec.ts` (synthetic-atlas PBR/CEL parity, dielectric + metallic environment specular/diffuse cells on both backends), `baked-player.spec.ts` (Preview Build), `baked-play.spec.ts` (Editor Play + served export, zero realtime light defines on applied receivers), `baked-runtime.spec.ts`; authoring side `scene-bake.spec.ts`, `scene-bake-job.spec.ts`, `bake-provider.spec.ts`, `bake-uv.spec.ts` — the quality-tier bake variants are local-only (`BL_BAKE_QUALITY_E2E=1`) |
 | SceneLayers | `scene-layer-rendering.spec.ts` (viewport + Play); `runtime-owner-continuity.spec.ts` (moving global layer retained across loading, Play + Preview Build) |
 | Particles | `p17-particles.spec.ts` (authored emitter/system, Play billboards, teardown, save/reopen) |
 
@@ -1466,7 +1465,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Editor viewport | `viewport-shading.spec.ts`, `cel-render-mode.spec.ts`, `rendering-baseline.spec.ts`, `color-pipeline.spec.ts` (bloom), `webgpu-backend.spec.ts`, `viewport-guides.spec.ts` |
 | Play | `p4-play.spec.ts`, `qa-animation-overlap.spec.ts`, `tilemap-rendering.spec.ts`, `qa-play-controls.spec.ts`, `play-debug-console.spec.ts`, `runtime-owner-continuity.spec.ts`, `scene-layer-rendering.spec.ts`, `clustered-path-selection.spec.ts` |
-| Preview Build | `p14-preview-build.spec.ts`, `baked-player.spec.ts`, `tilemap-rendering.spec.ts`, `runtime-owner-continuity.spec.ts`, `clustered-path-selection.spec.ts` (packed player) |
+| Preview Build | `p14-preview-build.spec.ts`, `tilemap-rendering.spec.ts`, `runtime-owner-continuity.spec.ts`, `clustered-path-selection.spec.ts` (packed player) |
 | Exported player | `p14-export.spec.ts` (unzip-serve-boot-tick), `player-backend.spec.ts` (packed `apps/player` over HTTP, both backends) |
 
 ### Recovery
