@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "0.0.1",
+      "title": "Updates And Release News",
+      "changes": [
+        "Windows release builds download updates from GitHub Releases automatically and install them when you exit BabylonSlate. Automatic Updates can be disabled in Engine Settings.",
+        "Release news appears the first time you launch a version on web, desktop, or iOS.",
+        "Open Changelog from the Project Browser account menu to read the bundled release history, even offline."
+      ]
+    }
+  ]
+}

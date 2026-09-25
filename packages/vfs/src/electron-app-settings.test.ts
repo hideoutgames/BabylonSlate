@@ -24,17 +24,24 @@ describe("Electron userData app settings", () => {
 
     const next = defaultEngineSettings();
     next.templatesFolder = "Templates";
+    next.automaticUpdatesEnabled = false;
+    next.seenReleaseVersions = ["1.2.3"];
     await store.save(next);
 
     expect(bridge.writeSettings).toHaveBeenCalledOnce();
     expect((await new ElectronAppSettingsStore(bridge).load()).templatesFolder).toBe(
       "Templates",
     );
+    const restored = await new ElectronAppSettingsStore(bridge).load();
+    expect(restored.automaticUpdatesEnabled).toBe(false);
+    expect(restored.seenReleaseVersions).toEqual(["1.2.3"]);
   });
 
   it("falls back to defaults when the bridge has no settings yet", async () => {
     const store = new ElectronAppSettingsStore(fakeBridge());
     expect((await store.load()).undoHistoryLength).toBe(50);
+    expect((await store.load()).automaticUpdatesEnabled).toBe(true);
+    expect((await store.load()).seenReleaseVersions).toEqual([]);
   });
 
   it("keeps settings in memory when the bridge fails", async () => {

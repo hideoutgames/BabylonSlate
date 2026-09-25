@@ -40,9 +40,7 @@ export * from "./environment-lighting";
 export * from "./render-effects";
 
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
-export * from "./baked-lighting";
-export * from "./baked-geometry";
-export * from "./baking";
 export * from "./area-rect-light";
 export * from "./outline-component";
 export * from "./water";
+export * from "./spring-arm-component";

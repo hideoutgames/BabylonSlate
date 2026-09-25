@@ -7,14 +7,6 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   currentAreaEmissionChunk,
   decodeAreaEmission,
-  BAKED_LIGHTING_ASSET_TYPE,
-  bakedLightingImportResult,
-  encodeBakedLightingAsset,
-  readBakedLightingAssetChunks,
-  BAKED_GEOMETRY_ASSET_TYPE,
-  readBakedGeometryAssetChunks,
-  bakedGeometryImportResult,
-  encodeBakedGeometryAsset,
   collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
   encodePackedModelAsset,
@@ -95,24 +87,6 @@ async function bytesForAsset(
       return null;
     }
   }
-  if (asset.header.type === BAKED_LIGHTING_ASSET_TYPE) {
-    const decoded = await readBakedLightingAssetChunks(asset.header, async (entry) => {
-      const data = await readAssetChunk(asset.path, entry.id);
-      if (!data) throw new Error(`Missing baked lighting chunk ${entry.id}.`);
-      return data;
-    });
-    return encodeBakedLightingAsset(await bakedLightingImportResult({ guid: decoded.guid,
-      name: asset.header.name, manifest: decoded.manifest, atlases: decoded.atlases }));
-  }
-  if (asset.header.type === BAKED_GEOMETRY_ASSET_TYPE) {
-    const decoded = await readBakedGeometryAssetChunks(asset.header, async (entry) => {
-      const data = await readAssetChunk(asset.path, entry.id);
-      if (!data) throw new Error(`Missing baked geometry chunk ${entry.id}.`);
-      return data;
-    });
-    return encodeBakedGeometryAsset(await bakedGeometryImportResult({ guid: decoded.guid,
-      name: asset.header.name, manifest: decoded.manifest, topology: decoded.topology }));
-  }
   if (asset.header.type === "Audio") {
     const payload = normalizeAudioPayload(document ?? asset.header.payload);
     const blobs = await collectPackedAudioClipBlobs({
@@ -172,7 +146,6 @@ export async function loadExportDocuments(
   const graphs = new Map<string, SerializedGraph>();
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
-  const bakeErrors = new Map<string, unknown>();
   const fontFacetypes = new Map<string, Uint8Array>();
   const areaEmissions = new Map<string, Uint8Array>();
   const areaEmissionErrors = new Map<string, unknown>();
@@ -216,20 +189,9 @@ export async function loadExportDocuments(
     ) {
       graphs.set(asset.header.guid, document as SerializedGraph);
     }
-    let payload: Uint8Array | null = null;
-    try {
-      payload = await bytesForAsset(
-        asset,
-        document,
-        loaders.readAssetChunk,
-        loaders.transcoderAvailable !== false,
-      );
-    } catch (error) {
-      if (asset.header.type !== BAKED_LIGHTING_ASSET_TYPE) throw error;
-      // Immutable orphan candidates must not block an unrelated export. Surface
-      // the failure when the reachability collector actually requests this bake.
-      bakeErrors.set(asset.header.guid, error);
-    }
+    const payload = await bytesForAsset(
+      asset, document, loaders.readAssetChunk, loaders.transcoderAvailable !== false,
+    );
     if (payload) bytes.set(asset.header.guid, payload);
     const emissionChunk = currentAreaEmissionChunk(asset.header);
     if (emissionChunk) {
@@ -281,7 +243,6 @@ export async function loadExportDocuments(
     graphByGuid: (guid) => graphs.get(guid) ?? null,
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => {
-      if (bakeErrors.has(guid)) throw bakeErrors.get(guid);
       return bytes.get(guid) ?? null;
     },
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,

@@ -238,7 +238,8 @@ export function compileMaterialPlan(
         : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
-  const pendingTextures: Texture[] = [];
+  // Samples of one asset share a Texture; one load must rebuild once.
+  const pendingTextures = new Set<Texture>();
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
@@ -984,7 +985,7 @@ function bindTexture(
   realization: BlockRealization,
   options: CompileMaterialOptions,
   diagnostics: MaterialDiagnostic[],
-  pendingTextures: Texture[],
+  pendingTextures: Set<Texture>,
 ): boolean {
   const operand = operation.inputs.texture;
   const producerId =
@@ -1007,7 +1008,7 @@ function bindTexture(
     texture?: Texture | null;
   };
   block.texture = texture;
-  if (!isGpuTextureSampleReady(texture)) pendingTextures.push(texture);
+  if (!isGpuTextureSampleReady(texture)) pendingTextures.add(texture);
   return true;
 }
 

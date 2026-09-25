@@ -86,6 +86,7 @@ import { brandIconSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { IconActionButton } from "./icon-action-button";
 import { HomepageAccount } from "./homepage-account";
+import { ReleaseNews } from "./release-news";
 import { HomepageApplicationSettings } from "./homepage-application-settings";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageEmptyArt } from "./homepage-empty-art";
@@ -237,6 +238,7 @@ export function Homepage({
   const [operation, setOperation] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [applicationSettingsOpen, setApplicationSettingsOpen] =
     useState(false);
@@ -375,6 +377,7 @@ export function Homepage({
             onOpenChange={setAccountOpen}
             onApplicationSettings={() => setApplicationSettingsOpen(true)}
             onEngineSettings={() => setSettingsOpen(true)}
+            onChangelog={() => setChangelogOpen(true)}
           />
         </div>
       </header>
@@ -673,6 +676,7 @@ export function Homepage({
                           settingsOpen ||
                           applicationSettingsOpen ||
                           accountOpen ||
+                          changelogOpen ||
                           view !== "projects"
                         }
                       />
@@ -857,6 +861,7 @@ export function Homepage({
         open={applicationSettingsOpen}
         onOpenChange={setApplicationSettingsOpen}
       />
+      <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !accountOpen && !settingsOpen && !applicationSettingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>
           <SettingsModal

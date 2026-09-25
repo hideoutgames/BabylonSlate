@@ -140,8 +140,6 @@ export interface PlayOverlayProps {
   particleLibrary?: PlayParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Reads baked-lighting assets from the project registry. */
-  bakeAssetReader?: import("@babylonslate/assets").BakeRuntimeAssetReader;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -224,7 +222,6 @@ export function PlayOverlay({
   particleLibrary,
   materialDocuments,
   materialFunctions,
-  bakeAssetReader,
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
@@ -357,8 +354,6 @@ export function PlayOverlay({
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
-  const bakeAssetReaderRef = useRef(bakeAssetReader);
-  bakeAssetReaderRef.current = bakeAssetReader;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -511,7 +506,6 @@ export function PlayOverlay({
       particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
-      bakeAssetReader: bakeAssetReaderRef.current,
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
       consoleRenderSettings: initialConsoleRenderRef.current,
@@ -704,7 +698,6 @@ export function PlayOverlay({
         renderTasks: () => string[];
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
-        bakedSession: () => ReturnType<PlaySession["handle"]["bakedSessionDiagnostics"]> | null;
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
       };
     };
@@ -718,7 +711,6 @@ export function PlayOverlay({
         return handle ? captureShadowDiagnostics(handle.scene, { host: "play", meshes: handle.scene.meshes }) : null;
       },
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
-      bakedSession: () => sessionRef.current?.handle.bakedSessionDiagnostics() ?? null,
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

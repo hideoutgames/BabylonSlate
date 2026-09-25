@@ -19,6 +19,7 @@ import {
   componentSubtreeIds,
   applyPrefabComponentTransform,
   applyPrefabPivotDelta,
+  authoredTransformFromPreview,
 } from "./prefab-preview";
 
 describe("prefabComponentsFromGraph", () => {
@@ -232,6 +233,30 @@ describe("previewSceneFor", () => {
     });
     expect(scene.actors[2]?.parentId).toBe("prefab-mesh");
     expect(scene.actors[2]?.transform).toEqual(child.transform);
+  });
+
+  it("places spring arm children at the socket and maps gizmo commits back to local space", () => {
+    const arm = {
+      id: "arm",
+      classId: "SpringArmComponent",
+      properties: { armLength: 5 },
+      parentId: null,
+    };
+    const camera = {
+      id: "cam",
+      classId: "CameraComponent",
+      properties: {},
+      parentId: "arm",
+      transform: {
+        position: [0, 1, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const components = [arm, camera];
+    const preview = previewSceneFor(components).actors.find((actor) => actor.id === "cam")!;
+    expect(preview.transform.position).toEqual([0, 1, -5]);
+    expect(authoredTransformFromPreview(components, "cam", preview.transform)).toEqual(camera.transform);
   });
 
   it("keeps the near-black studio clear and omits the default 3D skybox", () => {

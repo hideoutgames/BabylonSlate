@@ -369,6 +369,16 @@ export type CommandMessage =
         rotation: [number, number, number, number];
         scale: [number, number, number];
         hitTest?: "ignore" | "block" | "passThrough";
+        /** Present on `springarm` parts; children attach to the arm socket. */
+        springArm?: {
+          armLength: number;
+          enableLocationLag: boolean;
+          locationLagSpeed: number;
+          maxLocationLagDistance: number;
+          enableRotationLag: boolean;
+          rotationLagSpeed: number;
+          drawDebugLag: boolean;
+        };
         text3d?: {
           text: string;
           size: number;

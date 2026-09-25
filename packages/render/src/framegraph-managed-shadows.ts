@@ -21,6 +21,15 @@ type BorrowedMap = {
   texture: InternalTexture;
 };
 
+/** Run one restoration step, collecting its failure without masking others. */
+function attempt(errors: unknown[], action: () => void): void {
+  try {
+    action();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
@@ -177,6 +186,7 @@ export function unsupportedManagedShadows(scene: Scene): string | undefined {
  */
 export class ManagedShadowsTask extends FrameGraphTask {
   private borrowed: BorrowedMap[] = [];
+  private readonly currentGenerators: ShadowGenerator[] = [];
   private recorded = false;
   private changedDuringFrame = false;
   private readonly scene: Scene;
@@ -193,9 +203,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
   }
 
   /** Changed bindings require readiness, not new graph tasks or render-pass IDs. */
-  needsPreparation(): boolean {
+  needsPreparation(current = this.generators()): boolean {
     if (this.changedDuringFrame) return true;
-    const current = this.generators();
     return (
       current.length !== this.borrowed.length ||
       current.some((generator, index) => {
@@ -209,13 +218,17 @@ export class ManagedShadowsTask extends FrameGraphTask {
     );
   }
 
+  /** Reused by every call; consumers copy it (borrowed, bound shadows). */
   private generators(): ShadowGenerator[] {
     const controller = findSceneShadowController(this.scene);
-    const generators: ShadowGenerator[] = [];
+    const generators = this.currentGenerators;
+    let count = 0;
     for (const light of this.scene.lights) {
       const generator = controller?.generator(light);
-      if (generator) generators.push(generator);
+      if (generator) generators[count++] = generator;
     }
+    // Truncate after overwriting; clearing first would drop the backing store.
+    generators.length = count;
     return generators;
   }
 
@@ -223,7 +236,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
     const reason = unsupportedManagedShadows(this.scene);
     if (reason) throw new Error(reason);
     const current = this.generators();
-    if (this.needsPreparation()) {
+    if (this.needsPreparation(current)) {
       const previous = this.borrowed;
       this.borrowed = current.map((generator) => {
         const map = generator.getShadowMap()!;
@@ -296,24 +309,17 @@ export class ManagedShadowsTask extends FrameGraphTask {
           failed = true;
           failure = error;
         } finally {
-          const restore = (action: () => void) => {
-            try {
-              action();
-            } catch (error) {
-              errors.push(error);
-            }
-          };
-          restore(() => {
+          attempt(errors, () => {
             map._disableEngineStages = stages;
           });
-          restore(() => {
+          attempt(errors, () => {
             this.scene._intermediateRendering = intermediate;
           });
-          restore(() => engine.setDepthBuffer(depthTest));
-          restore(() => engine.setDepthWrite(depthWrite));
+          attempt(errors, () => engine.setDepthBuffer(depthTest));
+          attempt(errors, () => engine.setDepthWrite(depthWrite));
           // renderUnmanaged lacks finally in 9.20. Restore the caller's target
           // even when a caster callback throws; never mask the original failure.
-          restore(() => {
+          attempt(errors, () => {
             if (engine._currentRenderTarget !== target) {
               if (target) engine.bindFramebuffer(target);
               else engine.restoreDefaultFramebuffer(true);

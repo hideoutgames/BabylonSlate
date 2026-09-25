@@ -20,6 +20,7 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent",
   "SkyboxComponent",
   "CameraComponent",
+  "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",

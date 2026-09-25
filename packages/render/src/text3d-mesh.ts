@@ -27,6 +27,8 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { VisualBundle } from "./visual-bundle";
 
 const TEXT3D_RESOLUTION = 4;
+// Keyed by the cached chunk instance; CreateTextShapePaths only reads the font.
+const parsedTypeFaces = new WeakMap<Uint8Array, IFontData | null>();
 
 export function resolveText3DFontData(
   properties: Text3DProperties,
@@ -36,7 +38,11 @@ export function resolveText3DFontData(
   if (guid) {
     const bytes = assets?.fontFacetypeBytes?.get(guid);
     if (bytes) {
-      const parsed = parseTypeFaceJson(bytes);
+      let parsed = parsedTypeFaces.get(bytes);
+      if (parsed === undefined) {
+        parsed = parseTypeFaceJson(bytes);
+        parsedTypeFaces.set(bytes, parsed);
+      }
       if (parsed) return { font: parsed, bundled: false };
     }
   }

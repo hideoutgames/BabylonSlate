@@ -17,6 +17,9 @@ import {
   parseAreaRectLightProperties,
   parseOutlineProperties,
   OUTLINE_WIDTH_LIMITS,
+  parseSpringArmProperties,
+  SPRING_ARM_LAG_SPEED_LIMITS,
+  SPRING_ARM_LENGTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -271,15 +274,6 @@ function asRgb(value: unknown): [number, number, number] | null {
     return null;
   }
   return [r, g, b];
-}
-
-function lightMobilityRow(actorId: string, component: SerializedComponent,
-  update: (property: string, value: unknown) => void): PropertyRow {
-  return { kind: "enum", id: rowId(actorId, component.id, "mobility"), label: "Mobility",
-    value: String(component.properties.mobility ?? "dynamic"), defaultValue: "dynamic",
-    description: "Static bakes direct and indirect light. Stationary bakes indirect light. Realtime lighting remains active until runtime bake application is available.",
-    options: [{ value: "dynamic", label: "Dynamic" }, { value: "stationary", label: "Stationary" }, { value: "static", label: "Static" }],
-    onChange: (value) => update("mobility", value) };
 }
 
 function colliderShapeRows(
@@ -569,11 +563,6 @@ export function componentPropertyRows(
           "Pick Mesh",
         ),
         materialRow,
-        { kind: "enum", id: rowId(actorId, component.id, "bakeParticipation"), label: "Bake Participation",
-          value: String(component.properties.bakeParticipation ?? "none"), defaultValue: "none",
-          options: [{ value: "none", label: "None" }, { value: "staticReceiver", label: "Static Receiver" }, { value: "staticOccluder", label: "Static Occluder" }],
-          description: "Static Receivers also block and bounce baked light. Static Occluders receive no atlas.",
-          onChange: (value) => update("bakeParticipation", value) },
         ...meshCollisionRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key) => ({
           kind: "boolean" as const,
@@ -588,7 +577,6 @@ export function componentPropertyRows(
           update,
           new Set([
             "meshKind",
-            "bakeParticipation",
             "castShadows",
             "receiveShadows",
             "assetGuid",
@@ -1224,7 +1212,6 @@ export function componentPropertyRows(
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const lightKind = String(component.properties.lightKind ?? "point");
         const rows: PropertyRow[] = [
-          lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1318,7 +1305,6 @@ export function componentPropertyRows(
             "color",
             "intensity",
               "lightKind",
-              "mobility",
             "range",
             "outerAngle",
             "innerAngle",
@@ -1333,7 +1319,6 @@ export function componentPropertyRows(
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const groundColor = asRgb(component.properties.groundColor) ?? [0, 0, 0];
       return [
-        lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1369,7 +1354,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
+          new Set(["enabled", "color", "groundColor", "intensity"]),
         ),
       ];
     }
@@ -1384,6 +1369,29 @@ export function componentPropertyRows(
           description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
         { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
+      ];
+    }
+    case "SpringArmComponent": {
+      const properties = parseSpringArmProperties(component.properties);
+      const lagSpeedRow = (key: "locationLagSpeed" | "rotationLagSpeed", label: string, enabled: boolean): PropertyRow => ({
+        kind: "number", id: rowId(actorId, component.id, key), label, value: properties[key],
+        min: SPRING_ARM_LAG_SPEED_LIMITS[0], max: SPRING_ARM_LAG_SPEED_LIMITS[1], sensitivity: 0.1, disabled: !enabled,
+        description: "Higher values catch up faster. The lag is frame-rate independent.", onChange: (next) => update(key, next) });
+      return [
+        { kind: "number", id: rowId(actorId, component.id, "armLength"), label: "Arm Length", value: properties.armLength,
+          min: SPRING_ARM_LENGTH_LIMITS[0], max: SPRING_ARM_LENGTH_LIMITS[1], sensitivity: 0.05,
+          description: "Distance behind the arm's origin, along its local -Z axis, where child components attach.", onChange: (next) => update("armLength", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableLocationLag"), label: "Enable Location Lag", value: properties.enableLocationLag,
+          description: "During Play, the arm trails behind its target position and children move smoothly.", onChange: (next) => update("enableLocationLag", next) },
+        lagSpeedRow("locationLagSpeed", "Location Lag Speed", properties.enableLocationLag),
+        { kind: "number", id: rowId(actorId, component.id, "maxLocationLagDistance"), label: "Max Location Lag Distance", value: properties.maxLocationLagDistance,
+          min: 0, sensitivity: 0.05, disabled: !properties.enableLocationLag,
+          description: "Furthest the arm may trail its target. 0 means unlimited.", onChange: (next) => update("maxLocationLagDistance", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableRotationLag"), label: "Enable Rotation Lag", value: properties.enableRotationLag,
+          description: "During Play, the arm eases toward its target rotation and children swing smoothly.", onChange: (next) => update("enableRotationLag", next) },
+        lagSpeedRow("rotationLagSpeed", "Rotation Lag Speed", properties.enableRotationLag),
+        { kind: "boolean", id: rowId(actorId, component.id, "drawDebugLag"), label: "Draw Debug Lag", value: properties.drawDebugLag,
+          description: "During Play, draw the target arm (yellow), the lagged arm (green), the lag offset (red), and recent socket trails.", onChange: (next) => update("drawDebugLag", next) },
       ];
     }
     case "AreaRectLightComponent": {

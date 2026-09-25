@@ -3,7 +3,6 @@ import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 
-import { normalizeBakeAuthoringSettings, type BakeAuthoringSettings } from "./baking";
 
 /**
  * Scene document schema (v4): actors, components and scene settings.
@@ -116,10 +115,6 @@ export interface SceneSettings {
   fogEnd: number;
   /** Optional IBL cube texture asset guid. */
   environmentTextureGuid: string | null;
-  /** Last explicitly published bake; validity is checked against its manifest. */
-  bakedLightingAssetGuid?: string | null;
-  bakeSettings?: BakeAuthoringSettings;
-  /** Absent fields inherit the project's Environment Lighting settings. */
   environmentLighting?: EnvironmentLightingOverrides;
   /** Default Camera actor id; both ids required to resolve. */
   mainCameraActorId: string | null;
@@ -327,7 +322,7 @@ function normalizeComponent(
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
-      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
+      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
@@ -479,10 +474,6 @@ export function normalizeSceneSettings(
       typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
     fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
     environmentTextureGuid: asNullableString(source.environmentTextureGuid),
-    ...(source.bakedLightingAssetGuid !== undefined
-      ? { bakedLightingAssetGuid: asNullableString(source.bakedLightingAssetGuid) }
-      : {}),
-    ...(source.bakeSettings !== undefined ? { bakeSettings: normalizeBakeAuthoringSettings(source.bakeSettings) } : {}),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(
       source.mainCameraActorId,
@@ -756,3 +747,4 @@ export function wouldCreateComponentCycle(
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { parseOutlineProperties } from "./outline-component";
+import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";

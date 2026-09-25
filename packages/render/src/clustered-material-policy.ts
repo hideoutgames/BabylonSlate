@@ -108,19 +108,29 @@ function unqualifiedNativeFeature(material: Material): string | undefined {
   return undefined;
 }
 
+// Per-call scratch; the verdict depends only on the material, not the mesh.
+const checkedMaterials = new Set<Material>();
+
 /** Inspect actual scene consumers; unused preview/proxy/post-process materials do not select the path. */
 export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
   if (!scene.lightsEnabled)
     return "This scene does not use lighting; using Forward.";
-  for (const mesh of scene.meshes) {
-    // Empty transform/proxy nodes do not submit a material pass.
-    if (!mesh.getTotalVertices()) continue;
-    const material = mesh.material ?? scene.defaultMaterial;
-    const feature = unqualifiedNativeFeature(material);
-    if (feature)
-      return `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`;
-    if (!compatible(material))
-      return `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
+  try {
+    for (const mesh of scene.meshes) {
+      // Empty transform/proxy nodes do not submit a material pass.
+      if (!mesh.getTotalVertices()) continue;
+      const material = mesh.material ?? scene.defaultMaterial;
+      if (checkedMaterials.has(material)) continue;
+      checkedMaterials.add(material);
+      const feature = unqualifiedNativeFeature(material);
+      if (feature)
+        return `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`;
+      if (!compatible(material))
+        return `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
+    }
+  } finally {
+    // Never retain scene materials between calls.
+    checkedMaterials.clear();
   }
   return undefined;
 }

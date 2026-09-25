@@ -82,7 +82,12 @@ export function releaseDisposition(identity, tagSha, release) {
   return release ? "resume-draft" : "create-draft";
 }
 
+export function windowsArtifactNames(version) {
+  const installer = `BabylonSlate-${version}-x64.exe`;
+  return [installer, "SHA256SUMS.txt", "build-manifest.json", ...(version.endsWith("-release") ? ["latest.yml", `${installer}.blockmap`] : [])];
+}
+
 export function validateArtifacts(version, names) {
-  const expected = [`BabylonSlate-${version}-x64.exe`, "SHA256SUMS.txt", "build-manifest.json"];
+  const expected = windowsArtifactNames(version);
   requireValue(names.length === expected.length && new Set(names).size === names.length && expected.every(name => names.includes(name)), "Windows artifacts must exactly match the public allowlist");
 }

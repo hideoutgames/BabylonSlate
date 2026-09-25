@@ -28,8 +28,6 @@ test("pipeline preferences are project-wide, retained through reopen, and absent
   await choose(page, "project-render-path", "Clustered Forward");
   await choose(page, "project-gpu-backend", "WebGPU");
   await expect(page.getByTestId("setting-render-mode").locator('[data-slot="select-value"]')).toHaveText("PBR");
-  await expect(page.getByTestId("project-render-pipeline-status")).toContainText("Forward · WebGL2");
-  await expect(page.getByTestId("project-render-pipeline-status")).toContainText("Your preferences are retained.");
   await page.screenshot({ path: testInfo.outputPath("project-pipeline-preferences.png") });
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByTestId("settings-modal")).toHaveCount(0);
@@ -52,7 +50,6 @@ test("pipeline preferences are project-wide, retained through reopen, and absent
   await expect(page.getByTestId("setting-render-mode").locator('[data-slot="select-value"]')).toHaveText("PBR");
   await choose(page, "project-render-path", "Auto");
   await choose(page, "project-gpu-backend", "Auto");
-  await expect(page.getByTestId("project-render-pipeline-status")).toContainText("Forward · WebGL2");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByTestId("settings-modal")).toHaveCount(0);
   await waitForSceneViewportReady(page);

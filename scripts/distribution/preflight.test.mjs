@@ -8,7 +8,9 @@ function fixture(patch = {}) {
   const reads = [];
   const dependencies = {
     repository: "owner/repo",
-    git: async (args) => args[0] === "show" ? JSON.stringify({ version: "1.0.0", appleSequenceOffset: 0 }) : "",
+    git: async (args) => args[0] !== "show" ? "" : JSON.stringify(args[1].endsWith("changelog.json")
+      ? { schemaVersion: 1, releases: [{ version: "1.0.0", title: "Updates", changes: ["New editor features."] }] }
+      : { version: "1.0.0", appleSequenceOffset: 0 }),
     api: async (path) => {
       reads.push(path);
       if (path === "/branches/main") return { protected: true, protection: { required_status_checks: { contexts: [] } } };
@@ -43,6 +45,20 @@ test("release channel never substitutes an ancestor's successful checks", async 
   const original = fixture();
   const wrong = fixture({ api: async path => path.startsWith("/actions/workflows/") ? { workflow_runs: [{ id: 42, head_sha: "b".repeat(40), status: "completed", conclusion: "success" }] } : original.dependencies.api(path) });
   await assert.rejects(preflight({ ...request, channel: "release" }, wrong.dependencies), /Verify/);
+});
+
+test("release preflight requires patch notes from the exact selected source", async () => {
+  const original = fixture();
+  const reads = [];
+  const dependencies = { ...original.dependencies, git: async args => {
+    reads.push(args);
+    return original.dependencies.git(args);
+  } };
+  const result = await preflight({ ...request, channel: "release" }, dependencies);
+  assert.deepEqual(result.identity.patchNotes.changes, ["New editor features."]);
+  assert.ok(reads.some(args => args[1] === `${sha}:release/changelog.json`));
+  dependencies.git = async args => args[1]?.endsWith("changelog.json") ? JSON.stringify({ schemaVersion: 1, releases: [] }) : original.dependencies.git(args);
+  await assert.rejects(preflight({ ...request, channel: "release" }, dependencies), /Patch notes/);
 });
 
 test("published Windows release and conflicting annotated tags fail preflight", async () => {
