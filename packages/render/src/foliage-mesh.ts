@@ -5,11 +5,12 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseFoliageProperties, type FoliageBatch } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
+import { acquireGlbContainer, createModelMaterialCloner, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@babylonslate/assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { RENDERING_GROUP } from "./sorting";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
+import { VisualBundle } from "./visual-bundle";
 
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
@@ -39,7 +40,8 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   const data = parseFoliageProperties(properties);
   const root = new Mesh(name, scene);
   root.isPickable = false;
-  const held: Array<{ release(): void }> = [];
+  const bundle = new VisualBundle();
+  const { cloneMaterial } = createModelMaterialCloner(scene, bundle);
   const batches: Array<{ root: Mesh; batch: FoliageBatch }> = [];
   batchesByRoot.set(root, batches);
   let cancel!: (reason: Error) => void;
@@ -47,7 +49,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   void cancellation.catch(() => {});
   root.onDisposeObservable.addOnce(() => {
     cancel(new Error("Foliage preparation cancelled"));
-    held.forEach((lease) => lease.release());
+    bundle.dispose();
   });
   const ready = (async () => {
     for (const [batchIndex, batch] of data.batches.entries()) {
@@ -56,7 +58,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
       const source = assets?.modelSources?.get(batch.modelGuid) ?? (bytes ? installAssetBytes(bytes, "model/gltf-binary") : undefined);
       if (!source) continue;
       const lease = acquireGlbContainer(scene, batch.modelGuid, source);
-      held.push(lease);
+      bundle.releaseWith(() => lease.release());
       const container = await lease.load;
       if (root.isDisposed()) return;
       const batchRoot = new Mesh(`${name}:batch:${batchIndex}`, scene);
@@ -77,6 +79,8 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
         const modelMatrix = sourceMesh.computeWorldMatrix(true).multiply(Matrix.Scaling(scale, scale, scale));
         for (const [cell, transforms] of cells) {
           const mesh = geometry.clone(`${name}:foliage:${batchIndex}:${sourceMesh.uniqueId}:${cell}`, batchRoot, true);
+          bundle.ownRenderUser(mesh);
+          if (mesh.material) mesh.material = cloneMaterial(mesh.material);
           mesh.position.setAll(0); mesh.rotation.setAll(0); mesh.rotationQuaternion = Quaternion.Identity(); mesh.scaling.setAll(1);
           mesh.skeleton = null; mesh.morphTargetManager = null;
           mesh.setEnabled(true); mesh.isVisible = true; mesh.visibility = 1;
