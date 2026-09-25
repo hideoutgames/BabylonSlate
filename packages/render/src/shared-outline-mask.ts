@@ -11,7 +11,11 @@ import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
 import { CelMaterial } from "./cel-material";
 
-type MaskProgram = { source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant };
+type MaskProgram = {
+  source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant;
+  /** Render id and instancing mode of the last successful render-time validation. */
+  readyRenderId?: number; readyHardware?: boolean;
+};
 
 /** Native submesh submission with pass-owned programs; original materials never change. */
 export class SharedOutlineMaskRenderer {
@@ -28,11 +32,12 @@ export class SharedOutlineMaskRenderer {
   private readonly setInstanceWorld = (_instance: boolean, world: Matrix) => this.currentEffect!.setMatrix("world", world);
   constructor(renderer: ObjectRenderer, view: SharedOutlineView, group: SharedOutlineGroup) {
     this.renderer = renderer; this.view = view; this.group = group;
-    renderer.customIsReadyFunction = (mesh) => {
+    renderer.customIsReadyFunction = (mesh, _refreshRate, preWarm) => {
       if (this.disposed || mesh.isDisposed()) return false;
       // The renderer performs LOD selection after this callback. Check both the
-      // source here and the actual LOD again before submission.
-      return (mesh.subMeshes ?? []).every((subMesh) => this.ready(subMesh));
+      // source here and the actual LOD again before submission. Readiness
+      // probes (preWarm) always revalidate and never let a draw skip its check.
+      return (mesh.subMeshes ?? []).every((subMesh) => this.ready(subMesh, !preWarm));
     };
     renderer.customRenderFunction = (opaque, tested, transparent, depthOnly) => {
       const engine = view.scene.getEngine();
@@ -81,7 +86,8 @@ export class SharedOutlineMaskRenderer {
       mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined);
     return batch;
   }
-  private ready(subMesh: SubMesh): boolean {
+  /** `render` marks render-time validation, which the same pass's draw may reuse. */
+  private ready(subMesh: SubMesh, render: boolean): boolean {
     const source = this.source(subMesh);
     if (!source) return true;
     const mesh = subMesh.getRenderingMesh();
@@ -102,6 +108,8 @@ export class SharedOutlineMaskRenderer {
         throw new Error(`Shared outlines cannot reproduce the coverage of custom material "${source.name}".`);
       program = { source, variant }; this.programs.set(subMesh, program);
     }
+    // Any other validation, including a probe, invalidates the draw shortcut.
+    program.readyRenderId = undefined;
     if (program.variant) {
       const compiled = program.variant.compiled;
       if (compiled.buildState !== "ready") return false;
@@ -112,6 +120,7 @@ export class SharedOutlineMaskRenderer {
       // texture/deformation define edit. That replaced reference is ours too.
       if (before && wrapper?.effect !== before) this.retirements.push(retireOwnedEffect(before, () => before.dispose()));
       program.wrapper = wrapper;
+      if (ready && render) { program.readyRenderId = this.view.scene.getRenderId(); program.readyHardware = hardware; }
       return ready;
     }
     const coverage = source as Material & { opacityFresnelParameters?: { isEnabled: boolean }; useAlphaFresnel?: boolean; _useAlphaFresnel?: boolean };
@@ -119,34 +128,32 @@ export class SharedOutlineMaskRenderer {
       throw new Error(`Shared outlines require an authored coverage variant for Fresnel material "${source.name}".`);
     const texture = coverageTexture(source, mesh);
     const opacity = opacityTexture(source);
-    for (const sampled of [texture, opacity]) if (sampled && sampled.coordinatesIndex > 1)
-      throw new Error(`Shared outlines do not yet qualify alpha texture UV set ${sampled.coordinatesIndex + 1} on "${source.name}".`);
+    const unsupported = texture && texture.coordinatesIndex > 1 ? texture : opacity && opacity.coordinatesIndex > 1 ? opacity : null;
+    if (unsupported)
+      throw new Error(`Shared outlines do not yet qualify alpha texture UV set ${unsupported.coordinatesIndex + 1} on "${source.name}".`);
     const attributes = [VertexBuffer.PositionKind];
     const defines = ["#define STORE_CAMERASPACE_Z"];
-    const uv1 = [texture, opacity].some((sampled) => sampled && sampled.coordinatesIndex !== 1) && mesh.isVerticesDataPresent(VertexBuffer.UVKind);
-    const uv2 = [texture, opacity].some((sampled) => sampled?.coordinatesIndex === 1) && mesh.isVerticesDataPresent(VertexBuffer.UV2Kind);
+    const uv1 = (samplesUV1(texture) || samplesUV1(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UVKind);
+    const uv2 = (samplesUV2(texture) || samplesUV2(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UV2Kind);
     if (texture || opacity) {
       defines.push("#define ALPHATEST");
       if (uv1) { attributes.push(VertexBuffer.UVKind); defines.push("#define UV1"); }
       if (uv2) { attributes.push(VertexBuffer.UV2Kind); defines.push("#define UV2"); }
-      for (const [sampled, prefix] of [[texture, "SLATE_DIFFUSE"], [opacity, "SLATE_OPACITY"]] as const) if (sampled) {
-        defines.push(`#define ${prefix}`);
-        if (sampled.coordinatesIndex === 1 && uv2) defines.push(`#define ${prefix}_UV2`);
-        else if (sampled.coordinatesIndex !== 1 && uv1) defines.push(`#define ${prefix}_UV1`);
-      }
+      defineCoverageSampler(defines, texture, "SLATE_DIFFUSE", uv1, uv2);
+      defineCoverageSampler(defines, opacity, "SLATE_OPACITY", uv1, uv2);
     }
     const vertexAlpha = mesh.hasVertexAlpha && mesh.useVertexColors && mesh.isVerticesDataPresent(VertexBuffer.ColorKind);
     const instanceAlpha = hardware && mesh.hasThinInstances && mesh.isVerticesDataPresent(VertexBuffer.ColorInstanceKind);
     if (vertexAlpha) { attributes.push(VertexBuffer.ColorKind); defines.push("#define VERTEXCOLOR", "#define VERTEXALPHA"); }
     if (instanceAlpha) { attributes.push(VertexBuffer.ColorInstanceKind); defines.push("#define INSTANCESCOLOR"); }
     if (vertexAlpha || instanceAlpha) defines.push("#define SLATE_VERTEX_ALPHA");
-    const fallbacks = new EffectFallbacks();
+    let cpuSkinning = false;
     if (mesh.useBones && mesh.computeBonesUsingShaders) {
       attributes.push(VertexBuffer.MatricesIndicesKind, VertexBuffer.MatricesWeightsKind);
       if (mesh.numBoneInfluencers > 4) attributes.push(VertexBuffer.MatricesIndicesExtraKind, VertexBuffer.MatricesWeightsExtraKind);
       defines.push(`#define NUM_BONE_INFLUENCERS ${mesh.numBoneInfluencers}`);
       defines.push(mesh.skeleton?.isUsingTextureForMatrices ? "#define BONETEXTURE" : `#define BonesPerMesh ${(mesh.skeleton?.bones.length ?? 0) + 1}`);
-      if (mesh.numBoneInfluencers > 0) fallbacks.addCPUSkinningFallback(0, mesh);
+      cpuSkinning = mesh.numBoneInfluencers > 0;
     } else defines.push("#define NUM_BONE_INFLUENCERS 0");
     // Color morphs are needed only when their alpha changes visible coverage.
     const morphs = mesh.morphTargetManager ? PrepareDefinesAndAttributesForMorphTargets(mesh.morphTargetManager,
@@ -166,6 +173,8 @@ export class SharedOutlineMaskRenderer {
     if (wrapper.defines !== joined) {
       this.retireWrapper(subMesh, program);
       wrapper = subMesh._getDrawWrapper(this.renderer.renderPassId, true)!;
+      const fallbacks = new EffectFallbacks();
+      if (cpuSkinning) fallbacks.addCPUSkinningFallback(0, mesh);
       const uniforms = ["world", "viewProjection", "view", "selectionId", "tableSize", "discardNonmembers", "alphaCutoff", "coverageAlpha", "coverageMode", "coverageDiffuse", "diffuseMatrix", "opacityMatrix", "opacityOptions",
         "mBones", "boneTextureInfo", "morphTargetInfluences", "morphTargetCount", "morphTargetTextureInfo", "morphTargetTextureIndices",
         "bakedVertexAnimationSettings", "bakedVertexAnimationTextureSizeInverted", "bakedVertexAnimationTime"];
@@ -179,7 +188,9 @@ export class SharedOutlineMaskRenderer {
       }, this.view.scene.getEngine()), joined);
     }
     program.wrapper = wrapper;
-    return (!texture || texture.isReady()) && (!opacity || opacity.isReady()) && !!wrapper.effect?.isReady();
+    const ready = (!texture || texture.isReady()) && (!opacity || opacity.isReady()) && !!wrapper.effect?.isReady();
+    if (ready && render) { program.readyRenderId = this.view.scene.getRenderId(); program.readyHardware = hardware; }
+    return ready;
   }
   private draw(subMesh: SubMesh): void {
     const original = this.source(subMesh);
@@ -188,7 +199,12 @@ export class SharedOutlineMaskRenderer {
     effective._internalAbstractMeshDataInfo._isActiveIntermediate = false;
     // Keep this submission's mode; ready() refreshes the field after source admission.
     const batch = this.instances(subMesh), hardware = this.hardware;
-    if (batch.mustReturn || !this.ready(subMesh)) { this.renderer.resetRefreshCounter(); return; }
+    // Reuse this pass's render-time validation of the same submesh and mode.
+    // LOD and instance-source submeshes are validated here on first submission.
+    const prepared = this.programs.get(subMesh);
+    const current = prepared?.source === original && prepared.readyRenderId === this.view.scene.getRenderId() &&
+      prepared.readyHardware === hardware && !!prepared.wrapper?.effect;
+    if (batch.mustReturn || !current && !this.ready(subMesh, true)) { this.renderer.resetRefreshCounter(); return; }
     const engine = this.view.scene.getEngine();
     let orientation = original._getEffectiveOrientation(mesh);
     if (effective._getWorldMatrixDeterminant() < 0)
@@ -267,6 +283,15 @@ function alphaCutoff(material: Material): number {
 function opacityTexture(material: Material): BaseTexture | null {
   const values = material as Material & { opacityTexture?: BaseTexture | null; _opacityTexture?: BaseTexture | null };
   return values.opacityTexture ?? values._opacityTexture ?? null;
+}
+/** Coverage samplers read UV2 for coordinate index 1 and UV1 otherwise. */
+function samplesUV1(texture: BaseTexture | null): boolean { return !!texture && texture.coordinatesIndex !== 1; }
+function samplesUV2(texture: BaseTexture | null): boolean { return texture?.coordinatesIndex === 1; }
+function defineCoverageSampler(defines: string[], sampled: BaseTexture | null, prefix: string, uv1: boolean, uv2: boolean): void {
+  if (!sampled) return;
+  defines.push(`#define ${prefix}`);
+  if (sampled.coordinatesIndex === 1 && uv2) defines.push(`#define ${prefix}_UV2`);
+  else if (sampled.coordinatesIndex !== 1 && uv1) defines.push(`#define ${prefix}_UV1`);
 }
 function usesTextureAlpha(material: Material): boolean {
   const flags = material as Material & { useAlphaFromDiffuseTexture?: boolean; _useAlphaFromAlbedoTexture?: boolean };
