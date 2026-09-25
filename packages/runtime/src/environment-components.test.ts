@@ -21,6 +21,8 @@ it("transports authored terrain and a whole mixed foliage stroke as component pa
       { componentId: "plants", meshKind: "foliage", foliage },
     ] });
     expect(runtime.getWorld().getActors()).toHaveLength(1);
+    runtime.start();
+    runtime.tick();
     expect(runtime.getPhysicsSync()!.lineTrace({ x: 0.2, y: 10, z: 0.2 }, { x: 0.2, y: -10, z: 0.2 })).toMatchObject({ hit: true, actorId: "environment", location: { y: 3 } });
   } finally { runtime.stop(); }
 });

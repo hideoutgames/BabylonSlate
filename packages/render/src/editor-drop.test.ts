@@ -75,9 +75,9 @@ describe("editor Drop", () => {
     })]);
     expect(drop(["selected"])).toEqual([]);
     sceneData.actors[1]!.components[0]!.properties.collisionsEnabled = true;
-    expect(drop(["selected"])[0]?.position).toEqual([0, 3.5, 0]);
+    expect(drop(["selected"])[0]?.position).toEqual([0, 3.75, 0]); // Built-in box is 1.5 units tall.
     sceneData.actors[1]!.components[0]!.properties.heights = Array(25).fill(4);
-    expect(drop(["selected"])[0]?.position).toEqual([0, 5.5, 0]);
+    expect(drop(["selected"])[0]?.position).toEqual([0, 5.75, 0]);
   });
 
   it("uses a configurable strict limit, including distances above the default", () => {
