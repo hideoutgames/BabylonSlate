@@ -152,7 +152,7 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **TraceCopyButton / TraceEmptyState** | Compact clipboard feedback and catalog Empty states for read-only trace inspection. | Trace Snapshot, Changes, Log and Timeline. |
-| **RenderPipelineFields** | Compact Render Path/GPU Backend preferences with live requested/effective path, Engine backend and concrete fallback feedback; project-only — Play session requests use the `renderpath` console command instead. Pending changes explain settings-close or Stop timing. | Project Settings → Rendering. |
+| **RenderPipelineFields** | Compact project Render Path/GPU Backend preferences. Play session requests use the `renderpath` console command. | Project Settings → Rendering. |
 | **AnimEditorModeBar** ([`anim-editor-mode-bar.tsx`](../../apps/editor/src/components/anim-editor-mode-bar.tsx)) | Chrome `ToolbarStrip` + **State Machine \| Animation Object** `ToggleGroup` `size="sm"`. `data-testid="anim-editor-mode-bar"`. Not a DockView tab. | Animation Graph document shell, above the stacked State Machine and Animation Object DockView surfaces. |
 | **HomepageProfileMenu** | Compact avatar DropdownMenu with an identity header, optional Account Settings, Manage Subscription, optional Application / Engine Settings, and Sign In or Sign Out; image failures fall back to the account icon. | Every launcher account: guests, Clerk web accounts (driven by `useUser` / `useClerk`), and native desktop/mobile sessions. |
 | **DebugConsole** | Flat bottom Sheet with selectable live log/print/error transcript, command history, and a scrollable keyboard-accessible completion list with argument hints. | Play overlay and Preview Build. |

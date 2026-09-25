@@ -202,13 +202,6 @@ test("editor path selection and Play use one admitted cluster and retain the req
   const auto = await rendering(canvas, "editor");
   expect(auto?.pipeline.requested.renderPath).toBe("auto");
   expect(auto?.pipeline.effective.renderPath).toBe("clusteredForward");
-  await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-rendering").click();
-  await expect(
-    page.getByTestId("project-render-pipeline-status"),
-  ).toContainText("Clustered Forward");
-  await page.getByRole("button", { name: "Done", exact: true }).click();
   await clickPlayAndWaitForOverlay(page);
   const play = page.getByTestId("play-overlay").locator("canvas").first();
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({
