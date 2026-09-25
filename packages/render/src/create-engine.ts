@@ -979,7 +979,8 @@ function initializeEngine(
       };
       if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
         engine.setSize(size.width, size.height);
-      prepareSnapshot();
+      admittedSnapshot = prepareSnapshot();
+      snapshotAdmitted = true;
       return shouldRenderFrame(performance.now());
     }, {
       begin: () => { frameCopyReady = false; },
@@ -2015,6 +2016,10 @@ function initializeEngine(
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
   let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
+  // renderLoop reuses admission's sample until end-frame unless a push or
+  // command invalidated the applied identity in between.
+  let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
+  let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
@@ -2209,7 +2214,7 @@ function initializeEngine(
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
-    const sampled = prepareSnapshot();
+    const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
     if (!shouldRenderFrame(frameStart)) {
@@ -2325,6 +2330,7 @@ function initializeEngine(
     if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    snapshotAdmitted = false;
     if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
       if (runtimeScalability && !worldLoading) {
