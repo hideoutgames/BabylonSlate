@@ -21,8 +21,9 @@ it.each(["havok", "software"] as const)("%s predicts off-centre impulse response
     expect(backend.getBodyVelocity("body")).toEqual(before);
     backend.addImpulseAtPoint("body", impulse, point);
     const after = backend.getBodyVelocity("body")!;
+    // Native velocity storage is quantized (for example 0.16 reads as 0.16015625).
     for (const motion of ["linear", "angular"] as const) for (const axis of ["x", "y", "z"] as const)
-      expect(after[motion][axis] - before[motion][axis]).toBeCloseTo(response[motion][axis], 4);
+      expect(after[motion][axis] - before[motion][axis]).toBeCloseTo(response[motion][axis], 2);
     backend.destroyBody("body");
     expect(backend.getBodyImpulseResponse!("body", impulse, point)).toBeNull();
   } finally { backend.dispose(); }
