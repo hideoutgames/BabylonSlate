@@ -186,15 +186,17 @@ export class SharedOutlineOwner {
         replacement = true;
       } catch (error) { lease.release(); throw error; }
     }
+    const data = state.data;
     let first = capacity, last = -1, offset = 0;
-    const put = (id: number) => {
-      if (state!.data[offset] !== id || replacement) {
-        state!.data[offset] = id; first = Math.min(first, offset); last = offset;
-      }
-      offset++;
-    };
-    if (renderSelf) put(this.identityFor(source));
-    for (const instance of instances ?? []) put(this.identityFor(instance));
+    if (renderSelf) {
+      const id = this.identityFor(source);
+      if (data[0] !== id || replacement) { data[0] = id; first = 0; last = 0; }
+      offset = 1;
+    }
+    if (instances) for (let index = 0; index < instances.length; index++, offset++) {
+      const id = this.identityFor(instances[index]!);
+      if (data[offset] !== id || replacement) { data[offset] = id; if (offset < first) first = offset; last = offset; }
+    }
     if (last >= first) {
       state.buffer.updateDirectly(state.data.subarray(first, last + 1), first);
       this.uploads++;
