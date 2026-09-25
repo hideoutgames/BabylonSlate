@@ -177,7 +177,7 @@ export function modelSlotFingerprint(
         .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
         .join(",");
       const colliders = JSON.stringify(payload.simpleColliders ?? []);
-      return `${guid}:${slots}:${colliders}`;
+      return `${guid}:${payload.importScale}:${slots}:${colliders}`;
     })
     .sort()
     .join(";");

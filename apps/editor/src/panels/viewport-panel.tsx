@@ -27,7 +27,7 @@ import {
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { bakeRuntimeAssetReader } from "@babylonslate/assets";
-import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";

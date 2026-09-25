@@ -54,6 +54,7 @@ it("waits for initial foliage and refreshes late model sources and import scale 
   await sync.whenEditorModelsReady();
   const root = sync.meshForComponent("stroke", "foliage")!;
   const instance = root.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
+  expect(instance, JSON.stringify({ sameRoot: root === empty, meshes: scene.meshes.map((mesh) => ({ name: mesh.name, count: mesh instanceof Mesh ? mesh.thinInstanceCount : 0 })) })).toBeDefined();
   expect(instance.thinInstanceCount).toBe(1);
   expect(instance.isVisible).toBe(false);
   expect(instance.isPickable).toBe(false);
