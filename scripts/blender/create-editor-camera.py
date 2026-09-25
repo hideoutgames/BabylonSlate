@@ -23,10 +23,10 @@ scene = bpy.data.scenes.new("Slate Standard Camera")
 bpy.context.window.scene = scene
 # One closed silhouette: low tapered body with a directly attached solid lens.
 rings = [
-    (-.664, rectangle(.129, .110, .016)),
-    (-.648, rectangle(.145, .126, .018)),
-    (-.178, rectangle(.174, .154, .018)),
-    (-.162, rectangle(.158, .138, .012)),
+    (-.664, rectangle(.119, .123, .016)),
+    (-.648, rectangle(.133, .141, .018)),
+    (-.178, rectangle(.160, .173, .018)),
+    (-.162, rectangle(.151, .155, .012)),
     (-.162, rectangle(.145, .104, .012)),
     (-.050, rectangle(.196, .118, .014)),
     (-.030, rectangle(.196, .118, .014)),
@@ -48,7 +48,7 @@ material_indices.append(2)
 
 # A shallow, solid top grip grows directly from the body, with sloped ends.
 def grip_vertex(x, z, rise):
-    top = .126 + (z + .648) / .470 * .028
+    top = .141 + (z + .648) / .470 * .032
     return (x, -z, top + rise)
 
 
