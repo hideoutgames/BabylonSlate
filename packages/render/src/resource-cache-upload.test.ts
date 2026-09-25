@@ -93,7 +93,10 @@ it("admits a sampling variant that shares a live upload while over budget", asyn
   working.release();
 });
 
-it("still rejects a delayed over-budget upload when a variant shares it before measurement", async () => {
+it.each([
+  ["its owner", [0, 1]],
+  ["the variant", [1, 0]],
+] as const)("still rejects a delayed over-budget upload shared before measurement when %s measures first", async (_first, order) => {
   const { cache, engine } = host();
   engine.getCaps().maxAnisotropy = 8;
   const bytes = new Blob([ktx2()], { type: "image/ktx2" });
@@ -106,7 +109,11 @@ it("still rejects a delayed over-budget upload when a variant shares it before m
   uploaded(source.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   const variant = acquireTextureVariant(source.resource as Texture, { anisotropicFilteringLevel: 2 })!;
   expect(variant.resource.getInternalTexture()).toBe(source.resource.getInternalTexture());
-  for (const finish of headers) finish();
+  expect(headers).toHaveLength(2);
+  for (const index of order) {
+    headers[index]!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
   await expect(source.ready).rejects.toThrow(/budget/);
   await expect(variant.ready).rejects.toThrow(/budget/);
   expect(cache.accountedBytes()).toBe(0);

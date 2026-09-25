@@ -252,6 +252,8 @@ export class ResourceCache {
   private readonly blobs = new Map<string, Blob>();
   private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
   private readonly textureKeys = new WeakMap<BaseTexture, string>();
+  /** Shared-upload wrappers whose own preparation passed load-time admission. */
+  private readonly admittedTextures = new WeakSet<BaseTexture>();
   private readonly urlKeys = new Map<string, string>();
   private clock = 0;
   private totalBytes = 0;
@@ -529,20 +531,30 @@ export class ResourceCache {
     const uploads = entry.textureUploads;
     // The earliest live wrapper on an upload owns its admission; later variants
     // add no accounted bytes. Check again at load: a rejected owner is removed.
-    const admit = () => {
+    // Binding defers to any earlier sharer so it cannot throw; load defers only
+    // to one that already passed admission, so a later-rejected owner cannot
+    // leave this variant holding the upload.
+    const admit = (loaded: boolean) => {
       for (const [sampling, upload] of uploads) {
         if (sampling === key) break;
-        if (upload === uploadKey) return;
+        if (upload !== uploadKey) continue;
+        if (!loaded) return;
+        const sharer = entry.textures.get(sampling);
+        if (sharer && this.admittedTextures.has(sharer)) {
+          this.admittedTextures.add(texture);
+          return;
+        }
       }
       this.assertAdmitted();
+      if (loaded) this.admittedTextures.add(texture);
     };
     uploads.set(key, uploadKey);
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
     try {
       const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
-      preparation.validate(admit, () => texture.dispose(), measured);
-      admit();
+      preparation.validate(() => admit(true), () => texture.dispose(), measured);
+      admit(false);
       preparation.observe(texture);
     } catch (error) {
       preparation.onError();
