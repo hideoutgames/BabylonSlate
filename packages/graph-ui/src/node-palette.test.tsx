@@ -58,6 +58,14 @@ const begin: PaletteNode = {
 };
 
 describe("NodePalette", () => {
+  function paletteItems() {
+    return document.querySelectorAll('[data-testid^="node-palette-item-"]');
+  }
+
+  function itemIds() {
+    return [...paletteItems()].map((el) => el.getAttribute("data-testid"));
+  }
+
   it("retains node contracts and selection when finding a node through its alias", () => {
     const onAddNode = vi.fn();
     const node = { ...log, description: "Changes only this running session.", searchAliases: ["session output"] };
@@ -71,167 +79,136 @@ describe("NodePalette", () => {
     fireEvent.click(row);
     expect(onAddNode).toHaveBeenCalledWith(node);
   });
-  it("adds the keyboard-selected search result without requiring row tabbing", () => {
+
+  it("collapses categories until expanded, and expands every match while searching", () => {
+    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={() => {}} />,
+    );
+    const debug = getByTestId("node-palette-category-Debug");
+    expect(debug.getAttribute("aria-expanded")).toBe("false");
+    expect(paletteItems()).toHaveLength(0);
+
+    fireEvent.click(debug);
+    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("true");
+    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
+
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "e" } });
+    expect(itemIds()).toEqual([
+      "node-palette-item-debug.log",
+      "node-palette-item-flow.event.beginPlay",
+    ]);
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "log" } });
+    expect(queryByTestId("node-palette-category-Flow")).toBeNull();
+    expect(getByTestId("node-palette-category-Debug").textContent).toBe("Debug1");
+  });
+
+  it("expands a lone category without a click", () => {
+    render(<NodePalette open onOpenChange={() => {}} paletteNodes={[log]} onAddNode={() => {}} />);
+    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
+  });
+
+  it("navigates the tree from the search field and adds the active node", () => {
     const onAddNode = vi.fn();
     const { getByPlaceholderText, getByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={onAddNode}
-      />,
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={onAddNode} />,
     );
     const input = getByPlaceholderText("Search nodes");
+    const selected = (testId: string) => getByTestId(testId).getAttribute("aria-selected");
+
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(
-      getByTestId("node-palette-item-flow.event.beginPlay").getAttribute(
-        "aria-selected",
-      ),
-    ).toBe("true");
+    expect(selected("node-palette-category-Flow")).toBe("true");
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(selected("node-palette-item-flow.event.beginPlay")).toBe("true");
+    expect(input.getAttribute("aria-activedescendant")).toBe(
+      getByTestId("node-palette-item-flow.event.beginPlay").id,
+    );
+
+    fireEvent.keyDown(input, { key: "ArrowLeft" });
+    expect(selected("node-palette-category-Flow")).toBe("true");
+    fireEvent.keyDown(input, { key: "ArrowLeft" });
+    expect(getByTestId("node-palette-category-Flow").getAttribute("aria-expanded")).toBe("false");
+    expect(paletteItems()).toHaveLength(0);
+
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(onAddNode).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onAddNode).toHaveBeenCalledWith(begin);
+
     onAddNode.mockClear();
     fireEvent.change(input, { target: { value: "no-such-node" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onAddNode).not.toHaveBeenCalled();
   });
-  it("defaults the Context Sensitive switch to on", () => {
-    const { getByTestId, getByText } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-      />,
-    );
 
-    const toggle = getByTestId("node-palette-context-sensitive");
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(getByText("Context Sensitive")).toBeTruthy();
-    expect(toggle.closest("[data-slot='field']")?.className).toMatch(
-      /min-h-\[var\(--touch-target,44px\)\]|min-h-11/,
+  it("adds the first search match on Enter without moving through rows", () => {
+    const onAddNode = vi.fn();
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={onAddNode} />,
     );
+    const input = getByPlaceholderText("Search nodes");
+    fireEvent.change(input, { target: { value: "begin" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).toHaveBeenCalledWith(begin);
   });
 
-  it("clears search when the palette is opened again", () => {
-    const props = {
-      onOpenChange: vi.fn(),
-      paletteNodes: [log, begin],
-      onAddNode: vi.fn(),
-    };
-    const { getByPlaceholderText, rerender } = render(
-      <NodePalette open {...props} />,
+  it("opens at the anchor and stays inside the viewport near its edge", () => {
+    const props = { onOpenChange: () => {}, paletteNodes: [log, begin], onAddNode: () => {} };
+    const { getByTestId, rerender } = render(
+      <NodePalette open {...props} anchor={{ x: 100, y: 120 }} />,
     );
+    const popup = () => getByTestId("node-palette");
+    expect(popup().style.left).toBe("100px");
+    expect(popup().style.top).toBe("120px");
 
-    fireEvent.change(getByPlaceholderText("Search nodes"), {
-      target: { value: "log" },
-    });
-    expect(getByPlaceholderText("Search nodes")).toHaveProperty("value", "log");
+    rerender(<NodePalette open {...props} anchor={{ x: window.innerWidth - 4, y: window.innerHeight - 4 }} />);
+    const left = Number.parseFloat(popup().style.left);
+    const top = Number.parseFloat(popup().style.top);
+    expect(left + Number.parseFloat(popup().style.width)).toBeLessThanOrEqual(window.innerWidth);
+    expect(top + Number.parseFloat(popup().style.height)).toBeLessThanOrEqual(window.innerHeight);
+  });
 
+  it("clears search and category expansion when the palette is opened again", () => {
+    const props = { onOpenChange: vi.fn(), paletteNodes: [log, begin], onAddNode: vi.fn() };
+    const { getByPlaceholderText, getByTestId, rerender } = render(<NodePalette open {...props} />);
+
+    fireEvent.click(getByTestId("node-palette-category-Debug"));
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "log" } });
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
 
     expect(getByPlaceholderText("Search nodes")).toHaveProperty("value", "");
+    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("resets the category to All when the palette is opened again", () => {
-    const props = {
-      onOpenChange: vi.fn(),
-      paletteNodes: [log, begin],
-      onAddNode: vi.fn(),
-    };
+  it("defaults Context Sensitive to on and lists only compatible opposite pins", () => {
+    const { getByTestId, getByRole, queryByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={() => {}} filterPin={execOut} />,
+    );
+    expect(getByTestId("node-palette-context-sensitive").getAttribute("aria-checked")).toBe("true");
+    expect(getByRole("tree", { name: "Suggested Nodes" })).toBeTruthy();
+    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
+    expect(queryByTestId("node-palette-category-Debug")).toBeNull();
+  });
+
+  it("shows the full catalog when Context Sensitive is turned off, and keeps it off after reopening", () => {
+    const props = { onOpenChange: vi.fn(), paletteNodes: [log, begin], onAddNode: vi.fn(), filterPin: execOut };
     const { getByTestId, rerender } = render(<NodePalette open {...props} />);
 
-    fireEvent.click(getByTestId("node-palette-category-Debug"));
-    expect(
-      getByTestId("node-palette-category-Debug").getAttribute("aria-current"),
-    ).toBe("true");
+    fireEvent.click(getByTestId("node-palette-context-sensitive"));
+    expect(getByTestId("node-palette-context-sensitive").getAttribute("aria-checked")).toBe("false");
+    expect(getByTestId("node-palette-category-Debug")).toBeTruthy();
+    expect(getByTestId("node-palette-category-Flow")).toBeTruthy();
 
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
-
-    expect(
-      getByTestId("node-palette-category-all").getAttribute("aria-current"),
-    ).toBe("true");
-  });
-
-  it("lists only compatible opposite pins when Context Sensitive is on", () => {
-    const { getByTestId, queryByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-        filterPin={execOut}
-      />,
-    );
-
-    expect(
-      getByTestId("node-palette-context-sensitive").getAttribute(
-        "aria-checked",
-      ),
-    ).toBe("true");
-    expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
-    expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
-  });
-
-  it("shows the full palette when Context Sensitive is turned off", () => {
-    const { getByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-        filterPin={execOut}
-      />,
-    );
-
-    fireEvent.click(getByTestId("node-palette-context-sensitive"));
-
-    expect(
-      getByTestId("node-palette-context-sensitive").getAttribute(
-        "aria-checked",
-      ),
-    ).toBe("false");
-    expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
+    expect(getByTestId("node-palette-context-sensitive").getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(getByTestId("node-palette-category-Flow"));
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
-
-  it("counts categories from the search-filtered set", () => {
-    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-      />,
-    );
-
-    expect(getByTestId("node-palette-category-all").textContent).toContain("2");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
-      "1",
-    );
-    expect(getByTestId("node-palette-category-Flow").textContent).toContain(
-      "1",
-    );
-
-    fireEvent.change(getByPlaceholderText("Search nodes"), {
-      target: { value: "log" },
-    });
-
-    expect(getByTestId("node-palette-category-all").textContent).toContain("1");
-    expect(getByTestId("node-palette-category-Debug").textContent).toContain(
-      "1",
-    );
-    expect(queryByTestId("node-palette-category-Flow")).toBeNull();
-  });
-
-  function paletteItems() {
-    return document.querySelectorAll('[data-testid^="node-palette-item-"]');
-  }
 
   it("finds symbol and formula aliases without confusing multiply with power", () => {
     const nodes: PaletteNode[] = [
@@ -257,9 +234,7 @@ describe("NodePalette", () => {
       ["square root", "sqrt"],
     ]) {
       fireEvent.change(search, { target: { value: query } });
-      expect([...paletteItems()].map((row) => row.getAttribute("data-testid"))).toEqual([
-        `node-palette-item-${expectedId}`,
-      ]);
+      expect(itemIds()).toEqual([`node-palette-item-${expectedId}`]);
       expect(getByTestId("node-palette-category-math").textContent).toBe("Math1");
     }
     fireEvent.keyDown(search, { key: "Enter" });
@@ -280,20 +255,20 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
 
-  it("shows readable category labels while selecting their original IDs", () => {
+  it("shows readable category labels and sorts categories by them", () => {
     const nodes = [
-      { ...log, category: "math.vector" },
-      { ...begin, category: "uv" },
+      { ...log, category: "uv" },
+      { ...begin, category: "math.vector" },
     ];
-    const { getByTestId, queryByTestId, getByRole } = render(
+    const { getByTestId } = render(
       <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
     );
     expect(getByTestId("node-palette-category-math.vector").textContent).toBe("Math Vector1");
     expect(getByTestId("node-palette-category-uv").textContent).toBe("UV1");
+    const categories = [...document.querySelectorAll('[data-testid^="node-palette-category-"]')];
+    expect(categories.map((el) => el.textContent)).toEqual(["Math Vector1", "UV1"]);
     fireEvent.click(getByTestId("node-palette-category-math.vector"));
-    expect(getByRole("combobox", { name: "Category" }).textContent).toContain("Math Vector");
-    expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
-    expect(queryByTestId("node-palette-item-flow.event.beginPlay")).toBeNull();
+    expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
   });
 
   function manyNodes(count: number): PaletteNode[] {
@@ -336,117 +311,39 @@ describe("NodePalette", () => {
   });
 
   it("mounts every palette item when the catalog body height is 0", () => {
-    const nodes = manyNodes(80);
     render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={nodes}
-        onAddNode={() => {}}
-      />,
+      <NodePalette open onOpenChange={() => {}} paletteNodes={manyNodes(80)} onAddNode={() => {}} />,
     );
     expect(paletteItems()).toHaveLength(80);
-    expect(
-      document.querySelector('[data-testid="node-palette-item-n79"]'),
-    ).toBeTruthy();
+    expect(document.querySelector('[data-testid="node-palette-item-n79"]')).toBeTruthy();
   });
 
   it("mounts only viewport-near rows for a ~1000-node palette", () => {
     stubPaletteBodyHeight(440);
-    const nodes = manyNodes(1000);
-    const { queryByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={nodes}
-        onAddNode={() => {}}
-      />,
+    const { getByTestId, queryByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={manyNodes(1000)} onAddNode={() => {}} />,
     );
     const mounted = paletteItems();
     expect(mounted.length).toBeGreaterThan(0);
     expect(mounted.length).toBeLessThan(40);
     expect(queryByTestId("node-palette-item-n0")).toBeTruthy();
     expect(queryByTestId("node-palette-item-n999")).toBeNull();
-    expect(
-      document.querySelector('[data-testid="node-palette-category-all"]')
-        ?.textContent,
-    ).toContain("1000");
-  });
-
-  it("alternates node rows across category headers and keeps stripes stable when scrolling", () => {
-    stubPaletteBodyHeight(440);
-    const nodes = manyNodes(100);
-    nodes[0] = { ...nodes[0]!, category: "A" };
-    const { getByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={nodes}
-        onAddNode={() => {}}
-      />,
-    );
-    expect(
-      getByTestId("node-palette-item-n0").classList.contains("bg-list-stripe"),
-    ).toBe(false);
-    expect(
-      getByTestId("node-palette-item-n1").classList.contains("bg-list-stripe"),
-    ).toBe(true);
-    expect(
-      getByTestId("node-palette-item-n2").classList.contains("bg-list-stripe"),
-    ).toBe(false);
-    fireEvent.scroll(getByTestId("node-palette-body"), {
-      target: { scrollTop: 880 },
-    });
-    expect(
-      getByTestId("node-palette-item-n19").classList.contains("bg-list-stripe"),
-    ).toBe(true);
-    expect(
-      getByTestId("node-palette-item-n20").classList.contains("bg-list-stripe"),
-    ).toBe(false);
+    expect(getByTestId("node-palette-category-Math").textContent).toContain("1000");
   });
 
   it("search finds the last item without mounting the full palette", () => {
     stubPaletteBodyHeight(440);
-    const nodes = manyNodes(1000);
     const { getByPlaceholderText, getByTestId, queryByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={nodes}
-        onAddNode={() => {}}
-      />,
+      <NodePalette open onOpenChange={() => {}} paletteNodes={manyNodes(1000)} onAddNode={() => {}} />,
     );
-
     act(() => {
       fireEvent.change(getByPlaceholderText("Search nodes"), {
         target: { value: "Node 999" },
       });
     });
-
     expect(getByTestId("node-palette-item-n999")).toBeTruthy();
     expect(queryByTestId("node-palette-item-n0")).toBeNull();
     expect(paletteItems()).toHaveLength(1);
-  });
-
-  it("keeps Context Sensitive off after close and reopen", () => {
-    const props = {
-      onOpenChange: vi.fn(),
-      paletteNodes: [log, begin],
-      onAddNode: vi.fn(),
-      filterPin: execOut,
-    };
-    const { getByTestId, rerender } = render(<NodePalette open {...props} />);
-
-    fireEvent.click(getByTestId("node-palette-context-sensitive"));
-    rerender(<NodePalette open={false} {...props} />);
-    rerender(<NodePalette open {...props} />);
-
-    expect(
-      getByTestId("node-palette-context-sensitive").getAttribute(
-        "aria-checked",
-      ),
-    ).toBe("false");
-    expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
 
   const boolOut: SerializedPin = {
@@ -487,95 +384,32 @@ describe("NodePalette", () => {
     title: "AND",
     category: "logic",
     pins: [
-      {
-        id: "a",
-        name: "A",
-        kind: "data",
-        direction: "in",
-        type: { kind: "bool" },
-      },
-      {
-        id: "b",
-        name: "B",
-        kind: "data",
-        direction: "in",
-        type: { kind: "bool" },
-      },
+      { id: "a", name: "A", kind: "data", direction: "in", type: { kind: "bool" } },
+      { id: "b", name: "B", kind: "data", direction: "in", type: { kind: "bool" } },
     ],
   };
 
-  it("titles the catalog Add Node", () => {
-    const { getByText } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-      />,
+  it("titles the menu Add Node without a pin-type subtitle", () => {
+    const { getByText, queryByText, container } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[print, branch]} onAddNode={() => {}} filterPin={boolOut} />,
     );
     expect(getByText("Add Node")).toBeTruthy();
-  });
-
-  it("labels All as Suggested and omits Compatible with pin-type subtitle", () => {
-    const { getByTestId, queryByText, container } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[print, branch]}
-        onAddNode={() => {}}
-        filterPin={boolOut}
-      />,
-    );
-    expect(getByTestId("node-palette-category-all").textContent).toMatch(
-      /Suggested/,
-    );
     expect(queryByText(/Compatible with/)).toBeNull();
-    expect(
-      container.querySelector('[data-slot="dialog-description"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-slot="dialog-description"]')).toBeNull();
   });
 
-  it("lists pin-filtered Suggested rows in relevance order without category headers", () => {
-    const { getByTestId, queryByRole } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[print, branch]}
-        onAddNode={() => {}}
-        filterPin={boolOut}
-      />,
+  it("lists pin-filtered suggestions in relevance order with their category labels", () => {
+    const { getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[print, branch]} onAddNode={() => {}} filterPin={boolOut} />,
     );
-    const items = [...paletteItems()].map((el) =>
-      el.getAttribute("data-testid"),
-    );
-    expect(items).toEqual([
+    expect(itemIds()).toEqual([
       "node-palette-item-flow.branch",
       "node-palette-item-debug.print",
     ]);
-    expect(queryByRole("heading", { name: /debug/i })).toBeNull();
-    expect(getByTestId("node-palette-item-flow.branch").textContent).toMatch(
-      /Flow/i,
-    );
-  });
-
-  it("groups the unfiltered catalog by category", () => {
-    const { getByRole } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[log, begin]}
-        onAddNode={() => {}}
-      />,
-    );
-    expect(getByRole("heading", { name: "Debug" })).toBeTruthy();
-    expect(getByRole("heading", { name: "Flow" })).toBeTruthy();
+    expect(getByTestId("node-palette-item-flow.branch").textContent).toMatch(/Flow/i);
   });
 
   it("ranks Branch above AND when source pins include Exec and Bool", () => {
-    const items = () =>
-      [...document.querySelectorAll('[data-testid^="node-palette-item-"]')].map(
-        (el) => el.getAttribute("data-testid"),
-      );
     render(
       <NodePalette
         open
@@ -586,31 +420,7 @@ describe("NodePalette", () => {
         sourcePins={[execOut, boolOut]}
       />,
     );
-    expect(items()).toEqual([
-      "node-palette-item-flow.branch",
-      "node-palette-item-logic.and",
-      "node-palette-item-debug.print",
-    ]);
-  });
-
-  it("keeps score order inside a selected category", () => {
-    const { getByTestId } = render(
-      <NodePalette
-        open
-        onOpenChange={() => {}}
-        paletteNodes={[print, branch, and]}
-        onAddNode={() => {}}
-        filterPin={boolOut}
-      />,
-    );
-    fireEvent.click(getByTestId("node-palette-category-logic"));
-    expect(
-      [...paletteItems()].map((el) => el.getAttribute("data-testid")),
-    ).toEqual(["node-palette-item-logic.and"]);
-    fireEvent.click(getByTestId("node-palette-category-all"));
-    expect(
-      [...paletteItems()].map((el) => el.getAttribute("data-testid")),
-    ).toEqual([
+    expect(itemIds()).toEqual([
       "node-palette-item-flow.branch",
       "node-palette-item-logic.and",
       "node-palette-item-debug.print",

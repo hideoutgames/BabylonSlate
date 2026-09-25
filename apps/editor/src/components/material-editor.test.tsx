@@ -427,6 +427,7 @@ describe("Material graph panel", () => {
     harness.content = doc as unknown as Record<string, unknown>;
     const view = render(<MaterialGraphPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Color Parameter" } });
     fireEvent.click(screen.getByTestId("node-palette-item-param.color"));
     const added = lastCommit();
     const newId = added.nodes.find((node) => node.type === "param.color")!.id;
@@ -448,6 +449,7 @@ describe("Material graph panel", () => {
     harness.content = doc as unknown as Record<string, unknown>;
     const view = render(<MaterialGraphPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Float Parameter" } });
     fireEvent.click(screen.getByTestId("node-palette-item-param.float"));
     const added = lastCommit();
     const newId = added.nodes.find((node) => node.type === "param.float")!.id;

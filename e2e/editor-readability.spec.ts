@@ -40,7 +40,7 @@ test.describe("Editor modal readability", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible();
   });
 
-  test("dark settings and Add Node use readable boundaries and alternating rows", async ({
+  test("dark settings and Add Node use readable boundaries and row targets", async ({
     page,
   }) => {
     await openMinimalTestProject(page);
@@ -63,13 +63,19 @@ test.describe("Editor modal readability", { tag: IPAD_TEST_TAG }, () => {
       .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await page.getByTestId("graph-add-node").click();
-    const rows = page.locator('[data-testid^="node-palette-item-"]');
-    await expect(rows.nth(2)).toBeVisible();
-    const colors = await rows.evaluateAll((elements) =>
-      elements.slice(0, 3).map((el) => getComputedStyle(el).backgroundColor),
+    const palette = page.getByTestId("node-palette");
+    await expect(palette).toBeVisible();
+    const coarse = await page.evaluate(
+      () => matchMedia("(pointer: coarse)").matches,
     );
-    expect(colors[0]).toBe(colors[2]);
-    expect(colors[0]).not.toBe(colors[1]);
+    const category = palette.locator('[data-testid^="node-palette-category-"]').first();
+    const categoryBox = await category.boundingBox();
+    expect(categoryBox!.height).toBe(coarse ? 44 : 28);
+    const idleFill = await category.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.getByTestId("node-palette-search").press("ArrowDown");
+    await expect(category).toHaveAttribute("aria-selected", "true");
+    const activeFill = await category.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(activeFill).not.toBe(idleFill);
     await page.screenshot({
       path: test.info().outputPath("dark-add-node.png"),
     });
