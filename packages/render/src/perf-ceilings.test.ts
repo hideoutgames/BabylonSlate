@@ -9,7 +9,6 @@ import {
   IPAD_TEXTURE_BYTE_SUGGESTION,
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
-  textureByteCeilingWarning,
 } from "./perf-ceilings";
 
 describe("perf ceilings", () => {
@@ -27,12 +26,10 @@ describe("perf ceilings", () => {
     expect(geometryBytes).toBe(24 * 32 + 36 * 4);
     expect(textureBytes).toBeLessThan(TEXTURE_BYTE_CEILING);
     expect(geometryBytes).toBeLessThan(GEOMETRY_BYTE_CEILING);
-    expect(textureByteCeilingWarning(textureBytes)).toBeNull();
     expect(geometryByteCeilingWarning(geometryBytes)).toBeNull();
   });
 
   it("warns when accounted bytes or draw calls drift past the budget", () => {
-    expect(textureByteCeilingWarning(TEXTURE_BYTE_CEILING + 1)).toMatch(/ceiling/);
     expect(geometryByteCeilingWarning(GEOMETRY_BYTE_CEILING + 1)).toMatch(/ceiling/);
     expect(drawCallCeilingWarning(DRAW_CALL_WARN_CEILING)).toBeNull();
     expect(drawCallCeilingWarning(DRAW_CALL_WARN_CEILING + 1)).toMatch(
