@@ -188,7 +188,8 @@ export class SceneRenderCoordinator {
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
-    const result = this.graph.render(camera);
+    // Draw on readiness's admission; graph preparation or invalidation re-admits.
+    const result = this.graph.render(camera, true, true);
     if (result.rendered !== false) this.editorOverlay?.(camera);
     const after = this.graph.readiness(camera);
     return { ...result, rendered: result.rendered !== false,

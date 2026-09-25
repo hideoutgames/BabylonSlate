@@ -106,6 +106,11 @@ export class ForwardSceneFrameGraph {
   private readinessRevision = 0;
   private membership: number[] | undefined;
   private strictChecks = 0;
+  // One-shot record of readiness()'s admission for an immediately following
+  // render. Any invalidation bumps the revision; a strict probe bumps checks.
+  private admittedCamera: Camera | undefined;
+  private admittedRevision = -1;
+  private admittedChecks = -1;
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
@@ -458,10 +463,14 @@ export class ForwardSceneFrameGraph {
 
   /** A pending eligible graph is distinct from an admitted classic fallback. */
   readiness(camera: Camera): ForwardSceneGraphReadiness {
+    this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, ready: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
+    this.admittedCamera = camera;
+    this.admittedRevision = this.readinessRevision;
+    this.admittedChecks = this.strictChecks;
     this.refreshFailure(camera);
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
@@ -494,12 +503,18 @@ export class ForwardSceneFrameGraph {
     return { path: "frameGraph", ready: true };
   }
 
-  /** Render one scene frame, with an explicit, observable classic fallback. */
-  render(camera: Camera, updateCameras = true): ForwardSceneGraphResult & { rendered?: boolean } {
+  /** Render one scene frame, with an explicit, observable classic fallback.
+   * reuseAdmission is for a caller that invokes readiness() immediately before
+   * with no scene work between; any invalidation or strict probe re-admits. */
+  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: boolean } {
+    const admitted = this.admittedCamera;
+    this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, rendered: false };
     this.syncMembership();
-    this.syncShadowAdmission(camera);
+    if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
+      this.admittedChecks !== this.strictChecks)
+      this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
     this.refreshFailure(camera);
     const output = this.output(camera);
@@ -1037,6 +1052,7 @@ export class ForwardSceneFrameGraph {
   }
 
   private releaseGraphResources(): void {
+    this.admittedCamera = undefined;
     findSceneShadowController(this.scene)?.setReceiverRenderPass(undefined);
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
