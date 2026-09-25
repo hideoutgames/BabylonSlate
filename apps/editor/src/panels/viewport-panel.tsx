@@ -1335,7 +1335,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           className="pointer-events-auto rounded-lg border border-border bg-popover p-1 shadow-md"
           data-testid="viewport-panel-frame"
         >
-          {sceneMode !== "design" ? <SceneBrushToolbar mode={sceneMode} disabled={!sceneReady || playing || preparing} /> : <ViewportToolbar
+          {sceneMode !== "design" ? <SceneBrushToolbar mode={sceneMode} scene={scene} disabled={!sceneReady || playing || preparing} /> : <ViewportToolbar
             onDrop={dropSelection}
             dropDisabled={dropDisabled}
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
