@@ -120,6 +120,18 @@ describe("physicsActorDiagnostics", () => {
     ).toEqual([]);
   });
 
+  it("treats a Landscape as an implicit body and collider only when enabled", () => {
+    for (const classId of ["RigidBodyComponent", "ColliderComponent"]) {
+      const actor = { id: "terrain", components: [
+        { id: "landscape", classId: "LandscapeComponent", properties: { collisionsEnabled: false } },
+        { id: "physics", classId },
+      ] };
+      expect(physicsActorDiagnostics(actor)).toHaveLength(1);
+      actor.components[0]!.properties!.collisionsEnabled = true;
+      expect(physicsActorDiagnostics(actor)).toEqual([]);
+    }
+  });
+
   it("does not treat No Collision MeshComponent as a physics source", () => {
     expect(
       physicsActorDiagnostics({

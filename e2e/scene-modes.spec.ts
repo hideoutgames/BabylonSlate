@@ -72,6 +72,14 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await selectMode(page, "Landscape");
     await page.getByRole("button", { name: "Create Landscape", exact: true }).click();
     await expect(page.getByRole("treeitem", { name: /Landscape 1/ })).toBeVisible();
+    const collisions = page.getByRole("checkbox", { name: "Landscape Collisions", exact: true });
+    await expect(collisions).not.toBeChecked();
+    if (isMobile) await collisions.tap();
+    else await collisions.check();
+    await page.getByTestId("undo-document").click();
+    await expect(collisions).not.toBeChecked();
+    await page.getByTestId("redo-document").click();
+    await expect(collisions).toBeChecked();
     await page.getByRole("button", { name: "Frame", exact: true }).click();
     await expect.poll(() => terrainPixelFraction(page)).toBeGreaterThan(0.02);
     await page.getByRole("button", { name: "Raise", exact: true }).click();
@@ -111,6 +119,7 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("scene-mode-select")).toContainText("Landscape");
     await expect(page.getByRole("tree", { name: "Landscape Components" })).toHaveCount(0);
     expect(await heightSum()).toBe(saved);
+    expect((await content(page)).actors.flatMap((actor) => actor.components).find((component) => component.classId === "LandscapeComponent")!.properties.collisionsEnabled).toBe(true);
   });
 
   test("selects only Models and paints one undoable foliage component per stroke", async ({ page, isMobile }) => {
