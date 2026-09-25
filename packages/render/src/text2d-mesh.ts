@@ -88,6 +88,7 @@ export type MsdfAtlas = {
 const MSDF_SHADER = "text2dMsdf";
 const MSDF_ITALIC_SHEAR = -0.2;
 const loggedMsdfFallback = new Set<string>();
+let msdfShadersRegistered = false;
 
 function decodeJson(bytes: Uint8Array): unknown {
   try {
@@ -251,6 +252,8 @@ function unlitMaterial(
 }
 
 function ensureMsdfShaders(): void {
+  if (msdfShadersRegistered) return;
+  msdfShadersRegistered = true;
   ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}VertexShader`] = `
 attribute position: vec3f;
 attribute uv: vec2f;
@@ -569,6 +572,9 @@ export function createText2DMesh(
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
       [];
+    // MSDF uniforms depend only on these style fields; bold and italic are
+    // mesh transforms, so glyphs of one style share a bundle-owned material.
+    const msdfMaterials = new Map<string, Material>();
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
       const child = MeshBuilder.CreatePlane(
@@ -584,15 +590,21 @@ export function createText2DMesh(
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       child.rotation.z = restRotation;
       if (msdf) {
-        child.material = msdfGlyphMaterial(
-          scene,
-          `${name}:glyph:${index}`,
-          item.style.color,
-          item.style.outline,
-          item.style.outlineColor,
-          atlasTexture,
-          bundle,
-        );
+        const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
+        let material = msdfMaterials.get(styleKey);
+        if (!material) {
+          material = msdfGlyphMaterial(
+            scene,
+            `${name}:glyph:${index}`,
+            item.style.color,
+            item.style.outline,
+            item.style.outlineColor,
+            atlasTexture,
+            bundle,
+          );
+          msdfMaterials.set(styleKey, material);
+        }
+        child.material = material;
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
         child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
