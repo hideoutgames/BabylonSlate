@@ -636,6 +636,7 @@ function initializePlayer(
     }
     if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
       inProcess.registerTileContent({
+        waters: content.waterPayloads,
         tilemaps: content.tilemapPayloads,
         tilesets: content.tilesetPayloads,
         pixelsPerUnit: content.pixelsPerUnit,

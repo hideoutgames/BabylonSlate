@@ -301,6 +301,7 @@ export function ContentBrowserWorkspace({
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
+  const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     done: number;
@@ -2021,6 +2022,7 @@ export function ContentBrowserWorkspace({
       const fileName = newAssetFileName(type, name);
       if (!fileName) return;
       const result = buildNewAssetResult({
+        waterStyle: newWaterStyle,
         type,
         name,
         guid: newAssetGuid(),
@@ -2060,6 +2062,7 @@ export function ContentBrowserWorkspace({
     newAssetName,
     newAssetNameTaken,
     newAssetParent,
+    newWaterStyle,
     newAssetType,
     openDocuments,
     openOrFocusDocument,
@@ -2605,6 +2608,8 @@ export function ContentBrowserWorkspace({
         name={newAssetName}
         onNameChange={setNewAssetName}
         parentClass={newAssetParent}
+        waterStyle={newWaterStyle}
+        onWaterStyleChange={setNewWaterStyle}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}

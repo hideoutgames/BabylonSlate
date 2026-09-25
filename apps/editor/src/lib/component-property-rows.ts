@@ -1,3 +1,5 @@
+import { normalizeWaterBody, normalizeWaterBuoyancy, waterKindForClass } from "@babylonslate/core";
+import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
   assetRowIdentity,
@@ -475,6 +477,39 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  const waterKind = waterKindForClass(component.classId);
+  if (waterKind) {
+    const body = normalizeWaterBody(component.properties, waterKind);
+    const numeric = ([key, label, min, max]: [keyof typeof body, string, number, number]): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label, value: Number(body[key]), min, max, onChange: (value) => update(key, value) });
+    const rows: PropertyRow[] = [
+      assetRow(actorId, component, "assetGuid", "Water", ["Water"], update, context, "Pick Water"),
+      { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: body.enabled, onChange: (value) => update("enabled", value) },
+      numeric(["width", "Width", 0.1, 10000]),
+      ...(waterKind !== "river" ? [numeric(["length", "Length", 0.1, 10000])] : []),
+      numeric(["depth", "Depth", 0.01, 10000]), numeric(["waveScale", "Wave Scale", 0, 10]),
+      numeric(["flowSpeed", "Flow Speed", -100, 100]),
+      ...(waterKind !== "river" ? [numeric(["flowDirection", "Flow Direction", -360, 360])] : []),
+      numeric(["resolution", "Surface Resolution", 8, 128]),
+    ];
+    if (waterKind === "river") {
+      rows.push({ kind: "number", id: rowId(actorId, component.id, "pointCount"), label: "Path Point Count", value: body.points.length, min: 2, max: 128, description: "Points run from upstream to downstream in local space. Y sets the water elevation.", onChange: (count) => {
+        const points = body.points.slice(0, Math.round(count));
+        while (points.length < Math.round(count)) { const last = points[points.length - 1]!; points.push([last[0], last[1], last[2] + 5]); }
+        update("points", points);
+      } });
+      body.points.forEach((point, index) => rows.push({ kind: "vector3", id: rowId(actorId, component.id, "point-" + index), label: "Path Point " + (index + 1), value: point, onChange: (value) => update("points", body.points.map((p, i) => i === index ? value.slice(0, 3) : p)) }));
+    }
+    return rows;
+  }
+  if (component.classId === "WaterBuoyancyComponent") {
+    const b = normalizeWaterBuoyancy(component.properties);
+    return [
+      { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: b.enabled, onChange: (value) => update("enabled", value) },
+      { kind: "number", id: rowId(actorId, component.id, "volume"), label: "Volume", value: b.volume, min: 0, description: "Cubic metres. Zero automatically floats this body's mass. Extra loads push it deeper.", onChange: (value) => update("volume", value) },
+      ...(["width", "length", "height", "drag", "angularDrag"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: b[key], min: key === "drag" || key === "angularDrag" ? 0 : 0.01, onChange: (value) => update(key, value) })),
+      { kind: "vector3", id: rowId(actorId, component.id, "offset"), label: "Offset", value: b.offset, onChange: (value) => update("offset", value.slice(0, 3)) },
+    ];
+  }
   switch (component.classId) {
     case "MeshComponent": {
       const assetGuid =

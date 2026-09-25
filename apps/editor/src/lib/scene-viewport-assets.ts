@@ -6,7 +6,7 @@ import {
   skyboxFaceGuidsFromScene, spriteAssetGuidsFromScene, tilemapAssetGuidsFromScene,
 } from "./play-content";
 
-const resourceTypes = new Set(["Material", "MaterialFunction", "Model", "Texture", "Sprite",
+const resourceTypes = new Set(["Water", "Material", "MaterialFunction", "Model", "Texture", "Sprite",
   "SpriteAnimation", "Tilemap", "Tileset", "Font", "Animation", "Skeleton"]);
 
 /** Match the viewport collectors. Transforms and scene autosaves do not alter

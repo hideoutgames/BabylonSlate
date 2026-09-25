@@ -114,6 +114,7 @@ export interface PlayOverlayProps {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
@@ -200,6 +201,7 @@ export function PlayOverlay({
   blackboards,
   spritePayloads,
   spriteAnimationPayloads,
+  waterPayloads,
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
@@ -309,6 +311,8 @@ export function PlayOverlay({
   spritePayloadsRef.current = spritePayloads;
   const spriteAnimationPayloadsRef = useRef(spriteAnimationPayloads);
   spriteAnimationPayloadsRef.current = spriteAnimationPayloads;
+  const waterPayloadsRef = useRef(waterPayloads);
+  waterPayloadsRef.current = waterPayloads;
   const tilemapPayloadsRef = useRef(tilemapPayloads);
   tilemapPayloadsRef.current = tilemapPayloads;
   const tilesetPayloadsRef = useRef(tilesetPayloads);
@@ -484,6 +488,7 @@ export function PlayOverlay({
       blackboards: blackboardsRef.current,
       spritePayloads: spritePayloadsRef.current,
       spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
+      waterPayloads: waterPayloadsRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,

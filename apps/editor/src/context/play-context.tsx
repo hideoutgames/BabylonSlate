@@ -273,6 +273,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
+  const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
   );
@@ -352,6 +353,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayBlackboards,
     collectPlaySpritePayloads,
     collectPlaySpriteAnimationPayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -1060,6 +1062,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         }
 
         try {
+          const waters = await collectPlayWaterContent();
+          setPlayWaters(waters);
           const particles = await collectPlayParticles();
           setPlayParticleLibrary(particles);
           const materials = await collectPlayMaterialLibrary(
@@ -1069,6 +1073,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ...resourceScenes,
             ],
             [
+              ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : []),
               ...particleMaterialGuidsFromLibrary(particles),
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
               ...overlayGraphMaterials,
@@ -1262,7 +1267,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
-      collectPlayTilemapContent,
+      collectPlayWaterContent,
+    collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
@@ -1529,6 +1535,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             blackboards={playBlackboards}
             spritePayloads={playSpritePayloads}
             spriteAnimationPayloads={playSpriteAnimationPayloads}
+            waterPayloads={playWaters}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}

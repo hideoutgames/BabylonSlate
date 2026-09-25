@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { isInputAssetType, normalizeInputAssetPayload, type InputAssetDefinition } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
@@ -521,6 +522,7 @@ interface DocumentContextValue {
     graphs: readonly PlayAnimGraphEntry[],
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
+  collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -2782,6 +2784,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "water"
         | "model"
         | "skeleton"
         | "animation"
@@ -2984,6 +2987,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [loadPlayAssetContent, projectService],
   );
+
+  const collectPlayWaterContent = useCallback(async (): Promise<Map<string, WaterDefinition>> => {
+    const waters = new Map<string, WaterDefinition>();
+    for (const asset of projectService.registry?.list() ?? []) {
+      if (asset.header.type !== "Water") continue;
+      const content = await loadPlayAssetContent("water", asset.path);
+      if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
+    }
+    return waters;
+  }, [loadPlayAssetContent, projectService]);
 
   const collectPlayTilemapContent = useCallback(
     async (
@@ -4357,6 +4370,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
+      collectPlayWaterContent,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4423,6 +4437,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
+      collectPlayWaterContent,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,

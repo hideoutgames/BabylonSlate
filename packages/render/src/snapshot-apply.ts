@@ -1,4 +1,5 @@
 import { sceneShadowController } from "./shadow-controller";
+import { createWaterMesh } from "./water-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -733,7 +734,7 @@ export function applyAssignMesh(
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
   const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
-      part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+      part.meshAssetGuid && !["water", "sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
@@ -1239,6 +1240,7 @@ function createPlayVisual(
         deferredModels,
         retainedBitmapBytes,
         targets,
+        part.water,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1271,8 +1273,14 @@ export function createPlayMesh(
   deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
+  water?: import("@babylonslate/core").WaterBodyProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "water" && water) {
+    const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
+    const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
+    return createWaterMesh(scene, name, water, definition, material);
+  }
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
     const tilesets = binding.tilesets ?? new Map();

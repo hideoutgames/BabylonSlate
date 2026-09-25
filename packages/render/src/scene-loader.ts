@@ -1,4 +1,6 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
+import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
+import { createWaterMesh } from "./water-mesh";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import {
@@ -212,6 +214,7 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -235,6 +238,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -362,6 +366,7 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
+    visuals.some((component) => waterKindForClass(component.classId) !== null) ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
     visuals.some((component) => component.classId === "ColliderComponent") ||
@@ -379,6 +384,7 @@ function componentVisualKind(
   actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"
@@ -624,6 +630,12 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  const waterKind = waterKindForClass(component.classId);
+  if (waterKind) {
+    const body = normalizeWaterBody(component.properties, waterKind);
+    const definition = body.assetGuid ? assets?.waters?.get(body.assetGuid) : undefined;
+    return createWaterMesh(scene, name, body, definition, definition?.materialGuid ? assets?.resolveMaterial?.(definition.materialGuid, { scene }) : null);
+  }
   if (component.classId === "SpriteComponent") {
     return createSpriteComponentMesh(scene, name, component, assets);
   }

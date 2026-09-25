@@ -26,6 +26,7 @@ export type DockviewDocumentKind =
   | "sound-attenuation"
   | "particle-emitter"
   | "particle-system"
+  | "water"
   | "model"
   | "skeleton"
   | "animation"
@@ -57,6 +58,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "water",
   "model",
   "skeleton",
   "animation",
@@ -111,6 +113,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
   "particle-system": "particle-system-preview",
+  water: "water-preview",
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
@@ -520,6 +523,11 @@ const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const WATER_WINDOWS: DockWindowDefinition[] = [
+  { id: "water-preview", component: "water-preview", title: "Preview" },
+  { id: "water-details", component: "water-details", title: "Details", defaultPosition: { referencePanelId: "water-preview", direction: "right", initialWidth: 300 } },
+];
+
 const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
   {
     id: "particle-system-preview",
@@ -862,6 +870,7 @@ export function listDockWindows(
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }
+  if (kind === "water") return WATER_WINDOWS;
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }

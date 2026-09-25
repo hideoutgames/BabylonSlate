@@ -435,6 +435,7 @@ export interface CreateEngineOptions {
   onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
@@ -1065,6 +1066,7 @@ function initializeEngine(
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   onRollback(() => disposeSnapshotBinding(binding));
   binding.tilemaps = options.tilemapPayloads;
+  binding.waters = options.waterPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;
@@ -1564,6 +1566,7 @@ function initializeEngine(
       binding.spriteAnimations =
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
+      binding.waters = assets.waters ?? binding.waters;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
       binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
       if (assets.materialTextureGuids) {
@@ -2898,6 +2901,10 @@ function initializeEngine(
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");
       }
+      if (command.type === "waterTime") {
+        setSceneWaterTime(scene, command.seconds);
+        scheduler.invalidate("snapshot");
+      }
       if (command.type === "animState") {
         appliedSnapshotIdentity = null;
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
@@ -3328,3 +3335,4 @@ export function createAppEngine(
   return engine;
 }
 import { AreaRectLightGroup } from "./area-rect-light";
+import { setSceneWaterTime } from "./water-mesh";

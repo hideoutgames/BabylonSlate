@@ -27,6 +27,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "water",
   "model",
   "skeleton",
   "animation",
@@ -120,6 +121,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ParticleEmitter";
     case "particle-system":
       return "ParticleSystem";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":
@@ -211,6 +214,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-emitter";
     case "ParticleSystem":
       return "particle-system";
+    case "Water":
+      return "water";
     case "SkyboxCreator":
       return "skybox-creator";
     case "Trace":
@@ -284,6 +289,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Particle Emitter";
     case "particle-system":
       return "Particle System";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":

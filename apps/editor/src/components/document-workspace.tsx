@@ -495,6 +495,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
+          doc.ref.kind === "water" ||
           doc.ref.kind === "skeleton" ||
           doc.ref.kind === "animation" ||
           doc.ref.kind === "skybox-creator"
