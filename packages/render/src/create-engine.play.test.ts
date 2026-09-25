@@ -38,7 +38,6 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
-import * as renderPathSession from "./render-path-session";
 import * as sceneBakePreparation from "./scene-bake-preparation";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
@@ -3395,14 +3394,15 @@ describe("Play createEngine view", () => {
     );
   });
 
-  it("returns shared-Engine glTF and KTX2 decoding to workers after the last Play view stops", () => {
+  it("returns glTF and KTX2 decoding to workers after the page's last Play view stops", () => {
     const engine = sharedEngine();
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
     handles.push(editor);
     const ktx2Workers = KhronosTextureContainer2.DefaultNumWorkers;
     expect(ktx2Workers).toBeGreaterThan(0);
+    // Decoder statics are page-global, so a Play view on another Engine holds them too.
     const first = playHandle(engine).handle;
-    const second = playHandle(engine).handle;
+    const second = playHandle(sharedEngine()).handle;
     expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
     expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
     first.dispose();
@@ -3414,13 +3414,11 @@ describe("Play createEngine view", () => {
   });
 
   it("returns decoding to workers when Play construction rolls back", () => {
-    const failure = new Error("Play render path could not start.");
-    const retain = vi.spyOn(renderPathSession, "retainPlayRenderPathSession").mockImplementation(() => { throw failure; });
-    try {
-      expect(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), playMode: true })).toThrow(failure);
-    } finally {
-      retain.mockRestore();
-    }
+    const failure = new Error("Play view canvas is unavailable.");
+    // Fail before the view reaches its Engine, right after the Play decoder setup.
+    const canvas = new FakeCanvas();
+    vi.spyOn(canvas, "getContext").mockImplementation(() => { throw failure; });
+    expect(() => createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), playMode: true })).toThrow(failure);
     expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
   });
 

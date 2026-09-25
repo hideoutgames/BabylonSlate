@@ -83,6 +83,7 @@ import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCo
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
+  type Ktx2DecoderRuntimeOptions,
 } from "./ktx2-transcoder";
 import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
@@ -731,6 +732,21 @@ function initializeEngine(
   options: CreateEngineOptions,
   onRollback: (cleanup: () => void) => void,
 ): EngineHandle {
+  // Decoder statics are page-global. Overlay Play borrows the editor Engine,
+  // so the page's last Play view returns later editor decodes to workers.
+  // Retain before the Play configuration so any construction failure restores it.
+  let ktx2Runtime: Pick<Ktx2DecoderRuntimeOptions, "caps" | "renderer"> | null = null;
+  const releaseMainThreadDecoding = options.playMode
+    ? retainMainThreadDecoding(() => {
+        configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
+          dracoBasePath: options.dracoBasePath,
+          meshoptBasePath: options.meshoptBasePath,
+        });
+        // Without an Engine this view never moved KTX2 decoding to the main thread.
+        if (ktx2Runtime) configureKtx2DecoderRuntime(KhronosTextureContainer2, ktx2Runtime);
+      })
+    : null;
+  onRollback(() => releaseMainThreadDecoding?.());
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
@@ -787,24 +803,12 @@ function initializeEngine(
   });
   const previousScaling = engine.getHardwareScalingLevel();
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
-  const ktx2Runtime = {
+  ktx2Runtime = {
     caps: engine.getCaps(),
     renderer: (
       engine as { getGlInfo?: () => { renderer?: string } }
     ).getGlInfo?.().renderer,
   };
-  // Decoder statics are page-global. Overlay Play borrows the editor Engine,
-  // so its last Play view returns later editor decodes to workers.
-  const releaseMainThreadDecoding = options.playMode
-    ? retainMainThreadDecoding(engine, () => {
-        configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
-          dracoBasePath: options.dracoBasePath,
-          meshoptBasePath: options.meshoptBasePath,
-        });
-        configureKtx2DecoderRuntime(KhronosTextureContainer2, ktx2Runtime);
-      })
-    : null;
-  onRollback(() => releaseMainThreadDecoding?.());
   const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
   onRollback(() => releasePlayRenderPath?.());
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
@@ -3263,18 +3267,18 @@ function isAmbiguousHudMeshKind(meshKind: string | null | undefined): boolean {
   return meshKind === "sprite" || meshKind === "tilemap";
 }
 
-const mainThreadDecodingViews = new WeakMap<AbstractEngine, number>();
+/** Live Play views on every Engine in this page; decoder statics are page-global. */
+let mainThreadDecodingViews = 0;
 
-/** Hold main-thread decoding for one Play view; the last release restores workers. */
-function retainMainThreadDecoding(engine: AbstractEngine, restoreWorkers: () => void): () => void {
-  mainThreadDecodingViews.set(engine, (mainThreadDecodingViews.get(engine) ?? 0) + 1);
+/** Hold main-thread decoding for one Play view; the page's last release restores workers. */
+function retainMainThreadDecoding(restoreWorkers: () => void): () => void {
+  mainThreadDecodingViews += 1;
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const views = (mainThreadDecodingViews.get(engine) ?? 1) - 1;
-    mainThreadDecodingViews.set(engine, views);
-    if (views === 0) restoreWorkers();
+    mainThreadDecodingViews -= 1;
+    if (mainThreadDecodingViews === 0) restoreWorkers();
   };
 }
 
