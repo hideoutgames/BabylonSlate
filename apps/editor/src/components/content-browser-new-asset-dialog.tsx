@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import {
   SearchInput,
   TreeView,
@@ -39,6 +39,7 @@ import {
   creatableAssetTypeDescription,
   creatableAssetTypeLabel,
   filterCreatableAssetTypes,
+  newAssetFileName,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { usePhoneLayout } from "../shell/use-platform-layout";
@@ -60,9 +61,50 @@ export interface ContentBrowserNewAssetDialogProps {
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   nameTaken: boolean;
+  /** Content Browser folder the asset is written to (`assets/Characters`). */
+  destinationFolder?: string;
   busy?: boolean;
   error?: string | null;
   onCreate: () => void;
+}
+
+function NewAssetSummary({
+  type,
+  name,
+  destinationFolder,
+}: {
+  type: CreatableAssetType;
+  name: string;
+  destinationFolder?: string;
+}) {
+  const fileName = newAssetFileName(type, name);
+  return (
+    <dl
+      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-md border bg-muted/30 px-3 py-2.5 text-sm"
+      data-testid="new-asset-summary"
+    >
+      {destinationFolder ? (
+        <>
+          <dt className="text-muted-foreground">Location</dt>
+          <dd className="flex min-w-0 items-center gap-1.5">
+            <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate" title={destinationFolder}>{destinationFolder}</span>
+          </dd>
+        </>
+      ) : null}
+      <dt className="text-muted-foreground">File</dt>
+      <dd className="flex min-w-0 items-center gap-1.5" data-testid="new-asset-summary-file">
+        <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        {fileName ? (
+          <span className="truncate font-mono text-xs" title={fileName}>{fileName}</span>
+        ) : (
+          <span className="text-muted-foreground">Enter a name</span>
+        )}
+      </dd>
+      <dt className="text-muted-foreground">Then</dt>
+      <dd>{type === "Scene" ? "Opens in a new tab" : "Appears in this folder"}</dd>
+    </dl>
+  );
 }
 
 function navigateChoice(event: KeyboardEvent<HTMLDivElement>) {
@@ -90,6 +132,7 @@ export function ContentBrowserNewAssetDialog({
   onParentClassChange,
   classAssets = [],
   nameTaken,
+  destinationFolder,
   busy = false,
   error = null,
   onCreate,
@@ -292,6 +335,11 @@ export function ContentBrowserNewAssetDialog({
                     ) : null}
                   </Field>
                 </FieldGroup>
+                <NewAssetSummary
+                  type={type}
+                  name={name}
+                  destinationFolder={destinationFolder}
+                />
               </div>
               {type === "Class" ? (
                 <div

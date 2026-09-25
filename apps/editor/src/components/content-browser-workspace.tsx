@@ -2607,6 +2607,7 @@ export function ContentBrowserWorkspace({
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}
+        destinationFolder={selectedFolderPath}
         error={operationError}
         busy={busy}
         onCreate={() => {
