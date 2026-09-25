@@ -54,6 +54,7 @@ import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
 import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
 import { GRID_MESH_NAME } from "./editor-grid";
+import { createEditorCameraModel, EDITOR_CAMERA_MODEL_KIND, isEditorCameraModel } from "./editor-camera-model";
 import {
   BLOCKING_VOLUME_COLOR,
   createEditorVolumeMesh,
@@ -398,7 +399,7 @@ function componentVisualKind(
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
-  if (component.classId === "CameraComponent") return editorBillboardKind("camera");
+  if (component.classId === "CameraComponent") return EDITOR_CAMERA_MODEL_KIND;
   if (component.classId === "AudioComponent") return editorBillboardKind("audio");
   if (component.classId === "SkyboxComponent") {
     const size = parseSkyboxSize(component.properties.size);
@@ -567,7 +568,7 @@ export function editorMeshKindOf(
   }
   if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
   if (actor.components.some((component) => component.classId === "CameraComponent")) {
-    return editorBillboardKind("camera");
+    return EDITOR_CAMERA_MODEL_KIND;
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
     return editorBillboardKind("audio");
@@ -645,7 +646,7 @@ export function createMeshForComponent(
     return mesh;
   }
   if (component.classId === "CameraComponent") {
-    return createEditorBillboard(scene, name, "camera");
+    return createEditorCameraModel(scene, name);
   }
   if (component.classId === "AudioComponent") {
     return createEditorBillboard(scene, name, "audio");
@@ -1131,6 +1132,7 @@ export function applyComponentChildTransforms(
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
+    if (isEditorCameraModel(child) && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
     if (component.classId === "MeshComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
     applySerializedTransform(
       child,

@@ -1,3 +1,4 @@
+import { isEditorCameraModel } from "./editor-camera-model";
 import {
   Color3,
   FreeCamera,
@@ -374,7 +375,7 @@ export class EditorDebugOverlay {
     );
     rtt.activeCamera = camera;
     rtt.renderList = this.scene.meshes.filter(
-      (mesh) => !mesh.name.startsWith("debug"),
+      (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
     );
     this.previewTexture = rtt;
     this.tick(this.now());

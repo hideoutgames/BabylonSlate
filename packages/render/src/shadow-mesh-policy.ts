@@ -28,6 +28,7 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
     editorActorOrigin?: boolean;
     editorPickProxy?: boolean;
     editorBillboard?: string;
+    editorCameraModel?: boolean;
     editorVolume?: boolean;
     editorColliderVisual?: boolean;
     playHelperVisual?: boolean;
@@ -39,6 +40,7 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
     meta.editorActorOrigin ||
     meta.editorPickProxy ||
     meta.editorBillboard ||
+    meta.editorCameraModel ||
     meta.editorVolume ||
     meta.editorColliderVisual ||
     meta.playHelperVisual ||

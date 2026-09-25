@@ -31,7 +31,10 @@ describe("collectNavBakeGeometry", () => {
       ...createDefaultScene(),
       actors: [
         createActor("ground", "Ground", {
-          components: [createMeshComponent("mesh", "ground")],
+          components: [
+            createMeshComponent("mesh", "ground"),
+            { id: "camera", classId: "CameraComponent", properties: {} },
+          ],
         }),
         createActor("nav", "NavMesh", {
           components: [
@@ -55,8 +58,9 @@ describe("collectNavBakeGeometry", () => {
     };
     sync.apply(sceneData);
     const geometry = collectNavBakeGeometry(sync, sceneData);
-    expect(geometry.positions.length).toBeGreaterThan(9);
-    expect(geometry.indices.length).toBeGreaterThan(3);
+    // Only the ground's two triangles; attached editor camera geometry is not walkable.
+    expect(geometry.positions).toHaveLength(12);
+    expect(geometry.indices).toHaveLength(6);
     sync.dispose();
   });
 

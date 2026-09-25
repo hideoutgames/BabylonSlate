@@ -7,6 +7,7 @@ import {
 } from "@babylonjs/core";
 import { isColliderVisualMesh } from "./collider-visual";
 import { isEditorBillboardMesh } from "./editor-billboard";
+import { isEditorCameraModel } from "./editor-camera-model";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isEditorModelPlaceholder } from "./glb-anim";
@@ -37,6 +38,7 @@ const SKIP_NAME_PREFIXES = [
 ] as const;
 
 export function isViewportShadingTarget(mesh: Mesh): boolean {
+  if (isEditorCameraModel(mesh)) return false;
   if (isEditorBillboardMesh(mesh)) return false;
   if (isEditorVolumeMesh(mesh)) return false;
   if (isColliderVisualMesh(mesh)) return false;

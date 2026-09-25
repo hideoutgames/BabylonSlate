@@ -171,11 +171,13 @@ function sourceBounds(
     const meta = mesh.metadata as {
       editorPickProxy?: boolean;
       editorBillboard?: string;
+      editorCameraModel?: boolean;
       editorVolume?: boolean;
     } | null;
     if (
       meta?.editorPickProxy ||
       meta?.editorBillboard ||
+      meta?.editorCameraModel ||
       meta?.editorVolume ||
       mesh.visibility === 0 ||
       mesh.infiniteDistance

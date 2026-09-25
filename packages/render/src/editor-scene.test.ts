@@ -1969,7 +1969,7 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("draws camera helper billboards in front of the grid", () => {
+  it("draws the camera helper in front of the grid", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
@@ -1987,8 +1987,8 @@ describe("editor grid", () => {
       ?.getChildMeshes()
       .find(
         (mesh) =>
-          (mesh.metadata as { editorBillboard?: string } | null)
-            ?.editorBillboard === "camera",
+          (mesh.metadata as { editorCameraModel?: boolean } | null)
+            ?.editorCameraModel,
       );
     expect(billboard).toBeTruthy();
     expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.world);

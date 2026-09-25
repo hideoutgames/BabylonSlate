@@ -139,6 +139,7 @@ export function applyWorldVisualGroup(
 
 function isEditorHelperBillboard(mesh: { metadata?: unknown }): boolean {
   return (
+    (mesh.metadata as { editorCameraModel?: boolean } | null)?.editorCameraModel === true ||
     typeof (mesh.metadata as { editorBillboard?: unknown } | null)
       ?.editorBillboard === "string"
   );
