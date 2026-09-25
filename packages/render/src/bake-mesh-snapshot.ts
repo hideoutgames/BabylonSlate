@@ -16,6 +16,22 @@ const formats = new Map<number, [BakeVertexAttribute["componentType"], number]>(
   ],
 );
 
+/** Babylon vertex buffer type of each packed bake component type. */
+export const BAKE_COMPONENT_BUFFER_TYPES = Object.fromEntries(
+  [...formats].map(([type, [componentType]]) => [componentType, type]),
+) as Record<BakeVertexAttribute["componentType"], number>;
+
+/** Packed bytes of a source snapshot: its indices and every attribute. */
+export function bakeSourceByteLength(source: BakeGeometrySource): number {
+  return (
+    source.indices.byteLength +
+    source.attributes.reduce(
+      (sum, attribute) => sum + attribute.data.byteLength,
+      0,
+    )
+  );
+}
+
 /** Copy every packed attribute, retaining integer/normalized bytes across interleaved buffers. */
 export function snapshotBakeMesh(mesh: Mesh): BakeGeometrySource {
   if (

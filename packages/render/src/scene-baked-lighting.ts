@@ -23,6 +23,8 @@ import {
   type LoadedRuntimeBake,
 } from "@babylonslate/assets";
 import {
+  BAKE_COMPONENT_BUFFER_TYPES,
+  bakeSourceByteLength,
   registerBakeSourceMesh,
   snapshotBakeSourceMesh,
   unregisterBakeSourceMesh,
@@ -58,15 +60,6 @@ interface Candidate {
   atlas: Awaited<ReturnType<typeof acquireBakedAtlas>>;
   binding: RuntimeIrradianceBinding;
 }
-const formats = {
-  i8: VertexBuffer.BYTE,
-  u8: VertexBuffer.UNSIGNED_BYTE,
-  i16: VertexBuffer.SHORT,
-  u16: VertexBuffer.UNSIGNED_SHORT,
-  u32: VertexBuffer.UNSIGNED_INT,
-  f32: VertexBuffer.FLOAT,
-};
-
 function sameSource(a: BakeGeometrySource, b: BakeGeometrySource) {
   if (
     a.vertexCount !== b.vertexCount ||
@@ -140,7 +133,7 @@ async function prepareGeometry(
             postponeInternalCreation: false,
             stride: attribute.data.byteLength / source.vertexCount,
             size: attribute.components,
-            type: formats[attribute.componentType],
+            type: BAKE_COMPONENT_BUFFER_TYPES[attribute.componentType],
             normalized: attribute.normalized,
             useBytes: true,
           },
@@ -295,12 +288,7 @@ export class SceneBakedLighting {
         )
           throw new Error("A baked receiver is not owned by the target Scene.");
         const source = snapshotBakeSourceMesh(sourceMesh);
-        sourceBytes +=
-          source.indices.byteLength +
-          source.attributes.reduce(
-            (bytes, attribute) => bytes + attribute.data.byteLength,
-            0,
-          );
+        sourceBytes += bakeSourceByteLength(source);
         if (sourceBytes > 32 * 1024 * 1024)
           throw new Error(
             "Runtime baked receiver sources exceed their aggregate byte limit.",
@@ -317,7 +305,6 @@ export class SceneBakedLighting {
         };
       });
       if (
-        targets.length > 64 ||
         new Set(targets.map((target) => target.mesh)).size !== targets.length ||
         new Set(targets.map((target) => bakedReceiverKey(target.identity)))
           .size !== targets.length

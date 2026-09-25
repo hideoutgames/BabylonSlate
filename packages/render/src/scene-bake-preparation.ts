@@ -32,7 +32,10 @@ import type {
   BakePrototypeInput,
   BakePrototypeMesh,
 } from "./bake-prototype-input";
-import { snapshotBakeSourceMesh } from "./bake-mesh-snapshot";
+import {
+  bakeSourceByteLength,
+  snapshotBakeSourceMesh,
+} from "./bake-mesh-snapshot";
 
 export type SceneBakeSettings = BakeAuthoringSettings;
 export interface SceneBakeOwner {
@@ -62,6 +65,13 @@ export interface PreparedSceneBake {
   }>;
 }
 
+/** Provider identity hashed into preparation inputs and written to the job manifest. */
+export const BAKE_PROVIDER = {
+  id: "three-gpu-pathtracer",
+  version: "0.0.24",
+} as const;
+export const BAKE_JOB_ADAPTER_VERSION = "scene-job-1";
+
 export class StaleSceneBakeError extends Error {
   constructor() {
     super(
@@ -79,8 +89,7 @@ export function preparedBakeReceiverTransport(
   if (!mesh.receiver)
     throw new Error("Only Static Receivers can own bake atlas coordinates.");
   remapBakeGeometry(mesh.source, topology);
-  const order =
-    Matrix.FromArray(mesh.world).determinant() < 0 ? [0, 1, 2] : [0, 2, 1];
+  const order = bakeCornerOrder(Matrix.FromArray(mesh.world));
   const uv2 = new Float32Array(topology.indices.length * 2);
   for (let triangle = 0; triangle < topology.indices.length; triangle += 3) {
     for (let corner = 0; corner < 3; corner++) {
@@ -97,6 +106,11 @@ export function preparedBakeReceiverTransport(
       albedo: [...mesh.transport.material.albedo],
     },
   };
+}
+
+// Babylon's left-handed primitive winding is opposite the provider's geometric cross product.
+function bakeCornerOrder(world: Matrix): number[] {
+  return world.determinant() < 0 ? [0, 1, 2] : [0, 2, 1];
 }
 
 const hash = (value: unknown) =>
@@ -191,8 +205,7 @@ function transportPositions(
   );
   const result = new Float32Array(source.indices.length * 3);
   const point = new Vector3();
-  // Babylon's left-handed primitive winding is opposite the provider's geometric cross product.
-  const order = world.determinant() < 0 ? [0, 1, 2] : [0, 2, 1];
+  const order = bakeCornerOrder(world);
   for (let triangle = 0; triangle < source.indices.length; triangle += 3) {
     for (let corner = 0; corner < 3; corner++) {
       const vertex = source.indices[triangle + order[corner]];
@@ -289,8 +302,6 @@ export async function prepareSceneBake(options: {
     throw new Error(
       "Bake environment cube transport and source attribution are not implemented yet; the previous bake is retained.",
     );
-  if (document.actors.length > 1024)
-    throw new Error("Bake preparation admits at most 1024 actors.");
   const worldOf = transforms(document.actors);
   const actorById = new Map(document.actors.map((actor) => [actor.id, actor]));
   const assertFixedOwner = (actor: SerializedActor) => {
@@ -444,12 +455,7 @@ export async function prepareSceneBake(options: {
         // A receiver whose authored geometry is retained under an applied bake
         // is fingerprinted and transported from that authored source.
         const source = snapshotBakeSourceMesh(mesh);
-        geometryBytes +=
-          source.indices.byteLength +
-          source.attributes.reduce(
-            (sum, attribute) => sum + attribute.data.byteLength,
-            0,
-          );
+        geometryBytes += bakeSourceByteLength(source);
         if (geometryBytes > 32 * 1024 * 1024)
           throw new Error(
             "Bake Scene geometry exceeds the 32 MiB source snapshot limit.",
@@ -544,10 +550,9 @@ export async function prepareSceneBake(options: {
     environment: await hash({ kind: "none" }),
     settings: await hash(settings),
     provider: await hash({
-      id: "three-gpu-pathtracer",
-      version: "0.0.24",
+      ...BAKE_PROVIDER,
       adapterVersion: "scene-preparation-1",
-      jobAdapterVersion: "scene-job-1",
+      jobAdapterVersion: BAKE_JOB_ADAPTER_VERSION,
       uv: "xatlasjs-0.2.0-adapter1",
       quantity: "physical-E",
       transport: "two-sided-diffuse-only",

@@ -14,7 +14,10 @@ import {
 import { unwrapBakeGeometry } from "./bake-uv-atlas";
 import { bakeLightingPrototype } from "./bake-provider-prototype";
 import { validateBakePrototypeInput } from "./bake-prototype-input";
+import { bakeSourceByteLength } from "./bake-mesh-snapshot";
 import {
+  BAKE_JOB_ADAPTER_VERSION,
+  BAKE_PROVIDER,
   preparedBakeReceiverTransport,
   StaleSceneBakeError,
   type PreparedSceneBake,
@@ -42,13 +45,8 @@ const MIB = 1024 * 1024;
 /** Account managed typed buffers and provider estimates, not driver/context/native-heap memory. */
 export function estimateSceneBakeJob(prepared: PreparedSceneBake) {
   const receivers = prepared.meshes.filter((mesh) => mesh.receiver);
-  const sourceSizes = prepared.meshes.map(
-    (mesh) =>
-      mesh.source.indices.byteLength +
-      mesh.source.attributes.reduce(
-        (sum, attribute) => sum + attribute.data.byteLength,
-        0,
-      ),
+  const sourceSizes = prepared.meshes.map((mesh) =>
+    bakeSourceByteLength(mesh.source),
   );
   const sourceBytes = sourceSizes.reduce((sum, bytes) => sum + bytes, 0);
   const transportBytes = prepared.meshes.reduce(
@@ -200,11 +198,7 @@ export async function runSceneBakeJob(options: {
       version: 1,
       sceneGuid: prepared.owner.sceneGuid,
       inputs: { ...prepared.inputs },
-      provider: {
-        id: "three-gpu-pathtracer",
-        version: "0.0.24",
-        adapterVersion: "scene-job-1",
-      },
+      provider: { ...BAKE_PROVIDER, adapterVersion: BAKE_JOB_ADAPTER_VERSION },
       settingsVersion: "scene-job-1",
       dependencies: [...prepared.dependencies],
       sources: structuredClone(prepared.sources),
