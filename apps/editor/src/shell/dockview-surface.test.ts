@@ -16,19 +16,19 @@ describe("dockviewApiKey", () => {
     );
     expect(dockviewApiKey("anim-graph:loco", "animationObject")).toBe(
       "anim-graph:loco::animationObject",
-      "anim-graph:loco::design",
-      "anim-graph:loco::landscape",
-      "anim-graph:loco::foliage",
     );
   });
 });
 
 describe("dockviewApiKeysForDocument", () => {
-  it("lists default plus Animation Graph surfaces so close disposes every shell", () => {
+  it("lists all document surfaces so close disposes every shell", () => {
     expect(dockviewApiKeysForDocument("anim-graph:loco")).toEqual([
       "anim-graph:loco",
       "anim-graph:loco::stateMachine",
       "anim-graph:loco::animationObject",
+      "anim-graph:loco::design",
+      "anim-graph:loco::landscape",
+      "anim-graph:loco::foliage",
     ]);
   });
 });

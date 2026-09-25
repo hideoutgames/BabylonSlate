@@ -28,7 +28,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
   const entries = scene?.actors.flatMap((actor) => actor.components.filter((c) => c.classId === classId).map((component) => ({ actor, component, id: `${actor.id}/${component.id}` }))) ?? [];
   const landscape = classId === "LandscapeComponent";
   const selection = entries.find((entry) => landscape ? entry.id === landscapeSelection : selectedActorIds.includes(entry.actor.id));
-  return <PanelFrame>
+  return <PanelFrame className="scene-environment-panel">
     <TreeView aria-label={landscape ? "Landscape Components" : "Foliage Components"}
       nodes={entries.map(({ actor, component, id }) => ({ id, label: `${actor.name}${actor.components.filter((c) => c.classId === classId).length > 1 ? ` · ${component.id}` : ""}`, depth: 0, hasChildren: false, expanded: false, muted: actor.locked || !actor.visible, icon: landscape ? <MountainIcon /> : <TreesIcon /> }))}
       selectedId={selection?.id}
@@ -40,7 +40,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
       <Button size="sm" variant="outline" onClick={() => frameActor(selection.actor.id)}>Frame</Button>
       <Button size="sm" variant="outline" disabled={selection.actor.locked} onClick={() => {
         if (!scene) return;
-        void commit({ ...scene, actors: scene.actors.flatMap((actor) => actor.id !== selection.actor.id ? [actor] : actor.components.length === 1 ? [] : [{ ...actor, components: actor.components.filter((c) => c.id !== selection.component.id) }]) });
+        void commit({ ...scene, actors: scene.actors.flatMap((actor) => actor.id !== selection.actor.id ? [actor] : actor.components.length === 1 && !scene.actors.some((child) => child.parentId === actor.id) ? [] : [{ ...actor, components: actor.components.filter((c) => c.id !== selection.component.id) }]) });
       }}>Delete Component</Button>
     </div>}
   </PanelFrame>;
@@ -70,10 +70,10 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
     { id: "layer", label: "Paint Layer", kind: "enum", value: String(brush.layer), options: [0, 1, 2, 3].map((i) => ({ value: String(i), label: `Layer ${i + 1}` })), onChange: (layer) => tools.setLandscapeBrush({ ...brush, layer: Number(layer) }) },
   ];
   const materials = (assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => (entry.header.payload as Record<string, unknown>)?.domain === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
-  return <PanelFrame><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+  return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
     <PropertyGrid rows={[
       { id: "size", label: "New Landscape Size", kind: "number", value: size, min: 1, max: 4096, onChange: setSize },
-      { id: "resolution", label: "New Landscape Cells", kind: "number", value: resolution, min: 4, max: 256, step: 1, onChange: setResolution },
+      { id: "resolution", label: "New Landscape Cells", kind: "number", value: resolution, min: 4, max: 256, sensitivity: 1, onChange: (value) => setResolution(Math.round(value)) },
     ]} />
     <div className="flex"><Button size="sm" onClick={() => {
       if (!scene) return;
@@ -84,7 +84,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       { id: "name", label: "Name", kind: "text", value: selected.actor.name, onChange: (name) => { if (scene) void commit({ ...scene, actors: scene.actors.map((a) => a.id === selected.actor.id ? { ...a, name } : a) }); } },
       { id: "width", label: "Width", kind: "number", value: data.width, min: 1, max: 4096, onChange: (width) => setData({ ...data, width }) },
       { id: "depth", label: "Depth", kind: "number", value: data.depth, min: 1, max: 4096, onChange: (depth) => setData({ ...data, depth }) },
-      { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, step: 1, onChange: (value) => setData(resizeLandscape(data, value)) },
+      { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, onChange: (value) => setData(resizeLandscape(data, value)) },
       { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
     ]} /> : <Empty><EmptyDescription>Select a Landscape to edit its settings.</EmptyDescription></Empty>}
     <PropertyGrid rows={rows} />
@@ -101,7 +101,12 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const setGroups = (foliageGroups: FoliageGroup[]) => { if (scene) void commit({ ...scene, settings: { ...scene.settings, foliageGroups } }); };
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
-  return <PanelFrame><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+  const surfaceMaterials = new Set((assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => {
+    const domain = (entry.header.payload as Record<string, unknown>)?.domain;
+    return domain === undefined || domain === "surface";
+  }).map((entry) => entry.header.guid));
+  const pickerAssets = assets.filter((asset) => picker === "model" ? asset.type === "Model" : surfaceMaterials.has(asset.guid));
+  return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
     <div className="flex flex-wrap gap-1"><Button size="sm" onClick={() => {
       const next = { id: crypto.randomUUID(), name: `Foliage Group ${groups.length + 1}`, models: [] };
       setGroups([...groups, next]); tools.setGroupId(next.id);
@@ -119,10 +124,10 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
       </div>)}
       <div className="flex"><Button size="sm" variant="outline" onClick={() => setPicker("model")}>Add Model</Button></div>
     </> : <Empty><EmptyTitle>No Group Selected</EmptyTitle><EmptyDescription>Create a group and add Model assets to paint.</EmptyDescription></Empty>}
-    <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={assets} allowedTypes={picker === "model" ? ["Model"] : ["Material"]} allowNone={picker !== "model"} onPick={(guid) => {
+    <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={pickerAssets} allowedTypes={picker === "model" ? ["Model"] : ["Material"]} allowNone={picker !== "model"} onPick={(guid) => {
       if (!group) return;
       if (picker === "model" && guid && assets.some((asset) => asset.guid === guid && asset.type === "Model")) update({ ...group, models: [...group.models, { modelGuid: guid, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2 }] });
-      else if (typeof picker === "number") update({ ...group, models: group.models.map((model, i) => i === picker ? { ...model, materialGuid: guid } : model) });
+      else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) update({ ...group, models: group.models.map((model, i) => i === picker ? { ...model, materialGuid: guid } : model) });
       setPicker(null);
     }} />
   </div></PanelFrame>;

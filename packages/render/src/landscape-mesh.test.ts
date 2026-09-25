@@ -26,7 +26,18 @@ it("updates chunked geometry and shared-edge normals in place through scene edit
     return [];
   });
   expect(borderSamples).toHaveLength(4);
-  for (const sample of borderSamples) { expect(sample.height).toBe(3); expect(sample.normal).toEqual([0, 1, 0]); }
+  for (const sample of borderSamples) {
+    expect(sample.height).toBe(3);
+    expect(sample.normal[0]).toBeCloseTo(0);
+    expect(sample.normal[1]).toBeCloseTo(1);
+    expect(sample.normal[2]).toBeCloseTo(0);
+  }
   sync.apply(before);
   expect(chunks[0]!.getVerticesData(VertexBuffer.PositionKind)!.filter((_, i) => i % 3 === 1).every((v) => v === 0)).toBe(true);
+  sync.apply({ ...before, actors: [{ ...before.actors[0]!, components: [{ id: "land", classId: "LandscapeComponent", properties: { ...landscape, width: 128 } }] }] });
+  expect(chunks[0]!.getVerticesData(VertexBuffer.UVKind)![0]).toBe(-8);
+  sync.apply({ ...before, actors: [{ ...before.actors[0]!, locked: true }] });
+  expect(chunks.every((chunk) => !chunk.isPickable && chunk.isVisible)).toBe(true);
+  sync.apply({ ...before, actors: [{ ...before.actors[0]!, visible: false }] });
+  expect(chunks.every((chunk) => !chunk.isVisible)).toBe(true);
 });

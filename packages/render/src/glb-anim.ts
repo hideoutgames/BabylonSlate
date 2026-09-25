@@ -457,7 +457,7 @@ function keepSourceName(sourceName: string): string {
 }
 
 /** Prepare only this unpublished instance's actual material/mesh variants. */
-async function prepareInstanceMaterials(
+export async function prepareInstanceMaterials(
   root: Mesh,
   assertCurrent: () => void,
   cancellation: Promise<never>,

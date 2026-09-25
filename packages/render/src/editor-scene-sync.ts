@@ -315,6 +315,8 @@ export class EditorSceneSync {
                 this.pendingVisuals.get(actor.id) === candidate && this.meshes.get(actor.id) === previous;
               const onAdopted = () => {
                 if (!ownsLoad()) return;
+                const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+                if (current) this.prepareActorVisual(current, candidate);
                 candidate.parent = previous.parent;
                 for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
                 this.meshes.set(actor.id, candidate);
@@ -371,6 +373,7 @@ export class EditorSceneSync {
       }
       if (!mesh) continue;
       this.beginEditorModelLoad(actor, mesh);
+      this.trackFoliagePreparation(actor, mesh);
       if (!prepared) this.prepareActorVisual(actor, mesh);
       yield 0.2 + 0.3 * ++index / actorCount;
     }
@@ -526,6 +529,29 @@ export class EditorSceneSync {
     for (const candidate of this.pendingVisuals.values()) candidate.dispose();
     this.pendingVisuals.clear();
     this.pendingTextureLoads.clear();
+  }
+
+  private trackFoliagePreparation(actor: SerializedActor, root: Mesh): void {
+    if (!actor.components.some((component) => component.classId === "FoliageComponent")) return;
+    const ready = ownedVisualTexturePreparation(root);
+    if (!ready) return;
+    const generation = this.applyGeneration;
+    const signal = this.pendingApply?.signal;
+    const load = ready.then(() => {
+      if (generation !== this.applyGeneration || signal?.aborted || this.disposed || root.isDisposed() || this.meshes.get(actor.id) !== root) return;
+      const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+      if (!current) return;
+      this.prepareActorVisual(current, root);
+      freezeStaticActorWorldMatrix(root);
+      if (!this.applyingScene) {
+        this.freezeActiveQueue();
+        this.scheduler?.invalidate("asset");
+        this.onAfterApply?.();
+      }
+    });
+    // Retain failures in the generation's readiness set for the loading dialog.
+    this.pendingTextureLoads.add(load);
+    void load.catch((error: unknown) => console.warn(`[render] Foliage preparation failed: ${String(error)}`));
   }
 
   private refreshEnvironmentComponents(actor: SerializedActor, root: Mesh, assets?: MeshAssetContext): void {

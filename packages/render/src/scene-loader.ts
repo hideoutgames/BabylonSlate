@@ -385,7 +385,7 @@ function componentVisualKind(
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
-  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}`;
+  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"
@@ -1112,7 +1112,16 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   mesh.isVisible = actor.visible;
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
+  const environmentRoots = new Set(actor.components
+    .filter((entry) => entry.classId === "LandscapeComponent" || entry.classId === "FoliageComponent")
+    .map((entry) => editorComponentMeshName(actor.id, entry.id)));
   for (const child of childMeshesOf(mesh)) {
+    const environmentRoot = child.metadata?.landscapeRoot ?? child.metadata?.foliageRoot;
+    if (environmentRoot && environmentRoots.has(environmentRoot.name)) {
+      child.isVisible = actor.visible;
+      child.isPickable = actor.visible && !actor.locked;
+      continue;
+    }
     if (isEditorBillboardMesh(child)) {
       applyEditorBillboardPass(child);
       syncEditorBillboardParentScale(child);
@@ -1307,4 +1316,4 @@ export function toVector3(value: [number, number, number]): Vector3 {
   return new Vector3(value[0], value[1], value[2]);
 }
 import { createLandscapeMesh } from "./landscape-mesh";
-import { createFoliageMesh } from "./foliage-mesh";
+import { createFoliageMesh, foliageSourceFingerprint } from "./foliage-mesh";

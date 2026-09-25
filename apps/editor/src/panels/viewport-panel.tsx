@@ -97,6 +97,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const {
     openDocuments,
+    activeDocumentId,
     applySceneChange,
     projectDocument,
     projectGuid,
@@ -262,17 +263,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
   brushStateRef.current = {
     ...sceneTools, scene, mode: sceneMode,
-    enabled: sceneReady && !sceneLoad.open && !playing && !preparing,
+    enabled: activeDocumentId === documentId && sceneReady && !sceneLoad.open && !playing && !preparing,
     group: group ? { ...group, models: group.models.filter((model) => assetRegistry?.list({ type: "Model" }).some((asset) => asset.header.guid === model.modelGuid)) } : undefined,
   };
   useEffect(() => {
     const handle = engineRef.current; const canvas = canvasRef.current;
-    if (!handle || !canvas || sceneMode === "design") return;
+    if (!handle || !canvas || sceneMode === "design" || activeDocumentId !== documentId || playing || preparing) return;
     return attachSceneBrushInput(handle, canvas, {
       getState: () => brushStateRef.current!,
       commit: (next, before) => brushStateRef.current?.scene === before ? applySceneChange(documentId, next) : Promise.resolve(false),
+      onError: (error) => engineCommandBus.dispatch({ type: "log", message: `Scene brush could not apply: ${String(error)}` }),
     });
-  }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, applySceneChange]);
+  }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, activeDocumentId, playing, preparing, applySceneChange]);
   // Late-arriving registry updates resolve lazily so a baked-lighting asset
   // saved after engine creation still applies on the next scene load.
   const assetRegistryRef = useRef(assetRegistry);

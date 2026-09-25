@@ -1297,6 +1297,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dockviewApisRef.current.clear();
       disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
+      sceneFocusedLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       try {
@@ -1727,6 +1728,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.clear();
     disposeDockSubscriptions();
     preFocusLayoutsRef.current.clear();
+    sceneFocusedLayoutsRef.current.clear();
     setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
@@ -4117,8 +4119,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
     if (!def) return;
     const placementKey = doc.ref.kind === "scene" ? `${dockOptions.sceneMode}:${panelId}` : panelId;
-    const remembered =
-      documentService.getPanelPlacements(activeDocumentId)[placementKey] ?? null;
+    const placements = documentService.getPanelPlacements(activeDocumentId);
+    const remembered = placements[placementKey] ?? (dockOptions.sceneMode === "design" ? placements[panelId] : null) ?? null;
     const result = toggleDockWindowOnApi(
       asDockWindowApi(api),
       def,

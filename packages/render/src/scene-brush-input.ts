@@ -1,6 +1,8 @@
 import { Color3, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
 import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
+import { freezeEditorActiveMeshes } from "./scene-perf";
+import { RENDERING_GROUP } from "./sorting";
 
 export interface SceneBrushState {
   scene: SerializedScene | null;
@@ -25,6 +27,7 @@ function alignment(normal: Vector3): Quaternion {
 export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasElement, options: {
   getState(): SceneBrushState;
   commit(next: SerializedScene, before: SerializedScene): Promise<boolean>;
+  onError?(error: unknown): void;
   random?: () => number;
 }): () => void {
   let stroke: Stroke | null = null;
@@ -56,16 +59,25 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     const rect = canvas.getBoundingClientRect();
     return handle.scene.pick(event.clientX - rect.left, event.clientY - rect.top, predicate(state));
   };
-  const hideRing = () => { ring?.dispose(); ring = null; handle.scheduler.invalidate("input"); };
+  const hideRing = () => {
+    if (!ring) return;
+    ring.dispose(); ring = null;
+    freezeEditorActiveMeshes(handle.scene);
+    handle.scheduler.invalidate("manual");
+  };
   const showRing = (point: Vector3, normal: Vector3, radius: number) => {
-    const rotation = Matrix.FromQuaternion(alignment(normal));
+    const rotation = Matrix.Identity();
+    alignment(normal).toRotationMatrix(rotation);
     const points = Array.from({ length: 49 }, (_, i) => {
       const angle = i / 48 * Math.PI * 2;
       return Vector3.TransformCoordinates(new Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius), rotation).add(point).add(normal.scale(0.025));
     });
+    const created = !ring;
     ring = MeshBuilder.CreateLines("sceneBrushPreview", { points, instance: ring ?? undefined, updatable: true }, handle.scene);
     ring.color = new Color3(0.95, 0.65, 0.2); ring.isPickable = false;
-    handle.scheduler.invalidate("input");
+    ring.renderingGroupId = RENDERING_GROUP.foreground;
+    if (created) freezeEditorActiveMeshes(handle.scene);
+    handle.scheduler.invalidate("manual");
   };
   const cellKey = (p: Vector3, spacing: number) => `${Math.floor(p.x / spacing)}:${Math.floor(p.y / spacing)}:${Math.floor(p.z / spacing)}`;
   const occupy = (current: Stroke, point: Vector3) => {
@@ -108,7 +120,8 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
             Vector3.Distance(Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world), point) > state.foliageBrush.radius) })).filter((batch) => batch.transforms.length);
           return batches.length ? [{ ...component, properties: { ...data, batches } }] : [];
         });
-        return components.length ? [{ ...actor, components }] : actor.components.length ? [] : [actor];
+        return components.length || current.next.actors.some((child) => child.parentId === actor.id)
+          ? [{ ...actor, components }] : actor.components.length ? [] : [actor];
       }) };
     } else if (state.group) {
       const brush = state.foliageBrush;
@@ -146,6 +159,9 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     pending = true;
     void options.commit(current.next, current.before).then((ok) => {
       if (!ok && options.getState().scene) handle.editor?.sync.apply(options.getState().scene!);
+    }).catch((error: unknown) => {
+      if (options.getState().scene) handle.editor?.sync.apply(options.getState().scene!);
+      options.onError?.(error);
     }).finally(() => { pending = false; });
   };
   const consume = (event: PointerEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };

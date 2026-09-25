@@ -75,6 +75,7 @@ export function updateLandscapeMesh(root: Mesh, properties: unknown, assets?: Me
       const vertex = chunkData(data, chunk);
       chunk.mesh.updateVerticesData(VertexBuffer.PositionKind, vertex.positions!, true);
       chunk.mesh.updateVerticesData(VertexBuffer.NormalKind, vertex.normals!);
+      chunk.mesh.updateVerticesData(VertexBuffer.UVKind, vertex.uvs!);
       chunk.mesh.updateVerticesData(VertexBuffer.ColorKind, vertex.colors!);
     }
     const material = data.materialGuid ? assets?.resolveMaterial?.(data.materialGuid, { scene: root.getScene() }) : null;

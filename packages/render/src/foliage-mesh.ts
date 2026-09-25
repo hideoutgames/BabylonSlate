@@ -5,21 +5,30 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseFoliageProperties, type FoliageBatch } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { acquireGlbContainer } from "./glb-anim";
+import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@babylonslate/assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { RENDERING_GROUP } from "./sorting";
+import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
 
 export function foliagePreparation(root: Mesh): Promise<void> | undefined { return preparations.get(root); }
 
+export function foliageSourceFingerprint(properties: unknown, assets?: MeshAssetContext): string {
+  const models = new Set(parseFoliageProperties(properties).batches.map((batch) => batch.modelGuid));
+  return [...models].map((guid) => {
+    const source = assets?.modelSources?.get(guid) ?? assets?.modelBytes?.get(guid);
+    return `${guid}:${source ? snapshotByteFingerprint(source) : "missing"}:${assets?.modelPayloads?.get(guid)?.importScale ?? 1}`;
+  }).join("|");
+}
+
 export function refreshFoliageMaterials(root: Mesh, assets?: MeshAssetContext): void {
   for (const entry of batchesByRoot.get(root) ?? []) {
     const payload = assets?.modelPayloads?.get(entry.batch.modelGuid);
     const resolve = (guid: string) => assets?.resolveMaterial?.(guid, { scene: root.getScene() }) ?? null;
-    if (payload) applyModelMaterialSlots(entry.root, payload.materialSlots, resolve);
+    applyModelMaterialSlots(entry.root, payload?.materialSlots ?? [], resolve);
     const override = entry.batch.materialGuid ? resolve(entry.batch.materialGuid) : null;
     if (override) for (const mesh of entry.root.getChildMeshes()) mesh.material = override;
   }
@@ -33,7 +42,13 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   const held: Array<{ release(): void }> = [];
   const batches: Array<{ root: Mesh; batch: FoliageBatch }> = [];
   batchesByRoot.set(root, batches);
-  root.onDisposeObservable.addOnce(() => held.forEach((lease) => lease.release()));
+  let cancel!: (reason: Error) => void;
+  const cancellation = new Promise<never>((_resolve, reject) => { cancel = reject; });
+  void cancellation.catch(() => {});
+  root.onDisposeObservable.addOnce(() => {
+    cancel(new Error("Foliage preparation cancelled"));
+    held.forEach((lease) => lease.release());
+  });
   const ready = (async () => {
     for (const [batchIndex, batch] of data.batches.entries()) {
       if (root.isDisposed()) return;
@@ -46,6 +61,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
       if (root.isDisposed()) return;
       const batchRoot = new Mesh(`${name}:batch:${batchIndex}`, scene);
       batchRoot.parent = root;
+      batchRoot.setEnabled(false);
       batchRoot.isPickable = false;
       batches.push({ root: batchRoot, batch });
       const scale = assets?.modelPayloads?.get(batch.modelGuid)?.importScale ?? 1;
@@ -78,8 +94,16 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
         }
       }
     }
-    if (!root.isDisposed()) refreshFoliageMaterials(root, assets);
-  })();
+    if (root.isDisposed()) return;
+    refreshFoliageMaterials(root, assets);
+    await prepareInstanceMaterials(root, () => {
+      if (root.isDisposed()) throw new Error("Foliage preparation cancelled");
+    }, cancellation);
+    if (!root.isDisposed()) for (const entry of batches) entry.root.setEnabled(true);
+  })().catch((error: unknown) => {
+    // Releasing the last lease during deletion can retire an in-flight decode.
+    if (!root.isDisposed()) throw error;
+  });
   preparations.set(root, ready);
   void ready.catch(() => {});
   return root;

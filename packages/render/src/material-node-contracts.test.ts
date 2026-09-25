@@ -29,6 +29,22 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each(["layer1", "layer2", "layer3", "layer4"])("compiles Landscape coordinates, height, slope and painted %s into a surface", async (layer) => {
+    const doc = createDefaultMaterialDocument("Terrain", "landscape");
+    doc.edges = [];
+    for (const type of ["uv", "height", "slope", "layers", "blend"]) node(doc, type, `landscape.${type}`);
+    node(doc, "noise", "noise.perlin");
+    wire(doc, "uv", "uv", "noise", "coordinates");
+    wire(doc, "noise", "out", "blend", "layer");
+    wire(doc, "baseColor", "out", "blend", "base");
+    wire(doc, "layers", layer, "blend", "weight");
+    wire(doc, "blend", "color", "output", "baseColor");
+    wire(doc, "height", "height", "output", "worldPositionOffset");
+    wire(doc, "slope", "slope", "output", "roughness");
+    const result = await compile(doc);
+    expect(result.material.compiledShaders).toContain("color");
+  });
+
   for (const domain of ["surface", "postProcess", "particle"] as const) {
     it.each(["perlin", "voronoi", "worley"])(`compiles every %s noise output in ${domain}`, async (kind) => {
       const doc = createDefaultMaterialDocument("Noise", domain);
