@@ -1,13 +1,19 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import {
-  CatalogDialog,
-  CatalogResultRow,
+  clampOverlayMenuPosition,
   humanizePropertyLabel,
-  WindowedList,
   isCoarsePointerEnvironment,
+  SearchInput,
+  WindowedList,
 } from "@babylonslate/editor-kit";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
-import { Switch } from "@babylonslate/ui/components/switch";
+import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
+import { Kbd } from "@babylonslate/ui/components/kbd";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
@@ -16,8 +22,13 @@ import {
 } from "./graph-connect";
 import { nodeRoleClass, nodeVisualRole } from "./node-theme";
 
-/** Matches `--touch-target` so header and item rows share one window. */
-export const NODE_PALETTE_ROW_HEIGHT = 44;
+/** Desktop rows match `--chrome-row`; coarse pointers use `--touch-target`. */
+export const NODE_PALETTE_ROW_HEIGHT = 28;
+export const NODE_PALETTE_TOUCH_ROW_HEIGHT = 44;
+
+const POPUP_WIDTH = 360;
+const POPUP_HEIGHT = 460;
+const POPUP_MARGIN = 8;
 
 export interface NodePaletteProps {
   open: boolean;
@@ -30,11 +41,22 @@ export interface NodePaletteProps {
   sourcePins?: SerializedPin[];
   /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /**
+   * Viewport point the menu opens from (pointer, double tap, or under the Add
+   * Node button). Without one the menu is centered.
+   */
+  anchor?: { x: number; y: number } | null;
 }
 
 type PaletteRow =
-  | { kind: "header"; key: string; category: string }
-  | { kind: "item"; key: string; node: PaletteNode; striped: boolean };
+  | {
+      kind: "category";
+      key: string;
+      category: string;
+      count: number;
+      expanded: boolean;
+    }
+  | { kind: "item"; key: string; node: PaletteNode; nested: boolean };
 
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
@@ -55,107 +77,66 @@ function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   });
 }
 
-function flattenPaletteRows(
-  grouped: Array<[string, PaletteNode[]]>,
-  omitHeaders: boolean,
-): PaletteRow[] {
-  const rows: PaletteRow[] = [];
-  let itemIndex = 0;
-  for (const [category, nodes] of grouped) {
-    if (!omitHeaders) {
-      rows.push({ kind: "header", key: `header:${category}`, category });
-    }
-    for (const node of nodes) {
-      rows.push({
-        kind: "item",
-        key: node.id,
-        node,
-        striped: itemIndex % 2 === 1,
-      });
-      itemIndex += 1;
-    }
-  }
-  return rows;
+function rowId(listId: string, key: string): string {
+  return `${listId}-${encodeURIComponent(key)}`;
 }
 
-function PaletteWindowedList({
-  rows,
-  activeId,
-  listId,
-  onActiveChange,
-  onAddNode,
-  onOpenChange,
-}: {
-  rows: PaletteRow[];
-  activeId: string | null;
-  listId: string;
-  onActiveChange: (id: string) => void;
-  onAddNode: (node: PaletteNode) => void;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const activeIndex = rows.findIndex(
-    (row) => row.kind === "item" && row.key === activeId,
+function cssPixels(name: string): number {
+  const value = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue(name),
   );
+  return Number.isFinite(value) ? value : 0;
+}
+
+function popupFrame(anchor: { x: number; y: number } | null | undefined) {
+  const insets = {
+    top: cssPixels("--safe-top"),
+    right: cssPixels("--safe-right"),
+    bottom: cssPixels("--safe-bottom"),
+    left: cssPixels("--safe-left"),
+  };
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const width = Math.min(POPUP_WIDTH, vw - insets.left - insets.right - POPUP_MARGIN * 2);
+  const height = Math.min(POPUP_HEIGHT, vh - insets.top - insets.bottom - POPUP_MARGIN * 2);
+  const origin = anchor ?? { x: (vw - width) / 2, y: (vh - height) / 2 };
+  const { x, y } = clampOverlayMenuPosition({
+    ...origin,
+    width,
+    height,
+    viewportWidth: vw,
+    viewportHeight: vh,
+    margin: POPUP_MARGIN,
+    insets,
+  });
+  return { left: x, top: y, width, height };
+}
+
+function NodeRoleMark({ node }: { node: PaletteNode }) {
   return (
-    <div role="listbox" id={listId} aria-label="Nodes">
-      <WindowedList
-        itemCount={rows.length}
-        rowHeight={NODE_PALETTE_ROW_HEIGHT}
-        activeIndex={activeIndex}
-      >
-        {(index) => {
-          const row = rows[index]!;
-          if (row.kind === "header")
-            return (
-              <h3 className="flex h-full items-center px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {humanizePropertyLabel(row.category)}
-              </h3>
-            );
-          const node = row.node;
-          const commit = () => {
-            onAddNode(node);
-            onOpenChange(false);
-          };
-          return (
-            <CatalogResultRow
-              role="option"
-              id={`${listId}-${encodeURIComponent(node.id)}`}
-              tooltip={node.description}
-              aria-description={node.description}
-              active={node.id === activeId}
-              striped={row.striped}
-              tabIndex={-1}
-              className="h-full"
-              data-testid={`node-palette-item-${node.id}`}
-              onSelect={commit}
-              onFocus={() => onActiveChange(node.id)}
-              title={node.title}
-              description={humanizePropertyLabel(node.category)}
-              leading={
-                <span
-                  className={cn(
-                    "size-2.5 shrink-0 rounded-sm",
-                    nodeRoleClass(
-                      nodeVisualRole({
-                        nodeType: node.id,
-                        title: node.title,
-                        category: node.category,
-                        pure: node.pure,
-                        material: node.defaultData?.__material === true,
-                        latent: node.latent,
-                      }),
-                    ),
-                  )}
-                  aria-hidden="true"
-                />
-              }
-            />
-          );
-        }}
-      </WindowedList>
-    </div>
+    <span
+      className={cn(
+        "size-2.5 shrink-0 rounded-sm",
+        nodeRoleClass(
+          nodeVisualRole({
+            nodeType: node.id,
+            title: node.title,
+            category: node.category,
+            pure: node.pure,
+            material: node.defaultData?.__material === true,
+            latent: node.latent,
+          }),
+        ),
+      )}
+      aria-hidden="true"
+    />
   );
 }
+
+/**
+ * Unreal-style Add Node menu: a pointer-anchored popup with search, a
+ * collapsible category tree, and Context Sensitive filtering for pin drags.
+ */
 export function NodePalette({
   open,
   onOpenChange,
@@ -164,179 +145,291 @@ export function NodePalette({
   filterPin = null,
   sourcePins,
   pinCompatibility,
+  anchor,
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const listId = useId();
-  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  /** Categories the user flipped from their default open state. */
+  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
   const [contextSensitive, setContextSensitive] = useState(true);
+  const listId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const pinFiltered = Boolean(filterPin && contextSensitive);
+  const searching = search.trim().length > 0;
+  const coarse = isCoarsePointerEnvironment();
+  const rowHeight = coarse ? NODE_PALETTE_TOUCH_ROW_HEIGHT : NODE_PALETTE_ROW_HEIGHT;
 
   useEffect(() => {
     if (!open) return;
     setSearch("");
-    setActiveId(null);
-    setActiveCategory("all");
+    setActiveKey(null);
+    setToggled(new Set());
   }, [open]);
 
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
-    return filterPin && contextSensitive
-      ? filterPaletteForPin(nodes, filterPin, pinCompatibility, sourcePins)
+    return pinFiltered
+      ? filterPaletteForPin(nodes, filterPin!, pinCompatibility, sourcePins)
       : nodes;
-  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility, sourcePins]);
+  }, [filterPin, paletteNodes, pinCompatibility, pinFiltered, sourcePins]);
 
-  const filteredBySearch = useMemo(
-    () => filterNodes(allNodes, search),
-    [allNodes, search],
-  );
+  const filtered = useMemo(() => filterNodes(allNodes, search), [allNodes, search]);
 
-  const categories = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const node of filteredBySearch) {
-      map.set(node.category, (map.get(node.category) ?? 0) + 1);
+  const rows = useMemo((): PaletteRow[] => {
+    // Pin suggestions keep their relevance order instead of a category tree.
+    if (pinFiltered) {
+      return filtered.map((node) => ({ kind: "item", key: node.id, node, nested: false }));
     }
-    const listed = [...map.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, count]) => ({ id, label: humanizePropertyLabel(id), count }));
-    return [
-      {
-        id: "all",
-        label: pinFiltered ? "Suggested" : "All",
-        count: filteredBySearch.length,
-      },
-      ...listed,
-    ];
-  }, [filteredBySearch, pinFiltered]);
-
-  useEffect(() => {
-    if (
-      activeCategory !== "all" &&
-      !categories.some((category) => category.id === activeCategory)
-    ) {
-      setActiveCategory("all");
-    }
-  }, [activeCategory, categories]);
-
-  const filtered = useMemo(() => {
-    if (activeCategory === "all") return filteredBySearch;
-    return filteredBySearch.filter((node) => node.category === activeCategory);
-  }, [activeCategory, filteredBySearch]);
-
-  const grouped = useMemo(() => {
-    if (pinFiltered && activeCategory === "all") {
-      return [["", filtered] as [string, PaletteNode[]]];
-    }
-    const map = new Map<string, PaletteNode[]>();
+    const groups = new Map<string, PaletteNode[]>();
     for (const node of filtered) {
-      const list = map.get(node.category) ?? [];
+      const list = groups.get(node.category) ?? [];
       list.push(node);
-      map.set(node.category, list);
+      groups.set(node.category, list);
     }
-    const entries = [...map.entries()];
-    if (pinFiltered) return entries;
-    return entries.sort(([a], [b]) => a.localeCompare(b));
-  }, [activeCategory, filtered, pinFiltered]);
+    const sorted = [...groups.entries()].sort(([a], [b]) =>
+      humanizePropertyLabel(a).localeCompare(humanizePropertyLabel(b)),
+    );
+    const openByDefault = searching || sorted.length === 1;
+    const result: PaletteRow[] = [];
+    for (const [category, nodes] of sorted) {
+      const expanded = toggled.has(category) ? !openByDefault : openByDefault;
+      result.push({
+        kind: "category",
+        key: `category:${category}`,
+        category,
+        count: nodes.length,
+        expanded,
+      });
+      if (!expanded) continue;
+      for (const node of nodes) {
+        result.push({ kind: "item", key: node.id, node, nested: true });
+      }
+    }
+    return result;
+  }, [filtered, pinFiltered, searching, toggled]);
 
-  const rows = useMemo(
-    () => flattenPaletteRows(grouped, pinFiltered),
-    [grouped, pinFiltered],
-  );
-
-  const options = rows.flatMap((row) =>
-    row.kind === "item" ? [row.node] : [],
-  );
-  const activeIndex = options.findIndex((node) => node.id === activeId);
+  const activeIndex = rows.findIndex((row) => row.key === activeKey);
+  const firstItemIndex = rows.findIndex((row) => row.kind === "item");
 
   if (!paletteNodes?.length) return null;
 
-  return (
-    <CatalogDialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) {
-          setSearch("");
-          setActiveCategory("all");
+  const close = () => onOpenChange(false);
+  const commit = (node: PaletteNode) => {
+    onAddNode(node);
+    close();
+  };
+  const toggleCategory = (category: string) => {
+    setToggled((current) => {
+      const next = new Set(current);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
+  const activate = (row: PaletteRow) => {
+    if (row.kind === "item") commit(row.node);
+    else toggleCategory(row.category);
+  };
+
+  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || rows.length === 0) return;
+    const active = activeIndex >= 0 ? rows[activeIndex]! : null;
+    let next = activeIndex;
+    switch (event.key) {
+      case "ArrowDown":
+        next = Math.min(rows.length - 1, activeIndex + 1);
+        break;
+      case "ArrowUp":
+        next = activeIndex < 0 ? rows.length - 1 : Math.max(0, activeIndex - 1);
+        break;
+      case "Home":
+        if (activeIndex < 0) return;
+        next = 0;
+        break;
+      case "End":
+        if (activeIndex < 0) return;
+        next = rows.length - 1;
+        break;
+      case "ArrowRight":
+        if (active?.kind !== "category" || active.expanded) return;
+        event.preventDefault();
+        toggleCategory(active.category);
+        return;
+      case "ArrowLeft":
+        if (!active) return;
+        event.preventDefault();
+        if (active.kind === "category") {
+          if (active.expanded) toggleCategory(active.category);
+          return;
         }
-      }}
-      title="Add Node"
-      categories={categories}
-      activeCategoryId={activeCategory}
-      onCategoryChange={(id) => {
-        setActiveCategory(id);
-        setActiveId(null);
-      }}
-      search={search}
-      onSearchChange={(value) => {
-        setSearch(value);
-        setActiveId(null);
-      }}
-      autoFocusSearch={!isCoarsePointerEnvironment()}
-      searchInputProps={{
-        role: "combobox",
-        "aria-label": "Search Nodes",
-        "aria-autocomplete": "list",
-        "aria-expanded": options.length > 0,
-        "aria-controls": options.length > 0 ? listId : undefined,
-        "aria-activedescendant":
-          activeIndex >= 0
-            ? `${listId}-${encodeURIComponent(options[activeIndex]!.id)}`
-            : undefined,
-        onKeyDown: (event) => {
-          if (event.nativeEvent.isComposing || options.length === 0) return;
-          let next = activeIndex;
-          if (event.key === "ArrowDown")
-            next = Math.min(options.length - 1, activeIndex + 1);
-          else if (event.key === "ArrowUp")
-            next =
-              activeIndex < 0
-                ? options.length - 1
-                : Math.max(0, activeIndex - 1);
-          else if (event.key === "Home") next = 0;
-          else if (event.key === "End") next = options.length - 1;
-          else if (event.key === "Enter") {
-            event.preventDefault();
-            onAddNode(options[Math.max(0, activeIndex)]!);
-            onOpenChange(false);
-            return;
-          } else return;
-          event.preventDefault();
-          setActiveId(options[next]!.id);
-        },
-      }}
-      searchPlaceholder="Search nodes"
-      data-testid="node-palette"
-      footer={
-        <Field
-          orientation="horizontal"
-          className="min-h-[var(--touch-target,44px)] items-center"
-        >
-          <Switch
-            id="node-palette-context-sensitive"
-            checked={contextSensitive}
-            onCheckedChange={(checked) => setContextSensitive(checked === true)}
-            data-testid="node-palette-context-sensitive"
-          />
-          <FieldLabel htmlFor="node-palette-context-sensitive">
-            Context Sensitive
-          </FieldLabel>
-        </Field>
+        if (active.nested) {
+          setActiveKey(`category:${active.node.category}`);
+        }
+        return;
+      case "Enter": {
+        event.preventDefault();
+        const target = active ?? (firstItemIndex >= 0 ? rows[firstItemIndex]! : null);
+        if (target) activate(target);
+        return;
       }
-    >
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No matches</p>
-      ) : (
-        <PaletteWindowedList
-          key={`${search}:${activeCategory}:${contextSensitive}`}
-          rows={rows}
-          activeId={activeId}
-          listId={listId}
-          onActiveChange={setActiveId}
-          onAddNode={onAddNode}
-          onOpenChange={onOpenChange}
-        />
-      )}
-    </CatalogDialog>
+      default:
+        return;
+    }
+    event.preventDefault();
+    setActiveKey(rows[next]!.key);
+  };
+
+  const frame = open ? popupFrame(anchor) : null;
+  const activeDescendant = activeIndex >= 0 ? rowId(listId, rows[activeIndex]!.key) : undefined;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        data-testid="node-palette"
+        showCloseButton={false}
+        overlayClassName="bg-transparent"
+        initialFocus={(interaction) =>
+          coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current
+        }
+        className="node-palette-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        style={frame ?? undefined}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-2 px-2 pt-2 pb-1.5">
+          <DialogTitle className="text-sm">Add Node</DialogTitle>
+          <label className="node-palette-context flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
+            <Checkbox
+              checked={contextSensitive}
+              onCheckedChange={(checked) => setContextSensitive(checked === true)}
+              data-testid="node-palette-context-sensitive"
+            />
+            Context Sensitive
+          </label>
+        </div>
+        <div className="shrink-0 border-b px-2 pb-2">
+          <SearchInput
+            ref={searchRef}
+            role="combobox"
+            aria-label="Search Nodes"
+            aria-autocomplete="list"
+            aria-expanded={rows.length > 0}
+            aria-controls={rows.length > 0 ? listId : undefined}
+            aria-activedescendant={activeDescendant}
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
+              setActiveKey(null);
+              setToggled(new Set());
+            }}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Search nodes"
+            className="h-7 min-h-[var(--chrome-row,28px)]"
+            data-testid="node-palette-search"
+          />
+        </div>
+        <div
+          ref={bodyRef}
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-1 outline-none"
+          style={{ overflowY: "auto" }}
+          data-testid="node-palette-body"
+        >
+          {rows.length === 0 ? (
+            <p className="px-2 py-3 text-sm text-muted-foreground">No matches</p>
+          ) : (
+            <div
+              role="tree"
+              id={listId}
+              aria-label={pinFiltered ? "Suggested Nodes" : "Nodes"}
+            >
+              <WindowedList
+                key={`${search}:${contextSensitive}`}
+                itemCount={rows.length}
+                rowHeight={rowHeight}
+                activeIndex={activeIndex}
+              >
+                {(index) => {
+                  const row = rows[index]!;
+                  const active = row.key === activeKey;
+                  if (row.kind === "category") {
+                    return (
+                      <div
+                        role="treeitem"
+                        id={rowId(listId, row.key)}
+                        aria-expanded={row.expanded}
+                        aria-selected={active}
+                        aria-level={1}
+                        tabIndex={-1}
+                        data-active={active ? "true" : undefined}
+                        data-testid={`node-palette-category-${row.category}`}
+                        className="node-palette-row node-palette-category"
+                        onClick={() => {
+                          setActiveKey(row.key);
+                          toggleCategory(row.category);
+                        }}
+                      >
+                        <ChevronRightIcon
+                          aria-hidden="true"
+                          className="node-palette-chevron"
+                          data-expanded={row.expanded ? "true" : undefined}
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {humanizePropertyLabel(row.category)}
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {row.count}
+                        </span>
+                      </div>
+                    );
+                  }
+                  const node = row.node;
+                  return (
+                    <div
+                      role="treeitem"
+                      id={rowId(listId, row.key)}
+                      aria-selected={active}
+                      aria-level={row.nested ? 2 : 1}
+                      aria-description={node.description}
+                      title={node.description}
+                      tabIndex={-1}
+                      data-active={active ? "true" : undefined}
+                      data-nested={row.nested ? "true" : undefined}
+                      data-testid={`node-palette-item-${node.id}`}
+                      className="node-palette-row node-palette-item"
+                      onClick={() => commit(node)}
+                      onFocus={() => setActiveKey(row.key)}
+                    >
+                      <NodeRoleMark node={node} />
+                      <span className="min-w-0 flex-1 truncate">{node.title}</span>
+                      {row.nested ? null : (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {humanizePropertyLabel(node.category)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }}
+              </WindowedList>
+            </div>
+          )}
+        </div>
+        <div className="node-palette-hints shrink-0 items-center gap-3 border-t px-2 py-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd>
+            Navigate
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd>←</Kbd>
+            <Kbd>→</Kbd>
+            Collapse / Expand
+          </span>
+          <span className="flex items-center gap-1">
+            <Kbd>Enter</Kbd>
+            Add
+          </span>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

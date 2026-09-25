@@ -587,6 +587,7 @@ function GraphEditorCanvas({
     nodeId?: string;
     position: { x: number; y: number };
   } | null>(null);
+  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null);
   const connectDragRef = useRef<{
     pointerId: number;
     pointer: { x: number; y: number };
@@ -1492,6 +1493,7 @@ function GraphEditorCanvas({
       if (action === "add-node") {
         const position = screenToFlowPosition(point);
         setPendingConnect({ pin, nodeId: fromNode.id, position });
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
         finishGesture();
         return;
@@ -1834,7 +1836,7 @@ function GraphEditorCanvas({
   }, []);
 
   const handlePaneClick = useCallback(
-    () => {
+    (event?: { clientX: number; clientY: number }) => {
       if (skipPaneClickRef.current) {
         skipPaneClickRef.current = false;
         return;
@@ -1852,7 +1854,9 @@ function GraphEditorCanvas({
         !readOnly &&
         emptyPaneDoubleTapAddsNode
       ) {
-        setPendingConnect(null);
+        const point = event ? { x: event.clientX, y: event.clientY } : null;
+        setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
       }
       lastPaneTapRef.current = now;
@@ -1862,6 +1866,7 @@ function GraphEditorCanvas({
       connectEndMode,
       emptyPaneDoubleTapAddsNode,
       readOnly,
+      screenToFlowPosition,
     ],
   );
 
@@ -1889,11 +1894,19 @@ function GraphEditorCanvas({
         }
       }
       if (paletteNodes && paletteNodes.length > 0) {
-        setPendingConnect(null);
+        const point = { x: event.clientX, y: event.clientY };
+        setPendingConnect({ position: screenToFlowPosition(point) });
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
       }
     },
-    [contextMenuItemsForNode, paletteNodes, paneMenu.openMenuAt, readOnly],
+    [
+      contextMenuItemsForNode,
+      paletteNodes,
+      paneMenu.openMenuAt,
+      readOnly,
+      screenToFlowPosition,
+    ],
   );
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
@@ -2218,8 +2231,10 @@ function GraphEditorCanvas({
               size="icon-sm"
               aria-label="Add Node"
               title="Add Node"
-              onClick={() => {
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
                 setPendingConnect(null);
+                setPaletteAnchor({ x: rect.left, y: rect.bottom + 4 });
                 setPaletteOpenState(true);
               }}
               data-testid="graph-add-node"
@@ -2410,6 +2425,7 @@ function GraphEditorCanvas({
           pinCompatibility={pinCompatibility}
           sourcePins={paletteSourcePins}
           onAddNode={handleAddPaletteNode}
+          anchor={paletteAnchor}
         />
         )}
         <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />
