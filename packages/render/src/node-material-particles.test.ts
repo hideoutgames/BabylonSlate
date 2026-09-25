@@ -52,6 +52,8 @@ describe("compiled particle effect bindings", () => {
       expect(dispose).not.toHaveBeenCalled();
       engine.endFrame();
       expect(dispose).toHaveBeenCalledOnce();
+      // Babylon binds only ready effects; particle Materials carry uniforms (the Multiply blend alpha).
+      await vi.waitFor(() => expect(current.isReady()).toBe(true));
       current.onBindObservable.notifyObservers(current);
       current.onBindObservable.notifyObservers(current);
       expect(creations).toBe(changed);
