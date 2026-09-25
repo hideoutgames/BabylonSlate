@@ -8,7 +8,6 @@ import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
 } from "./perf-ceilings";
-import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 
 export interface ResourceCacheOptions {
@@ -221,11 +220,10 @@ const caches = new WeakMap<AbstractEngine, ResourceCache>();
  */
 export function resourceCacheForEngine(
   engine: AbstractEngine,
-  options?: ResourceCacheOptions,
 ): ResourceCache {
   const existing = caches.get(engine);
   if (existing) return existing;
-  const cache = new ResourceCache(options);
+  const cache = new ResourceCache();
   caches.set(engine, cache);
   return cache;
 }
@@ -640,12 +638,7 @@ export class ResourceCache {
     }
   }
 
-  account(
-    assetGuid: string,
-    bytes: number,
-    format: TextureFormat = "rgba8",
-  ): void {
-    void format;
+  account(assetGuid: string, bytes: number): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) {
       this.entries.set(assetGuid, {
@@ -668,16 +661,6 @@ export class ResourceCache {
     this.totalBytes += bytes;
     entry.lastUsed = ++this.clock;
     this.evictToCeiling();
-  }
-
-  accountTextureSize(
-    assetGuid: string,
-    width: number,
-    height: number,
-    format: TextureFormat,
-    withMips: boolean,
-  ): void {
-    this.account(assetGuid, accountedTextureBytes(width, height, format, withMips));
   }
 
   /** Resolve the exact acquired generation, including after a context restore. */
@@ -873,7 +856,6 @@ export class ResourceCacheOwner implements TextureResources {
   setClientBudget(...args: Parameters<ResourceCache["setClientBudget"]>) { this.inner.setClientBudget(...args); }
   setClientBudgetEnabled(...args: Parameters<ResourceCache["setClientBudgetEnabled"]>) { this.inner.setClientBudgetEnabled(...args); }
   account(...args: Parameters<ResourceCache["account"]>) { this.inner.account(...args); }
-  accountTextureSize(...args: Parameters<ResourceCache["accountTextureSize"]>) { this.inner.accountTextureSize(...args); }
   releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
   accountedBytes() { return this.inner.accountedBytes(); }
   resourceStats() { return this.inner.resourceStats(); }

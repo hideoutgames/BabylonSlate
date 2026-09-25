@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { accountedTextureBytes } from "./texture-bytes";
 import {
   accountedGeometryBytes,
   DRAW_CALL_WARN_CEILING,
@@ -23,9 +22,8 @@ describe("perf ceilings", () => {
   });
 
   it("keeps the tiny CI fixture under texture and geometry ceilings", () => {
-    const textureBytes = accountedTextureBytes(64, 64, "rgba8", true);
+    const textureBytes = Math.ceil(64 * 64 * 4 * (4 / 3));
     const geometryBytes = accountedGeometryBytes(24, 36);
-    expect(textureBytes).toBe(Math.ceil(64 * 64 * 4 * (4 / 3)));
     expect(geometryBytes).toBe(24 * 32 + 36 * 4);
     expect(textureBytes).toBeLessThan(TEXTURE_BYTE_CEILING);
     expect(geometryBytes).toBeLessThan(GEOMETRY_BYTE_CEILING);
