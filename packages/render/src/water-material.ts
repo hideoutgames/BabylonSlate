@@ -4,39 +4,43 @@ import type { WaterBodyProperties, WaterDefinition } from "@babylonslate/core";
 /** Procedural water shading on native PBR, including separately authored WGSL. */
 export class WaterMaterialPlugin extends MaterialPluginBase {
   time = 0;
-  constructor(material: PBRMaterial, readonly water: WaterDefinition, readonly body: WaterBodyProperties) {
+  readonly water: WaterDefinition;
+  readonly body: WaterBodyProperties;
+  constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, { SLATE_WATER: true }, true, true);
+    this.water = water;
+    this.body = body;
     this.doNotSerialize = true;
   }
   override isCompatible(): boolean { return true; }
   override getClassName(): string { return "WaterMaterialPlugin"; }
-  override getAttributes(attributes: string[]): void { attributes.push("uv2"); }
+  override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow"); }
   override getUniforms() {
-    return { ubo: ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterFlow"].map((name) => ({ name, size: 4, type: "vec4" })) };
+    const names = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook"];
+    return { ubo: names.map((name) => ({ name, size: 4, type: "vec4" })) };
   }
   override bindForSubMesh(buffer: UniformBuffer): void {
-    const w = this.water, b = this.body, direction = b.flowDirection * Math.PI / 180;
+    const w = this.water, b = this.body;
     buffer.updateFloat4("slateWaterShallow", ...w.shallowColor, w.opacity);
     buffer.updateFloat4("slateWaterDeep", ...w.deepColor, w.waveHeight * b.waveScale);
     buffer.updateFloat4("slateWaterFoam", ...w.foamColor, w.foamAmount);
     buffer.updateFloat4("slateWaterMotion", this.time, w.rippleScale, w.rippleStrength, w.foamWidth);
     buffer.updateFloat4("slateWaterLook", w.colorBands, w.depthColorDistance, b.depth, w.style === "stylized" ? 1 : 0);
-    buffer.updateFloat4("slateWaterFlow", Math.cos(direction) * b.flowSpeed, Math.sin(direction) * b.flowSpeed, 0, 0);
   }
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {
     const wgsl = language === ShaderLanguage.WGSL;
     if (shaderType === "vertex") return {
-      CUSTOM_VERTEX_DEFINITIONS: wgsl ? "attribute uv2: vec2f; varying vSlateWater: vec4f;" : "attribute vec2 uv2; varying vec4 vSlateWater;",
+      CUSTOM_VERTEX_DEFINITIONS: wgsl ? "attribute slateWaterData: vec4f; attribute slateWaterFlow: vec3f; varying vSlateWater: vec4f; varying vSlateWaterFlow: vec2f;" : "attribute vec4 slateWaterData; attribute vec3 slateWaterFlow; varying vec4 vSlateWater; varying vec2 vSlateWaterFlow;",
       CUSTOM_VERTEX_MAIN_END: wgsl
-        ? "vertexOutputs.vSlateWater = vec4f(positionUpdated.xz, vertexInputs.uv2.x, positionUpdated.y - vertexInputs.uv2.y);"
-        : "vSlateWater = vec4(positionUpdated.xz, uv2.x, positionUpdated.y - uv2.y);",
+        ? "vertexOutputs.vSlateWater = vec4f(positionUpdated.xz, vertexInputs.slateWaterData.y, vertexInputs.slateWaterData.x); vertexOutputs.vSlateWaterFlow = vertexInputs.slateWaterFlow.xz;"
+        : "vSlateWater = vec4(positionUpdated.xz, slateWaterData.y, slateWaterData.x); vSlateWaterFlow = slateWaterFlow.xz;",
     };
     if (shaderType !== "fragment") return null;
     const p = wgsl ? "uniforms." : "", v = wgsl ? "fragmentInputs.vSlateWater" : "vSlateWater";
     const decl = (type: string, name: string, expression: string) => wgsl ? `var ${name}: ${type === "float" ? "f32" : type + "f"} = ${expression};` : `${type} ${name} = ${expression};`;
     const vector = wgsl ? "vec3f" : "vec3";
     const code = [
-      decl("vec2", "swUV", `(${v}.xy - ${p}slateWaterFlow.xy * ${p}slateWaterMotion.x) * ${p}slateWaterMotion.y`),
+      decl("vec2", "swUV", `(${v}.xy - ${wgsl ? "fragmentInputs." : ""}vSlateWaterFlow * ${p}slateWaterMotion.x) * ${p}slateWaterMotion.y`),
       decl("float", "swTime", `${p}slateWaterMotion.x`),
       decl("float", "swNoise", "sin(swUV.x + sin(swUV.y * 0.73 + swTime)) * sin(swUV.y * 1.17 - swTime * 0.6)"),
       decl("float", "swDepth", `min(${p}slateWaterLook.z, max(0.0, ${v}.z) * 0.7)`),
@@ -50,7 +54,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       `alpha = mix(${p}slateWaterShallow.a, 1.0, swFoam);`,
     ].join("\n");
     return {
-      CUSTOM_FRAGMENT_DEFINITIONS: wgsl ? "varying vSlateWater: vec4f;" : "varying vec4 vSlateWater;",
+      CUSTOM_FRAGMENT_DEFINITIONS: wgsl ? "varying vSlateWater: vec4f; varying vSlateWaterFlow: vec2f;" : "varying vec4 vSlateWater; varying vec2 vSlateWaterFlow;",
       CUSTOM_FRAGMENT_BEFORE_LIGHTS: code,
     };
   }

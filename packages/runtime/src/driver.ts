@@ -972,6 +972,10 @@ class InProcessRuntime implements RuntimeDriver {
         if (!actor || actor.destroyed) return undefined;
         return actor;
       },
+      sampleWater: (position, actorId) => {
+        this.physicsSync.water.update(this.world.getActors(), this.world.clock.tickIndex * this.dt);
+        return this.physicsSync.water.sample(position, actorId);
+      },
       lineTrace: (start, end, options) =>
         this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>

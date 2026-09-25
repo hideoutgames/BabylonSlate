@@ -42,6 +42,14 @@ function renderDialog(
 }
 
 describe("ContentBrowserNewAssetDialog", () => {
+  it("lets a Water asset choose Stylized rendering before creation", () => {
+    const onWaterStyleChange = vi.fn();
+    const { onCreate } = renderDialog({ type: "Water", name: "Lagoon", waterStyle: "realistic", onWaterStyleChange });
+    fireEvent.click(screen.getByRole("button", { name: "Stylized", exact: true }));
+    expect(onWaterStyleChange).toHaveBeenCalledWith("stylized");
+    fireEvent.click(screen.getByRole("button", { name: "Create", exact: true }));
+    expect(onCreate).toHaveBeenCalledOnce();
+  });
   afterEach(() => {
     cleanup();
     layout.phone = false;

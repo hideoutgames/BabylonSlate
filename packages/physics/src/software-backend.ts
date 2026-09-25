@@ -589,6 +589,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       } else {
         body.linearVelocity.z = 0;
       }
+      const angularDamp = Math.max(0, 1 - body.desc.angularDamping * dt);
+      const angular = body.angularVelocity;
+      angular.x *= angularDamp; angular.y *= angularDamp; angular.z *= angularDamp;
+      const speed = Math.hypot(angular.x, angular.y, angular.z);
+      if (speed > 1e-8) {
+        const half = speed * dt / 2, factor = Math.sin(half) / speed;
+        body.transform.rotation = multiplyQuat({ x: angular.x * factor, y: angular.y * factor, z: angular.z * factor, w: Math.cos(half) }, body.transform.rotation);
+      }
       const damp = Math.max(0, 1 - body.desc.linearDamping * dt);
       body.linearVelocity.x *= damp;
       body.linearVelocity.y *= damp;

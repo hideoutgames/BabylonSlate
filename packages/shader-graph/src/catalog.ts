@@ -243,6 +243,22 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "time", name: "Time", type: FLOAT }],
   },
   {
+    type: "input.waterSurface",
+    title: "Water Surface",
+    category: "input",
+    searchAliases: ["water", "foam", "shore", "waves", "flow"],
+    domains: ["surface"],
+    inputs: [],
+    outputs: [
+      { id: "waveHeight", name: "Wave Height", type: FLOAT },
+      { id: "bankDistance", name: "Bank Distance", type: FLOAT },
+      { id: "waterDepth", name: "Water Depth", type: FLOAT },
+      { id: "time", name: "Simulation Time", type: FLOAT },
+      { id: "flow", name: "Local Flow", type: VEC3 },
+    ],
+    cost: 0,
+  },
+  {
     type: "input.vertexColor",
     title: "Vertex Color",
     category: "Input",

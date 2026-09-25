@@ -3,14 +3,37 @@ import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createPlayMesh } from "./snapshot-apply";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
+import { compileMaterialPlan } from "./material-compiler";
 
 describe("Water rendering", () => {
+  it("compiles Water Surface data into a custom material and preserves borrowed ownership", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const doc = createDefaultMaterialDocument("Foam");
+      doc.shadingModel = "unlit";
+      doc.nodes.push({ id: "water", type: "input.waterSurface", position: { x: 0, y: 0 }, properties: {} });
+      doc.edges = [{ id: "foam", sourceNodeId: "water", sourcePinId: "bankDistance", targetNodeId: "output", targetPinId: "emissive" }];
+      const plan = lowerMaterialDocument(doc);
+      if (!plan.ok) throw new Error(JSON.stringify(plan.diagnostics));
+      const result = compileMaterialPlan(plan.plan, { scene, name: "water-custom" });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      expect(await result.ready).toEqual([]);
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), undefined, result.material);
+      const data = mesh.getVerticesData("slateWaterData")!;
+      expect(data[1]).toBeCloseTo(0);
+      expect(data[(4 * 9 + 4) * 4 + 1]).toBeCloseTo(15);
+      mesh.dispose();
+      expect(scene.materials).toContain(result.material);
+      result.dispose();
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("moves the rendered surface with the simulation clock and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
-    const materialCount = scene.materials.length;
     try {
       const mesh = createWaterMesh(scene, "lake", body, water);
+      const material = mesh.material;
       setSceneWaterTime(scene, 2);
       updateSceneWater(scene);
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
@@ -23,7 +46,7 @@ describe("Water rendering", () => {
       expect(sceneHasWater(scene)).toBe(true);
       mesh.dispose();
       expect(sceneHasWater(scene)).toBe(false);
-      expect(scene.materials.length).toBe(materialCount);
+      expect(scene.materials).not.toContain(material);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("constructs a bounded river from a Play component without a model asset", () => {

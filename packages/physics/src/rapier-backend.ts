@@ -116,6 +116,7 @@ type RapierRigidBody = {
   handle: number;
   translation(): { x: number; y: number };
   linvel(): { x: number; y: number };
+  angvel(): number;
   setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
   rotation(): number;
@@ -123,6 +124,7 @@ type RapierRigidBody = {
   setAngvel(velocity: number, wakeUp: boolean): void;
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
+  applyImpulseAtPoint(impulse: { x: number; y: number }, point: { x: number; y: number }, wakeUp: boolean): void;
   setNextKinematicTranslation(t: { x: number; y: number }): void;
   setNextKinematicRotation(angle: number): void;
   setGravityScale(scale: number, wakeUp: boolean): void;

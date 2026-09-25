@@ -167,10 +167,12 @@ export const emptyWaterSample = (): WaterSample => ({
 });
 
 /** Identical analytic waves drive the visible mesh, queries and buoyancy. */
+const waveComponents = [[0, 1, 0.65, 0], [1.1, 1.73, 0.25, 1.2], [-0.7, 2.41, 0.1, 2.7]] as const;
+
 export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1) {
   const angle = water.waveDirection * Math.PI / 180;
   let height = 0, dx = 0, dz = 0, velocity = 0;
-  for (const [turn, frequency, amplitude, phase] of [[0, 1, 0.65, 0], [1.1, 1.73, 0.25, 1.2], [-0.7, 2.41, 0.1, 2.7]]) {
+  for (const [turn, frequency, amplitude, phase] of waveComponents) {
     const k = 2 * Math.PI * frequency! / water.waveLength;
     const ax = Math.cos(angle + turn!), az = Math.sin(angle + turn!);
     const omega = Math.sqrt(9.81 * k) * water.waveSpeed;
@@ -187,44 +189,74 @@ export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, t
 
 /** Local footprint, bank distance and sloped river elevation. */
 export function waterFootprint(body: WaterBodyProperties, x: number, z: number) {
-  if (body.kind === "ocean") return { inside: true, height: 0, edge: Infinity, flowX: Math.cos(body.flowDirection * Math.PI / 180), flowZ: Math.sin(body.flowDirection * Math.PI / 180) };
+  if (body.kind === "ocean") return { inside: true, height: 0, edge: Infinity, slopeX: 0, slopeZ: 0, flowY: 0, flowX: Math.cos(body.flowDirection * Math.PI / 180), flowZ: Math.sin(body.flowDirection * Math.PI / 180) };
   if (body.kind !== "river") {
     const radius = Math.hypot(x / (body.width / 2), z / (body.length / 2));
-    return { inside: radius <= 1, height: 0, edge: (1 - radius) * Math.min(body.width, body.length) / 2, flowX: Math.cos(body.flowDirection * Math.PI / 180), flowZ: Math.sin(body.flowDirection * Math.PI / 180) };
+    return { inside: radius <= 1, height: 0, edge: (1 - radius) * Math.min(body.width, body.length) / 2, slopeX: 0, slopeZ: 0, flowY: 0, flowX: Math.cos(body.flowDirection * Math.PI / 180), flowZ: Math.sin(body.flowDirection * Math.PI / 180) };
   }
-  let best = Infinity, height = 0, flowX = 0, flowZ = 1;
+  let best = Infinity, height = 0, flowX = 0, flowZ = 1, slopeX = 0, slopeZ = 0, flowY = 0;
   for (let i = 1; i < body.points.length; i++) {
     const a = body.points[i - 1]!, b = body.points[i]!;
     const vx = b[0] - a[0], vz = b[2] - a[2], length = Math.hypot(vx, vz);
     if (length < 1e-6) continue;
     const t = clamp(((x - a[0]) * vx + (z - a[2]) * vz) / (length * length), 0, 1);
     const distance = Math.hypot(x - a[0] - t * vx, z - a[2] - t * vz);
-    if (distance < best) { best = distance; height = a[1] + t * (b[1] - a[1]); flowX = vx / length; flowZ = vz / length; }
+    if (distance < best) {
+      best = distance; height = a[1] + t * (b[1] - a[1]); flowX = vx / length; flowZ = vz / length;
+      flowY = (b[1] - a[1]) / length;
+      const slope = t > 0 && t < 1 ? flowY : 0;
+      slopeX = slope * flowX; slopeZ = slope * flowZ;
+    }
   }
-  return { inside: best <= body.width / 2, height, edge: body.width / 2 - best, flowX, flowZ };
+  return { inside: best <= body.width / 2, height, edge: body.width / 2 - best, flowX, flowY, flowZ, slopeX, slopeZ };
 }
 
-/** Query a horizontal/yaw-rotated body; river path points carry its slope. */
+/** Intersect a world-vertical line with the transformed, displaced surface. */
 export function sampleWaterSurface(
   water: WaterDefinition, body: WaterBodyProperties, position: Vec3, time: number,
   transform: Transform = identityTransform(),
 ): WaterSample {
-  if (!body.enabled || !Number.isFinite(time)) return emptyWaterSample();
-  const sx = Math.abs(transform.scale.x), sy = Math.abs(transform.scale.y), sz = Math.abs(transform.scale.z);
-  if (Math.min(sx, sy, sz) < 1e-6) return emptyWaterSample();
-  const local = quatRotateVector(inverseQuat(transform.rotation), { x: position.x - transform.position.x, y: 0, z: position.z - transform.position.z });
-  const x = local.x / sx, z = local.z / sz;
+  if (!body.enabled || ![time, position.x, position.y, position.z].every(Number.isFinite)) return emptyWaterSample();
+  const { x: sx, y: sy, z: sz } = transform.scale;
+  if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-6) return emptyWaterSample();
+  const inverse = inverseQuat(transform.rotation);
+  const local = quatRotateVector(inverse, { x: position.x - transform.position.x, y: position.y - transform.position.y, z: position.z - transform.position.z });
+  const up = quatRotateVector(inverse, { x: 0, y: 1, z: 0 });
+  const origin = { x: local.x / sx, y: local.y / sy, z: local.z / sz };
+  const ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
+  if (Math.abs(ray.y) < 1e-6) return emptyWaterSample();
+  let distance = -origin.y / ray.y;
+  // Newton iteration preserves actor/component pitch, roll and signed scales.
+  for (let i = 0; i < 12; i++) {
+    const x = origin.x + ray.x * distance, z = origin.z + ray.z * distance;
+    const footprint = waterFootprint(body, x, z);
+    const wave = sampleWaterWaves(water, x, z, time, body.waveScale);
+    const dx = footprint.slopeX - wave.normal.x / wave.normal.y;
+    const dz = footprint.slopeZ - wave.normal.z / wave.normal.y;
+    const residual = origin.y + ray.y * distance - footprint.height - wave.height;
+    if (Math.abs(residual) < 1e-5) break;
+    const derivative = ray.y - dx * ray.x - dz * ray.z;
+    if (Math.abs(derivative) < 1e-6) return emptyWaterSample();
+    distance -= residual / derivative;
+  }
+  const x = origin.x + ray.x * distance, z = origin.z + ray.z * distance;
   const footprint = waterFootprint(body, x, z);
-  if (!footprint.inside) return emptyWaterSample();
   const wave = sampleWaterWaves(water, x, z, time, body.waveScale);
-  const normal = quatRotateVector(transform.rotation, { x: wave.normal.x / sx, y: wave.normal.y / sy, z: wave.normal.z / sz });
-  const magnitude = Math.hypot(normal.x, normal.y, normal.z);
-  const flow = quatRotateVector(transform.rotation, { x: footprint.flowX * body.flowSpeed, y: 0, z: footprint.flowZ * body.flowSpeed });
-  const height = transform.position.y + (footprint.height + wave.height) * sy;
+  if (!footprint.inside || !Number.isFinite(distance) || Math.abs(origin.y + ray.y * distance - footprint.height - wave.height) > 0.001) return emptyWaterSample();
+  const normal = quatRotateVector(transform.rotation, {
+    x: (wave.normal.x / wave.normal.y - footprint.slopeX) / sx,
+    y: 1 / sy,
+    z: (wave.normal.z / wave.normal.y - footprint.slopeZ) / sz,
+  });
+  const magnitude = Math.hypot(normal.x, normal.y, normal.z) * (normal.y < 0 ? -1 : 1);
+  const velocity = quatRotateVector(transform.rotation, {
+    x: footprint.flowX * body.flowSpeed * sx,
+    y: (footprint.flowY * body.flowSpeed + wave.velocity) * sy,
+    z: footprint.flowZ * body.flowSpeed * sz,
+  });
   return {
-    found: true, height, depth: height - position.y,
+    found: true, height: position.y + distance, depth: distance,
     normal: { x: normal.x / magnitude, y: normal.y / magnitude, z: normal.z / magnitude },
-    velocity: { x: flow.x, y: wave.velocity * sy, z: flow.z },
-    edgeDistance: footprint.edge * Math.min(sx, sz),
+    velocity, edgeDistance: footprint.edge * Math.min(Math.abs(sx), Math.abs(sz)),
   };
 }

@@ -181,9 +181,11 @@ and a static four-line node-body preview as Custom GLSL.
 
 Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing header and native account screen).
 
-### Input asset editors
+### Water asset editor
 
 Water documents use DockView Preview and Details panels with PropertyGrid controls and a Surface Material picker. New Asset offers Realistic and Stylized starting presets. Place Actors has Ocean, Lake, River, and Puddle entries; placing a Water asset creates a lake using that asset. Component Details reuse the shared typed property rows, including river path points and buoyancy dimensions.
+
+### Input asset editors
 
 Input Action and Input Axis documents use the standard DockView document shell with Bindings and Details panels. `InputBindingsPanel` composes `PanelFrame`, `SearchDropdown`, `BindingCodePicker`, and compact Buttons; `InputBindingDetailsPanel` uses `PropertyGrid`. Whole binding rows select Details by click or keyboard; a right-aligned Lucide trash control removes the row. Shared document selection lives in `InputAssetEditingProvider`. Input authoring is reached through Content Browser > Input, not Project Settings. See [input assets and events](input.md).
 

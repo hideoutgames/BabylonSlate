@@ -1549,3 +1549,8 @@ Local PR eligibility uses the path-aware `pnpm verify:local` preflight: changed 
 ActorComponent subclasses are the component scripting host. Add the Class directly to an Actor or prefab; each attachment is its own object with independent variables, interfaces, and Begin Play, Tick, and Destroyed events. Self references that component. Begin Play runs once after its owning Actor enters the world, including components added during Play. Actor destruction and Play stop end the component's script lifecycle.
 
 Get First Component Of Type and Get All Components Of Type search live components in the loaded world (including active SceneLayer actors), matching descendants in actor spawn order and component attachment order. They return an object reference or an array of references; no match yields null or an empty array.
+
+
+### Water assets and buoyancy
+
+Water v1 assets provide Realistic and Stylized presets, procedural PBR shading, shared wave parameters, bank/crest foam and optional Surface MaterialGraph shading. Ocean, Lake, River and Puddle components define geometry and currents. The editor provides Water creation, dockable Preview/Details, Place Actors entries and typed component controls. Native force-based Water Buoyancy preserves contact impulses from falling rigid bodies. NodeGraph's Sample Water Surface and MaterialGraph's Water Surface supply the shared query and shading data; ordinary component variables handle tuning. See [Water architecture and usage](architecture/render.md#water).

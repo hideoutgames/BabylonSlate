@@ -2,7 +2,7 @@ import { Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, ty
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
 import { configureWaterMaterial, WaterMaterialPlugin } from "./water-material";
 
-type Surface = { mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; base: Float32Array; positions: Float32Array; normals: Float32Array; plugin: WaterMaterialPlugin | null };
+type Surface = { mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; base: Float32Array; positions: Float32Array; normals: Float32Array; slopes: Float32Array; data: Float32Array; plugin: WaterMaterialPlugin | null };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
 
@@ -35,14 +35,14 @@ function updateSurface(s: Surface, time: number): void {
     const wave = sampleWaterWaves(s.water, x, z, time, s.body.waveScale);
     s.positions[i] = x; s.positions[i + 1] = s.base[i + 1]! + wave.height; s.positions[i + 2] = z;
     // Add the centreline's base slope to the wave normal for sloped rivers.
-    const h = 0.02;
-    const dx = s.body.kind === "river" ? (waterFootprint(s.body, x + h, z).height - waterFootprint(s.body, x - h, z).height) / (2 * h) : 0;
-    const dz = s.body.kind === "river" ? (waterFootprint(s.body, x, z + h).height - waterFootprint(s.body, x, z - h).height) / (2 * h) : 0;
+    const dx = s.slopes[i / 3 * 2]!, dz = s.slopes[i / 3 * 2 + 1]!;
     const nx = wave.normal.x / wave.normal.y - dx, nz = wave.normal.z / wave.normal.y - dz, length = Math.hypot(nx, 1, nz);
+    s.data[i / 3 * 4] = wave.height; s.data[i / 3 * 4 + 3] = time;
     s.normals[i] = nx / length; s.normals[i + 1] = 1 / length; s.normals[i + 2] = nz / length;
   }
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, true);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
+  s.mesh.updateVerticesData("slateWaterData", s.data);
   if (s.plugin) s.plugin.time = time;
 }
 
@@ -68,7 +68,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const mesh = new Mesh(name, scene);
   mesh.setEnabled(body.enabled);
   mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
-  const positions: number[] = [], normals: number[] = [], uv2: number[] = [], indices: number[] = [];
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], waterData: number[] = [], flow: number[] = [], slopes: number[] = [], indices: number[] = [];
   const rows = body.resolution, columns = body.kind === "river" ? Math.min(16, rows) : rows;
   for (let row = 0; row <= rows; row++) for (let column = 0; column <= columns; column++) {
     const u = column / columns * 2 - 1, v = row / rows * 2 - 1;
@@ -77,15 +77,20 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     else if (body.kind !== "ocean") { x *= Math.sqrt(1 - v * v / 2); z *= Math.sqrt(1 - u * u / 2); }
     const footprint = waterFootprint(body, x, z);
     positions.push(x, footprint.height, z); normals.push(0, 1, 0);
-    uv2.push(Math.min(10000, Math.max(0, footprint.edge)), footprint.height);
+    uvs.push(column / columns, row / rows);
+    waterData.push(0, Math.min(10000, Math.max(0, footprint.edge)), body.depth, 0);
+    flow.push(footprint.flowX * body.flowSpeed, footprint.flowY * body.flowSpeed, footprint.flowZ * body.flowSpeed);
+    slopes.push(footprint.slopeX, footprint.slopeZ);
     if (row < rows && column < columns) {
       const a = row * (columns + 1) + column, b = a + columns + 1;
       indices.push(a, b, a + 1, a + 1, b, b + 1);
     }
   }
   const data = new VertexData();
-  data.positions = positions; data.normals = normals; data.indices = indices; data.uvs2 = uv2;
+  data.positions = positions; data.normals = normals; data.indices = indices; data.uvs = uvs;
   data.applyToMesh(mesh, true);
+  mesh.setVerticesData("slateWaterData", waterData, true, 4);
+  mesh.setVerticesData("slateWaterFlow", flow, false, 3);
   let plugin: WaterMaterialPlugin | null = null;
   if (customMaterial) mesh.material = customMaterial;
   else {
@@ -95,7 +100,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
-  const surface: Surface = { mesh, water, body, base: new Float32Array(positions), positions: new Float32Array(positions), normals: new Float32Array(normals), plugin };
+  const surface: Surface = { mesh, water, body, base: new Float32Array(positions), positions: new Float32Array(positions), normals: new Float32Array(normals), slopes: new Float32Array(slopes), data: new Float32Array(waterData), plugin };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);

@@ -52,7 +52,7 @@ export class WaterWorld {
         if (!kind || component.destroyed) continue;
         const body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
         if (!body.enabled) continue;
-        const definition = body.assetGuid ? this.definitions.get(body.assetGuid) : this.defaultWater;
+        const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
         if (!definition) continue;
         this.bodies.push({ actorId: actor.guid, definition, body,
           transform: componentWorldTransform(component, actor, this.transforms.get(actor.guid)!),
@@ -93,7 +93,7 @@ export class WaterWorld {
       const point = { x: transform.position.x + offset.x, y: transform.position.y + offset.y, z: transform.position.z + offset.z };
       const sample = this.sample(point, props.waterActorId);
       if (!sample.found || sample.depth > sample.waterDepth + height / 2) continue;
-      const submerged = Math.max(0, Math.min(1, sample.depth / height + 0.5));
+      const submerged = Math.max(0, Math.min(sample.waterDepth, sample.depth + height / 2) - Math.max(0, sample.depth - height / 2)) / height;
       if (submerged === 0) continue;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
       const r = { x: point.x - pose.position.x, y: point.y - pose.position.y, z: point.z - pose.position.z };

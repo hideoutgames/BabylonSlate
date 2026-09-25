@@ -1114,6 +1114,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           appendLog(
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
+          setPlayWaters(new Map());
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyPlayParticleLibrary());

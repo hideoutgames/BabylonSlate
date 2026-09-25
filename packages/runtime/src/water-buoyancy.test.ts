@@ -5,6 +5,28 @@ import { createPhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 describe("Water buoyancy with native collision response", () => {
+  it("creates a collidable body from buoyancy alone and follows moving waves", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    const sea = world.createActor({ classId: "Actor", guid: "sea" });
+    sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent" }));
+    world.spawnActorNow(sea);
+    const boat = world.createActor({ classId: "Actor", guid: "float" });
+    boat.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { drag: 8 } }));
+    world.spawnActorNow(boat);
+    const heights: number[] = [];
+    try {
+      for (let i = 0; i < 360; i++) {
+        sync.step(1 / 60, world, i / 60);
+        if (i > 180) heights.push(boat.transform.position.y);
+      }
+      expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(0.2);
+      const p = boat.transform.position;
+      expect(sync.lineTrace({ ...p, y: p.y + 3 }, { ...p, y: p.y - 3 }).actorId).toBe("float");
+      expect(Math.abs(p.y)).toBeLessThan(0.6);
+    } finally { sync.dispose(); }
+  });
   it("floats a body, dips under a falling rigid body, and retains its added load", async () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });

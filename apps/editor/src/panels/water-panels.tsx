@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
-import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneWaterTime } from "@babylonslate/render";
+import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine } from "@babylonslate/render";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -40,7 +40,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
 export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+  const { openDocuments, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +50,12 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     if (!canvas || !engine) return;
     const host = createParticlePreviewScene(engine, { skybox: true });
     const water = JSON.parse(key) as WaterDefinition;
-    createWaterMesh(host.scene, "water-preview", normalizeWaterBody({ width: 24, length: 24, waveScale: 1, depth: 5 }), water);
     host.camera.radius = 28;
     host.camera.lowerRadiusLimit = 8;
     host.camera.upperRadiusLimit = 80;
-    const presenter = createMaterialPreviewPresenter(host, canvas);
+    const presenter = createMaterialPreviewPresenter(host, canvas, { onError: setError });
+    let materials: MaterialLibrary | null = null;
+    let cancelled = false;
     let frame = 0;
     const start = performance.now();
     setError(null);
@@ -67,9 +68,36 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
         frame = requestAnimationFrame(tick);
       } catch (cause) { setError(cause instanceof Error ? cause.message : "Water preview could not render."); }
     };
-    frame = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); };
-  }, [key, play]);
+    void (async () => {
+      let customMaterial = null;
+      if (water.materialGuid) {
+        const library = await collectPlayMaterialLibrary(undefined, [], [water.materialGuid]);
+        const bytes = await collectPlayTextureBytes(new Map(), new Map(), library.textureGuids);
+        if (cancelled) return;
+        const sources = installTextureBytes(bytes);
+        const cache = resourceCacheForEngine(engine);
+        materials = new MaterialLibrary({
+          functions: () => Object.fromEntries(library.functions),
+          acquireTexture: (guid) => {
+            const source = sources?.get(guid);
+            return source ? acquireMaterialTexture(cache, guid, engine, source, { hasAlpha: true }) : null;
+          },
+        });
+        const document = library.documents.get(water.materialGuid);
+        if (!document) throw new Error("The selected Water material is unavailable.");
+        const acquired = materials.acquire(host.scene, water.materialGuid, document);
+        if (!acquired.ok) throw new Error(acquired.diagnostics.map((entry) => entry.message).join("\n"));
+        const diagnostics = await acquired.ready;
+        if (cancelled) return;
+        if (diagnostics.length) throw new Error(diagnostics.map((entry) => entry.message).join("\n"));
+        customMaterial = acquired.material;
+      }
+      if (cancelled) return;
+      createWaterMesh(host.scene, "water-preview", normalizeWaterBody({ width: 24, length: 24, waveScale: 1, depth: 5 }), water, customMaterial);
+      frame = requestAnimationFrame(tick);
+    })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
+    return () => { cancelled = true; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
+  }, [key, play, collectPlayMaterialLibrary, collectPlayTextureBytes]);
   return <PanelFrame data-testid="water-preview-panel">
     <canvas ref={canvasRef} className="min-h-0 h-full w-full touch-none" aria-label="Water Preview" data-testid="water-preview-canvas" />
     {error ? <Alert variant="destructive"><AlertTitle>Preview Failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}

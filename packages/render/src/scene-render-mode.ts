@@ -148,6 +148,7 @@ export function setSceneRenderSettings(
         if (
           !(mesh instanceof Mesh) ||
           !isViewportShadingTarget(mesh) ||
+          mesh.metadata?.slateWater === true ||
           !mesh.material
         )
           continue;
