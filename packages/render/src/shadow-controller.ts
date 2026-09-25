@@ -702,6 +702,8 @@ export class SceneShadowController {
       }
     }
     reserveSceneShadows(scene, admitted);
+    // One scene-wide light invalidation covers every retained generator's defines.
+    let materialsDirty = false;
     for (const entry of this.entries.values()) {
       if (entry.status !== "active") continue;
       const directionalLight = entry.light instanceof DirectionalLight;
@@ -710,8 +712,9 @@ export class SceneShadowController {
       entry.settings = settings;
       if (entry.generator) {
         this.applySettings(entry.generator, settings);
-        if (previousSettings?.fadeFraction !== settings.fadeFraction ||
-            (directionalLight && previousSettings?.autoBias !== settings.autoBias)) {
+        if (!materialsDirty && (previousSettings?.fadeFraction !== settings.fadeFraction ||
+            (directionalLight && previousSettings?.autoBias !== settings.autoBias))) {
+          materialsDirty = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
         }
