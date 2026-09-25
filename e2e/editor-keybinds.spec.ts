@@ -43,7 +43,7 @@ test("viewport shortcuts match menu hints and closing preserves the dirty docume
   await expect(grid).toHaveAttribute("aria-keyshortcuts", "Shift+G");
   await expect(grid.locator("kbd").last()).toBeVisible();
   const gridBefore = await grid.getAttribute("aria-checked");
-  await page.screenshot({ path: testInfo.outputPath("viewport-shortcut-hints.png") });
+  await page.screenshot({ path: testInfo.outputPath("viewport-shortcut-hints.png"), animations: "disabled" });
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("viewport-settings-menu")).toBeHidden();
   await expect(page.getByTestId("viewport-settings")).toBeFocused();
@@ -70,7 +70,7 @@ test("viewport shortcuts match menu hints and closing preserves the dirty docume
   await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
   await page.getByTestId("place-actors-item-shape-box").click();
   await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
-  await expect(page.getByTestId("scene-outliner-panel").getByText("Box", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("scene-outliner-panel").getByRole("treeitem", { name: "box", exact: true })).toBeVisible();
 });
 
 test.describe("phone shortcut affordances", () => {
@@ -91,13 +91,13 @@ test.describe("phone shortcut affordances", () => {
     expect(menu).not.toBeNull();
     expect(menu!.x).toBeGreaterThanOrEqual(0);
     expect(menu!.x + menu!.width).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath("phone-viewport-menu.png") });
+    await page.screenshot({ path: testInfo.outputPath("phone-viewport-menu.png"), animations: "disabled" });
     await page.keyboard.press("Escape");
     await page.getByTestId("document-switcher").tap();
     await page.getByRole("menuitemradio", { name: "Content Browser" }).tap();
     await expect(page.getByTestId("open-documents-menu")).toBeHidden();
     await page.getByTestId("content-browser-new-asset").tap();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath("phone-new-asset.png") });
+    await page.screenshot({ path: testInfo.outputPath("phone-new-asset.png"), animations: "disabled" });
   });
 });
