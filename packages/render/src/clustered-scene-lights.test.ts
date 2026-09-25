@@ -34,7 +34,7 @@ import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
 } from "@babylonslate/core";
-import { syncSceneLighting } from "./scene-lighting";
+import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
@@ -555,6 +555,11 @@ describe("explicit clustered light ownership", () => {
     syncSceneLighting(scene);
     expect(owner.status().clustered).toBe(1);
     expect(locals.filter((light) => light.isEnabled())).toHaveLength(2);
+    // Enabled locals outside the shared allowance stay in the conventional report.
+    const outside = locals.filter((light) => !light.isEnabled());
+    expect(sceneLightingLimits(scene).join()).toContain(
+      `Limited: ${outside.map((light) => light.name).join(", ")}`,
+    );
 
     const parent = new TransformNode("moved excluded parent", scene);
     const moved = lights[5]!;
