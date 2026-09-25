@@ -7,7 +7,7 @@ import {
   type Texture,
   type CubeTexture,
 } from "@babylonjs/core";
-import { ResourceCache } from "./resource-cache";
+import { acquireTextureVariant, ResourceCache } from "./resource-cache";
 
 it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {
   const { cache, engine } = host();
@@ -74,6 +74,51 @@ it("rejects an over-budget successor without retiring the working upload", () =>
   expect(cache.accountedBytes()).toBe(80);
   expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
   working.release();
+});
+
+it("admits a sampling variant that shares a live upload while over budget", async () => {
+  const { cache, engine } = host();
+  engine.getCaps().maxAnisotropy = 8;
+  const working = cache.acquireTexture("working", engine, ktx2());
+  uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  const bytes = cache.accountedBytes();
+  cache.setByteCeiling(bytes - 1);
+  const variant = acquireTextureVariant(working.resource as Texture, { anisotropicFilteringLevel: 2 });
+  expect(variant?.resource).not.toBe(working.resource);
+  await expect(variant?.ready).resolves.toBeUndefined();
+  expect(variant?.resource.getInternalTexture()).toBe(working.resource.getInternalTexture());
+  expect(cache.accountedBytes()).toBe(bytes);
+  expect(cache.resourceStats()).toMatchObject({ wrappers: 2, pending: 0 });
+  variant?.release();
+  working.release();
+});
+
+it.each([
+  ["its owner", [0, 1]],
+  ["the variant", [1, 0]],
+] as const)("still rejects a delayed over-budget upload shared before measurement when %s measures first", async (_first, order) => {
+  const { cache, engine } = host();
+  engine.getCaps().maxAnisotropy = 8;
+  const bytes = new Blob([ktx2()], { type: "image/ktx2" });
+  const headers: Array<() => void> = [];
+  const header = new Blob();
+  vi.spyOn(header, "arrayBuffer").mockImplementation(() => new Promise((resolve) => { headers.push(() => resolve(ktx2().buffer)); }));
+  vi.spyOn(bytes, "slice").mockReturnValue(header);
+  cache.setByteCeiling(79);
+  const source = cache.acquireTexture("atlas", engine, bytes);
+  uploaded(source.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  const variant = acquireTextureVariant(source.resource as Texture, { anisotropicFilteringLevel: 2 })!;
+  expect(variant.resource.getInternalTexture()).toBe(source.resource.getInternalTexture());
+  expect(headers).toHaveLength(2);
+  for (const index of order) {
+    headers[index]!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  await expect(source.ready).rejects.toThrow(/budget/);
+  await expect(variant.ready).rejects.toThrow(/budget/);
+  expect(cache.accountedBytes()).toBe(0);
+  variant.release();
+  source.release();
 });
 
 const disposers: Array<() => void> = [];

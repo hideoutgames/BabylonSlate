@@ -5,6 +5,7 @@ import {
   Vector3,
   type AbstractMesh,
   type LinesMesh,
+  type Material,
   type Observer,
   type Scene,
 } from "@babylonjs/core";
@@ -17,6 +18,9 @@ export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
 type DrawEntry = {
   meshes: AbstractMesh[];
+  /** GreasedLine auto-materials; mesh disposal leaves them in the scene. */
+  materials: Material[];
+  frameId: number | null;
   birthTick: number | null;
   remainingMs: number | null;
   presented: boolean;
@@ -250,7 +254,11 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     }
   };
 
-  const addLine = (command: DebugDrawCommand, meshes: AbstractMesh[]): void => {
+  const addLine = (
+    command: DebugDrawCommand,
+    meshes: AbstractMesh[],
+    materials: Material[],
+  ): void => {
     const start = asVec3(command.start, { x: 0, y: 0, z: 0 });
     const end = asVec3(command.end, { x: 1, y: 0, z: 0 });
     const color = asColor(command.color);
@@ -263,6 +271,9 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
           { width: thickness, color, createAndAssignMaterial: true },
           scene,
         );
+        // Capture the source before a CEL sync can swap in a wrapper; disposing
+        // the source also disposes that wrapper.
+        if (mesh.material) materials.push(mesh.material);
         markOverlay(mesh);
         meshes.push(mesh);
         return;
@@ -444,11 +455,14 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     }
   };
 
-  const build = (command: DebugDrawCommand): AbstractMesh[] => {
+  const build = (
+    command: DebugDrawCommand,
+  ): { meshes: AbstractMesh[]; materials: Material[] } => {
     const meshes: AbstractMesh[] = [];
+    const materials: Material[] = [];
     switch (command.kind) {
       case "line":
-        addLine(command, meshes);
+        addLine(command, meshes, materials);
         break;
       case "point":
         addPoint(command, meshes);
@@ -527,12 +541,14 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       default:
         break;
     }
-    return meshes;
+    return { meshes, materials };
   };
 
   const drop = (entry: DrawEntry): void => {
     for (const mesh of entry.meshes) mesh.dispose();
+    for (const material of entry.materials) material.dispose();
     entry.meshes.length = 0;
+    entry.materials.length = 0;
   };
 
   const dropExpiredSimDraws = (assignBirth: boolean): void => {
@@ -568,18 +584,27 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     applyCommand(command) {
       if (command.type !== "debugDraw") return false;
       const duration = asNumber(command.duration, 0);
-      const meshes = build(command);
+      const { meshes, materials } = build(command);
       if (meshes.length === 0) return true;
+      const frameId =
+        typeof command.frameId === "number" && Number.isFinite(command.frameId)
+          ? command.frameId
+          : null;
       if (duration <= 0) {
+        // A new runtime tick replaces the previous duration-0 draws; draws from
+        // the same tick (e.g. a Line Trace line and its hit marker) accumulate.
         for (let i = entries.length - 1; i >= 0; i--) {
           const entry = entries[i]!;
           if (entry.remainingMs != null) continue;
+          if (frameId != null && entry.frameId === frameId) continue;
           drop(entry);
           entries.splice(i, 1);
         }
       }
       entries.push({
         meshes,
+        materials,
+        frameId,
         birthTick: null,
         remainingMs: duration > 0 ? duration * 1000 : null,
         presented: false,

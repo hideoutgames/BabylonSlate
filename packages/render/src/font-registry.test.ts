@@ -6,14 +6,18 @@ import {
   type FontFaceLike,
 } from "./font-registry";
 
-function mockHost(options: { fail?: boolean } = {}): FontFaceHost {
+type MockFontHost = FontFaceHost & { faces: FontFaceLike[]; fail: boolean };
+
+function mockHost(options: { fail?: boolean } = {}): MockFontHost {
   const faces: FontFaceLike[] = [];
-  return {
+  const host: MockFontHost = {
+    faces,
+    fail: options.fail === true,
     create(family) {
       return {
         family,
         load: async () => {
-          if (options.fail) throw new Error("decode failed");
+          if (host.fail) throw new Error("decode failed");
           return { family, load: async () => faces[0]! };
         },
       };
@@ -21,11 +25,16 @@ function mockHost(options: { fail?: boolean } = {}): FontFaceHost {
     add(face) {
       faces.push(face);
     },
+    delete(face) {
+      const index = faces.indexOf(face);
+      if (index >= 0) faces.splice(index, 1);
+    },
     async load() {
-      if (options.fail) throw new Error("decode failed");
+      if (host.fail) throw new Error("decode failed");
       return faces;
     },
   };
+  return host;
 }
 
 describe("FontRegistry", () => {
@@ -91,6 +100,52 @@ describe("FontRegistry", () => {
     expect(ok).toBe(true);
     expect(registry.isReady("a")).toBe(true);
     expect(registry.isReady("b")).toBe(true);
+  });
+
+  it("adds one document face per font content, including concurrent and repeated registrations", async () => {
+    const host = mockHost();
+    const registry = new FontRegistry(host);
+    const entry = (bytes: BufferSource) => ({ guid: "font-1", family: "Display", bytes });
+    expect(
+      await Promise.all([
+        registry.register(entry(new Uint8Array([1, 2, 3]).buffer)),
+        registry.register(entry(new Uint8Array([1, 2, 3]).buffer)),
+      ]),
+    ).toEqual([true, true]);
+    expect(registry.consumeDirty()).toBe(true);
+    expect(await registry.registerAll([entry(new Uint8Array([9, 1, 2, 3]).subarray(1))])).toBe(true);
+    expect(host.faces).toHaveLength(1);
+    expect(registry.consumeDirty()).toBe(false);
+  });
+
+  it("replaces a font's face only after changed content loads", async () => {
+    const host = mockHost();
+    const registry = new FontRegistry(host);
+    await registry.register({ guid: "font-1", family: "Display", bytes: new Uint8Array([1]).buffer });
+    const [original] = host.faces;
+    host.fail = true;
+    expect(await registry.register({ guid: "font-1", family: "Display", bytes: new Uint8Array([2]).buffer })).toBe(false);
+    expect(host.faces).toEqual([original]);
+    host.fail = false;
+    expect(await registry.register({ guid: "font-1", family: "Display", bytes: new Uint8Array([3]).buffer })).toBe(true);
+    expect(host.faces).toHaveLength(1);
+    expect(host.faces[0]).not.toBe(original);
+  });
+
+  it("removes only its own faces on dispose, including a registration still loading", async () => {
+    const host = mockHost();
+    const sibling = new FontRegistry(host);
+    const registry = new FontRegistry(host);
+    const entry = { guid: "font-1", family: "Display", bytes: new Uint8Array([1]).buffer };
+    await sibling.register(entry);
+    await registry.register(entry);
+    const loading = registry.register({ ...entry, guid: "font-2" });
+    registry.dispose();
+    await loading;
+    expect(await registry.register({ ...entry, guid: "font-3" })).toBe(false);
+    expect(host.faces).toHaveLength(1);
+    sibling.dispose();
+    expect(host.faces).toEqual([]);
   });
 
   it("marks the GUI host dirty after a successful font load", async () => {

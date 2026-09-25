@@ -375,6 +375,8 @@ export function attachViewportGestures(
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
+    // Horizontal-only scrolling (sideways trackpad swipe, Shift+wheel) is not zoom.
+    if (event.deltaY === 0) return;
     if (!editorActive()) return;
     const rect = canvas.getBoundingClientRect();
     const hasPoint =

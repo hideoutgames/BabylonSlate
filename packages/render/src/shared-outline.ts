@@ -123,8 +123,6 @@ export class SharedOutlineOwner {
     for (const key of newKeys.sort()) this.identities.set(key, this.identities.size + 1);
     for (const [mesh, key] of requested) next.set(mesh, this.identities.get(key)!);
     for (const [source, record] of this.sources) if (!requiredSources.has(source)) this.releaseSource(source, record);
-    for (const mesh of this.meshIdentity.keys()) if (!next.has(mesh) && mesh.instancedBuffers)
-      mesh.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = 0;
     this.meshIdentity.clear();
     for (const [mesh, id] of next) this.meshIdentity.set(mesh, id);
     for (const source of requiredSources) {

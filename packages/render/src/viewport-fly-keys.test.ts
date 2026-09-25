@@ -163,14 +163,27 @@ describe("attachViewportFlyKeys", () => {
     expect(controller.camera.target.equals(targetBefore)).toBe(true);
   });
 
-  it("leaves command chords such as Mod+S and Mod+D to editor shortcuts", () => {
+  it("ignores WASD pressed as part of a Ctrl, Meta or Alt shortcut", () => {
     const { controller } = attach();
     const targetBefore = controller.camera.target.clone();
 
-    target.emit("keydown", { ...key("KeyS"), ctrlKey: true });
-    target.emit("keydown", { ...key("KeyD"), metaKey: true });
+    for (const modifier of ["ctrlKey", "metaKey", "altKey"]) {
+      target.emit("keydown", { ...key("KeyA"), [modifier]: true });
+    }
     expect(frames).toHaveLength(0);
     expect(controller.camera.target.equals(targetBefore)).toBe(true);
+  });
+
+  it("stops flying when Meta is released because macOS drops keyups under Cmd", () => {
+    attach();
+    target.emit("keydown", key("KeyW"));
+    pump(0);
+    expect(scheduler.shouldRender()).toBe(true);
+
+    target.emit("keyup", { ...key("MetaLeft"), key: "Meta" });
+    scheduler.noteRendered();
+    expect(scheduler.shouldRender()).toBe(false);
+    expect(frames).toHaveLength(0);
   });
 
   it("ignores WASD when isEnabled returns false", () => {

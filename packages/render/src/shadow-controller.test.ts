@@ -14,6 +14,7 @@ import {
   RenderTargetTexture,
   Scene,
   ShadowGenerator,
+  StandardMaterial,
   UniversalCamera,
   TransformNode,
   Vector3,
@@ -559,6 +560,50 @@ describe("shared shadow lifecycle", () => {
       expect(controller.generator(a)).not.toBeNull();
     } finally { clock.mockRestore(); }
   });
+
+  it.each([true, false])(
+    "keeps the retained sun's caster bounds and limits current while a local handoff warms (cascades supported: %s)",
+    (cascaded) => {
+      const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+      try {
+        const { scene, controller } = fixture();
+        if (cascaded) enableHeadlessCascades(scene);
+        // The sun's requested map exceeds the device size, so admission reduces it.
+        scene.getEngine().getCaps().maxTextureSize = 1024;
+        updateSceneRenderingSettings(scene, {
+          shadows: normalizeShadowSettings({ cascades: 2, mapSize: 2048, localMapSize: 256, maxLocalLights: 1 }),
+        });
+        const caster = MeshBuilder.CreateBox("caster", {}, scene);
+        caster.material = new StandardMaterial("receiver", scene);
+        controller.setParticipation(caster, { castShadows: true, receiveShadows: true });
+        const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+        const near = new SpotLight("near", new Vector3(0, 3, -2), Vector3.Down(), Math.PI / 2, 1, scene);
+        const far = new SpotLight("far", new Vector3(40, 3, -2), Vector3.Down(), Math.PI / 2, 1, scene);
+        near.range = far.range = 100;
+        for (const light of [sun, near, far]) controller.register(light, true);
+        // The prepared Forward graph supplies this pass, enabling warm handoffs.
+        controller.setReceiverRenderPass(scene.getEngine().createRenderPassId("receiver"));
+        controller.sync();
+        const generator = controller.generator(sun)!;
+        expect(generator instanceof CascadedShadowGenerator).toBe(cascaded);
+        const sunReason = controller.diagnostics([sun])[0]!.reason;
+        expect(sunReason).toContain("shadow map reduced");
+        if (!cascaded) expect(sunReason).toContain("cascades: device capability");
+        scene.activeCamera!.position.x = 40;
+        caster.position.x = 60;
+        caster.computeWorldMatrix(true);
+        clock.mockReturnValue(500);
+        controller.sync();
+        expect(controller.status(far)).toBe("warming");
+        expect(controller.generator(sun)).toBe(generator);
+        // The outgoing map still renders; the retained sun keeps its own limits.
+        expect(controller.diagnostics([sun, near]).map(({ status, reason }) => ({ status, reason })))
+          .toEqual([{ status: "active", reason: sunReason }, { status: "active", reason: null }]);
+        if (cascaded)
+          expect((generator as CascadedShadowGenerator).shadowCastersBoundingInfo.maximum.x).toBeGreaterThan(60);
+      } finally { clock.mockRestore(); }
+    },
+  );
 
   it("refreshes parented and detached light positions before shadow selection", () => {
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);

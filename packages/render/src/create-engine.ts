@@ -83,6 +83,7 @@ import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCo
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
+  type Ktx2DecoderRuntimeOptions,
 } from "./ktx2-transcoder";
 import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
@@ -731,11 +732,28 @@ function initializeEngine(
   options: CreateEngineOptions,
   onRollback: (cleanup: () => void) => void,
 ): EngineHandle {
+  // Decoder statics are page-global. Overlay Play borrows the editor Engine,
+  // so the page's last Play view returns later editor decodes to workers.
+  // Retain before the Play configuration so any construction failure restores it.
+  let ktx2Runtime: Pick<Ktx2DecoderRuntimeOptions, "caps" | "renderer"> | null = null;
+  const releaseMainThreadDecoding = options.playMode
+    ? retainMainThreadDecoding(() => {
+        configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
+          dracoBasePath: options.dracoBasePath,
+          meshoptBasePath: options.meshoptBasePath,
+        });
+        // Without an Engine this view never moved KTX2 decoding to the main thread.
+        if (ktx2Runtime) configureKtx2DecoderRuntime(KhronosTextureContainer2, ktx2Runtime);
+      })
+    : null;
+  onRollback(() => releaseMainThreadDecoding?.());
+  // Views mounted while any Play view is live keep Play's main-thread decoding.
+  const mainThreadDecoding = mainThreadDecodingViews > 0;
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
-    playMode: options.playMode === true,
+    playMode: mainThreadDecoding,
   });
 
   const ownsEngine = !options.sharedEngine;
@@ -787,14 +805,17 @@ function initializeEngine(
   });
   const previousScaling = engine.getHardwareScalingLevel();
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
-  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
-  onRollback(() => releasePlayRenderPath?.());
-  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
-    mainThread: options.playMode === true,
+  ktx2Runtime = {
     caps: engine.getCaps(),
     renderer: (
       engine as { getGlInfo?: () => { renderer?: string } }
     ).getGlInfo?.().renderer,
+  };
+  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
+  onRollback(() => releasePlayRenderPath?.());
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    mainThread: mainThreadDecoding,
+    ...ktx2Runtime,
   });
 
   const sharedViewBlit = !presentRtt && visibleContext &&
@@ -1059,6 +1080,7 @@ function initializeEngine(
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
+  onRollback(() => fontRegistry.dispose());
   binding.modelBytes = options.modelBytes;
   binding.modelSources = installModelSources(options);
   binding.modelPayloads = options.modelPayloads;
@@ -2343,7 +2365,13 @@ function initializeEngine(
   const presentationObserver = engine.onEndFrameObservable.add(() => {
     if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
-      if (runtimeScalability && !worldLoading && worldRenderer?.isReady() && sceneLayerCompositor?.isReady() !== false) runtimeScalability.presented();
+      if (runtimeScalability && !worldLoading) {
+        // A stored preparation failure rethrows until the coordinator's retry
+        // succeeds. It must not escape endFrame and stop the shared Engine loop.
+        let ready = false;
+        try { ready = worldRenderer.isReady() && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
+        if (ready) runtimeScalability.presented();
+      }
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
@@ -2510,6 +2538,7 @@ function initializeEngine(
       releaseOffscreenDispatch?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
+      releaseMainThreadDecoding?.();
       engine.stopRenderLoop(renderLoop);
       // Bounded cleanup reporting (`bounded`) stays separate from confirmed
       // actual native release (`actual`): an uncertain report never proves a
@@ -2544,6 +2573,12 @@ function initializeEngine(
       editor?.grid.dispose();
       editor?.selection.dispose();
       editor?.sync.dispose();
+      // Host-side timers and DOM stop now; the preview RTT and meshes wait
+      // for native release with the Scene.
+      debugOverlay?.stop();
+      // In-flight bake preparation stops now; receivers restore with the Scene.
+      bakedSession.cancel();
+      playCursor?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -2553,26 +2588,32 @@ function initializeEngine(
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
+      // Document FontFaces are host state; sibling views keep their own faces.
+      fontRegistry.dispose();
       audioService?.dispose();
+      const reportRetirementFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
+      };
+      const reportReleaseFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
+      };
       const releaseSceneResources = () => {
         playFreeCam?.dispose();
         playViz?.dispose();
         playDebugDraw?.dispose();
-        playCursor?.dispose();
         debugOverlay?.dispose();
         debugOverlay = null;
+        // Rollback order: bake receivers restore before the library disposes.
+        // A failed receiver restore is reported; the remaining owners still release.
+        try { bakedSession.dispose(); } catch (error) {
+          console.warn(`[render] Baked lighting receiver restore failed during view disposal: ${String(error)}`);
+        }
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose();
-      };
-      const reportRetirementFailure = (error: unknown) => {
-        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
-      };
-      const reportReleaseFailure = (error: unknown) => {
-        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
       };
       if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
         // Pending native work may still borrow Scene, library and cache
@@ -3230,6 +3271,21 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
 /** World scenes also use these kinds; hold off until spawn classifies the slot. */
 function isAmbiguousHudMeshKind(meshKind: string | null | undefined): boolean {
   return meshKind === "sprite" || meshKind === "tilemap";
+}
+
+/** Live Play views on every Engine in this page; decoder statics are page-global. */
+let mainThreadDecodingViews = 0;
+
+/** Hold main-thread decoding for one Play view; the page's last release restores workers. */
+function retainMainThreadDecoding(restoreWorkers: () => void): () => void {
+  mainThreadDecodingViews += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    mainThreadDecodingViews -= 1;
+    if (mainThreadDecodingViews === 0) restoreWorkers();
+  };
 }
 
 function setOtherEngineViewsEnabled(

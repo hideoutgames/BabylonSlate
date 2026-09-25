@@ -74,6 +74,22 @@ describe("shared outline admission", () => {
     expect(owner.identityForKey("new")).toBe(0);
   });
 
+  it("leaves a released instance source drawable and admissible again", () => {
+    const { scene, owner, view } = setup();
+    const source = MeshBuilder.CreateBox("source", {}, scene);
+    const instance = source.createInstance("instance");
+    const selection: SharedOutlineContribution = {
+      ...style, kind: "selection", targets: [{ key: "actor", meshes: [source, instance] }],
+    };
+    view.setContribution("selection", selection);
+    view.removeContribution("selection");
+    expect(source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBeUndefined();
+    expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBeUndefined();
+    expect(() => source._processInstancedBuffers([instance], true)).not.toThrow();
+    view.setContribution("selection", selection);
+    expect(owner.identityFor(source)).toBeGreaterThan(0);
+  });
+
   it("keeps whole-actor thin matrices owned by the mesh when another consumer leaves", () => {
     const { scene, owner, view } = setup();
     const mesh = MeshBuilder.CreateBox("thin-group", {}, scene);

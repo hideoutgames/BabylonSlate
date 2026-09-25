@@ -22,6 +22,7 @@ const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
 const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
+const scratchLightPosition = new Vector3();
 
 export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
@@ -172,6 +173,22 @@ function isGlobalLight(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof HemisphericLight;
 }
 
+/** Area lights inherit Light.getAbsolutePosition(), which is the origin. Rank
+ * them where Babylon's shader transfer places them. */
+function admissionPosition(light: Light): Vector3 {
+  if (light instanceof RectAreaLight)
+    return light.parent
+      ? Vector3.TransformCoordinatesToRef(
+          light.position,
+          light.parent.getWorldMatrix(),
+          scratchLightPosition,
+        )
+      : light.position;
+  return light instanceof ShadowLight && !light.parent
+    ? light.position
+    : light.getAbsolutePosition();
+}
+
 /** Shared authored-local ordering before clustered and conventional resource admission. */
 export function compareLightAdmission(
   scene: Scene,
@@ -182,18 +199,19 @@ export function compareLightAdmission(
   camera?.getViewMatrix();
   const distances = new Map<Light, number>();
   for (const light of candidates) {
-    if (light instanceof ShadowLight && !isGlobalLight(light)) {
+    if (
+      (light instanceof ShadowLight || light instanceof RectAreaLight) &&
+      !isGlobalLight(light)
+    ) {
       // Excluded children never reach normal shader binding. Refresh parented
       // positions before either quality or shader-capacity selection.
       light.parent?.computeWorldMatrix(true);
-      light.computeTransformedInformation();
+      if (light instanceof ShadowLight) light.computeTransformedInformation();
     }
     const squared =
       camera && !isGlobalLight(light)
         ? Vector3.DistanceSquared(
-            light instanceof ShadowLight && !light.parent
-              ? light.position
-              : light.getAbsolutePosition(),
+            admissionPosition(light),
             camera.globalPosition,
           )
         : 0;

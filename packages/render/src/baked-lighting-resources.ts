@@ -168,7 +168,7 @@ function irradianceTexelsToHalfBits(values: Float32Array): Uint16Array {
     }
     // Rebiased exponent with round-to-nearest on the discarded 13 bits; a
     // mantissa carry correctly increments the exponent field.
-    out[index] = sign | ((exponent + 15) << 10) | ((mantissa + 0x1000) >>> 13);
+    out[index] = sign | (((exponent + 15) << 10) + ((mantissa + 0x1000) >>> 13));
   }
   return out;
 }

@@ -1,7 +1,5 @@
 import {
-  Color3,
   Mesh,
-  StandardMaterial,
   VertexData,
   type Scene,
 } from "@babylonjs/core";
@@ -12,21 +10,16 @@ import {
   type OverlayPanelProperties,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
-import { overlayTextureWorldSize } from "./overlay-texture-quad";
+import {
+  createOverlayUnlitMaterial,
+  overlayTextureWorldSize,
+} from "./overlay-texture-quad";
+import { VisualBundle } from "./visual-bundle";
 
 export type OverlayPanelMeshOptions = OverlayPanelProperties & {
   destWidth?: number;
   destHeight?: number;
 };
-
-function overlayUnlitMaterial(scene: Scene, name: string): StandardMaterial {
-  const material = new StandardMaterial(`${name}-unlit`, scene);
-  material.disableLighting = true;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.White();
-  material.backFaceCulling = false;
-  return material;
-}
 
 function sourceSizePx(
   properties: OverlayPanelProperties,
@@ -88,9 +81,10 @@ export function createOverlayPanelMesh(
     vertex += 4;
   }
   const mesh = new Mesh(name, scene);
+  const bundle = new VisualBundle();
+  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
   if (positions.length === 0) {
-    const fallback = overlayUnlitMaterial(scene, name);
-    mesh.material = fallback;
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     return mesh;
   }
   const vertexData = new VertexData();
@@ -108,7 +102,7 @@ export function createOverlayPanelMesh(
           unlit: true,
         }) ?? null
       : null;
-  mesh.material = compiled ?? overlayUnlitMaterial(scene, name);
+  mesh.material = compiled ?? createOverlayUnlitMaterial(scene, name, bundle);
   if (parsed.source === "texture") {
     applyAlbedoTexture(mesh, scene, parsed.textureGuid, assets);
   }

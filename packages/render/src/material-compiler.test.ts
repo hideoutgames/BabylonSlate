@@ -755,6 +755,78 @@ describe("material compiler", () => {
     ).toContain("CustomBlock");
   });
 
+  describe("Custom GLSL readiness with a loading texture", () => {
+    async function compileWithLoadingTexture() {
+      const scene = host();
+      // The custom-shader check is skipped on NullEngine; model a real engine.
+      vi.spyOn(scene.getEngine(), "getClassName").mockReturnValue("WebGL2Engine");
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push(
+        { id: "glsl", type: "custom.glsl", position: { x: 0, y: 0 }, properties: { body: "a" } },
+        { id: "mask", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "mask" } },
+      );
+      doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+      doc.edges.push(
+        { id: "e-color-a", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "glsl", targetPinId: "a" },
+        { id: "e-glsl-out", sourceNodeId: "glsl", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+        { id: "e-mask-emission", sourceNodeId: "mask", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "emissive" },
+      );
+      const texture = new Texture(null, scene);
+      disposers.push(() => texture.dispose());
+      const loaded = vi.spyOn(texture, "isReady").mockReturnValue(false);
+      const result = compileMaterialPlan(planFor(doc), { scene, name: "slow", resolveTexture: () => texture });
+      if (!result.ok) throw new Error(result.diagnostics.map((d) => d.message).join(", "));
+      disposers.push(result.dispose);
+      // Babylon loads block shader code asynchronously before the build completes.
+      await new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      return { texture, loaded, result };
+    }
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("does not charge the texture wait against the shader compile budget", async () => {
+      vi.useFakeTimers();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      vi.advanceTimersByTime(20_000);
+      expect(result.buildState).toBe("pending");
+      loaded.mockReturnValue(true);
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      vi.advanceTimersByTime(100);
+      expect(await result.ready).toEqual([]);
+      expect(result.buildState).toBe("ready");
+    });
+
+    it("still applies the shader compile budget once loaded textures let the effect start", async () => {
+      vi.useFakeTimers();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      loaded.mockReturnValue(true);
+      // The real readiness check creates the probe effect, which never compiles.
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        return false;
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      vi.advanceTimersByTime(14_000);
+      expect(result.buildState).toBe("pending");
+      vi.advanceTimersByTime(2_000);
+      expect(result.buildState).toBe("failed");
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+    });
+
+    it("reports a texture diagnostic instead of a GLSL timeout when textures never become ready", async () => {
+      vi.useFakeTimers();
+      const { result } = await compileWithLoadingTexture();
+      vi.advanceTimersByTime(125_000);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.missingTexture", severity: "error" })]);
+      expect(result.buildState).toBe("failed");
+    });
+  });
+
   it("resolves a texture through the injected texture provider", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

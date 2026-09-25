@@ -1,5 +1,5 @@
 import { materialTextureBindings, type ResourceLease } from "./resource-cache";
-import type { Material, NodeMaterial, Scene, Texture } from "@babylonjs/core";
+import type { Material, NodeMaterial, Observer, Scene, Texture } from "@babylonjs/core";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
@@ -124,6 +124,7 @@ export class MaterialLibrary {
   private readonly scenes = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly pending = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly tracked = new Set<Scene>();
+  private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
   private readonly options: MaterialLibraryOptions;
 
   constructor(options: MaterialLibraryOptions = {}) {
@@ -142,6 +143,10 @@ export class MaterialLibrary {
     this.scenes.set(scene, created);
     this.pending.set(scene, new Map());
     this.tracked.add(scene);
+    // SceneLayer scenes are disposed without releaseScene. Babylon notifies
+    // before it disposes materials, so the library retires its own first.
+    const observer = scene.onDisposeObservable.addOnce(() => this.releaseScene(scene));
+    if (observer) this.disposeObservers.set(scene, observer);
     return created;
   }
 
@@ -159,7 +164,7 @@ export class MaterialLibrary {
     options?: MaterialAcquireOptions,
   ): boolean {
     const lowered = this.planFor(doc, options?.unlit);
-    if (!lowered.ok) return false;
+    if (!lowered.ok || scene.isDisposed) return false;
     const entries = this.entriesFor(scene);
     const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entry = this.pending.get(scene)?.get(key) ?? entries.get(key);
@@ -187,6 +192,8 @@ export class MaterialLibrary {
     }
     const denied = options?.validatePlan?.(lowered.plan);
     if (denied) return { ok: false, diagnostics: [denied] };
+    // A disposed Scene no longer notifies disposal, so nothing could release it.
+    if (scene.isDisposed) return { ok: false, diagnostics: [{ code: "material.compile.cancelled", message: "Material scene was disposed", severity: "error" }] };
     const key = cacheKey(assetGuid, unlit, options?.instanceKey, options?.logicalSceneBuffers);
     const entries = this.entriesFor(scene);
     const existing = entries.get(key);
@@ -450,6 +457,8 @@ export class MaterialLibrary {
   releaseScene(scene: Scene): void {
     const entries = this.scenes.get(scene);
     if (!entries) return;
+    const observer = this.disposeObservers.get(scene);
+    if (observer) { scene.onDisposeObservable.remove(observer); this.disposeObservers.delete(scene); }
     for (const entry of entries.values()) entry.dispose();
     const pending = this.pending.get(scene);
     if (pending) { for (const entry of pending.values()) entry.dispose(); pending.clear(); }

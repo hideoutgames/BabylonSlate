@@ -510,6 +510,31 @@ describe("material preview orbit gestures", () => {
     expect(onChange).toHaveBeenCalled();
   });
 
+  it("taps only for a single pointer released in place", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const onTap = vi.fn();
+    const handle = attachMaterialPreviewGestures(
+      canvas as unknown as HTMLCanvasElement,
+      host.camera,
+      { onTap },
+    );
+    disposers.push(() => handle.dispose());
+    canvas.emit("pointerdown", pointer(1, 100, 90));
+    canvas.emit("pointerdown", pointer(2, 220, 90));
+    canvas.emit("pointermove", pointer(2, 280, 90));
+    canvas.emit("pointerup", pointer(2, 280, 90));
+    canvas.emit("pointerup", pointer(1, 100, 90));
+    canvas.emit("pointerdown", pointer(3, 160, 90));
+    canvas.emit("pointercancel", pointer(3, 160, 90));
+    expect(onTap).not.toHaveBeenCalled();
+    canvas.emit("pointerdown", pointer(4, 160, 90));
+    canvas.emit("pointerup", pointer(4, 162, 91));
+    expect(onTap).toHaveBeenCalledOnce();
+    expect(onTap).toHaveBeenCalledWith(162, 91);
+  });
+
   it("attaches listeners only to the preview canvas and drops them on dispose", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());

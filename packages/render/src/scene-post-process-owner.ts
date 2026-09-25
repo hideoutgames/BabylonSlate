@@ -42,10 +42,12 @@ export class ScenePostProcessOwner {
     if (this.disposed || this.nativeCamera === camera) return;
     this.detachNative();
     this.graphParameters = undefined;
+    // Latch the camera only after a successful attach, so a thrown attach is retried.
+    if (this.hasEnabledEntries) {
+      this.native = attachPostProcessStack({ ...this.options, camera });
+      this.applyReplay(this.native);
+    }
     this.nativeCamera = camera;
-    if (!this.hasEnabledEntries) return;
-    this.native = attachPostProcessStack({ ...this.options, camera });
-    this.applyReplay(this.native);
   }
 
   /** No native pass may apply again after the graph has processed scene color. */

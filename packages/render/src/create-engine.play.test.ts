@@ -1,6 +1,7 @@
 import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -21,6 +22,7 @@ import {
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
+import { BakedSceneSession } from "./baked-scene-session";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
@@ -36,6 +38,7 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
+import * as sceneBakePreparation from "./scene-bake-preparation";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
@@ -101,6 +104,7 @@ class FakeCanvas {
 
 function spawnOverlayButton(
   handle: ReturnType<typeof createEngine>,
+  renderFrame: () => void,
   layerId = "hud",
   layerBounds?: { width: number; height: number },
 ): void {
@@ -129,6 +133,24 @@ function spawnOverlayButton(
     hitTest: "block",
     hasButton: true,
   });
+  // Play visuals stay hidden, and so unclickable, until a snapshot shows them.
+  const snapshot = new Float32Array(snapshotFloatCount(8));
+  writeSnapshotHeader(snapshot, {
+    frameId: 1,
+    tickIndex: 1,
+    actorCount: 1,
+    scriptMs: 0,
+    physicsMs: 0,
+  });
+  writeActorSlot(snapshot, 0, {
+    slotId: 1,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+    flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+  });
+  handle.pushSnapshot(snapshot);
+  renderFrame();
 }
 
 function pointerAt(
@@ -520,6 +542,27 @@ describe("Play createEngine view", () => {
     engine.onEndFrameObservable.notifyObservers(engine);
     await presented;
     expect(handle.scene.frameGraph).toBeNull();
+  });
+
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const presented = handle.presentFirstFrame();
+    renderViews(engine);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    // A stored preparation failure rethrows from readiness while the classic
+    // fallback still draws and copies the steady-state frame.
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
+      throw new Error("Scene rendering preparation timed out.");
+    });
+    try {
+      renderViews(engine);
+      expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+    } finally {
+      probe.mockRestore();
+    }
   });
 
   it("restores the editor scale before readmitting shared views when Play stops", async () => {
@@ -1900,6 +1943,79 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("does not report a bake failure when a view is disposed during bake preparation", async () => {
+    const engine = sharedEngine();
+    // The bake Material closure admits only opaque two-sided surfaces.
+    const material = createDefaultMaterialDocument();
+    material.twoSided = true;
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["material-1", material]]),
+      bakeAssetReader: async () => undefined,
+    });
+    handles.push(handle);
+    const receiver = createMeshComponent("mesh", "ground");
+    receiver.properties.materialGuid = "material-1";
+    receiver.properties.bakeParticipation = "staticReceiver";
+    const document = createDefaultScene();
+    document.actors = [
+      createActor("receiver", "Ground", { components: [receiver] }),
+      createActor("lamp", "Lamp", {
+        transform: { position: [0, 2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [{ id: "light", classId: "LightComponent", properties: { mobility: "static", intensity: 4 } }],
+      }),
+    ];
+    document.settings.bakedLightingAssetGuid = "bake";
+    document.settings.bakeSettings = { resolution: 32, paddingTexels: 2, samples: 1, bounces: 2 };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const preparation = vi.spyOn(sceneBakePreparation, "prepareSceneBake");
+    // Browsers confirm native release only after a frame drain; hold it so
+    // preparation settles while the Scene's deferred release is still pending.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(function (this: SceneRenderCoordinator) {
+      return whenReleased.call(this).then(() => held);
+    });
+    try {
+      handle.loadScene(document, { sceneAssetGuid: "scene-1" });
+      expect(handle.bakedSessionDiagnostics().state).toBe("pending");
+      expect(preparation).toHaveBeenCalledOnce();
+      handle.dispose();
+      // Preparation hashes asynchronously; let it settle before checking reports.
+      await Promise.allSettled(preparation.mock.results.map((result) => result.value));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(handle.scene.isDisposed).toBe(false);
+      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
+      release();
+      await handle.whenReleased();
+      await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      preparation.mockRestore();
+    }
+  });
+
+  it("still releases a shared view's Scene when restoring baked receivers fails", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    const failure = new AggregateError([new Error("Receiver restore failed.")], "Baked receiver material release failed.");
+    const restore = vi.spyOn(BakedSceneSession.prototype, "dispose").mockImplementation(() => { throw failure; });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      handle.dispose();
+      await handle.whenReleased();
+      await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(failure.message));
+    } finally {
+      restore.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {
     const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Blur", "postProcess");
@@ -1929,6 +2045,42 @@ describe("Play createEngine view", () => {
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
     expect(disposeLibrary).toHaveBeenCalled();
     expect(engine.isDisposed).toBe(false);
+  });
+
+  it("stops the camera preview timer and Play cursor at dispose while shared native release is held", async () => {
+    const engine = sharedEngine();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockReturnValue(held);
+    const previewRenders = vi.spyOn(RenderTargetTexture.prototype, "render");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+      handles.push(editor);
+      const camera = createActor("cam", "Camera", {
+        components: [{ id: "camera", classId: "CameraComponent", properties: { fieldOfView: 60 } }],
+      });
+      editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [camera] }, selectedActorIds: [camera.id] });
+      previewRenders.mockClear();
+      vi.advanceTimersByTime(1000);
+      expect(previewRenders).toHaveBeenCalledOnce();
+      const playCanvas = new FakeCanvas();
+      const play = createEngine(playCanvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(play);
+      expect(playCanvas.style.cursor).toBe("none");
+      editor.dispose();
+      play.dispose();
+      previewRenders.mockClear();
+      vi.advanceTimersByTime(3000);
+      expect(previewRenders).not.toHaveBeenCalled();
+      expect(playCanvas.style.cursor).toBe("");
+      expect(editor.scene.isDisposed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      previewRenders.mockRestore();
+      whenReleased.mockRestore();
+      release();
+    }
   });
 
   it("awaits a rendering-quality replaced post-process generation at shared teardown", async () => {
@@ -3253,6 +3405,39 @@ describe("Play createEngine view", () => {
     );
   });
 
+  it("returns glTF and KTX2 decoding to workers after the page's last Play view stops", () => {
+    const engine = sharedEngine();
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(editor);
+    const ktx2Workers = KhronosTextureContainer2.DefaultNumWorkers;
+    expect(ktx2Workers).toBeGreaterThan(0);
+    // Decoder statics are page-global, so a Play view on another Engine holds them too.
+    const first = playHandle(engine).handle;
+    const second = playHandle(sharedEngine()).handle;
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
+    // A Scene or Prefab view mounted during Play keeps Play's decoding.
+    const remounted = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(remounted);
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
+    first.dispose();
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    second.dispose();
+    // Undefined lets Babylon choose its default worker pool size.
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(ktx2Workers);
+  });
+
+  it("returns decoding to workers when Play construction rolls back", () => {
+    const failure = new Error("Play view canvas is unavailable.");
+    // Fail before the view reaches its Engine, right after the Play decoder setup.
+    const canvas = new FakeCanvas();
+    vi.spyOn(canvas, "getContext").mockImplementation(() => { throw failure; });
+    expect(() => createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), playMode: true })).toThrow(failure);
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
+  });
+
   it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
     const engine = sharedEngine();
     const editor = createEngine(
@@ -3727,6 +3912,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     const events: Array<{ event: string; actorGuid: string }> = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
@@ -3737,7 +3923,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.());
 
     canvas.emit("pointerdown", pointerAt(128, 128));
     expect(canvas.capturedPointers).toEqual([1]);
@@ -3770,6 +3956,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     const events: string[] = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
@@ -3781,7 +3968,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle, "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
     const mesh = handle.sceneLayerScenes()[0]?.scene.getMeshByName("actor-1");
     mesh?.refreshBoundingInfo(false, false);
     const extent = mesh?.getBoundingInfo().boundingBox.extendSize;

@@ -682,7 +682,8 @@ export function compileMaterialPlan(
           settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
           return;
         }
-        const started = Date.now();
+        const dependenciesStarted = Date.now();
+        let started = dependenciesStarted;
         const check = () => {
           if (disposed) return;
           try {
@@ -696,6 +697,17 @@ export function compileMaterialPlan(
               buildState = "ready";
               settleBuild([]);
               return;
+            }
+            // Blocking textures defer effect creation. The compile budget starts
+            // with the effect; a separate, longer bound covers the dependency wait.
+            if (shaderProbe && !subMesh?.effect) {
+              if (Date.now() - dependenciesStarted > 120000) {
+                finishShaderCheck();
+                buildState = "failed";
+                settleBuild([{ code: "material.missingTexture", message: "Material textures did not become ready", severity: "error" }]);
+                return;
+              }
+              started = Date.now();
             }
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();

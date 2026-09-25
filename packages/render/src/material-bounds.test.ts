@@ -19,4 +19,27 @@ describe("material displacement bounds", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it.each([false, true])("restores world bounds at a mesh moved while padded (frozen: %s)", (frozen) => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = MeshBuilder.CreateBox("box", { size: 2 }, scene);
+    const material = new StandardMaterial("displaced", scene);
+    material.metadata = { boundsPadding: 3 };
+    mesh.material = material;
+    applyMaterialBounds(mesh);
+    mesh.position.x = 10;
+    mesh.computeWorldMatrix(true);
+    if (frozen) mesh.freezeWorldMatrix();
+    expect(mesh.getBoundingInfo().boundingBox.centerWorld.x).toBeCloseTo(10);
+    mesh.material = null;
+    applyMaterialBounds(mesh);
+    mesh.computeWorldMatrix();
+    const box = mesh.getBoundingInfo().boundingBox;
+    expect(box.maximum.x).toBe(1);
+    expect(box.centerWorld.x).toBeCloseTo(10);
+    expect(box.maximumWorld.x).toBeCloseTo(11);
+    scene.dispose();
+    engine.dispose();
+  });
 });

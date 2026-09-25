@@ -94,6 +94,9 @@ export type Ktx2DecoderRuntimeOptions = {
   renderer?: string;
 };
 
+/** Babylon's worker count before any main-thread configuration replaced it. */
+const workerDefaults = new WeakMap<Ktx2DecoderRuntimeContainer, number>();
+
 const SOFTWARE_GL_RENDERER =
   /swiftshader|llvmpipe|softpipe|microsoft basic render|\bsoftware\b/i;
 
@@ -141,9 +144,13 @@ export function configureKtx2DecoderRuntime(
   container: Ktx2DecoderRuntimeContainer,
   options: Ktx2DecoderRuntimeOptions = {},
 ): void {
-  if (options.mainThread) {
-    container.DefaultNumWorkers = 0;
+  if (!workerDefaults.has(container)) {
+    workerDefaults.set(container, container.DefaultNumWorkers);
   }
+  // Best effort: Babylon fixes the thread mode at the page's first KTX2 decode.
+  container.DefaultNumWorkers = options.mainThread
+    ? 0
+    : workerDefaults.get(container)!;
   container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
   container.DefaultDecoderOptions.forceRGBA =
     shouldForceKtx2Rgba(options.caps, options.renderer);

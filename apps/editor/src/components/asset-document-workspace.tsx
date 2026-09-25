@@ -208,6 +208,8 @@ function FontEditor({
     });
     return () => {
       cancelled = true;
+      // Remove this preview's FontFace so each rerun or close releases its bytes.
+      registry.dispose();
     };
   }, [
     fontAttempt,

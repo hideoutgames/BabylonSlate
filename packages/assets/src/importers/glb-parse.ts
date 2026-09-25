@@ -99,9 +99,11 @@ export function encodeGlbJsonBin(
   json: Record<string, unknown>,
   bin: Uint8Array,
 ): Uint8Array {
-  const jsonText = JSON.stringify(json);
-  const jsonPad = pad4(jsonText.length);
-  const jsonBytes = new TextEncoder().encode(jsonText + " ".repeat(jsonPad));
+  // Pad by UTF-8 byte length; non-ASCII names make it differ from the UTF-16 length.
+  const encoded = new TextEncoder().encode(JSON.stringify(json));
+  const jsonBytes = new Uint8Array(encoded.byteLength + pad4(encoded.byteLength));
+  jsonBytes.set(encoded);
+  jsonBytes.fill(0x20, encoded.byteLength);
   const binPad = pad4(bin.byteLength);
   const binBytes = new Uint8Array(bin.byteLength + binPad);
   binBytes.set(bin, 0);

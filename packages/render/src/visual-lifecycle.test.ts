@@ -1,18 +1,19 @@
 import { installAssetBytes } from "@babylonslate/assets";
 import { Animation, AnimationGroup, FreeCamera, Mesh, NullEngine, PBRMaterial, RawTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
-import { createActor, createDefaultScene, createMeshComponent, parseText2DProperties } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, parseOverlayPanelProperties, parseText2DProperties } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
 import * as modelContainer from "./model-container";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
-import { applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";
 import { visualMeshes } from "./visual-meshes";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createText3DMesh } from "./text3d-mesh";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
+import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -243,11 +244,14 @@ describe("visual generation ownership", () => {
     expect({ materials: scene.materials.length, meshes: scene.meshes.length, geometries: scene.geometries.length, textures: scene.textures.length }).toEqual(warmed);
   });
 
-  it.each(["3D text", "overlay texture"])("retires %s construction materials after an authored override", (kind) => {
+  it.each(["3D text", "overlay texture", "overlay panel", "Play 2D material"])("retires %s construction materials after an authored override", (kind) => {
     const { scene } = host();
     const borrowed = new StandardMaterial("authored", scene);
     const cycle = () => {
-      const mesh = kind === "3D text" ? createText3DMesh(scene, "text", { text: "T" }) : createOverlayTextureQuad(scene, "overlay", null);
+      const mesh = kind === "3D text" ? createText3DMesh(scene, "text", { text: "T" })
+        : kind === "overlay texture" ? createOverlayTextureQuad(scene, "overlay", null)
+          : kind === "overlay panel" ? createOverlayPanelMesh(scene, "panel", parseOverlayPanelProperties({}))
+            : createPlayMesh(scene, 1, "2dmaterial", "mat-1");
       mesh.material = borrowed;
       mesh.dispose();
     };
