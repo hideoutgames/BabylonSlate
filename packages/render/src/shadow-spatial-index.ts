@@ -163,36 +163,44 @@ export class ShadowSpatialIndex {
     this.refit();
     return this.root;
   }
-  queryPlanes(planes: readonly Plane[]): AbstractMesh[] {
+  /** Clears and fills `result`, so per-frame callers can reuse one list. */
+  queryPlanes(
+    planes: readonly Plane[],
+    result: AbstractMesh[] = [],
+  ): AbstractMesh[] {
     this.refit();
-    const result: AbstractMesh[] = [];
-    const visit = (node?: Node) => {
-      if (!node) return;
-      if (!node.deforming)
-        for (const plane of planes) {
-          const n = plane.normal;
-          if (
-            n.x * (n.x >= 0 ? node.max.x : node.min.x) +
-              n.y * (n.y >= 0 ? node.max.y : node.min.y) +
-              n.z * (n.z >= 0 ? node.max.z : node.min.z) +
-              plane.d <
-            0
-          )
-            return;
-        }
-      if (node.mesh) {
-        if (
-          node.mesh.isEnabled() &&
-          node.mesh.isVisible &&
-          !node.mesh.isDisposed()
-        )
-          result.push(node.mesh);
-      } else {
-        visit(node.left);
-        visit(node.right);
-      }
-    };
-    visit(this.root);
+    result.length = 0;
+    this.visit(this.root, planes, result);
     return result;
+  }
+  private visit(
+    node: Node | undefined,
+    planes: readonly Plane[],
+    result: AbstractMesh[],
+  ): void {
+    if (!node) return;
+    if (!node.deforming)
+      for (const plane of planes) {
+        const n = plane.normal;
+        if (
+          n.x * (n.x >= 0 ? node.max.x : node.min.x) +
+            n.y * (n.y >= 0 ? node.max.y : node.min.y) +
+            n.z * (n.z >= 0 ? node.max.z : node.min.z) +
+            plane.d <
+          0
+        )
+          return;
+      }
+    if (node.mesh) {
+      if (
+        node.mesh.isEnabled() &&
+        node.mesh.isVisible &&
+        !node.mesh.isDisposed()
+      )
+        result.push(node.mesh);
+    } else {
+      this.visit(node.left, planes, result);
+      this.visit(node.right, planes, result);
+    }
   }
 }

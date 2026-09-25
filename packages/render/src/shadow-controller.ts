@@ -12,11 +12,11 @@ import {
   Vector3,
   Frustum,
   Material,
+  Plane,
   RenderTargetTexture,
   type AbstractMesh,
   type Light,
   type Scene,
-  type Plane,
   type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
@@ -37,7 +37,10 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
-import { resolveDirectionalShadowBias } from "./shadow-bias";
+import {
+  resolveDirectionalShadowBias,
+  type DirectionalShadowBiasInput,
+} from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
@@ -829,6 +832,11 @@ export class SceneShadowController {
           // bound yet. Never derive from the previous frame in applySettings.
           let preparedBias: EffectiveShadowBias | null = null;
           let clearedForDraw = false;
+          // The resolver reads its input synchronously; each map reuses one.
+          const biasInput: DirectionalShadowBiasInput = {
+            width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
+            poissonRadiusTexels: 0, depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
+          };
           map?.onBeforeRenderObservable.add((layer) => {
             clearedForDraw = false;
             const settings = entry.settings!;
@@ -838,22 +846,21 @@ export class SceneShadowController {
               : generator.projectionMatrix;
             const size = map.getSize();
             const matrix = projection?.m;
-            const effective = resolveDirectionalShadowBias({
-              width: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0,
-              height: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0,
-              depth: matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0,
-              mapWidth: size.width,
-              mapHeight: size.height,
-              filter: generator.usePercentageCloserFiltering ? "pcf"
-                : generator.useContactHardeningShadow ? "pcss"
-                  : generator.usePoissonSampling ? "poisson" : "none",
-              filterQuality: generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
-                : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low",
-              poissonRadiusTexels: generator.blurScale,
-              depthClamp: generator instanceof CascadedShadowGenerator && generator.depthClamp,
-              authoredDepthBias: settings.depthBias,
-              authoredNormalBias: settings.normalBias,
-            });
+            biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
+            biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
+            biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
+            biasInput.mapWidth = size.width;
+            biasInput.mapHeight = size.height;
+            biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
+              : generator.useContactHardeningShadow ? "pcss"
+                : generator.usePoissonSampling ? "poisson" : "none";
+            biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
+              : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
+            biasInput.poissonRadiusTexels = generator.blurScale;
+            biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
+            biasInput.authoredDepthBias = settings.depthBias;
+            biasInput.authoredNormalBias = settings.normalBias;
+            const effective = resolveDirectionalShadowBias(biasInput);
             generator.bias = effective.bias;
             generator.normalBias = effective.normalBias;
             const record = preparedBias ??= {
@@ -878,13 +885,17 @@ export class SceneShadowController {
           map?.onAfterRenderObservable.add(() => {
             if (!clearedForDraw || !preparedBias) return;
             const record = entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
-            Object.assign(record, preparedBias, {
-              depthBias: generator.bias,
-              normalBias: generator.normalBias,
-            });
+            Object.assign(record, preparedBias);
+            record.depthBias = generator.bias;
+            record.normalBias = generator.normalBias;
             clearedForDraw = false;
           });
           let activePlanes: Plane[] | null = null;
+          // Babylon consumes each custom list synchronously, so every map reuses
+          // its planes and caster list; upstream views the same side/far planes.
+          const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
+          const upstream = planes.slice(1);
+          const casters: AbstractMesh[] = [];
           if (map)
             map.getCustomRenderList = (layer) => {
               const transform =
@@ -892,12 +903,12 @@ export class SceneShadowController {
                   ? generator.getCascadeTransformMatrix(layer)
                   : generator.getTransformMatrix();
               if (!transform) return null;
-              const planes = Frustum.GetPlanes(transform);
+              Frustum.GetPlanesToRef(transform, planes);
               activePlanes =
                 directionalLight && entry.settings!.filter === "pcf"
-                  ? planes.slice(1)
+                  ? upstream
                   : planes;
-              return this.spatial.queryPlanes(activePlanes);
+              return this.spatial.queryPlanes(activePlanes, casters);
             };
           generator.customAllowRendering = (part) => {
             if (hasDeformingShadowBounds(part.getMesh())) return true;
