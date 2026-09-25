@@ -14,6 +14,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [design/perf-budget.md](design/perf-budget.md) | A16 iPad performance budget and render rules |
 | [design/renderer-qualification.md](design/renderer-qualification.md) | Renderer coverage matrix and the sustained qualification route |
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
+| [design/particle-emitters.md](design/particle-emitters.md) | Particle emitter redesign: Basic and Particle Graph kinds, Material-only look, staging |
 | [architecture/](architecture/) | Package and subsystem notes |
 | [architecture/overview.md](architecture/overview.md) | Package and subsystem overview |
 | [architecture/containers.md](architecture/containers.md) | `.babasset` / project folder / `.babplugin` wire formats |

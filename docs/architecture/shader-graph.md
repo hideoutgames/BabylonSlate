@@ -543,8 +543,8 @@ when an asset changes. Material Output groups Surface,
 Emission, Transparency and Geometry pins. Non-surface Details omit surface-only
 controls. **Bounds Padding (Local)** expands mesh culling bounds for authored
 displacement and restores original bounds on material reassignment; it does not
-alter collision shapes. Particle materials preview on a disposable particle
-system rather than an unrelated static mesh.
+alter collision shapes. Particle materials preview on one stationary plane (see
+[Geometry information and particle previews](#geometry-information-and-particle-previews)).
 
 Imported glTF graphs retain base-color/alpha factors, metallic and roughness
 factors and packed B/G channels, emissive factors/textures, normal maps, alpha
