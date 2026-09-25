@@ -1544,6 +1544,46 @@ describe("createPlayMesh", () => {
     expect(shown()).toHaveLength(glyphs.length + parts.length);
   });
 
+  it("keeps a hidden actor hidden when an assignment replaces its visual", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
+    const text = (value: string) => ({
+      type: "assignMesh" as const,
+      slotId: 1,
+      meshKind: "2dtext",
+      meshAssetGuid: null,
+      text2d: parseText2DProperties({ text: value }),
+    });
+    applyAssignMesh(scene, binding, text("HI"));
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
+    const snapshot = (flags: number) => ({
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      actors: [1, 2].map((slotId) => ({
+        slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+      })),
+    });
+    applySnapshotToScene(scene, binding, snapshot(0));
+    const [textRoot, boxRoot] = [binding.meshes.get(1), binding.meshes.get(2)];
+    // A script text write rebuilds the glyphs; a model assignment stages a new root.
+    applyAssignMesh(scene, binding, text("HO"));
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
+    await binding.slotAnimLoads?.get(2);
+    expect(binding.meshes.get(1)).not.toBe(textRoot);
+    expect(binding.meshes.get(2)).not.toBe(boxRoot);
+    const glyphs = binding.meshes.get(1)!.getChildMeshes();
+    const parts = visualMeshes(binding.meshes.get(2)!);
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(parts.length).toBeGreaterThan(0);
+    const shown = () => [...glyphs, ...parts].filter((mesh) => mesh.isVisible).map((mesh) => mesh.name);
+    expect(shown()).toEqual([]);
+    applySnapshotToScene(scene, binding, snapshot(SNAPSHOT_FLAG_VISIBLE));
+    expect(shown()).toHaveLength(glyphs.length + parts.length);
+  });
+
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {
     const handle = createTestEngine();
     handles.push(handle);

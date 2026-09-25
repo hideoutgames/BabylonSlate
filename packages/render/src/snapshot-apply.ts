@@ -806,7 +806,9 @@ export function applyAssignMesh(
       adopted = true;
       rejected.delete(command.slotId);
       staged.setEnabled(true);
-      setPlayVisualVisibility(binding, staged, binding.liveSlots.has(command.slotId));
+      // The adopted root inherits the last snapshot flag, not live membership.
+      setPlayVisualVisibility(binding, staged,
+        appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
       if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
@@ -854,6 +856,8 @@ export function applyAssignMesh(
     try { applyMaterialToActorMeshes(binding, command.slotId, stagedText); }
     catch (error) { stagedText.dispose(); throw error; }
   }
+  // A hidden text rewritten every tick must not show its new glyphs for a frame.
+  const lastVisible = existing ? appliedPlayVisibility.get(existing) : undefined;
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
@@ -865,7 +869,7 @@ export function applyAssignMesh(
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
-  setPlayVisualVisibility(binding, rebuilt, binding.liveSlots.has(command.slotId));
+  setPlayVisualVisibility(binding, rebuilt, lastVisible ?? binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   binding.onVisualChanged?.(command.slotId);
 }
