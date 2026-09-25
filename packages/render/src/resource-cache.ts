@@ -296,14 +296,19 @@ export class ResourceCache {
     } };
   }
 
-  private assertAdmitted(): void {
-    this.evictToCeiling();
+  /** Null when any view (or, without view flags, the cache) disables budgeting. */
+  private effectiveCeiling(): number | null {
     const policies = [...this.clientBudgets.values()];
     const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
-    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
+    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return null;
     const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
-    if (this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
+    return caps.length ? Math.max(...caps) : this.ceiling;
+  }
+
+  private assertAdmitted(): void {
+    this.evictToCeiling();
+    const ceiling = this.effectiveCeiling();
+    if (ceiling !== null && this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
   }
 
   resourceStats() {
@@ -699,12 +704,8 @@ export class ResourceCache {
   }
 
   evictToCeiling(): void {
-    const policies = [...this.clientBudgets.values()];
-    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
-    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
-    const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
-    if (this.totalBytes <= ceiling) return;
+    const ceiling = this.effectiveCeiling();
+    if (ceiling === null || this.totalBytes <= ceiling) return;
     const target = ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
       .filter((e) => this.isUnreferenced(e))
