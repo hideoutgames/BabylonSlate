@@ -30,6 +30,12 @@ function keyFor(scene: Scene, camera: Camera): string {
   return liveSceneEffectsKey(scene, camera);
 }
 
+class DisplaySpaceImageProcessingPostProcess extends ImageProcessingPostProcess {
+  // Babylon's prepass recognizes the native class name as a request for
+  // linear material output. A display-space vignette must preserve gamma input.
+  override getClassName(): string { return "DisplaySpaceImageProcessingPostProcess"; }
+}
+
 /**
  * Settings-driven Display Color stage and display-space effects on a camera's
  * native post-process chain. The owner attaches and retires plain Babylon
@@ -200,7 +206,9 @@ export class SceneEffectsOwner {
         );
       }
       if (plan.imageProcessing) {
-        const pass = new ImageProcessingPostProcess(
+        const DisplayPass = plan.imageProcessing.sceneLinear
+          ? ImageProcessingPostProcess : DisplaySpaceImageProcessingPostProcess;
+        const pass = new DisplayPass(
           "Scene Effects Display Color",
           1,
           camera,

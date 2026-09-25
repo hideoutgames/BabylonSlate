@@ -127,10 +127,10 @@ export function normalizeRenderEffectsSettings(
   const bloom = object(source.bloom);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
-  const reflectionNumber = (key: keyof ReflectionSettings, limits: readonly [number, number]) =>
-    finite(reflections[key], DEFAULT_RENDER_EFFECTS.reflections[key] as number, ...limits);
-  const volumetricNumber = (key: keyof VolumetricLightingSettings, limits: readonly [number, number]) =>
-    finite(volumetric[key], DEFAULT_RENDER_EFFECTS.volumetricLighting[key] as number, ...limits);
+  const reflectionNumber = (key: Exclude<keyof ReflectionSettings, "enabled">, limits: readonly [number, number]) =>
+    finite(reflections[key], DEFAULT_RENDER_EFFECTS.reflections[key], ...limits);
+  const volumetricNumber = (key: Exclude<keyof VolumetricLightingSettings, "enabled">, limits: readonly [number, number]) =>
+    finite(volumetric[key], DEFAULT_RENDER_EFFECTS.volumetricLighting[key], ...limits);
   const color = colorTriple(vignette.color);
   return {
     colorPipeline: {
