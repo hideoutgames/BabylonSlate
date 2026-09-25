@@ -17,6 +17,7 @@ import {
 
   type Light,
   type AbstractMesh,
+  type Matrix,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
@@ -138,6 +139,52 @@ export function composeActorComponentTransform(
     position: parentPos.add(rotated),
     rotation: parentRot.multiply(new Quaternion(lx, ly, lz, lw)),
   };
+}
+
+const scratchWorldScale = new Vector3();
+const scratchWorldRotation = new Quaternion();
+const scratchWorldPosition = new Vector3();
+const scratchComponentRotation = new Quaternion();
+const scratchWorldComponent = { position: new Vector3(), rotation: new Quaternion() };
+
+/** The same local offset as composeActorComponentTransform, applied to a
+ * parent-resolved actor world matrix. Callers copy the reused result. */
+function composeWorldComponentTransform(
+  world: Matrix,
+  component: SerializedComponent | undefined,
+): { position: Vector3; rotation: Quaternion } {
+  world.decompose(scratchWorldScale, scratchWorldRotation, scratchWorldPosition);
+  const local = component?.transform ?? identitySerializedTransform();
+  const { position, rotation } = scratchWorldComponent;
+  position
+    .copyFromFloats(
+      local.position[0] * scratchWorldScale.x,
+      local.position[1] * scratchWorldScale.y,
+      local.position[2] * scratchWorldScale.z,
+    )
+    .applyRotationQuaternionInPlace(scratchWorldRotation)
+    .addInPlace(scratchWorldPosition);
+  const [lx, ly, lz, lw] = local.rotation;
+  scratchComponentRotation.set(lx, ly, lz, lw);
+  scratchWorldRotation.multiplyToRef(scratchComponentRotation, rotation);
+  return scratchWorldComponent;
+}
+
+/** Attached actors use their parent-resolved world pose. Cyclic or missing
+ * attachments keep the actor's local pose and report why. */
+function composeAttachedComponentTransform(
+  actor: SerializedActor,
+  component: SerializedComponent,
+  actorWorld: (actor: SerializedActor) => Matrix,
+  onDiagnostic: ((message: string) => void) | undefined,
+): { position: Vector3; rotation: Quaternion } {
+  if (!actor.parentId) return composeActorComponentTransform(actor, component);
+  try {
+    return composeWorldComponentTransform(actorWorld(actor), component);
+  } catch (error) {
+    onDiagnostic?.(`${component.classId} ${actor.id}: ${String(error)}`);
+    return composeActorComponentTransform(actor, component);
+  }
 }
 
 export function actorForwardFromRotation(rotation: {
@@ -395,7 +442,13 @@ export function syncAuthoredCamerasFromMeshes(
     if (!mesh) continue;
     const camera = scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}${actor.id}`);
     if (!camera) continue;
-    mesh.computeWorldMatrix(true);
+    const world = mesh.computeWorldMatrix(true);
+    if (mesh.parent) {
+      // Attached actor meshes hold parent-local TRS; follow their world pose.
+      const composed = composeWorldComponentTransform(world, component);
+      updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+      continue;
+    }
     const rotation = mesh.rotationQuaternion
       ? mesh.rotationQuaternion
       : Quaternion.FromEulerVector(mesh.rotation);
@@ -532,7 +585,7 @@ export function* syncAuthoredIlluminationSteps(
       }
       applyAuthoredLightProperties(light, lightComponent.properties);
       {
-        const composed = composeActorComponentTransform(actor, lightComponent);
+        const composed = composeAttachedComponentTransform(actor, lightComponent, actorWorld, options.onDiagnostic);
         updateAuthoredLightTransform(
           light,
           {
@@ -562,7 +615,7 @@ export function* syncAuthoredIlluminationSteps(
       }
       applyAuthoredCameraProperties(camera, cameraComponent.properties);
       {
-        const composed = composeActorComponentTransform(actor, cameraComponent);
+        const composed = composeAttachedComponentTransform(actor, cameraComponent, actorWorld, options.onDiagnostic);
         updateAuthoredCameraTransform(
           camera,
           {
