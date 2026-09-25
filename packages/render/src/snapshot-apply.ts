@@ -511,7 +511,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water")) return true;
   const part = parts[0]!;
   return (
     part.position[0] !== 0 ||

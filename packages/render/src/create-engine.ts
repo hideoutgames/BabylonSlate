@@ -1047,6 +1047,7 @@ function initializeEngine(
   onRollback(() => disposeSnapshotBinding(binding));
   binding.tilemaps = options.tilemapPayloads;
   binding.waters = options.waterPayloads;
+  if (options.playMode) setSceneWaterTime(scene, 0);
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;

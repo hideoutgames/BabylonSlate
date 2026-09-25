@@ -245,7 +245,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
   {
     type: "input.waterSurface",
     title: "Water Surface",
-    category: "input",
+    category: "Input",
     searchAliases: ["water", "foam", "shore", "waves", "flow"],
     domains: ["surface"],
     inputs: [],

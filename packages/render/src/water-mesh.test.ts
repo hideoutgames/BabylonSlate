@@ -2,11 +2,30 @@ import { describe, expect, it } from "vitest";
 import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
-import { createPlayMesh } from "./snapshot-apply";
+import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 
 describe("Water rendering", () => {
+  it("realizes and resizes an identity-transform Water component received from Play", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    binding.waters = new Map([["water", { ...createDefaultWaterDefinition(), waveHeight: 0 }]]);
+    const assign = (width: number) => applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 1, meshKind: "water", meshAssetGuid: "water",
+      parts: [{ componentId: "lake", meshKind: "water", meshAssetGuid: "water", parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width, length: 10, resolution: 8 }) }],
+    });
+    try {
+      assign(12);
+      const root = binding.meshes.get(1)!;
+      const surface = root.getChildMeshes()[0]!;
+      expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+      expect(surface.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(6);
+      assign(20);
+      expect(root.isDisposed()).toBe(true);
+      expect(binding.meshes.get(1)!.getChildMeshes()[0]!.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(10);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("compiles Water Surface data into a custom material and preserves borrowed ownership", async () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
