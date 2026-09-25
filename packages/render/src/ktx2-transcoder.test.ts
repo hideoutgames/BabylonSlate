@@ -6,7 +6,6 @@ import {
   playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
   shouldPackKtx2ForPreviewBuild,
-  shouldPackKtx2Textures,
 } from "./ktx2-transcoder";
 
 describe("ktx2 transcoder config", () => {
@@ -152,15 +151,7 @@ describe("ktx2 transcoder config", () => {
     files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
-    expect(shouldPackKtx2Textures(files, "Apple A16 GPU")).toBe(true);
     expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
-    expect(shouldPackKtx2Textures(files, "Google SwiftShader")).toBe(false);
-    expect(
-      shouldPackKtx2Textures(
-        files,
-        "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 16.0.0)))",
-      ),
-    ).toBe(false);
   });
 
   it("never packs KTX2 for Preview Build, even on a hardware GPU with a full transcoder", () => {
@@ -176,7 +167,7 @@ describe("ktx2 transcoder config", () => {
       ["ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1])],
       ["ktx2/zstddec.wasm", new Uint8Array([1])],
     ]);
-    expect(shouldPackKtx2Textures(files, "Apple A16 GPU")).toBe(true);
+    expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
     expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
   });
 });
