@@ -464,6 +464,14 @@ describe("SceneLayerCompositor", () => {
     mesh.refreshBoundingInfo(false, false);
     const extent = mesh.getBoundingInfo().boundingBox.extendSize;
     expect(extent.x * 2).toBeCloseTo(0.32);
+
+    // The floor only widens eligible buttons; hidden or disabled ones stay inert.
+    const floor = { minTargetPx: 44, canvasCssHeight: 256 };
+    mesh.isVisible = false;
+    expect(compositor.pickHits(missX, 128, floor)).toEqual([]);
+    mesh.isVisible = true;
+    mesh.setEnabled(false);
+    expect(compositor.pickHits(missX, 128, floor)).toEqual([]);
   });
 
   it("keeps overlay NDC stable when the world camera translates", () => {

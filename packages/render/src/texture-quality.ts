@@ -53,23 +53,33 @@ export class QualityTextureBlock extends TextureBlock {
   }
   override bind(effect: Effect, material?: NodeMaterial): void {
     const source = super.texture;
-    if (material && source) {
-      const anisotropy = sceneRenderingSettings(material.getScene()).textureAnisotropy;
+    const settings = material ? sceneRenderingSettings(material.getScene()) : undefined;
+    if (settings && source) {
+      const anisotropy = settings.textureAnisotropy;
       if (this.qualitySource !== source || this.qualityAnisotropy !== anisotropy) {
-        const next = source.anisotropicFilteringLevel === anisotropy ? null
-          : acquireTextureVariant(source, { anisotropicFilteringLevel: anisotropy });
+        let next: ResourceLease<Texture> | null = null;
+        let failed = false;
+        try {
+          next = source.anisotropicFilteringLevel === anisotropy ? null
+            : acquireTextureVariant(source, { anisotropicFilteringLevel: anisotropy });
+        } catch (error) {
+          // Binding runs every frame. Record the attempt and keep sampling the
+          // shared source unchanged, because other views sample it too.
+          failed = true;
+          console.warn(`[render] Texture sample "${this.name}" keeps its source sampling: ${String(error)}`);
+        }
         this.qualityLease?.release(); this.qualityLease = next ?? undefined;
         this.qualitySource = source; this.qualityAnisotropy = anisotropy;
         // Imported, individually owned wrappers retain their existing behavior.
-        if (!next && source.anisotropicFilteringLevel !== anisotropy) applyMaterialTextureAnisotropy(source, anisotropy);
+        if (!next && !failed && source.anisotropicFilteringLevel !== anisotropy) applyMaterialTextureAnisotropy(source, anisotropy);
       }
     }
     super.bind(effect);
+    // A connected image source binds the shared source first; sample this scene's variant.
+    if (this.hasImageSource && this.qualityLease) effect.setTexture(this.samplerName, this.qualityLease.resource);
     effect.setFloat(
       "slateTextureLodBias",
-      material?.mode === 0
-        ? sceneRenderingSettings(material.getScene()).textureLodBias
-        : 0,
+      settings && material?.mode === 0 ? settings.textureLodBias : 0,
     );
   }
   protected override _buildBlock(

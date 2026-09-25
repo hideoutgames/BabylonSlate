@@ -291,6 +291,15 @@ describe("syncAuthoredIllumination", () => {
     expect(camera.position.x).toBeCloseTo(5);
     expect(camera.position.y).toBeCloseTo(1);
     expect(camera.position.z).toBeCloseTo(-4);
+    // Attached actor meshes carry parent-local TRS; the camera follows the world pose.
+    const parent = MeshBuilder.CreateBox("parent", { size: 0.1 }, scene);
+    parent.position.x = 2;
+    mesh.parent = parent;
+    syncAuthoredCamerasFromMeshes(scene, data, (id) =>
+      id === "rig" ? mesh : null,
+    );
+    expect(camera.position.x).toBeCloseTo(7);
+    expect(camera.position.z).toBeCloseTo(-4);
   });
 
   it("uses the live render aspect for orthographic extents, not 16:9", () => {
@@ -798,5 +807,38 @@ describe("syncAuthoredIllumination", () => {
     expect(light.position.x).toBeCloseTo(3);
     expect(light.position.y).toBeCloseTo(2);
     expect(light.position.z).toBeCloseTo(3);
+  });
+
+  it("places lights and cameras on attached actors at the parent-resolved world pose", () => {
+    const { scene } = createHandle();
+    const child = (id: string, parentId: string, classId: string, properties: Record<string, unknown> = {}) =>
+      createActor(id, id, {
+        parentId,
+        transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [{ id: `${id}-component`, classId, properties }],
+      });
+    // A quarter turn about +Y maps the child's local +X offset to -Z and +Z to +X.
+    const quarterTurn: [number, number, number, number] = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+    const diagnostics: string[] = [];
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        createActor("parent", "Parent", { transform: { position: [3, 0, 0], rotation: quarterTurn, scale: [1, 1, 1] } }),
+        child("lamp", "parent", "LightComponent", { lightKind: "spot" }),
+        child("rig", "parent", "CameraComponent"),
+        child("orphan", "missing", "LightComponent", { lightKind: "point" }),
+      ]),
+      { stealActiveCamera: false, onDiagnostic: (message) => diagnostics.push(message) },
+    );
+    const lamp = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`) as SpotLight;
+    expect(lamp).toBeInstanceOf(SpotLight);
+    expect(Vector3.Distance(lamp.position, new Vector3(3, 0, -1))).toBeCloseTo(0);
+    expect(Vector3.Distance(lamp.direction, new Vector3(1, 0, 0))).toBeCloseTo(0);
+    const rig = scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}rig`) as UniversalCamera;
+    expect(Vector3.Distance(rig.position, new Vector3(3, 0, -1))).toBeCloseTo(0);
+    expect(Vector3.Distance(rig.getDirection(Vector3.Forward()), new Vector3(1, 0, 0))).toBeCloseTo(0);
+    // An unresolved attachment keeps its local pose and reports why.
+    expect((scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}orphan`) as PointLight).position.x).toBeCloseTo(1);
+    expect(diagnostics).toEqual([expect.stringMatching(/^Light orphan: .*Missing actor attachment/)]);
   });
 });

@@ -1,6 +1,11 @@
 import { VertexBuffer } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateNavMesh, initNavigation, navMeshDebugPrimitives } from "@babylonslate/navigation";
+
+vi.mock("@babylonslate/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/navigation")>();
+  return { ...actual, navMeshDebugPrimitives: vi.fn(actual.navMeshDebugPrimitives) };
+});
 import { createTestEngine } from "./create-null-engine";
 import {
   NAVMESH_DEBUG_Y_OFFSET,
@@ -86,6 +91,18 @@ describe("NavMeshDebugOverlay", () => {
     const pending = overlay.sync(bytes);
     overlay.clear();
     await pending;
+    expect(overlay.mesh).toBeNull();
+    expect(handle.scene.getMeshByName("navmeshDebug")).toBeNull();
+    expect(handle.scene.materials.some((material) => material.name === "navmeshDebugMat")).toBe(false);
+  });
+
+  it("draws no navmesh fill when the bake has no walkable triangles", async () => {
+    const bytes = await generateNavMesh(groundPrism());
+    const handle = createTestEngine();
+    handles.push(handle);
+    const overlay = new NavMeshDebugOverlay(handle.scene);
+    vi.mocked(navMeshDebugPrimitives).mockReturnValueOnce([]);
+    await overlay.sync(bytes);
     expect(overlay.mesh).toBeNull();
     expect(handle.scene.getMeshByName("navmeshDebug")).toBeNull();
     expect(handle.scene.materials.some((material) => material.name === "navmeshDebugMat")).toBe(false);

@@ -36,11 +36,12 @@ import { forwardLightBudget } from "./forward-light-budget";
 import { ManagedClusteredLightContainer } from "./clustered-light-container";
 import { bindClusteredMaterialVariants } from "./clustered-material-bindings";
 
+import { availableManagedLightingBytes } from "./managed-lighting-resources";
 import {
-  availableManagedLightingBytes,
-  beginManagedLightingAllocation,
-  type ManagedLightingLease,
-} from "./managed-lighting-resources";
+  beginManagedRenderAllocation,
+  releaseManagedRenderLeaseAfterDisposal,
+  type ManagedRenderLease,
+} from "./managed-render-resources";
 import {
   clusteredTextureAllocationBytes,
   clusteredTextureResources,
@@ -77,7 +78,7 @@ export class ClusteredSceneLights {
   private syncing = false;
   private allocationFailure: string | undefined;
   private allocatedBatches = 0;
-  private resourceLease: ManagedLightingLease | undefined;
+  private resourceLease: ManagedRenderLease | undefined;
   private reservedTextureBytes = 0;
   private cameraBounds: ClusteredCameraBounds | undefined;
   private lightOrder: ClusteredLightOrder | undefined;
@@ -317,7 +318,7 @@ export class ClusteredSceneLights {
             capability.backend,
           );
           const fail = beginClusteredAllocation(this.scene, () =>
-            lease.release(),
+            this.releaseLease(lease),
           );
           try {
             this.container = new ManagedClusteredLightContainer(
@@ -371,7 +372,7 @@ export class ClusteredSceneLights {
             capability.backend,
           );
           const fail = beginClusteredAllocation(this.scene, () =>
-            lease.release(),
+            this.releaseLease(lease),
           );
           try {
             container._updateBatches(this.scene.activeCamera);
@@ -500,7 +501,7 @@ export class ClusteredSceneLights {
     this.cameraBounds = undefined;
     this.container.dispose(false, true);
     this.container = undefined;
-    this.resourceLease?.release();
+    if (this.resourceLease) this.releaseLease(this.resourceLease);
     this.resourceLease = undefined;
     this.reservedTextureBytes = 0;
     this.allocatedBatches = 0;
@@ -513,8 +514,8 @@ export class ClusteredSceneLights {
     batchSize: number,
     batches: number,
     backend: "webgl2" | "webgpu",
-  ): ManagedLightingLease {
-    const lease = beginManagedLightingAllocation(
+  ): ManagedRenderLease {
+    const lease = beginManagedRenderAllocation(
       this.scene.getEngine(),
       clusteredTextureAllocationBytes(batchSize, batches, backend),
     );
@@ -525,11 +526,18 @@ export class ClusteredSceneLights {
     return lease;
   }
 
-  private adoptTextures(lease: ManagedLightingLease, batches: number): void {
+  /** Call after confirmed disposal. WebGPU destroys textures at its end-frame drain. */
+  private releaseLease(lease: ManagedRenderLease): void {
+    void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), lease);
+  }
+
+  private adoptTextures(lease: ManagedRenderLease, batches: number): void {
     const resources = clusteredTextureResources(this.container!);
-    lease.commit(resources);
+    lease.commit(
+      resources.map((resource) => ({ ...resource, category: "cluster" })),
+    );
     // Native _updateBatches has disposed the old textures before returning.
-    this.resourceLease?.release();
+    if (this.resourceLease) this.releaseLease(this.resourceLease);
     this.resourceLease = lease;
     this.reservedTextureBytes = resources.reduce(
       (sum, resource) => sum + resource.bytes,

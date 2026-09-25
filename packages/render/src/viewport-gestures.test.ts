@@ -532,6 +532,20 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.beta).toBeCloseTo(beta, 6);
   });
 
+  it.each(["2d", "3d"] as const)("ignores horizontal-only wheel scrolling in %s", (mode) => {
+    const { controller } = attach(mode);
+    const radius = controller.camera.radius;
+    const halfHeight = controller.orthoHalfHeight();
+
+    const wheel = { deltaX: 40, deltaY: 0, clientX: 200, clientY: 150, preventDefault: vi.fn() };
+    canvas.emit("wheel", wheel);
+
+    expect(controller.camera.radius).toBe(radius);
+    expect(controller.orthoHalfHeight()).toBe(halfHeight);
+    // A sideways swipe still must not scroll the page or navigate back.
+    expect(wheel.preventDefault).toHaveBeenCalled();
+  });
+
   it("2D wheel zoom keeps the world point under the cursor", () => {
     const { controller } = attach("2d");
     controller.updateOrthoBounds(800 / 600);

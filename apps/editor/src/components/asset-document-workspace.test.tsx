@@ -190,6 +190,36 @@ describe("AssetDocumentWorkspace authoring", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByText("No fallback glyphs detected")).toBeNull();
   });
+  it("removes its preview font face from the document when the Font document closes", async () => {
+    const faces = new Set<unknown>();
+    vi.stubGlobal("FontFace", class {
+      family: string;
+      constructor(family: string) { this.family = family; }
+    });
+    const fonts = Object.getOwnPropertyDescriptor(document, "fonts");
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        add: (face: unknown) => faces.add(face),
+        delete: (face: unknown) => faces.delete(face),
+        load: async () => [],
+        check: () => true,
+      },
+    });
+    try {
+      const { unmount } = render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("font-sample-preview").getAttribute("data-fonts-ready")).toBe("true");
+      });
+      expect(faces.size).toBe(1);
+      unmount();
+      expect(faces.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+      if (fonts) Object.defineProperty(document, "fonts", fonts);
+      else delete (document as { fonts?: unknown }).fonts;
+    }
+  });
   it("picks Font fallbacks instead of typing guids", async () => {
     render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
     fireEvent.click(screen.getByTestId("font-fallbacks-add"));

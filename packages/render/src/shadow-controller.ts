@@ -639,6 +639,22 @@ export class SceneShadowController {
         entry.key === JSON.stringify([entry.mapSize, entry.light.needCube(), entry.light instanceof DirectionalLight ? settings.cascades : 1]) &&
         entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
       outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
+    // CSM freezes caster bounds; retained owners refresh them every sync.
+    const maintainCascades = (entry: Entry) => {
+      if (!(entry.generator instanceof CascadedShadowGenerator)) return;
+      entry.generator.shadowMaxZ = settings.distance;
+      if (casterBounds)
+        entry.generator.shadowCastersBoundingInfo.reConstruct(
+          casterBounds.min,
+          casterBounds.max,
+        );
+    };
+    const applyCascadeFallback = (entry: Entry) => {
+      if (entry.light instanceof DirectionalLight && cascadeFallback)
+        entry.reason = entry.reason
+          ? `${cascadeFallback}; ${entry.reason}`
+          : cascadeFallback;
+    };
     const layout = new Map<Light, ShadowGenerator | null>();
     const donors = [...outgoing];
     if (canWarm) for (const entry of incoming) {
@@ -654,7 +670,14 @@ export class SceneShadowController {
       if (!this.receiverWarmup.ready(key, layout, [camera.renderPassId, this.receiverPass!],
         () => originals.every(([light, generator]) => this.entries.get(light)?.generator === generator && light.isEnabled()))) {
         for (const entry of incoming) { entry.status = "warming"; entry.reason = "preparing shadow receiver shaders"; }
-        for (const entry of owners) { entry.status = "active"; entry.reason = null; this.refresh.apply(entry.generator!); }
+        for (const entry of owners) {
+          // Outgoing maps still render; retained winners keep admission reasons.
+          if (entry.status !== "active") entry.reason = null;
+          entry.status = "active";
+          maintainCascades(entry);
+          applyCascadeFallback(entry);
+          this.refresh.apply(entry.generator!);
+        }
         return;
       }
       this.receiverWarmup.commit();
@@ -692,13 +715,7 @@ export class SceneShadowController {
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
         }
-        if (entry.generator instanceof CascadedShadowGenerator)
-          entry.generator.shadowMaxZ = settings.distance;
-        if (casterBounds && entry.generator instanceof CascadedShadowGenerator)
-          entry.generator.shadowCastersBoundingInfo.reConstruct(
-            casterBounds.min,
-            casterBounds.max,
-          );
+        maintainCascades(entry);
         if (
           entry.light instanceof DirectionalLight &&
           !(entry.generator instanceof CascadedShadowGenerator)
@@ -924,10 +941,7 @@ export class SceneShadowController {
     const live: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
-      if (entry.light instanceof DirectionalLight && cascadeFallback)
-        entry.reason = entry.reason
-          ? `${cascadeFallback}; ${entry.reason}`
-          : cascadeFallback;
+      applyCascadeFallback(entry);
       const cascaded = entry.generator instanceof CascadedShadowGenerator;
       const passes =
         entry.generator instanceof CascadedShadowGenerator

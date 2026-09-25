@@ -72,6 +72,17 @@ describe("ktx2 transcoder config", () => {
     expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
   });
 
+  it("returns KTX2 transcoding to worker threads after a main-thread configuration", () => {
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: { forceRGBA: false, useRGBAIfASTCBC7NotAvailableWhenUASTC: false },
+    };
+    configureKtx2DecoderRuntime(mock, { mainThread: true });
+    expect(mock.DefaultNumWorkers).toBe(0);
+    configureKtx2DecoderRuntime(mock, {});
+    expect(mock.DefaultNumWorkers).toBe(4);
+  });
+
   it("forces RGBA on SwiftShader even when ASTC caps are present", () => {
     const decoderOptions = {
       forceRGBA: false,

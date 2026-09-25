@@ -78,14 +78,26 @@ export function configureGltfMeshDecoders(
     options.dracoBasePath,
     options.meshoptBasePath,
   );
-  draco.DefaultConfiguration = {
-    ...draco.DefaultConfiguration,
-    wasmUrl: urls.draco.wasmUrl,
-    wasmBinaryUrl: urls.draco.wasmBinaryUrl,
-    fallbackUrl: urls.draco.fallbackUrl,
-    numWorkers: options.playMode === true ? 0 : draco.DefaultConfiguration.numWorkers,
-  };
-  draco.ResetDefault?.(true);
+  // `undefined` lets Babylon pick its default worker count.
+  const numWorkers = options.playMode === true ? 0 : undefined;
+  const current = draco.DefaultConfiguration;
+  // The static default decoder is page-global and lazily warmed; replace it
+  // only when its effective configuration changes.
+  if (
+    current.wasmUrl !== urls.draco.wasmUrl ||
+    current.wasmBinaryUrl !== urls.draco.wasmBinaryUrl ||
+    current.fallbackUrl !== urls.draco.fallbackUrl ||
+    current.numWorkers !== numWorkers
+  ) {
+    draco.DefaultConfiguration = {
+      ...current,
+      wasmUrl: urls.draco.wasmUrl,
+      wasmBinaryUrl: urls.draco.wasmBinaryUrl,
+      fallbackUrl: urls.draco.fallbackUrl,
+      numWorkers,
+    };
+    draco.ResetDefault?.(true);
+  }
   meshopt.Configuration = {
     ...meshopt.Configuration,
     decoder: { url: urls.meshopt.url },

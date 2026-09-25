@@ -218,6 +218,47 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
+  it("moves a frozen scaled sprite when only the frame pivot changes", () => {
+    const frame = {
+      textureGuid: "frame",
+      durationMs: 100,
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 100,
+      height: 100,
+    };
+    const animation: SpriteAnimationPayload = {
+      frameDurationMs: 100,
+      frames: [
+        { ...frame, pivot: { x: 0.5, y: 0.5 } },
+        { ...frame, pivot: { x: 0, y: 1 } },
+      ],
+    };
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", {
+      name: "a",
+      u: 0,
+      v: 0,
+      uSize: 1,
+      vSize: 1,
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      width: 100,
+      height: 100,
+    });
+    mesh.scaling.set(2, 2, 1);
+    applySpriteAnimationAssetFrame(mesh, animation, 0);
+    mesh.freezeWorldMatrix();
+    expect(mesh.getWorldMatrix().getTranslation().x).toBeCloseTo(0);
+    applySpriteAnimationAssetFrame(mesh, animation, 0.99);
+    const translation = mesh.getWorldMatrix().getTranslation();
+    expect(translation.x).toBeCloseTo(0.5);
+    expect(translation.y).toBeCloseTo(0.5);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
+    scene.dispose();
+    engine.dispose();
+  });
+
   it("sizes the sprite quad from Sprite Animation texture pixels", () => {
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,

@@ -14,6 +14,7 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { SceneBakedLighting } from "./scene-baked-lighting";
 import {
+  acquireBakedAtlas,
   bakedGpuAllocationStatus,
   reserveBakedGpuBytes,
 } from "./baked-lighting-resources";
@@ -243,6 +244,22 @@ it("accounts unexpected native buffer capacity and keeps realtime geometry after
   await expect(owner.load(f.optionsFor(f.mesh))).rejects.toThrow(/quarantined/);
   expect(allocate).toHaveBeenCalledTimes(allocations);
   owner.dispose();
+});
+
+it("rounds half-float atlas uploads just below a power of two up to that power", async () => {
+  const f = await fixture();
+  const { manifest } = await createBakedLightingFixture(1, 1);
+  const bytes = new Uint8Array(16);
+  const view = new DataView(bytes.buffer);
+  [1.9999, 7.999, 0.49995, 1].forEach((value, index) =>
+    view.setFloat32(index * 4, value, true),
+  );
+  const upload = vi.spyOn(f.engine, "createRawTexture");
+  const atlas = await acquireBakedAtlas(f.engine, manifest.atlases[0]!, bytes);
+  expect([...(upload.mock.lastCall![0] as Uint16Array)]).toEqual([
+    0x4000, 0x4800, 0x3800, 0x3c00,
+  ]);
+  atlas.release();
 });
 
 it("retains WebGPU charges when disposal occurs inside the current end-frame notification", async () => {

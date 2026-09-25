@@ -86,12 +86,12 @@ export class NavMeshDebugOverlay {
   ): Promise<void> {
     this.clear();
     const generation = this.generation;
+    const positions: number[] = [];
+    const indices: number[] = [];
     if (bytes && bytes.byteLength > 0) {
       await initNavigation();
       if (generation !== this.generation) return;
       const primitives = navMeshDebugPrimitives(bytes);
-      const positions: number[] = [];
-      const indices: number[] = [];
       for (const primitive of primitives) {
         if (primitive.type !== "tris") continue;
         const start = positions.length / 3;
@@ -106,14 +106,15 @@ export class NavMeshDebugOverlay {
           indices.push(start + i);
         }
       }
+    }
+    // A bake with no walkable triangles draws no fill, only its blockers.
+    if (positions.length > 0) {
       const mesh = new Mesh("navmeshDebug", this.scene);
       mesh.isPickable = false;
       mesh.receiveShadows = false;
       const data = new VertexData();
-      data.positions = positions.length > 0 ? positions : world === "2d"
-        ? [0, 0, -NAVMESH_DEBUG_Y_OFFSET, 1, 0, -NAVMESH_DEBUG_Y_OFFSET, 0, 1, -NAVMESH_DEBUG_Y_OFFSET]
-        : [0, NAVMESH_DEBUG_Y_OFFSET, 0, 1, NAVMESH_DEBUG_Y_OFFSET, 0, 0, NAVMESH_DEBUG_Y_OFFSET, 1];
-      data.indices = indices.length > 0 ? indices : [0, 1, 2];
+      data.positions = positions;
+      data.indices = indices;
       data.applyToMesh(mesh);
       const material = new StandardMaterial("navmeshDebugMat", this.scene);
       material.disableLighting = true;

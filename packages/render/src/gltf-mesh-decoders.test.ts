@@ -8,6 +8,7 @@ import {
   GLTF_MESH_DECODER_RELATIVE_FILES,
   configureGltfMeshDecoders,
   gltfMeshDecoderUrls,
+  type DracoDecoderConfigHost,
 } from "./gltf-mesh-decoders";
 
 const editorPublic = join(
@@ -71,6 +72,28 @@ describe("gltf mesh decoder config", () => {
       "/assets/meshopt/meshopt_decoder.js",
     );
     expect(draco.DefaultConfiguration.numWorkers).toBe(0);
+  });
+
+  it("keeps the warmed default decoder until the effective configuration changes", () => {
+    // Models Babylon's lazily built static default and ResetDefault(skipDispose).
+    let warmed: { numWorkers?: number } | null = null;
+    const draco = {
+      DefaultConfiguration: {} as DracoDecoderConfigHost["DefaultConfiguration"],
+      get Default() {
+        return (warmed ??= { numWorkers: draco.DefaultConfiguration.numWorkers });
+      },
+      ResetDefault: () => { warmed = null; },
+    };
+    const meshopt = { Configuration: { decoder: { url: "" } } };
+    configureGltfMeshDecoders(draco, meshopt);
+    const editorDecoder = draco.Default;
+    configureGltfMeshDecoders(draco, meshopt);
+    expect(draco.Default).toBe(editorDecoder);
+    configureGltfMeshDecoders(draco, meshopt, { playMode: true });
+    expect(draco.Default.numWorkers).toBe(0);
+    // Leaving main-thread Play returns to Babylon's default worker count.
+    configureGltfMeshDecoders(draco, meshopt);
+    expect(draco.Default.numWorkers).toBeUndefined();
   });
 });
 

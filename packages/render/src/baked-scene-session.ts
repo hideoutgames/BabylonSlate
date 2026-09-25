@@ -142,12 +142,7 @@ export class BakedSceneSession {
 
   /** Why the last rebind failed, for diagnostics and the bake panel. */
   get staleReason(): string | null {
-    return this.state === "stale"
-      ? (this.staleReasons[0] ??
-          (this.owner.validity.status !== "valid"
-            ? [...Object.values(this.owner.validity)].join(" ")
-            : null))
-      : null;
+    return this.state === "stale" ? (this.staleReasons[0] ?? null) : null;
   }
 
   get bakedLighting(): SceneBakedLighting {
@@ -187,7 +182,8 @@ export class BakedSceneSession {
    */
   apply(sceneData: SerializedScene, host: BakedSceneHost | null): void {
     // `loadScene`/`applySceneEnvironment` pairs hand the same document through
-    // twice; only a new document or a stale release needs another pass.
+    // twice; only a new document or a stale release needs another pass. A
+    // deduped apply keeps the original load's cancellation signal.
     if (
       sceneData === this.sceneData &&
       (host?.sceneAssetGuid ?? null) === (this.host?.sceneAssetGuid ?? null) &&
@@ -199,6 +195,7 @@ export class BakedSceneSession {
     this.abort = new AbortController();
     this.sceneData = sceneData;
     this.host = host ?? undefined;
+    this.staleReasons = [];
     if (!sceneData.settings.bakedLightingAssetGuid || !host) {
       // Nothing was ever bound: receivers and owner are already empty, so
       // releasing them would only dirty strict readiness for no reason.
@@ -211,6 +208,10 @@ export class BakedSceneSession {
       this.state = "idle";
       return;
     }
+    if (host.signal?.aborted) {
+      this.release();
+      return;
+    }
     this.receivers.release();
     this.receivers = new BakedReceiverMaterials(this.scene);
     this.owner.invalidate("Scene loading superseded the applied bake.");
@@ -218,6 +219,16 @@ export class BakedSceneSession {
     this.state = "pending";
     this.pendingSince = performance.now();
     markSceneReadinessDirty(this.scene);
+    // A cancelled load withdraws its still-pending bake so readiness and the
+    // next apply are not held by superseded work; an applied bake stays bound.
+    host.signal?.addEventListener(
+      "abort",
+      () => {
+        if (!this.disposed && this.epoch === epoch && this.state === "pending")
+          this.release();
+      },
+      { once: true, signal: this.abort.signal },
+    );
     void this.progress(epoch);
   }
 
@@ -225,10 +236,12 @@ export class BakedSceneSession {
     if (this.scene.isDisposed || this.disposed) return true;
     if (this.state === "applied") {
       this.receivers.sync();
-      if (this.owner.validity.status !== "valid") {
+      const validity = this.owner.validity;
+      if (validity.status !== "valid") {
         // A live-source change invalidated the admitted bake; realtime wins.
         this.receivers.release();
         this.receivers = new BakedReceiverMaterials(this.scene);
+        this.staleReasons = validityReasons(validity);
         this.state = "stale";
         markSceneReadinessDirty(this.scene);
         return true;
@@ -311,13 +324,7 @@ export class BakedSceneSession {
       });
       if (this.epoch !== epoch || this.disposed) return;
       if (!applied) {
-        const validity = this.owner.validity;
-        this.staleReasons =
-          validity.status === "stale"
-            ? [...validity.reasons]
-            : validity.status === "missing"
-              ? [validity.reason]
-              : ["The bake did not apply."];
+        this.staleReasons = validityReasons(this.owner.validity);
         console.warn(
           `[render] Baked lighting did not apply: ${this.staleReasons.join(" ")}`,
         );
@@ -343,7 +350,8 @@ export class BakedSceneSession {
       this.state = "applied";
       markSceneReadinessDirty(this.scene);
     } catch (error) {
-      if (this.epoch !== epoch || this.disposed) return;
+      // A host that stopped being current cancelled this bake; that is not a failure.
+      if (this.epoch !== epoch || this.disposed || !host.isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
       // A bake participant whose visual has not spawned yet stays pending and
       // retries on the next readiness probe.
@@ -364,6 +372,7 @@ export class BakedSceneSession {
   release(): void {
     this.epoch++;
     this.abort?.abort();
+    this.staleReasons = [];
     if (this.state !== "idle") {
       this.receivers.release();
       this.receivers = new BakedReceiverMaterials(this.scene);
@@ -374,16 +383,34 @@ export class BakedSceneSession {
     this.state = "idle";
   }
 
+  /** Abandon in-flight preparation and IO without releasing applied receivers.
+   * A stopping view calls this at once; dispose() still releases later. */
+  cancel(): void {
+    this.epoch++;
+    this.abort?.abort();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.epoch++;
-    this.abort?.abort();
+    this.cancel();
     this.unregisterReadiness();
-    this.receivers.release();
-    this.owner.dispose();
     this.state = "idle";
+    this.staleReasons = [];
+    try {
+      this.receivers.release();
+    } finally {
+      this.owner.dispose();
+    }
   }
+}
+
+function validityReasons(validity: BakedLightingValidity): string[] {
+  return validity.status === "stale"
+    ? [...validity.reasons]
+    : validity.status === "missing"
+      ? [validity.reason]
+      : ["The bake did not apply."];
 }
 
 function receiverIdentities(sceneData: SerializedScene): Array<{

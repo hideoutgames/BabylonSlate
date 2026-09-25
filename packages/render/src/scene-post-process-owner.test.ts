@@ -1,5 +1,5 @@
 import { NullEngine, Scene, FreeCamera, Vector3 } from "@babylonjs/core";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
@@ -31,6 +31,25 @@ it("replays entry values across native detach and rebuild while preserving autho
     owner.dispose();
     expect(owner.setParameter("a", "Gain", { kind: "float", value: 1 })).toBe(false);
     expect(camera._postProcesses.filter(Boolean)).toHaveLength(0);
+  } finally { owner.dispose(); library.dispose(); scene.dispose(); engine.dispose(); }
+});
+
+it("retries a native stack whose attach threw instead of reporting it ready", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", Vector3.Zero(), scene);
+  const library = new MaterialLibrary();
+  const document = gainDocument();
+  const owner = new ScenePostProcessOwner({ scene, camera, library, documentFor: () => document,
+    deviceBuffers: { sceneDepth: false, sceneNormal: false },
+    stack: [{ id: "a", materialGuid: "gain", enabled: true, order: 0 }] });
+  try {
+    vi.spyOn(library, "acquire").mockImplementationOnce(() => { throw new Error("controlled compile failure"); });
+    expect(() => owner.useNative(camera)).toThrow("controlled compile failure");
+    expect(owner.nativeReadyFor(camera)).toBe(false);
+    owner.useNative(camera);
+    expect(owner.nativeReadyFor(camera)).toBe(true);
+    expect(camera._postProcesses.filter(Boolean)).toHaveLength(1);
   } finally { owner.dispose(); library.dispose(); scene.dispose(); engine.dispose(); }
 });
 

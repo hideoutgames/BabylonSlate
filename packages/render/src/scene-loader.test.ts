@@ -351,6 +351,38 @@ describe("scene-loader", () => {
     );
   });
 
+  it("keeps the default billboard for empty and RigidBody children of a mesh actor", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("gun", "Gun", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+        createActor("muzzle", "Muzzle", { parentId: "gun" }),
+        createActor("body", "Body", {
+          parentId: "gun",
+          components: [
+            {
+              id: "rb",
+              classId: "RigidBodyComponent",
+              properties: { motionType: "dynamic" },
+            },
+          ],
+        }),
+      ]),
+    );
+    for (const id of ["muzzle", "body"]) {
+      const origin = scene.getMeshByName(editorMeshName(id));
+      const icon = scene.getMeshByName(editorComponentMeshName(id, "billboard"));
+      expect(origin!.isPickable).toBe(true);
+      expect(
+        (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+      ).toBe("default");
+      expect(icon!.isVisible).toBe(true);
+    }
+  });
+
   it("draws a ColliderComponent as world-space dashed geometry parented with local TRS", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
@@ -781,6 +813,8 @@ describe("scene-loader", () => {
     expect(scene.getMeshByName("origin:axis-x")).not.toBeNull();
     expect(scene.getMeshByName("origin:axis-y")).not.toBeNull();
     expect(scene.getMeshByName("origin:axis-z")).not.toBeNull();
+    mesh.dispose();
+    expect(scene.getMaterialByName("origin-pivot")).toBeNull();
   });
 
   it("clearSceneMeshes is safe on an already empty scene", () => {
@@ -868,6 +902,10 @@ describe("scene-loader", () => {
     expect((button!.material as StandardMaterial).disableLighting).toBe(true);
     expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
     expect(panel!.getTotalVertices()).toBeGreaterThan(8);
+    for (const mesh of [material!, button!, panel!]) {
+      mesh.dispose();
+      expect(scene.getMaterialByName(`${mesh.name}-unlit`)).toBeNull();
+    }
   });
 
   it("fingerprints 2DPanel dest from actor scale so 9-slice rebuilds on resize", () => {

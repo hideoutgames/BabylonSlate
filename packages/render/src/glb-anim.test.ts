@@ -1,10 +1,15 @@
 import { installAssetBytes } from "@babylonslate/assets";
 import { FreeCamera, Vector3, MeshBuilder, TransformNode } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
-import type { NamedSeekableGroup } from "./anim-apply";
+import {
+  applyAnimStateToScene,
+  sceneAnimHostFromBinding,
+  type NamedSeekableGroup,
+} from "./anim-apply";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
+  accountedGeometryBytesForScene,
   adoptLoadedHierarchy,
   animationRetargetHasMatches,
   beginSlotModelAnimLoad,
@@ -12,7 +17,12 @@ import {
   invalidateSlotAnimLoad,
   reportGlbLoadFailure,
 } from "./glb-anim";
-import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
+import {
+  encodeParentedAnimatedTriangleGlb,
+  encodeTranslatedTetrahedronGlb,
+  encodeTriangleGlb,
+} from "./model-mesh";
+import { accountedGeometryBytes } from "./perf-ceilings";
 import {
   applySnapshotToScene,
   createSnapshotSceneBinding,
@@ -165,6 +175,95 @@ describe("beginSlotModelAnimLoad", () => {
       handle?.scene.dispose();
       handle?.engine.dispose();
     }
+  });
+
+  type Layer = [clipName: string, normalisedTime: number, weight: number];
+  // Both clips move part y from 0 to 1; only Second also moves root y.
+  async function loadCrossfadeModel() {
+    const handle = createTestEngine();
+    handles.push(handle);
+    new FreeCamera("camera", new Vector3(0, 0, -5), handle.scene);
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(handle.scene, "actor");
+    const split = splitGlbJsonBin(encodeParentedAnimatedTriangleGlb("First"))!;
+    const animations = split.json.animations as Array<{ name: string; channels: unknown[] }>;
+    animations.push({
+      ...animations[0]!,
+      name: "Second",
+      channels: [...animations[0]!.channels, { sampler: 0, target: { node: 0, path: "translation" } }],
+    });
+    await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
+    const host = sceneAnimHostFromBinding(binding, { animationGroups: handle.scene.animationGroups });
+    const part = visualMeshes(root)[0]!;
+    return {
+      scene: handle.scene,
+      apply: (layers: Layer[]) => {
+        const [clipName, normalisedTime] = layers[layers.length - 1]!;
+        applyAnimStateToScene(host, {
+          type: "animState",
+          slotId: 1,
+          stateId: `s${layers.length - 1}`,
+          normalisedTime,
+          blendWeights: Object.fromEntries(layers.map(([, , weight], index) => [`s${index}`, weight])),
+          clipName,
+          clipKind: "animation",
+          clipAssetGuid: "model",
+          layers: layers.map(([clipName, normalisedTime, weight], index) => ({
+            stateId: `s${index}`, clipAssetGuid: "model", clipName, clipKind: "animation", normalisedTime, weight,
+          })),
+        });
+      },
+      pose: () => [part.position.y, (part.parent as TransformNode).position.y],
+    };
+  }
+
+  it.each<[string, Layer[][], number, number]>([
+    ["mixes crossfade layers by weight", [[["First", 1, 0.5], ["Second", 0.5, 0.5]]], 0.75, 0.25],
+    ["keeps the outgoing pose when the incoming layer has no weight", [[["First", 1, 1], ["Second", 0.5, 0]]], 1, 0],
+    ["seeks a clip shared by two layers once at the current state's time", [[["First", 0.25, 0.5], ["First", 0.75, 0.5]]], 0.75, 0],
+    ["renders only the latest crossfade of a slot", [
+      [["First", 1, 0.2], ["Second", 0.5, 0.8]],
+      [["First", 1, 0.5], ["Second", 0.5, 0.5]],
+    ], 0.75, 0.25],
+    ["drops a crossfade replaced by a single clip before the render", [
+      [["First", 1, 0.5], ["Second", 0.5, 0.5]],
+      [["First", 1, 1]],
+    ], 1, 0],
+  ])("%s", async (_name, commands, partY, rootY) => {
+    const model = await loadCrossfadeModel();
+    for (const layers of commands) model.apply(layers);
+    model.scene.render();
+    const [part, root] = model.pose();
+    expect(part).toBeCloseTo(partY);
+    expect(root).toBeCloseTo(rootY);
+  });
+
+  it("drops a crossfade replaced after a render skipped its animation pass", async () => {
+    const model = await loadCrossfadeModel();
+    const loading = {};
+    // Babylon skips a Scene's first animation pass while data is pending.
+    model.scene.addPendingData(loading);
+    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
+    model.scene.render();
+    model.scene.removePendingData(loading);
+    model.apply([["First", 1, 1]]);
+    model.scene.render();
+    const [part, root] = model.pose();
+    expect(part).toBeCloseTo(1);
+    expect(root).toBeCloseTo(0);
+  });
+
+  it("accounts a mesh shared by two glTF nodes once", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const split = splitGlbJsonBin(encodeTranslatedTetrahedronGlb([0, 0, 0]))!;
+    (split.json.nodes as unknown[]).push({ mesh: 0, translation: [1, 0, 0] });
+    (split.json.scenes as Array<{ nodes: number[] }>)[0]!.nodes = [0, 1];
+    const root = createModelActorRoot(handle.scene, "actor-2");
+    await beginSlotModelAnimLoad(handle.scene, createSnapshotSceneBinding(), 2, "model-1",
+      installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
+    expect(visualMeshes(root)).toHaveLength(2);
+    expect(accountedGeometryBytesForScene(handle.scene)).toBe(accountedGeometryBytes(4, 12));
   });
 
   it("loads a static GLB nested in a larger ArrayBuffer", async () => {

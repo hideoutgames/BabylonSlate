@@ -547,6 +547,20 @@ describe("material library", () => {
     expect(scene.materials).not.toContain(result.material);
   });
 
+  it("releases texture leases when a scene is disposed without releaseScene and never tracks it again", async () => {
+    const f = textureLibrary();
+    const layer = new Scene(f.scene.getEngine());
+    const acquired = f.library.acquire(layer, "material", textureDocument("first"));
+    if (!acquired.ok) throw new Error("Material did not compile");
+    expect(await acquired.ready).toEqual([]);
+    expect(f.cache.resourceStats().leases).toBe(1);
+    layer.dispose();
+    expect(f.cache.resourceStats().leases).toBe(0);
+    expect(f.library.acquire(layer, "material", textureDocument("first")).ok).toBe(false);
+    expect(f.library.isCompiled(layer, "material", textureDocument("first"))).toBe(false);
+    expect(f.cache.resourceStats().leases).toBe(0);
+  });
+
   it("reports whether a graph is already compiled for a scene", () => {
     const scene = host();
     const library = new MaterialLibrary();

@@ -31,13 +31,15 @@ export type BakedSourceLightResolver = (
  * sampler. Shared materials are never mutated: PBR/Standard surfaces get a
  * clone with `BakedIrradiancePlugin`; CEL adapters re-wrap the same source so
  * `SLATE_BAKED` joins the environment accumulation; authored graphs clone and
- * set `CelLightBlock.bakedIrradiance`; MultiMaterial children recurse.
+ * set `CelLightBlock.bakedIrradiance`; MultiMaterial children recurse and
+ * each child variant is recorded in `children` for disposal.
  * Unsupported materials return null so realtime lighting stays untouched.
  */
 function bakedMaterialVariant(
   scene: Scene,
   material: Material,
   sampling: BakedIrradianceSampling,
+  children: Material[],
 ): Material | null {
   if (material instanceof CelMaterial) {
     // An unlit adapter mirrors its source's flat color; no bake applies.
@@ -68,9 +70,16 @@ function bakedMaterialVariant(
     return variant;
   }
   if (material instanceof MultiMaterial) {
+    const variants = material.subMaterials.map((child) =>
+      child ? bakedMaterialVariant(scene, child, sampling, children) : null,
+    );
+    const owned = variants.filter((child): child is Material => !!child);
+    if (!owned.length) return null;
+    // Unsupported children stay the shared originals and are never owned.
+    children.push(...owned);
     const variant = new MultiMaterial(`baked:${material.name}`, scene);
-    variant.subMaterials = material.subMaterials.map((child) =>
-      child ? (bakedMaterialVariant(scene, child, sampling) ?? child) : child,
+    variant.subMaterials = material.subMaterials.map(
+      (child, index) => variants[index] ?? child,
     );
     return variant;
   }
@@ -121,6 +130,8 @@ interface AppliedReceiver {
   original: Material | null;
   /** Null when the mesh's material cannot consume the atlas; the entry stays watched so a later supported assignment still wraps. */
   variant: Material | null;
+  /** MultiMaterial child variants; disposing the container leaves its children. */
+  ownedChildren: Material[];
   excludedLights: Light[];
   /** Light-kind sources that had no runtime light yet at wrap() — re-resolved on every sync. */
   pendingExclusions: Extract<BakedLightingSource, { kind: "light" }>[];
@@ -184,8 +195,9 @@ export class BakedReceiverMaterials {
     };
     const current = mesh.material;
     const source = current ?? this.scene.defaultMaterial;
+    const ownedChildren: Material[] = [];
     const variant = source
-      ? bakedMaterialVariant(this.scene, source, sampling)
+      ? bakedMaterialVariant(this.scene, source, sampling, ownedChildren)
       : null;
     const entry: AppliedReceiver = {
       binding,
@@ -195,6 +207,7 @@ export class BakedReceiverMaterials {
       // never the variant that was replaced.
       original: current ?? null,
       variant,
+      ownedChildren,
       excludedLights: [],
       pendingExclusions: [],
       observer: mesh.onMaterialChangedObservable.add(() => {
@@ -306,6 +319,7 @@ export class BakedReceiverMaterials {
       if (index >= 0) light.excludedMeshes.splice(index, 1);
     }
     entry.variant?.dispose(false, false);
+    for (const child of entry.ownedChildren) child.dispose(false, false);
   }
 
   /** Per-receiver material and compiled-define readout for session diagnostics. */

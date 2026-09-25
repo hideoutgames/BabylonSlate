@@ -1,7 +1,7 @@
 import { sceneShadowController } from "./shadow-controller";
 import { applyMaterialBounds } from "./material-bounds";
 import {
-  Color3,
+  AbstractMesh,
   DirectionalLight,
   HemisphericLight,
   Mesh,
@@ -10,10 +10,8 @@ import {
   Quaternion,
   Scene,
   SpotLight,
-  StandardMaterial,
   UniversalCamera,
   Vector3,
-  type AbstractMesh,
   type Camera,
   type Light,
   type Material,
@@ -45,7 +43,11 @@ import {
   meshAssetFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
-import { createOverlayTextureQuad } from "./overlay-texture-quad";
+import {
+  createOverlayTextureQuad,
+  createOverlayUnlitMaterial,
+} from "./overlay-texture-quad";
+import { VisualBundle } from "./visual-bundle";
 import {
   createOverlayPanelMesh,
   type OverlayPanelMeshOptions,
@@ -712,7 +714,9 @@ export function applyAssignMesh(
       () => {
         stampOverlayPick(existing, command);
         applyPlayVisualSorting(existing, command.slotId, binding);
-        setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
+        // Adopted glTF parts inherit the last snapshot flag, not live membership.
+        setPlayVisualVisibility(binding, existing,
+          appliedPlayVisibility.get(existing) ?? binding.liveSlots.has(command.slotId), true);
         retireRemovedMaterials();
         releaseRetainedMaterialOwners(binding, command.slotId);
         binding.onVisualChanged?.(command.slotId);
@@ -733,7 +737,9 @@ export function applyAssignMesh(
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
-    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    // Staged models never record or compare rejections; skip hashing every
+    // installed asset. Other preparations keep the request-time asset state.
+    const descriptor = stagesModels ? "" : `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
     const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
     rejectedPreparedAssignments.set(binding, rejected);
     if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
@@ -800,7 +806,9 @@ export function applyAssignMesh(
       adopted = true;
       rejected.delete(command.slotId);
       staged.setEnabled(true);
-      setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
+      // The adopted root inherits the last snapshot flag, not live membership.
+      setPlayVisualVisibility(binding, staged,
+        appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
       if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
@@ -826,16 +834,18 @@ export function applyAssignMesh(
   let stagedText: Mesh | null = null;
   const deferredModels: DeferredModelLoad[] = [];
   if (stagesText) {
-    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
+    // Script text writes re-emit assignMesh every tick; hash installed assets
+    // only to compare or record a rejected allocation.
+    const descriptor = () => `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
     const rejected = rejectedTextAssignments.get(binding);
-    if (existing && rejected?.get(command.slotId) === descriptor) return;
+    if (existing && rejected?.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     try {
       stagedText = createPlayVisual(scene, command.slotId, binding, deferredModels);
       rejected?.delete(command.slotId);
     } catch (error) {
       if (!(error instanceof BitmapAllocationLimitError) || !existing) throw error;
       const failed = rejected ?? new Map<number, string>();
-      failed.set(command.slotId, descriptor);
+      failed.set(command.slotId, descriptor());
       rejectedTextAssignments.set(binding, failed);
       console.warn(`[render] ${error.code}: ${error.message}`);
       return;
@@ -846,6 +856,8 @@ export function applyAssignMesh(
     try { applyMaterialToActorMeshes(binding, command.slotId, stagedText); }
     catch (error) { stagedText.dispose(); throw error; }
   }
+  // A hidden text rewritten every tick must not show its new glyphs for a frame.
+  const lastVisible = existing ? appliedPlayVisibility.get(existing) : undefined;
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
@@ -857,7 +869,7 @@ export function applyAssignMesh(
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
-  setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
+  setPlayVisualVisibility(binding, rebuilt, lastVisible ?? binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   binding.onVisualChanged?.(command.slotId);
 }
@@ -876,7 +888,8 @@ export function migratePlaySlotVisual(
   const rotationQuaternion = existing.rotationQuaternion?.clone();
   const rotation = existing.rotation.clone();
   const scaling = existing.scaling.clone();
-  const visible = existing.isVisible;
+  // An origin root's own isVisible is always false; carry the snapshot flag.
+  const visible = appliedPlayVisibility.get(existing) ?? existing.isVisible;
   const metadata = existing.metadata;
   existing.dispose();
   binding.spriteOverlays?.get(slotId)?.dispose();
@@ -897,7 +910,7 @@ export function migratePlaySlotVisual(
   }
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
-  setPlayVisualVisibility(rebuilt, visible);
+  setPlayVisualVisibility(binding, rebuilt, visible);
   binding.onVisualChanged?.(slotId);
   return rebuilt;
 }
@@ -971,10 +984,6 @@ function playMeshMetadata(mesh: Mesh): {
   } | null;
 }
 
-function isPlayActorOrigin(mesh: Mesh): boolean {
-  return Boolean(playMeshMetadata(mesh)?.playActorOrigin);
-}
-
 function isPlayHelperVisual(mesh: Mesh): boolean {
   const meta = playMeshMetadata(mesh);
   return Boolean(meta?.playHelperVisual || meta?.playActorOrigin);
@@ -1018,20 +1027,41 @@ function markPlayHelperVisual(mesh: Mesh): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), playHelperVisual: true };
 }
 
-function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
-  const origin = isPlayActorOrigin(mesh);
-  const helper = isPlayHelperVisual(mesh);
-  mesh.isVisible = origin || helper ? false : visible;
-  if (!origin) return;
-  for (const child of mesh.getChildMeshes()) {
-    if (!child.name.includes("|")) continue;
-    const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
-    if (afterPipe.includes(":")) continue;
-    if (isMesh(child) && isPlayHelperVisual(child)) {
-      child.isVisible = false;
-      continue;
+/** Last snapshot visibility applied to each slot root's visual tree. */
+const appliedPlayVisibility = new WeakMap<Mesh, boolean>();
+
+/** Slot roots are named `actor-<slot>`; part, glyph and chunk names never resolve to one. */
+function isOtherSlotRoot(
+  binding: SnapshotSceneBinding,
+  root: Mesh,
+  node: import("@babylonjs/core").Node,
+): boolean {
+  if (node === root || !node.name.startsWith("actor-")) return false;
+  return binding.meshes.get(Number(node.name.slice("actor-".length))) === node;
+}
+
+/**
+ * Babylon does not inherit `isVisible`, so a hidden actor hides every drawn
+ * descendant: parts, glyphs, glTF meshes, tilemap chunks and sprite overlays.
+ * Helpers and origins stay hidden. Particle emitters and other actors' roots
+ * keep their own visibility. Unchanged values return without a tree walk.
+ */
+function setPlayVisualVisibility(
+  binding: SnapshotSceneBinding,
+  mesh: Mesh,
+  visible: boolean,
+  force = false,
+): void {
+  if (!force && appliedPlayVisibility.get(mesh) === visible) return;
+  appliedPlayVisibility.set(mesh, visible);
+  mesh.isVisible = isPlayHelperVisual(mesh) ? false : visible;
+  const pending = mesh.getChildren();
+  for (let node = pending.pop(); node; node = pending.pop()) {
+    if (node.name.startsWith("particleEmitter:") || isOtherSlotRoot(binding, mesh, node)) continue;
+    if (node instanceof AbstractMesh) {
+      node.isVisible = isMesh(node) && isPlayHelperVisual(node) ? false : visible;
     }
-    child.isVisible = visible;
+    pending.push(...node.getChildren());
   }
 }
 
@@ -1044,13 +1074,12 @@ export function applyPossessCamera(
   refreshPlayActiveCamera(scene, binding);
 }
 
-function isWorldOverlayLeftoverName(name: string, slotId: number): boolean {
-  const prefix = `actor-${slotId}`;
-  return (
-    name === prefix ||
-    name.startsWith(`${prefix}-`) ||
-    name.startsWith(`${prefix}|`)
-  );
+/** `actor-N`, `actor-N-…` or `actor-N|…`, but never `actor-NM…`. */
+function isWorldOverlayLeftoverName(name: string, prefix: string): boolean {
+  if (!name.startsWith(prefix)) return false;
+  if (name.length === prefix.length) return true;
+  const next = name.charCodeAt(prefix.length);
+  return next === 45 || next === 124;
 }
 
 /** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
@@ -1058,10 +1087,16 @@ export function disposeWorldOverlayLeftovers(
   worldScene: Scene,
   slotId: number,
 ): void {
-  for (const mesh of [...worldScene.meshes]) {
-    if (isWorldOverlayLeftoverName(mesh.name, slotId)) {
-      mesh.dispose();
-    }
+  // Runs for every overlay actor on every applied snapshot, and almost always
+  // matches nothing. Collect first: dispose splices scene.meshes and children.
+  const prefix = `actor-${slotId}`;
+  let leftovers: AbstractMesh[] | undefined;
+  for (const mesh of worldScene.meshes) {
+    if (isWorldOverlayLeftoverName(mesh.name, prefix)) (leftovers ??= []).push(mesh);
+  }
+  if (!leftovers) return;
+  for (const mesh of leftovers) {
+    if (!mesh.isDisposed()) mesh.dispose();
   }
 }
 
@@ -1306,12 +1341,9 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const material = new StandardMaterial(`${name}-unlit`, scene);
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.White();
-    material.backFaceCulling = false;
-    mesh.material = material;
+    const bundle = new VisualBundle();
+    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {
@@ -1353,7 +1385,14 @@ export function createPlayMesh(
       } : binding;
       await beginSlotModelAnimLoad(
         scene, owner, slotId, assetGuid, bytes, root,
-        preparation ? undefined : () => binding.onVisualChanged?.(slotId),
+        preparation ? undefined : () => {
+          // Late glTF parts join an applied slot; unchanged samples are not
+          // re-applied (for example while paused), so hide or show them now.
+          const slotRoot = binding.meshes.get(slotId);
+          const visible = slotRoot ? appliedPlayVisibility.get(slotRoot) : undefined;
+          if (slotRoot && visible !== undefined) setPlayVisualVisibility(binding, slotRoot, visible, true);
+          binding.onVisualChanged?.(slotId);
+        },
         preparation?.ownsLoad,
         (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
       );
@@ -1521,6 +1560,7 @@ export function applySnapshotToScene(
     writeActorTransform(mesh, actor);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
+      binding,
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
@@ -1542,14 +1582,7 @@ export function applySnapshotToScene(
         composed.rotation,
       );
     }
-    if (mesh.getScene() === scene) {
-      applyTilemapParallaxToMesh(
-        mesh,
-        scene.activeCamera ?? { position: actor.position },
-      );
-    }
   }
-  snapPlayCameraToPixelGrid(scene, binding);
   updateBoneAttachments(binding);
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (attachment.applied) binding.areaLights.get(slotId)?.setWorld(attachment.world);
@@ -1569,6 +1602,14 @@ export function applySnapshotToScene(
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
   refreshPlayActiveCamera(scene, binding);
+  // Camera-dependent passes wait for every camera pose, including later slots
+  // and bone attachments, and for this snapshot's active camera.
+  snapPlayCameraToPixelGrid(scene, binding);
+  for (let i = 0; i < count; i++) {
+    const mesh = binding.snapshotMeshes[i];
+    if (mesh?.getScene() !== scene) continue;
+    applyTilemapParallaxToMesh(mesh, scene.activeCamera ?? snapshot.actors[i]!);
+  }
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }

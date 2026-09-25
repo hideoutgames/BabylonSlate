@@ -21,8 +21,10 @@ import {
 import type { ColliderShape } from "@babylonslate/physics";
 import {
   createOverlayTextureQuad,
+  createOverlayUnlitMaterial,
   overlayTextureVisualKind,
 } from "./overlay-texture-quad";
+import { VisualBundle } from "./visual-bundle";
 import {
   createOverlayPanelMesh,
   overlayPanelVisualKind,
@@ -150,7 +152,9 @@ export function createPrimitiveMesh(
 function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   const root = MeshBuilder.CreateSphere(name, { diameter: 0.14 }, scene);
   root.isPickable = true;
-  const material = new StandardMaterial(`${name}-pivot`, scene);
+  const bundle = new VisualBundle();
+  root.onDisposeObservable.addOnce(() => bundle.dispose());
+  const material = bundle.ownMaterial(new StandardMaterial(`${name}-pivot`, scene));
   material.disableLighting = true;
   material.emissiveColor = new Color3(0.92, 0.93, 0.96);
   material.diffuseColor = Color3.Black();
@@ -322,10 +326,8 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 
 export function helperBillboardIconOf(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
 ): EditorBillboardIcon | null {
   if (hasSurfaceVisual(actor)) return null;
-  if (skipOverlayButtonVisual(actor, allActors)) return null;
   const fill = actor.components.find(
     (component) => component.classId === "HemisphericFillLightComponent",
   );
@@ -358,7 +360,7 @@ export function needsOriginRoot(
 ): boolean {
   const visuals = visualComponentsOf(actor, allActors);
   return (
-    helperBillboardIconOf(actor, allActors) !== null ||
+    helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -610,7 +612,7 @@ export function editorMeshKindOf(
   if (actor.components.some((component) => component.classId === "NavMeshComponent")) {
     return editorBillboardKind("navmesh");
   }
-  const helper = helperBillboardIconOf(actor, allActors);
+  const helper = helperBillboardIconOf(actor);
   return helper ? editorBillboardKind(helper) : null;
 }
 
@@ -679,12 +681,9 @@ export function createMeshForComponent(
   }
   if (component.classId === "2DMaterialComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const material = new StandardMaterial(`${name}-unlit`, scene);
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.White();
-    material.backFaceCulling = false;
-    mesh.material = material;
+    const bundle = new VisualBundle();
+    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     const guid = stringProp(component.properties.materialGuid);
     if (guid && assets?.resolveMaterial) {
       const compiled = assets.resolveMaterial(guid, { scene, unlit: true });
@@ -710,12 +709,9 @@ export function createMeshForComponent(
   }
   if (component.classId === "2DButtonComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const material = new StandardMaterial(`${name}-unlit`, scene);
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.White();
-    material.backFaceCulling = false;
-    mesh.material = material;
+    const bundle = new VisualBundle();
+    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     return mesh;
   }
   if (component.classId === "ParticleComponent") {
@@ -921,7 +917,7 @@ function createActorOriginHierarchy(
       const parentId = parentVisualMeshId(component, meshes, componentsById);
       mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
     }
-    const helperIcon = helperBillboardIconOf(actor, allActors);
+    const helperIcon = helperBillboardIconOf(actor);
     if (helperIcon && !visuals.some(isBillboardComponent)) {
       const billboard = createEditorBillboard(
         scene,
@@ -1021,7 +1017,7 @@ export function createActorMesh(
   if (
     skipOverlayButtonVisual(actor, allActors) &&
     visualComponentsOf(actor, allActors).length === 0 &&
-    helperBillboardIconOf(actor, allActors) === null
+    helperBillboardIconOf(actor) === null
   ) {
     const hidden = createOriginRootMesh(scene, actor);
     hidden.metadata = { ...(hidden.metadata ?? {}), editorUnpickable: true };

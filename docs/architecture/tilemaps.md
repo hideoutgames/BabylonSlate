@@ -53,7 +53,7 @@ Play builds a parent `actor-N` mesh plus one child draw per non-empty static chu
 
 Tilemap atlas materials stay **unlit and double-sided** in both 2D and 3D scenes. They disable material fog and image processing to preserve atlas colors, and retain their atlas when attached beneath actors or components with mesh/model material overrides. Alpha testing discards transparent atlas pixels. Sprite and tilemap mesh disposal or atlas rebinding disposes the old owned albedo material while preserving the shared ResourceCache texture, including mixed scenes rebuilt after painting.
 
-`tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw and returns animation descriptors alongside geometry. The `:anim` mesh starts on frame zero and is subsequently sought by the scene clock. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
+`tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw and returns animation descriptors alongside geometry. The `:anim` mesh starts on frame zero and is subsequently sought by the scene clock. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`) after every camera is posed, the active camera is refreshed and the pixel snap has run.
 
 ## Sorting
 

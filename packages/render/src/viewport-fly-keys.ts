@@ -171,6 +171,8 @@ export function attachViewportFlyKeys(
   const onKeyDown = (event: Event) => {
     const keyboard = event as KeyboardEvent;
     if (!FLY_CODES.has(keyboard.code)) return;
+    // Ctrl/Cmd/Alt+A/S/D/W are shortcuts, not movement.
+    if (keyboard.ctrlKey || keyboard.metaKey || keyboard.altKey) return;
     if (isEditableTarget(keyboard.target)) return;
     if (!enabled()) return;
     keys.add(keyboard.code);
@@ -179,6 +181,12 @@ export function attachViewportFlyKeys(
 
   const onKeyUp = (event: Event) => {
     const keyboard = event as KeyboardEvent;
+    if (keyboard.key === "Meta") {
+      // macOS sends no keyup for keys released while Cmd is held.
+      keys.clear();
+      stopLoop();
+      return;
+    }
     keys.delete(keyboard.code);
     if (keys.size === 0) stopLoop();
   };

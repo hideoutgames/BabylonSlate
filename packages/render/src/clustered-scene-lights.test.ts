@@ -7,6 +7,7 @@ import {
   TransformNode,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
   PBRMaterial,
   PointLight,
   Scene,
@@ -16,6 +17,8 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import * as capabilities from "./clustered-light-capabilities";
 import { ClusteredSceneLights } from "./clustered-scene-lights";
 import {
@@ -229,6 +232,21 @@ describe("explicit clustered light ownership", () => {
     });
     owner.setLights([]);
     expect(managedLightingReservations(engine).reservedBytes).toBe(0);
+  });
+
+  it("keeps released WebGPU cluster textures reserved until the native end-frame drain", async () => {
+    const { engine, scene, lights } = fixture();
+    const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
+    const bytes = managedLightingReservations(engine).clusterBytes;
+    expect(bytes).toBeGreaterThan(0);
+    // Babylon selects its container layout at construction; flip only the
+    // release boundary, where WebGPU defers physical texture destruction.
+    Object.defineProperty(engine, "isWebGPU", { get: () => true });
+    owner.dispose();
+    await Promise.resolve();
+    expect(managedLightingReservations(engine).clusterBytes).toBe(bytes);
+    engine.endFrame();
+    expect(managedLightingReservations(engine).clusterBytes).toBe(0);
   });
 
   it("preserves same-scene shadow reservations while clusters contend and recover after context restoration", () => {
@@ -710,6 +728,44 @@ describe("explicit clustered light ownership", () => {
     expect(owner.status().clustered).toBe(48);
     owner.dispose();
     expect(scene.textures).not.toContain(target);
+  });
+
+  it("keeps one borrowed mask entry in a resized graph's texture manager", async () => {
+    const options = new NullEngineOptions();
+    options.renderWidth = 80;
+    options.renderHeight = 64;
+    const { engine, scene, lights } = fixture(new NullEngine(options));
+    vi.spyOn(engine, "buildTextureLayout").mockImplementation(
+      (enabled, backbuffer) =>
+        backbuffer
+          ? [0x0405]
+          : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)),
+    );
+    const owner = new ClusteredSceneLights(scene, lights);
+    let textures: FrameGraph["textureManager"] | undefined;
+    const addTask = FrameGraph.prototype.addTask;
+    vi.spyOn(FrameGraph.prototype, "addTask").mockImplementation(function (
+      this: FrameGraph,
+      task: FrameGraphTask,
+    ) {
+      textures = this.textureManager;
+      return addTask.call(this, task);
+    });
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(scene.activeCamera!)).toEqual({ path: "frameGraph" });
+    const manager = textures!;
+    const bytes = manager.computeTotalTextureSize(false, 80, 64);
+    expect(bytes).toBeGreaterThan(0);
+    for (const [width, height] of [[96, 72], [120, 90], [80, 64]] as const) {
+      options.renderWidth = width;
+      options.renderHeight = height;
+      expect(await graph.prepare(scene.activeCamera!)).toEqual({ path: "frameGraph" });
+      // The same graph rebuilds; its external entries must not accumulate.
+      expect(textures).toBe(manager);
+      expect(manager.computeTotalTextureSize(false, 80, 64)).toBe(bytes);
+    }
+    graph.dispose();
+    owner.dispose();
   });
   it("registers cluster defines and samplers when an already compiled point-light slot changes type", async () => {
     const { engine, scene, mesh, lights } = fixture();

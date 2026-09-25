@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
-import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
+import { DEFAULT_SORTING_LAYERS, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
@@ -1196,6 +1196,37 @@ describe("createPlayMesh", () => {
     expect(camera.position.y).toBeCloseTo(0.03, 6);
   });
 
+  it("offsets tilemap parallax from the same snapshot's snapped camera", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.pixelPerfect = true;
+    binding.pixelsPerUnit = 100;
+    const map = setTile({ ...createDefaultTilemapPayload(), tilesetGuid: "atlas" }, "layer-1", 0, 0, 1);
+    // Parallax 0 is screen-locked: the layer offset equals the camera position.
+    binding.tilemaps = new Map([["map", { ...map, layers: map.layers.map((layer) => ({ ...layer, parallax: { x: 0, y: 0 } })) }]]);
+    binding.tilesets = new Map([["atlas", normalizeTilesetPayload({})]]);
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: "map", meshKind: "tilemap" });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "orthographic" },
+    });
+    const pose = (slotId: number, x: number, y: number) => ({
+      slotId, flags: 1, position: { x, y, z: -8 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+    });
+    // The tilemap slot precedes the camera slot that moves in this snapshot.
+    applySnapshotToScene(scene, binding, {
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
+    });
+    const chunk = binding.meshes.get(1)!.getChildMeshes()[0]!;
+    expect(chunk.position.x).toBeCloseTo(3.01, 6);
+    expect(chunk.position.y).toBeCloseTo(1.03, 6);
+  });
+
   it("prefers a possessed camera over the Default Camera", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -1477,6 +1508,80 @@ describe("createPlayMesh", () => {
     expect(sphere?.isVisible).toBe(true);
     expect(box?.position.asArray()).toEqual([-4, 1, 0]);
     expect(sphere?.position.asArray()).toEqual([4, 2, 0]);
+  });
+
+  it("hides every drawn part of a hidden 2D Text or Model actor", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "2dtext",
+      meshAssetGuid: null,
+      text2d: parseText2DProperties({ text: "HI" }),
+    });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
+    const snapshot = (flags: number) => ({
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      actors: [1, 2].map((slotId) => ({
+        slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+      })),
+    });
+    // Hidden before the model loads: glTF parts adopted afterwards stay hidden.
+    applySnapshotToScene(scene, binding, snapshot(0));
+    await binding.slotAnimLoads?.get(2);
+    const glyphs = binding.meshes.get(1)!.getChildMeshes();
+    const parts = visualMeshes(binding.meshes.get(2)!);
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(parts.length).toBeGreaterThan(0);
+    const shown = () => [...glyphs, ...parts].filter((mesh) => mesh.isVisible).map((mesh) => mesh.name);
+    expect(shown()).toEqual([]);
+    applySnapshotToScene(scene, binding, snapshot(SNAPSHOT_FLAG_VISIBLE));
+    expect(shown()).toHaveLength(glyphs.length + parts.length);
+  });
+
+  it("keeps a hidden actor hidden when an assignment replaces its visual", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
+    const text = (value: string) => ({
+      type: "assignMesh" as const,
+      slotId: 1,
+      meshKind: "2dtext",
+      meshAssetGuid: null,
+      text2d: parseText2DProperties({ text: value }),
+    });
+    applyAssignMesh(scene, binding, text("HI"));
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
+    const snapshot = (flags: number) => ({
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      actors: [1, 2].map((slotId) => ({
+        slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+      })),
+    });
+    applySnapshotToScene(scene, binding, snapshot(0));
+    const [textRoot, boxRoot] = [binding.meshes.get(1), binding.meshes.get(2)];
+    // A script text write rebuilds the glyphs; a model assignment stages a new root.
+    applyAssignMesh(scene, binding, text("HO"));
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
+    await binding.slotAnimLoads?.get(2);
+    expect(binding.meshes.get(1)).not.toBe(textRoot);
+    expect(binding.meshes.get(2)).not.toBe(boxRoot);
+    const glyphs = binding.meshes.get(1)!.getChildMeshes();
+    const parts = visualMeshes(binding.meshes.get(2)!);
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(parts.length).toBeGreaterThan(0);
+    const shown = () => [...glyphs, ...parts].filter((mesh) => mesh.isVisible).map((mesh) => mesh.name);
+    expect(shown()).toEqual([]);
+    applySnapshotToScene(scene, binding, snapshot(SNAPSHOT_FLAG_VISIBLE));
+    expect(shown()).toHaveLength(glyphs.length + parts.length);
   });
 
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {

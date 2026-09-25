@@ -22,6 +22,7 @@ import {
 } from "@babylonslate/core";
 import {
   composeActorComponentTransform,
+  composeAuthoredComponentTransform,
   applyAuthoredCameraLens,
   type AuthoredCameraProperties,
 } from "./scene-illumination";
@@ -43,20 +44,6 @@ type OverlaySync = {
   selectedComponentIds?: readonly string[];
   audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
 };
-
-function actorPosition(actor: SerializedActor): Vector3 {
-  const [x, y, z] = actor.transform.position;
-  return new Vector3(x, y, z);
-}
-
-function actorRotation(actor: SerializedActor): Quaternion {
-  const [x, y, z, w] = actor.transform.rotation;
-  return new Quaternion(x, y, z, w);
-}
-
-function actorForward(actor: SerializedActor): Vector3 {
-  return Vector3.Forward().applyRotationQuaternion(actorRotation(actor));
-}
 
 const DEBUG_FAR_MIN = 8;
 const DEBUG_FAR_NEAR_SCALE = 40;
@@ -163,6 +150,7 @@ export class EditorDebugOverlay {
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
   private audioDebug: Array<{
     root: TransformNode;
@@ -193,7 +181,7 @@ export class EditorDebugOverlay {
     const camera = selected.find((entry) => entry.component.classId === "CameraComponent");
     const light = selected.find((entry) => entry.component.classId === "LightComponent" || entry.component.classId === "AreaRectLightComponent");
     if (camera) this.buildCameraDebug(camera.actor, camera.component);
-    if (light) this.buildLightDebug(light.actor, light.component);
+    if (light) this.buildLightDebug(light.actor, light.component, sceneData.actors);
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
       const guid = component.properties.audioAssetGuid ?? component.properties.assetGuid;
@@ -269,15 +257,24 @@ export class EditorDebugOverlay {
     void this.blitPreview();
   }
 
-  dispose(): void {
+  /**
+   * Stop host-side work (the preview timer, pose follow and canvas writes)
+   * while a shared Engine may still borrow the preview RTT and meshes.
+   */
+  stop(): void {
+    this.stopped = true;
     this.scene.onBeforeRenderObservable.remove(this.audioPoseObserver);
     this.clearTimer();
-    this.disposeVisuals();
     this.previewCanvas = null;
   }
 
+  dispose(): void {
+    this.stop();
+    this.disposeVisuals();
+  }
+
   private ensureTimer(): void {
-    if (this.useExternalClock || this.timer || !this.previewTexture) return;
+    if (this.stopped || this.useExternalClock || this.timer || !this.previewTexture) return;
     this.timer = setInterval(() => this.tick(), CAMERA_PREVIEW_INTERVAL_MS);
   }
 
@@ -383,7 +380,7 @@ export class EditorDebugOverlay {
     this.tick(this.now());
   }
 
-  private buildLightDebug(actor: SerializedActor, component: SerializedComponent): void {
+  private buildLightDebug(actor: SerializedActor, component: SerializedComponent, actors: readonly SerializedActor[]): void {
     if (component.classId === "AreaRectLightComponent") {
       const native = this.scene.getLightByName(`authoredAreaLight:${actor.id}:${component.id}`);
       if (!native?.parent || native.metadata?.areaLight?.error) return;
@@ -405,8 +402,10 @@ export class EditorDebugOverlay {
     }
     const kind = String(component.properties.lightKind ?? "point") as LightDebugKind;
     const range = Math.max(0.1, asNumber(component.properties.range, 10));
-    const origin = actorPosition(actor);
-    const forward = actorForward(actor);
+    // Match the authored light: parent-resolved actor pose × component transform.
+    const composed = composeAuthoredComponentTransform(actor, component, actors);
+    const origin = composed.position;
+    const forward = Vector3.Forward().applyRotationQuaternion(composed.rotation);
     const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
     this.lightDebugKind = kind === "spot" || kind === "directional" ? kind : "point";
     if (this.lightDebugKind === "directional") {
@@ -496,7 +495,8 @@ export class EditorDebugOverlay {
     if (!canvas || !texture) return;
     try {
       const buffer = await texture.readPixels();
-      if (!buffer || !canvas.getContext) return;
+      // A stopped overlay or replaced canvas must not receive a late readback.
+      if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const { width, height } = texture.getSize();
