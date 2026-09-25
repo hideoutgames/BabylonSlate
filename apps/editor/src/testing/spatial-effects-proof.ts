@@ -47,7 +47,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         light = kind === "point" ? new PointLight("Fog Light", position, scene)
           : kind === "spot" ? new SpotLight("Fog Light", position, Vector3.Down(), Math.PI / 2, 1, scene)
             : new DirectionalLight("Fog Light", new Vector3(0.2, -1, 0.1), scene);
-        applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 120, range: 12, outerAngle: 90, innerAngle: 60, castShadows: true });
+        applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: true });
         const blocker = MeshBuilder.CreateBox("Beam Occluder", { width: 2, height: 0.2, depth: 2 }, scene);
         blocker.position.y = 1.5; blocker.material = black;
       }
@@ -94,7 +94,10 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         else effects.volumetricLighting.enabled = true;
         const on = await draw();
         let changed: number[];
-        if (light) { applyAuthoredLightProperties(light, { castShadows: false }); changed = await draw(); }
+        if (light) {
+          applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
+          changed = await draw();
+        }
         else {
           camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
           camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 3; camera.orthoBottom = -3;

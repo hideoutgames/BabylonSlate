@@ -12,6 +12,7 @@ import { sceneRenderingSettings, resolveSceneRenderingQuality } from "./render-s
 import { bindVolumetricLights, selectVolumetricLights, volumetricLayoutKey, volumeShadowLayout } from "./volumetric-lights";
 import { volumetricShader, volumetricCompositeShader } from "./volumetric-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
+import { beginManagedRenderAllocation } from "./managed-render-resources";
 
 /** Delay native define setters until all settings/camera flags are configured.
  * Babylon otherwise overwrites (and leaks) each intermediate Effect reference. */
@@ -46,6 +47,21 @@ export function spatialEffectsUnsupported(scene: Scene): string | undefined {
     !caps.textureHalfFloatRender || !caps.depthTextureExtension)
     return "Reflections and volumetric lighting require four render targets, half-float textures and depth sampling.";
   return undefined;
+}
+
+/** Reserve MRTs, color/depth and effect targets before any native allocation.
+ * Scaled targets use rounded dimensions, just like their allocation recipes. */
+export function reserveSpatialEffects(scene: Scene, plan: SceneEffectsPlan, width: number, height: number, native: boolean) {
+  const pixels = width * height;
+  const quality = resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
+  const scaledBytes = (scale: number) => Math.max(1, Math.round(width * Math.max(0.25, scale * quality))) *
+    Math.max(1, Math.round(height * Math.max(0.25, scale * quality))) * 8;
+  // Native includes its half-float prepass color, R32 depth, padded depth/stencil
+  // and a full-size PP input. Graph includes its scene color/depth and geometry Z.
+  let bytes = pixels * (native ? 28 : 18);
+  if (plan.reflections) bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
+  if (plan.volumetricLighting) bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
+  return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
 export function liveSceneEffectsKey(scene: Scene, camera = scene.activeCamera): string {

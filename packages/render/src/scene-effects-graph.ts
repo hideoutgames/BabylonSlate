@@ -1,6 +1,6 @@
 import { Constants, type Camera } from "@babylonjs/core";
 import { SpatialEffectsGraph } from "./spatial-effects-graph";
-import { spatialEffectsUnsupported } from "./spatial-effects";
+import { reserveSpatialEffects, spatialEffectsUnsupported } from "./spatial-effects";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -107,12 +107,21 @@ export class SceneEffectsGraph {
       if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(graph.scene)) {
         const camera = options.camera ?? graph.scene.activeCamera;
         if (!camera) throw new Error("Spatial effects require a camera.");
-        this.spatial = new SpatialEffectsGraph(graph, camera, plan, source, options.width, options.height);
-        for (const task of this.spatial.tasks) {
-          this.tasks.push(task);
-          this.externalTasks.add(task);
+        const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height, false);
+        if (lease) {
+          this.spatial = new SpatialEffectsGraph(graph, camera, plan, source, options.width, options.height, lease,
+            this.sceneColorTexture !== null && this.depthTexture !== null ? [
+              { handle: this.sceneColorTexture, category: "sceneColor" },
+              { handle: this.depthTexture, category: "depth" },
+            ] : []);
+          for (const task of this.spatial.tasks) {
+            this.tasks.push(task);
+            this.externalTasks.add(task);
+          }
+          source = this.spatial.output;
+        } else {
+          console.warn("Spatial effects disabled: shared Engine render-target budget is exhausted.");
         }
-        source = this.spatial.output;
       }
       if (plan.bloom) {
         // `kernel` is relative to final output size on both paths; the task

@@ -19,8 +19,8 @@ import {
 } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
-import { createSpatialStages, liveSceneEffectsKey, spatialGeometryTypes } from "./spatial-effects";
-import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
+import { createSpatialStages, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
+import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
   return sceneRenderingSettings(scene).effectsPlan;
@@ -90,25 +90,21 @@ export class SceneEffectsOwner {
     if (!plan) return;
     const engine = this.scene.getEngine();
     const passes: PostProcess[] = [];
+    const unattached = new Set<SpatialStage>();
     // Linear HDR keeps float intermediates until the display stage; Legacy
     // Display and CEL keep the established byte pipeline end to end.
     const type = plan.sceneLinear
       ? Constants.TEXTURETYPE_HALF_FLOAT
       : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     try {
-      if (plan.reflections || plan.volumetricLighting) {
+      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(this.scene)) {
         const size = camera.outputRenderTarget?.getSize();
         const width = size?.width ?? engine.getRenderWidth(true);
         const height = size?.height ?? engine.getRenderHeight(true);
-        const spatial = createSpatialStages(this.scene, camera, plan, width, height);
-        if (spatial.length) {
-          // Include the peak MRT and all native input/output targets. Keep this
-          // conservative reservation until every retired native pass releases.
-          this.spatialLease = beginManagedRenderAllocation(engine, width * height * 96);
-          if (!this.spatialLease) {
-            for (const stage of spatial) this.track(retireOwnedEffect(stage.wrapper.effect, () => stage.wrapper.dispose()));
-            throw new Error("Spatial effects exceed the shared Engine resource reservation.");
-          }
+        this.spatialLease = reserveSpatialEffects(this.scene, plan, width, height, true) ?? undefined;
+        if (this.spatialLease) {
+          const spatial = createSpatialStages(this.scene, camera, plan, width, height);
+          for (const stage of spatial) unattached.add(stage);
           this.ownedPrePass = !this.scene.prePassRenderer;
           const prepass = this.scene.enablePrePassRenderer();
           if (!prepass) throw new Error("Spatial effects require a pre-pass renderer.");
@@ -124,6 +120,7 @@ export class SceneEffectsOwner {
             });
             spatialPasses.push(pass);
             passes.push(pass);
+            unattached.delete(stage);
             pass.onApply = (effect) => {
               if (stage.geometry) {
                 const target = prepass.getRenderTarget();
@@ -142,6 +139,8 @@ export class SceneEffectsOwner {
             name: "Slate Spatial Effects", enabled: false, texturesRequired: spatialGeometryTypes(plan),
           };
           prepass.markAsDirty();
+        } else {
+          console.warn("Spatial effects disabled: shared Engine render-target budget is exhausted.");
         }
       }
       if (plan.bloom) {
@@ -242,6 +241,7 @@ export class SceneEffectsOwner {
         );
       }
     } catch (error) {
+      for (const stage of unattached) this.track(retireOwnedEffect(stage.wrapper.effect, () => stage.wrapper.dispose()));
       for (const pass of passes.splice(0)) {
         try {
           this.retirePass(pass, camera);

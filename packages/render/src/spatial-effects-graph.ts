@@ -6,7 +6,7 @@ import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Tex
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { createSpatialStages, spatialEffectsUnsupported, type SpatialStage } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
-import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderCategory, type ManagedRenderLease } from "./managed-render-resources";
+import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderCategory, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTextureResource } from "./render-target-resource-cost";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
@@ -56,13 +56,14 @@ export class SpatialEffectsGraph {
   private committed = false;
   private released: Promise<void> | undefined;
 
-  constructor(graph: FrameGraph, camera: Camera, plan: SceneEffectsPlan, source: FrameGraphTextureHandle, width: number, height: number) {
+  constructor(graph: FrameGraph, camera: Camera, plan: SceneEffectsPlan, source: FrameGraphTextureHandle, width: number, height: number, lease: ManagedRenderLease, sceneTargets: { handle: FrameGraphTextureHandle; category: ManagedRenderCategory }[] = []) {
     this.graph = graph;
     const reason = spatialEffectsUnsupported(graph.scene);
     if (reason) throw new Error(reason);
-    const lease = beginManagedRenderAllocation(graph.engine, width * height * 96);
-    if (!lease) throw new Error("Spatial effects exceed the shared Engine resource reservation.");
     this.lease = lease;
+    this.handles.push(...sceneTargets);
+    const unattached = new Set<SpatialStage>();
+    try {
     const target = (name: string, scale = 1, depth = false) => {
       const handle = graph.textureManager.createRenderTargetTexture(name, {
         size: { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }, sizeIsPercentage: false,
@@ -94,19 +95,21 @@ export class SpatialEffectsGraph {
       buffers.reflectivitySampler = this.geometry.geometryReflectivityTexture;
     }
     for (const handle of Object.values(buffers)) this.handles.push({ handle, category: "geometry" });
-    try {
       const stages = createSpatialStages(graph.scene, camera, plan, width, height);
+      for (const stage of stages) unattached.add(stage);
       const inputs: FrameGraphTextureHandle[] = [];
       for (const stage of stages) {
         inputs.push(source);
         const task = new SpatialTask(graph, stage, buffers, stage.mainInput === undefined ? undefined : inputs[stage.mainInput]);
         this.tasks.push(task);
+        unattached.delete(stage);
         task.sourceTexture = source;
         task.targetTexture = target(stage.wrapper.name, stage.scale);
         source = task.outputTexture;
       }
       this.output = source;
     } catch (error) {
+      for (const stage of unattached) retireOwnedEffect(stage.wrapper.effect, () => stage.wrapper.dispose());
       this.disposeTasks();
       // Declarations allocate no targets until graph.build. The caller still
       // owns and retires that graph after a failed construction.
@@ -126,8 +129,8 @@ export class SpatialEffectsGraph {
   disposeTasks(): void {
     if (this.disposed) return;
     for (const task of this.tasks) task.dispose();
-    this.geometry.dispose();
-    this.clear.dispose();
+    this.geometry?.dispose();
+    this.clear?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> { return Promise.all(this.tasks.map((task) => task.whenDisposed())).then(() => {}); }
