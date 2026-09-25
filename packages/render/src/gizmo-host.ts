@@ -13,7 +13,6 @@ import type { ViewportMode } from "@babylonslate/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";
-export { SELECTION_COLOR } from "./selection-style";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
@@ -584,5 +583,3 @@ export function createGizmoHost(
     },
   };
 }
-
-/** Selection outline colour, shared by the outline pass and the 2D bounds. */
