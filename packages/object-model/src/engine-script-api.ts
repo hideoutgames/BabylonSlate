@@ -314,6 +314,18 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "SpringArmComponent",
+    variables: [
+      { name: "Arm Length", typeId: "float", propertyKey: "armLength" },
+      { name: "Enable Location Lag", typeId: "bool", propertyKey: "enableLocationLag" },
+      { name: "Location Lag Speed", typeId: "float", propertyKey: "locationLagSpeed" },
+      { name: "Max Location Lag Distance", typeId: "float", propertyKey: "maxLocationLagDistance" },
+      { name: "Enable Rotation Lag", typeId: "bool", propertyKey: "enableRotationLag" },
+      { name: "Rotation Lag Speed", typeId: "float", propertyKey: "rotationLagSpeed" },
+      { name: "Draw Debug Lag", typeId: "bool", propertyKey: "drawDebugLag" },
+    ],
+  },
+  {
     classId: "AreaRectLightComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
