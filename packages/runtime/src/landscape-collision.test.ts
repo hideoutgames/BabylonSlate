@@ -83,10 +83,18 @@ it.each([false, true])("a falling Havok body lands only when Landscape Collision
   } finally { sync.dispose(); }
 });
 
-it("keeps Landscape collision geometry out of a 2D physics world", () => {
-  const { world, component } = worldWithLandscape();
-  component.setVariable("collisionsEnabled", true);
-  const backend = createSoftwarePhysicsBackend("2d");
+it.each([{ kind: "2d" as const, enabled: true }, { kind: "3d" as const, enabled: false }])(
+  "ignores nonparticipating Landscape transforms ($kind, enabled=$enabled)", ({ kind, enabled }) => {
+  const { world, actor, component } = worldWithLandscape();
+  component.setVariable("collisionsEnabled", enabled);
+  // A visual-only sheared hierarchy must not invoke physics TRS validation.
+  const parent = world.createActor({ classId: "Actor", guid: "parent", transform: {
+    ...identityTransform(), scale: { x: 2, y: 1, z: 1 },
+  } });
+  world.spawnActorNow(parent);
+  actor.setVariable("parentId", parent.guid);
+  actor.transform.rotation = { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) };
+  const backend = createSoftwarePhysicsBackend(kind);
   const sync = new PhysicsWorldSync(backend);
   try {
     sync.syncFromWorld(world);
