@@ -2,6 +2,7 @@ import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
+import { WaterSurfaceBlock } from "./water-surface-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -631,6 +632,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       : AnimatedInputBlockTypes.Time;
     return single(block, {}, { time: block.output });
   },
+  "input.waterSurface": ({ name }) => {
+    const block = new WaterSurfaceBlock(name);
+    return single(block, {}, Object.fromEntries(block.outputs.map((output) => [output.name, output])));
+  },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition
       ? { blocks: [], inputs: {}, outputs: { position: plumbing.cameraPosition } }
@@ -794,6 +799,47 @@ ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
   }
   const block = attributeVector(name, "normal", 3);
   return single(block, {}, { normal: block.output });
+};
+
+ADAPTERS["landscape.uv"] = (context) => {
+  const position = ADAPTERS["input.worldPosition"]!(context);
+  const split = new VectorSplitterBlock(`${context.name}_split`);
+  position.outputs.position!.connectTo(split.xyzIn);
+  const merge = new VectorMergerBlock(`${context.name}_xz`);
+  split.x.connectTo(merge.x); split.z.connectTo(merge.y);
+  const scale = new ScaleBlock(context.name);
+  merge.xyOut.connectTo(scale.input);
+  return { blocks: [...position.blocks, split, merge, scale], inputs: { scale: scale.factor }, outputs: { uv: scale.output } };
+};
+ADAPTERS["landscape.height"] = (context) => {
+  const position = ADAPTERS["input.worldPosition"]!(context);
+  const split = new VectorSplitterBlock(context.name);
+  position.outputs.position!.connectTo(split.xyzIn);
+  return { blocks: [...position.blocks, split], inputs: {}, outputs: { height: split.y } };
+};
+ADAPTERS["landscape.slope"] = (context) => {
+  const normal = ADAPTERS["input.worldNormal"]!(context);
+  const unit = new NormalizeBlock(`${context.name}_unit`);
+  normal.outputs.normal!.connectTo(unit.input);
+  const split = new VectorSplitterBlock(`${context.name}_split`);
+  unit.output.connectTo(split.xyzIn);
+  const abs = new TrigonometryBlock(`${context.name}_abs`);
+  abs.operation = TrigonometryBlockOperations.Abs;
+  split.y.connectTo(abs.input);
+  const one = new InputBlock(`${context.name}_one`); one.value = 1;
+  const slope = new SubtractBlock(context.name);
+  one.output.connectTo(slope.left); abs.output.connectTo(slope.right);
+  return { blocks: [...normal.blocks, unit, split, abs, one, slope], inputs: {}, outputs: { slope: slope.output } };
+};
+ADAPTERS["landscape.layers"] = ({ name }) => {
+  const color = new InputBlock(`${name}_weights`, undefined, NodeMaterialBlockConnectionPointTypes.Color4);
+  color.setAsAttribute("color");
+  const split = new VectorSplitterBlock(name); color.output.connectTo(split.xyzw);
+  return { blocks: [color, split], inputs: {}, outputs: { layer1: split.x, layer2: split.y, layer3: split.z, layer4: split.w } };
+};
+ADAPTERS["landscape.blend"] = ({ name }) => {
+  const blend = new LerpBlock(name);
+  return single(blend, { base: blend.left, layer: blend.right, weight: blend.gradient }, { color: blend.output });
 };
 
 ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {

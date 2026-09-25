@@ -1533,3 +1533,29 @@ Material generations retain their compile-time texture leases until preparation 
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
 
 Texture installation preserves the existing legacy UASTC descriptor normalization before creating immutable upload Blobs. Stored asset bytes remain unchanged; repeated bindings reuse the installed content without repeating conversion or hashing.
+## Water
+
+Water assets share one definition between the renderer and game worker. Realistic and Stylized presets expose colors, opacity, reflections, roughness, waves, ripples, foam, and density. Ocean, Lake, River, and Puddle components own their footprint, depth, wave scale, and current. River points include elevation; lakes and puddles use elliptical bounds.
+
+`WaterBuoyancyComponent` applies lift and drag at four support points through the native physics backend. It preserves collision impulses and angular motion, so a falling rigid body can depress and tip a floating body. Zero Volume automatically provides displacement for twice the body's mass; an explicit Volume uses cubic metres and the asset's Density uses kg/m³. Width, Length, Height, and Offset describe the floating volume. Existing Rigid Body and collider settings continue to control mass and collision response.
+
+Surface queries and buoyancy use the same analytic waves and simulation clock as rendering. Overlapping surfaces select the highest water surface, or the explicitly selected water actor. Disabled water does not participate in queries or buoyancy. Puddle depth limits its buoyant volume.
+
+
+To start, create a **Water** asset and choose **Realistic** or **Stylized**. Open its Preview and Details to tune the look. Drag it from Place Actors into a 3D scene to create a lake, or add an Ocean, Lake, River, or Puddle component and select that asset. Components without an assigned asset use the Realistic defaults. A missing assigned asset also falls back to those defaults in rendering and simulation.
+
+- Ocean is an infinite query surface rendered as a camera-following grid. Width and Length set the visible patch; Resolution controls tessellation (8 to 128).
+- Lake and Puddle use elliptical surfaces. Puddle defaults are shallow and nearly still; its finite depth limits the displaced volume.
+- River uses component-local centreline points with elevation, a width and a directed current. Add points in Details; Flow Speed reverses with a negative value.
+- Water supports actor and component transforms, including signed scales. Vertical surfaces cannot be sampled as water height. Geometry updates and queries share the same analytic waves. Foam follows the authored banks and crests; color depth is estimated from bank distance and component Depth.
+
+Add **Water Buoyancy** to the object that should float. It creates a dynamic body and a box collider when needed; authored Rigid Body and collider components take precedence. Match Width, Length, Height and Offset to the hull. Rigid Body Mass controls weight. Zero Volume balances an unloaded object halfway submerged; set Volume explicitly to give the hull a fixed carrying capacity. Native Havok collision impulses transfer falling loads, allowing dipping, tipping and sinking under excess weight. This is surface buoyancy, not a fluid-volume simulation or splash solver.
+
+Only two dedicated graph nodes are added:
+
+| Graph | Node | Purpose |
+| --- | --- | --- |
+| NodeGraph | Sample Water Surface | Queries a world position and optional Water Actor. Returns Found, world surface height, signed immersion depth, surface normal, water velocity, bank distance and the live Water Actor. Outside water returns Found false. Ocean bank distance is infinite. |
+| MaterialGraph | Water Surface | Reads local wave height, bank distance, component water depth, simulation time and local flow from the rendered mesh. Ordinary meshes return zero. Ocean shading clamps bank distance to 10,000 units. |
+
+A Water asset's **Custom Material** accepts a Surface MaterialGraph; it replaces built-in shading while retaining geometry waves and buoyancy. Use Water Surface to blend foam by bank distance or animate effects with the water clock. Additional graph position offsets affect rendering only. Existing component variable Get/Set nodes expose water assignment, dimensions, current, waves, enabled state and buoyancy tuning. Water content is loaded before scene realization in Play and the player; simulation time travels through the worker bridge and freezes with Play pause.

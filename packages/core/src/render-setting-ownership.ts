@@ -82,6 +82,7 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   grid: "non-rendering",
   editorJoystickEnabled: "non-rendering",
   showNavmesh: "non-rendering",
+  foliageGroups: "non-rendering",
 } as const satisfies Record<
   keyof SceneSettings,
   QualityGroup | "independent" | "non-rendering"

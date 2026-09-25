@@ -15,9 +15,11 @@ import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
+import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
+  waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Validated native emission data, separate from original Texture bytes. */
@@ -128,6 +130,7 @@ export function meshAssetFingerprint(
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
     `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
     `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
+    `waters:${payloadMapFingerprint(assets.waters)}`,
     `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
@@ -154,6 +157,7 @@ export function meshAssetFingerprintWithoutModels(
     spritePayloads: assets?.spritePayloads,
     spriteAnimations: assets?.spriteAnimations,
     tilemaps: assets?.tilemaps,
+    waters: assets?.waters,
     tilesets: assets?.tilesets,
     textureBytes: assets?.textureBytes,
     texturePixelSizes: assets?.texturePixelSizes,
@@ -176,7 +180,7 @@ export function modelSlotFingerprint(
         .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
         .join(",");
       const colliders = JSON.stringify(payload.simpleColliders ?? []);
-      return `${guid}:${slots}:${colliders}`;
+      return `${guid}:${payload.importScale}:${slots}:${colliders}`;
     })
     .sort()
     .join(";");
@@ -213,6 +217,8 @@ const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void> | undefined {
   const pending: Promise<void>[] = [];
   for (const mesh of [root, ...root.getChildMeshes()]) {
+    const foliage = foliagePreparation(mesh as Mesh);
+    if (foliage) pending.push(foliage);
     const binding = albedoBindings.get(mesh);
     const albedo = binding?.preparation;
     const skybox = skyboxMeshPreparation(mesh);

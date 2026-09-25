@@ -1,4 +1,6 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
+import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
+import { createWaterMesh } from "./water-mesh";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import {
@@ -14,6 +16,8 @@ import {
   SPRING_ARM_COMPONENT_CLASS_ID,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh, foliageSourceFingerprint } from "./foliage-mesh";
 import {
   extractGltfCollisionMesh,
   meshCollisionFingerprint,
@@ -56,6 +60,7 @@ import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
 import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
 import { GRID_MESH_NAME } from "./editor-grid";
+import { createEditorCameraModel, EDITOR_CAMERA_MODEL_KIND, isEditorCameraModel } from "./editor-camera-model";
 import {
   BLOCKING_VOLUME_COLOR,
   createEditorVolumeMesh,
@@ -214,6 +219,9 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -238,6 +246,9 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -365,6 +376,8 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
+    visuals.some((component) => waterKindForClass(component.classId) !== null) ||
+    visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
     visuals.some((component) => component.classId === "ColliderComponent") ||
@@ -383,6 +396,9 @@ function componentVisualKind(
   actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
+  if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
+  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"
@@ -402,7 +418,7 @@ function componentVisualKind(
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
-  if (component.classId === "CameraComponent") return editorBillboardKind("camera");
+  if (component.classId === "CameraComponent") return EDITOR_CAMERA_MODEL_KIND;
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
     return `springarm:${parseSpringArmProperties(component.properties).armLength}`;
   }
@@ -573,7 +589,7 @@ export function editorMeshKindOf(
   }
   if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
   if (actor.components.some((component) => component.classId === "CameraComponent")) {
-    return editorBillboardKind("camera");
+    return EDITOR_CAMERA_MODEL_KIND;
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
     return editorBillboardKind("audio");
@@ -630,6 +646,14 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  const waterKind = waterKindForClass(component.classId);
+  if (waterKind) {
+    const body = normalizeWaterBody(component.properties, waterKind);
+    const definition = body.assetGuid ? assets?.waters?.get(body.assetGuid) : undefined;
+    return createWaterMesh(scene, name, body, definition, definition?.materialGuid ? assets?.resolveMaterial?.(definition.materialGuid, { scene }) : null);
+  }
+  if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
+  if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
   if (component.classId === "SpriteComponent") {
     return createSpriteComponentMesh(scene, name, component, assets);
   }
@@ -651,7 +675,7 @@ export function createMeshForComponent(
     return mesh;
   }
   if (component.classId === "CameraComponent") {
-    return createEditorBillboard(scene, name, "camera");
+    return createEditorCameraModel(scene, name);
   }
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
     return createEditorSpringArmMesh(
@@ -1097,7 +1121,16 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   mesh.isVisible = actor.visible;
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
+  const environmentRoots = new Set(actor.components
+    .filter((entry) => entry.classId === "LandscapeComponent" || entry.classId === "FoliageComponent")
+    .map((entry) => editorComponentMeshName(actor.id, entry.id)));
   for (const child of childMeshesOf(mesh)) {
+    const environmentRoot = child.metadata?.landscapeRoot ?? child.metadata?.foliageRoot;
+    if (environmentRoot && environmentRoots.has(environmentRoot.name)) {
+      child.isVisible = actor.visible;
+      child.isPickable = actor.visible && !actor.locked;
+      continue;
+    }
     if (isEditorBillboardMesh(child)) {
       applyEditorBillboardPass(child);
       syncEditorBillboardParentScale(child);
@@ -1121,6 +1154,7 @@ export function applyComponentChildTransforms(
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
+    if (isEditorCameraModel(child) && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
     if (component.classId === "MeshComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
     applySerializedTransform(
       child,

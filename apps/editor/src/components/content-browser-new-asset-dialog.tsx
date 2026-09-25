@@ -1,3 +1,5 @@
+import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+import type { WaterStyle } from "@babylonslate/core";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import {
@@ -58,6 +60,8 @@ export interface ContentBrowserNewAssetDialogProps {
   onNameChange: (name: string) => void;
   parentClass: string;
   onParentClassChange: (parentClass: string) => void;
+  waterStyle?: WaterStyle;
+  onWaterStyleChange?: (style: WaterStyle) => void;
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   nameTaken: boolean;
@@ -130,6 +134,8 @@ export function ContentBrowserNewAssetDialog({
   onNameChange,
   parentClass,
   onParentClassChange,
+  waterStyle = "realistic",
+  onWaterStyleChange,
   classAssets = [],
   nameTaken,
   destinationFolder,
@@ -335,6 +341,14 @@ export function ContentBrowserNewAssetDialog({
                     ) : null}
                   </Field>
                 </FieldGroup>
+                {type === "Water" ? (
+                  <FieldGroup><Field><FieldLabel>Water Style</FieldLabel>
+                    <ToggleGroup value={[waterStyle]} onValueChange={(values) => { const value = values[0]; if (value === "realistic" || value === "stylized") onWaterStyleChange?.(value); }} variant="outline" size="sm" aria-label="Water Style">
+                      <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
+                      <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
+                    </ToggleGroup>
+                  </Field></FieldGroup>
+                ) : null}
                 <NewAssetSummary
                   type={type}
                   name={name}

@@ -1361,6 +1361,7 @@ describe("content-browser-helpers", () => {
       "InputAxis",
       "ParticleEmitter",
       "ParticleSystem",
+      "Water",
       "SkyboxCreator",
     ]);
   });
@@ -1414,6 +1415,7 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
+      "Water",
       "ParticleEmitter",
       "ParticleSystem",
       "SkyboxCreator",
@@ -2237,5 +2239,15 @@ describe("runWithContentBrowserImportBusy", () => {
     ).rejects.toThrow(/\.bin buffer/i);
     expect(busy).toBe(false);
     expect(progressCleared).toBe(true);
+  });
+});
+
+
+describe("Water asset authoring", () => {
+  it("persists the chosen preset and its custom material dependency", () => {
+    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null, waterStyle: "stylized" });
+    expect(result.payload).toMatchObject({ style: "stylized", colorBands: 4 });
+    expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+    expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
 });

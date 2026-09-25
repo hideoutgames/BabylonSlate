@@ -13,6 +13,7 @@ import {
 } from "@babylonslate/navigation";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import { visualMeshes } from "./visual-meshes";
+import { isEditorCameraModel } from "./editor-camera-model";
 
 export type NavBakeCollectExtras = {
   tilemapChains?: readonly XyChain[];
@@ -85,7 +86,7 @@ function bakeVisualMeshes(root: Mesh): Mesh[] {
   return visualMeshes(root).filter((mesh): mesh is Mesh => {
     if (!(mesh instanceof Mesh)) return false;
     const meta = mesh.metadata as { editorPickProxy?: boolean } | null;
-    return !meta?.editorPickProxy;
+    return !meta?.editorPickProxy && !isEditorCameraModel(mesh);
   });
 }
 

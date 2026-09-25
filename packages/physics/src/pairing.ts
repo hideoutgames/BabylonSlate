@@ -28,7 +28,7 @@ function meshComponentHasCollision(component: {
   return component.properties?.collisionMode !== "none";
 }
 
-/** Pairing warnings for RigidBody / Collider. Tilemaps, blocking volumes, and Mesh collision are exempt. */
+/** Pairing warnings for RigidBody / Collider. Implicit collision sources are exempt. */
 export function physicsActorDiagnostics(
   actor: PhysicsActorLike,
 ): PhysicsPairingWarning[] {
@@ -37,6 +37,7 @@ export function physicsActorDiagnostics(
     (component) =>
       component.classId === "TilemapComponent" ||
       component.classId === "BlockingVolumeComponent" ||
+      (component.classId === "LandscapeComponent" && component.properties?.collisionsEnabled === true) ||
       meshComponentHasCollision(component),
   );
   if (hasImplicitBody) return [];

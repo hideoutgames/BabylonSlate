@@ -606,6 +606,19 @@ describe("scene-referenced Play content", () => {
     expect(materialAssetGuidsFromScene(scene)).toEqual(["mat-rock"]);
   });
 
+  it("collects landscape materials and every Model and material in mixed foliage strokes", () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("environment", "Environment", { components: [
+      { id: "land", classId: "LandscapeComponent", properties: { materialGuid: "terrain" } },
+      { id: "plants", classId: "FoliageComponent", properties: { batches: [
+        { modelGuid: "oak", materialGuid: "leaves", transforms: [{}] },
+        { modelGuid: "pine", materialGuid: "leaves", transforms: [{}] },
+      ] } },
+    ] })];
+    expect(modelAssetGuidsFromScene(scene)).toEqual(["oak", "pine"]);
+    expect(materialAssetGuidsFromScene(scene)).toEqual(["terrain", "leaves"]);
+  });
+
   it("collects post-process stack guids in authored order, including disabled entries", () => {
     const scene = createDefaultScene();
     scene.settings.postProcessStack = [

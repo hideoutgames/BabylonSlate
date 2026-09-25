@@ -51,6 +51,8 @@ describe("app settings", () => {
     expect(settings.appearance.theme).toBe("system");
     expect(settings.focusKeepPanels).toEqual({
       scene: ["viewport"],
+      sceneLandscape: ["viewport"],
+      sceneFoliage: ["viewport"],
       "scene-layer": ["viewport"],
       graph: ["graph"],
       enum: ["enum-members"],
