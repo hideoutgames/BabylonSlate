@@ -7,8 +7,8 @@ import { waterWaveComponents, type WaterBodyProperties, type WaterColor, type Wa
  * the regular interference of plain sines. All are world-space and advect with the current.
  */
 const DETAIL_OCTAVES = [
-  [0.0, 1.0, 0.3, 1.0, 0.0], [0.9, 1.53, 0.27, 0.93, 1.7], [-0.7, 2.31, 0.24, 1.07, 4.1], [2.1, 3.37, 0.2, 0.9, 2.3],
-  [-1.9, 4.93, 0.17, 1.1, 5.6], [0.35, 7.21, 0.14, 0.95, 0.9], [-2.6, 10.3, 0.11, 1.05, 3.3], [1.4, 14.9, 0.09, 1.0, 6.0],
+  [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.53, 0.2, 0.93, 1.7], [-0.7, 2.31, 0.18, 1.07, 4.1], [2.1, 3.37, 0.15, 0.9, 2.3],
+  [-1.9, 4.93, 0.13, 1.1, 5.6], [0.35, 7.21, 0.11, 0.95, 0.9], [-2.6, 10.3, 0.09, 1.05, 3.3], [1.4, 14.9, 0.07, 1.0, 6.0],
 ] as const;
 
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
@@ -41,7 +41,7 @@ float swOK${i} = swBaseK * ${f(multiplier)};
 vec2 swOD${i} = vec2(cos(U.slateWaterWaves.w + ${f(turn)}), sin(U.slateWaterWaves.w + ${f(turn)}));
 float swOX${i} = swOK${i} * dot(swOD${i}, swChop) - sqrt(9.81 * swOK${i}) * ${f(speed)} * U.slateWaterWaves.z * swTime + ${f(phase)};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
-float swOA${i} = ${f(slope)} * (1.0 - smoothstep(0.45, 1.5, fwidth(swOX${i}))) * (1.0 - swStylized * ${f(Math.min(0.85, i * 0.14))});
+float swOA${i} = ${f(slope)} * (1.0 - smoothstep(0.3, 1.1, fwidth(swOX${i}))) * (1.0 - swStylized * ${f(Math.min(0.85, i * 0.14))});
 swDetail += swOD${i} * (swOW${i} * cos(swOX${i}) * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOD${i} * (swOW${i} * cos(swOX${i}) * 0.3 / swOK${i});`).join("");
