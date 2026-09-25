@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
-import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
@@ -1194,6 +1194,37 @@ describe("createPlayMesh", () => {
     const camera = binding.cameras.get(1) as { position: { x: number; y: number } };
     expect(camera.position.x).toBeCloseTo(0.01, 6);
     expect(camera.position.y).toBeCloseTo(0.03, 6);
+  });
+
+  it("offsets tilemap parallax from the same snapshot's snapped camera", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.pixelPerfect = true;
+    binding.pixelsPerUnit = 100;
+    const map = setTile({ ...createDefaultTilemapPayload(), tilesetGuid: "atlas" }, "layer-1", 0, 0, 1);
+    // Parallax 0 is screen-locked: the layer offset equals the camera position.
+    binding.tilemaps = new Map([["map", { ...map, layers: map.layers.map((layer) => ({ ...layer, parallax: { x: 0, y: 0 } })) }]]);
+    binding.tilesets = new Map([["atlas", normalizeTilesetPayload({})]]);
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: "map", meshKind: "tilemap" });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "orthographic" },
+    });
+    const pose = (slotId: number, x: number, y: number) => ({
+      slotId, flags: 1, position: { x, y, z: -8 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+    });
+    // The tilemap slot precedes the camera slot that moves in this snapshot.
+    applySnapshotToScene(scene, binding, {
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2, actors: [pose(1, 0, 0), pose(2, 3.014, 1.026)],
+    });
+    const chunk = binding.meshes.get(1)!.getChildMeshes()[0]!;
+    expect(chunk.position.x).toBeCloseTo(3.01, 6);
+    expect(chunk.position.y).toBeCloseTo(1.03, 6);
   });
 
   it("prefers a possessed camera over the Default Camera", () => {

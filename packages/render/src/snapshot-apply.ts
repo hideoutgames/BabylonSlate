@@ -1550,14 +1550,7 @@ export function applySnapshotToScene(
         composed.rotation,
       );
     }
-    if (mesh.getScene() === scene) {
-      applyTilemapParallaxToMesh(
-        mesh,
-        scene.activeCamera ?? { position: actor.position },
-      );
-    }
   }
-  snapPlayCameraToPixelGrid(scene, binding);
   updateBoneAttachments(binding);
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (attachment.applied) binding.areaLights.get(slotId)?.setWorld(attachment.world);
@@ -1577,6 +1570,14 @@ export function applySnapshotToScene(
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
   refreshPlayActiveCamera(scene, binding);
+  // Camera-dependent passes wait for every camera pose, including later slots
+  // and bone attachments, and for this snapshot's active camera.
+  snapPlayCameraToPixelGrid(scene, binding);
+  for (let i = 0; i < count; i++) {
+    const mesh = binding.snapshotMeshes[i];
+    if (mesh?.getScene() !== scene) continue;
+    applyTilemapParallaxToMesh(mesh, scene.activeCamera ?? snapshot.actors[i]!);
+  }
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }
