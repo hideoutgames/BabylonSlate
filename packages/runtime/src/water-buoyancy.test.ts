@@ -5,6 +5,65 @@ import { createPhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 describe("Water buoyancy with native collision response", () => {
+  it("uses explicit cubic metres for carrying capacity, live edits and scale", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    const sea = world.createActor({ classId: "Actor", guid: "sea" });
+    sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
+    world.spawnActorNow(sea);
+    const float = world.createActor({ classId: "Actor", guid: "float" });
+    const buoyancy = world.createComponent({ classId: "WaterBuoyancyComponent", variables: { volume: 0.002, drag: 8 } });
+    float.attachComponent(buoyancy);
+    world.spawnActorNow(float);
+    let tick = 0;
+    const step = (count: number) => { for (let i = 0; i < count; i++) sync.step(1 / 60, world, tick++ / 60); };
+    try {
+      step(300);
+      expect(float.transform.position.y).toBeCloseTo(0, 2);
+      buoyancy.setVariable("volume", 0.004);
+      step(420);
+      expect(float.transform.position.y).toBeCloseTo(0.25, 2);
+      float.transform.scale.x = 2;
+      step(420);
+      expect(float.transform.position.y).toBeCloseTo(0.375, 2);
+      // The scaled hull now displaces at most 0.5 kg of water: it cannot carry 1 kg.
+      buoyancy.setVariable("volume", 0.00025);
+      step(180);
+      expect(float.transform.position.y).toBeLessThan(-1.5);
+    } finally { sync.dispose(); }
+  });
+
+  it.each([1 / 60, 1 / 30])("keeps a light body stable entering water with a large explicit volume at dt=%s", async (dt) => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const world = new World({ seed: 1, dt, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    const sea = world.createActor({ classId: "Actor", guid: "sea" });
+    sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
+    world.spawnActorNow(sea);
+    const float = world.createActor({ classId: "Actor", guid: "float", transform: { ...identityTransform(), position: { x: 0, y: 2, z: 0 } } });
+    float.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { volume: 1 } }));
+    world.spawnActorNow(float);
+    const settled: number[] = [];
+    let entered = false, maximumAfterEntry = -Infinity;
+    try {
+      for (let i = 0; i < Math.round(12 / dt); i++) {
+        sync.step(dt, world, i * dt);
+        const y = float.transform.position.y;
+        entered ||= y < 0.5;
+        if (entered) maximumAfterEntry = Math.max(maximumAfterEntry, y);
+        if (i * dt > 10) settled.push(y);
+      }
+      expect(entered).toBe(true);
+      expect(maximumAfterEntry).toBeLessThan(1);
+      // A 1 kg body displaces 0.001 m³: only the bottom millimetre stays submerged.
+      expect(Math.min(...settled)).toBeGreaterThan(0.48);
+      expect(Math.max(...settled)).toBeLessThan(0.52);
+    } finally { sync.dispose(); }
+  });
+
   it("creates a collidable body from buoyancy alone and follows moving waves", async () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
