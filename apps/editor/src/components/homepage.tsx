@@ -35,7 +35,6 @@ import {
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
-import type { UncleanExit } from "../lib/session-liveness";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -146,8 +145,6 @@ interface HomepageProps {
   onReconnect: () => Promise<void>;
   onRecover: () => void | Promise<void>;
   onDismissRecovery: () => void;
-  uncleanExit?: UncleanExit | null;
-  onDismissUncleanExit?: () => void;
   onSettingsChanged: () => Promise<void>;
 }
 
@@ -166,8 +163,6 @@ export function Homepage({
   onReconnect,
   onRecover,
   onDismissRecovery,
-  uncleanExit,
-  onDismissUncleanExit,
   onSettingsChanged,
 }: HomepageProps) {
   const [scheme, setScheme] = useHomepageScheme();
@@ -508,26 +503,6 @@ export function Homepage({
               disabled={busy}
               onClick={onDismissRecovery}
             >
-              Dismiss
-            </Button>
-          </Alert>
-        )}
-        {uncleanExit && (
-          <Alert className="homepage-notice" data-testid="unclean-exit-notice">
-            <AlertDescription>
-              {`BabylonSlate restarted unexpectedly${
-                uncleanExit.project
-                  ? ` while ${uncleanExit.project.name} was open`
-                  : ""
-              }.`}
-              {uncleanExit.project
-                ? " Reopen it to recover journaled edits; edits that were never journaled are lost."
-                : ""}
-              {uncleanExit.recentCount >= 3
-                ? ` This has happened ${uncleanExit.recentCount} times in the last 10 minutes.`
-                : ""}
-            </AlertDescription>
-            <Button variant="ghost" size="sm" onClick={onDismissUncleanExit}>
               Dismiss
             </Button>
           </Alert>

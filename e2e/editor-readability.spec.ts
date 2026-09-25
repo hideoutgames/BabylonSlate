@@ -70,6 +70,8 @@ test.describe("Editor modal readability", { tag: IPAD_TEST_TAG }, () => {
     );
     const category = palette.locator('[data-testid^="node-palette-category-"]').first();
     const categoryBox = await category.boundingBox();
+    // The dialog covers the click point, so the first row stays hovered until the pointer moves.
+    await page.mouse.move(0, 0);
     expect(categoryBox!.height).toBe(coarse ? 44 : 28);
     const idleFill = await category.evaluate((el) => getComputedStyle(el).backgroundColor);
     await page.getByTestId("node-palette-search").press("ArrowDown");
