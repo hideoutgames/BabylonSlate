@@ -45,6 +45,10 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 - `NestedMenu` items take `shortcut` and render it right-aligned; coarse-pointer context menus hide keycaps.
 - Controls with a shortcut set `aria-keyshortcuts`; visual keycaps are decorative.
 
+## Settings
+
+Engine Settings → Editor → **Keybinds** lists commands by category. Selecting a shortcut records the next chord (lone modifiers wait, Escape cancels without closing the dialog, Tab leaves). Each row can be unassigned or reset; **Reset All** clears every override. Rows warn when a chord is shared with another command, and viewport tools warn on W/A/S/D because those fly the camera. Settings search matches command names.
+
 ## Storage
 
 Overrides live in Engine Settings `keybinds` (`Record<commandId, chord[]>`). Only commands that differ from their defaults are stored, so later default changes still reach users who never customized them. An empty list unassigns a command. Unparseable chords are ignored; a malformed map falls back to `{}` without dropping other settings.

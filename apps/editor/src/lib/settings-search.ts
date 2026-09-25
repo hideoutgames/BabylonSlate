@@ -1,3 +1,5 @@
+import { EDITOR_COMMANDS } from "./editor-keybinds";
+
 export type SettingSearchField = {
   categoryId: string;
   label: string;
@@ -142,4 +144,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["thumbnails", "Generate Thumbnails", "setting-thumbnails"],
   ["templates", "Templates Folder", "setting-templates-folder"],
   ["focus", "Keep Panels In Focus Mode"],
+  ...EDITOR_COMMANDS.map(
+    (command) => ["keybinds", command.label, `keybind-${command.id}-record`] as const,
+  ),
 ]);

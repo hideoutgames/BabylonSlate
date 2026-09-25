@@ -230,6 +230,11 @@ const ENGINE_CATEGORIES: Array<
     label: "Focus",
     keywords: "focus keep tabs panels layout",
   },
+  {
+    id: "keybinds",
+    label: "Keybinds",
+    keywords: "keyboard shortcuts hotkeys keybinds keys bindings",
+  },
 ];
 
 const GENERIC_FONT_FALLBACKS = [
@@ -250,6 +255,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "assets",
       "thumbnails",
       "focus",
+      "keybinds",
       "about",
     ],
   },
