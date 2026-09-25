@@ -121,6 +121,7 @@ export {
 } from "./humanize-property-label";
 export {
   PropertyGrid,
+  PropertySectionTitle,
   type PropertyGridProps,
   type PropertyRow,
   type Vector3Value,
