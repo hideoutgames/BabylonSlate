@@ -5,6 +5,23 @@ import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinit
 
 describe("Water surfaces", () => {
   const flat = { ...createDefaultWaterDefinition(), waveHeight: 0 };
+  it("bounds Ocean independently of the camera and reserves infinite coverage for Global Water Volume", () => {
+    const ocean = normalizeWaterBody({ width: 20, length: 10 }, "ocean");
+    expect(sampleWaterSurface(flat, ocean, { x: 9, y: -1, z: 4 }, 0)).toMatchObject({ found: true, edgeDistance: 1 });
+    expect(sampleWaterSurface(flat, ocean, { x: 11, y: 0, z: 0 }, 0).found).toBe(false);
+    expect(sampleWaterSurface(flat, normalizeWaterBody({}, "global"), { x: 100000, y: -1, z: -100000 }, 0)).toMatchObject({ found: true, height: 0 });
+  });
+  it("keeps wave height, wavelength, normals and current speed in world units when a volume moves or stretches", () => {
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 80, length: 80, flowSpeed: 2 }, "ocean");
+    const moved = { ...identityTransform(), position: { x: 7, y: 0, z: -4 }, scale: { x: 8, y: -3, z: 0.5 } };
+    for (const point of [{ x: 2, y: -1, z: 3 }, { x: 5, y: -1, z: -2 }]) {
+      const before = sampleWaterSurface(water, body, point, 1.7);
+      const after = sampleWaterSurface(water, body, point, 1.7, moved);
+      expect(after.height).toBeCloseTo(before.height, 6);
+      expect(after.normal.x).toBeCloseTo(before.normal.x, 6);
+      expect(after.velocity).toEqual(before.velocity);
+    }
+  });
   it("keeps a scaled, translated lake bounded and reports signed immersion", () => {
     const body = normalizeWaterBody({ width: 10, length: 4 });
     const transform = { ...identityTransform(), position: { x: 20, y: 3, z: 10 }, scale: { x: 2, y: 1, z: 1 } };

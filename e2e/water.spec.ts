@@ -8,6 +8,7 @@ import { createDefaultMaterialDocument } from "../packages/shader-graph/src/docu
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import type { runWaterRenderingProof } from "../apps/editor/src/testing/water-rendering-proof";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -22,6 +23,25 @@ async function centerColor(canvas: Locator): Promise<number[]> {
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`Water shading stays in world space when volumes move and stretch on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID/i.test(message.text())) errors.push(message.text());
+    });
+    await page.goto("/?test=1&waterRenderingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateWaterRenderingProof?: unknown }).__babylonslateWaterRenderingProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as { __babylonslateWaterRenderingProof: typeof runWaterRenderingProof }).__babylonslateWaterRenderingProof(backend), backend);
+    for (const [name, png] of Object.entries(result.evidence)) {
+      const bytes = Buffer.from(png.split(",")[1]!, "base64");
+      await testInfo.attach(name, { body: bytes, contentType: "image/png" });
+      await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
+    }
+    expect(errors).toEqual([]);
+    expect(result.differences.realistic).toBeLessThan(2);
+    expect(result.differences.stylized).toBeLessThan(2);
+  });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
