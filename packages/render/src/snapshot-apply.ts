@@ -1046,13 +1046,12 @@ export function applyPossessCamera(
   refreshPlayActiveCamera(scene, binding);
 }
 
-function isWorldOverlayLeftoverName(name: string, slotId: number): boolean {
-  const prefix = `actor-${slotId}`;
-  return (
-    name === prefix ||
-    name.startsWith(`${prefix}-`) ||
-    name.startsWith(`${prefix}|`)
-  );
+/** `actor-N`, `actor-N-…` or `actor-N|…`, but never `actor-NM…`. */
+function isWorldOverlayLeftoverName(name: string, prefix: string): boolean {
+  if (!name.startsWith(prefix)) return false;
+  if (name.length === prefix.length) return true;
+  const next = name.charCodeAt(prefix.length);
+  return next === 45 || next === 124;
 }
 
 /** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
@@ -1060,10 +1059,16 @@ export function disposeWorldOverlayLeftovers(
   worldScene: Scene,
   slotId: number,
 ): void {
-  for (const mesh of [...worldScene.meshes]) {
-    if (isWorldOverlayLeftoverName(mesh.name, slotId)) {
-      mesh.dispose();
-    }
+  // Runs for every overlay actor on every applied snapshot, and almost always
+  // matches nothing. Collect first: dispose splices scene.meshes and children.
+  const prefix = `actor-${slotId}`;
+  let leftovers: AbstractMesh[] | undefined;
+  for (const mesh of worldScene.meshes) {
+    if (isWorldOverlayLeftoverName(mesh.name, prefix)) (leftovers ??= []).push(mesh);
+  }
+  if (!leftovers) return;
+  for (const mesh of leftovers) {
+    if (!mesh.isDisposed()) mesh.dispose();
   }
 }
 
