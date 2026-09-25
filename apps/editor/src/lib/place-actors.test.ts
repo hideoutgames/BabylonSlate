@@ -19,6 +19,13 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places a Water asset as a lake that already references the selected asset", () => {
+  const [water] = projectPlaceActors([{ path: "assets/Lagoon.water.babasset", header: { guid: "lagoon", name: "Lagoon", type: "Water" } }]);
+  expect(water).toBeDefined();
+  const actor = spawnPlacedActor(createDefaultScene(), water!, "lake", ORIGIN);
+  expect(actor.components).toEqual([expect.objectContaining({ classId: "WaterLakeComponent", properties: expect.objectContaining({ assetGuid: "lagoon", depth: 5 }) })]);
+});
+
 describe("camera names", () => {
   it("keeps repeated placement and duplication distinguishable", () => {
     const scene = createDefaultScene();

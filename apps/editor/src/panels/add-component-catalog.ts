@@ -56,11 +56,6 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
-  engineComponent("WaterOceanComponent", "Water Ocean", "Open water with broad waves", "Water"),
-  engineComponent("WaterLakeComponent", "Water Lake", "Bounded water with gentle waves", "Water"),
-  engineComponent("WaterRiverComponent", "Water River", "Path-shaped water with a flowing current", "Water"),
-  engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
-  engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   engineComponent(
     "MeshComponent",
     "Mesh",
@@ -132,6 +127,11 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Plays a Particle System",
     "Particles",
   ),
+  engineComponent("WaterOceanComponent", "Water Ocean", "Open water with broad waves", "Water"),
+  engineComponent("WaterLakeComponent", "Water Lake", "Bounded water with gentle waves", "Water"),
+  engineComponent("WaterRiverComponent", "Water River", "Path-shaped water with a flowing current", "Water"),
+  engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
+  engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   engineComponent(
     "2DAnchorComponent",
     "2D Anchor",

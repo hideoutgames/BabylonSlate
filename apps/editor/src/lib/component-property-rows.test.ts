@@ -67,6 +67,19 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits a river path through typed vector rows and extends from its last point", () => {
+  const properties = { points: [[0, 3, 0], [4, 2, 8]] };
+  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties });
+  const point = rows.find((row) => row.label === "Path Point 2");
+  const count = rows.find((row) => row.label === "Path Point Count");
+  if (point?.kind !== "vector3" || count?.kind !== "number") throw new Error("River path controls missing");
+  point.onChange([4, 1, 9]);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 1, 9]]);
+  count.onChange(3);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
+  expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+});
+
 describe("componentPropertyRows", () => {
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
