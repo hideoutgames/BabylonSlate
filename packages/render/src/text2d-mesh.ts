@@ -21,7 +21,6 @@ import {
   parseText2DProperties,
   resolveText2DRenderer,
   type RichTextStyle,
-  type Text2DProperties,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
@@ -42,7 +41,6 @@ import {
   layoutText2DFromProperties,
   type GlyphMetricsProvider,
   type Text2DEffectContext,
-  type Text2DLayout,
   type Text2DLayoutItem,
 } from "./text2d-layout";
 
@@ -125,27 +123,6 @@ export function parseMsdfAtlas(bytes: Uint8Array): MsdfAtlas | null {
     scaleW: parsed.common?.scaleW && parsed.common.scaleW > 0 ? parsed.common.scaleW : 1,
     scaleH: parsed.common?.scaleH && parsed.common.scaleH > 0 ? parsed.common.scaleH : 1,
     chars,
-  };
-}
-
-function defaultMetrics(pixelsPerUnit: number): GlyphMetricsProvider {
-  const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
-  return {
-    measureGlyph(_ch, style) {
-      const world = style.size / ppu;
-      return {
-        width: world * 0.5,
-        height: world,
-        bearingX: 0,
-        bearingY: 0,
-        advance: world * 0.5,
-        source: "bitmap",
-      };
-    },
-    measureImage(_guid, sizePx) {
-      const height = sizePx / ppu;
-      return { width: height, height };
-    },
   };
 }
 
@@ -640,24 +617,4 @@ export function createText2DMesh(
     bundle.dispose();
     throw error;
   }
-}
-
-export function text2dPropertiesFromUnknown(
-  properties: unknown,
-  rich = false,
-): Text2DProperties {
-  return parseText2DProperties(properties, { rich });
-}
-
-export function layoutForText2D(
-  properties: unknown,
-  assets: Text2DAssetContext | undefined,
-  options: Text2DMeshOptions,
-): Text2DLayout {
-  const ppu = assets?.pixelsPerUnit && assets.pixelsPerUnit > 0 ? assets.pixelsPerUnit : 100;
-  return layoutText2DFromProperties(properties, {
-    rich: options.rich === true,
-    pixelsPerUnit: ppu,
-    metrics: options.metrics ?? defaultMetrics(ppu),
-  }).layout;
 }
