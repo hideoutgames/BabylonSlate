@@ -554,9 +554,7 @@ export function createGizmoHost(
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       scene.pointerX = mapped.x;
       scene.pointerY = mapped.y;
-      const pick =
-        layer.utilityLayerScene.pick(mapped.x, mapped.y) ??
-        scene.pick(mapped.x, mapped.y);
+      const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
       const pointerEventInit = {
         pointerId: canvasSize?.pointerId ?? 1,
         button: 0,
