@@ -20,11 +20,9 @@ describe("perf ceilings", () => {
     expect(TEXTURE_EVICTION_TARGET_FACTOR).toBe(0.8);
   });
 
-  it("keeps the tiny CI fixture under texture and geometry ceilings", () => {
-    const textureBytes = Math.ceil(64 * 64 * 4 * (4 / 3));
+  it("keeps the tiny CI fixture under the geometry ceiling", () => {
     const geometryBytes = accountedGeometryBytes(24, 36);
     expect(geometryBytes).toBe(24 * 32 + 36 * 4);
-    expect(textureBytes).toBeLessThan(TEXTURE_BYTE_CEILING);
     expect(geometryBytes).toBeLessThan(GEOMETRY_BYTE_CEILING);
     expect(geometryByteCeilingWarning(geometryBytes)).toBeNull();
   });

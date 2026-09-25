@@ -1381,7 +1381,7 @@ describe("material compiler", () => {
     expect(rebuild).toHaveBeenCalled();
   });
 
-  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", async () => {
+  it("rebuilds a frozen NodeMaterial on texture load without invalidating other scene materials while dirty is blocked", async () => {
     const scene = host();
     const unrelated = new StandardMaterial("unrelated", scene);
     const resolved = new Texture(null, scene, true, false);
@@ -1404,8 +1404,8 @@ describe("material compiler", () => {
     const subMesh = mesh.subMeshes[0]!;
     ready = true;
     await result.material.forceCompilationAsync(mesh);
-    // Babylon announces new materials on a later tick; a rendered frame has
-    // already synced lighting for them before a texture finishes loading.
+    // Settle scene-lighting's own material sync first, so the check below
+    // isolates the compiler's rebuild from that separately tracked toggle.
     syncSceneLighting(scene);
     expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
     const stale = subMesh.effect;

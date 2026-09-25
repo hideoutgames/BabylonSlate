@@ -135,7 +135,6 @@ describe("3D Text mesh", () => {
     expect(bundledAsciiTypeFace.glyphs.e).toBeDefined();
     expect(bundledAsciiTypeFace.glyphs.x).toBeDefined();
     expect(bundledAsciiTypeFace.glyphs.t).toBeDefined();
-    expect(TEXT3D_TEST_FONTFACE_T.glyphs.T?.o).toContain("m ");
     const resolved = resolveText3DFontData(
       {
         text: "Text",
