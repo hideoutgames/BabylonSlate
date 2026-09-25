@@ -44,9 +44,10 @@ export const VALUE_MODE_GRADIENT = {
 export interface ValueModeFieldProps<M extends string> {
   /** Property name, e.g. "Lifetime". */
   label: string;
-  value: M;
+  /** The mode type comes from `options`, so state setters work as `onChange`. */
+  value: NoInfer<M>;
   options: readonly ValueModeOption<M>[];
-  onChange: (mode: M) => void;
+  onChange: (mode: NoInfer<M>) => void;
   disabled?: boolean;
   /** Hosts pass `value-mode-<rowId>`. */
   "data-testid"?: string;

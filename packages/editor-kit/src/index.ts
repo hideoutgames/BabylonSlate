@@ -144,18 +144,14 @@ export {
   type ValueModeFieldProps,
   type ValueModeOption,
 } from "./value-mode-field";
+export { CurveField, type CurveFieldProps } from "./curve-field";
+export { GradientField, type GradientFieldProps } from "./gradient-field";
 export {
-  CurveField,
   sampleCurve,
-  type CurveFieldProps,
-  type CurveKey,
-} from "./curve-field";
-export {
-  GradientField,
   sampleGradient,
-  type GradientFieldProps,
+  type CurveKey,
   type GradientStop,
-} from "./gradient-field";
+} from "./curve-keys";
 export {
   TreeView,
   TREE_ROW_HEIGHT,

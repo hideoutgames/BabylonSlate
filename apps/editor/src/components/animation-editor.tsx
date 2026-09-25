@@ -220,7 +220,8 @@ export function AnimationEditor({
     rows.push({
       id: "durationMs",
       kind: "number",
-      label: "Duration (ms)",
+      label: "Duration",
+      unit: "ms",
       value: animation.durationMs,
       disabled: true,
       onChange: () => {},

@@ -1,10 +1,9 @@
-import { DrawWrapper, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { DrawWrapper, ParticleSystem } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
-import { applyParticleLook } from "./particle-system-factory";
+import { bindParticleMaterial } from "./particle-system-factory";
 
 describe("compiled particle effect bindings", () => {
   const cleanup: (() => void)[] = [];
@@ -13,15 +12,13 @@ describe("compiled particle effect bindings", () => {
   async function host() {
     const { scene, engine } = createTestEngine();
     cleanup.push(() => engine.dispose(), () => scene.dispose());
-    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
     const library = new MaterialLibrary();
     cleanup.push(() => library.dispose());
     const compiled = library.acquire(scene, "particle", createDefaultMaterialDocument("Particle", "particle"));
     if (materialUnavailable(compiled)) throw new Error("Particle fixture must compile");
     const create = async (name: string) => {
       const system = new ParticleSystem(name, 16, scene);
-      applyParticleLook({ system, material: compiled.material, texture, gpu: false,
-        emitter: createDefaultParticleEmitterPayload(), systemPayload: createDefaultParticleSystemPayload() });
+      void bindParticleMaterial(system, compiled.material);
       await compiled.ready;
       await vi.waitFor(() => expect(system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)).toBeTruthy());
       return system;

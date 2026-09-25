@@ -115,10 +115,12 @@ describe("particle-system-factory", () => {
   it("stops a Once emitter after its Duration in seconds", () => {
     const { scene } = host();
     const system = cpuSystem(scene, { emitter: { loop: "once", duration: 0.5 } });
+    const stopped = vi.fn();
+    system.onStoppedObservable.add(stopped);
     step(system, 29);
-    expect(system.isStopped()).toBe(false);
+    expect(stopped).not.toHaveBeenCalled();
     step(system, 2);
-    expect(system.isStopped()).toBe(true);
+    expect(stopped).toHaveBeenCalledOnce();
   });
 
   it("starts and emits a looping emitter with Spawn Rate and Lifetime curves", () => {

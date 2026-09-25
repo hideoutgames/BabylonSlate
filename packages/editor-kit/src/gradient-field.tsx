@@ -18,12 +18,13 @@ import {
   clampNumber,
   keyHitFraction,
   roundKeyTime,
+  sampleGradient,
   widestGapInsertion,
-} from "./curve-field";
+  type GradientStop,
+} from "./curve-keys";
 import { NumericDragField } from "./numeric-drag-field";
 
-/** One gradient stop; `color` is RGBA 0–1. */
-export type GradientStop = { t: number; color: [number, number, number, number] };
+export type { GradientStop } from "./curve-keys";
 
 export interface GradientFieldProps {
   id?: string;
@@ -51,40 +52,15 @@ function cssColor([r, g, b, a]: GradientStop["color"]): string {
   return `rgb(${channel(r)} ${channel(g)} ${channel(b)} / ${clampNumber(a, 0, 1)})`;
 }
 
-/** User colours over the token checkerboard, so alpha reads as transparency. */
-function gradientBackground(stops: readonly GradientStop[]): string {
-  const colors = stops.map((stop) => `${cssColor(stop.color)} ${stop.t * 100}%`);
-  const fill =
-    colors.length > 1
-      ? `linear-gradient(to right, ${colors.join(", ")})`
-      : `linear-gradient(${cssColor(stops[0]?.color ?? [0, 0, 0, 0])}, ${cssColor(stops[0]?.color ?? [0, 0, 0, 0])})`;
-  return `${fill}, ${CHECKERBOARD}`;
-}
-
 function swatchBackground(color: GradientStop["color"]): string {
   return `linear-gradient(${cssColor(color)}, ${cssColor(color)}), ${CHECKERBOARD}`;
 }
 
-/** Linear RGBA sample between the surrounding stops. */
-export function sampleGradient(
-  stops: readonly GradientStop[],
-  t: number,
-): GradientStop["color"] {
-  const first = stops[0];
-  if (!first) return [0, 0, 0, 0];
-  if (t <= first.t) return [...first.color];
-  for (let i = 1; i < stops.length; i += 1) {
-    const next = stops[i]!;
-    if (t <= next.t) {
-      const previous = stops[i - 1]!;
-      const span = next.t - previous.t;
-      const f = span > 0 ? (t - previous.t) / span : 0;
-      return previous.color.map(
-        (channel, index) => channel + (next.color[index]! - channel) * f,
-      ) as GradientStop["color"];
-    }
-  }
-  return [...stops[stops.length - 1]!.color];
+/** User colours over the token checkerboard, so alpha reads as transparency. */
+function gradientBackground(stops: readonly GradientStop[]): string {
+  if (stops.length < 2) return swatchBackground(stops[0]?.color ?? [0, 0, 0, 0]);
+  const colors = stops.map((stop) => `${cssColor(stop.color)} ${stop.t * 100}%`);
+  return `linear-gradient(to right, ${colors.join(", ")}), ${CHECKERBOARD}`;
 }
 
 /**

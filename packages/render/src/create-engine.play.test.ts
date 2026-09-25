@@ -24,7 +24,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { BakedSceneSession } from "./baked-scene-session";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
@@ -294,20 +294,24 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: engine, playMode: true,
-      textureBytes: new Map([["particle-texture", new Uint8Array([1])]]),
+      materialDocuments: new Map([["particle-material", createDefaultMaterialDocument("Sparks", "particle")]]),
       particleLibrary: {
-        emitters: new Map([["emitter", { ...createDefaultParticleEmitterPayload(), textureGuid: "particle-texture" }]]),
+        emitters: new Map([["emitter", { kind: "basic", payload: normalizeParticleEmitterPayload({ render: { materialGuid: "particle-material" } }) }]]),
         systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]),
       },
     });
     handles.push(handle);
-    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene);
-    const acquire = ResourceCache.prototype.acquireTexture;
+    // Each native particle slot owns one Material lease; count the ones still held.
     let liveLeases = 0;
-    vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, ...args) {
-      if (args[0] !== "particle-texture") return acquire.apply(this, args);
-      liveLeases += 1;
-      return { resource: texture, key: "controlled-particle-texture", release: () => { liveLeases -= 1; } };
+    const acquire = MaterialLibrary.prototype.acquire;
+    const release = MaterialLibrary.prototype.release;
+    vi.spyOn(MaterialLibrary.prototype, "acquire").mockImplementation(function (this: MaterialLibrary, ...args) {
+      if (args[1] === "particle-material") liveLeases += 1;
+      return acquire.apply(this, args);
+    });
+    vi.spyOn(MaterialLibrary.prototype, "release").mockImplementation(function (this: MaterialLibrary, ...args) {
+      if (args[1] === "particle-material") liveLeases -= 1;
+      return release.apply(this, args);
     });
     const assign = (slotId: number, layer?: string) => {
       handle.applyCommand({ type: "spawn", slotId, actorGuid: `particle-${slotId}`, classId: "Actor", sceneLayerId: layer });

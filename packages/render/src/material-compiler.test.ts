@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type InputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -315,14 +315,14 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
-  it("compiles Particle Texture as ParticleTextureBlock with particle_uv when UV is unwired", () => {
+  it("samples particle textures at particle_uv and keeps transparent texels neutral under Multiply", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument("Sparks", "particle");
     doc.nodes.push({
       id: "tex",
-      type: "input.particleTexture",
+      type: "texture.sample",
       position: { x: 0, y: 80 },
-      properties: {},
+      properties: { textureGuid: "sparks" },
     });
     doc.edges = [
       {
@@ -333,20 +333,32 @@ describe("material compiler", () => {
         targetPinId: "color",
       },
     ];
+    const texture = new Texture(null, scene);
+    disposers.push(() => texture.dispose());
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "particleTexture",
+      resolveTexture: () => texture,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) {
       throw new Error(result.diagnostics.map((row) => row.message).join(", "));
     }
     disposers.push(result.dispose);
-    expect(
-      result.material.attachedBlocks.some(
-        (block) => block.getClassName() === "ParticleTextureBlock",
-      ),
-    ).toBe(true);
+    const sample = result.material.attachedBlocks.find(
+      (block) => block instanceof TextureBlock,
+    ) as TextureBlock;
+    const uv = sample.uv.connectedPoint?.ownerBlock as InputBlock | undefined;
+    expect(uv?.isAttribute).toBe(true);
+    expect(uv?.name).toBe("particle_uv");
+    // Emitters own blend; the Multiply effect maps a transparent texel to white.
+    const fragment = result.material.attachedBlocks.find(
+      (block) => block instanceof FragmentOutputBlock,
+    ) as FragmentOutputBlock;
+    const blend = fragment.rgba.connectedPoint?.ownerBlock;
+    expect(blend).toBeInstanceOf(ParticleBlendMultiplyBlock);
+    expect((blend as ParticleBlendMultiplyBlock).color.connectedPoint).toBe(sample.rgba);
+    expect((blend as ParticleBlendMultiplyBlock).alphaTexture.isConnected).toBe(true);
   });
 
   it("instantiates a Babylon block per lowered operation", () => {
