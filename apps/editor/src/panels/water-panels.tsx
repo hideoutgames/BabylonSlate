@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DirectionalLight, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
@@ -49,6 +50,8 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     const canvas = canvasRef.current, engine = play?.ensureSharedEngine();
     if (!canvas || !engine) return;
     const host = createParticlePreviewScene(engine, { skybox: true });
+    const sun = new DirectionalLight("water-preview-sun", new Vector3(-0.3, -1, 0.6), host.scene);
+    sun.intensity = 1.4;
     const water = JSON.parse(key) as WaterDefinition;
     host.camera.radius = 28;
     host.camera.lowerRadiusLimit = 8;

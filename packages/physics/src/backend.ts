@@ -43,6 +43,10 @@ export interface PhysicsBackend {
   /** World-space impulse at a point, preserving collision-driven linear and angular motion. */
   addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void;
   getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null;
+  /** Read-only velocity change from a world impulse, including collider inertia. */
+  getBodyImpulseResponse?(bodyId: string, impulse: Vec3, point: Vec3): {
+    linear: Vec3; angular: Vec3; centerOfMass: Vec3;
+  } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
 
   createCollider(desc: ColliderDesc): void;

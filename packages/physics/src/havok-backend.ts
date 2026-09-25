@@ -421,6 +421,30 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return { linear: { x: linear.x, y: linear.y, z: linear.z }, angular: { x: angular.x, y: angular.y, z: angular.z } };
   }
 
+  getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return null;
+    const props = record.body.getMassProperties();
+    const mass = props.mass ?? record.desc.mass;
+    if (mass <= 0) return null;
+    const rotation = record.node.rotationQuaternion ?? Quaternion.Identity();
+    const center = props.centerOfMass?.clone() ?? Vector3.Zero();
+    center.rotateByQuaternionToRef(rotation, center);
+    center.addInPlace(record.node.position);
+    const orientation = rotation.multiply(props.inertiaOrientation ?? Quaternion.Identity());
+    const torque = Vector3.Cross(new Vector3(point.x, point.y, point.z).subtract(center), new Vector3(impulse.x, impulse.y, impulse.z));
+    torque.rotateByQuaternionToRef(orientation.conjugate(), torque);
+    // Havok reports principal inertia per unit mass; zero means a locked axis.
+    for (const axis of ["x", "y", "z"] as const)
+      torque[axis] = props.inertia && props.inertia[axis] > 0 ? torque[axis] / (mass * props.inertia[axis]) : 0;
+    torque.rotateByQuaternionToRef(orientation, torque);
+    return {
+      linear: { x: impulse.x / mass, y: impulse.y / mass, z: impulse.z / mass },
+      angular: { x: torque.x, y: torque.y, z: torque.z },
+      centerOfMass: { x: center.x, y: center.y, z: center.z },
+    };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
