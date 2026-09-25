@@ -111,6 +111,20 @@ function allocationKey(
   ]);
 }
 
+/** Faces admission charges a light under the effective settings. */
+function admissionPasses(light: ShadowLight, settings: ShadowSettings): number {
+  return light instanceof DirectionalLight
+    ? settings.cascades
+    : light.needCube()
+      ? 6
+      : 1;
+}
+
+/** Material samplers admission charges a light under the effective settings. */
+function admissionSamplers(light: ShadowLight, settings: ShadowSettings): number {
+  return settings.filter === "pcss" && !light.needCube() ? 2 : 1;
+}
+
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
 function shadowAllocationCheckpoint(
   scene: Scene,
@@ -538,7 +552,6 @@ export class SceneShadowController {
     const reserveLocalMaps =
       settings.maxLocalLights > 0 &&
       candidates.some((entry) => !(entry.light instanceof DirectionalLight));
-    let local = 0;
     // Reserve the single sun before local maps regardless of local priorities.
     candidates.sort(
       (a, b) =>
@@ -551,13 +564,8 @@ export class SceneShadowController {
     let remainingLocalFaces = 0;
     const planned = candidates.filter((entry) => {
       const directional = entry.light instanceof DirectionalLight;
-      const passes = directional
-        ? settings.cascades
-        : entry.light.needCube()
-          ? 6
-          : 1;
-      const samplers =
-        settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
+      const passes = admissionPasses(entry.light, settings);
+      const samplers = admissionSamplers(entry.light, settings);
       entry.reason =
         !directional && plannedLocal >= settings.maxLocalLights
           ? "local light capacity"
@@ -575,24 +583,12 @@ export class SceneShadowController {
       }
       return true;
     });
+    // Admitted totals never exceed the planned ones, so every planned entry still
+    // fits the local, pass and sampler budgets; only memory can reject it here.
     for (const entry of planned) {
       const directional = entry.light instanceof DirectionalLight;
-      const passes = directional
-        ? settings.cascades
-        : entry.light.needCube()
-          ? 6
-          : 1;
-      const samplers =
-        settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
-      entry.reason =
-        !directional && local >= settings.maxLocalLights
-          ? "local light capacity"
-          : admitted.passes + passes > passBudget
-            ? "shadow face/pass budget"
-            : admitted.samplers + samplers > samplerBudget
-              ? "material sampler headroom"
-              : null;
-      if (entry.reason) continue;
+      const passes = admissionPasses(entry.light, settings);
+      const samplers = admissionSamplers(entry.light, settings);
       const requestedSize = directional
         ? settings.mapSize
         : settings.localMapSize;
@@ -644,7 +640,6 @@ export class SceneShadowController {
       admitted.bytes += peakPasses * mapSize ** 2 * bytesPerTexel;
       admitted.passes += passes;
       admitted.samplers += samplers;
-      if (!directional) local++;
     }
     const owners = [...this.entries.values()].filter((entry) => entry.generator);
     const winners = [...this.entries.values()].filter((entry) => entry.status === "active");
