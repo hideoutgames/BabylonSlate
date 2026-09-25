@@ -169,7 +169,8 @@ export class ClusteredSceneLights {
     this.syncing = true;
     try {
       for (const [material, restore] of this.materialBindings) {
-        if (!this.scene.materials.includes(material)) {
+        // Babylon 9.20 addMaterial/removeMaterial keep this index; -1 is absent.
+        if (material._indexInSceneMaterialArray === -1) {
           restore();
           this.materialBindings.delete(material);
         }

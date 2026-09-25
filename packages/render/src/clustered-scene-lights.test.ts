@@ -4,8 +4,10 @@ import {
   FreeCamera,
   DirectionalLight,
   HemisphericLight,
+  LightBlock,
   TransformNode,
   MeshBuilder,
+  NodeMaterial,
   NullEngine,
   NullEngineOptions,
   PBRMaterial,
@@ -809,6 +811,24 @@ describe("explicit clustered light ownership", () => {
     syncSceneLighting(scene);
     await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
     expect(mesh.lightSources).toEqual([lights[0]]);
+  });
+
+  it("restores light-block methods when a graph leaves the scene and rebinds it when re-added", () => {
+    const { scene, lights } = fixture();
+    const graph = new NodeMaterial("graph", scene);
+    const block = new LightBlock("lighting");
+    graph.attachedBlocks.push(block);
+    const original = block.updateUniformsAndSamples;
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(block.updateUniformsAndSamples).not.toBe(original);
+    scene.removeMaterial(graph);
+    syncSceneLighting(scene);
+    expect(block.updateUniformsAndSamples).toBe(original);
+    scene.addMaterial(graph);
+    syncSceneLighting(scene);
+    expect(block.updateUniformsAndSamples).not.toBe(original);
+    owner.dispose();
+    expect(block.updateUniformsAndSamples).toBe(original);
   });
 
   it("uploads stable authored light rows when camera depth reverses, and honors explicit priority changes", () => {
