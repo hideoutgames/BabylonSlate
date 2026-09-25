@@ -19,6 +19,10 @@ export const MAX_CAMERA_RADIUS = 400;
 export const TWO_D_ALPHA = -Math.PI / 2;
 export const TWO_D_BETA = Math.PI / 2;
 
+const scratchPosition = new Vector3();
+const scratchDirectionA = new Vector3();
+const scratchDirectionB = new Vector3();
+
 export interface EditorCameraOptions {
   mode?: ViewportMode;
   scheduler?: Pick<RenderScheduler, "invalidate">;
@@ -239,7 +243,7 @@ export function createEditorCamera(
     camera.inertialBetaOffset = 0;
     camera.inertialRadiusOffset = 0;
     camera.getViewMatrix();
-    const position = camera.position.clone();
+    const position = scratchPosition.copyFrom(camera.position);
     camera.alpha += deltaYaw;
     camera.beta = Math.min(
       Math.PI - 0.01,
@@ -247,7 +251,7 @@ export function createEditorCamera(
     );
     camera.getViewMatrix();
     if (!pivotAroundCenter) {
-      camera.target.addInPlace(position.subtract(camera.position));
+      camera.target.addInPlace(position.subtractInPlace(camera.position));
     }
     invalidate();
   };
@@ -261,10 +265,12 @@ export function createEditorCamera(
       return;
     }
     camera.getViewMatrix();
-    const lookDir = camera.getDirection(Vector3.Forward());
-    const rightDir = camera.getDirection(Vector3.Right());
-    camera.target.addInPlace(lookDir.scale(forward));
-    camera.target.addInPlace(rightDir.scale(right));
+    const lookDir = scratchDirectionA;
+    const rightDir = scratchDirectionB;
+    camera.getDirectionToRef(Vector3.LeftHandedForwardReadOnly, lookDir);
+    camera.getDirectionToRef(Vector3.RightReadOnly, rightDir);
+    camera.target.addInPlace(lookDir.scaleInPlace(forward));
+    camera.target.addInPlace(rightDir.scaleInPlace(right));
     invalidate();
   };
 
@@ -336,8 +342,10 @@ export function createEditorCamera(
       if (mode === "2d") applyOrthoBounds();
     },
     pan: (deltaX: number, deltaY: number) => {
-      const right = camera.getDirection(Vector3.Right());
-      const up = camera.getDirection(Vector3.Up());
+      const right = scratchDirectionA;
+      const up = scratchDirectionB;
+      camera.getDirectionToRef(Vector3.RightReadOnly, right);
+      camera.getDirectionToRef(Vector3.UpReadOnly, up);
       camera.target.addInPlace(right.scaleInPlace(deltaX));
       camera.target.addInPlace(up.scaleInPlace(deltaY));
       invalidate();

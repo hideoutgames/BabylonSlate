@@ -1310,6 +1310,52 @@ describe("material compiler", () => {
     expect(unfreeze).not.toHaveBeenCalled();
   });
 
+  it("rebuilds and reports once for a pending texture shared by two samples", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const errors = new Observable<{ message?: string }>();
+    (
+      resolved as Texture & { onErrorObservable: Observable<{ message?: string }> }
+    ).onErrorObservable = errors;
+    const diagnostics: Array<{ code: string }> = [];
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "base", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-1" } },
+      { id: "glow", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-1" } },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      { id: "e-base", sourceNodeId: "base", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" },
+      { id: "e-glow", sourceNodeId: "glow", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "emissive" },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "shared-texture",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+      onTextureError: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const samples = result.material.attachedBlocks.filter(
+      (block): block is TextureBlock => block instanceof TextureBlock,
+    );
+    expect(samples.map((sample) => sample.texture)).toEqual([resolved, resolved]);
+    errors.notifyObservers({ message: "ktx2 decode failed" });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "material.missingTexture" }),
+    ]);
+    const rebuild = vi.spyOn(result.material, "build");
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
   it("rebuilds when isReady is true only because loading failed onto the error sampler", () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);

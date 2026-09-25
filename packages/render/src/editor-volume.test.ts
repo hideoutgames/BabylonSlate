@@ -1,4 +1,4 @@
-import { StandardMaterial } from "@babylonjs/core";
+import { StandardMaterial, type AbstractMesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -7,6 +7,13 @@ import {
   isEditorVolumeMesh,
   NAV_BLOCKER_VOLUME_COLOR,
 } from "./editor-volume";
+
+/** Dash boxes in the merged `:dash:` outline mesh (24 vertices per box). */
+function outlineDashCount(mesh: AbstractMesh): number {
+  const dashes = mesh.getChildMeshes().filter((child) => child.name.includes(":dash:"));
+  expect(dashes).toHaveLength(1);
+  return dashes[0]!.getTotalVertices() / 24;
+}
 
 describe("editor volume", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -34,7 +41,7 @@ describe("editor volume", () => {
     expect(mesh.visibility).toBe(1);
     const material = mesh.material as StandardMaterial;
     expect(material.alpha).toBe(0);
-    expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
+    expect(outlineDashCount(mesh)).toBeGreaterThan(8);
   });
 
   it("builds a cylinder volume outline", () => {
@@ -46,6 +53,6 @@ describe("editor volume", () => {
       "cylinder",
       BLOCKING_VOLUME_COLOR,
     );
-    expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
+    expect(outlineDashCount(mesh)).toBeGreaterThan(8);
   });
 });

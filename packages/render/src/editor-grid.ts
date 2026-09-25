@@ -463,7 +463,6 @@ export function createEditorGrid(
   };
 
   const sync = () => {
-    applyPlane();
     if (!camera) return;
     const origin = snapGridOrigin(mode, camera.target, spacing);
     if (mode === "2d") {

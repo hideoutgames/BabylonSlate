@@ -84,10 +84,10 @@ import {
 } from "./scene-illumination";
 import { createSpriteQuad } from "./sprite-quad";
 import {
-  applyTilemapParallaxToMesh,
   createTilemapMeshes,
   isTilemapChunkMesh,
   updateSceneTilemapAnimations,
+  updateSceneTilemapParallax,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -1705,11 +1705,9 @@ export function applySnapshotToScene(
   // Camera-dependent passes wait for every camera pose, including later slots
   // and bone attachments, and for this snapshot's active camera.
   snapPlayCameraToPixelGrid(scene, binding);
-  for (let i = 0; i < count; i++) {
-    const mesh = binding.snapshotMeshes[i];
-    if (mesh?.getScene() !== scene) continue;
-    applyTilemapParallaxToMesh(mesh, scene.activeCamera ?? snapshot.actors[i]!);
-  }
+  // Only the world Scene: overlay slots skip world-camera parallax.
+  const activeCamera = scene.activeCamera;
+  if (activeCamera) updateSceneTilemapParallax(scene, activeCamera.position);
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }
@@ -1838,16 +1836,17 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     actor.rotation.w,
   );
   // Keep local TRS in sync for gizmos / picking later.
-  if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
   mesh.position.copyFrom(scratchPos);
   mesh.rotationQuaternion = mesh.rotationQuaternion ?? new Quaternion();
   mesh.rotationQuaternion.copyFrom(scratchQuat);
   mesh.scaling.copyFrom(scratchScale);
   // No shared Matrix argument: Babylon caches an independent world matrix for
   // every actor slot. Sharing the scratch matrix collapses all rendered meshes.
+  // It also lifts any freeze and recomputes once from the TRS written above.
   if (shouldFreezeStaticWorldMatrix(mesh)) {
     mesh.freezeWorldMatrix();
   } else {
+    if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
     // Update off-screen casters too: active-mesh evaluation does not necessarily
     // visit them before the shadow hierarchy is queried.
     mesh.computeWorldMatrix();

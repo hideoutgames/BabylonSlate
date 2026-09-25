@@ -1,7 +1,9 @@
 import {
   Frustum,
   Matrix,
+  Plane,
   Vector3,
+  type AbstractMesh,
   type DirectionalLight,
   type Scene,
 } from "@babylonjs/core";
@@ -18,6 +20,9 @@ export function configureDirectionalShadowProjection(
   const center = Vector3.Zero();
   const corner = Vector3.Zero();
   const clip = Matrix.Identity();
+  const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
+  const upstream = planes.slice(1);
+  const casters: AbstractMesh[] = [];
   light.autoCalcShadowZBounds = false;
   light.customProjectionMatrixBuilder = (view, _renderList, result) => {
     const camera = scene.activeCamera;
@@ -56,7 +61,8 @@ export function configureDirectionalShadowProjection(
       scene.getEngine().isNDCHalfZRange,
     );
     view.multiplyToRef(result, clip);
-    const candidates = spatial.queryPlanes(Frustum.GetPlanes(clip).slice(1));
+    Frustum.GetPlanesToRef(clip, planes);
+    const candidates = spatial.queryPlanes(upstream, casters);
     let near = center.z - radius;
     const far = center.z + radius;
     for (const mesh of candidates)
