@@ -125,6 +125,15 @@ function admissionSamplers(light: ShadowLight, settings: ShadowSettings): number
   return settings.filter === "pcss" && !light.needCube() ? 2 : 1;
 }
 
+/** Faces a live generator renders: its cascades, a cube's six, otherwise one. */
+function generatorPasses(generator: ShadowGenerator): number {
+  return generator instanceof CascadedShadowGenerator
+    ? generator.numCascades
+    : generator.getLight().needCube()
+      ? 6
+      : 1;
+}
+
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
 function shadowAllocationCheckpoint(
   scene: Scene,
@@ -346,14 +355,9 @@ export class SceneShadowController {
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
     let bytes = 0;
-    for (const { light, generator } of this.entries.values()) {
+    for (const { generator } of this.entries.values()) {
       if (!generator) continue;
-      const count =
-        generator instanceof CascadedShadowGenerator
-          ? generator.numCascades
-          : light instanceof PointLight
-            ? 6
-            : 1;
+      const count = generatorPasses(generator);
       passes += count;
       bytes +=
         count *
@@ -390,13 +394,7 @@ export class SceneShadowController {
             : generator.useContactHardeningShadow
               ? "pcss"
               : "pcf",
-        passes: generator
-          ? generator instanceof CascadedShadowGenerator
-            ? generator.numCascades
-            : light instanceof PointLight
-              ? 6
-              : 1
-          : 0,
+        passes: generator ? generatorPasses(generator) : 0,
         mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
       };
     });
@@ -965,12 +963,7 @@ export class SceneShadowController {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
       const cascaded = entry.generator instanceof CascadedShadowGenerator;
-      const passes =
-        entry.generator instanceof CascadedShadowGenerator
-          ? entry.generator.numCascades
-          : entry.light.needCube()
-            ? 6
-            : 1;
+      const passes = generatorPasses(entry.generator);
       live.bytes +=
         (cascaded ? 4 : passes) * entry.mapSize ** 2 * bytesPerTexel;
       live.passes += passes;
