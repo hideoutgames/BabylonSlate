@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/assets";
 import {
   identitySerializedTransform,
+  landscapeCollisionMesh,
   springArmChildOffset,
   type SerializedScene,
   type SerializedTransform,
@@ -210,6 +211,9 @@ export function collisionSurfaces(
             shifted,
           );
         } else add(actor.id, collider.shape, world);
+      } else if (component.classId === "LandscapeComponent" && worldKind === "3d") {
+        const shape = landscapeCollisionMesh(properties);
+        if (shape) add(actor.id, shape, world);
       } else if (component.classId === "BlockingVolumeComponent") {
         add(
           actor.id,

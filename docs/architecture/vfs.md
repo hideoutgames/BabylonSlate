@@ -77,7 +77,7 @@ Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/
 
 ## WebContent termination (iOS)
 
-Capacitor 8.5.0 handles `webViewWebContentProcessDidTerminate` natively — `WebViewDelegationHandler` resets the bridge and reloads the WebView, unbounded, and there is no app-level hook without replacing the private delegate, which we do not do. The reload restarts the editor at Home, so the durable signal is web-side: the `babylonslate.session-liveness` record (`apps/editor/src/lib/session-liveness.ts`) is left `alive` when the page dies without `pagehide`, and the next start surfaces a dismissible Home notice naming the project that was open. In-memory edits never journaled are lost; Play and bakes are never restarted automatically.
+Capacitor 8.5.0 handles `webViewWebContentProcessDidTerminate` natively — `WebViewDelegationHandler` resets the bridge and reloads the WebView, unbounded, and there is no app-level hook without replacing the private delegate, which we do not do. The reload restarts the editor at Home without a notice. Reopening the project recovers journaled edits; in-memory edits never journaled are lost. Play and bakes are never restarted automatically.
 
 ## Templates folder
 

@@ -626,7 +626,7 @@ Spec: [engineplan.md](../engineplan.md) §2.6 / §18 / §19, Appendix A `p16-aud
 
 ## P17 Particle engine
 
-Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-*`. Design note: [particles.md](../architecture/particles.md). **Done.** Quads only; wrap `GPUParticleSystem` / `ParticleSystem`; particle-domain NME; two assets. Packed-player hydrate and overlay Play share `ParticleService`. Out of scope remains mesh particles / SPS / NPE / fluid renderer.
+Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-*`. Design note: [particles.md](../architecture/particles.md). **Done.** Quads only; wrap `GPUParticleSystem` / `ParticleSystem`; particle-domain NME; two assets. Packed-player hydrate and overlay Play share `ParticleService`. Out of scope remains mesh particles / SPS / fluid renderer / the NPE UI, snippets and Babylon JSON payloads. Bursts, extra shapes and the node-graph emitter moved to the Particle emitters named slice (`p-particle-*`).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -637,7 +637,7 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-
 | Play Particles / Stop Particles | Done (`p17-particle-nodes`) | `scripting`, `scripting-nodes`, `runtime` | runtime |
 | Architecture doc + Playwright + verify | Done (`p17-particle-acceptance`) | unit + e2e | all P17 slices |
 
-**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers; P20 editor/runtime follow-on.
+**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / fluid renderer / sub-emitters / sprite-sheet flipbooks (see Particle emitters below); P18 iPad optimisation; P19 BT/nav leftovers; P20 editor/runtime follow-on.
 
 ## P18 iPad editor optimisation
 
@@ -686,5 +686,14 @@ Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Acto
 
 **P20 is Done.**
 
+## Particle emitters (`p-particle-*`)
 
+Spec: [engineplan.md](../engineplan.md) §2.7 / §18, Appendix A `p-particle-*`. Design note: [particle-emitters.md](../design/particle-emitters.md). Named slice, additive on Done P17 (do not uncheck `p17-particle-*`). One PR per slice, sequential.
 
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design note + engineplan revision | Done (`p-particle-design`) | `docs/` | P20 Done |
+| Basic module stack, Material-only look, seconds | `p-particle-basic` | `core` (shared particle literals), `assets`, `render`, `shader-graph`, `ui` (stage role map), `editor-kit`, `exporter` (closure test), `apps/editor`, `apps/player`, `e2e` | design |
+| Particle Graph IR, lowering, editor | `p-particle-graph` | new `particle-graph`, `assets`, `core`, `vfs`, `render`, `ui`, `graph-ui`, `editor-kit`, `apps/editor`, `apps/player`, `exporter`, root lint/Vitest config, `e2e` | Basic |
+
+Out of scope: sprite-sheet flipbooks, noise, flow maps, sub-emitters, mesh/custom emitters, `textureMask`, ramp/remap gradients, NPE UI/snippets/Babylon JSON, `ParticleHelper`, SPS, fluid renderer, GPU graph tier, generated default textures.

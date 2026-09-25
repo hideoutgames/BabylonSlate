@@ -146,6 +146,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       { id: "name", label: "Name", kind: "text", value: selected.actor.name, onChange: (name) => { if (scene) void commit({ ...scene, actors: scene.actors.map((a) => a.id === selected.actor.id ? { ...a, name } : a) }); } },
       { id: "size", label: "Size", kind: "vector3", axes: ["W", "D"], value: [data.width, data.depth, 0], onChange: ([width, depth]) => setData({ ...data, width: Math.min(4096, Math.max(1, width)), depth: Math.min(4096, Math.max(1, depth)) }) },
       { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, description: `${formatUnits(data.width / data.subdivisions)} × ${formatUnits(data.depth / data.subdivisions)} units per cell`, onChange: (value) => setData(resizeLandscape(data, value)) },
+      { id: "landscape-collisions", label: "Landscape Collisions", kind: "boolean", value: data.collisionsEnabled, onChange: (collisionsEnabled) => setData({ ...data, collisionsEnabled }) },
       { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Default", onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
     ]} /> : <>
       <PropertySectionTitle>Landscape</PropertySectionTitle>
