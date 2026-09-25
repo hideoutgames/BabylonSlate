@@ -509,7 +509,7 @@ describe("Slate project browser", () => {
     };
     const { unmount } = renderHomepage();
     let autoUpdate = await openApplicationSettings();
-    await waitFor(() => expect(autoUpdate).toHaveProperty("disabled", false));
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-disabled")).not.toBe("true"));
     expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(autoUpdate);
     await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
@@ -527,6 +527,6 @@ describe("Slate project browser", () => {
     renderHomepage();
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Application Settings" }));
-    expect(await screen.findByRole("switch", { name: "Automatic Updates" })).toHaveProperty("disabled", true);
+    expect((await screen.findByRole("switch", { name: "Automatic Updates" })).getAttribute("aria-disabled")).toBe("true");
   });
 });
