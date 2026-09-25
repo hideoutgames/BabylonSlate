@@ -64,6 +64,7 @@ import {
   lockNodeDragAxis,
   allocateGraphDragTransaction,
   nodeChangesMutateGraph,
+  replaceChangesAsSelection,
   reconcileCanvasGraph,
   shouldEmitNodeChanges,
   toSerializedGraph,
@@ -763,15 +764,13 @@ function GraphEditorCanvas({
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
-        const constrained = lockNodeDragAxis(changes, current, lockDragAxis);
+        const constrained = replaceChangesAsSelection(
+          lockNodeDragAxis(changes, current, lockDragAxis),
+        );
         const applied = readOnly
-          ? constrained.flatMap((change): NodeChange<CanvasNode>[] => {
-              if (change.type === "select" || change.type === "dimensions") return [change];
-              // React Flow setNodes (focus/host selection/marquee) emits replace
-              // changes. In inspection mode accept only their selection state.
-              if (change.type === "replace") return [{ type: "select", id: change.id, selected: change.item.selected === true }];
-              return [];
-            })
+          ? constrained.filter(
+              (change) => change.type === "select" || change.type === "dimensions",
+            )
           : constrained;
         const next = applyNodeChanges(applied, current);
         const allocated = allocateGraphDragTransaction(
@@ -802,8 +801,9 @@ function GraphEditorCanvas({
     (changes: EdgeChange[]) => {
       if (readOnly) return;
       setEdges((current) => {
-        const next = applyEdgeChanges(changes, current);
-        if (nodeChangesMutateGraph(changes)) {
+        const effective = replaceChangesAsSelection(changes);
+        const next = applyEdgeChanges(effective, current);
+        if (nodeChangesMutateGraph(effective)) {
           emitChange(graphStateRef.current.nodes, next);
         }
         return next;

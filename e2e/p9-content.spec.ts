@@ -625,6 +625,14 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("anim-rule-breadcrumb-state-machine").click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
 
+    await badge.click();
+    await expect(page.getByText("To State Blend Seconds")).toBeVisible();
+    await page.getByRole("button", { name: "Flip Direction" }).click();
+    await expect(page.getByTestId("property-name")).toHaveValue("State");
+    await expect(page.getByText("To Idle Blend Seconds")).toBeVisible();
+    await page.getByTestId("anim-graph-state-idle").click();
+    await expect(page.getByText("To State Blend Seconds")).toHaveCount(0);
+
     await page.getByTestId("anim-graph-state-idle").click();
     await expect(page.getByTestId("property-clipKind")).toBeVisible();
     await page.getByTestId("property-clipAsset").click();
