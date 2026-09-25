@@ -38,57 +38,6 @@ export interface BakedIrradianceSampling {
 }
 
 /**
- * CPU reference for the Standard/CEL injected shader composition: the raw
- * irradiance added to `diffuseBase` for one texel, matching the unnormalized
- * realtime contribution `lightColor * cos * attenuation`.
- */
-export function bakedDiffuseIrradiance(
-  texel: readonly [number, number, number, number],
-): [number, number, number] {
-  const coverage = texel[3];
-  return [
-    texel[0] * coverage,
-    texel[1] * coverage,
-    texel[2] * coverage,
-  ];
-}
-
-/**
- * CPU reference for the PBR injected shader composition: the
- * energy-normalized irradiance added to `diffuseBase`, matching the realtime
- * contribution `lightColor * cos * attenuation / PI`.
- */
-export function bakedNormalizedDiffuseIrradiance(
-  texel: readonly [number, number, number, number],
-): [number, number, number] {
-  const coverage = texel[3];
-  return [
-    texel[0] * coverage * BAKED_IRRADIANCE_INV_PI,
-    texel[1] * coverage * BAKED_IRRADIANCE_INV_PI,
-    texel[2] * coverage * BAKED_IRRADIANCE_INV_PI,
-  ];
-}
-
-/**
- * CPU reference for a fully covered surface: outgoing diffuse after the
- * material's own diffuse albedo multiplication, matching PBR's
- * `finalDiffuse = diffuseBase * albedo` once the normalized baked term joins
- * diffuseBase. Standard/CEL apply the albedo to the unnormalized `E`
- * contribution instead.
- */
-export function bakedOutgoingDiffuse(
-  albedo: readonly [number, number, number],
-  irradiance: readonly [number, number, number],
-  coverage: number,
-): [number, number, number] {
-  return [
-    albedo[0] * irradiance[0] * coverage * BAKED_IRRADIANCE_INV_PI,
-    albedo[1] * irradiance[1] * coverage * BAKED_IRRADIANCE_INV_PI,
-    albedo[2] * irradiance[2] * coverage * BAKED_IRRADIANCE_INV_PI,
-  ];
-}
-
-/**
  * Analytic physical-E under the provider's convention for one point light:
  * `E = intensity * color * cos / d^2`. Three.js `PointLight(intensity, 0, 2)`
  * and Babylon's automatic point intensity both mean candela, and Babylon's
