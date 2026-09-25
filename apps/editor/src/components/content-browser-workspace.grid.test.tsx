@@ -510,7 +510,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(within(dialog).queryByTestId("graph-add-node")).toBeNull();
     fireEvent.click(within(dialog).getByTestId("asset-reference-node-tex-1"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Open Asset" }));
-    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "asset-settings", path: "assets/tex-1.babasset", label: "Tex 1" }));
+    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-1.babasset", label: "Tex 1" }));
   });
   it("preserves a folder name and explains a failed create so it can be retried", async () => {
     installRegistry([]);
@@ -862,7 +862,7 @@ describe("ContentBrowserWorkspace grid window", () => {
 
     await waitFor(() =>
       expect(docs.openDocument).toHaveBeenCalledWith({
-        kind: "asset-settings",
+        kind: "texture",
         path: "assets/tex-0.babasset",
         label: "Tex 0",
       }),
