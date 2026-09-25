@@ -195,6 +195,19 @@ function composeAttachedComponentTransform(
   }
 }
 
+/** The editor's authored component pose, parent-resolved like the realtime
+ * light or camera (local on a broken attachment). Returns fresh objects. */
+export function composeAuthoredComponentTransform(
+  actor: SerializedActor,
+  component: SerializedComponent,
+  actors: readonly SerializedActor[],
+): { position: Vector3; rotation: Quaternion } {
+  const composed = actor.parentId
+    ? composeAttachedComponentTransform(actor, component, authoredActorMatrices(actors), undefined)
+    : composeActorComponentTransform(actor, component);
+  return { position: composed.position.clone(), rotation: composed.rotation.clone() };
+}
+
 export function actorForwardFromRotation(rotation: {
   x: number;
   y: number;

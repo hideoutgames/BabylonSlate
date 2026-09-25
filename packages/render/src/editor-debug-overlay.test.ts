@@ -426,6 +426,37 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
+  it("aims light debug from an attached actor's parent-resolved pose", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    const sceneData = sceneWith([
+      createActor("car", "Car", {
+        transform: {
+          ...identitySerializedTransform(),
+          position: [0, 0, 5],
+          rotation: eulerDegreesToQuaternion([0, 90, 0]),
+        },
+      }),
+      createActor("spot", "Spot", {
+        parentId: "car",
+        transform: { ...identitySerializedTransform(), position: [0, 0, 2] },
+        components: [
+          { id: "light", classId: "LightComponent", properties: { lightKind: "spot", range: 10, outerAngle: 45 } },
+        ],
+      }),
+    ]);
+    overlay.sync({ sceneData, selectedActorIds: ["spot"] });
+    const axis = scene.getMeshByName("debugLight:spot:axis")!;
+    axis.computeWorldMatrix(true);
+    const data = axis.getVerticesData(VertexBuffer.PositionKind)!;
+    const start = Vector3.TransformCoordinates(Vector3.FromArray(data, 0), axis.getWorldMatrix());
+    const end = Vector3.TransformCoordinates(Vector3.FromArray(data, data.length - 3), axis.getWorldMatrix());
+    // The car turns the child's local +Z offset and forward onto world +X.
+    expect(start.subtract(new Vector3(2, 0, 5)).length()).toBeCloseTo(0, 5);
+    expect(end.subtract(start).normalize().subtract(Vector3.Right()).length()).toBeCloseTo(0, 5);
+    overlay.dispose();
+  });
+
   it("uses a selected CameraComponent on the prefab root", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);

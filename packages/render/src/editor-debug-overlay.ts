@@ -22,6 +22,7 @@ import {
 } from "@babylonslate/core";
 import {
   composeActorComponentTransform,
+  composeAuthoredComponentTransform,
   applyAuthoredCameraLens,
   type AuthoredCameraProperties,
 } from "./scene-illumination";
@@ -180,7 +181,7 @@ export class EditorDebugOverlay {
     const camera = selected.find((entry) => entry.component.classId === "CameraComponent");
     const light = selected.find((entry) => entry.component.classId === "LightComponent" || entry.component.classId === "AreaRectLightComponent");
     if (camera) this.buildCameraDebug(camera.actor, camera.component);
-    if (light) this.buildLightDebug(light.actor, light.component);
+    if (light) this.buildLightDebug(light.actor, light.component, sceneData.actors);
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
       const guid = component.properties.audioAssetGuid ?? component.properties.assetGuid;
@@ -379,7 +380,7 @@ export class EditorDebugOverlay {
     this.tick(this.now());
   }
 
-  private buildLightDebug(actor: SerializedActor, component: SerializedComponent): void {
+  private buildLightDebug(actor: SerializedActor, component: SerializedComponent, actors: readonly SerializedActor[]): void {
     if (component.classId === "AreaRectLightComponent") {
       const native = this.scene.getLightByName(`authoredAreaLight:${actor.id}:${component.id}`);
       if (!native?.parent || native.metadata?.areaLight?.error) return;
@@ -401,8 +402,8 @@ export class EditorDebugOverlay {
     }
     const kind = String(component.properties.lightKind ?? "point") as LightDebugKind;
     const range = Math.max(0.1, asNumber(component.properties.range, 10));
-    // Match the authored light: actor TRS × component transform.
-    const composed = composeActorComponentTransform(actor, component);
+    // Match the authored light: parent-resolved actor pose × component transform.
+    const composed = composeAuthoredComponentTransform(actor, component, actors);
     const origin = composed.position;
     const forward = Vector3.Forward().applyRotationQuaternion(composed.rotation);
     const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
