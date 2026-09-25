@@ -100,6 +100,8 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Exposure", "project-effects-exposure"],
   ["rendering", "Contrast", "project-effects-contrast"],
   ["rendering", "Bloom", "project-effects-bloom"],
+  ["rendering", "Real-Time Reflections Screen Space SSR", "project-effects-reflections"],
+  ["rendering", "Volumetric Lighting Light Beams Fog Density", "project-effects-volumetric"],
   ["rendering", "Bloom Threshold", "project-effects-bloom-threshold"],
   ["rendering", "Bloom Weight", "project-effects-bloom-weight"],
   ["rendering", "Bloom Kernel", "project-effects-bloom-kernel"],

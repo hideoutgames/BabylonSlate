@@ -6,6 +6,28 @@
 export type ColorPipelineMode = "legacyDisplay" | "sceneLinear";
 export type RenderEffectsToneMapping = "none" | "standard" | "aces" | "neutral";
 
+export interface ReflectionSettings {
+  enabled: boolean;
+  /** Ray marching resolution; scene color remains full resolution. */
+  resolutionScale: number;
+  maxSteps: number;
+  maxDistance: number;
+  thickness: number;
+  strength: number;
+}
+
+export interface VolumetricLightingSettings {
+  enabled: boolean;
+  resolutionScale: number;
+  steps: number;
+  /** Maximum admitted directional, point and spot contributors per view. */
+  maxLights: number;
+  density: number;
+  intensity: number;
+  maxDistance: number;
+  anisotropy: number;
+}
+
 export interface RenderEffectsSettings {
   /** Stage contract version; Scene Linear renders HDR then resolves display. */
   colorPipeline: { version: 1; mode: ColorPipelineMode };
@@ -26,6 +48,8 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  reflections: ReflectionSettings;
+  volumetricLighting: VolumetricLightingSettings;
 }
 
 export const RENDER_EFFECTS_LIMITS = {
@@ -36,6 +60,17 @@ export const RENDER_EFFECTS_LIMITS = {
   bloomWeight: [0, 10],
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
+  spatialResolutionScale: [0.25, 1],
+  reflectionSteps: [8, 128],
+  reflectionDistance: [0.1, 1000],
+  reflectionThickness: [0.001, 10],
+  reflectionStrength: [0, 1],
+  volumetricSteps: [8, 64],
+  volumetricLights: [1, 4],
+  volumetricDensity: [0, 1],
+  volumetricIntensity: [0, 10],
+  volumetricDistance: [0.1, 1000],
+  volumetricAnisotropy: [-0.9, 0.9],
 } as const;
 
 export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
@@ -46,6 +81,14 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  reflections: {
+    enabled: false, resolutionScale: 0.5, maxSteps: 32,
+    maxDistance: 50, thickness: 0.2, strength: 1,
+  },
+  volumetricLighting: {
+    enabled: false, resolutionScale: 0.5, steps: 24, maxLights: 4,
+    density: 0.02, intensity: 1, maxDistance: 50, anisotropy: 0.2,
+  },
 };
 
 const TONE_MAPPINGS: readonly RenderEffectsToneMapping[] = [
@@ -82,6 +125,12 @@ export function normalizeRenderEffectsSettings(
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
   const bloom = object(source.bloom);
+  const reflections = object(source.reflections);
+  const volumetric = object(source.volumetricLighting);
+  const reflectionNumber = (key: keyof ReflectionSettings, limits: readonly [number, number]) =>
+    finite(reflections[key], DEFAULT_RENDER_EFFECTS.reflections[key] as number, ...limits);
+  const volumetricNumber = (key: keyof VolumetricLightingSettings, limits: readonly [number, number]) =>
+    finite(volumetric[key], DEFAULT_RENDER_EFFECTS.volumetricLighting[key] as number, ...limits);
   const color = colorTriple(vignette.color);
   return {
     colorPipeline: {
@@ -139,5 +188,23 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    reflections: {
+      enabled: reflections.enabled === true,
+      resolutionScale: reflectionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
+      maxSteps: Math.round(reflectionNumber("maxSteps", RENDER_EFFECTS_LIMITS.reflectionSteps)),
+      maxDistance: reflectionNumber("maxDistance", RENDER_EFFECTS_LIMITS.reflectionDistance),
+      thickness: reflectionNumber("thickness", RENDER_EFFECTS_LIMITS.reflectionThickness),
+      strength: reflectionNumber("strength", RENDER_EFFECTS_LIMITS.reflectionStrength),
+    },
+    volumetricLighting: {
+      enabled: volumetric.enabled === true,
+      resolutionScale: volumetricNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
+      steps: Math.round(volumetricNumber("steps", RENDER_EFFECTS_LIMITS.volumetricSteps)),
+      maxLights: Math.round(volumetricNumber("maxLights", RENDER_EFFECTS_LIMITS.volumetricLights)),
+      density: volumetricNumber("density", RENDER_EFFECTS_LIMITS.volumetricDensity),
+      intensity: volumetricNumber("intensity", RENDER_EFFECTS_LIMITS.volumetricIntensity),
+      maxDistance: volumetricNumber("maxDistance", RENDER_EFFECTS_LIMITS.volumetricDistance),
+      anisotropy: volumetricNumber("anisotropy", RENDER_EFFECTS_LIMITS.volumetricAnisotropy),
+    },
   };
 }

@@ -123,6 +123,8 @@ export class ClusteredSceneLights {
     return this.statusValue;
   }
 
+  authoredLights(): readonly Light[] { return this.registry; }
+
   limits(): string[] {
     return [...this.statusValue.reasons];
   }

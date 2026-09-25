@@ -1,4 +1,6 @@
-import { Constants } from "@babylonjs/core";
+import { Constants, type Camera } from "@babylonjs/core";
+import { SpatialEffectsGraph } from "./spatial-effects-graph";
+import { spatialEffectsUnsupported } from "./spatial-effects";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -20,6 +22,7 @@ export interface SceneEffectsGraphOptions {
   frameGraph: FrameGraph;
   plan: SceneEffectsPlan;
   effects: RenderEffectsSettings;
+  camera?: Camera;
   /** Authored-stack output feeding the chain. Absent when the object
    * renderer draws this chain's own scene color instead. */
   authoredOutputTexture?: FrameGraphTextureHandle;
@@ -50,6 +53,7 @@ export class SceneEffectsGraph {
   /** The last chain output; the caller's output copy is its only consumer. */
   readonly outputTexture: FrameGraphTextureHandle;
   readonly tasks: FrameGraphTask[] = [];
+  readonly spatial?: SpatialEffectsGraph;
   private readonly retirements: OwnedEffectRetirement[] = [];
   private readonly externalTasks = new Set<FrameGraphTask>();
   private tasksDisposed = false;
@@ -99,6 +103,16 @@ export class SceneEffectsGraph {
           },
         );
         source = this.sceneColorTexture;
+      }
+      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(graph.scene)) {
+        const camera = options.camera ?? graph.scene.activeCamera;
+        if (!camera) throw new Error("Spatial effects require a camera.");
+        this.spatial = new SpatialEffectsGraph(graph, camera, plan, source, options.width, options.height);
+        for (const task of this.spatial.tasks) {
+          this.tasks.push(task);
+          this.externalTasks.add(task);
+        }
+        source = this.spatial.output;
       }
       if (plan.bloom) {
         // `kernel` is relative to final output size on both paths; the task
@@ -174,6 +188,7 @@ export class SceneEffectsGraph {
   disposeTasks(): void {
     if (this.tasksDisposed) return;
     const errors: unknown[] = [];
+    try { this.spatial?.disposeTasks(); } catch (error) { errors.push(error); }
     for (const task of this.tasks.splice(0)) {
       if (this.externalTasks.has(task)) continue;
       try {
@@ -200,7 +215,7 @@ export class SceneEffectsGraph {
         ),
       );
     this.disposed ??= Promise.all(
-      this.retirements.map((retirement) => retirement.completion),
+      [...this.retirements.map((retirement) => retirement.completion), this.spatial?.whenDisposed()],
     ).then(() => {});
     return this.disposed;
   }
@@ -214,7 +229,7 @@ export class SceneEffectsGraph {
         ),
       );
     this.released ??= Promise.all(
-      this.retirements.map((retirement) => retirement.released),
+      [...this.retirements.map((retirement) => retirement.released), this.spatial?.whenReleased()],
     ).then(() => {});
     return this.released;
   }
