@@ -19,7 +19,7 @@ export function isOutlineOnlySceneEdit(previous: SerializedScene | null, next: S
     return { ...scene, settings: { ...scene.settings, celShading: cel }, actors: scene.actors.map((actor) => ({
       ...actor, components: actor.components.flatMap((component) => component.classId !== "OutlineComponent" ? [component]
         // A component can also be an attachment parent. Retain that structure
-        // so its transform edits still revalidate baked geometry and assets.
+        // so its transform edits still update child geometry and assets.
         : actor.components.some((child) => child.parentId === component.id) ? [{ ...component, properties: {} }] : []),
     })) };
   };

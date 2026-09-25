@@ -35,7 +35,6 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import type {
-  BakeRuntimeAssetReader,
   SpriteAnimationPayload,
   SpritePayload,
   TilemapPayload,
@@ -94,7 +93,6 @@ import {
 } from "./editor-clear-color";
 import {
   applySceneToBabylonScene,
-  editorComponentMeshName,
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
@@ -109,7 +107,6 @@ import {
 } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
-  AUTHORED_LIGHT_PREFIX,
   refreshAuthoredCameraLenses,
   syncAuthoredCamerasFromMeshes,
   syncAuthoredAreaLightsFromMeshes,
@@ -162,17 +159,11 @@ import {
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
-  playComponentMeshName,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
-import {
-  BakedSceneSession,
-  type BakedSceneHost,
-  type BakedSessionDiagnostics,
-} from "./baked-scene-session";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -229,7 +220,7 @@ export interface EditorSceneLoadOptions {
   assets?: MeshAssetContext;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Project asset guid of the loaded Scene document (bake manifest `sceneGuid`). */
+  /** Project asset guid of the loaded Scene document. */
   sceneAssetGuid?: string;
   onProgress?: (progress: number) => void;
 }
@@ -294,17 +285,6 @@ export interface EngineHandle {
   }>;
   /** Material names on Play meshes and GLB descendants (Preview e2e). */
   playMeshMaterialNames: () => string[];
-  /** Baked-lighting session state for player/editor diagnostics. */
-  bakedSessionDiagnostics: () => BakedSessionDiagnostics;
-  /**
-   * Bind the baked-lighting session for an already-realized scene. Scene
-   * switches go through `loadScene`; hosts whose boot scene never reloads
-   * (the active-scene early return) call this so the bake still applies.
-   */
-  applyBakedSession: (
-    sceneData: SerializedScene,
-    sceneAssetGuid?: string,
-  ) => void;
   /** Compiled effect defines per Play mesh (e2e shader-state readout). */
   playMeshMaterialDefines: () => Array<{
     mesh: string;
@@ -486,12 +466,6 @@ export interface CreateEngineOptions {
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   /** Material Function documents keyed by asset guid. */
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /**
-   * Reads BakedLighting / BakedGeometry assets from this host's asset source
-   * (project registry, packed game container). Without it, assigned baked
-   * lighting releases instead of applying.
-   */
-  bakeAssetReader?: BakeRuntimeAssetReader;
   /** Authored scene post-process stack. */
   postProcessStack?: readonly PostProcessStackInput[];
   /**
@@ -1473,70 +1447,7 @@ function initializeEngine(
   };
   binding.onVisualChanged = refreshRuntimeOutline;
 
-  // One bake owner per world Scene. `apply` runs at the end of every scene
-  // load; receivers that have not spawned yet (Play command realization) keep
-  // the session pending, which withholds strict first-frame admission until
-  // the atlas and bindings are confirmed or the bake proves stale.
-  const bakedSession = new BakedSceneSession(scene);
-  onRollback(() => bakedSession.dispose());
-  let lastBakedSceneGuid: string | undefined;
-  const playSlotForActor = (actorId: string): number | null => {
-    for (const [slotId, sorting] of binding.meshSorting) {
-      if (sorting.actorGuid === actorId) return slotId;
-    }
-    return null;
-  };
-  const playMeshForComponent = (
-    actorId: string,
-    componentId: string,
-  ): Mesh | null => {
-    const slotId = playSlotForActor(actorId);
-    if (slotId === null) return null;
-    const root = binding.meshes.get(slotId);
-    if (!root || root.isDisposed()) return null;
-    const named = playComponentMeshName(slotId, componentId);
-    const target = [root, ...root.getChildMeshes()].find(
-      (mesh) => mesh.name === named,
-    );
-    if (target instanceof Mesh) return target;
-    return binding.primaryComponentIds.get(slotId) === componentId
-      ? root
-      : null;
-  };
-  const playLightForComponent = (actorId: string) => {
-    const slotId = playSlotForActor(actorId);
-    return slotId === null ? null : (binding.lights.get(slotId) ?? null);
-  };
-  const bakeHost = (
-    sceneAssetGuid: string | undefined,
-    signal?: AbortSignal,
-  ): BakedSceneHost | null => {
-    if (!sceneAssetGuid || !options.bakeAssetReader) return null;
-    return {
-      sceneAssetGuid,
-      readAsset: options.bakeAssetReader,
-      materials: materialDocuments,
-      functions: Object.fromEntries(materialFunctions),
-      projectEnvironment:
-        sceneRenderingSettings(scene).project.environmentLighting,
-      meshForComponent: editorSync
-        ? (actorId, componentId) =>
-            editorSync.meshForComponent(actorId, componentId)
-        : options.playMode
-          ? playMeshForComponent
-          : (actorId, componentId) =>
-              scene.getMeshByName(
-                editorComponentMeshName(actorId, componentId),
-              ) as Mesh | null,
-      lightForComponent: options.playMode
-        ? playLightForComponent
-        : (actorId) =>
-            scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}${actorId}`),
-      isCurrent: () => !disposed && !scene.isDisposed,
-      signal,
-    };
-  };
-
+  let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
@@ -1617,8 +1528,7 @@ function initializeEngine(
     assertCurrent(generation);
     freezeLibraryMaterials();
     rebuildPostProcessStack();
-    lastBakedSceneGuid = load.sceneAssetGuid;
-    bakedSession.apply(sceneData, bakeHost(load.sceneAssetGuid, load.signal));
+    lastSceneAssetGuid = load.sceneAssetGuid;
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
   };
 
@@ -1627,14 +1537,12 @@ function initializeEngine(
     loadOptions?: { sceneAssetGuid?: string },
   ) => {
     assertCurrent(loadGeneration);
-    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
       isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       editorSync.apply(sceneData);
-      // Poses change bake validity even while rendering topology stays stable.
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
-    if (editorSync && loadOptions?.sceneAssetGuid === lastBakedSceneGuid &&
+    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       editorSync.apply(sceneData);
@@ -1650,12 +1558,11 @@ function initializeEngine(
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
-    lastBakedSceneGuid = loadOptions?.sceneAssetGuid;
+    lastSceneAssetGuid = loadOptions?.sceneAssetGuid;
     if (editorSync) {
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     if (options.playMode) {
@@ -1675,13 +1582,11 @@ function initializeEngine(
       });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
-      bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
-    bakedSession.apply(sceneData, bakeHost(loadOptions?.sceneAssetGuid));
   };
 
   let editor: EditorTools | null = null;
@@ -2576,8 +2481,6 @@ function initializeEngine(
       // Host-side timers and DOM stop now; the preview RTT and meshes wait
       // for native release with the Scene.
       debugOverlay?.stop();
-      // In-flight bake preparation stops now; receivers restore with the Scene.
-      bakedSession.cancel();
       playCursor?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -2603,11 +2506,6 @@ function initializeEngine(
         playDebugDraw?.dispose();
         debugOverlay?.dispose();
         debugOverlay = null;
-        // Rollback order: bake receivers restore before the library disposes.
-        // A failed receiver restore is reported; the remaining owners still release.
-        try { bakedSession.dispose(); } catch (error) {
-          console.warn(`[render] Baked lighting receiver restore failed during view disposal: ${String(error)}`);
-        }
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
@@ -2698,11 +2596,6 @@ function initializeEngine(
           if (pendingWorld) {
             applyAssignMesh(scene, binding, pendingWorld);
             pendingOverlayAssign.delete(command.slotId);
-            // Same late-resolution as the direct assignMesh path below: a
-            // deferred `light:*` visual may be the baked source a receiver
-            // could not resolve at bind time.
-            if (pendingWorld.meshKind?.startsWith("light:"))
-              bakedSession.refresh();
           }
         }
       }
@@ -2818,8 +2711,6 @@ function initializeEngine(
         } else {
           applyAssignMesh(scene, binding, command);
         }
-        // A spawned light can resolve a baked receiver's pending exclusion.
-        if (command.meshKind?.startsWith("light:")) bakedSession.refresh();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
           command.slotId,
@@ -3015,11 +2906,6 @@ function initializeEngine(
       }
       return [...names].sort();
     },
-    bakedSessionDiagnostics: () => bakedSession.diagnostics(),
-    applyBakedSession: (sceneData, sceneAssetGuid) => {
-      if (sceneAssetGuid !== undefined) lastBakedSceneGuid = sceneAssetGuid;
-      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
-    },
     playMeshMaterialDefines: () => {
       const rows: Array<{
         mesh: string;
@@ -3062,8 +2948,6 @@ function initializeEngine(
         applyClearColor: true,
         assets: binding,
       });
-      // Environment inputs are part of the bake's validity hash; revalidate.
-      bakedSession.apply(sceneData, bakeHost(lastBakedSceneGuid));
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
