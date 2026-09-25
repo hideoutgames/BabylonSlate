@@ -448,10 +448,8 @@ describe("NestedMenu context overlay", () => {
       const panel = document.querySelector(
         '[data-testid="context-menu-panel"]',
       ) as HTMLElement;
-      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
-        width: 192,
-        height: 40,
-      } as DOMRect);
+      Object.defineProperty(panel, "offsetWidth", { configurable: true, value: 192 });
+      Object.defineProperty(panel, "offsetHeight", { configurable: true, value: 40 });
       await waitFor(() => expect(panel.style.left).toBe("900px"));
 
       values["--safe-right"] = "200px";
@@ -494,10 +492,8 @@ describe("NestedMenu context overlay", () => {
       const panel = document.querySelector(
         '[data-testid="context-menu-panel"]',
       ) as HTMLElement;
-      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
-        width: 192,
-        height: 120,
-      } as DOMRect);
+      Object.defineProperty(panel, "offsetWidth", { configurable: true, value: 192 });
+      Object.defineProperty(panel, "offsetHeight", { configurable: true, value: 120 });
       fireEvent.click(
         document.querySelector('[data-testid="context-menu-item-more"]')!,
       );

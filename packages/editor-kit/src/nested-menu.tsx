@@ -554,9 +554,9 @@ function OverlayMenu({
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
-    const rect = panel?.getBoundingClientRect();
-    const width = rect?.width ?? 192;
-    const height = rect?.height ?? 0;
+    // Layout size, not the rect: the open animation starts scaled down.
+    const width = panel?.offsetWidth ?? 192;
+    const height = panel?.offsetHeight ?? 0;
     setPosition(
       clampOverlayMenuPosition({
         x,
@@ -576,7 +576,7 @@ function OverlayMenu({
         parentX: position.x,
         parentY: position.y,
         parentWidth:
-          parentWidth ?? panelRef.current?.getBoundingClientRect().width ?? 192,
+          parentWidth ?? panelRef.current?.offsetWidth ?? 192,
         submenuWidth: 192,
         viewportWidth: viewport.width,
         margin: 8,
