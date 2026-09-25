@@ -366,4 +366,3 @@ export function createWaterHandles(layer: UtilityLayerRenderer, scene: Scene, op
     },
   };
 }
-
