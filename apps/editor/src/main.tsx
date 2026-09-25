@@ -157,6 +157,13 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("waterRenderingProof")
+) {
+  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof }) => {
+    Object.assign(window, { __babylonslateWaterRenderingProof: runWaterRenderingProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("celRenderModeProof")
 ) {
   void import("./testing/cel-render-mode-proof").then(

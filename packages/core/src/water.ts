@@ -200,7 +200,7 @@ export function waterFootprint(body: WaterBodyProperties, x: number, z: number) 
   if (body.kind === "global") return { ...plane, inside: true, edge: Infinity, edgeX: 0, edgeZ: 0 };
   if (body.kind === "ocean") {
     const ex = body.width / 2 - Math.abs(x), ez = body.length / 2 - Math.abs(z);
-    return { ...plane, inside: ex >= 0 && ez >= 0, edge: Math.min(ex, ez), edgeX: ex < ez ? Math.sign(x) : 0, edgeZ: ex < ez ? 0 : Math.sign(z) };
+    return { ...plane, inside: ex >= -1e-6 && ez >= -1e-6, edge: Math.min(ex, ez), edgeX: ex < ez ? Math.sign(x) : 0, edgeZ: ex < ez ? 0 : Math.sign(z) };
   }
   if (body.kind !== "river") {
     const radius = Math.hypot(x / (body.width / 2), z / (body.length / 2));

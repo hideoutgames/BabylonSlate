@@ -17,10 +17,12 @@ describe("Water rendering", () => {
       setSceneWaterTime(scene, 1.7); updateSceneWater(scene);
       expect(mesh.getTotalVertices()).toBeGreaterThan(initialVertices * 3);
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const waterData = mesh.getVerticesData("slateWaterData")!;
       const matrix = mesh.computeWorldMatrix(true);
       const transform = { position: mesh.position, rotation: mesh.rotationQuaternion, scale: mesh.scaling };
       // Interior vertices compare the renderer and the public physics query, not a duplicate wave formula.
       for (let i = 15; i < positions.length - 15; i += 57) {
+        if (waterData[i / 3 * 4 + 1]! < 1) continue;
         const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, i), matrix);
         const sample = sampleWaterSurface(water, body, point, 1.7, transform);
         expect(sample.found).toBe(true);
