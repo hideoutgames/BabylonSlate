@@ -101,6 +101,7 @@ class FakeCanvas {
 
 function spawnOverlayButton(
   handle: ReturnType<typeof createEngine>,
+  renderFrame: () => void,
   layerId = "hud",
   layerBounds?: { width: number; height: number },
 ): void {
@@ -129,6 +130,24 @@ function spawnOverlayButton(
     hitTest: "block",
     hasButton: true,
   });
+  // Play visuals stay hidden, and so unclickable, until a snapshot shows them.
+  const snapshot = new Float32Array(snapshotFloatCount(8));
+  writeSnapshotHeader(snapshot, {
+    frameId: 1,
+    tickIndex: 1,
+    actorCount: 1,
+    scriptMs: 0,
+    physicsMs: 0,
+  });
+  writeActorSlot(snapshot, 0, {
+    slotId: 1,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+    flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+  });
+  handle.pushSnapshot(snapshot);
+  renderFrame();
 }
 
 function pointerAt(
@@ -3727,6 +3746,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     const events: Array<{ event: string; actorGuid: string }> = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
@@ -3737,7 +3757,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.());
 
     canvas.emit("pointerdown", pointerAt(128, 128));
     expect(canvas.capturedPointers).toEqual([1]);
@@ -3770,6 +3790,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas();
     const events: string[] = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
@@ -3781,7 +3802,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle, "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
     const mesh = handle.sceneLayerScenes()[0]?.scene.getMeshByName("actor-1");
     mesh?.refreshBoundingInfo(false, false);
     const extent = mesh?.getBoundingInfo().boundingBox.extendSize;

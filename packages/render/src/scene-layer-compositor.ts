@@ -418,6 +418,8 @@ export class SceneLayerCompositor {
         layer.layerBounds.height / 2,
       );
       for (const mesh of layer.scene.meshes) {
+        // Same eligibility as Babylon's default ray pick above.
+        if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) continue;
         const metadata = overlayMetadataOf(mesh);
         if (!metadata?.overlayHasButton) continue;
         const hitTest = parseSceneLayerHitTest(metadata.overlayHitTest, "ignore");
