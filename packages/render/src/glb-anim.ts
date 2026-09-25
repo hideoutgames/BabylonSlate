@@ -12,7 +12,7 @@ import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { loadModelContainer } from "./model-container";
+import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
 import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@babylonslate/assets";
 import { applyAnimStateToScene,
@@ -430,17 +430,7 @@ export function adoptLoadedHierarchy(
     meshes: readonly AbstractMesh[];
   },
 ): void {
-  const candidates = [
-    ...(container.rootNodes ?? []),
-    ...container.transformNodes,
-    ...container.meshes,
-  ];
-  const seen = new Set<Node>();
-  for (const node of candidates) {
-    if (seen.has(node) || node === placeholder) continue;
-    seen.add(node);
-    if (!node.parent) node.parent = placeholder;
-  }
+  parentContainerRoots(placeholder, container);
   hideModelPlaceholder(placeholder);
 }
 
