@@ -170,6 +170,13 @@ function composeWorldComponentTransform(
   return scratchWorldComponent;
 }
 
+/** Readable diagnostic names, matching the editor's component names. */
+const ATTACHED_COMPONENT_LABELS: Readonly<Record<string, string>> = {
+  LightComponent: "Light",
+  [HEMISPHERIC_FILL_LIGHT_CLASS_ID]: "Hemispheric Fill Light",
+  CameraComponent: "Camera",
+};
+
 /** Attached actors use their parent-resolved world pose. Cyclic or missing
  * attachments keep the actor's local pose and report why. */
 function composeAttachedComponentTransform(
@@ -182,7 +189,8 @@ function composeAttachedComponentTransform(
   try {
     return composeWorldComponentTransform(actorWorld(actor), component);
   } catch (error) {
-    onDiagnostic?.(`${component.classId} ${actor.id}: ${String(error)}`);
+    const label = ATTACHED_COMPONENT_LABELS[component.classId] ?? component.classId;
+    onDiagnostic?.(`${label} ${actor.id}: ${String(error)}`);
     return composeActorComponentTransform(actor, component);
   }
 }

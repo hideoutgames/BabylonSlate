@@ -811,27 +811,34 @@ describe("syncAuthoredIllumination", () => {
 
   it("places lights and cameras on attached actors at the parent-resolved world pose", () => {
     const { scene } = createHandle();
-    const child = (id: string, parentId: string, classId: string) =>
+    const child = (id: string, parentId: string, classId: string, properties: Record<string, unknown> = {}) =>
       createActor(id, id, {
         parentId,
         transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-        components: [{ id: `${id}-component`, classId, properties: { lightKind: "point" } }],
+        components: [{ id: `${id}-component`, classId, properties }],
       });
+    // A quarter turn about +Y maps the child's local +X offset to -Z and +Z to +X.
+    const quarterTurn: [number, number, number, number] = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
     const diagnostics: string[] = [];
     syncAuthoredIllumination(
       scene,
       sceneWith([
-        createActor("parent", "Parent", { transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }),
-        child("lamp", "parent", "LightComponent"),
+        createActor("parent", "Parent", { transform: { position: [3, 0, 0], rotation: quarterTurn, scale: [1, 1, 1] } }),
+        child("lamp", "parent", "LightComponent", { lightKind: "spot" }),
         child("rig", "parent", "CameraComponent"),
-        child("orphan", "missing", "LightComponent"),
+        child("orphan", "missing", "LightComponent", { lightKind: "point" }),
       ]),
       { stealActiveCamera: false, onDiagnostic: (message) => diagnostics.push(message) },
     );
-    expect((scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`) as PointLight).position.x).toBeCloseTo(4);
-    expect((scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}rig`) as UniversalCamera).position.x).toBeCloseTo(4);
+    const lamp = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`) as SpotLight;
+    expect(lamp).toBeInstanceOf(SpotLight);
+    expect(Vector3.Distance(lamp.position, new Vector3(3, 0, -1))).toBeCloseTo(0);
+    expect(Vector3.Distance(lamp.direction, new Vector3(1, 0, 0))).toBeCloseTo(0);
+    const rig = scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}rig`) as UniversalCamera;
+    expect(Vector3.Distance(rig.position, new Vector3(3, 0, -1))).toBeCloseTo(0);
+    expect(Vector3.Distance(rig.getDirection(Vector3.Forward()), new Vector3(1, 0, 0))).toBeCloseTo(0);
     // An unresolved attachment keeps its local pose and reports why.
     expect((scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}orphan`) as PointLight).position.x).toBeCloseTo(1);
-    expect(diagnostics).toEqual([expect.stringContaining("Missing actor attachment")]);
+    expect(diagnostics).toEqual([expect.stringMatching(/^Light orphan: .*Missing actor attachment/)]);
   });
 });
