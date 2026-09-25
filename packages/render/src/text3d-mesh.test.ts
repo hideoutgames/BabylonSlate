@@ -129,19 +129,27 @@ describe("3D Text mesh", () => {
 
   it("prefers a Font facetype chunk over the bundled TypeFace", () => {
     const bytes = new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T));
-    const resolved = resolveText3DFontData(
-      {
-        text: "T",
-        size: 1,
-        depth: 0.1,
-        color: [1, 1, 1],
-        fontAssetGuid: "font-1",
-        alignment: "left",
-      },
-      { fontFacetypeBytes: new Map([["font-1", bytes]]) },
-    );
+    const properties = {
+      text: "T",
+      size: 1,
+      depth: 0.1,
+      color: [1, 1, 1] as [number, number, number],
+      fontAssetGuid: "font-1",
+      alignment: "left" as const,
+    };
+    const assets = { fontFacetypeBytes: new Map([["font-1", bytes]]) };
+    const resolved = resolveText3DFontData(properties, assets);
     expect(resolved.bundled).toBe(false);
     expect(resolved.font.glyphs.T?.ha).toBe(600);
+    // Rebuilds from the same cached chunk reuse its parsed TypeFace.
+    expect(resolveText3DFontData(properties, assets).font).toBe(resolved.font);
+    // An edited Font installs a new chunk under the same guid.
+    const edited = new TextEncoder().encode(JSON.stringify({
+      ...TEXT3D_TEST_FONTFACE_T,
+      glyphs: { ...TEXT3D_TEST_FONTFACE_T.glyphs, T: { ...TEXT3D_TEST_FONTFACE_T.glyphs.T, ha: 700 } },
+    }));
+    const reloaded = { fontFacetypeBytes: new Map([["font-1", edited]]) };
+    expect(resolveText3DFontData(properties, reloaded).font.glyphs.T?.ha).toBe(700);
   });
 
   it("builds an editor mesh for Text3DComponent and fingerprints text edits", () => {
