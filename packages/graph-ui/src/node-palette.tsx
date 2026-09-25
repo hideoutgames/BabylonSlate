@@ -149,14 +149,12 @@ export function NodePalette({
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  /** Categories the user flipped from their default open state. */
-  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [contextSensitive, setContextSensitive] = useState(true);
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const pinFiltered = Boolean(filterPin && contextSensitive);
-  const searching = search.trim().length > 0;
   const coarse = isCoarsePointerEnvironment();
   const rowHeight = coarse ? NODE_PALETTE_TOUCH_ROW_HEIGHT : NODE_PALETTE_ROW_HEIGHT;
 
@@ -164,7 +162,7 @@ export function NodePalette({
     if (!open) return;
     setSearch("");
     setActiveKey(null);
-    setToggled(new Set());
+    setCollapsed(new Set());
   }, [open]);
 
   const allNodes = useMemo(() => {
@@ -190,10 +188,9 @@ export function NodePalette({
     const sorted = [...groups.entries()].sort(([a], [b]) =>
       humanizePropertyLabel(a).localeCompare(humanizePropertyLabel(b)),
     );
-    const openByDefault = searching || sorted.length === 1;
     const result: PaletteRow[] = [];
     for (const [category, nodes] of sorted) {
-      const expanded = toggled.has(category) ? !openByDefault : openByDefault;
+      const expanded = !collapsed.has(category);
       result.push({
         kind: "category",
         key: `category:${category}`,
@@ -207,7 +204,7 @@ export function NodePalette({
       }
     }
     return result;
-  }, [filtered, pinFiltered, searching, toggled]);
+  }, [collapsed, filtered, pinFiltered]);
 
   const activeIndex = rows.findIndex((row) => row.key === activeKey);
   const firstItemIndex = rows.findIndex((row) => row.kind === "item");
@@ -220,7 +217,7 @@ export function NodePalette({
     close();
   };
   const toggleCategory = (category: string) => {
-    setToggled((current) => {
+    setCollapsed((current) => {
       const next = new Set(current);
       if (next.has(category)) next.delete(category);
       else next.add(category);
@@ -319,7 +316,7 @@ export function NodePalette({
             onChange={(value) => {
               setSearch(value);
               setActiveKey(null);
-              setToggled(new Set());
+              setCollapsed(new Set());
             }}
             onKeyDown={onSearchKeyDown}
             placeholder="Search nodes"

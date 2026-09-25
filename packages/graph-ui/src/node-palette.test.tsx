@@ -80,17 +80,19 @@ describe("NodePalette", () => {
     expect(onAddNode).toHaveBeenCalledWith(node);
   });
 
-  it("collapses categories until expanded, and expands every match while searching", () => {
+  it("expands categories by default, collapses on click, and expands every match while searching", () => {
     const { getByPlaceholderText, getByTestId, queryByTestId } = render(
       <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={() => {}} />,
     );
-    const debug = getByTestId("node-palette-category-Debug");
-    expect(debug.getAttribute("aria-expanded")).toBe("false");
-    expect(paletteItems()).toHaveLength(0);
-
-    fireEvent.click(debug);
     expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("true");
-    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
+    expect(itemIds()).toEqual([
+      "node-palette-item-debug.log",
+      "node-palette-item-flow.event.beginPlay",
+    ]);
+
+    fireEvent.click(getByTestId("node-palette-category-Debug"));
+    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("false");
+    expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
 
     fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "e" } });
     expect(itemIds()).toEqual([
@@ -100,11 +102,6 @@ describe("NodePalette", () => {
     fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "log" } });
     expect(queryByTestId("node-palette-category-Flow")).toBeNull();
     expect(getByTestId("node-palette-category-Debug").textContent).toBe("Debug1");
-  });
-
-  it("expands a lone category without a click", () => {
-    render(<NodePalette open onOpenChange={() => {}} paletteNodes={[log]} onAddNode={() => {}} />);
-    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
   });
 
   it("navigates the tree from the search field and adds the active node", () => {
@@ -117,8 +114,8 @@ describe("NodePalette", () => {
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(selected("node-palette-category-Flow")).toBe("true");
-    fireEvent.keyDown(input, { key: "ArrowRight" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(selected("node-palette-item-flow.event.beginPlay")).toBe("true");
     expect(input.getAttribute("aria-activedescendant")).toBe(
@@ -129,7 +126,7 @@ describe("NodePalette", () => {
     expect(selected("node-palette-category-Flow")).toBe("true");
     fireEvent.keyDown(input, { key: "ArrowLeft" });
     expect(getByTestId("node-palette-category-Flow").getAttribute("aria-expanded")).toBe("false");
-    expect(paletteItems()).toHaveLength(0);
+    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
 
     fireEvent.keyDown(input, { key: "ArrowRight" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -181,7 +178,7 @@ describe("NodePalette", () => {
     rerender(<NodePalette open {...props} />);
 
     expect(getByPlaceholderText("Search nodes")).toHaveProperty("value", "");
-    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("false");
+    expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("true");
   });
 
   it("defaults Context Sensitive to on and lists only compatible opposite pins", () => {
@@ -206,7 +203,6 @@ describe("NodePalette", () => {
     rerender(<NodePalette open={false} {...props} />);
     rerender(<NodePalette open {...props} />);
     expect(getByTestId("node-palette-context-sensitive").getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(getByTestId("node-palette-category-Flow"));
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
 
@@ -267,8 +263,10 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-category-uv").textContent).toBe("UV1");
     const categories = [...document.querySelectorAll('[data-testid^="node-palette-category-"]')];
     expect(categories.map((el) => el.textContent)).toEqual(["Math Vector1", "UV1"]);
-    fireEvent.click(getByTestId("node-palette-category-math.vector"));
-    expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
+    expect(itemIds()).toEqual([
+      "node-palette-item-flow.event.beginPlay",
+      "node-palette-item-debug.log",
+    ]);
   });
 
   function manyNodes(count: number): PaletteNode[] {
