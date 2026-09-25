@@ -20,7 +20,7 @@ it("realizes terrain heights and instanced foliage from Play parts before publis
     await binding.slotAnimLoads?.get(0);
     const root = binding.meshes.get(0)!;
     const ground = root.getChildMeshes().find((mesh) => mesh.metadata?.landscapeRoot)!;
-    expect(ground.getVerticesData(VertexBuffer.PositionKind)!.filter((_, index) => index % 3 === 1)).toEqual(Array(25).fill(2));
+    expect(Array.from(ground.getVerticesData(VertexBuffer.PositionKind)!).filter((_, index) => index % 3 === 1)).toEqual(Array(25).fill(2));
     const plants = root.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
     expect(plants.thinInstanceCount).toBe(2);
     expect(plants.isVisible).toBe(true);
