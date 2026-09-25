@@ -34,6 +34,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -1019,6 +1020,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         >
           <AlertDialogContent data-testid="outliner-delete-folder-dialog">
             <AlertDialogHeader>
+              <AlertDialogMedia className="bg-destructive/10 text-destructive">
+                <Trash2Icon />
+              </AlertDialogMedia>
               <AlertDialogTitle>Delete Folder</AlertDialogTitle>
               <AlertDialogDescription>
                 Delete {deletingFolder.name} only and move its contents up one
@@ -1037,6 +1041,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               </AlertDialogAction>
               <AlertDialogAction
                 size="sm"
+                variant="destructive"
                 onClick={() => removeFolder(deletingFolder.id, true)}
               >
                 Folder And Contents

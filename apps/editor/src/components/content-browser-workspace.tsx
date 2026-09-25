@@ -2739,8 +2739,8 @@ export function ContentBrowserWorkspace({
               None clears Class references; placed actors and components keep their data with a base Class, and child Classes fall back to BObject. Other deleted asset references are cleared.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <ul className="max-h-60 overflow-y-auto overscroll-y-contain text-sm">
-            {classReplacements.map((entry) => <li key={entry.guid}>{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
+          <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">
+            {classReplacements.map((entry) => <li key={entry.guid} className="px-3 py-1.5">{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
           </ul>
           <AlertDialogFooter>
             <AlertDialogCancel>Back</AlertDialogCancel>

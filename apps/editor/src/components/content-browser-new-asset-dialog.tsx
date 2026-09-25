@@ -245,9 +245,16 @@ export function ContentBrowserNewAssetDialog({
                   : "min-h-0 min-w-0 flex-1 border-l",
               )}
             >
-              <div className="flex shrink-0 flex-col gap-4 border-b p-4">
+              <div
+                className={cn(
+                  "flex shrink-0 flex-col gap-4 p-4",
+                  type === "Class" && "border-b",
+                )}
+              >
                 <div className="flex items-start gap-3">
-                  <TypeVisualIcon visual={selectedVisual} />
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <TypeVisualIcon visual={selectedVisual} />
+                  </span>
                   <div className="min-w-0 flex flex-col gap-1">
                     <p className="truncate font-medium">
                       {creatableAssetTypeLabel(type)}
@@ -336,7 +343,7 @@ export function ContentBrowserNewAssetDialog({
           ) : null}
         </div>
         {error ? <Alert variant="destructive"><AlertTitle>Could Not Create Asset</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-        <div className="flex shrink-0 justify-end gap-2 border-t px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/40 px-4 py-3">
           <Button
             type="button"
             variant="outline"
