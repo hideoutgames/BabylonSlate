@@ -115,7 +115,8 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await page.getByTestId("debug-console-submit").click();
       await expect.poll(() => observedPhases(host)).toContain("Preparing Scene");
       await expect(dialog).toBeHidden({ timeout: 30_000 });
-      expect(await observedPhases(host)).toContain("Presenting First Frame");
+      // Preview Build never shows the dialog, so the hidden check can pass mid-load.
+      await expect.poll(() => observedPhases(host), { timeout: 30_000 }).toContain("Presenting First Frame");
       if (mode === "Preview Build") {
         await expect(host).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
         expect(await observedDialogSeen(host)).toBe(false);
