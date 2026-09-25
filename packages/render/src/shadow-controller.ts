@@ -784,9 +784,11 @@ export class SceneShadowController {
             defines.rebuild();
           };
           validateAllocation(generator);
-          for (const mesh of this.meshes)
-            generator.addShadowCaster(mesh, false);
           const map = generator.getShadowMap();
+          // The new map's list is empty and the casters are unique, so skip
+          // addShadowCaster's per-mesh indexOf scan. The constructor has already
+          // light-dirtied every mesh that can bind this light's shadow defines.
+          if (map) map.renderList = Array.from(this.meshes);
           let drawsBefore = 0;
           let indicesBefore = 0;
           map?.onBeforeBindObservable.add(() => {
