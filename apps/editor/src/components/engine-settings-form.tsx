@@ -132,6 +132,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Skybox Creator",
   },
   { kind: "trace", keepKey: "trace", label: "Trace" },
+  { kind: "texture", keepKey: "texture", label: "Texture" },
 ];
 
 export type EngineSettingsCategoryId =

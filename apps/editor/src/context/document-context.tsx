@@ -2794,6 +2794,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "input-axis"
         | "audio"
         | "scene-layer"
+        | "texture"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
