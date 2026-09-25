@@ -41,9 +41,11 @@ const labels = {
 export function RenderQualityFields({
   settings,
   onChange,
+  hideTitle = false,
 }: {
   settings: RenderProjectSettings;
   onChange: (settings: RenderProjectSettings) => void;
+  hideTitle?: boolean;
 }) {
   const effective = resolveRenderingQuality(settings);
   const apply = (level: QualityLevel, group?: QualityGroup) => {
@@ -68,7 +70,7 @@ export function RenderQualityFields({
     : "custom";
   return (
     <FieldSet>
-      <FieldLegend>Scalability</FieldLegend>
+      <FieldLegend className={hideTitle ? "sr-only" : undefined}>Scalability</FieldLegend>
       <FieldGroup className="gap-2">
         {([undefined, ...QUALITY_GROUPS] as (QualityGroup | undefined)[]).map(
           (group) => (

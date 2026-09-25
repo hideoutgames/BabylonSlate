@@ -94,6 +94,26 @@ async function expectContainedCards(browser: Locator) {
     .toBe(true);
 }
 
+async function expectSearchFillsToolbar(browser: Locator) {
+  await expect
+    .poll(async () =>
+      browser.evaluate((element) => {
+        const toolbar = element.querySelector(".homepage-template-toolbar")!;
+        const [search, sort, add] = [
+          ".editor-search-input",
+          '[aria-label="Sort Templates"]',
+          '[aria-label="Add Template"]',
+        ].map((selector) => toolbar.querySelector(selector)!.getBoundingClientRect());
+        return (
+          search.right <= sort.left &&
+          sort.right <= add.left &&
+          search.width > sort.width + add.width
+        );
+      }),
+    )
+    .toBe(true);
+}
+
 test(`template cards stay inside their gallery through resize and import ${IPAD_TEST_TAG}`, async ({
   page,
 }) => {
@@ -102,6 +122,7 @@ test(`template cards stay inside their gallery through resize and import ${IPAD_
     ".homepage-library-view:not([hidden]) .homepage-template-browser",
   );
   await expectContainedCards(browser);
+  await expectSearchFillsToolbar(browser);
   for (const viewport of [
     { width: 1024, height: 600 },
     { width: 844, height: 390 },
@@ -109,6 +130,7 @@ test(`template cards stay inside their gallery through resize and import ${IPAD_
   ]) {
     await page.setViewportSize(viewport);
     await expectContainedCards(browser);
+    await expectSearchFillsToolbar(browser);
   }
   const chooserPromise = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Add Template" }).click();
