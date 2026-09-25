@@ -317,7 +317,9 @@ viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous
 material on screen. `acquire` rebuilds when the cached `NodeMaterial` is
 already disposed (removed from `scene.materials` — NodeMaterial has no
-`isDisposed()`). `invalidate()` drops every cached instance so the next acquire
+`isDisposed()`). Disposing a Scene releases its entries, pending builds and
+texture leases even without `releaseScene`; `acquire` on a disposed Scene returns
+`material.compile.cancelled`. `invalidate()` drops every cached instance so the next acquire
 compiles onto live GPU state. WebGL restore also calls `releaseGpuTextures()`
 so Texture Parameters bind new InternalTextures instead of a white cube.
 
@@ -333,7 +335,8 @@ Play overlay, which share that Engine. Prefab Preview is on that Engine too
 (`p18-shared-prefab-engine`) via RTT + 2D blit. Orbit / pinch / wheel attach to the preview canvas
 only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Vertical orbit matches
-the Scene viewport (`beta -= dy`; dragging down looks up). Hidden Material tabs
+the Scene viewport (`beta -= dy`; dragging down looks up). A tap fires only for a
+single pointer released in place, never after a pinch or on `pointercancel`. Hidden Material tabs
 and in-editor Play freeze present. Recreating the preview Scene (canvas remount,
 tab remount after idle-unmount, WebGL context restore) bumps a scene epoch so
 the graph recompiles onto the new Scene even when the compile key is unchanged.
@@ -555,7 +558,9 @@ available for explicit editing/assignment.
 
 Custom GLSL readiness includes a bounded GPU shader check on a hidden surface
 probe, unattached post-process or inactive particle system before the library
-publishes a replacement. GLSL failures retain the
+publishes a replacement. The 15 s GLSL budget starts once the probe effect
+exists; waiting for blocking textures has a separate 120 s ceiling that reports
+`material.missingTexture`, not a GLSL timeout. GLSL failures retain the
 previous material. NullEngine unit tests check graph construction only; browser
 checks exercise the GPU compiler.
 
