@@ -181,7 +181,6 @@ float slatePcfPointDepth(vec2 tap, vec3 origin, vec3 plane) {
           wgsl ? "frustumEdgeFalloff: f32)" : "float frustumEdgeFalloff)",
           wgsl ? "frustumEdgeFalloff: f32,slatePlane: vec3f)" : "float frustumEdgeFalloff,vec3 slatePlane)",
         );
-      const samples = kernel === 3 ? 4 : 9;
       if (kernel === 1) {
         const v2 = wgsl ? "vec2f" : "vec2";
         const declaration = (type: string, name: string, value: string) => wgsl ? `var ${name}: ${type}=${value};` : `${type} ${name}=${value};`;
@@ -209,22 +208,26 @@ ${declaration(v2, "rpBase", "floor(rpTexel)")}
 ${declaration(wgsl ? "f32" : "float", "shadow", "0.")}
 ${taps}`,
         );
-      } else if (wgsl) {
-        const uvPattern = "base_uv\\.xy\\+ vec2f\\(u\\[(\\d)\\],v\\[(\\d)\\]\\)";
-        adapted.replace(
-          new RegExp(`(${uvPattern}),${cascaded ? "layer," : ""}uvDepth\\.z`, "g"),
-          (_match, uv) => `${uv},${cascaded ? "layer," : ""}${depth(uv)}`,
-          samples,
-        );
       } else {
-        adapted.replace(
-          /base_uv\.xy\+vec2\(u\[(\d)\],v\[(\d)\]\),(layer,)?uvDepth\.z/g,
-          (_match, u, v, layer) => {
-            const uv = `base_uv.xy+vec2(u[${u}],v[${v}])`;
-            return `${uv},${layer ?? ""}${depth(uv)}`;
-          },
-          samples,
-        );
+        // PCF3 and PCF5 compare 4 and 9 taps; each tap gets a corrected depth.
+        const samples = kernel === 3 ? 4 : 9;
+        if (wgsl) {
+          const uvPattern = "base_uv\\.xy\\+ vec2f\\(u\\[(\\d)\\],v\\[(\\d)\\]\\)";
+          adapted.replace(
+            new RegExp(`(${uvPattern}),${cascaded ? "layer," : ""}uvDepth\\.z`, "g"),
+            (_match, uv) => `${uv},${cascaded ? "layer," : ""}${depth(uv)}`,
+            samples,
+          );
+        } else {
+          adapted.replace(
+            /base_uv\.xy\+vec2\(u\[(\d)\],v\[(\d)\]\),(layer,)?uvDepth\.z/g,
+            (_match, u, v, layer) => {
+              const uv = `base_uv.xy+vec2(u[${u}],v[${v}])`;
+              return `${uv},${layer ?? ""}${depth(uv)}`;
+            },
+            samples,
+          );
+        }
       }
       result = checkedShader(result, `add ${name} automatic variant`).replace(
         original,
