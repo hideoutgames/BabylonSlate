@@ -12,8 +12,14 @@ import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-re
 
 class SpatialTask extends FrameGraphPostProcessTask {
   private retirement: OwnedEffectRetirement | undefined;
-  constructor(graph: FrameGraph, readonly stage: SpatialStage, private readonly buffers: Record<string, FrameGraphTextureHandle>, private readonly main?: FrameGraphTextureHandle) {
+  readonly stage: SpatialStage;
+  private readonly buffers: Record<string, FrameGraphTextureHandle>;
+  private readonly main?: FrameGraphTextureHandle;
+  constructor(graph: FrameGraph, stage: SpatialStage, buffers: Record<string, FrameGraphTextureHandle>, main?: FrameGraphTextureHandle) {
     super(stage.wrapper.name, graph, stage.wrapper);
+    this.stage = stage;
+    this.buffers = buffers;
+    this.main = main;
     this.depthTest = false;
   }
   override record() {
@@ -39,6 +45,7 @@ class SpatialTask extends FrameGraphPostProcessTask {
 
 /** Demand-driven geometry and spatial effects owned by the enclosing view graph. */
 export class SpatialEffectsGraph {
+  private readonly graph: FrameGraph;
   readonly clear: FrameGraphClearTextureTask;
   readonly geometry: LogicalGeometryTask;
   readonly tasks: SpatialTask[] = [];
@@ -49,7 +56,8 @@ export class SpatialEffectsGraph {
   private committed = false;
   private released: Promise<void> | undefined;
 
-  constructor(private readonly graph: FrameGraph, camera: Camera, plan: SceneEffectsPlan, source: FrameGraphTextureHandle, width: number, height: number) {
+  constructor(graph: FrameGraph, camera: Camera, plan: SceneEffectsPlan, source: FrameGraphTextureHandle, width: number, height: number) {
+    this.graph = graph;
     const reason = spatialEffectsUnsupported(graph.scene);
     if (reason) throw new Error(reason);
     const lease = beginManagedRenderAllocation(graph.engine, width * height * 96);

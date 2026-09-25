@@ -262,7 +262,10 @@ describe("SettingsModal project authoring", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: query } });
     fireEvent.click(screen.getByRole("button", { name: result }));
-    await waitFor(() => expect(document.activeElement?.id).toBe(targetId));
+    // Base UI redirects focus from the checkbox id to the visible switch.
+    const target = document.getElementById(targetId);
+    const control = target?.matches('input[type="checkbox"]') ? screen.getByTestId(targetId) : target;
+    await waitFor(() => expect(document.activeElement).toBe(control));
     expect(screen.getByRole("button", { name: section }).getAttribute("aria-expanded")).toBe("true");
   });
   it("starts post processing closed and stages its settings until Done", () => {
