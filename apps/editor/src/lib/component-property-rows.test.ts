@@ -67,6 +67,15 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits Global Water Volume settings without exposing finite bounds", () => {
+  const { rows, update } = rowsFor({ id: "global", classId: "GlobalWaterVolumeComponent", properties: {} });
+  expect(rows.some((row) => row.label === "Width" || row.label === "Length")).toBe(false);
+  const depth = rows.find((row) => row.label === "Depth");
+  if (depth?.kind !== "number") throw new Error("Missing global water controls");
+  depth.onChange(42);
+  expect(update).toHaveBeenLastCalledWith("depth", 42);
+});
+
 it("edits a river path through typed vector rows and extends from its last point", () => {
   const properties = { points: [[0, 3, 0], [4, 2, 8]] };
   const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties });

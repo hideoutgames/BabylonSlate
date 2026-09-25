@@ -140,7 +140,7 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
-  ...["WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent"].map((classId): EngineClassScriptApi => ({
+  ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent"].map((classId): EngineClassScriptApi => ({
     classId,
     variables: [
       { name: "Water", typeId: "asset", typeClassId: "Water", propertyKey: "assetGuid" },

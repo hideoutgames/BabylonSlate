@@ -48,6 +48,7 @@ export type PropertyRow =
       min?: number;
       max?: number;
       sensitivity?: number;
+      precision?: number;
       onChange: (value: number) => void;
       onCommit?: (value: number) => void;
     })
@@ -201,6 +202,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           min={row.min}
           max={row.max}
           sensitivity={row.sensitivity}
+          precision={row.precision}
           disabled={row.disabled}
           onChange={row.onChange}
           onDragEnd={row.onCommit}
