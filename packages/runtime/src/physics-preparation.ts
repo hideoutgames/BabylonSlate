@@ -171,6 +171,7 @@ export function physicsWorldTransforms(
           component.owner === actor &&
           [
             "RigidBodyComponent",
+            "WaterBuoyancyComponent",
             "ColliderComponent",
             "MeshComponent",
             "BlockingVolumeComponent",

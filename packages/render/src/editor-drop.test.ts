@@ -102,6 +102,15 @@ describe("editor Drop", () => {
     ).toEqual([0, -0.5, 0]);
   });
 
+  it("drops a camera's optical origin, without treating its editor model as collision", () => {
+    const camera = createActor("camera", "Camera", {
+      transform: { ...identitySerializedTransform(), position: [0, 10, 0] },
+      components: [{ id: "camera", classId: "CameraComponent", properties: {} }],
+    });
+    expect(setup([camera, box("floor", [0, 0, 0])]).drop(["camera"])[0]?.position)
+      .toEqual([0, 0.75, 0]);
+  });
+
   it("uses imported visual bounds through TransformNode wrappers and ignores debug lines", () => {
     const model = createActor("model", "Model", {
       transform: { ...identitySerializedTransform(), position: [0, 10, 0] },

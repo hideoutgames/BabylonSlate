@@ -405,6 +405,22 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     body.applyImpulse(this.tmpImpulse, this.tmpLocation);
   }
 
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
+    const record = this.bodies.get(bodyId);
+    if (!record?.body || record.desc.motionType !== "dynamic") return;
+    if (![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
+    this.tmpImpulse.set(impulse.x, impulse.y, impulse.z);
+    this.tmpLocation.set(point.x, point.y, point.z);
+    record.body.applyImpulse(this.tmpImpulse, this.tmpLocation);
+  }
+
+  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null {
+    const body = this.bodies.get(bodyId)?.body;
+    if (!body) return null;
+    const linear = body.getLinearVelocity(), angular = body.getAngularVelocity();
+    return { linear: { x: linear.x, y: linear.y, z: linear.z }, angular: { x: angular.x, y: angular.y, z: angular.z } };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;

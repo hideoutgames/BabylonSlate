@@ -18,10 +18,12 @@ import { DesktopSecretStore } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { isEditorSender, rendererFile, validateIpcArguments } from "./packaged-security";
+import { automaticUpdatesEnabled, createDesktopUpdates } from "./desktop-updates";
 
 const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
 const editorWindows = new Set<number>();
+let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
@@ -50,6 +52,9 @@ async function createWindow(): Promise<void> {
   const contentsId = window.webContents.id;
   editorWindows.add(contentsId);
   window.on("closed", () => editorWindows.delete(contentsId));
+  // Windows can terminate an installer during shutdown/logoff. Keep it cached
+  // for a subsequent normal exit instead.
+  window.on("session-end", () => updates?.setEnabled(false));
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (!isEditorSender(url, true)) event.preventDefault();
@@ -78,6 +83,7 @@ function registerIpc(): void {
   handle("settings:write", async (_event, json) => {
     await mkdir(dirname(settingsPath), { recursive: true });
     await writeFile(settingsPath, String(json));
+    updates?.setEnabled(automaticUpdatesEnabled(String(json)));
   });
 
   const secretsPath = userDataFile("source-control-secrets.json");
@@ -200,6 +206,17 @@ void app.whenReady().then(async () => {
     } catch { return new Response(null, { status: 404 }); }
   });
   registerIpc();
+  if (app.isPackaged && process.platform === "win32") {
+    try {
+      const manifest = JSON.parse(await readFile(join(rendererRoot, "build-manifest.json"), "utf8"));
+      if (manifest.channel === "release" && manifest.windowsVersion === app.getVersion()) {
+        const { autoUpdater } = await import("electron-updater");
+        updates = createDesktopUpdates(autoUpdater, error => console.warn("Automatic update failed:", error));
+        const settings = await readFile(userDataFile("engine-settings.json"), "utf8").catch(() => null);
+        updates.setEnabled(automaticUpdatesEnabled(settings));
+      }
+    } catch (error) { console.warn("Automatic updates unavailable:", error); }
+  }
   await createWindow();
 });
 

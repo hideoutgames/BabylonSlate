@@ -1,6 +1,6 @@
 import {
   isPublishedSnapshot,
-  readActorSlot,
+  readActorSlotInto,
   readSnapshotHeader,
   snapshotFloatCount,
   type ActorSlot,
@@ -37,6 +37,8 @@ export class SnapshotInterpolator {
   private maxActors: number;
   private scratch: ActorSlot[];
   private prevIndexBySlot: Int32Array;
+  private readonly prevSlot = emptySlot();
+  private readonly nextSlot = emptySlot();
   private readonly sampled: SampledSnapshot;
   private generation = 0;
 
@@ -79,8 +81,8 @@ export class SnapshotInterpolator {
     if (readSnapshotHeader(buffer).layoutGeneration !== this.generation) return;
     const dest = this.pair[this.write]!;
     if (buffer.length > dest.length) return;
-    dest.fill(0);
     dest.set(buffer);
+    if (buffer.length < dest.length) dest.fill(0, buffer.length);
     this.prev = this.next;
     this.next = dest;
     this.write = 1 - this.write;
@@ -99,7 +101,7 @@ export class SnapshotInterpolator {
     if (!this.prev || t >= 1 || !isPublishedSnapshot(this.prev)) {
       const count = Math.min(nextHeader.actorCount, this.maxActors);
       for (let i = 0; i < count; i++) {
-        copySlot(readActorSlot(this.next, i), this.scratch[i]!);
+        readActorSlotInto(this.next, i, this.scratch[i]!);
       }
       this.sampled.frameId = nextHeader.frameId;
       this.sampled.tickIndex = nextHeader.tickIndex;
@@ -112,13 +114,13 @@ export class SnapshotInterpolator {
     const count = Math.min(nextHeader.actorCount, this.maxActors);
     this.prevIndexBySlot.fill(-1);
     for (let i = 0; i < prevCount; i++) {
-      const slotId = readActorSlot(this.prev, i).slotId;
+      const slotId = readActorSlotInto(this.prev, i, this.prevSlot).slotId;
       if (slotId >= 0 && slotId < this.maxActors) {
         this.prevIndexBySlot[slotId] = i;
       }
     }
     for (let i = 0; i < count; i++) {
-      const b = readActorSlot(this.next, i);
+      const b = readActorSlotInto(this.next, i, this.nextSlot);
       const out = this.scratch[i]!;
       const prevIndex =
         b.slotId >= 0 && b.slotId < this.maxActors
@@ -128,7 +130,7 @@ export class SnapshotInterpolator {
         copySlot(b, out);
         continue;
       }
-      const a = readActorSlot(this.prev, prevIndex);
+      const a = readActorSlotInto(this.prev, prevIndex, this.prevSlot);
       out.slotId = b.slotId;
       out.position.x = a.position.x + (b.position.x - a.position.x) * t;
       out.position.y = a.position.y + (b.position.y - a.position.y) * t;

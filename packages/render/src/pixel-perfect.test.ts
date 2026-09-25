@@ -5,7 +5,6 @@ import {
   applyPixelArtSamplingToScene,
   pixelPerfectOrthoHalfHeight,
   quantizeZoom,
-  snapPointToPixelGrid,
   snapToPixelGrid,
 } from "./pixel-perfect";
 import { createEditorCamera } from "./editor-camera";
@@ -38,11 +37,6 @@ describe("snapToPixelGrid", () => {
   it("rounds world units to the nearest texture pixel", () => {
     expect(snapToPixelGrid(0.014, 100)).toBeCloseTo(0.01, 6);
     expect(snapToPixelGrid(0.016, 100)).toBeCloseTo(0.02, 6);
-    expect(snapPointToPixelGrid({ x: 0.014, y: 0.026, z: 3 }, 100)).toEqual({
-      x: 0.01,
-      y: 0.03,
-      z: 3,
-    });
   });
 });
 

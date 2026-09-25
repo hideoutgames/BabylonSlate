@@ -140,6 +140,19 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  ...["WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent"].map((classId): EngineClassScriptApi => ({
+    classId,
+    variables: [
+      { name: "Water", typeId: "asset", typeClassId: "Water", propertyKey: "assetGuid" },
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      ...[["Width", "width"], ["Length", "length"], ["Depth", "depth"], ["Wave Scale", "waveScale"], ["Flow Speed", "flowSpeed"], ["Flow Direction", "flowDirection"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),
+    ],
+  })),
+  { classId: "WaterBuoyancyComponent", variables: [
+    { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+    ...[["Volume", "volume"], ["Width", "width"], ["Length", "length"], ["Height", "height"], ["Drag", "drag"], ["Angular Drag", "angularDrag"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),
+    { name: "Offset", typeId: "vec3", propertyKey: "offset" },
+  ] },
   {
     classId: "GameInstance",
     functions: [
@@ -311,6 +324,18 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Color", typeId: "color", propertyKey: "color" },
       { name: "Width", typeId: "float", propertyKey: "width" },
       { name: "Render Through Meshes", typeId: "bool", propertyKey: "throughMeshes" },
+    ],
+  },
+  {
+    classId: "SpringArmComponent",
+    variables: [
+      { name: "Arm Length", typeId: "float", propertyKey: "armLength" },
+      { name: "Enable Location Lag", typeId: "bool", propertyKey: "enableLocationLag" },
+      { name: "Location Lag Speed", typeId: "float", propertyKey: "locationLagSpeed" },
+      { name: "Max Location Lag Distance", typeId: "float", propertyKey: "maxLocationLagDistance" },
+      { name: "Enable Rotation Lag", typeId: "bool", propertyKey: "enableRotationLag" },
+      { name: "Rotation Lag Speed", typeId: "float", propertyKey: "rotationLagSpeed" },
+      { name: "Draw Debug Lag", typeId: "bool", propertyKey: "drawDebugLag" },
     ],
   },
   {

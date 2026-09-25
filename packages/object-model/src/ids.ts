@@ -22,10 +22,13 @@ export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
 
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
   "CameraComponent",
+  "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",
@@ -34,6 +37,11 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "Text3DComponent",
   "AudioComponent",
   "ParticleComponent",
+  "WaterOceanComponent",
+  "WaterLakeComponent",
+  "WaterRiverComponent",
+  "WaterPuddleComponent",
+  "WaterBuoyancyComponent",
   "RigidBodyComponent",
   "ColliderComponent",
   "AnimationGraphComponent",
@@ -68,8 +76,16 @@ export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "WaterOceanComponent",
+  "WaterLakeComponent",
+  "WaterRiverComponent",
+  "WaterPuddleComponent",
+  "WaterBuoyancyComponent",
+  "LandscapeComponent",
+  "FoliageComponent",
   "SkyboxComponent",
   "CameraComponent",
+  "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",

@@ -11,7 +11,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { sceneRenderingSettings } from "./render-settings";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
-import type { AbstractMesh, Camera, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
+import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {
@@ -36,6 +36,23 @@ export type ForwardSceneGraphResult =
   { path: "frameGraph" } | { path: "classic"; reason: string };
 export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & { ready: boolean };
 const outlineAttachments = new WeakMap<SharedOutlineView, ForwardSceneFrameGraph>();
+/** Readiness-relevant collection sizes, compared in place each frame. */
+const membershipCounts: readonly ((scene: Scene) => number)[] = [
+  (scene) => scene.meshes.length,
+  (scene) => scene.materials.length,
+  (scene) => scene.lights.length,
+  (scene) => scene.textures.length,
+  (scene) => scene.cameras.length,
+  (scene) => scene.skeletons.length,
+  (scene) => scene.particleSystems.length,
+  (scene) => scene.customRenderTargets.length,
+  (scene) => scene.layers.length,
+  (scene) => scene.effectLayers?.length ?? 0,
+  (scene) => scene.proceduralTextures?.length ?? 0,
+  // Custom readiness checks register without any observable.
+  (scene) => (scene as unknown as { _isReadyChecks?: { length: number }[] })
+    ._isReadyChecks?.length ?? 0,
+];
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
@@ -104,8 +121,23 @@ export class ForwardSceneFrameGraph {
   private suppressCameraMark = 0;
   private readinessDirtyFlag = true;
   private readinessRevision = 0;
-  private membership: number[] | undefined;
+  private readonly membership: number[] = [];
+  private membershipRecorded = false;
   private strictChecks = 0;
+  // One-shot record of readiness()'s admission for an immediately following
+  // render. Any invalidation bumps the revision; a strict probe bumps checks.
+  private admittedCamera: Camera | undefined;
+  private admittedRevision = -1;
+  private admittedChecks = -1;
+  // render()'s per-frame scratch; probeReadiness keeps its own snapshot.
+  private readonly shadowLights: Light[] = [];
+  private readonly shadowFlags: boolean[] = [];
+  private readonly sceneObjects: FrameGraphObjectList = { meshes: null, particleSystems: null };
+  private graphRender: Scene["customRenderFunction"];
+  // Scene.render already updates the selected camera. The pinned graph
+  // function would update every scene camera a second time if passed true.
+  private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) =>
+    this.graphRender!.call(this.scene, false, ignoreAnimations);
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
@@ -320,32 +352,17 @@ export class ForwardSceneFrameGraph {
       this.observedOutlineRevision = outlineRevision;
       this.markReadinessDirty();
     }
-    const scene = this.scene;
-    const counts = [
-      scene.meshes.length,
-      scene.materials.length,
-      scene.lights.length,
-      scene.textures.length,
-      scene.cameras.length,
-      scene.skeletons.length,
-      scene.particleSystems.length,
-      scene.customRenderTargets.length,
-      scene.layers.length,
-      scene.effectLayers?.length ?? 0,
-      scene.proceduralTextures?.length ?? 0,
-      // Custom readiness checks register without any observable.
-      (scene as unknown as { _isReadyChecks?: { length: number }[] })
-        ._isReadyChecks?.length ?? 0,
-    ];
-    const previous = this.membership;
-    this.membership = counts;
-    if (!previous) return;
-    for (let index = 0; index < counts.length; index += 1) {
-      if (counts[index] !== previous[index]) {
-        this.markReadinessDirty();
-        return;
-      }
+    const membership = this.membership;
+    let changed = false;
+    for (let index = 0; index < membershipCounts.length; index += 1) {
+      const count = membershipCounts[index]!(this.scene);
+      if (count === membership[index]) continue;
+      membership[index] = count;
+      changed = true;
     }
+    // The first call only records the sizes.
+    if (changed && this.membershipRecorded) this.markReadinessDirty();
+    this.membershipRecorded = true;
   }
 
   /** Assign activeCamera without tripping the readiness-dirty subscription. */
@@ -458,10 +475,14 @@ export class ForwardSceneFrameGraph {
 
   /** A pending eligible graph is distinct from an admitted classic fallback. */
   readiness(camera: Camera): ForwardSceneGraphReadiness {
+    this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, ready: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
+    this.admittedCamera = camera;
+    this.admittedRevision = this.readinessRevision;
+    this.admittedChecks = this.strictChecks;
     this.refreshFailure(camera);
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
@@ -474,15 +495,11 @@ export class ForwardSceneFrameGraph {
         (!this.effectsOwner.hasEnabledEntries ||
           (this.effectsOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) };
     }
-    const output = this.output(camera);
-    if (this.graph &&
-      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth))
-      this.markReadinessDirty();
+    const outputCurrent = this.outputMatches(this.output(camera));
+    if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() || this.shadows?.needsPreparation() ||
-      this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-      this.outputColor !== output.color || this.outputDepth !== output.depth)
+      !outputCurrent)
       return { path: "frameGraph", ready: false };
     this.objects!.camera = camera;
     this.cull!.camera = camera;
@@ -494,15 +511,21 @@ export class ForwardSceneFrameGraph {
     return { path: "frameGraph", ready: true };
   }
 
-  /** Render one scene frame, with an explicit, observable classic fallback. */
-  render(camera: Camera, updateCameras = true): ForwardSceneGraphResult & { rendered?: boolean } {
+  /** Render one scene frame, with an explicit, observable classic fallback.
+   * reuseAdmission is for a caller that invokes readiness() immediately before
+   * with no scene work between; any invalidation or strict probe re-admits. */
+  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: boolean } {
+    const admitted = this.admittedCamera;
+    this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "classic", reason: unavailable, rendered: false };
     this.syncMembership();
-    this.syncShadowAdmission(camera);
+    if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
+      this.admittedChecks !== this.strictChecks)
+      this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
     this.refreshFailure(camera);
-    const output = this.output(camera);
+    const outputCurrent = this.outputMatches(this.output(camera));
     const reason =
       this.unsupported(camera) ??
       this.failure ??
@@ -513,16 +536,10 @@ export class ForwardSceneFrameGraph {
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
-      this.preparedWidth !== output.width ||
-      this.preparedHeight !== output.height ||
-      this.outputColor !== output.color ||
-      this.outputDepth !== output.depth
+      !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
-    if (this.graph &&
-      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth))
-      this.markReadinessDirty();
+    if (this.graph && !outputCurrent) this.markReadinessDirty();
     this.setActiveCamera(camera);
     if (reason) {
       const blocked =
@@ -558,18 +575,21 @@ export class ForwardSceneFrameGraph {
     const renderPass = engine.currentRenderPassId;
     const oit = this.scene._depthPeelingRenderer;
     const intermediate = this.scene._intermediateRendering;
-    const shadowFlags = this.scene.lights.map(
-      (light) => [light, light.shadowEnabled] as const,
-    );
+    const lights = this.scene.lights;
+    const shadowLights = this.shadowLights;
+    const shadowFlags = this.shadowFlags;
+    // Overwrite, then truncate: clearing to zero would drop the backing store.
+    for (let index = 0; index < lights.length; index += 1) {
+      shadowLights[index] = lights[index]!;
+      shadowFlags[index] = lights[index]!.shadowEnabled;
+    }
+    shadowLights.length = shadowFlags.length = lights.length;
     try {
       this.renderingCamera = camera;
       this.scene.frameGraph = graph;
       this.scene.activeCamera = camera;
-      const graphRender = this.scene.customRenderFunction!;
-      // Scene.render already updates the selected camera. The pinned graph
-      // function would update every scene camera a second time if passed true.
-      this.scene.customRenderFunction = (_update, ignoreAnimations) =>
-        graphRender.call(this.scene, false, ignoreAnimations);
+      this.graphRender = this.scene.customRenderFunction!;
+      this.scene.customRenderFunction = this.pinnedGraphRender;
       const revision = this.readinessRevision;
       this.scene.render(updateCameras);
       this.syncMembership();
@@ -582,7 +602,8 @@ export class ForwardSceneFrameGraph {
       this.scene._depthPeelingRenderer = oit;
       this.scene._intermediateRendering = intermediate;
       engine.currentRenderPassId = renderPass;
-      for (const [light, enabled] of shadowFlags) light.shadowEnabled = enabled;
+      for (let index = 0; index < shadowLights.length; index += 1)
+        shadowLights[index]!.shadowEnabled = shadowFlags[index]!;
       this.renderingCamera = undefined;
     }
   }
@@ -687,13 +708,16 @@ export class ForwardSceneFrameGraph {
         !target.depthStencilTexture)
     )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
-    const ownedPasses = [
-      ...(this.postProcessOwner?.passes ?? []),
-      ...this.effectsOwner.passes,
-    ];
-    if (camera._postProcesses.some((pass) => pass && !ownedPasses.includes(pass)) ||
-      scene.postProcesses.some((pass) => !ownedPasses.includes(pass)))
-      return "Scene post-processing requires classic rendering.";
+    // Graph frames attach no native passes; only collect owners for a candidate.
+    if (camera._postProcesses.some(Boolean) || scene.postProcesses.length) {
+      const ownedPasses = [
+        ...(this.postProcessOwner?.passes ?? []),
+        ...this.effectsOwner.passes,
+      ];
+      if (camera._postProcesses.some((pass) => pass && !ownedPasses.includes(pass)) ||
+        scene.postProcesses.some((pass) => !ownedPasses.includes(pass)))
+        return "Scene post-processing requires classic rendering.";
+    }
     if (
       scene.customRenderTargets.length ||
       scene.environmentTexture?.isRenderTarget
@@ -960,6 +984,12 @@ export class ForwardSceneFrameGraph {
     };
   }
 
+  /** Whether the prepared graph was built for this exact output size and attachments. */
+  private outputMatches(output: ReturnType<ForwardSceneFrameGraph["output"]>): boolean {
+    return this.preparedWidth === output.width && this.preparedHeight === output.height &&
+      this.outputColor === output.color && this.outputDepth === output.depth;
+  }
+
   private isReady(): boolean {
     return this.probeReadiness().ready;
   }
@@ -1008,10 +1038,9 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    this.cull!.objectList = {
-      meshes: this.scene.meshes,
-      particleSystems: this.scene.particleSystems,
-    };
+    this.sceneObjects.meshes = this.scene.meshes;
+    this.sceneObjects.particleSystems = this.scene.particleSystems;
+    this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;
     const geometry = this.postProcessGraph?.geometryTask;
     if (geometry) {
@@ -1037,6 +1066,7 @@ export class ForwardSceneFrameGraph {
   }
 
   private releaseGraphResources(): void {
+    this.admittedCamera = undefined;
     findSceneShadowController(this.scene)?.setReceiverRenderPass(undefined);
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.

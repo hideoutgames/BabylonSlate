@@ -295,6 +295,17 @@ describe("material document", () => {
 });
 
 describe("switching material domain", () => {
+  it("keeps a Landscape graph on normalization and drops its specific nodes when returning to Surface", () => {
+    const doc = createDefaultMaterialDocument("Terrain", "landscape");
+    doc.nodes.push({ id: "height", type: "landscape.height", position: { x: 0, y: 0 }, properties: {} });
+    doc.edges.push({ id: "height-edge", sourceNodeId: "height", sourcePinId: "height", targetNodeId: "output", targetPinId: "roughness" });
+    expect(normalizeMaterialDocument(doc).domain).toBe("landscape");
+    const surface = setMaterialDomain(doc, "surface");
+    expect(surface.nodes.some((node) => node.id === "height")).toBe(false);
+    expect(surface.edges.some((edge) => edge.id === "height-edge")).toBe(false);
+    expect(surface.nodes.some((node) => node.type === "output.surface")).toBe(true);
+  });
+
   it("replaces the surface terminal with the post-process terminal", () => {
     const doc = setMaterialDomain(
       createDefaultMaterialDocument("Rock"),

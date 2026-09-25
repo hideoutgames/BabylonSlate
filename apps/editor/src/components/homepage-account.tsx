@@ -44,11 +44,13 @@ export function HomepageAccount({
   onOpenChange,
   onApplicationSettings,
   onEngineSettings,
+  onChangelog,
 }: {
   disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
   onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
+  onChangelog?: () => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
   const [desktopAccount, setDesktopAccount] =
@@ -141,6 +143,7 @@ export function HomepageAccount({
       onSubscription={openSubscription}
       onApplicationSettings={onApplicationSettings}
       onEngineSettings={onEngineSettings}
+      onChangelog={onChangelog}
       onOpenChange={setMenuOpen}
     />
   );
@@ -155,6 +158,7 @@ export function HomepageAccount({
               onSubscription={openSubscription}
               onApplicationSettings={onApplicationSettings}
               onEngineSettings={onEngineSettings}
+              onChangelog={onChangelog}
               onOpenChange={setMenuOpen}
               onOverlayChange={setClerkOverlayOpen}
               fallback={fallback}

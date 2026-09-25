@@ -369,6 +369,23 @@ it("caches strict readiness on unchanged frames and re-probes once after a scene
   renderer.dispose();
 });
 
+it("draws unvalidated frames without acknowledging them and re-probes a scene change once", async () => {
+  const { scene, renderer } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  const frame = vi.fn();
+  scene.onAfterRenderObservable.add(frame);
+  expect(renderer.render(false)).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: false });
+  expect(frame).toHaveBeenCalledTimes(1);
+  const checks = renderer.strictReadinessChecks;
+  MeshBuilder.CreateBox("added", {}, scene);
+  expect(renderer.render(false)).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: false });
+  expect(renderer.render()).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: true });
+  expect(frame).toHaveBeenCalledTimes(3);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
 it("holds native fallback when light admission invalidates its cached shader readiness", async () => {
   const { scene, camera, renderer } = host();
   const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } });

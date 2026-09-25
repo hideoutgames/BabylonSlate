@@ -39,7 +39,7 @@ import { setupDefaultViewport } from "./viewport";
 import { sceneShadowController } from "./shadow-controller";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
-import { encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";

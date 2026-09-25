@@ -345,6 +345,14 @@ describe("combineText2DEffects", () => {
     expect(later.rotation).toBeGreaterThan(0);
   });
 
+  it("writes the same sample into a reused output", () => {
+    const effects = { shake: 1, waveSpeed: 2, waveIntensity: 1, hover: 1, rotate: 45 };
+    const context = { time: 0.7, index: 3, fontSize: 0.32, hoverPhase: 0.2, rotatePhase: 0.4, noise: () => 0.8 };
+    const out = { x: 9, y: 9, rotation: 9 };
+    expect(combineText2DEffects(effects, context, out)).toBe(out);
+    expect(out).toEqual(combineText2DEffects(effects, context));
+  });
+
   it("returns a frozen rest pose when paused after a previous sample", () => {
     const live = combineText2DEffects(
       { shake: 0, waveSpeed: 2, waveIntensity: 1, hover: 0, rotate: 0 },

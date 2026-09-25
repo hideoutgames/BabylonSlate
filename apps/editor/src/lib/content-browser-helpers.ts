@@ -1,3 +1,4 @@
+import { createDefaultWaterDefinition, normalizeWaterDefinition, type WaterStyle } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
@@ -225,6 +226,7 @@ export const CREATABLE_ASSET_TYPES = [
   "InputAxis",
   "ParticleEmitter",
   "ParticleSystem",
+  "Water",
   "SkyboxCreator",
 ] as const;
 
@@ -258,7 +260,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "ParticleEmitter", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialFunction", "Water", "ParticleEmitter", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -295,6 +297,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
   ParticleEmitter: "One Babylon particle recipe: texture, shape, lifetime, and color.",
   ParticleSystem: "Starts several Particle Emitters on one actor.",
+  Water: "Shared water appearance and waves for oceans, lakes, rivers, and puddles.",
   SkyboxCreator:
     "Editor-only helper tool that slices a texture into six skybox faces.",
 };
@@ -1413,6 +1416,7 @@ export function defaultParentClassForType(
 }
 
 export function buildNewAssetResult(options: {
+  waterStyle?: WaterStyle;
   type: CreatableAssetType;
   name: string;
   guid: string;
@@ -1421,6 +1425,7 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
+  if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
 
   if (type === "Scene") {
     const payload = createDefaultScene() as unknown as Record<string, unknown>;
@@ -1686,6 +1691,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   SoundAttenuation: ".atten.babasset",
   ParticleEmitter: ".emitter.babasset",
   ParticleSystem: ".particles.babasset",
+  Water: ".water.babasset",
   SkyboxCreator: ".skyboxcreator.babasset",
 };
 
@@ -1750,6 +1756,7 @@ export function assetHeaderDependencies(
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
+    ...(assetType === "Water" && normalizeWaterDefinition(payload).materialGuid ? [normalizeWaterDefinition(payload).materialGuid!] : []),
     ...skyboxCreatorAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
@@ -1762,8 +1769,6 @@ export function assetHeaderDependencies(
     const settings = payload.settings as Record<string, unknown> | undefined;
     const environment = settings?.environmentTextureGuid;
     if (typeof environment === "string" && environment.length > 0) unique.add(environment);
-    const bake = settings?.bakedLightingAssetGuid;
-    if (typeof bake === "string" && bake.length > 0) unique.add(bake);
   }
   if (["Scene", "SceneLayer", "Class", "Graph"].includes(assetType)) {
     const addClass = (classId: unknown) => {

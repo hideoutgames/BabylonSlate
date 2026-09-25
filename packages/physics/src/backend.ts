@@ -40,6 +40,9 @@ export interface PhysicsBackend {
     motionType: RigidBodyDesc["motionType"],
   ): void;
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
+  /** World-space impulse at a point, preserving collision-driven linear and angular motion. */
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void;
+  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
 
   createCollider(desc: ColliderDesc): void;

@@ -1,14 +1,37 @@
 import { Mesh, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createText3DComponent } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { bundledAsciiTypeFace, TEXT3D_TEST_FONTFACE_T } from "./default-typeface";
+import { bundledAsciiTypeFace } from "./default-typeface";
 import {
   actorVisualFingerprint,
   applySceneToBabylonScene,
   editorMeshName,
 } from "./scene-loader";
 import { createText3DMesh, resolveText3DFontData } from "./text3d-mesh";
+
+function clockwiseRect(x0: number, y0: number, x1: number, y1: number): string {
+  return `m ${x0} ${y1} l ${x0} ${y0} l ${x1} ${y0} l ${x1} ${y1} l ${x0} ${y1} `;
+}
+
+const TEXT3D_TEST_FONTFACE_T: IFontData = {
+  resolution: 1000,
+  underlineThickness: 50,
+  boundingBox: { yMin: 0, yMax: 700 },
+  glyphs: {
+    T: {
+      ha: 600,
+      o: [
+        clockwiseRect(50, 600, 550, 700),
+        clockwiseRect(250, 0, 350, 600),
+      ]
+        .join("")
+        .trimEnd(),
+    },
+    " ": { ha: 300, o: "" },
+  },
+};
 
 describe("3D Text mesh", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -112,7 +135,6 @@ describe("3D Text mesh", () => {
     expect(bundledAsciiTypeFace.glyphs.e).toBeDefined();
     expect(bundledAsciiTypeFace.glyphs.x).toBeDefined();
     expect(bundledAsciiTypeFace.glyphs.t).toBeDefined();
-    expect(TEXT3D_TEST_FONTFACE_T.glyphs.T?.o).toContain("m ");
     const resolved = resolveText3DFontData(
       {
         text: "Text",
@@ -129,19 +151,27 @@ describe("3D Text mesh", () => {
 
   it("prefers a Font facetype chunk over the bundled TypeFace", () => {
     const bytes = new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T));
-    const resolved = resolveText3DFontData(
-      {
-        text: "T",
-        size: 1,
-        depth: 0.1,
-        color: [1, 1, 1],
-        fontAssetGuid: "font-1",
-        alignment: "left",
-      },
-      { fontFacetypeBytes: new Map([["font-1", bytes]]) },
-    );
+    const properties = {
+      text: "T",
+      size: 1,
+      depth: 0.1,
+      color: [1, 1, 1] as [number, number, number],
+      fontAssetGuid: "font-1",
+      alignment: "left" as const,
+    };
+    const assets = { fontFacetypeBytes: new Map([["font-1", bytes]]) };
+    const resolved = resolveText3DFontData(properties, assets);
     expect(resolved.bundled).toBe(false);
     expect(resolved.font.glyphs.T?.ha).toBe(600);
+    // Rebuilds from the same cached chunk reuse its parsed TypeFace.
+    expect(resolveText3DFontData(properties, assets).font).toBe(resolved.font);
+    // An edited Font installs a new chunk under the same guid.
+    const edited = new TextEncoder().encode(JSON.stringify({
+      ...TEXT3D_TEST_FONTFACE_T,
+      glyphs: { ...TEXT3D_TEST_FONTFACE_T.glyphs, T: { ...TEXT3D_TEST_FONTFACE_T.glyphs.T, ha: 700 } },
+    }));
+    const reloaded = { fontFacetypeBytes: new Map([["font-1", edited]]) };
+    expect(resolveText3DFontData(properties, reloaded).font.glyphs.T?.ha).toBe(700);
   });
 
   it("builds an editor mesh for Text3DComponent and fingerprints text edits", () => {

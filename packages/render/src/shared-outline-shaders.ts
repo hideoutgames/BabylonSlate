@@ -5,7 +5,7 @@ import "@babylonjs/core/Shaders/selection.fragment";
 import "@babylonjs/core/ShadersWGSL/selection.fragment";
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
-import { SHARED_OUTLINE_ATTRIBUTE, SHARED_OUTLINE_MAX_WIDTH } from "./shared-outline";
+import { SHARED_OUTLINE_ATTRIBUTE, SHARED_OUTLINE_GROUPS, SHARED_OUTLINE_MAX_WIDTH } from "./shared-outline";
 
 export const SHARED_OUTLINE_MASK_SHADER = "babylonSlateSharedOutlineMask";
 export const SHARED_OUTLINE_COMPOSE_SHADER = "babylonSlateSharedOutlineCompose";
@@ -194,7 +194,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   }
   fragmentOutputs.color = vec4f(id % 256.0, floor(id / 256.0) % 256.0, floor(id / 65536.0), 255.0) / 255.0;
 }`;
-  const groups = ["strict", "through", "selection"];
+  const groups = SHARED_OUTLINE_GROUPS;
   const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
   // Keep one candidate body instead of eight copies of the fade calculation.
   // These nearest, non-mipmapped buffers need no implicit texture derivatives.

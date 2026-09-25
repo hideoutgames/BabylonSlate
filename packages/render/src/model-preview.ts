@@ -7,7 +7,7 @@ import type {
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
-import { loadModelContainer } from "./model-container";
+import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { normalizeModelImportScale, type ModelMaterialSlot } from "@babylonslate/assets";
 import {
   createMaterialPreviewScene,
@@ -161,17 +161,7 @@ export async function loadModelPreviewSource(
     const scale = normalizeModelImportScale(importScale);
     wrapper.scaling.set(scale, scale, scale);
     wrapper.setEnabled(false);
-    const candidates = [
-      ...(container.rootNodes ?? []),
-      ...container.transformNodes,
-      ...container.meshes,
-    ];
-    const seen = new Set<(typeof candidates)[number]>();
-    for (const node of candidates) {
-      if (seen.has(node) || node === host.mesh || node === wrapper) continue;
-      seen.add(node);
-      if (!node.parent) node.parent = wrapper;
-    }
+    parentContainerRoots(wrapper, container);
     host.mesh.visibility = 0;
     host.mesh.computeWorldMatrix(true);
     // Imported joint transforms can put the visible rest pose far from raw vertices.

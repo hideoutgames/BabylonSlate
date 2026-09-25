@@ -1,5 +1,6 @@
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -36,6 +37,7 @@ import { runSceneWork, type SceneWorkOptions } from "./scene-work";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import {
   freezeEditorActiveMeshes,
+  hasEditorActiveMeshFreeze,
   isStructuralEditorChange,
   unfreezeEditorActiveMeshes,
 } from "./scene-perf";
@@ -44,8 +46,6 @@ import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { text2DBitmapBytes } from "./text2d-mesh";
-
-const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
@@ -255,7 +255,9 @@ export class EditorSceneSync {
     rebuild ||= this.assetsNeedRebuild;
     // Blocking loads already require final readiness; skip the immediate path's
     // full-document structural pre-scan and unfreeze before phased planning.
-    if (cooperative || rebuild || isStructuralEditorChange(this.lastScene, sceneData)) unfreezeEditorActiveMeshes(this.scene);
+    // Without a freeze to release, the pre-scan would decide nothing.
+    if (cooperative || rebuild || (hasEditorActiveMeshFreeze(this.scene) &&
+      isStructuralEditorChange(this.lastScene, sceneData))) unfreezeEditorActiveMeshes(this.scene);
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
     const nextKinds = new Map<string, string | null>();
@@ -315,6 +317,8 @@ export class EditorSceneSync {
                 this.pendingVisuals.get(actor.id) === candidate && this.meshes.get(actor.id) === previous;
               const onAdopted = () => {
                 if (!ownsLoad()) return;
+                const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+                if (current) this.prepareActorVisual(current, candidate);
                 candidate.parent = previous.parent;
                 for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
                 this.meshes.set(actor.id, candidate);
@@ -330,17 +334,23 @@ export class EditorSceneSync {
                   this.onAfterApply?.();
                 }
               };
+              let failedFoliage = false;
               const load = (textureReady ?? Promise.resolve()).then(async () => {
                 if (!ownsLoad()) return;
                 if (modelGuid) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
                 else onAdopted();
-              }, () => {
+              }, (error: unknown) => {
                 if (ownsLoad()) this.rejectedVisuals.set(actor.id, descriptor);
+                if (actor.components.some((component) => component.classId === "FoliageComponent") && ownsLoad()) {
+                  failedFoliage = true;
+                  throw error;
+                }
                 // The exact texture owner reports preparation failure once.
               }).finally(() => {
                 if (this.pendingVisuals.get(actor.id) === candidate) this.pendingVisuals.delete(actor.id);
                 if (this.meshes.get(actor.id) !== candidate) candidate.dispose();
-                this.pendingTextureLoads.delete(load);
+                // Keep a settled rejection observable until the next scene generation.
+                if (!failedFoliage) this.pendingTextureLoads.delete(load);
               });
               this.pendingTextureLoads.add(load);
               void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));
@@ -371,6 +381,7 @@ export class EditorSceneSync {
       }
       if (!mesh) continue;
       this.beginEditorModelLoad(actor, mesh);
+      this.trackFoliagePreparation(actor, mesh);
       if (!prepared) this.prepareActorVisual(actor, mesh);
       yield 0.2 + 0.3 * ++index / actorCount;
     }
@@ -444,6 +455,7 @@ export class EditorSceneSync {
     for (const actor of sceneData.actors) {
       const root = this.meshes.get(actor.id);
       if (root && !root.isDisposed()) {
+        this.refreshEnvironmentComponents(actor, root, this.meshAssetsForScene(sceneData));
         this.restoreMeshComponentConstruction(actor, root);
         this.applyModelSlots(actor, root);
         this.bindActorMeshMaterials(actor, root);
@@ -469,7 +481,7 @@ export class EditorSceneSync {
     const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
     const component = actor?.components.find((entry) => entry.id === componentId);
     const root = this.meshes.get(actorId);
-    return root && component?.classId === "MeshComponent"
+    return root && component && ["MeshComponent", "LandscapeComponent", "FoliageComponent"].includes(component.classId)
       ? visualForMeshComponent(root, actorId, componentId) : null;
   }
 
@@ -527,7 +539,41 @@ export class EditorSceneSync {
     this.pendingTextureLoads.clear();
   }
 
+  private trackFoliagePreparation(actor: SerializedActor, root: Mesh): void {
+    if (!actor.components.some((component) => component.classId === "FoliageComponent")) return;
+    const ready = ownedVisualTexturePreparation(root);
+    if (!ready) return;
+    const generation = this.applyGeneration;
+    const signal = this.pendingApply?.signal;
+    const load = ready.then(() => {
+      if (generation !== this.applyGeneration || signal?.aborted || this.disposed || root.isDisposed() || this.meshes.get(actor.id) !== root) return;
+      const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
+      if (!current) return;
+      this.prepareActorVisual(current, root);
+      freezeStaticActorWorldMatrix(root);
+      if (!this.applyingScene) {
+        this.freezeActiveQueue();
+        this.scheduler?.invalidate("asset");
+        this.onAfterApply?.();
+      }
+    });
+    // Retain failures in the generation's readiness set for the loading dialog.
+    this.pendingTextureLoads.add(load);
+    void load.catch((error: unknown) => console.warn(`[render] Foliage preparation failed: ${String(error)}`));
+  }
+
+  private refreshEnvironmentComponents(actor: SerializedActor, root: Mesh, assets?: MeshAssetContext): void {
+    for (const component of actor.components) {
+      const visual = visualForMeshComponent(root, actor.id, component.id);
+      if (!visual) continue;
+      const context = { ...assets, resolveMaterial: this.resolveMaterial ?? assets?.resolveMaterial };
+      if (component.classId === "LandscapeComponent") updateLandscapeMesh(visual, component.properties, context);
+      if (component.classId === "FoliageComponent") refreshFoliageMaterials(visual, context);
+    }
+  }
+
   private prepareActorVisual(actor: SerializedActor, mesh: Mesh): void {
+    this.refreshEnvironmentComponents(actor, mesh, this.assets);
     applyActorTransform(mesh, actor);
     applyComponentChildTransforms(mesh, actor);
     applyEditorBillboardFromActor(mesh, actor);
@@ -862,3 +908,5 @@ function meshAndDescendantMeshes(root: Mesh): Mesh[] {
     .filter((child): child is Mesh => child instanceof Mesh);
   return [root, ...children];
 }
+import { updateLandscapeMesh } from "./landscape-mesh";
+import { refreshFoliageMaterials } from "./foliage-mesh";

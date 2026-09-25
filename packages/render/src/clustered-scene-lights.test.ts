@@ -4,8 +4,10 @@ import {
   FreeCamera,
   DirectionalLight,
   HemisphericLight,
+  LightBlock,
   TransformNode,
   MeshBuilder,
+  NodeMaterial,
   NullEngine,
   NullEngineOptions,
   PBRMaterial,
@@ -32,7 +34,7 @@ import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
 } from "@babylonslate/core";
-import { syncSceneLighting } from "./scene-lighting";
+import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import {
   createDefaultMaterialDocument,
@@ -553,6 +555,11 @@ describe("explicit clustered light ownership", () => {
     syncSceneLighting(scene);
     expect(owner.status().clustered).toBe(1);
     expect(locals.filter((light) => light.isEnabled())).toHaveLength(2);
+    // Enabled locals outside the shared allowance stay in the conventional report.
+    const outside = locals.filter((light) => !light.isEnabled());
+    expect(sceneLightingLimits(scene).join()).toContain(
+      `Limited: ${outside.map((light) => light.name).join(", ")}`,
+    );
 
     const parent = new TransformNode("moved excluded parent", scene);
     const moved = lights[5]!;
@@ -809,6 +816,24 @@ describe("explicit clustered light ownership", () => {
     syncSceneLighting(scene);
     await vi.waitFor(() => expect(isSceneFrameReady(scene)).toBe(true));
     expect(mesh.lightSources).toEqual([lights[0]]);
+  });
+
+  it("restores light-block methods when a graph leaves the scene and rebinds it when re-added", () => {
+    const { scene, lights } = fixture();
+    const graph = new NodeMaterial("graph", scene);
+    const block = new LightBlock("lighting");
+    graph.attachedBlocks.push(block);
+    const original = block.updateUniformsAndSamples;
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(block.updateUniformsAndSamples).not.toBe(original);
+    scene.removeMaterial(graph);
+    syncSceneLighting(scene);
+    expect(block.updateUniformsAndSamples).toBe(original);
+    scene.addMaterial(graph);
+    syncSceneLighting(scene);
+    expect(block.updateUniformsAndSamples).not.toBe(original);
+    owner.dispose();
+    expect(block.updateUniformsAndSamples).toBe(original);
   });
 
   it("uploads stable authored light rows when camera depth reverses, and honors explicit priority changes", () => {

@@ -8,7 +8,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import type { Node } from "@babylonjs/core/node";
+import { isRigJointNode } from "./skeleton-preview";
 
 export { attachSkeletonPreview } from "./skeleton-preview";
 
@@ -16,19 +16,6 @@ export function ensureNodeRotationQuaternion(node: TransformNode): void {
   if (!node.rotationQuaternion) {
     node.rotationQuaternion = Quaternion.FromEulerVector(node.rotation);
   }
-}
-
-function isCatalogBoneNode(node: TransformNode): boolean {
-  return node.name !== "__root__" && node.name !== "materialPreviewMesh";
-}
-
-function isCameraOrLight(node: Node): boolean {
-  const className = node.getClassName();
-  return className.includes("Camera") || className.includes("Light");
-}
-
-function isRigTransform(node: Node): node is TransformNode {
-  return node instanceof TransformNode && !isCameraOrLight(node);
 }
 
 export interface LinkedSkeletonFromNodeRigOptions {
@@ -53,14 +40,9 @@ export function createLinkedSkeletonFromNodeRig(
   const scene = root.getScene();
   const name = options.name || `${root.name}_skeleton`;
   const skeleton = new Skeleton(name, name, scene);
-  const nodes: TransformNode[] = [];
-  if (isRigTransform(root) && isCatalogBoneNode(root)) nodes.push(root);
-  for (const child of root.getChildTransformNodes(false)) {
-    if (!isRigTransform(child)) continue;
-    if (child.name.endsWith("_overlay")) continue;
-    if (!isCatalogBoneNode(child)) continue;
-    nodes.push(child);
-  }
+  const nodes = [root, ...root.getChildTransformNodes(false)].filter(
+    isRigJointNode,
+  );
 
   let overlay: Mesh | null = null;
   if (options.createMesh) {

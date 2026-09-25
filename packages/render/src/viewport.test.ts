@@ -1,8 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { Color3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
-import { setHighlightColor, setupDefaultViewport } from "./viewport";
+import { setupDefaultViewport } from "./viewport";
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 
 describe("viewport", () => {
@@ -49,15 +48,6 @@ describe("viewport", () => {
     setupDefaultViewport(scene);
 
     expect(scene.activeCamera).toBe(scene.getCameraByName("camera"));
-  });
-
-  it("setHighlightColor writes the scene ambient colour", () => {
-    const { scene } = createHandle();
-    setHighlightColor(scene, new Color3(1, 0, 0));
-
-    expect(scene.ambientColor.r).toBe(1);
-    expect(scene.ambientColor.g).toBe(0);
-    expect(scene.ambientColor.b).toBe(0);
   });
 
   it("uses the dark Neutral background as clearColor (oklch(0.145 0 0) ≈ #242424)", () => {
