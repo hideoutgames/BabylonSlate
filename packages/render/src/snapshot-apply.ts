@@ -735,7 +735,9 @@ export function applyAssignMesh(
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
-    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    // Staged models never record or compare rejections; skip hashing every
+    // installed asset. Other preparations keep the request-time asset state.
+    const descriptor = stagesModels ? "" : `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
     const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
     rejectedPreparedAssignments.set(binding, rejected);
     if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
@@ -828,16 +830,18 @@ export function applyAssignMesh(
   let stagedText: Mesh | null = null;
   const deferredModels: DeferredModelLoad[] = [];
   if (stagesText) {
-    const descriptor = `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
+    // Script text writes re-emit assignMesh every tick; hash installed assets
+    // only to compare or record a rejected allocation.
+    const descriptor = () => `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
     const rejected = rejectedTextAssignments.get(binding);
-    if (existing && rejected?.get(command.slotId) === descriptor) return;
+    if (existing && rejected?.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     try {
       stagedText = createPlayVisual(scene, command.slotId, binding, deferredModels);
       rejected?.delete(command.slotId);
     } catch (error) {
       if (!(error instanceof BitmapAllocationLimitError) || !existing) throw error;
       const failed = rejected ?? new Map<number, string>();
-      failed.set(command.slotId, descriptor);
+      failed.set(command.slotId, descriptor());
       rejectedTextAssignments.set(binding, failed);
       console.warn(`[render] ${error.code}: ${error.message}`);
       return;
