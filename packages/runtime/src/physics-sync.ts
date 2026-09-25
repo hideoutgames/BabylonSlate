@@ -50,6 +50,7 @@ import {
  * collision, or a Blocking Volume.
  */
 export class PhysicsWorldSync {
+  readonly water = new WaterWorld();
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly bodyByActor = new Map<string, string>();
@@ -302,7 +303,7 @@ export class PhysicsWorldSync {
       if (!this.actorFilter(actor)) continue;
       const rigid = actor.components.find(
         (c) =>
-          c.classId === "RigidBodyComponent" &&
+          (c.classId === "RigidBodyComponent" || (this.backend.kind === "3d" && c.classId === "WaterBuoyancyComponent" && !actor.components.some((p) => p.classId === "RigidBodyComponent" && !p.destroyed))) &&
           !c.destroyed &&
           c.owner === actor,
       );
@@ -406,8 +407,17 @@ export class PhysicsWorldSync {
     this.tilemapCollidersByActor.delete(actorId);
   }
 
-  step(dt: number, world: World): void {
+  step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81): void {
     this.syncFromWorld(world);
+    if (this.backend.kind === "3d") {
+      this.water.update(this.actors, time);
+      for (const [actorId, bodyId] of this.bodyByActor) {
+        const actor = this.actorById.get(actorId);
+        const tuning = this.appliedBodyProperties.get(actorId)?.value;
+        if (actor && tuning?.motionType === "dynamic")
+          this.water.applyBuoyancy(actor, bodyId, this.backend, tuning.mass, gravity, dt);
+      }
+    }
     this.backend.step(dt);
     const bodyPoses = new Map<string, PhysicsTransform>();
     for (const [actorId, bodyId] of this.bodyByActor) {
@@ -571,7 +581,7 @@ export class PhysicsWorldSync {
   private createForActor(actor: Actor): void {
     const rigid = actor.components.find(
       (c) =>
-        c.classId === "RigidBodyComponent" && !c.destroyed && c.owner === actor,
+        (c.classId === "RigidBodyComponent" || (this.backend.kind === "3d" && c.classId === "WaterBuoyancyComponent" && !actor.components.some((p) => p.classId === "RigidBodyComponent" && !p.destroyed))) && !c.destroyed && c.owner === actor,
     );
     const tilemap = actor.components.find(
       (c) =>
@@ -1270,3 +1280,4 @@ function meshAssetGuid(component: ActorComponent): string | null {
   if (typeof variable === "string") return variable.trim() || null;
   return component.assetGuid;
 }
+import { WaterWorld } from "./water-world";

@@ -37,6 +37,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setCursorVisible",
   "animState",
   "tilemapAnimationTime",
+  "waterTime",
   "sceneLoading",
   "activeScene",
   "sceneLayerLoading",

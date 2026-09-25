@@ -34,6 +34,11 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "Text3DComponent",
   "AudioComponent",
   "ParticleComponent",
+  "WaterOceanComponent",
+  "WaterLakeComponent",
+  "WaterRiverComponent",
+  "WaterPuddleComponent",
+  "WaterBuoyancyComponent",
   "RigidBodyComponent",
   "ColliderComponent",
   "AnimationGraphComponent",
@@ -68,6 +73,11 @@ export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "WaterOceanComponent",
+  "WaterLakeComponent",
+  "WaterRiverComponent",
+  "WaterPuddleComponent",
+  "WaterBuoyancyComponent",
   "SkyboxComponent",
   "CameraComponent",
   "LightComponent",

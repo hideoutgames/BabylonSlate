@@ -1,4 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { normalizeWaterDefinition, normalizeWaterBody, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
@@ -207,6 +208,7 @@ export interface RuntimeDriverOptions {
   behaviourTrees?: Readonly<Record<string, BehaviourTreeDocument>>;
   blackboards?: Readonly<Record<string, BlackboardDocument>>;
   tilemaps?: Readonly<Record<string, TilemapPayload>>;
+  waters?: Readonly<Record<string, WaterDefinition>>;
   tilesets?: Readonly<Record<string, TilesetPayload>>;
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
@@ -331,6 +333,7 @@ export interface RuntimeDriver {
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;
+  registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void;
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
@@ -509,6 +512,7 @@ class InProcessRuntime implements RuntimeDriver {
   private currentBtNodeId: string | null = null;
   private currentBtAssetGuid: string | null = null;
   private tilemaps = new Map<string, TilemapPayload>();
+  private waters = new Map<string, WaterDefinition>();
   private tilesets = new Map<string, TilesetPayload>();
   private tilemapAnimationTimeMs = 0;
   private hasAnimatedTiles = false;
@@ -713,6 +717,7 @@ class InProcessRuntime implements RuntimeDriver {
         pixelsPerUnit: options.pixelsPerUnit,
       });
     }
+    if (options.waters) this.registerWaterContent(options.waters);
     if (options.models) {
       this.registerModelContent({
         models: options.models,
@@ -743,7 +748,11 @@ class InProcessRuntime implements RuntimeDriver {
         };
       },
       onPhysics: (ctx) => {
-        if (this.canTickScene()) this.physicsSync.step(ctx.dt, this.world);
+        if (this.canTickScene()) {
+          const time = ctx.tickIndex * ctx.dt;
+          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1]);
+          if (this.physicsSync.water.hasBodies) this.emit({ type: "waterTime", seconds: time });
+        }
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.dispatchCollisionEvents();
       },
@@ -1647,6 +1656,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private bindPhysicsContent(sync: PhysicsWorldSync): void {
+    sync.water.setContent(this.waters);
     sync.setTileContent({
       tilemaps: this.tilemaps,
       tilesets: this.tilesets,
@@ -2277,6 +2287,11 @@ class InProcessRuntime implements RuntimeDriver {
 
   registerBlackboard(guid: string, document: BlackboardDocument): void {
     this.blackboards.set(guid, document);
+  }
+
+  registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
+    this.waters = new Map(Array.from(content instanceof Map ? content.entries() : Object.entries(content), ([guid, value]) => [guid, normalizeWaterDefinition(value)]));
+    this.physicsSync.water.setContent(this.waters);
   }
 
   private refreshTilemapAnimationContent(): void {
@@ -4916,6 +4931,7 @@ function isPlayRenderable(
   skipButtonMesh: boolean,
 ): boolean {
   if (component.destroyed) return false;
+  if (waterKindForClass(component.classId)) return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
     component.classId === "MeshComponent" ||
@@ -4987,6 +5003,7 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (waterKindForClass(component.classId)) return "water";
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
@@ -5034,6 +5051,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
+    components.some((component) => waterKindForClass(component.classId) !== null) ||
     components.length > 1 ||
     components.some((component) => !isIdentityComponentTransform(component))
   );
@@ -5109,6 +5127,7 @@ function playMeshPartOf(
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
     scale: [scale.x, scale.y, scale.z],
+    ...(waterKindForClass(component.classId) ? { water: normalizeWaterBody(Object.fromEntries(component.variables), waterKindForClass(component.classId)!) } : {}),
     ...(component.classId === "Text3DComponent"
       ? {
           text3d: text3dAssignPayload(component),

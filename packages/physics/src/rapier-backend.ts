@@ -365,6 +365,20 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     );
   }
 
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    if (![impulse.x, impulse.y, point.x, point.y].every(Number.isFinite)) return;
+    record.body.applyImpulseAtPoint({ x: impulse.x, y: impulse.y }, { x: point.x, y: point.y }, true);
+  }
+
+  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null {
+    const body = this.bodies.get(bodyId)?.body;
+    if (!body) return null;
+    const linear = body.linvel();
+    return { linear: { x: linear.x, y: linear.y, z: 0 }, angular: { x: 0, y: 0, z: body.angvel() } };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;

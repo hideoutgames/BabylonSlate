@@ -247,6 +247,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     ],
   });
   registry.register({
+    type: "Water",
+    migrations: [(payload) => asRecord(normalizeWaterDefinition(payload))],
+  });
+  registry.register({
     type: "SkyboxCreator",
     migrations: [(payload) => asRecord(normalizeSkyboxCreatorPayload(payload))],
   });
@@ -280,3 +284,4 @@ export function migrateMaterialPayload(
     textureGuids: options.textureGuids,
   }) as unknown as Record<string, unknown>;
 }
+import { normalizeWaterDefinition } from "@babylonslate/core";

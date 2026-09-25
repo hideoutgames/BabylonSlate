@@ -1559,3 +1559,10 @@ Material generations retain their compile-time texture leases until preparation 
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
 
 Texture installation preserves the existing legacy UASTC descriptor normalization before creating immutable upload Blobs. Stored asset bytes remain unchanged; repeated bindings reuse the installed content without repeating conversion or hashing.
+# Water
+
+Water assets share one definition between the renderer and game worker. Realistic and Stylized presets expose colors, opacity, reflections, roughness, waves, ripples, foam, and density. Ocean, Lake, River, and Puddle components own their footprint, depth, wave scale, and current. River points include elevation; lakes and puddles use elliptical bounds.
+
+`WaterBuoyancyComponent` applies lift and drag at four support points through the native physics backend. It preserves collision impulses and angular motion, so a falling rigid body can depress and tip a floating body. Zero Volume automatically provides displacement for twice the body's mass; an explicit Volume uses cubic metres and the asset's Density uses kg/m³. Width, Length, Height, and Offset describe the floating volume. Existing Rigid Body and collider settings continue to control mass and collision response.
+
+Surface queries and buoyancy use the same analytic waves and simulation clock as rendering. Overlapping surfaces select the highest water surface, or the explicitly selected water actor. Disabled water does not participate in queries or buoyancy. Puddle depth limits its buoyant volume.
