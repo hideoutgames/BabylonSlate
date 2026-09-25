@@ -57,7 +57,13 @@
 
 .anim-state-node {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   min-width: 200px;
+  max-width: 280px;
   min-height: 88px;
   padding: 14px 28px;
   border-radius: var(--radius-lg);
@@ -77,18 +83,46 @@
 }
 
 .anim-state-node-title {
-  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 14px;
   font-weight: 600;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anim-state-node-clip {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.anim-state-node-clip-empty {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.anim-state-node-loop {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
 .anim-state-node-entry-mark {
-  margin-top: 4px;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--graph-state-entry);
+  border-radius: 999px;
   font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 500;
+  line-height: 16px;
   color: var(--graph-state-entry);
-  text-align: center;
 }
 
 .anim-state-handle {

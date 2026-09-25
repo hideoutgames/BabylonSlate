@@ -297,6 +297,30 @@ describe("AnimGraphEditor", () => {
     });
   });
 
+  it("shows each state's clip on its graph node", async () => {
+    const doc = locoGraph();
+    doc.clips = doc.clips.map((clip) =>
+      clip.id === "idle-clip" ? { ...clip, assetGuid: "anim-1" } : clip,
+    );
+    doc.states.push({
+      id: "blank",
+      name: "Blank",
+      clipId: null,
+      speed: 1,
+      loop: false,
+      position: { x: 600, y: 80 },
+    });
+    renderAnimGraph(doc);
+    await waitFor(() => {
+      expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toBe(
+        "Hero_Walk",
+      );
+    });
+    expect(screen.getByTestId("anim-state-node-clip-blank").textContent).toBe(
+      "No Clip",
+    );
+  });
+
   it("adds a state from the States list", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-state"));

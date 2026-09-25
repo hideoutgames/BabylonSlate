@@ -20,6 +20,7 @@ import {
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   validateAnimGraph,
+  type AnimClipCatalogEntry,
   type AnimClipKind,
   type AnimClipRef,
   type AnimGraphDocument,
@@ -30,27 +31,23 @@ import {
 import {
   AssetPicker,
   PanelFrame,
+  PinTypePicker,
   PropertyGrid,
   SearchDropdown,
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Field,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { ChevronRightIcon, Trash2Icon } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@babylonslate/ui/components/select";
-import { Trash2Icon } from "lucide-react";
-import {
+  GRAPH_DEFAULT_ZOOM,
   GraphEditor,
   animGraphEdgeTypes,
   animGraphNodeTypes,
@@ -59,6 +56,7 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
 import { InspectorPanel } from "../panels/inspector-panel";
@@ -75,13 +73,12 @@ import {
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { IconActionButton } from "./icon-action-button";
 
-const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }> =
-  [
-    { value: "bool", label: "Bool" },
-    { value: "int", label: "Int" },
-    { value: "float", label: "Float" },
-    { value: "string", label: "String" },
-  ];
+const VARIABLE_TYPES: readonly AnimVariableTypeId[] = [
+  "bool",
+  "int",
+  "float",
+  "string",
+];
 
 function asAnimGraph(
   payload: Record<string, unknown>,
@@ -195,6 +192,18 @@ function upsertStateClip(
   };
 }
 
+function stateClipLabel(
+  doc: AnimGraphDocument,
+  state: AnimState,
+  catalog: readonly AnimClipCatalogEntry[],
+): string {
+  const clip = doc.clips.find((row) => row.id === state.clipId);
+  if (!clip?.assetGuid) return "No Clip";
+  const entry = catalog.find((row) => row.guid === clip.assetGuid);
+  if (!entry) return "Missing Clip";
+  return entry.type === "Model" && clip.clipName ? clip.clipName : entry.name;
+}
+
 function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): string {
   const from =
     doc.states.find((state) => state.id === transition.fromStateId)?.name ??
@@ -296,9 +305,11 @@ function AnimGraphVariablesList({
                   )
                 }
               />
-              <Select
+              <PinTypePicker
                 value={variable.typeId}
-                onValueChange={(value) => {
+                types={VARIABLE_TYPES}
+                data-testid={`anim-graph-variable-type-${variable.id}`}
+                onChange={(value) => {
                   const typeId = value as AnimVariableTypeId;
                   commit(
                     commitAnimGraphVariables(
@@ -315,23 +326,7 @@ function AnimGraphVariablesList({
                     ),
                   );
                 }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-24"
-                  aria-label="Variable Type"
-                  data-testid={`anim-graph-variable-type-${variable.id}`}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VARIABLE_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
               <IconActionButton
                 label="Remove Variable"
                 variant="ghost"
@@ -370,12 +365,17 @@ function AnimGraphVariablesList({
                 type="button"
                 variant={selectedId === state.id ? "secondary" : "ghost"}
                 size="sm"
-                className="w-full justify-start"
+                className="w-full justify-between gap-2"
                 aria-pressed={selectedId === state.id}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => setSelectedId(state.id)}
               >
-                {state.name}
+                <span className="min-w-0 truncate">{state.name}</span>
+                {doc.entryStateId === state.id ? (
+                  <Badge variant="outline" className="shrink-0">
+                    Entry
+                  </Badge>
+                ) : null}
               </Button>
             ))}
           </div>
@@ -421,6 +421,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     ruleSurface,
   );
   const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
+  const { settings: appSettings } = useAppSettings();
+  const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [rulePaletteOpen, setRulePaletteOpen] = useState(false);
   const rulePaletteCacheRef = useRef(new ScriptPaletteCache());
   const graphDiagnostics = useMemo(
@@ -437,10 +439,19 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     openTransitionId
       ? (doc.transitions.find((row) => row.id === openTransitionId) ?? null)
       : null;
-  const initialGraph = useMemo(
-    () => hydrateAnimGraphForEditor(animGraphToSerialized(doc)),
-    [doc],
-  );
+  const initialGraph = useMemo(() => {
+    const graph = hydrateAnimGraphForEditor(animGraphToSerialized(doc));
+    const clipLabels = new Map(
+      doc.states.map((state) => [state.id, stateClipLabel(doc, state, catalog)]),
+    );
+    return {
+      ...graph,
+      nodes: graph.nodes.map((node) => ({
+        ...node,
+        data: { ...node.data, clipLabel: clipLabels.get(node.id) },
+      })),
+    };
+  }, [doc, catalog]);
   const ruleMembers = useMemo(
     () => animGraphMembersFromVariables(doc.variables),
     [doc.variables],
@@ -520,21 +531,32 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       <PanelFrame className="flex-1">
         <div className="flex h-full min-h-0 flex-col" data-testid="anim-rule-graph">
           <ToolbarStrip>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="anim-rule-breadcrumb-state-machine"
-              onClick={() => {
-                setSelectedNodeIds([]);
-                closeTransitionRule();
-              }}
-            >
-              State Machine
-            </Button>
-            <span className="px-2 text-sm" data-testid="anim-rule-breadcrumb">
-              {transitionLabel(doc, openTransition)}
-            </span>
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                data-testid="anim-rule-breadcrumb-state-machine"
+                onClick={() => {
+                  setSelectedNodeIds([]);
+                  closeTransitionRule();
+                }}
+              >
+                State Machine
+              </Button>
+              <ChevronRightIcon
+                aria-hidden
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+              <span
+                aria-current="page"
+                className="truncate px-2 text-sm font-medium"
+                data-testid="anim-rule-breadcrumb"
+              >
+                {transitionLabel(doc, openTransition)}
+              </span>
+            </nav>
           </ToolbarStrip>
           <GraphEditor
             key={openTransition.id}
@@ -542,6 +564,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             paletteNodes={rulePalette}
             onPaletteOpenChange={setRulePaletteOpen}
             diagnostics={graphDiagnostics}
+            defaultZoom={defaultZoom}
             sessionViewport={sessionViewport}
             onSessionViewportChange={onSessionViewportChange}
             onSelectionChange={setSelectedNodeIds}
@@ -570,6 +593,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}
           edgeTypes={animGraphEdgeTypes}
+          defaultZoom={defaultZoom}
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           defaultEdgeOptions={{
@@ -615,7 +639,13 @@ function transitionPropertyRows(
   doc: AnimGraphDocument,
   transition: AnimTransition,
   commit: (next: AnimGraphDocument) => void,
-): { rows: PropertyRow[]; openRuleId: string; reverseRuleId: string | null } {
+  titleFromSource: boolean,
+): {
+  title: string;
+  rows: PropertyRow[];
+  openRuleId: string;
+  reverseRuleId: string | null;
+} {
   const target =
     doc.states.find((state) => state.id === transition.toStateId)?.name ??
     transition.toStateId;
@@ -625,11 +655,14 @@ function transitionPropertyRows(
     transition.toStateId,
   );
   return {
+    title: titleFromSource
+      ? transitionLabel(doc, transition)
+      : `Transition To ${target}`,
     rows: [
       {
         id: `${transition.id}-blendSeconds`,
         kind: "number",
-        label: `To ${target} Blend Seconds`,
+        label: "Blend Seconds",
         value: transition.blendSeconds,
         min: 0,
         onChange: (blendSeconds) =>
@@ -638,7 +671,7 @@ function transitionPropertyRows(
       {
         id: `${transition.id}-priority`,
         kind: "number",
-        label: `To ${target} Priority`,
+        label: "Priority",
         value: transition.priority,
         onChange: (priority) =>
           commit(patchTransition(doc, transition.id, { priority })),
@@ -748,6 +781,10 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
             if (other) commit({ ...doc, entryStateId: other.id });
           },
         },
+      ]
+    : [];
+  const clipRows: PropertyRow[] = selected
+    ? [
         {
           id: "clipKind",
           kind: "enum",
@@ -809,19 +846,22 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
       ]
     : [];
   const transitionBlocks = outgoing.map((transition) =>
-    transitionPropertyRows(doc, transition, commit),
+    transitionPropertyRows(doc, transition, commit, !selected),
   );
 
   return (
     <PanelFrame>
       {selected || selectedTransition ? (
         <div data-testid="anim-graph-details">
-          {identityRows.length > 0 ? <PropertyGrid rows={identityRows} /> : null}
+          {identityRows.length > 0 ? (
+            <PropertyGrid title="State" rows={identityRows} />
+          ) : null}
+          {clipRows.length > 0 ? <PropertyGrid title="Clip" rows={clipRows} /> : null}
           {selected && clipKind === "animation" && clipAssetType === "Model" ? (
             <Field
               data-testid="property-row-clipName"
               data-disabled={clipNameOptions.length === 0 || undefined}
-              className="gap-0.5 border-b border-border/60 px-2 py-1"
+              className="gap-0.5 border-b border-border/30 px-2 py-1"
             >
               <FieldLabel htmlFor="property-clipName">Clip Name</FieldLabel>
               {clipNameOptions.length > 0 ? (
@@ -867,11 +907,17 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
               )}
             </Field>
           ) : null}
-          {playbackRows.length > 0 ? <PropertyGrid rows={playbackRows} /> : null}
+          {playbackRows.length > 0 ? (
+            <PropertyGrid title="Playback" rows={playbackRows} />
+          ) : null}
           {transitionBlocks.map((block) => (
-            <div key={block.openRuleId} className="flex flex-col gap-2 px-3 pb-3">
-              <PropertyGrid rows={block.rows} />
-              <div className="flex flex-wrap gap-1">
+            <div
+              key={block.openRuleId}
+              className="flex flex-col"
+              data-testid={`anim-graph-transition-${block.openRuleId}`}
+            >
+              <PropertyGrid title={block.title} rows={block.rows} />
+              <div className="flex flex-wrap gap-1 border-b border-border/30 px-2 py-1.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -918,7 +964,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           className="px-3 py-2 text-sm text-muted-foreground"
           data-testid="anim-graph-details-empty"
         >
-          Select a State
+          Select a State or Transition
         </p>
       )}
       <AssetPicker
