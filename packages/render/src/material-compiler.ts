@@ -160,17 +160,6 @@ export function nodeMaterialTexturesSampleReady(
   return true;
 }
 
-function markCompiledMaterialDirty(material: NodeMaterial): void {
-  const scene = material.getScene();
-  const blocked = scene.blockMaterialDirtyMechanism;
-  scene.blockMaterialDirtyMechanism = false;
-  try {
-    material.markDirty();
-  } finally {
-    scene.blockMaterialDirtyMechanism = blocked;
-  }
-}
-
 /**
  * Explicit guard rather than a bare `result.ok` check: `apps/editor` compiles
  * these sources without `strictNullChecks`, where TypeScript does not narrow a
@@ -778,7 +767,7 @@ export function compileMaterialPlan(
     try {
       material.build();
       configureSurface();
-      markCompiledMaterialDirty(material);
+      material.markDirty();
     } catch (error) {
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({

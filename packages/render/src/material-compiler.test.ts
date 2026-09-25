@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, Scene, ShaderMaterial, StandardMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -11,6 +11,7 @@ import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from ".
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { syncSceneLighting } from "./scene-lighting";
 
 const disposers: Array<() => void> = [];
 
@@ -1380,8 +1381,9 @@ describe("material compiler", () => {
     expect(rebuild).toHaveBeenCalled();
   });
 
-  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", () => {
+  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", async () => {
     const scene = host();
+    const unrelated = new StandardMaterial("unrelated", scene);
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
     let ready = false;
@@ -1397,18 +1399,29 @@ describe("material compiler", () => {
       throw new Error(result.diagnostics.map((row) => row.message).join(", "));
     }
     disposers.push(() => result.material.dispose());
+    const mesh = MeshBuilder.CreateBox("blocked-dirty-mesh", {}, scene);
+    mesh.material = result.material;
+    const subMesh = mesh.subMeshes[0]!;
+    ready = true;
+    await result.material.forceCompilationAsync(mesh);
+    // Babylon announces new materials on a later tick; a rendered frame has
+    // already synced lighting for them before a texture finishes loading.
+    syncSceneLighting(scene);
+    expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    const stale = subMesh.effect;
     scene.blockMaterialDirtyMechanism = true;
     result.material.freeze();
-    const dirtyWhileBlocked: boolean[] = [];
-    vi.spyOn(result.material, "markDirty").mockImplementation(function (
-      this: NodeMaterial,
-    ) {
-      dirtyWhileBlocked.push(this.getScene().blockMaterialDirtyMechanism);
-    });
-    ready = true;
+    const unrelatedDirty = vi.spyOn(unrelated, "markAsDirty");
     resolved.onLoadObservable.notifyObservers(resolved);
-    expect(dirtyWhileBlocked).toContain(false);
     expect(scene.blockMaterialDirtyMechanism).toBe(true);
+    expect(result.material.isFrozen).toBe(true);
+    // Only the rebuilt material is invalidated, not every scene material.
+    expect(unrelatedDirty).not.toHaveBeenCalled();
+    // The frozen draw picks up the rebuilt shader on its next frame.
+    scene.incrementRenderId();
+    await result.material.forceCompilationAsync(mesh);
+    expect(result.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    expect(subMesh.effect).not.toBe(stale);
   });
 
   it("does not forceCompilationAsync until sampled textures are sample-ready", async () => {
