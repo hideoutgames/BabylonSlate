@@ -86,7 +86,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
         const document = library.documents.get(water.materialGuid);
         if (!document) throw new Error("The selected Water material is unavailable.");
         const acquired = materials.acquire(host.scene, water.materialGuid, document);
-        if (!acquired.ok) throw new Error(acquired.diagnostics.map((entry) => entry.message).join("\n"));
+        if (acquired.ok === false) throw new Error(acquired.diagnostics.map((entry) => entry.message).join("\n"));
         const diagnostics = await acquired.ready;
         if (cancelled) return;
         if (diagnostics.length) throw new Error(diagnostics.map((entry) => entry.message).join("\n"));

@@ -1,3 +1,18 @@
+import { PostProcessRetirement } from "./post-process-retirement";
+import type { AudioLibrary } from "./audio-service";
+import { AudioService } from "./audio-service";
+import type { ParticleLibrary } from "./particle-service";
+import { ParticleService } from "./particle-service";
+import { acquireParticleMaterial } from "./particle-material";
+import type { AudioPlaybackBackend } from "./audio-playback-backend";
+import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
+import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
+import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
+import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
+import { nodeMaterialTexturesSampleReady } from "./material-compiler";
+import { AreaRectLightGroup } from "./area-rect-light";
+import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
@@ -201,18 +216,6 @@ import {
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
-import { PostProcessRetirement } from "./post-process-retirement";
-import type { AudioLibrary } from "./audio-service";
-import { AudioService } from "./audio-service";
-import type { ParticleLibrary } from "./particle-service";
-import { ParticleService } from "./particle-service";
-import { acquireParticleMaterial } from "./particle-material";
-import type { AudioPlaybackBackend } from "./audio-playback-backend";
-import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
-import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
-import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
-import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
   freezeEditorActiveMeshes,
@@ -222,7 +225,6 @@ import {
   SCENE_LOOKUP_MAPS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
-import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 
 export interface EditorSceneLoadOptions {
   signal: AbortSignal;
@@ -3334,5 +3336,3 @@ export function createAppEngine(
   });
   return engine;
 }
-import { AreaRectLightGroup } from "./area-rect-light";
-import { setSceneWaterTime } from "./water-mesh";

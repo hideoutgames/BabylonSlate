@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
+import { createDefaultWaterDefinition, createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
@@ -57,10 +57,10 @@ function flushFrames(count: number) {
   }
 }
 
-async function fixture() {
+async function fixture(withWater = false) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -103,6 +103,25 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
+    const { game, canvas } = await fixture(true);
+    TestWorker.failPost = fallbackMode;
+    const registered = vi.fn();
+    if (fallbackMode) vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((load, onCommand) => {
+      const runtime = runtimes.createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: load.scene, onCommand });
+      vi.spyOn(runtime, "registerWaterContent").mockImplementation(registered);
+      return runtime;
+    });
+    sessions.push(startPlayer({ game, canvas }));
+    const water = createDefaultWaterDefinition("stylized");
+    expect(rendering.createEngine).toHaveBeenCalledWith(canvas, expect.objectContaining({ waterPayloads: new Map([["water", water]]) }));
+    if (fallbackMode) expect(registered).toHaveBeenCalledWith(new Map([["water", water]]));
+    else {
+      const controls = TestWorker.instances[0]!.messages.filter((message) => message.channel === "control").map((message) => message.payload);
+      expect(controls).toContainEqual({ type: "loadWater", waters: [{ guid: "water", document: water }] });
+      expect(controls.findIndex((message) => message.type === "loadWater")).toBeLessThan(controls.findIndex((message) => message.type === "play"));
+    }
+  });
   it("stops before the worker's first loading token and detaches late commands and input", async () => {
     const { game, canvas, handle, input, owner } = await backendFixture();
     const onStopped = vi.fn();

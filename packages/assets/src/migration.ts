@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
@@ -284,4 +285,3 @@ export function migrateMaterialPayload(
     textureGuids: options.textureGuids,
   }) as unknown as Record<string, unknown>;
 }
-import { normalizeWaterDefinition } from "@babylonslate/core";

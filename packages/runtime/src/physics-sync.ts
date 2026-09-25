@@ -1,3 +1,4 @@
+import { WaterWorld } from "./water-world";
 import { normalizeWaterBuoyancy } from "@babylonslate/core";
 import type {
   ColliderDesc,
@@ -1293,4 +1294,3 @@ function meshAssetGuid(component: ActorComponent): string | null {
   if (typeof variable === "string") return variable.trim() || null;
   return component.assetGuid;
 }
-import { WaterWorld } from "./water-world";

@@ -63,10 +63,13 @@ const record = (v: unknown): Record<string, unknown> =>
 const number = (v: unknown, fallback: number, min: number, max: number) =>
   typeof v === "number" && Number.isFinite(v) ? clamp(v, min, max) : fallback;
 const guid = (v: unknown) => typeof v === "string" && v.trim() ? v.trim() : null;
-const tuple = (v: unknown, fallback: WaterColor, min: number, max: number): WaterColor =>
-  Array.isArray(v) && v.length === 3
+const tuple = (value: unknown, fallback: WaterColor, min: number, max: number): WaterColor => {
+  const point = record(value);
+  const v = Array.isArray(value) ? value : [point.x, point.y, point.z];
+  return Array.isArray(v) && v.length === 3
     ? [number(v[0], fallback[0], min, max), number(v[1], fallback[1], min, max), number(v[2], fallback[2], min, max)]
     : [...fallback];
+};
 
 export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): WaterDefinition {
   return {

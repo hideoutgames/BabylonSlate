@@ -218,6 +218,7 @@ function initializePlayer(
     renderSettings: manifest.render,
     spritePayloads: content.spritePayloads,
     spriteAnimations: content.spriteAnimationPayloads,
+    waterPayloads: content.waterPayloads,
     tilemapPayloads: content.tilemapPayloads,
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
@@ -634,9 +635,9 @@ function initializePlayer(
       const document = parseBlackboardDocument(entry.document);
       if (document) inProcess.registerBlackboard(entry.guid, document);
     }
+    inProcess.registerWaterContent(content.waterPayloads);
     if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
       inProcess.registerTileContent({
-        waters: content.waterPayloads,
         tilemaps: content.tilemapPayloads,
         tilesets: content.tilesetPayloads,
         pixelsPerUnit: content.pixelsPerUnit,
