@@ -34,11 +34,40 @@ rings = [
 ]
 vertices = [(x, -z, y) for z, ring in rings for x, y in ring]
 faces = [tuple(reversed(range(8)))]
+material_indices = [0]
 for ring in range(len(rings) - 1):
     for i in range(8):
+        # Replace the body's top face with an inset solid grip, not a bridge.
+        if ring == 1 and i == 4:
+            continue
         faces.append((ring * 8 + i, ring * 8 + (i + 1) % 8,
                       (ring + 1) * 8 + (i + 1) % 8, (ring + 1) * 8 + i))
+        material_indices.append(1 if ring >= 4 else 0)
 faces.append(tuple(range((len(rings) - 1) * 8, len(rings) * 8)))
+material_indices.append(2)
+
+# A shallow, solid top grip grows directly from the body, with sloped ends.
+def grip_vertex(x, z, rise):
+    top = .126 + (z + .648) / .470 * .028
+    return (x, -z, top + rise)
+
+
+grip_base = len(vertices)
+vertices.extend(grip_vertex(x, z, 0) for x, z in [
+    (.059, -.558), (-.059, -.558), (-.059, -.266), (.059, -.266),
+])
+grip_top = len(vertices)
+vertices.extend(grip_vertex(x, z, .035) for x, z in [
+    (.045, -.528), (-.045, -.528), (-.045, -.286), (.045, -.286),
+])
+outer = (12, 13, 21, 20)
+for i in range(4):
+    j = (i + 1) % 4
+    faces.append((outer[i], outer[j], grip_base + j, grip_base + i))
+    faces.append((grip_base + i, grip_base + j, grip_top + j, grip_top + i))
+    material_indices.extend((0, 0))
+faces.append(tuple(range(grip_top, grip_top + 4)))
+material_indices.append(0)
 mesh = bpy.data.meshes.new("Editor Camera")
 mesh.from_pydata(vertices, [], faces)
 mesh.update()
@@ -54,10 +83,8 @@ for name, color in [
     material = bpy.data.materials.new(name)
     material.diffuse_color = color
     mesh.materials.append(material)
-for polygon in mesh.polygons:
-    if polygon.index >= 33:
-        polygon.material_index = 1
-mesh.polygons[-1].material_index = 2
+for polygon, material_index in zip(mesh.polygons, material_indices):
+    polygon.material_index = material_index
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.mesh.normals_make_consistent(inside=False)
