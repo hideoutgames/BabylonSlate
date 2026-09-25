@@ -27,7 +27,7 @@ import {
   type AuthoredCameraProperties,
 } from "./scene-illumination";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
-import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
 import type { AudioLibrary } from "./audio-service";
 
@@ -152,6 +152,7 @@ export class EditorDebugOverlay {
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
+  private readonly previewBlitter = createRttCanvasBlitter();
   private audioDebug: Array<{
     root: TransformNode;
     actor: SerializedActor;
@@ -494,7 +495,7 @@ export class EditorDebugOverlay {
     const texture = this.previewTexture;
     if (!canvas || !texture) return;
     try {
-      const buffer = await texture.readPixels();
+      const buffer = await this.previewBlitter.read(texture);
       // A stopped overlay or replaced canvas must not receive a late readback.
       if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
@@ -502,11 +503,7 @@ export class EditorDebugOverlay {
       const { width, height } = texture.getSize();
       canvas.width = width;
       canvas.height = height;
-      ctx.putImageData(
-        new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
-        0,
-        0,
-      );
+      this.previewBlitter.put(ctx, buffer, width, height);
     } catch {
       // NullEngine / missing GPU readback is fine — tests assert the RTT itself.
     }
