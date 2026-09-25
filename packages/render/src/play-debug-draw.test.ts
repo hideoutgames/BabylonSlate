@@ -1,4 +1,3 @@
-import { StandardMaterial } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { createTestEngine } from "./create-null-engine";
@@ -177,7 +176,8 @@ describe("play debug draw", () => {
       }),
     );
     const line = scene.meshes.find((mesh) => mesh.name.startsWith(PLAY_DEBUG_DRAW_PREFIX));
-    expect(line?.material).toBeInstanceOf(StandardMaterial);
+    // Thick lines take the GreasedLine branch, not the CreateLines fallback.
+    expect(line?.getClassName()).toBe("GreasedLineMesh");
     scene.render();
     overlay.noteSimTick(1);
     overlay.noteSimTick(2);
