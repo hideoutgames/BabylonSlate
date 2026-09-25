@@ -1,81 +1,39 @@
 import {
   createDefaultParticleSystemPayload,
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
-  type ParticleEmitterPayload,
+  isParticleEmitterAssetType,
+  particleEmitterChangeTier,
+  particleLibraryEmitter,
+  particleLibraryFromAssets,
+  stableStringify,
+  type ParticleEmitterChangeTier,
+  type ParticleLibrary,
+  type ParticleLibraryEmitter,
   type ParticleSystemPayload,
 } from "@babylonslate/assets";
 
-export type PlayParticleLibrary = {
-  emitters: Map<string, ParticleEmitterPayload>;
-  systems: Map<string, ParticleSystemPayload>;
-};
-
-export function emptyPlayParticleLibrary(): PlayParticleLibrary {
-  return {
-    emitters: new Map(),
-    systems: new Map(),
-  };
-}
+/** @deprecated Use `ParticleLibrary` from `@babylonslate/assets`. */
+export type PlayParticleLibrary = ParticleLibrary;
 
 /** Build a Play particle library from registry/open-document payloads. */
 export function playParticleLibraryFromAssets(options: {
   assets: ReadonlyArray<{ guid: string; type: string; payload: unknown }>;
-}): PlayParticleLibrary {
-  const library = emptyPlayParticleLibrary();
-  for (const asset of options.assets) {
-    if (asset.type === "ParticleEmitter") {
-      library.emitters.set(
-        asset.guid,
-        normalizeParticleEmitterPayload(asset.payload),
-      );
-    } else if (asset.type === "ParticleSystem") {
-      library.systems.set(
-        asset.guid,
-        normalizeParticleSystemPayload(asset.payload),
-      );
-    }
-  }
-  return library;
+}): ParticleLibrary {
+  return particleLibraryFromAssets(options.assets);
 }
 
-export function particleTextureGuidsFromLibrary(
-  library: PlayParticleLibrary,
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const emitter of library.emitters.values()) {
-    if (!emitter.textureGuid || seen.has(emitter.textureGuid)) continue;
-    seen.add(emitter.textureGuid);
-    guids.push(emitter.textureGuid);
-  }
-  return guids;
-}
+export const PREVIEW_EMITTER_GUID = "preview-em";
+export const PREVIEW_SYSTEM_GUID = "preview-sys";
 
-export function particleMaterialGuidsFromLibrary(
-  library: PlayParticleLibrary,
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const emitter of library.emitters.values()) {
-    if (!emitter.materialGuid || seen.has(emitter.materialGuid)) continue;
-    seen.add(emitter.materialGuid);
-    guids.push(emitter.materialGuid);
-  }
-  return guids;
-}
-
-export function emitterPreviewLibrary(
-  emitter: ParticleEmitterPayload,
-): PlayParticleLibrary {
+/** Wraps one emitter in a synthetic Preview Particle System. */
+export function emitterPreviewLibrary(entry: ParticleLibraryEmitter): ParticleLibrary {
   return {
-    emitters: new Map([["preview-em", emitter]]),
+    emitters: new Map([[PREVIEW_EMITTER_GUID, entry]]),
     systems: new Map([
       [
-        "preview-sys",
+        PREVIEW_SYSTEM_GUID,
         {
           ...createDefaultParticleSystemPayload(),
-          emitterGuids: ["preview-em"],
+          emitterGuids: [PREVIEW_EMITTER_GUID],
         },
       ],
     ]),
@@ -84,47 +42,59 @@ export function emitterPreviewLibrary(
 
 export function systemPreviewLibrary(
   system: ParticleSystemPayload,
-  emitters: ReadonlyMap<string, ParticleEmitterPayload>,
-): PlayParticleLibrary {
-  const used = new Map<string, ParticleEmitterPayload>();
+  emitters: ReadonlyMap<string, ParticleLibraryEmitter>,
+): ParticleLibrary {
+  const used = new Map<string, ParticleLibraryEmitter>();
   for (const guid of system.emitterGuids) {
     const emitter = emitters.get(guid);
     if (emitter) used.set(guid, emitter);
   }
   return {
     emitters: used,
-    systems: new Map([["preview-sys", system]]),
+    systems: new Map([[PREVIEW_SYSTEM_GUID, system]]),
   };
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+const TIER_ORDER: readonly ParticleEmitterChangeTier[] = [
+  "none",
+  "live",
+  "respawn",
+  "rebuild",
+];
 
-export function emittersFromRegistry(
-  assets: ReadonlyArray<{
-    header: { guid: string; type: string; payload?: Record<string, unknown> };
-  }>,
-  openPayloads: ReadonlyMap<string, unknown>,
-): Map<string, ParticleEmitterPayload> {
-  const emitters = new Map<string, ParticleEmitterPayload>();
-  for (const asset of assets) {
-    if (asset.header.type !== "ParticleEmitter") continue;
-    const payload =
-      openPayloads.get(asset.header.guid) ?? asset.header.payload ?? {};
-    emitters.set(
-      asset.header.guid,
-      normalizeParticleEmitterPayload(asRecord(payload)),
-    );
+/**
+ * How a running preview must apply `next` over `applied`: the worst emitter tier,
+ * or `rebuild` when a System or an emitter slot itself changed. The preview applies
+ * `live` edits at once and waits for a pause in editing before heavier ones.
+ */
+export function particleLibraryChangeTier(
+  applied: ParticleLibrary,
+  next: ParticleLibrary,
+): ParticleEmitterChangeTier {
+  const systemGuids = new Set([...applied.systems.keys(), ...next.systems.keys()]);
+  for (const guid of systemGuids) {
+    if (
+      stableStringify(applied.systems.get(guid) ?? null) !==
+      stableStringify(next.systems.get(guid) ?? null)
+    ) {
+      return "rebuild";
+    }
   }
-  return emitters;
+  let tier: ParticleEmitterChangeTier = "none";
+  const emitterGuids = new Set([...applied.emitters.keys(), ...next.emitters.keys()]);
+  for (const guid of emitterGuids) {
+    const before = applied.emitters.get(guid);
+    const after = next.emitters.get(guid);
+    if (!before || !after || before.kind !== after.kind) return "rebuild";
+    const emitterTier = particleEmitterChangeTier(before.payload, after.payload);
+    if (TIER_ORDER.indexOf(emitterTier) > TIER_ORDER.indexOf(tier)) tier = emitterTier;
+  }
+  return tier;
 }
 
 /**
  * Resolve Emitters for Particle System Preview from open tabs or document
- * chunks. Registry headers do not store Emitter look (`textureGuid`, shape).
+ * chunks. Registry headers do not store the Emitter look (Material, modules).
  */
 export async function loadEmittersForPreview(options: {
   system: ParticleSystemPayload;
@@ -137,24 +107,23 @@ export async function loadEmittersForPreview(options: {
     kind: "particle-emitter",
     path: string,
   ) => Promise<unknown | null>;
-}): Promise<Map<string, ParticleEmitterPayload>> {
+}): Promise<Map<string, ParticleLibraryEmitter>> {
   const byGuid = new Map(
     options.assets
-      .filter((asset) => asset.header.type === "ParticleEmitter")
+      .filter((asset) => isParticleEmitterAssetType(asset.header.type))
       .map((asset) => [asset.header.guid, asset] as const),
   );
-  const emitters = new Map<string, ParticleEmitterPayload>();
+  const emitters = new Map<string, ParticleLibraryEmitter>();
   for (const guid of options.system.emitterGuids) {
-    const open = options.openPayloads.get(guid);
-    if (open != null) {
-      emitters.set(guid, normalizeParticleEmitterPayload(asRecord(open)));
-      continue;
-    }
+    if (emitters.has(guid)) continue;
     const asset = byGuid.get(guid);
     if (!asset) continue;
-    const loaded = await options.loadDocument("particle-emitter", asset.path);
-    if (loaded == null) continue;
-    emitters.set(guid, normalizeParticleEmitterPayload(asRecord(loaded)));
+    const payload =
+      options.openPayloads.get(guid) ??
+      (await options.loadDocument("particle-emitter", asset.path));
+    if (payload == null) continue;
+    const entry = particleLibraryEmitter(asset.header.type, payload);
+    if (entry) emitters.set(guid, entry);
   }
   return emitters;
 }

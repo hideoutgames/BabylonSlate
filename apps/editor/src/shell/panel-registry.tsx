@@ -55,9 +55,11 @@ import {
 import {
   ParticleEmitterDetailsPanel,
   ParticleEmitterPreviewPanel,
+} from "../panels/particle-emitter-panels";
+import {
   ParticleSystemDetailsPanel,
   ParticleSystemPreviewPanel,
-} from "../components/particle-editor";
+} from "../panels/particle-system-panels";
 import {
   ModelCollidersPanel,
   ModelDetailsPanel,

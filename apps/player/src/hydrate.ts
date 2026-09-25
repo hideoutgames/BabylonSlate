@@ -13,8 +13,8 @@ import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
+  isParticleAssetType,
+  particleLibraryFromAssets,
   normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -24,8 +24,7 @@ import {
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
-  type ParticleEmitterPayload,
-  type ParticleSystemPayload,
+  type ParticleLibrary,
   type RetargetAnimationLoad,
   type SoundAttenuationPayload,
   type SpriteAnimationPayload,
@@ -59,11 +58,6 @@ export type PackedAudioLibrary = {
   attenuations: Map<string, SoundAttenuationPayload>;
 };
 
-export type PackedParticleLibrary = {
-  emitters: Map<string, ParticleEmitterPayload>;
-  systems: Map<string, ParticleSystemPayload>;
-};
-
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
@@ -84,7 +78,7 @@ export type PackedGameContent = {
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
   audioLibrary: PackedAudioLibrary;
-  particleLibrary: PackedParticleLibrary;
+  particleLibrary: ParticleLibrary;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
   retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
   modelPayloads: Map<string, ModelPayload>;
@@ -156,8 +150,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const channels = new Map<string, AudioChannelPayload>();
   const audio = new Map<string, AudioPayload>(game.audioPayloads);
   const attenuations = new Map<string, SoundAttenuationPayload>();
-  const emitters = new Map<string, ParticleEmitterPayload>();
-  const systems = new Map<string, ParticleSystemPayload>();
+  const particleAssets: Array<{ guid: string; type: string; name?: string; payload: unknown }> = [];
   const animationPayloads = new Map<string, AnimationPayload>();
   const animationNames = new Map<string, string>();
 
@@ -231,12 +224,13 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       audio.set(entry.guid, normalizeAudioPayload(parsed));
       continue;
     }
-    if (entry.type === "ParticleEmitter" && parsed) {
-      emitters.set(entry.guid, normalizeParticleEmitterPayload(parsed));
-      continue;
-    }
-    if (entry.type === "ParticleSystem" && parsed) {
-      systems.set(entry.guid, normalizeParticleSystemPayload(parsed));
+    if (isParticleAssetType(entry.type) && parsed) {
+      particleAssets.push({
+        guid: entry.guid,
+        type: entry.type,
+        name: entry.name,
+        payload: parsed,
+      });
       continue;
     }
     if (entry.type === "Animation" && parsed) {
@@ -315,10 +309,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       audio,
       attenuations,
     },
-    particleLibrary: {
-      emitters,
-      systems,
-    },
+    particleLibrary: particleLibraryFromAssets(particleAssets),
     modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),

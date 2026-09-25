@@ -515,7 +515,7 @@ const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "particle-emitter-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
     },
   },
 ];
@@ -533,7 +533,7 @@ const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "particle-system-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
     },
   },
 ];
