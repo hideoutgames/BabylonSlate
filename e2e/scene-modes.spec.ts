@@ -6,7 +6,7 @@ import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src
 import { normalizeModelPayload } from "../packages/assets/src/model-payload";
 import { encodeTriangleGlb } from "../packages/render/src/model-mesh";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene, waitForSceneViewportReady, clickListedTestProject, waitForEditorInteractive } from "./open-test-project";
+import { openMainScene, waitForSceneViewportReady, waitForEditorInteractive } from "./open-test-project";
 import { closeProjectViaSettings } from "./close-project";
 import { saveAllIfEnabled } from "./save-all";
 import { IPAD_TEST_TAG } from "./ipad-tag";
@@ -106,7 +106,8 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await saveAllIfEnabled(page);
     const saved = await heightSum();
     await closeProjectViaSettings(page);
-    await clickListedTestProject(page); await waitForEditorInteractive(page); await openMainScene(page);
+    await page.getByTestId("open-listed-project-TestProject").click();
+    await waitForEditorInteractive(page); await openMainScene(page);
     await expect(page.getByTestId("scene-mode-select")).toContainText("Landscape");
     await expect(page.getByRole("tree", { name: "Landscape Components" })).toHaveCount(0);
     expect(await heightSum()).toBe(saved);
