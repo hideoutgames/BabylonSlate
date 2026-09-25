@@ -3,6 +3,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpRightIcon,
   BoneIcon,
+  ChevronsUpDownIcon,
   CopyIcon,
   CopyPlusIcon,
   FileInputIcon,
@@ -11,10 +12,10 @@ import {
   FolderPlusIcon,
   LinkIcon,
   ListFilterIcon,
-  OctagonAlertIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   UploadIcon,
   WaypointsIcon,
 } from "lucide-react";
@@ -2629,36 +2630,54 @@ export function ContentBrowserWorkspace({
         >
           <AlertDialogHeader className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
             <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
-              <OctagonAlertIcon className="size-4" />
+              <Trash2Icon className="size-4" />
             </AlertDialogMedia>
             <div className="flex min-w-0 flex-col gap-1">
               <AlertDialogTitle>
-                {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
+                {deleteTarget?.kind === "folder"
+                  ? "Delete Folder"
+                  : deleteTarget?.kind === "selection" && deleteTarget.folders.length > 0
+                    ? `Delete ${deleteListNames.length} Items`
+                    : deleteListNames.length === 1
+                      ? "Delete Asset"
+                      : `Delete ${deleteListNames.length} Assets`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {checkingDeleteReferences ? "Checking Class references before deletion."
+                {checkingDeleteReferences ? "Checking references…"
                   : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
-                  : hasReferencedClass ? "Choose one replacement for all usages of each Class. None clears its references and keeps placed instances with their engine base Class. You will confirm these changes next."
+                  : hasReferencedClass ? "Pick a replacement for each referenced Class, or leave None to clear its usages."
                   : deleteInboundRefs.length > 0
-                  ? "Deleting these items will break the references below. This cannot be undone."
-                  : "Permanently removes the selected items. This cannot be undone."}
+                  ? "The references below will break. This cannot be undone."
+                  : "This cannot be undone."}
               </AlertDialogDescription>
             </div>
           </AlertDialogHeader>
           <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             tabIndex={0} role="region" aria-label="Assets And References"
             data-testid="content-browser-delete-body">
-            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => (
-              <Field key={asset.header.guid} className="border-b px-4 py-3">
-                <FieldLabel htmlFor={`replace-class-${asset.header.guid}`}>Replace {resolveAssetName(asset.header.guid)}</FieldLabel>
-                <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
-                  className="min-h-[var(--touch-target,28px)] justify-start" onClick={() => setReplacementPicker(asset.header.guid)}>
-                  {classReplacementChoices[asset.header.guid]
-                    ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} /> : "None"}
-                </Button>
-                <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length} assets or settings listed below.</p>
-              </Field>
-            ))}
+            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => {
+              const usages = deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length;
+              return (
+                <Field key={asset.header.guid} orientation="horizontal" className="items-center border-b px-4 py-2.5">
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <FieldLabel htmlFor={`replace-class-${asset.header.guid}`} className="truncate">
+                      Replace {resolveAssetName(asset.header.guid)}
+                    </FieldLabel>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {usages === 1 ? "1 Usage" : `${usages} Usages`}
+                    </span>
+                  </div>
+                  <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
+                    className="min-h-[var(--touch-target,28px)] w-56 max-w-[50%] shrink-0 justify-between"
+                    onClick={() => setReplacementPicker(asset.header.guid)}>
+                    {classReplacementChoices[asset.header.guid]
+                      ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} />
+                      : <span className="text-muted-foreground">None</span>}
+                    <ChevronsUpDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                  </Button>
+                </Field>
+              );
+            })}
             <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
               <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
                 <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
@@ -2670,8 +2689,11 @@ export function ContentBrowserWorkspace({
                   ))}
                 </ul>
                 {deleteLastSceneClassLines.map((line) => (
-                  <p key={line} className="mt-2 text-sm font-medium text-destructive"
-                    data-testid="content-browser-delete-last-warning">{line}</p>
+                  <p key={line} className="mt-2 flex items-start gap-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+                    data-testid="content-browser-delete-last-warning">
+                    <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
+                    {line}
+                  </p>
                 ))}
                 {deleteInboundRefs.length === 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">No inbound references.</p>
@@ -2732,12 +2754,16 @@ export function ContentBrowserWorkspace({
         }} />
       <AlertDialog open={confirmReferencedDelete && deleteTarget !== null}
         onOpenChange={(open) => { if (!open) setConfirmReferencedDelete(false); }}>
-        <AlertDialogContent variant="destructive" data-testid="content-browser-delete-references-confirmation">
+        <AlertDialogContent variant="destructive" className="data-[size=default]:sm:max-w-md"
+          data-testid="content-browser-delete-references-confirmation">
           <AlertDialogHeader>
+            <AlertDialogMedia>
+              <Trash2Icon />
+            </AlertDialogMedia>
             <AlertDialogTitle>Delete Referenced Assets?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the selected assets and changes their references in {deleteInboundRefs.length} remaining assets or settings. This cannot be undone.
-              None clears Class references; placed actors and components keep their data with a base Class, and child Classes fall back to BObject. Other deleted asset references are cleared.
+              Updates references in {deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`}. This cannot be undone.
+              With None, placed actors keep their data on a base Class and child Classes fall back to BObject.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">
