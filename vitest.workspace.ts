@@ -19,6 +19,7 @@ export default defineConfig({
           include: [
             ...(packageCoverageOnly ? [] : ["apps/editor/**/*.test.ts"]),
             "packages/vfs/**/*.test.ts",
+            "packages/editor-kit/**/*.test.ts",
             "packages/graph-ui/**/*.test.ts",
             "packages/core/**/*.test.ts",
             "packages/assets/**/*.test.ts",
