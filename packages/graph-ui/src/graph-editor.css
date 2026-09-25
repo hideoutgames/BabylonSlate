@@ -79,6 +79,8 @@
 }
 
 .anim-state-node-entry {
+  /* Keeps the pinned Entry mark inside the shared min-height so wires stay level. */
+  padding-bottom: 26px;
   border-color: var(--graph-state-entry);
 }
 
@@ -114,15 +116,15 @@
 
 .anim-state-node-entry-mark {
   position: absolute;
-  top: 6px;
-  right: 8px;
-  padding: 0 6px;
-  border: 1px solid var(--graph-state-entry);
-  border-radius: 999px;
+  right: 0;
+  bottom: 9px;
+  left: 0;
   font-size: 10px;
-  font-weight: 500;
-  line-height: 16px;
+  letter-spacing: 0.04em;
+  line-height: 12px;
+  text-transform: uppercase;
   color: var(--graph-state-entry);
+  text-align: center;
 }
 
 .anim-state-handle {

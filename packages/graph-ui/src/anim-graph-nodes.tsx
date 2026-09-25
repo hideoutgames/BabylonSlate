@@ -57,7 +57,7 @@ export function AnimStateNode({
       data-testid={`anim-state-node-${id}`}
     >
       {ANIM_STATE_SIDES.map((side) => (
-        <span key={side}>
+        <span key={side} className="contents">
           <Handle
             type="target"
             position={SIDE_POSITION[side]}
