@@ -7,7 +7,7 @@ import {
   type Texture,
   type CubeTexture,
 } from "@babylonjs/core";
-import { ResourceCache } from "./resource-cache";
+import { acquireTextureVariant, ResourceCache } from "./resource-cache";
 
 it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {
   const { cache, engine } = host();
@@ -73,6 +73,23 @@ it("rejects an over-budget successor without retiring the working upload", () =>
   expect(working.resource.isReady()).toBe(true);
   expect(cache.accountedBytes()).toBe(80);
   expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+  working.release();
+});
+
+it("admits a sampling variant that shares a live upload while over budget", async () => {
+  const { cache, engine } = host();
+  engine.getCaps().maxAnisotropy = 8;
+  const working = cache.acquireTexture("working", engine, ktx2());
+  uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
+  const bytes = cache.accountedBytes();
+  cache.setByteCeiling(bytes - 1);
+  const variant = acquireTextureVariant(working.resource as Texture, { anisotropicFilteringLevel: 2 });
+  expect(variant?.resource).not.toBe(working.resource);
+  await expect(variant?.ready).resolves.toBeUndefined();
+  expect(variant?.resource.getInternalTexture()).toBe(working.resource.getInternalTexture());
+  expect(cache.accountedBytes()).toBe(bytes);
+  expect(cache.resourceStats()).toMatchObject({ wrappers: 2, pending: 0 });
+  variant?.release();
   working.release();
 });
 

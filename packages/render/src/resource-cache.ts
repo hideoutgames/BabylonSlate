@@ -526,13 +526,19 @@ export class ResourceCache {
     texture.anisotropicFilteringLevel = options.anisotropicFilteringLevel ?? 4;
     textureRequests.set(texture, { cache: this, assetGuid, engine, bytes, options });
     entry.textureUploads ??= new Map();
-    entry.textureUploads.set(key, uploadKey);
+    const uploads = entry.textureUploads;
+    // A wrapper on another live wrapper's upload adds no accounted bytes. Check
+    // again at load: a rejected first wrapper leaves this one owning the upload.
+    const admit = () => {
+      if (![...uploads].some(([sampling, upload]) => sampling !== key && upload === uploadKey)) this.assertAdmitted();
+    };
+    uploads.set(key, uploadKey);
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
     try {
       const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
-      preparation.validate(() => this.assertAdmitted(), () => texture.dispose(), measured);
-      this.assertAdmitted();
+      preparation.validate(admit, () => texture.dispose(), measured);
+      admit();
       preparation.observe(texture);
     } catch (error) {
       preparation.onError();
