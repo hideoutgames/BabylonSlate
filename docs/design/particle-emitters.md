@@ -7,10 +7,10 @@ Decision record for the **Particle emitters** named slice (`p-particle-*`). It r
 | PR | Checklist | Scope | Status |
 | --- | --- | --- | --- |
 | 1 | `p-particle-design` | This note, engineplan §2.7 revision, tracker section. Docs only | Landed with this note |
-| 2 | `p-particle-basic` | Basic Particle Emitter module stack, Material-only look, seconds, Babylon-constant blend/billboard mapping, bursts, new editor kit components | Planned |
+| 2 | `p-particle-basic` | Basic Particle Emitter module stack, Material-only look, seconds, Babylon-constant blend/billboard mapping, bursts, new editor kit components | Landed; reference in [particles.md](../architecture/particles.md) |
 | 3 | `p-particle-graph` | Particle Graph IR, lowering onto Babylon Node Particle blocks, graph editor, mixed-kind Particle System | Planned |
 
-Until PR2 lands, the code is the P17 surface described in particles.md (Texture field, Standard/Additive, `BILLBOARDMODE_ALL`).
+The Basic Particle Emitter, the Material-only look and the shared Particle System are shipped; [particles.md](../architecture/particles.md) is their reference, so this note keeps only decisions and rationale for them. Until PR3 lands there is no Particle Graph, and the Particle Graph sections below remain the plan.
 
 ## Decisions
 
@@ -21,8 +21,8 @@ Until PR2 lands, the code is the P17 surface described in particles.md (Texture 
 | D3 | Graph documents never store a backend. | A GPU tier for declarative graphs can be added later without a format change. |
 | D4 | The look is a **Material**. Both kinds require a particle-domain Material; emitters have no Texture field. Textures are sampled inside the Material with **Texture Sample** + **UV** (UV reads `particle_uv` in Particle mode). The **Particle Texture** material node is removed; **Particle Color** stays. | One look path. Babylon still requires a ready `particleTexture` (`isReady` in `thinParticleSystem.pure.js` and `gpuParticleSystem.pure.js`), so each native system owns a 1×1 white readiness texture that no shader samples. |
 | D5 | No emitter without a Material renders. The editor shows **No Material**; the runtime skips the slot with `particle.missing_material` (asset guid = the emitter). No default Material or Texture ships. | The user supplies materials; generated artwork is not allowed ([no-ai-artwork](../../.agents/rules/no-ai-artwork.md)). |
-| D6 | **Seconds** for both kinds: `updateSpeed = 1/60`. Rate is per second, lifetime and duration are seconds, gravity is m/s², angular speed is rad/s. | Babylon's defaults differ (classic 0.01, `SystemBlock` 0.0167), so today 1 unit ≈ 1.67 s. |
-| D7 | Blend and billboard options map to Babylon constants **by name** (`ParticleSystem.BLENDMODE_*`, `BILLBOARDMODE_*`), never repo-local numbers. | The P17 constants are swapped (`BLENDMODE_ONEONE` is 0 and `STANDARD` is 1 in Babylon), so saved "Additive" renders alpha-blended today. |
+| D6 | **Seconds** for both kinds: `updateSpeed = 1/60`. Rate is per second, lifetime and duration are seconds, gravity is m/s², angular speed is rad/s. | Babylon's defaults differ (classic 0.01, `SystemBlock` 0.0167), so in P17 1 unit ≈ 1.67 s. |
+| D7 | Blend and billboard options map to Babylon constants **by name** (`ParticleSystem.BLENDMODE_*`, `BILLBOARDMODE_*`), never repo-local numbers. | The P17 constants were swapped (`BLENDMODE_ONEONE` is 0 and `STANDARD` is 1 in Babylon), so saved "Additive" rendered alpha-blended. |
 | D8 | **No migration.** The project is unreleased. Header versions stay 1; normalizers read only the new shape and fill defaults, so existing emitters load with new defaults and may change look. | A chain step would force a save-approval prompt for a format nobody shipped. |
 | D9 | Lifecycle belongs to the **emitter**: Loop, Duration and Pre Warm live on each emitter of either kind. The Particle System keeps its slots, **Space** and **Preview Skybox**. | Emitter previews show their own timeline, and one System can hold a one-shot flash next to looping smoke. |
 | D10 | Quads only (`isBillboardBased = true`). No second renderer, mesh particles, SPS, fluid renderer or custom simulator. The NPE editor UI, snippet server, CDN URLs, `ParticleHelper` and Babylon JSON payloads are never used. | Same split as materials: own schema, then apply or lower in `@babylonslate/render`. |
@@ -41,60 +41,21 @@ Until PR2 lands, the code is the P17 surface described in particles.md (Texture 
 
 ## Look
 
-**Blend modes** (Render module, graph Emitter Output settings):
+Blend Mode and Billboard ids, their Babylon constants, the ONEONE/MULTIPLY effect reuse and the `ParticleBlendMultiplyBlock` insertion are in [particles.md → Look](../architecture/particles.md#look). Decisions:
 
-| Label | Id | Babylon constant | Blending |
-| --- | --- | --- | --- |
-| Additive (default) | `additive` | `BLENDMODE_ONEONE` (0) | src + dst |
-| Alpha Blend | `standard` | `BLENDMODE_STANDARD` (1) | src·α + dst·(1−α) |
-| Alpha Additive | `add` | `BLENDMODE_ADD` (2) | src·α + dst |
-| Multiply | `multiply` | `BLENDMODE_MULTIPLY` (3) | dst·src |
-| Subtract | `subtract` | `BLENDMODE_SUBTRACT` (−1) | dst − src |
-
-- `NodeMaterial.createEffectForParticles` compiles only the ONEONE and MULTIPLY effects. Other modes reuse the ONEONE effect (identical defines apart from `BLENDMULTIPLYMODE`) under the correct engine alpha state.
-- Particle Materials insert Babylon's `ParticleBlendMultiplyBlock` before the fragment output, so a transparent texel leaves the destination unchanged under Multiply.
-- Emitters own blend. The Material's own Blend Mode row is hidden in the particle domain.
-
-**Billboards:** Camera Facing (`BILLBOARDMODE_ALL`, default), Y Axis (`BILLBOARDMODE_Y`), Stretched (`BILLBOARDMODE_STRETCHED`, aligned to velocity; Scale Y lengthens it).
+- Emitters own blend (Render module; graph Emitter Output settings). The Material's own Blend Mode row is hidden in the particle domain.
+- Blend options are Additive (default), Alpha Blend, Alpha Additive, Multiply and Subtract; billboards are Camera Facing (default), Y Axis and Stretched. Both are read from Babylon by name (D7).
 
 ## Basic Particle Emitter
 
-### Value modes
+The module stack, value modes, shapes, bursts, units and change tiers are in [particles.md → Basic Particle Emitter](../architecture/particles.md#basic-particle-emitter). Decisions behind them:
 
-- Scalar properties use one union: **Constant** `{value}`, **Random Range** `{min, max}` or **Curve** `{keys}` (2–8 keys, first at 0 and last at 1, keys at least 1/256 apart). Colors use Constant, Random Range (two colors) or **Gradient** (2–8 stops, RGBA 0–1).
-- Each property allows a fixed subset of modes, a range and a unit from one spec table in `@babylonslate/assets` that the editor also reads.
-- Curves run over **particle age** (Birth → Death), except the Spawn Rate and Lifetime curves, which run over the **emitter cycle** (Start → End). The service drives emitter-time curves each frame, so Babylon's `addEmitRateGradient` / `addLifeTimeGradient` / `addStartSizeGradient` are never used and `start()` never throws on looping emitters.
-- A gradient replaces its fixed counterpart in Babylon (size, color, angular speed), so each property sets exactly one side.
-- Switching modes keeps the look: Constant → Range gives `[v, v]`; Range → Constant gives the midpoint; Curve → Range spans the key extremes.
-
-### Module stack
-
-Stages render in this order. **Always** modules have no switch; **Toggle** modules keep their values while disabled.
-
-| Stage | Module | Kind | Fields (modes) | Babylon |
-| --- | --- | --- | --- | --- |
-| Emitter | Emitter | Always | Material; Capacity; Loop (Infinite, Once); Duration (s); Pre Warm (s) | Material effect; capacity; `targetStopDuration` (Once only); `preWarmCycles` × `preWarmStepOffset` |
-| Spawn | Spawn Rate | Always | Rate /s (Constant, Curve over cycle) | `emitRate` |
-| Spawn | Bursts | Toggle (off) | Up to 8 entries: Time (s), Count, Cycles, Interval (s) | `manualEmitCount`, scheduled by the service |
-| Shape | Shape | Always | Point, Box, Sphere, Hemisphere, Cylinder, Cone; radius, radius range, height, angle, height range, spawn point only; Direction Radial (randomizer) or Directed (Direction Min/Max) | `create*Emitter` / `createDirected*Emitter` and instance fields |
-| Initialize | Initialize Particle | Always | Lifetime s (C, R, Curve over cycle); Speed /s (C, R); Size (C, R, Curve); Color (C, R, Gradient) | `min/maxLifeTime`; `min/maxEmitPower`; `min/maxSize` or `addSizeGradient`; `addColorGradient` |
-| Initialize | Scale | Toggle (off) | Scale X, Scale Y (C, R) | `min/maxScaleX`, `min/maxScaleY` |
-| Initialize | Rotation | Toggle (off) | Start Rotation deg (C, R); Rotation Speed deg/s (C, R, Curve) | `min/maxInitialRotation`; `min/maxAngularSpeed` or `addAngularSpeedGradient` |
-| Over Life | Speed Over Life | Toggle (off) | Multiplier (C, Curve) | `addVelocityGradient` |
-| Over Life | Speed Limit | Toggle (off) | Limit /s (C, Curve); Damping 0–1 | `addLimitVelocityGradient`, `limitVelocityDamping` |
-| Over Life | Drag | Toggle (off) | Drag 0–1 (C, Curve) | `addDragGradient` |
-| Forces | Gravity | Toggle (off) | Acceleration m/s² (default 0, −9.81, 0) | `gravity` |
-| Render | Render | Always | Blend Mode; Billboard | `blendMode`; `billboardMode` |
-
-Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, Lifetime 0.8–1.2 s, Speed 1–2, Size 0.2–0.4, Color gradient white → transparent, Additive, Camera Facing, capacity 256.
-
-### Runtime rules
-
-- **Bursts:** Babylon has no burst schedule. The service's emission driver sets `manualEmitCount` after a frame renders and restores rate emission (`-1`) once Babylon has consumed the count (it leaves `0`, which would otherwise mute rate emission forever). Bursts are one frame late by design, so GPU prewarm does not consume them. They are not simulated during prewarm.
-- **GPU slot ring:** under `emitRateControl`, Babylon sizes the GPU ring from rate × lifetime and overwrites live particles when bursts overlap. The owned GPU system claims the full ring (`capacity`) at construction and after `reset()`, guarded by a runtime layout check that fails the slot with `particle.apply_failed` after a Babylon upgrade. On GPU the oldest particle is recycled at capacity; on CPU new particles are dropped.
-- **Loop and drain:** Once emitters set `targetStopDuration = duration` and drain individually; Infinite emitters wrap the service's cycle clock. A System drains when every slot has stopped.
-- **Live edits in Preview:** value edits apply in place and keep particles. Edits that change GPU update defines or gradient key counts restart GPU particles (Babylon releases its buffers). Capacity, Loop, Pre Warm, Material, Billboard and adding or removing a curve rebuild the emitter.
-- Hemisphere direction is not normalized on the WebGL2 transform-feedback backend, so the plan divides Speed by the radius there to match WebGPU compute and CPU.
+- One value-mode union per property (Constant, Random Range, Curve; colors use Gradient), with allowed modes, ranges and units in one spec table in `@babylonslate/assets` that the editor also reads. Mode switches keep the look.
+- Spawn Rate and Lifetime curves run over the emitter cycle and are driven by the service each frame, because Babylon's emitter-time gradients throw on looping systems. Every other curve runs over particle age as a Babylon gradient.
+- Bursts are scheduled by the service through `manualEmitCount`, one frame late and not during prewarm, because Babylon has no burst schedule.
+- The owned GPU system claims its whole slot ring so overlapping bursts do not overwrite live particles; a layout guard fails the slot after an incompatible Babylon upgrade.
+- Pre Warm applies to Infinite emitters only, because Babylon advances a Once emitter's stop clock during prewarm.
+- Preview edits are tiered (`live`, `respawn`, `rebuild`) so value edits keep their particles.
 
 ## Particle Graph
 
@@ -139,8 +100,8 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 
 - Main-thread service in `@babylonslate/render`; the worker never imports Babylon and graphs emit commands only.
 - Slot records carry their kind and their own GPU flag. The P17 lifecycle contracts stay: incarnation, generation, idempotent Play, draining Stop, no GPU readback, SceneLayer ownership, stats returning to 0 on close.
-- One `ParticleLibrary` type in `@babylonslate/assets` (tagged `basic` / `graph` emitters plus systems) replaces the three copies in render, the editor and the player.
-- Diagnostics: `particle.unknown_system`, `particle.unknown_emitter`, `particle.missing_material` (replaces `particle.missing_texture`), `particle.apply_failed`, plus the graph codes above.
+- One `ParticleLibrary` type in `@babylonslate/assets` replaced the three copies in render, the editor and the player. PR2 ships `basic` emitter entries; PR3 adds `graph`.
+- A failure skips only its slot. Shipped behaviour and diagnostics: [particles.md → Runtime](../architecture/particles.md#runtime). PR3 adds the graph codes above.
 
 ## Editor and visual language
 
@@ -154,16 +115,7 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 
 ### Shared stage colours
 
-The Basic stage accents and the Particle Graph node headers use one role map onto the existing `--node-*` tokens, so a reader sees the same colour sequence in both editors.
-
-| Stage | Basic stages | Graph nodes | Token |
-| --- | --- | --- | --- |
-| Output | Emitter, Spawn, Render | Emitter Output | `--node-event` |
-| Create | Initialize | Create Particle | `--node-function` |
-| Shape | Shape | Shape nodes | `--node-latent` |
-| Update | Over Life, Forces | Update and Force nodes | `--node-pure` |
-| Input | — | Particle Attributes, System Values, Constants | `--node-variable` |
-| Value | — | Math, Vector, Logic, Random, Gradient | `--node-flow` |
+The Basic stage accents and the Particle Graph node headers use one role map onto the existing `--node-*` tokens, so a reader sees the same colour sequence in both editors. Table: [theming → Particle stage roles](../architecture/theming.md#particle-stage-roles).
 
 ### Particle Graph canvas
 
@@ -171,23 +123,11 @@ The Basic stage accents and the Particle Graph node headers use one role map ont
 - Value wires keep their pin colours at 4px. Color pins use `--pin-color`.
 - Compiler Results keep `pinId`, so pin error rings show on the canvas.
 
-### Basic Details
+### Basic Details and Preview
 
-- A **module stack**: sticky stage headers with a small accent pill; module cards with a chevron, title, collapsed summary (for example `30 /s`) and an enable switch for toggle modules. Disabled modules collapse, dim and keep their data.
-- The value-mode control is a 24px ghost icon button beside the label (44px on coarse pointers) that opens a Title Case menu: Constant, Random Range, Curve or Gradient.
-- Curves and gradients show an inline preview in a 28px row and expand inline into an editor with draggable keys or stops, Add/Remove buttons and numeric Time/Value (or Location/Color) fields. Coarse-pointer hit boxes are 44px tall and never overlap.
-- Units render verbatim after the label (`s`, `/s`, `deg`, `m/s²`), never through the label humanizer.
-- Every scrub uses a stable per-field undo merge key, so one gesture is one undo entry.
-
-### Preview
-
-- One preview surface for all three documents: Restart, Play/Pause, a GPU / CPU / GPU + CPU badge and an active-count badge (approximate on GPU), polled at 4 Hz.
-- Empty and failure states: **No Material** (with Pick Material), **No Emitters**, **Missing Emitter**, **Graph Has Errors**, **Loading Preview** (first boot only), **Preview Failed** with Retry.
-- Edits apply to the running preview after a 220ms debounce instead of rebuilding the scene.
-
-### New kit components (PR2)
-
-`ModuleStack` / `ModuleStage` / `ModuleCard`, `ValueModeField`, `CurveField`, `GradientField`; `PropertyGrid` gains `unit`, `labelAccessory` and the `range`, `curve`, `gradient` and `color4` row kinds; `ColorField` gains optional alpha. Each gets a [component catalog](../architecture/components.md) row and a Component Gallery entry.
+- Basic Details is a module stack with compact value-mode controls, inline curves and gradients, verbatim units and one undo entry per gesture. The shipped layout, preview states, change tiers and test ids are in [particles.md → Authoring](../architecture/particles.md#authoring).
+- One preview surface serves all three documents. The Particle Graph adds a **Graph Has Errors** state.
+- PR2 added `ModuleStack` / `ModuleStage` / `ModuleCard`, `ValueModeField`, `CurveField` and `GradientField`, extended `PropertyGrid` and `ColorField`, and added the `ParticlePreviewSurface` app wrapper; see the [component catalog](../architecture/components.md).
 
 ### Labels and icons
 

@@ -114,6 +114,12 @@ Scale about the midpoint, then apply two-finger translation. Wheel zooms about t
 - **Behaviour tree node drag:** free X/Y from the header handle (`.bt-node-drag-handle`). Attachments use `nodrag`. A completed move persists `editorPositions` and stably re-sorts siblings by X; Auto Arrange must not change `children[]`.
 - **Shake To Disconnect:** repeated node-drag reversals break the dragged nodes' incident links immediately when the shake threshold is reached. The node stays held, and connection assistance remains suppressed until release so nearby pins cannot reconnect during the same gesture. Engine Settings can disable shake detection.
 
+## Details curves and gradients
+
+- A collapsed Curve or Gradient row (`CurveField` / `GradientField`) is `touch-pan-y`, so a finger pan scrolls Details; a tap expands it.
+- The expanded curve plot or gradient bar is `touch-none`: one finger drags a key (or a stop, horizontally). On coarse pointers key and stop hit boxes are 44px tall and never wider than the gap to the nearest neighbour, so they never overlap.
+- **Add Key** / **Add Stop** is the primary way to add; double-click also adds. Arrow keys nudge the selected key (Shift ×10) and Delete removes it. Endpoints stay at 0 and 1.
+
 ## Document tabs (chrome bar)
 
 | Gesture | Action |

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test("gallery rendering disclosure supports keyboard and touch", { tag: IPAD_TEST_TAG }, async ({ page }) => {
@@ -333,5 +333,45 @@ test(
     const rowBox = await treeRow.boundingBox();
     expect(rowBox).not.toBeNull();
     expect(rowBox!.height).toBeGreaterThanOrEqual(28);
+  },
+);
+
+test(
+  "gallery module card headers and curve keys meet touch targets and keep desktop density",
+  { tag: IPAD_TEST_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?test=1&gallery=1");
+    await expect(page.getByTestId("component-gallery")).toBeVisible();
+    // Desktop Chrome also runs @ipad tests; its rows must stay at the compact 28px.
+    const ipad = testInfo.project.name === "ipad-landscape";
+    const expectHitArea = async (target: Locator, name: string, square = false) => {
+      const box = await target.boundingBox();
+      expect(box, `${name} should be laid out`).not.toBeNull();
+      if (ipad) {
+        expect(box!.height, `${name} height`).toBeGreaterThanOrEqual(44);
+        if (square) expect(box!.width, `${name} width`).toBeGreaterThanOrEqual(44);
+      } else {
+        expect(box!.height, `${name} height`).toBeCloseTo(28, 0);
+        if (square) expect(box!.width, `${name} width`).toBeCloseTo(28, 0);
+      }
+    };
+    const press = (target: Locator) => (ipad ? target.tap() : target.click());
+
+    const header = page.getByTestId("module-card-spawnRate-toggle");
+    await expectHitArea(header, "Spawn Rate header");
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    // The sticky stage header must not intercept the card header.
+    await press(header);
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+
+    await expectHitArea(page.getByTestId("gallery-curve-field-toggle"), "Curve toggle");
+    // Gallery keys sit at least a third of the plot apart, so no neighbour narrows them.
+    for (const index of [0, 1, 2]) {
+      await expectHitArea(page.getByTestId(`gallery-curve-field-key-${index}`), `Curve key ${index}`, true);
+    }
+    const key = page.getByTestId("gallery-curve-field-key-1");
+    await expect(key).toHaveAttribute("aria-pressed", "false");
+    await press(key);
+    await expect(key).toHaveAttribute("aria-pressed", "true");
   },
 );

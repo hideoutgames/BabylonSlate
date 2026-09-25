@@ -57,5 +57,25 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     const paused = result.captures.find((capture) => capture.name === "paused-drain")!;
     expect(paused.systems).toBe(2);
     if (gpu) expect(paused.processed.every((count) => count > 0)).toBe(true);
+    // Each blend mode over a mid-grey clear; plain Multiply darkening shows the transparent case drew.
+    const blend = (name: string) => {
+      const entry = result.blendCases.find((candidate) => candidate.name === name);
+      expect(entry, name).toBeDefined();
+      return entry!;
+    };
+    for (const name of ["additive", "add"]) {
+      const { centre, background } = blend(name);
+      expect(centre, name).toBeGreaterThan(background + 20);
+    }
+    for (const name of ["standard", "multiply", "subtract"]) {
+      const { centre, background } = blend(name);
+      expect(centre, name).toBeLessThan(background - 20);
+    }
+    const transparent = blend("multiply-transparent");
+    expect(Math.abs(transparent.centre - transparent.background)).toBeLessThanOrEqual(4);
+    // Unused ring slots draw nothing; overlapping bursts keep separate bands (the ring claim).
+    expect(result.bursts.beforeFirstBurst.red + result.bursts.beforeFirstBurst.blue).toBe(0);
+    expect(result.bursts.bands).toBeGreaterThanOrEqual(2);
+    expect(result.bursts.afterBursts.red).toBeGreaterThan(100);
   });
 }

@@ -1458,7 +1458,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Authored post-process stack | `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `scene-post-process-coordinator.spec.ts`, `scene-post-process-host.spec.ts`, `post-process-owner-overrides.spec.ts` |
 | Baked lighting | `baked-parity.spec.ts` (synthetic-atlas PBR/CEL parity, dielectric + metallic environment specular/diffuse cells on both backends), `baked-player.spec.ts` (Preview Build), `baked-play.spec.ts` (Editor Play + served export, zero realtime light defines on applied receivers), `baked-runtime.spec.ts`; authoring side `scene-bake.spec.ts`, `scene-bake-job.spec.ts`, `bake-provider.spec.ts`, `bake-uv.spec.ts` — the quality-tier bake variants are local-only (`BL_BAKE_QUALITY_E2E=1`) |
 | SceneLayers | `scene-layer-rendering.spec.ts` (viewport + Play); `runtime-owner-continuity.spec.ts` (moving global layer retained across loading, Play + Preview Build) |
-| Particles | `p17-particles.spec.ts` (authored emitter/system, Play billboards, teardown, save/reopen) |
+| Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, missing-Material diagnostic, save/reopen); `particle-lifecycle.spec.ts` (WebGL2/WebGPU × CPU/GPU emission, ownership, blend cases and overlapping bursts) |
 
 ### Hosts
 

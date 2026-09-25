@@ -533,14 +533,20 @@ Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 Audi
 
 See [audio.md](audio.md).
 
-## ParticleService (P17)
+## ParticleService
 
-Main-thread owner shared by overlay Play, asset Preview, and `apps/player`. Wraps Babylon `GPUParticleSystem` (default when `IsSupported`) with CPU `ParticleSystem` fallback. Billboard quads only (`isBillboardBased`, `BILLBOARDMODE_ALL`). No second renderer.
+Main-thread owner shared by overlay Play, the packed player and particle Previews (`packages/render/src/particle-service.ts`). Billboard quads only; no second renderer.
 
-- Play library of Particle Emitter / Particle System payloads loads beside `textureBytes`. Particle textures go through `getMaterialTexture`. Optional particle-domain Material uses `createEffectForParticles` after binding `system.particleTexture` onto `ParticleTextureBlock`.
+- **Per-emitter backend:** `GPUParticleSystem` (`emitRateControl: true`) when the owning engine supports compute or transform feedback, else CPU `ParticleSystem` with `min(capacity, 512)`. The owned GPU system claims its whole slot ring after construction and `reset()`, behind a runtime layout guard; at capacity the GPU recycles the oldest particle and the CPU drops new ones.
+- **Material required:** each slot leases a particle-domain Material (`acquireParticleMaterial`) and binds it with `bindParticleMaterial` → `createEffectForParticles`. A slot with no usable Material is skipped with `particle.missing_material` (`assetGuid` = the emitter); other slots play. Every per-slot failure skips only that slot.
+- **Readiness texture:** each native system owns a 1×1 white `RawTexture` as `particleTexture` because Babylon readiness requires one; no shader samples it, and the system's default `dispose()` frees it. There are no particle texture leases, and Play passes no particle texture acquirer.
+- **Seconds and pause:** `updateSpeed = 1/60` at creation; `setPaused` writes 0 and restores it. Live edits never write `updateSpeed`, prewarm or `targetStopDuration`.
+- **Blend and billboard** map ids to Babylon constants by name (`particle-render-modes.ts`). `createEffectForParticles` compiles only the ONEONE and MULTIPLY effects; the other blend modes reuse ONEONE under their own alpha state. Particle Materials insert `ParticleBlendMultiplyBlock` for Multiply.
+- **Emission driver** (`particle-emission-driver.ts`): drives Spawn Rate and Lifetime curves over the emitter cycle and schedules bursts through `manualEmitCount`, one frame late.
+- **Live edits:** `updateLibrary(library)` returns `{ tier }`. `live` edits write values and rebake GPU gradient textures in place, so particles survive; `respawn` (shape class, gradient key counts, blend into or out of Multiply) calls GPU `reset()`, so particles vanish and emission continues; `rebuild` recreates the bundle. `setLibrary` keeps Play semantics (later preparations only).
+- **Stop and drain:** per-emitter stop halts the driver before muting. CPU slots finish at zero live particles; GPU slots wait the lifetime bound, because the claimed ring always reports full capacity. `resetParticleSession` / `dispose()` on Play close, `changescene` and despawn.
+- **Stats:** `statsScope: "global"` (default; Play and player) publishes `systems`, `playing`, `gpu`, `gpuSystems` to test-mode `window.__babylonslateParticleStats` (`particleStats`); previews pass `"local"`. `previewStats()` returns `{ active, capacity, backend, approximate }` for the Preview badges. Play open/close must return `systems` to 0.
 - Worker emits `assignParticle` / `setParticlePlaying` only. Actor origin is an enabled zero-visibility emitter mesh (`alwaysSelectAsActiveMesh`) parented under the Play helper.
-- GPU `stop()` still draws leftovers; `resetParticleSession` / `dispose()` on Play close, `changescene`, and despawn.
-- Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return systems to 0.
 
 See [particles.md](particles.md).
 

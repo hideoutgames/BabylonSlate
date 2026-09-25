@@ -1,6 +1,13 @@
-import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import {
+  addMaterialPaletteNode,
+  compileMaterialPreview,
+  connectMaterialPins,
+  guidForPath,
+  importAlbedoTexture,
+  pickMaterialNodeTexture,
+} from "./material-graph";
 import {
   createContentBrowserAsset,
   openAssetFromBrowser,
@@ -11,17 +18,6 @@ import {
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import { openMinimalTestProject } from "./minimal-project";
-
-const ALBEDO_PNG = path.join(process.cwd(), "e2e/fixtures/albedo.png");
-
-async function guidForPath(page: Page, assetPath: string): Promise<string> {
-  return page.evaluate((target) => {
-    const host = globalThis as {
-      __babylonslateTest?: { guidForPath: (path: string) => string | null };
-    };
-    return host.__babylonslateTest?.guidForPath(target) ?? "";
-  }, assetPath);
-}
 
 async function pickAsset(
   page: Page,
@@ -49,6 +45,44 @@ async function closeWindowsMenu(page: Page): Promise<void> {
     await page.mouse.click(12, 12);
   }
   await expect(content).toHaveCount(0);
+}
+
+/** Picks a Value Mode for a Basic emitter Details row (`value-mode-<rowId>`). */
+async function chooseValueMode(
+  page: Page,
+  rowId: string,
+  mode: "constant" | "range" | "curve",
+): Promise<void> {
+  const menu = page.getByTestId(`value-mode-${rowId}-menu`);
+  await page.getByTestId(`value-mode-${rowId}`).click();
+  await expect(menu).toBeVisible();
+  await page.getByTestId(`value-mode-${rowId}-${mode}`).click();
+  // Radio items keep the menu open unless the host closes on click.
+  if (await menu.isVisible()) await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+}
+
+/** Particle Domain Material; the new Particle Output starts unwired. */
+async function createParticleMaterial(page: Page, name: string): Promise<string> {
+  await createContentBrowserAsset(page, "Material", name);
+  await openAssetFromBrowser(page, `assets/${name}.material.babasset`);
+  await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+  await expect(page.getByTestId("property-domain")).toBeVisible();
+  await page.getByTestId("property-domain").click();
+  await page.getByRole("option", { name: "Particle", exact: true }).click();
+  await expect(page.getByTestId("property-domain")).toContainText("Particle");
+  const guid = await guidForPath(page, `assets/${name}.material.babasset`);
+  expect(guid.length).toBeGreaterThan(0);
+  return guid;
+}
+
+/** Adds the emitter to a new slot of the open Particle System. */
+async function addSystemEmitter(page: Page, emitterPath: string, name: RegExp): Promise<void> {
+  const emitterGuid = await guidForPath(page, emitterPath);
+  expect(emitterGuid.length).toBeGreaterThan(0);
+  await page.getByTestId("particle-system-emitters-add").click();
+  await pickAsset(page, "particle-system-emitter-picker", emitterGuid);
+  await expect(page.getByTestId("particle-system-emitter-0")).toContainText(name);
 }
 
 async function particleStats(page: Page): Promise<{
@@ -79,22 +113,26 @@ test.describe("P17 particles", () => {
       if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
     });
     await openTestProject(page);
-    await openContentBrowser(page);
+    const albedoGuid = await importAlbedoTexture(page);
 
-    await page
-      .getByTestId("content-browser-import-input")
-      .setInputFiles([ALBEDO_PNG]);
+    // The look is the Material: a Texture Sample with unwired UV reads particle_uv.
+    const materialGuid = await createParticleMaterial(page, "SparksMat");
+    await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
+    await pickMaterialNodeTexture(page, albedoGuid);
+    await connectMaterialPins(
+      page,
+      "texture.sample-",
+      "rgba",
+      '[data-id="output"]',
+      "color",
+    );
     await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
-    ).toBeVisible({ timeout: 30_000 });
-
-    await createContentBrowserAsset(page, "Material", "SparksMat");
-    await openAssetFromBrowser(page, "assets/SparksMat.material.babasset");
-    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
-    await expect(page.getByTestId("property-domain")).toBeVisible();
-    await page.getByTestId("property-domain").click();
-    await page.getByRole("option", { name: "Particle" }).click();
-    await expect(page.getByTestId("property-domain")).toContainText("Particle");
+      page
+        .getByTestId("material-graph-editor")
+        .locator('.react-flow__edge[data-id*=":rgba:output:color"]'),
+    ).toHaveCount(1);
+    await compileMaterialPreview(page);
+    await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleEmitter", "Sparks");
     await openAssetFromBrowser(page, "assets/Sparks.emitter.babasset");
@@ -114,23 +152,29 @@ test.describe("P17 particles", () => {
     ).toBeVisible();
     await closeWindowsMenu(page);
 
-    await expect(page.getByTestId("particle-emitter-preview")).toBeVisible();
-    await expect(page.getByText("No Texture")).toBeVisible();
-    const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
-    expect(albedoGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-texture").click();
-    await pickAsset(page, "particle-emitter-texture-picker", albedoGuid);
+    const preview = page.getByTestId("particle-emitter-preview");
+    await expect(preview).toBeVisible();
+    await expect(preview.getByTestId("particle-preview-empty")).toContainText(
+      "No Material",
+    );
+    await preview.getByTestId("particle-preview-action").click();
+    await pickAsset(page, "particle-preview-material-picker", materialGuid);
     await expect(
       page.getByTestId("particle-emitter-preview-canvas"),
     ).toBeVisible();
+    // The backend badge shows only while at least one native system runs.
+    await expect(preview.getByTestId("particle-preview-backend")).toBeVisible({
+      timeout: 30_000,
+    });
 
-    const materialGuid = await guidForPath(
-      page,
-      "assets/SparksMat.material.babasset",
+    await page.getByTestId("module-card-gravity-enabled").click();
+    await expect(page.getByTestId("module-card-gravity-body")).toBeVisible();
+    // A Lifetime curve runs over the emitter cycle, which Play must accept on an Infinite loop.
+    await chooseValueMode(page, "lifetime", "curve");
+    await expect(page.getByTestId("property-lifetime-toggle")).toHaveAttribute(
+      "aria-label",
+      /2 Keys/,
     );
-    expect(materialGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-material").click();
-    await pickAsset(page, "particle-emitter-material-picker", materialGuid);
 
     await createContentBrowserAsset(page, "ParticleSystem", "Fire");
     await openAssetFromBrowser(page, "assets/Fire.particles.babasset");
@@ -140,13 +184,7 @@ test.describe("P17 particles", () => {
     await expect(
       page.getByTestId("particle-system-details-panel"),
     ).toBeVisible();
-    const emitterGuid = await guidForPath(
-      page,
-      "assets/Sparks.emitter.babasset",
-    );
-    expect(emitterGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-emitter-0").click();
-    await pickAsset(page, "particle-system-emitter-picker", emitterGuid);
+    await addSystemEmitter(page, "assets/Sparks.emitter.babasset", /Sparks/);
     await expect(page.getByText("Preview Skybox")).toBeVisible();
     await saveAllIfEnabled(page);
     await page
@@ -209,7 +247,7 @@ test.describe("P17 particles", () => {
     expect(shaderErrors).toEqual([]);
   });
 
-  test("Play/Stop Particles are on the Class palette; missing texture diagnoses", async ({
+  test("Play/Stop Particles are on the Class palette; missing material diagnoses", async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -235,10 +273,7 @@ test.describe("P17 particles", () => {
     await createContentBrowserAsset(page, "ParticleEmitter", "Bare");
     await createContentBrowserAsset(page, "ParticleSystem", "EmptyLook");
     await openAssetFromBrowser(page, "assets/EmptyLook.particles.babasset");
-    const emitterGuid = await guidForPath(page, "assets/Bare.emitter.babasset");
-    expect(emitterGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-emitter-0").click();
-    await pickAsset(page, "particle-system-emitter-picker", emitterGuid);
+    await addSystemEmitter(page, "assets/Bare.emitter.babasset", /Bare/);
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -264,8 +299,9 @@ test.describe("P17 particles", () => {
 
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
+    // The slot without a Material is skipped with particle.missing_material.
     await expect(page.getByTestId("play-log-tail")).toContainText(
-      /no Texture/i,
+      /no Material/i,
       { timeout: 15_000 },
     );
     await expect
@@ -280,19 +316,16 @@ test.describe("P17 particles", () => {
   }) => {
     test.setTimeout(240_000);
     await openTestProject(page);
-    await openContentBrowser(page);
-    await page
-      .getByTestId("content-browser-import-input")
-      .setInputFiles([ALBEDO_PNG]);
-    await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
-    ).toBeVisible({ timeout: 30_000 });
+    const materialGuid = await createParticleMaterial(page, "ReopenMat");
     await createContentBrowserAsset(page, "ParticleEmitter", "ReopenSparks");
     await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
-    const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
-    expect(albedoGuid.length).toBeGreaterThan(0);
-    await page.getByTestId("property-texture").click();
-    await pickAsset(page, "particle-emitter-texture-picker", albedoGuid);
+    await page.getByTestId("property-material").click();
+    await pickAsset(page, "particle-emitter-material-picker", materialGuid);
+    await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
+    const rate = page.getByTestId("property-rate");
+    await rate.fill("35");
+    await rate.press("Tab");
+    await expect(rate).toHaveValue("35");
     await saveAllIfEnabled(page);
 
     await closeProjectViaSettings(page);
@@ -306,6 +339,7 @@ test.describe("P17 particles", () => {
       page.locator('[data-asset-path="assets/ReopenSparks.emitter.babasset"]'),
     ).toBeVisible();
     await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
-    await expect(page.getByTestId("property-texture")).toContainText(/albedo/i);
+    await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
+    await expect(page.getByTestId("property-rate")).toHaveValue("35");
   });
 });
