@@ -16,7 +16,7 @@ import type { PhysicsWorldKind } from "@babylonslate/core";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";
-import { markPlayDebugOverlay } from "./play-debug-draw";
+import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
 const wireframeRestore = new WeakMap<Scene, Map<Material, boolean>>();

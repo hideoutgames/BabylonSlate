@@ -11,7 +11,7 @@ import {
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion } from "@babylonslate/core";
-import { RENDERING_GROUP } from "./sorting";
+import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
@@ -68,15 +68,6 @@ function asColor(value: unknown): Color3 {
     asNumber(record.y, 1),
     asNumber(record.z, 1),
   );
-}
-
-/** Keep a Play debug mesh out of picking, shadows, fog and Play wireframe/bounds. */
-export function markPlayDebugOverlay(mesh: AbstractMesh): void {
-  mesh.isPickable = false;
-  mesh.receiveShadows = false;
-  mesh.applyFog = false;
-  mesh.renderingGroupId = RENDERING_GROUP.world;
-  mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
 }
 
 function posePoint(local: Vector3, origin: Vector3, rotation: Quaternion): Vector3 {
