@@ -1539,6 +1539,8 @@ Water assets share one definition between the renderer and game worker. Realisti
 
 `WaterBuoyancyComponent` applies lift and drag at four support points through the native physics backend. It preserves collision impulses and angular motion, so a falling rigid body can depress and tip a floating body. Zero Volume automatically provides displacement for twice the body's mass; an explicit Volume uses cubic metres and the asset's Density uses kg/m³. Width, Length, Height, and Offset describe the floating volume. Existing Rigid Body and collider settings continue to control mass and collision response.
 
+Explicit Volume is multiplied by the component's absolute world scale on all three axes. At the default density, `0.002 m³` supports a `1 kg` body halfway submerged; increasing it to `0.004 m³` leaves a quarter submerged. A fully submerged hull supports at most `Density × scaled Volume` kilograms, so insufficient capacity sinks. Changes apply during Play. Details shows six decimal places and a fine scrub increment for small hulls; Reset returns to automatic (`0`). Lift and drag use implicit surface integration to prevent large displacement-to-mass ratios launching objects out of the water.
+
 Surface queries and buoyancy use the same analytic waves and simulation clock as rendering. Overlapping surfaces select the highest water surface, or the explicitly selected water actor. Disabled water does not participate in queries or buoyancy. Puddle depth limits its buoyant volume.
 
 

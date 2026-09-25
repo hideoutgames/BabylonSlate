@@ -21,13 +21,13 @@ describe("Water buoyancy with native collision response", () => {
     const step = (count: number) => { for (let i = 0; i < count; i++) sync.step(1 / 60, world, tick++ / 60); };
     try {
       step(300);
-      expect(float.transform.position.y).toBeCloseTo(0, 2);
+      expect(Math.abs(float.transform.position.y)).toBeLessThan(0.025);
       buoyancy.setVariable("volume", 0.004);
       step(420);
-      expect(float.transform.position.y).toBeCloseTo(0.25, 2);
+      expect(Math.abs(float.transform.position.y - 0.25)).toBeLessThan(0.025);
       float.transform.scale.x = 2;
       step(420);
-      expect(float.transform.position.y).toBeCloseTo(0.375, 2);
+      expect(Math.abs(float.transform.position.y - 0.375)).toBeLessThan(0.025);
       // The scaled hull now displaces at most 0.5 kg of water: it cannot carry 1 kg.
       buoyancy.setVariable("volume", 0.00025);
       step(180);

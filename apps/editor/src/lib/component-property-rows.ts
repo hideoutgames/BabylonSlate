@@ -499,7 +499,7 @@ export function componentPropertyRows(
     const b = normalizeWaterBuoyancy(component.properties);
     return [
       { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: b.enabled, onChange: (value) => update("enabled", value) },
-      { kind: "number", id: rowId(actorId, component.id, "volume"), label: "Volume", value: b.volume, min: 0, description: "Cubic metres. Zero automatically floats this body's mass. Extra loads push it deeper.", onChange: (value) => update("volume", value) },
+      { kind: "number", id: rowId(actorId, component.id, "volume"), label: "Volume", value: b.volume, defaultValue: 0, min: 0, max: 100000, sensitivity: 0.0001, precision: 6, description: "Cubic metres, scaled with the component. Zero is automatic. In default water, 0.002 floats 1 kg halfway submerged; larger volumes float higher. Extra loads push it deeper.", onChange: (value) => update("volume", value) },
       ...(["width", "length", "height", "drag", "angularDrag"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: b[key], min: key === "drag" || key === "angularDrag" ? 0 : 0.01, onChange: (value) => update(key, value) })),
       { kind: "vector3", id: rowId(actorId, component.id, "offset"), label: "Offset", value: b.offset, onChange: (value) => update("offset", value.slice(0, 3)) },
     ];

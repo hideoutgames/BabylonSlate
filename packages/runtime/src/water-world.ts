@@ -85,6 +85,7 @@ export class WaterWorld {
     if (!actorTransform || !pose || !velocity) return;
     const transform = componentWorldTransform(component, actor, { ...actorTransform, ...pose });
     const height = props.height * Math.abs(transform.scale.y);
+    if (height < 1e-6) return;
     for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
       const offset = quatRotateVector(transform.rotation, {
         x: (props.offset[0] + x * props.width) * transform.scale.x,
@@ -101,9 +102,25 @@ export class WaterWorld {
       const a = velocity.angular, v = velocity.linear;
       const drag = mass * Math.min(1, props.drag * dt) * submerged / 4;
       const spin = props.angularDrag;
+      const relativeY = v.y + (a.z * r.x - a.x * r.z) - sample.velocity.y;
+      const pointMass = mass / 4;
+      const lift = sample.density * volume * Math.max(0, gravity) / 4;
+      const stiffness = lift / height;
+      // Implicitly integrate the surface spring and drag. Explicit lift can launch
+      // a light hull metres in one step when its authored displacement is large.
+      // Clamp to the dry/fully immersed branches, preserving carrying capacity.
+      const freeVelocity = relativeY - Math.max(0, gravity) * dt;
+      const dragFactor = 1 + drag / pointMass;
+      const dragImpulse = -drag * (v.y + spin * (a.z * r.x - a.x * r.z) - sample.velocity.y - Math.max(0, gravity) * dt);
+      const maximumLift = lift * Math.min(1, sample.waterDepth / height, (sample.waterDepth - sample.depth + height / 2) / height) * dt;
+      const verticalImpulse = Math.max(dragImpulse / dragFactor, Math.min(
+        (maximumLift + dragImpulse) / dragFactor,
+        (stiffness * dt * (sample.depth + height / 2 - freeVelocity * dt) + dragImpulse)
+          / (dragFactor + stiffness * dt * dt / pointMass),
+      ));
       backend.addImpulseAtPoint(bodyId, {
         x: (sample.velocity.x - v.x - spin * (a.y * r.z - a.z * r.y)) * drag,
-        y: sample.density * volume * Math.max(0, gravity) * submerged * dt / 4 + (sample.velocity.y - v.y - spin * (a.z * r.x - a.x * r.z)) * drag,
+        y: verticalImpulse,
         z: (sample.velocity.z - v.z - spin * (a.x * r.y - a.y * r.x)) * drag,
       }, point);
     }
