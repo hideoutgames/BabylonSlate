@@ -30,6 +30,38 @@
   }
 }
 
+/*
+ * Details rows place a label beside its control once the panel has room.
+ * Vectors, asset pickers, and described rows keep the full width for their values and copy.
+ */
+@container property-grid (min-width: 16rem) {
+  [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
+    > [data-slot="field-group"]
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-described]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 0.5rem;
+  }
+
+  [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
+    > [data-slot="field-group"]
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-described])
+    > :first-child {
+    min-height: var(--chrome-row, 28px);
+  }
+
+  [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
+    > [data-slot="field-group"]
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-described])
+    [data-slot="field-label"] {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.2;
+  }
+}
+
 /* Disabled remains the interaction contract; inspection values stay readable. */
 [data-slot="property-grid"][data-readonly="true"] :is([data-slot="field-label"], :disabled, [aria-disabled="true"], [data-disabled]) {
   opacity: 1;
