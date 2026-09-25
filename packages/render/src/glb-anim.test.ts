@@ -5,6 +5,7 @@ import type { NamedSeekableGroup } from "./anim-apply";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
+  accountedGeometryBytesForScene,
   adoptLoadedHierarchy,
   animationRetargetHasMatches,
   beginSlotModelAnimLoad,
@@ -12,7 +13,12 @@ import {
   invalidateSlotAnimLoad,
   reportGlbLoadFailure,
 } from "./glb-anim";
-import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
+import {
+  encodeParentedAnimatedTriangleGlb,
+  encodeTranslatedTetrahedronGlb,
+  encodeTriangleGlb,
+} from "./model-mesh";
+import { accountedGeometryBytes } from "./perf-ceilings";
 import {
   applySnapshotToScene,
   createSnapshotSceneBinding,
@@ -165,6 +171,19 @@ describe("beginSlotModelAnimLoad", () => {
       handle?.scene.dispose();
       handle?.engine.dispose();
     }
+  });
+
+  it("accounts a mesh shared by two glTF nodes once", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const split = splitGlbJsonBin(encodeTranslatedTetrahedronGlb([0, 0, 0]))!;
+    (split.json.nodes as unknown[]).push({ mesh: 0, translation: [1, 0, 0] });
+    (split.json.scenes as Array<{ nodes: number[] }>)[0]!.nodes = [0, 1];
+    const root = createModelActorRoot(handle.scene, "actor-2");
+    await beginSlotModelAnimLoad(handle.scene, createSnapshotSceneBinding(), 2, "model-1",
+      installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
+    expect(visualMeshes(root)).toHaveLength(2);
+    expect(accountedGeometryBytesForScene(handle.scene)).toBe(accountedGeometryBytes(4, 12));
   });
 
   it("loads a static GLB nested in a larger ArrayBuffer", async () => {

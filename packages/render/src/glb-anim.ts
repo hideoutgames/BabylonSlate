@@ -14,7 +14,6 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@babylonslate/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
@@ -112,15 +111,9 @@ function cacheFor(scene: Scene): SceneGlbCache {
 
 function accountedAssetContainerGeometry(container: AssetContainer): number {
   let total = 0;
-  for (const mesh of container.meshes) {
-    const positions = mesh.getVerticesData?.(VertexBuffer.PositionKind);
-    const vertexCount = positions
-      ? positions.length / 3
-      : (mesh.getTotalVertices?.() ?? 0);
-    const indices = mesh.getIndices?.();
-    const indexCount = indices ? indices.length : 0;
-    if (vertexCount <= 0 && indexCount <= 0) continue;
-    total += accountedGeometryBytes(vertexCount, indexCount);
+  // Unique buffers: glTF InstancedMesh parts share their source geometry.
+  for (const geometry of container.geometries) {
+    total += accountedGeometryBytes(geometry.getTotalVertices(), geometry.getTotalIndices());
   }
   return total;
 }
