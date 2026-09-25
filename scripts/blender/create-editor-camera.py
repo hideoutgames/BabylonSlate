@@ -23,11 +23,11 @@ scene = bpy.data.scenes.new("Slate Standard Camera")
 bpy.context.window.scene = scene
 # One closed silhouette: low tapered body with a directly attached solid lens.
 rings = [
-    (-.730, rectangle(.129, .110, .016)),
-    (-.714, rectangle(.145, .126, .018)),
-    (-.244, rectangle(.174, .154, .018)),
-    (-.228, rectangle(.158, .138, .012)),
-    (-.228, rectangle(.145, .104, .012)),
+    (-.664, rectangle(.129, .110, .016)),
+    (-.648, rectangle(.145, .126, .018)),
+    (-.178, rectangle(.174, .154, .018)),
+    (-.162, rectangle(.158, .138, .012)),
+    (-.162, rectangle(.145, .104, .012)),
     (-.050, rectangle(.196, .118, .014)),
     (-.030, rectangle(.196, .118, .014)),
     (-.043, rectangle(.172, .094, .012)),
