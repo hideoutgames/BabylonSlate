@@ -3,7 +3,6 @@ import {
   PREVIEW_SYSTEM_GUID,
   emitterPreviewLibrary,
   loadEmittersForPreview,
-  particleLibraryChangeTier,
   systemPreviewLibrary,
 } from "./play-particles";
 import {
@@ -81,29 +80,5 @@ describe("loadEmittersForPreview", () => {
     });
     expect(loadDocument).not.toHaveBeenCalled();
     expect(emitters.get("em-1")?.payload.render.materialGuid).toBe("from-tab");
-  });
-});
-
-describe("particleLibraryChangeTier", () => {
-  const library = (payload: ParticleEmitterPayload, emitterGuids = ["em-1"]) =>
-    systemPreviewLibrary(
-      { ...createDefaultParticleSystemPayload(), emitterGuids },
-      new Map([["em-1", basic(payload)]]),
-    );
-  const base = withMaterial("mat-1");
-
-  it("applies a value edit live and holds back edits that restart the emitter", () => {
-    const rate = { ...base, spawn: { ...base.spawn, rate: { mode: "constant" as const, value: 45 } } };
-    expect(particleLibraryChangeTier(library(base), library(base))).toBe("none");
-    expect(particleLibraryChangeTier(library(base), library(rate))).toBe("live");
-    expect(particleLibraryChangeTier(library(base), library(withMaterial("mat-2")))).toBe(
-      "rebuild",
-    );
-  });
-
-  it("rebuilds when the System's slots change", () => {
-    expect(
-      particleLibraryChangeTier(library(base), library(base, ["em-1", "em-1"])),
-    ).toBe("rebuild");
   });
 });

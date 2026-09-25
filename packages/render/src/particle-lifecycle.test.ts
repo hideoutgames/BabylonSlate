@@ -42,8 +42,9 @@ function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null,
   const play = (playing: boolean) => service.handleCommand({ type: "setParticlePlaying", actorGuid: "actor", componentId: "particle", playing });
   /** One rendered frame for the service's per-frame work (NullEngine never simulates). */
   const frame = () => { host.scene.onBeforeRenderObservable.notifyObservers(host.scene); host.scene.onAfterRenderObservable.notifyObservers(host.scene); };
+  const state = () => service.playbackState("actor", "particle");
   cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
-  return { ...host, service, release, diagnostics, assign, play, frame,
+  return { ...host, service, release, diagnostics, assign, play, frame, state,
     acquisitions: () => acquisitions,
     complete: async () => { for (const resolve of waiting.splice(0)) resolve(); await new Promise((settled) => setTimeout(settled, 0)); } };
 }
@@ -113,7 +114,7 @@ describe("particle incarnation and playback ownership", () => {
     f.service.setPaused(true);
     f.assign();
     const first = f.scene.particleSystems[0] as ParticleSystem;
-    await vi.waitFor(() => expect(first.isStarted()).toBe(true));
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
     const advance = (system: ParticleSystem) => {
       system.emitRate = 100;
       // Public prewarm stepping uses the same native CPU simulation without a GPU draw.
@@ -130,13 +131,26 @@ describe("particle incarnation and playback ownership", () => {
     f.play(true);
     const restarted = f.scene.particleSystems[0] as ParticleSystem;
     expect(restarted).not.toBe(first);
-    await vi.waitFor(() => expect(restarted.isStarted()).toBe(true));
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
     advance(restarted);
     expect(restarted.getActiveCount()).toBe(0);
     f.service.setPaused(false);
     expect(restarted.updateSpeed).toBe(preparedSpeed);
     advance(restarted);
     expect(restarted.getActiveCount()).toBeGreaterThan(0);
+  });
+
+  it("keeps Pre Warm for a run prepared while paused", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ warm: { emitter: { prewarm: 1 }, spawn: { rate: { mode: "constant", value: 60 } },
+      initialize: { lifetime: { mode: "constant", value: 2 } } } }));
+    f.service.setPaused(true);
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
+    f.service.setPaused(false);
+    // CPU prewarm runs inside start(): one second at 60 /s is in place before any frame.
+    expect(system.getActiveCount()).toBeGreaterThan(50);
   });
 
   it("ignores an old Material rejection after a same-key successor starts", async () => {
@@ -294,5 +308,7 @@ describe("per-emitter lifecycle", () => {
     f.frame();
     expect(f.scene.particleSystems).toHaveLength(0);
     expect(f.service.stats()).toMatchObject({ systems: 0, playing: 0 });
+    // Released, not failed: the next Play prepares a new run.
+    expect(f.state()).toBe("ready-stopped");
   });
 });

@@ -44,14 +44,18 @@ export type ParticlePreviewStats = {
   approximate: boolean;
 };
 export type ParticleMaterialOwner = { scene: Scene; instanceKey: string };
+/** `ready-stopped` includes a released bundle (a finished Once System), which replays on its next Play. */
+export type ParticlePlaybackState = "preparing" | "ready-stopped" | "playing" | "draining" | "failed";
 type Assignment = Extract<CommandMessage, { type: "assignParticle" }>;
-type PlaybackState = "preparing" | "ready-stopped" | "playing" | "draining" | "failed" | "retired";
+type PlaybackState = ParticlePlaybackState | "retired";
 type SlotBase = {
   emitterGuid: string;
   system: IParticleSystem;
   lease: ResourceLease<NodeMaterial>;
   pending: number;
   updateSpeed: number;
+  /** Native `start()` ran. Systems readied while paused start on resume, so prewarm runs at speed. */
+  started: boolean;
   /** Native stop (a finished Once emitter) or drain; the emission driver is halted. */
   stopped: boolean;
   cancel: Array<() => void>;
@@ -64,6 +68,8 @@ type BasicSlot = SlotBase & {
   /** Source payload, diffed by `updateLibrary`. */
   payload: ParticleEmitterPayload;
   driver: BasicEmissionDriver;
+  /** GPU prewarm runs inside the first ready render and would consume a queued burst, so the driver waits for that draw. */
+  prewarmPending: boolean;
   lifetime: number;
   drainedTime: number;
   lastRenderId: number;
@@ -166,7 +172,7 @@ export class ParticleService {
     let applied: ParticleEmitterChangeTier = "none";
     for (const entry of [...this.live.values()]) {
       if (this.disposed || this.live.get(entry.key) !== entry) continue;
-      const tier = this.changeTier(entry);
+      const tier = this.changeTier(entry, library);
       if (tier === "none") continue;
       applied = maxTier(applied, tier);
       if (tier === "rebuild") {
@@ -176,6 +182,22 @@ export class ParticleService {
     }
     this.publishStats();
     return { tier: applied };
+  }
+
+  /**
+   * The tier `updateLibrary(library)` would apply now, without applying it. Only the
+   * service knows skipped slots, so a value edit that re-prepares one reads `rebuild`.
+   */
+  libraryChangeTier(library: ParticleLibrary): ParticleEmitterChangeTier {
+    let tier: ParticleEmitterChangeTier = "none";
+    for (const entry of this.live.values()) tier = maxTier(tier, this.changeTier(entry, library));
+    return tier;
+  }
+
+  /** Null when the component has no entry (never assigned, cleared, or an unknown System). */
+  playbackState(actorGuid: string, componentId: string): ParticlePlaybackState | null {
+    const state = this.live.get(liveKey(actorGuid, componentId))?.state;
+    return state && state !== "retired" ? state : null;
   }
 
   bindSlot(slotId: number, mesh: AbstractMesh | null): void {
@@ -200,6 +222,10 @@ export class ParticleService {
       if (paused) record.updateSpeed = record.system.updateSpeed;
       record.system.updateSpeed = paused ? 0 : record.updateSpeed;
     }
+    if (paused) return;
+    // Speeds are restored first: CPU prewarm runs inside `start()`, GPU prewarm on the first render.
+    for (const entry of [...this.live.values()]) if (entry.state === "playing") this.startSystems(entry);
+    this.publishStats();
   }
 
   handleCommand(command: CommandMessage): void {
@@ -343,7 +369,9 @@ export class ParticleService {
         if (entry.state === "playing") {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
-          for (const record of entry.systems) if (!record.stopped) record.driver.advance(record.system.updateSpeed * ratio);
+          for (const record of entry.systems) {
+            if (!record.stopped && !record.prewarmPending) record.driver.advance(record.system.updateSpeed * ratio);
+          }
         }
         this.finishDrain(entry, generation);
       });
@@ -387,8 +415,10 @@ export class ParticleService {
       system.emitter = slot.node;
       applyBasicEmitterPlan(system, plan, "create");
       const ready = bindParticleMaterial(system, lease.resource);
-      const record: SlotRecord = { kind: "basic", emitterGuid: guid, system, lease, gpu: slot.backend !== "cpu", backend: slot.backend,
-        payload, driver: createBasicEmissionDriver(system, plan.schedule), pending: 0, updateSpeed: plan.updateSpeed, stopped: false,
+      const gpu = slot.backend !== "cpu";
+      const record: SlotRecord = { kind: "basic", emitterGuid: guid, system, lease, gpu, backend: slot.backend,
+        payload, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
+        pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false,
         lifetime: plan.lifetimeBound, drainedTime: 0, lastRenderId: -1, lastCameraId: -1, cancel: [] };
       if (this.paused) system.updateSpeed = 0;
       applySortingToParticleSystem(system, slot.sorting);
@@ -404,6 +434,8 @@ export class ParticleService {
       if (record.gpu) {
         const draw = native.onBeforeDrawParticlesObservable.add(() => {
           if (!this.current(entry, generation)) return;
+          // Babylon draws only after its prewarm, so bursts queued from now on are rendered.
+          record.prewarmPending = false;
           const renderId = host.getRenderId();
           const cameraId = host.activeCamera?.uniqueId ?? -1;
           // MULTIPLYADD draws twice, but Babylon updates once per camera/render ID.
@@ -440,11 +472,23 @@ export class ParticleService {
     if (entry.timer !== undefined) { clearTimeout(entry.timer); entry.timer = undefined; }
     entry.preparationCheck?.(); entry.preparationCheck = undefined;
     entry.state = entry.desiredPlaying ? "playing" : "ready-stopped";
-    if (entry.desiredPlaying) for (const record of entry.systems) {
+    if (entry.desiredPlaying) this.startSystems(entry);
+    this.publishStats();
+  }
+
+  /**
+   * Starts a playing entry's systems. While paused they wait for `setPaused(false)`:
+   * prewarm at `updateSpeed` 0 would simulate nothing and never run again.
+   */
+  private startSystems(entry: LiveComponent): void {
+    if (this.paused) return;
+    for (const record of entry.systems) {
+      // A start observer may Stop or replace the entry.
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;
+      if (record.started) continue;
+      record.started = true;
       record.system.start(0);
     }
-    this.publishStats();
   }
 
   private stop(entry: LiveComponent): void {
@@ -476,8 +520,9 @@ export class ParticleService {
   private finishDrain(entry: LiveComponent, generation: number): void {
     if (!this.current(entry, generation) || entry.state !== "draining") return;
     // A claimed GPU ring always reports its capacity, so GPU slots wait the lifetime bound.
-    const drained = entry.systems.every(({ system, gpu, drainedTime, lifetime }) =>
-      gpu ? system.getActiveCount() === 0 || drainedTime > lifetime : system.getActiveCount() === 0);
+    // A system stopped before it started (paused) never emitted.
+    const drained = entry.systems.every(({ system, gpu, started, drainedTime, lifetime }) => !started ||
+      (gpu ? system.getActiveCount() === 0 || drainedTime > lifetime : system.getActiveCount() === 0));
     if (!drained) return;
     this.releaseBundle(entry);
     entry.state = "ready-stopped";
@@ -512,16 +557,16 @@ export class ParticleService {
     this.publishStats();
   }
 
-  /** Worst change tier between a prepared bundle's sources and the current library. */
-  private changeTier(entry: LiveComponent): ParticleEmitterChangeTier {
+  /** Worst change tier between a prepared bundle's sources and `library`. */
+  private changeTier(entry: LiveComponent, library: ParticleLibrary): ParticleEmitterChangeTier {
     const source = entry.source;
     const failed = entry.state === "failed";
     // Released bundles and bundles waiting for their owner prepare from the new library.
     if (!source || (!entry.node && !failed) || entry.state === "draining" || entry.state === "retired") return "none";
-    if (!sameContent(source.system, this.library.systems.get(entry.command.particleSystemGuid!))) return "rebuild";
+    if (!sameContent(source.system, library.systems.get(entry.command.particleSystemGuid!))) return "rebuild";
     let tier: ParticleEmitterChangeTier = "none";
     for (const [guid, previous] of source.emitters) {
-      const next = this.library.emitters.get(guid);
+      const next = library.emitters.get(guid);
       if (!previous || !next || previous.kind !== next.kind) {
         if (!sameContent(previous, next)) return "rebuild";
         continue;

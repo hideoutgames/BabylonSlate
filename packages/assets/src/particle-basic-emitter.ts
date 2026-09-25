@@ -344,8 +344,12 @@ function normalizeShape(value: unknown): ParticleEmitterShape {
   }
 }
 
-/** Keeps order, drops non-objects, caps at 8 entries and each count at `capacity`. */
-function normalizeBursts(value: unknown, capacity: number): ParticleBurst[] {
+/**
+ * Keeps order, drops non-objects and caps at 8 entries. Counts are not capped at
+ * Capacity here: every Capacity keystroke commits, so a stored cap would lose counts
+ * for good. The plan applies the cap.
+ */
+function normalizeBursts(value: unknown): ParticleBurst[] {
   if (!Array.isArray(value)) return [];
   const limits = PARTICLE_EMITTER_LIMITS;
   const bursts: ParticleBurst[] = [];
@@ -354,7 +358,7 @@ function normalizeBursts(value: unknown, capacity: number): ParticleBurst[] {
     if (!isRecord(entry)) continue;
     bursts.push({
       time: bounded(entry.time, 0, limits.burstTime),
-      count: Math.min(boundedInt(entry.count, 10, limits.burstCount), capacity),
+      count: boundedInt(entry.count, 10, limits.burstCount),
       cycles: boundedInt(entry.cycles, 1, limits.burstCycles),
       interval: bounded(entry.interval, 0.5, limits.burstInterval),
     });
@@ -383,23 +387,22 @@ export function normalizeParticleEmitterPayload(
   const gravity = asRecord(asRecord(rec.forces).gravity);
   const render = asRecord(rec.render);
   const specs = PARTICLE_VALUE_SPECS;
-  const capacity = boundedInt(emitter.capacity, PARTICLE_CAPACITY_DEFAULT, {
-    min: PARTICLE_CAPACITY_MIN,
-    max: PARTICLE_CAPACITY_MAX,
-  });
   return {
     schemaVersion: PARTICLE_EMITTER_SCHEMA_VERSION,
     emitter: {
       loop: emitter.loop === "once" ? "once" : "infinite",
       duration: bounded(emitter.duration, 2, PARTICLE_EMITTER_LIMITS.duration),
       prewarm: bounded(emitter.prewarm, 0, PARTICLE_EMITTER_LIMITS.prewarm),
-      capacity,
+      capacity: boundedInt(emitter.capacity, PARTICLE_CAPACITY_DEFAULT, {
+        min: PARTICLE_CAPACITY_MIN,
+        max: PARTICLE_CAPACITY_MAX,
+      }),
     },
     spawn: {
       rate: normalizeScalarValue(spawn.rate, specs["spawn.rate"]),
       bursts: {
         enabled: bursts.enabled === true,
-        entries: normalizeBursts(bursts.entries, capacity),
+        entries: normalizeBursts(bursts.entries),
       },
     },
     shape: normalizeShape(rec.shape),
@@ -498,7 +501,7 @@ export type BasicEmissionSchedule = {
   duration: number;
   rateCurve: ParticleScalarKey[] | null;
   lifetimeCurve: ParticleScalarKey[] | null;
-  /** Empty when the Bursts module is disabled. */
+  /** Empty when the Bursts module is disabled; counts are capped at the plan capacity. */
   bursts: ParticleBurst[];
 };
 
@@ -597,11 +600,12 @@ export function resolveBasicEmitterPlan(
       : 1;
   const { scale, rotation } = initialize;
   const angular = rotation.enabled ? rotation.speed : null;
+  const capacity = resolveParticleEmitterCapacity(
+    emitter.capacity,
+    options.backend !== "cpu",
+  );
   return {
-    capacity: resolveParticleEmitterCapacity(
-      emitter.capacity,
-      options.backend !== "cpu",
-    ),
+    capacity,
     updateSpeed: PARTICLE_UPDATE_SPEED,
     targetStopDuration: emitter.loop === "once" ? emitter.duration : 0,
     preWarmCycles: prewarm.cycles,
@@ -648,8 +652,12 @@ export function resolveBasicEmitterPlan(
       duration: emitter.duration,
       rateCurve: curveKeys(spawn.rate),
       lifetimeCurve: curveKeys(initialize.lifetime),
+      // One burst never exceeds the native ring (the CPU fallback's ring is smaller).
       bursts: spawn.bursts.enabled
-        ? spawn.bursts.entries.map((burst) => ({ ...burst }))
+        ? spawn.bursts.entries.map((burst) => ({
+            ...burst,
+            count: Math.min(burst.count, capacity),
+          }))
         : [],
     },
   };

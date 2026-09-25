@@ -37,22 +37,26 @@ describe("Basic emitter normalization", () => {
     expect(payload).not.toHaveProperty("textureGuid");
   });
 
-  it("clamps burst counts to capacity and keeps at most eight bursts", () => {
+  it("keeps burst counts above Capacity and at most eight bursts", () => {
     const payload = normalizeParticleEmitterPayload({
       emitter: { capacity: 64 },
       spawn: {
         bursts: {
-          enabled: true,
+          enabled: false,
           entries: [
             "junk",
-            { time: 0, count: 5000 },
+            { time: 0, count: 100 },
+            { time: 0.5, count: 5000 },
             ...Array.from({ length: 10 }, () => ({ time: 1, count: 3 })),
           ],
         },
       },
     });
     expect(payload.spawn.bursts.entries).toHaveLength(8);
-    expect(payload.spawn.bursts.entries[0]!.count).toBe(64);
+    // Capacity commits per keystroke, so a stored cap would lose counts for good.
+    expect(payload.spawn.bursts.entries.slice(0, 2).map((burst) => burst.count)).toEqual([
+      100, 4096,
+    ]);
   });
 
   it("keeps a disabled module's values but leaves it out of the plan", () => {
@@ -201,6 +205,26 @@ describe("Basic emitter plan", () => {
     const off = emitter((p) => (p.spawn.bursts = { enabled: false, entries }));
     expect(resolveBasicEmitterPlan(on, gpu).schedule.bursts).toEqual(entries);
     expect(resolveBasicEmitterPlan(off, gpu).schedule.bursts).toEqual([]);
+  });
+
+  it("caps each scheduled burst at the capacity its backend runs", () => {
+    const payload = emitter((p) => {
+      p.emitter.capacity = 1024;
+      p.spawn.bursts = {
+        enabled: true,
+        entries: [
+          { time: 0, count: 2000, cycles: 1, interval: 0.5 },
+          { time: 0.5, count: 300, cycles: 1, interval: 0.5 },
+        ],
+      };
+    });
+    const counts = (backend: "cpu" | "compute") =>
+      resolveBasicEmitterPlan(payload, { backend, space: "world" }).schedule.bursts.map(
+        (burst) => burst.count,
+      );
+    expect(counts("compute")).toEqual([1024, 300]);
+    expect(counts("cpu")).toEqual([512, 300]);
+    expect(payload.spawn.bursts.entries[0]!.count).toBe(2000);
   });
 });
 

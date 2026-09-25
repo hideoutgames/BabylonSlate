@@ -46,9 +46,12 @@ describe("ParticleService", () => {
     ready?: (guid: string) => Promise<void> | undefined;
     sceneForSlot?: (slotId: number) => Scene | null;
     statsScope?: "global" | "local";
+    /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
+    gpu?: boolean;
   } = {}) {
     const handle = createTestEngine();
     handles.push(handle);
+    if (options.gpu) vi.spyOn(handle.engine, "getCaps").mockReturnValue({ ...handle.engine.getCaps(), supportTransformFeedbacks: true });
     const emitterMesh = MeshBuilder.CreateBox("emitter", { size: 0.1 }, handle.scene);
     const leases = { acquired: 0, released: 0 };
     const diagnostics: ParticleServiceDiagnostic[] = [];
@@ -61,7 +64,7 @@ describe("ParticleService", () => {
     };
     const service = new ParticleService({
       scene: handle.scene,
-      gpuSupported: false,
+      gpuSupported: options.gpu ?? false,
       acquireMaterial,
       resolveEmitter: (slotId) => (slotId === 1 ? emitterMesh : null),
       sceneForSlot: options.sceneForSlot,
@@ -70,7 +73,13 @@ describe("ParticleService", () => {
     });
     const assign = (slotId = 1, play = true) => service.handleCommand({ type: "assignParticle", slotId, actorGuid: "fx",
       componentId: "particle-1", particleSystemGuid: "sys-1", play });
-    return { ...handle, service, emitterMesh, leases, diagnostics, assign };
+    /** One rendered frame for the service's per-frame work (NullEngine never simulates). */
+    const frame = () => {
+      handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
+      handle.scene.onAfterRenderObservable.notifyObservers(handle.scene);
+    };
+    const state = () => service.playbackState("fx", "particle-1");
+    return { ...handle, service, emitterMesh, leases, diagnostics, assign, frame, state };
   }
 
   const started = (system: unknown) => (system as ParticleSystem | undefined)?.isStarted() === true;
@@ -133,11 +142,12 @@ describe("ParticleService", () => {
   });
 
   it("creates no native system when the only slot has no Material", () => {
-    const { scene, service, diagnostics, assign } = host();
+    const { scene, service, diagnostics, assign, state } = host();
     service.setLibrary(library({ "em-1": basic({ render: { materialGuid: null } }) }));
     assign();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().systems).toBe(0);
+    expect(state()).toBe("failed");
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["particle.missing_material"]);
     service.dispose();
   });
@@ -301,6 +311,55 @@ describe("ParticleService", () => {
     expect(service.updateLibrary(library({ "em-1": basic() })).tier).toBe("rebuild");
     expect(scene.particleSystems).toHaveLength(1);
     await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    service.dispose();
+  });
+
+  it("reports a value edit on a skipped slot as a rebuild without applying it", async () => {
+    const { scene, service, assign } = host();
+    const rate = { spawn: { rate: { mode: "constant", value: 45 } } };
+    const skipped = { render: { materialGuid: null } };
+    service.updateLibrary(library({ "em-1": basic(), skipped: basic(skipped) }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    // Only the service knows the slot was skipped, so the preview debounces this edit.
+    expect(service.libraryChangeTier(library({ "em-1": basic(), skipped: basic({ ...skipped, ...rate }) }))).toBe("rebuild");
+    expect(service.libraryChangeTier(library({ "em-1": basic(rate), skipped: basic(skipped) }))).toBe("live");
+    expect(service.libraryChangeTier(library({ "em-1": basic(), skipped: basic(skipped) }, ["em-1"]))).toBe("rebuild");
+    expect(scene.particleSystems).toEqual([system]);
+    expect(system.emitRate).not.toBe(45);
+    service.dispose();
+  });
+
+  it("holds a prewarming GPU emitter's bursts until its first draw", async () => {
+    const { scene, service, assign, frame } = host({ gpu: true });
+    service.setLibrary(library({ "em-1": basic({ emitter: { prewarm: 1 }, spawn: { rate: { mode: "constant", value: 0 },
+      bursts: { enabled: true, entries: [{ time: 0, count: 8, cycles: 1, interval: 0.5 }] } } }) }));
+    assign();
+    const system = scene.particleSystems[0]!;
+    expect(service.stats().gpuSystems).toBe(1);
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    // GPU prewarm runs inside the first ready render and would emit a queued burst there.
+    frame();
+    frame();
+    expect(system.manualEmitCount).toBe(-1);
+    system.onBeforeDrawParticlesObservable.notifyObservers(null);
+    frame();
+    expect(system.manualEmitCount).toBe(8);
+    service.dispose();
+  });
+
+  it("drains a GPU emitter stopped while paused before it started", async () => {
+    const { scene, service, assign, frame, state } = host({ gpu: true });
+    service.setLibrary(library({ "em-1": basic() }));
+    service.setPaused(true);
+    assign();
+    await vi.waitFor(() => expect(state()).toBe("playing"));
+    service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: false });
+    // A claimed GPU ring reports full capacity and an unstarted system never draws.
+    frame();
+    expect(scene.particleSystems).toHaveLength(0);
+    expect(state()).toBe("ready-stopped");
     service.dispose();
   });
 

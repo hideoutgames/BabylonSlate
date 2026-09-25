@@ -21,8 +21,9 @@ export type BasicEmissionDriver = {
  * emitter-time gradients throw on looping systems, so the driver samples the Spawn Rate
  * and Lifetime curves over the emitter cycle and queues bursts through
  * `manualEmitCount`. A burst is queued after frame k renders and emitted in frame k + 1
- * (one frame late by design, so GPU prewarm inside the first render never consumes it);
- * bursts are not simulated during prewarm.
+ * (one frame late by design); bursts are not simulated during prewarm. GPU prewarm runs
+ * inside the first ready render, so the service advances a prewarming GPU emitter's
+ * driver only after its first draw.
  */
 export function createBasicEmissionDriver(
   target: EmissionTarget,

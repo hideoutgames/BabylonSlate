@@ -20,7 +20,6 @@ import {
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
-import { particleLibraryChangeTier } from "../lib/play-particles";
 import {
   ParticlePreviewSurface,
   type ParticlePreviewState,
@@ -29,6 +28,9 @@ import {
 /** Trailing pause after the last respawn/rebuild-tier edit (`IDLE_DEBOUNCE_MS` pattern). */
 export const PARTICLE_PREVIEW_EDIT_DEBOUNCE_MS = 220;
 const STATS_POLL_MS = 250;
+/** The one component the preview assigns. */
+const PREVIEW_ACTOR = "preview";
+const PREVIEW_COMPONENT = "preview";
 
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
 
@@ -118,12 +120,16 @@ export function ParticlePreviewCanvas({
   // A resolver knows only the Material documents collected at boot.
   const materialKey = particleLibraryMaterialGuids(library).sort().join(",");
 
-  /** Full-canvas state only when nothing plays; skipped slots become a notice. */
+  /**
+   * Full-canvas state only when the run failed; skipped slots become a notice. A
+   * finished Once emitter releases its systems but stays ready for Restart.
+   */
   const evaluate = useCallback(() => {
     const service = serviceRef.current;
     if (!service) return;
     const diagnostics = diagnosticsRef.current;
-    if (service.stats().systems === 0) {
+    const state = service.playbackState(PREVIEW_ACTOR, PREVIEW_COMPONENT);
+    if (state === null || state === "failed") {
       setFailure(blockingDiagnostic(diagnostics));
       setNotice(null);
     } else {
@@ -140,8 +146,8 @@ export function ParticlePreviewCanvas({
         service.handleCommand({
           type: "assignParticle",
           slotId: 0,
-          actorGuid: "preview",
-          componentId: "preview",
+          actorGuid: PREVIEW_ACTOR,
+          componentId: PREVIEW_COMPONENT,
           particleSystemGuid: systemGuid,
           play: true,
         });
@@ -276,11 +282,12 @@ export function ParticlePreviewCanvas({
   ]);
 
   useEffect(() => {
-    const applied = appliedRef.current;
-    if (!serviceRef.current || !applied) return;
-    const tier = particleLibraryChangeTier(applied, libraryRef.current);
-    if (tier === "none") return;
-    if (tier === "live" && debounceRef.current === undefined) {
+    const service = serviceRef.current;
+    if (!service || !appliedRef.current) return;
+    // Only the service knows skipped slots: a value edit that re-prepares one waits too.
+    const tier = service.libraryChangeTier(libraryRef.current);
+    if ((tier === "none" || tier === "live") && debounceRef.current === undefined) {
+      // A `none` edit still reaches the service, so Restart replays a released run with it.
       applyLibrary(libraryRef.current);
       return;
     }

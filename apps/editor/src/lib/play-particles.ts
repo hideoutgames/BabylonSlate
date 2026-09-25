@@ -1,10 +1,7 @@
 import {
   createDefaultParticleSystemPayload,
   isParticleEmitterAssetType,
-  particleEmitterChangeTier,
   particleLibraryEmitter,
-  stableStringify,
-  type ParticleEmitterChangeTier,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
@@ -42,43 +39,6 @@ export function systemPreviewLibrary(
     emitters: used,
     systems: new Map([[PREVIEW_SYSTEM_GUID, system]]),
   };
-}
-
-const TIER_ORDER: readonly ParticleEmitterChangeTier[] = [
-  "none",
-  "live",
-  "respawn",
-  "rebuild",
-];
-
-/**
- * How a running preview must apply `next` over `applied`: the worst emitter tier,
- * or `rebuild` when a System or an emitter slot itself changed. The preview applies
- * `live` edits at once and waits for a pause in editing before heavier ones.
- */
-export function particleLibraryChangeTier(
-  applied: ParticleLibrary,
-  next: ParticleLibrary,
-): ParticleEmitterChangeTier {
-  const systemGuids = new Set([...applied.systems.keys(), ...next.systems.keys()]);
-  for (const guid of systemGuids) {
-    if (
-      stableStringify(applied.systems.get(guid) ?? null) !==
-      stableStringify(next.systems.get(guid) ?? null)
-    ) {
-      return "rebuild";
-    }
-  }
-  let tier: ParticleEmitterChangeTier = "none";
-  const emitterGuids = new Set([...applied.emitters.keys(), ...next.emitters.keys()]);
-  for (const guid of emitterGuids) {
-    const before = applied.emitters.get(guid);
-    const after = next.emitters.get(guid);
-    if (!before || !after || before.kind !== after.kind) return "rebuild";
-    const emitterTier = particleEmitterChangeTier(before.payload, after.payload);
-    if (TIER_ORDER.indexOf(emitterTier) > TIER_ORDER.indexOf(tier)) tier = emitterTier;
-  }
-  return tier;
 }
 
 /**

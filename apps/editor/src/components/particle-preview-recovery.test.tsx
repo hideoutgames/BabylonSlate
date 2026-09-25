@@ -15,22 +15,31 @@ const harness = vi.hoisted(() => ({
     setPaused: ReturnType<typeof vi.fn>;
     updateLibrary: ReturnType<typeof vi.fn>;
     handleCommand: ReturnType<typeof vi.fn>;
+    systems: number;
+    state: string | null;
   }>,
   /** Diagnostics the next assign reports; a missing Material leaves no system. */
   assignDiagnostics: [] as ParticleServiceDiagnostic[],
+  /** The tier the service reports for the next library edit. */
+  tier: "live",
 }));
 
 vi.mock("@babylonslate/render", () => {
   class ParticleService {
     private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
-    private systems = 0;
+    systems = 0;
+    state: string | null = null;
     setPaused = vi.fn();
     setLibrary = vi.fn();
-    updateLibrary = vi.fn(() => ({ tier: "live" }));
+    libraryChangeTier = () => harness.tier;
+    updateLibrary = vi.fn(() => ({ tier: harness.tier }));
     handleCommand = vi.fn(() => {
       for (const diagnostic of harness.assignDiagnostics) this.onDiagnostic?.(diagnostic);
-      this.systems = harness.assignDiagnostics.length ? 0 : 1;
+      const failed = harness.assignDiagnostics.length > 0;
+      this.systems = failed ? 0 : 1;
+      this.state = failed ? "failed" : "playing";
     });
+    playbackState = () => this.state;
     stats = () => ({ systems: this.systems, playing: this.systems, gpu: true, gpuSystems: this.systems });
     previewStats = () => ({ active: 12, capacity: 256, backend: "gpu", approximate: true });
     dispose = vi.fn();
@@ -75,6 +84,7 @@ afterEach(() => {
   harness.createScene.mockReset();
   harness.services.length = 0;
   harness.assignDiagnostics = [];
+  harness.tier = "live";
 });
 
 const base = createDefaultParticleEmitterPayload();
@@ -82,6 +92,10 @@ const withMaterial: ParticleEmitterPayload = {
   ...base,
   render: { ...base.render, materialGuid: "mat-1" },
 };
+const withRate = (value: number): ParticleEmitterPayload => ({
+  ...withMaterial,
+  spawn: { ...withMaterial.spawn, rate: { mode: "constant", value } },
+});
 
 function preview(emitter: ParticleEmitterPayload = withMaterial) {
   return (
@@ -129,19 +143,33 @@ describe("Particle preview recovery", () => {
     });
   });
 
-  it("applies value edits at once and waits for edits that rebuild the emitter", async () => {
+  it("applies edits the service keeps live at once and waits for ones it re-prepares", async () => {
     const view = render(preview());
     await screen.findByTestId("particle-preview-restart");
     const service = harness.services[0]!;
-    view.rerender(
-      preview({ ...withMaterial, spawn: { ...withMaterial.spawn, rate: { mode: "constant", value: 60 } } }),
-    );
+    view.rerender(preview(withRate(60)));
     expect(service.updateLibrary).toHaveBeenCalledTimes(1);
-    view.rerender(preview({ ...withMaterial, render: { ...withMaterial.render, billboard: "y" } }));
+    // A value edit on a skipped slot re-prepares the whole bundle, so it waits like a rebuild.
+    harness.tier = "rebuild";
+    view.rerender(preview(withRate(61)));
     expect(service.updateLibrary).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("particle-preview-updating")).toBeTruthy();
     await waitFor(() => expect(service.updateLibrary).toHaveBeenCalledTimes(2));
     expect(harness.services).toHaveLength(1);
+  });
+
+  it("keeps Restart after a finished Once emitter released its systems", async () => {
+    const view = render(preview());
+    await screen.findByTestId("particle-preview-restart");
+    const service = harness.services[0]!;
+    service.systems = 0;
+    service.state = "ready-stopped";
+    harness.tier = "none";
+    view.rerender(preview(withRate(60)));
+    // The edit still reaches the service, so Restart replays the released run with it.
+    expect(service.updateLibrary).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("particle-preview-restart")).toBeTruthy();
+    expect(screen.queryByText("Preview Failed")).toBeNull();
   });
 
   it("names a Material the service could not use", async () => {

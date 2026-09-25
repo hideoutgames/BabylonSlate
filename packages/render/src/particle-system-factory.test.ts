@@ -6,6 +6,7 @@ import {
   resolveBasicEmitterPlan,
   type ParticleBlendMode,
 } from "@babylonslate/assets";
+import type { ParticleBillboardMode } from "@babylonslate/core";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -99,6 +100,18 @@ describe("particle-system-factory", () => {
     const { scene } = host();
     const system = cpuSystem(scene, { render: { blendMode } });
     expect(system.blendMode).toBe(constant);
+  });
+
+  it.each([
+    ["all", "#define BILLBOARDMODE_ALL"],
+    ["y", "#define BILLBOARDY"],
+    ["stretched", "#define BILLBOARDSTRETCHED"],
+  ] as Array<[ParticleBillboardMode, string]>)("draws Billboard %s through Babylon's matching billboard shader path", (billboard, define) => {
+    const { scene } = host();
+    const system = cpuSystem(scene, { render: { billboard } });
+    const defines: string[] = [];
+    system.fillDefines(defines, system.blendMode, false);
+    expect(defines.filter((entry) => entry.includes("BILLBOARD"))).toEqual(["#define BILLBOARD", define]);
   });
 
   it("measures rate and lifetime in seconds", () => {
