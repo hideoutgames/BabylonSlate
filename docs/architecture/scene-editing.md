@@ -199,6 +199,7 @@ See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../d
 Selecting multiple actors exposes shared Position, Rotation, Scale and Visible fields. Differing axes show **Mixed**. Entering or scrubbing an axis sets that absolute value on every selected actor while preserving their other axes. In 2D, Z-Order remains separate and hidden axes are retained. Reset applies the visible property axes across the selection. Each gesture is one scene edit with group Undo/Redo.
 
 **Primary Actor** identifies the actor whose name, lock flag and components are edited. Component addition, removal and property editing remain single-actor operations.
+
 ## Scene modes
 
 The global toolbar's **Scene Mode** picker is available in Scene documents: **Design** (the existing editor), **Landscape**, and **Foliage**. SceneLayer documents keep their existing tools. Each mode has its own DockView layout, Windows menu, and Focus keep-list in Engine Settings. Old layouts migrate into Design. Switching modes retains the scene and undo history; the normal Design Outliner includes Landscape and Foliage component owners.

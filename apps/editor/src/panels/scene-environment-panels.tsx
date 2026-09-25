@@ -19,8 +19,8 @@ function useEnvironmentScene() {
   return { scene, documentId, ...documents, commit: (next: SerializedScene) => documents.applySceneChange(documentId, next) };
 }
 
-export function LandscapeOutlinerPanel(_props: IDockviewPanelProps) { return <EnvironmentOutliner classId="LandscapeComponent" />; }
-export function FoliageOutlinerPanel(_props: IDockviewPanelProps) { return <EnvironmentOutliner classId="FoliageComponent" />; }
+export function LandscapeOutlinerPanel(_props: IDockviewPanelProps) { void _props; return <EnvironmentOutliner classId="LandscapeComponent" />; }
+export function FoliageOutlinerPanel(_props: IDockviewPanelProps) { void _props; return <EnvironmentOutliner classId="FoliageComponent" />; }
 
 function EnvironmentOutliner({ classId }: { classId: string }) {
   const { scene, commit } = useEnvironmentScene();
@@ -48,6 +48,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
 }
 
 export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
+  void _props;
   const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
   const { selectActor, frameActor } = useSceneEditing();
   const tools = useSceneTools();
@@ -95,6 +96,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
 }
 
 export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
+  void _props;
   const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
   const tools = useSceneTools();
   const [picker, setPicker] = useState<"model" | number | null>(null);
@@ -137,6 +139,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
 }
 
 export function FoliageSettingsPanel(_props: IDockviewPanelProps) {
+  void _props;
   const { foliageBrush: brush, setFoliageBrush } = useSceneTools();
   return <PanelFrame><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2"><PropertyGrid rows={[
     { id: "radius", label: "Brush Radius", kind: "number", value: brush.radius, min: 0.1, max: 128, onChange: (radius) => setFoliageBrush({ ...brush, radius }) },
