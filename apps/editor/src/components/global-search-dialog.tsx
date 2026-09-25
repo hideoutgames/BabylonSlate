@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Loader2Icon, SearchIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Badge } from "@babylonslate/ui/components/badge";
+import { Kbd } from "@babylonslate/ui/components/kbd";
 import {
   Dialog,
   DialogContent,
@@ -239,10 +240,20 @@ export function GlobalSearchDialog({
           <span aria-live="polite">
             {pending ? "Indexing…" : `${hasQuery ? entries.length : 0} Results`}
           </span>
-          <span>
-            <kbd>↑ ↓</kbd> Navigate <span className="px-1">·</span>{" "}
-            <kbd>Enter</kbd> Open <span className="px-1">·</span> <kbd>Esc</kbd>{" "}
-            Close
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              Navigate
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>Enter</Kbd>
+              Open
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>Esc</Kbd>
+              Close
+            </span>
           </span>
         </div>
       </DialogContent>

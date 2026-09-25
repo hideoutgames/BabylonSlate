@@ -107,9 +107,8 @@ export function RenderQualityFields({
               </Select>
               {!group ? (
                 <FieldDescription>
-                  Low targets a budget Android phone, Medium Apple A16, and
-                  Ultra a high-end gaming PC. These are unqualified targets;
-                  device admission can reduce effective cost.
+                  Low targets a budget Android phone, Medium an Apple A16, and
+                  Ultra a high-end gaming PC.
                 </FieldDescription>
               ) : null}
             </Field>
@@ -127,10 +126,7 @@ export function RenderQualityFields({
             step={0.05}
             onChange={(scale) => edit("resolution", { scale })}
           />
-          <FieldDescription>
-            Fraction of the target width and height. Runtime quality commands
-            can override this for the session.
-          </FieldDescription>
+          <FieldDescription>Fraction of the target width and height.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-resolution-dynamic">
@@ -205,10 +201,7 @@ export function RenderQualityFields({
               edit("textures", { byteBudget: mib * 1024 ** 2 })
             }
           />
-          <FieldDescription>
-            Textures category. Uploaded texture accounting drives cache
-            eviction; referenced textures retain their ownership.
-          </FieldDescription>
+          <FieldDescription>Unused textures are released above this budget.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-postprocessing-scale">
@@ -224,10 +217,7 @@ export function RenderQualityFields({
               edit("postprocessing", { resolutionScale })
             }
           />
-          <FieldDescription>
-            Applies to passes authored with Scalable Resolution. Authored
-            enablement and pass order are retained.
-          </FieldDescription>
+          <FieldDescription>Applies to passes with Scalable Resolution.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-lighting-mode">
@@ -255,11 +245,10 @@ export function RenderQualityFields({
             </SelectContent>
           </Select>
           <FieldDescription>
-            Lighting category. {resolveLocalLightBudget(effective.lighting)}{" "}
-            local lights requested. {effective.lighting.localLightMode === "auto"
-              ? `Auto follows the ${QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]} target. `
-              : "Manual overrides the Auto target. "}
-            Hardware shader/storage admission can reduce the effective count.
+            {resolveLocalLightBudget(effective.lighting)} local lights requested.{" "}
+            {effective.lighting.localLightMode === "auto"
+              ? `Auto follows the ${QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]} target.`
+              : "Manual overrides the Auto target."}{" "}
             Sun and fill lights use separate slots.
           </FieldDescription>
         </Field>

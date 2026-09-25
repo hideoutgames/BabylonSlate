@@ -5,14 +5,22 @@ import {
 } from "./open-test-project";
 import { openMinimalTestProject } from "./minimal-project";
 
+// Polls because dock panels re-lay out a frame after viewport or inset changes.
 async function expectWithinViewport(page: Page, testId: string) {
-  const box = await page.getByTestId(testId).boundingBox();
-  expect(box).not.toBeNull();
   const viewport = page.viewportSize()!;
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.y).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+  await expect
+    .poll(async () => {
+      const box = await page.getByTestId(testId).boundingBox();
+      return box
+        ? {
+            left: box.x >= 0,
+            top: box.y >= 0,
+            right: box.x + box.width <= viewport.width + 1,
+            bottom: box.y + box.height <= viewport.height + 1,
+          }
+        : null;
+    })
+    .toEqual({ left: true, top: true, right: true, bottom: true });
 }
 
 test.describe("Phone Editor", () => {
@@ -82,9 +90,10 @@ test.describe("Phone Editor", () => {
       })
       .toBeLessThanOrEqual(358);
     await page.setViewportSize({ width: 1194, height: 834 });
+    const statusBar = page.getByTestId("editor-status-bar");
     await expect
       .poll(async () => {
-        const box = await workspace.boundingBox();
+        const box = await statusBar.boundingBox();
         return box ? box.y + box.height : -1;
       })
       .toBe(834);

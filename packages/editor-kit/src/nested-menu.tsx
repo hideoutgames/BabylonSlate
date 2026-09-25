@@ -8,7 +8,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,6 +27,8 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { ariaKeyShortcuts, type KeyChord } from "./keybinds";
+import { ShortcutKeys } from "./shortcut-keys";
 import {
   clampOverlayMenuPosition,
   overlaySubmenuOrigin,
@@ -41,7 +43,10 @@ export type NestedMenuItem =
       onSelect: () => void;
       disabled?: boolean;
       variant?: "default" | "destructive";
-      shortcut?: string;
+      /** Keyboard chord shown right-aligned, e.g. `Mod+D` or `Delete`. */
+      shortcut?: KeyChord;
+      /** Leading 16px glyph, usually a Lucide icon. */
+      icon?: ReactNode;
       testId?: string;
     }
   | {
@@ -49,6 +54,7 @@ export type NestedMenuItem =
       id: string;
       label: string;
       items: NestedMenuItem[];
+      icon?: ReactNode;
       disabled?: boolean;
       testId?: string;
       contentTestId?: string;
@@ -166,6 +172,7 @@ function NestedMenuItems({
                 className={itemClass}
                 data-testid={itemTestId(item)}
               >
+                {item.icon}
                 {item.label}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent
@@ -190,16 +197,57 @@ function NestedMenuItems({
             variant={item.variant}
             className={itemClass}
             data-testid={itemTestId(item)}
+            aria-keyshortcuts={
+              item.shortcut ? ariaKeyShortcuts(item.shortcut) : undefined
+            }
             onClick={() => item.onSelect()}
           >
+            {item.icon}
             {item.label}
             {item.shortcut ? (
-              <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>
+              <DropdownMenuShortcut className="pl-4 tracking-normal">
+                <ShortcutKeys chord={item.shortcut} decorative />
+              </DropdownMenuShortcut>
             ) : null}
           </DropdownMenuItem>
         );
       })}
     </DropdownMenuGroup>
+  );
+}
+
+function OverlayItemContent({
+  leading,
+  label,
+  shortcut,
+  submenu = false,
+  showLeading,
+}: {
+  leading?: ReactNode;
+  label: string;
+  shortcut?: KeyChord;
+  submenu?: boolean;
+  showLeading: boolean;
+}) {
+  return (
+    <>
+      {showLeading ? (
+        <span className="context-menu-item-leading" aria-hidden="true">
+          {leading}
+        </span>
+      ) : null}
+      <span className="context-menu-item-label">{label}</span>
+      {shortcut ? (
+        <ShortcutKeys
+          chord={shortcut}
+          decorative
+          className="context-menu-item-shortcut"
+        />
+      ) : null}
+      {submenu ? (
+        <ChevronRightIcon className="context-menu-item-chevron" aria-hidden="true" />
+      ) : null}
+    </>
   );
 }
 
@@ -216,18 +264,24 @@ function OverlayMenuItems({
   onClose: () => void;
   onBeforeSelect: () => void;
 }) {
+  // One leading column for the whole panel keeps labels aligned.
+  const showLeading = items.some(
+    (item) =>
+      item.type === "checkbox" ||
+      item.type === "radio-group" ||
+      ("icon" in item && Boolean(item.icon)),
+  );
   return (
     <>
       {items.map((item) => {
         if (item.type === "separator") {
-          return <Separator key={item.id} />;
+          return (
+            <Separator key={item.id} className="context-menu-separator" />
+          );
         }
         if (item.type === "label") {
           return (
-            <div
-              key={item.id}
-              className="px-2 py-1 text-xs text-muted-foreground"
-            >
+            <div key={item.id} className="context-menu-label">
               {item.label}
             </div>
           );
@@ -249,7 +303,11 @@ function OverlayMenuItems({
                 if (item.closeOnClick) onClose();
               }}
             >
-              {item.label}
+              <OverlayItemContent
+                showLeading={showLeading}
+                leading={item.checked ? <CheckIcon /> : null}
+                label={item.label}
+              />
             </button>
           );
         }
@@ -272,7 +330,15 @@ function OverlayMenuItems({
                     if (item.closeOnClick) onClose();
                   }}
                 >
-                  {option.label}
+                  <OverlayItemContent
+                    showLeading={showLeading}
+                    leading={
+                      item.value === option.value ? (
+                        <span className="context-menu-item-radio" />
+                      ) : null
+                    }
+                    label={option.label}
+                  />
                 </button>
               ))}
             </div>
@@ -294,8 +360,12 @@ function OverlayMenuItems({
                 onOpenSubmenu(openSubmenuId === item.id ? null : item.id);
               }}
             >
-              {item.label}
-              <ChevronRightIcon className="ml-auto" />
+              <OverlayItemContent
+                showLeading={showLeading}
+                leading={item.icon}
+                label={item.label}
+                submenu
+              />
             </button>
           );
         }
@@ -305,11 +375,12 @@ function OverlayMenuItems({
             type="button"
             role="menuitem"
             disabled={item.disabled}
-            className={cn(
-              "context-menu-item",
-              item.variant === "destructive" && "text-destructive",
-            )}
+            className="context-menu-item"
+            data-variant={item.variant === "destructive" ? "destructive" : undefined}
             data-testid={itemTestId(item)}
+            aria-keyshortcuts={
+              item.shortcut ? ariaKeyShortcuts(item.shortcut) : undefined
+            }
             onClick={() => {
               if (item.disabled) return;
               onBeforeSelect();
@@ -317,7 +388,12 @@ function OverlayMenuItems({
               onClose();
             }}
           >
-            {item.label}
+            <OverlayItemContent
+              showLeading={showLeading}
+              leading={item.icon}
+              label={item.label}
+              shortcut={item.shortcut}
+            />
           </button>
         );
       })}
@@ -478,9 +554,9 @@ function OverlayMenu({
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
-    const rect = panel?.getBoundingClientRect();
-    const width = rect?.width ?? 192;
-    const height = rect?.height ?? 0;
+    // Layout size, not the rect: the open animation starts scaled down.
+    const width = panel?.offsetWidth ?? 192;
+    const height = panel?.offsetHeight ?? 0;
     setPosition(
       clampOverlayMenuPosition({
         x,
@@ -500,7 +576,7 @@ function OverlayMenu({
         parentX: position.x,
         parentY: position.y,
         parentWidth:
-          parentWidth ?? panelRef.current?.getBoundingClientRect().width ?? 192,
+          parentWidth ?? panelRef.current?.offsetWidth ?? 192,
         submenuWidth: 192,
         viewportWidth: viewport.width,
         margin: 8,
@@ -652,7 +728,10 @@ export function NestedMenu({
       )}
       <DropdownMenuContent
         align={align}
-        className={contentClassName}
+        className={cn(
+          size === "touch" ? "w-auto min-w-48" : "w-max min-w-40 whitespace-nowrap",
+          contentClassName,
+        )}
         data-testid={contentTestId}
       >
         <NestedMenuItems items={items} size={size} />

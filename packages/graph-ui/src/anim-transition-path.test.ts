@@ -45,4 +45,28 @@ describe("animTransitionPath", () => {
     });
     expect(firstControlX(path)).toBeGreaterThanOrEqual(ANIM_TRANSITION_MIN_STUB);
   });
+
+  it("points the badge from source to target on a short hop", () => {
+    const hop = {
+      sourceX: 0,
+      sourceY: 0,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      targetY: 0,
+    };
+    expect(animTransitionPath({ ...hop, targetX: 40 }).angle).toBeCloseTo(0);
+    expect(animTransitionPath({ ...hop, targetX: 400 }).angle).toBeCloseTo(0);
+  });
+
+  it("points a backward transition badge toward its target", () => {
+    const { angle } = animTransitionPath({
+      sourceX: 400,
+      sourceY: 0,
+      sourcePosition: Position.Right,
+      targetX: 0,
+      targetY: 0,
+      targetPosition: Position.Left,
+    });
+    expect(Math.abs(angle)).toBeCloseTo(180);
+  });
 });

@@ -2,12 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDownIcon,
   ArrowUpRightIcon,
+  BoneIcon,
+  ChevronsUpDownIcon,
+  CopyIcon,
+  CopyPlusIcon,
+  FileInputIcon,
   FolderIcon,
+  FolderInputIcon,
   FolderPlusIcon,
+  LinkIcon,
   ListFilterIcon,
-  OctagonAlertIcon,
+  PencilIcon,
   PlusIcon,
+  Trash2Icon,
+  TriangleAlertIcon,
   UploadIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
@@ -34,6 +44,7 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
+  type ContextMenuItem,
   AssetPicker,
   ClassPicker,
   PickerIdentity,
@@ -115,6 +126,7 @@ import {
   oursLockPaths,
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -159,7 +171,6 @@ import {
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
   runWithContentBrowserImportBusy,
-  type ContentBrowserContextAction,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
@@ -915,11 +926,13 @@ export function ContentBrowserWorkspace({
     [assetRegistry, classParentOf, selectedFolderPath],
   );
 
+  const keybinds = useKeybindings();
   const tileContextItems = useMemo(
     () => [
       {
         id: "open" as const,
         label: "Open",
+        icon: <ArrowUpRightIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
@@ -931,6 +944,7 @@ export function ContentBrowserWorkspace({
       {
         id: "import-msdf-atlas" as const,
         label: "Import MSDF Atlas…",
+        icon: <FileInputIcon />,
         onSelect: () => {
           void (async () => {
             const guid = menuTargetGuidsRef.current[0];
@@ -973,6 +987,8 @@ export function ContentBrowserWorkspace({
       {
         id: "duplicate" as const,
         label: "Duplicate",
+        icon: <CopyPlusIcon />,
+        shortcut: keybinds.get("edit.duplicate")?.[0],
         onSelect: () => {
           void (async () => {
             if (!assetRegistry) return;
@@ -1009,6 +1025,8 @@ export function ContentBrowserWorkspace({
       {
         id: "rename" as const,
         label: "Rename",
+        icon: <PencilIcon />,
+        shortcut: keybinds.get("edit.rename")?.[0],
         onSelect: () => {
           const folders = menuTargetFoldersRef.current.filter(
             (path) => !isFolderTreeRoot(path, rootPrefixes),
@@ -1037,22 +1055,26 @@ export function ContentBrowserWorkspace({
       {
         id: "retarget" as const,
         label: "Retarget…",
+        icon: <BoneIcon />,
         testId: "content-browser-retarget",
         onSelect: () => setRetargetPickerOpen(true),
       },
       {
         id: "move" as const,
         label: "Move…",
+        icon: <FolderInputIcon />,
         onSelect: () => openMoveForSnapshot("move"),
       },
       {
         id: "copy" as const,
         label: "Copy to Folder…",
+        icon: <CopyIcon />,
         onSelect: () => openMoveForSnapshot("copy"),
       },
       {
         id: "copy-asset-reference" as const,
         label: "Copy Asset Reference",
+        icon: <LinkIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid) return;
@@ -1062,6 +1084,7 @@ export function ContentBrowserWorkspace({
       {
         id: "show-references" as const,
         label: "Show References",
+        icon: <WaypointsIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
@@ -1071,6 +1094,9 @@ export function ContentBrowserWorkspace({
       {
         id: "delete" as const,
         label: "Delete",
+        icon: <Trash2Icon />,
+        variant: "destructive" as const,
+        shortcut: keybinds.get("edit.delete")?.[0],
         onSelect: () =>
           requestDeleteSnapshot(
             menuTargetGuidsRef.current,
@@ -1089,6 +1115,7 @@ export function ContentBrowserWorkspace({
       selectedFolderPath,
       browserRoots,
       setImportErrors,
+      keybinds,
     ],
   );
 
@@ -1738,16 +1765,19 @@ export function ContentBrowserWorkspace({
       {
         id: "new-folder",
         label: "New Folder",
+        icon: <FolderPlusIcon />,
         onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
       },
       {
         id: "new-asset",
         label: "New Asset",
+        icon: <PlusIcon />,
         onSelect: openNewAssetDialog,
       },
       {
         id: "import",
         label: "Import",
+        icon: <UploadIcon />,
         onSelect: () => {
           void handleImport();
         },
@@ -1781,6 +1811,28 @@ export function ContentBrowserWorkspace({
     onPaint: applyTileSelection,
   });
 
+  const selectionActionIds = useCallback(
+    (guids: string[], folders: string[]) =>
+      new Set<string>(
+        contentBrowserContextActions({
+          assetCount: guids.length,
+          folderCount: folders.length,
+          singleAssetType:
+            guids.length === 1 && folders.length === 0
+              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
+              : undefined,
+          canRetarget: canRetargetSelectedAssets(
+            guids.flatMap((guid) => {
+              const asset = assetRegistry?.getByGuid(guid);
+              if (!asset) return [];
+              return [{ type: asset.header.type, payload: asset.header.payload }];
+            }),
+          ),
+        }),
+      ),
+    [assetRegistry],
+  );
+
   const openSelectionMenu = useCallback(
     (
       clientX: number,
@@ -1807,26 +1859,13 @@ export function ContentBrowserWorkspace({
       }
       menuTargetGuidsRef.current = guids;
       menuTargetFoldersRef.current = folders;
-      const actionIds = new Set(
-        contentBrowserContextActions({
-          assetCount: guids.length,
-          folderCount: folders.length,
-          singleAssetType:
-            guids.length === 1 && folders.length === 0
-              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
-              : undefined,
-          canRetarget: canRetargetSelectedAssets(
-            guids.flatMap((guid) => {
-              const asset = assetRegistry?.getByGuid(guid);
-              if (!asset) return [];
-              return [{ type: asset.header.type, payload: asset.header.payload }];
-            }),
-          ),
-        }),
+      const actionIds = selectionActionIds(guids, folders);
+      const items: ContextMenuItem[] = tileContextItems.filter((item) =>
+        actionIds.has(item.id),
       );
-      const items = tileContextItems.filter((item) =>
-        actionIds.has(item.id as ContentBrowserContextAction),
-      );
+      const deleteIndex = items.findIndex((item) => item.id === "delete");
+      if (deleteIndex > 0)
+        items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
       openMenuAt(clientX, clientY, items);
     },
     [
@@ -1835,7 +1874,7 @@ export function ContentBrowserWorkspace({
       selectedFolderPaths,
       selectedGuids,
       tileContextItems,
-      assetRegistry,
+      selectionActionIds,
     ],
   );
 
@@ -1852,6 +1891,23 @@ export function ContentBrowserWorkspace({
     },
     [openSelectionMenu],
   );
+
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const runSelectionAction = (actionId: "duplicate" | "rename" | "delete") => {
+    const guids = [...selectedGuids];
+    const folders = [...selectedFolderPaths].filter(
+      (path) => !isFolderTreeRoot(path, rootPrefixes),
+    );
+    if (guids.length + folders.length === 0) return;
+    if (!selectionActionIds(guids, folders).has(actionId)) return;
+    menuTargetGuidsRef.current = guids;
+    menuTargetFoldersRef.current = folders;
+    tileContextItems.find((item) => item.id === actionId)?.onSelect();
+  };
+  const selectionKeys = { enabled: !busy, focusWithinRef: workspaceRef };
+  useKeybindCommand("edit.duplicate", () => runSelectionAction("duplicate"), selectionKeys);
+  useKeybindCommand("edit.rename", () => runSelectionAction("rename"), selectionKeys);
+  useKeybindCommand("edit.delete", () => runSelectionAction("delete"), selectionKeys);
 
   const handleTreeSelect = useCallback(
     (id: string, options?: { additive?: boolean; range?: boolean }) => {
@@ -2089,6 +2145,7 @@ export function ContentBrowserWorkspace({
 
   return (
     <div
+      ref={workspaceRef}
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-testid="content-browser-workspace"
     >
@@ -2305,14 +2362,18 @@ export function ContentBrowserWorkspace({
 
       <ResizablePanelGroup
         orientation="horizontal"
-        className="min-h-0 flex-1 overflow-hidden"
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden",
+          !phone && "content-browser-panes",
+        )}
       >
         {!phone ? (
           <>
             <ResizablePanel
               id="content-browser-folders"
               defaultSize="224px"
-              minSize="160px"
+              minSize="162px"
+              className="content-browser-pane"
               style={{ overflow: "hidden" }}
             >
               <aside
@@ -2329,7 +2390,7 @@ export function ContentBrowserWorkspace({
         <ResizablePanel
           id="content-browser-assets"
           minSize={phone ? 0 : "240px"}
-          className="flex h-full min-h-0 min-w-0 flex-col"
+          className="content-browser-pane flex h-full min-h-0 min-w-0 flex-col"
           style={{ overflow: "hidden" }}
         >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
@@ -2547,6 +2608,7 @@ export function ContentBrowserWorkspace({
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}
+        destinationFolder={selectedFolderPath}
         error={operationError}
         busy={busy}
         onCreate={() => {
@@ -2568,36 +2630,54 @@ export function ContentBrowserWorkspace({
         >
           <AlertDialogHeader className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
             <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
-              <OctagonAlertIcon className="size-4" />
+              <Trash2Icon className="size-4" />
             </AlertDialogMedia>
             <div className="flex min-w-0 flex-col gap-1">
               <AlertDialogTitle>
-                {deleteTarget?.kind === "folder" ? "Delete Folder" : "Delete Assets"}
+                {deleteTarget?.kind === "folder"
+                  ? "Delete Folder"
+                  : deleteTarget?.kind === "selection" && deleteTarget.folders.length > 0
+                    ? `Delete ${deleteListNames.length} Items`
+                    : deleteListNames.length === 1
+                      ? "Delete Asset"
+                      : `Delete ${deleteListNames.length} Assets`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {checkingDeleteReferences ? "Checking Class references before deletion."
+                {checkingDeleteReferences ? "Checking references…"
                   : deleteReferenceCheckFailed ? "Class references could not be checked. Reopen the affected assets and try again."
-                  : hasReferencedClass ? "Choose one replacement for all usages of each Class. None clears its references and keeps placed instances with their engine base Class. You will confirm these changes next."
+                  : hasReferencedClass ? "Pick a replacement for each referenced Class, or leave None to clear its usages."
                   : deleteInboundRefs.length > 0
-                  ? "Deleting these items will break the references below. This cannot be undone."
-                  : "Permanently removes the selected items. This cannot be undone."}
+                  ? "The references below will break. This cannot be undone."
+                  : "This cannot be undone."}
               </AlertDialogDescription>
             </div>
           </AlertDialogHeader>
           <div className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             tabIndex={0} role="region" aria-label="Assets And References"
             data-testid="content-browser-delete-body">
-            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => (
-              <Field key={asset.header.guid} className="border-b px-4 py-3">
-                <FieldLabel htmlFor={`replace-class-${asset.header.guid}`}>Replace {resolveAssetName(asset.header.guid)}</FieldLabel>
-                <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
-                  className="min-h-[var(--touch-target,28px)] justify-start" onClick={() => setReplacementPicker(asset.header.guid)}>
-                  {classReplacementChoices[asset.header.guid]
-                    ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} /> : "None"}
-                </Button>
-                <p className="text-xs text-muted-foreground">Applies to every usage in {deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length} assets or settings listed below.</p>
-              </Field>
-            ))}
+            {deletedClasses.filter((asset) => deleteInboundRefs.some((ref) => ref.targetGuids.includes(asset.header.guid))).map((asset) => {
+              const usages = deleteInboundRefs.filter((ref) => ref.targetGuids.includes(asset.header.guid)).length;
+              return (
+                <Field key={asset.header.guid} orientation="horizontal" className="items-center border-b px-4 py-2.5">
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <FieldLabel htmlFor={`replace-class-${asset.header.guid}`} className="truncate">
+                      Replace {resolveAssetName(asset.header.guid)}
+                    </FieldLabel>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {usages === 1 ? "1 Usage" : `${usages} Usages`}
+                    </span>
+                  </div>
+                  <Button id={`replace-class-${asset.header.guid}`} variant="outline" size="sm"
+                    className="min-h-[var(--touch-target,28px)] w-56 max-w-[50%] shrink-0 justify-between"
+                    onClick={() => setReplacementPicker(asset.header.guid)}>
+                    {classReplacementChoices[asset.header.guid]
+                      ? <PickerIdentity label={resolveAssetName(classReplacementChoices[asset.header.guid]!)} visual={{ family: "class" }} />
+                      : <span className="text-muted-foreground">None</span>}
+                    <ChevronsUpDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                  </Button>
+                </Field>
+              );
+            })}
             <div className={cn("grid min-w-0", deleteInboundRefs.length > 0 && "md:grid-cols-[minmax(12rem,1fr)_minmax(20rem,2fr)]")}>
               <section className="min-w-0 px-4 py-3" aria-label="Selected For Deletion">
                 <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">Selected <span className="tabular-nums">{deleteListNames.length}</span></h3>
@@ -2609,8 +2689,11 @@ export function ContentBrowserWorkspace({
                   ))}
                 </ul>
                 {deleteLastSceneClassLines.map((line) => (
-                  <p key={line} className="mt-2 text-sm font-medium text-destructive"
-                    data-testid="content-browser-delete-last-warning">{line}</p>
+                  <p key={line} className="mt-2 flex items-start gap-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+                    data-testid="content-browser-delete-last-warning">
+                    <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
+                    {line}
+                  </p>
                 ))}
                 {deleteInboundRefs.length === 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">No inbound references.</p>
@@ -2671,16 +2754,20 @@ export function ContentBrowserWorkspace({
         }} />
       <AlertDialog open={confirmReferencedDelete && deleteTarget !== null}
         onOpenChange={(open) => { if (!open) setConfirmReferencedDelete(false); }}>
-        <AlertDialogContent variant="destructive" data-testid="content-browser-delete-references-confirmation">
+        <AlertDialogContent variant="destructive" className="data-[size=default]:sm:max-w-md"
+          data-testid="content-browser-delete-references-confirmation">
           <AlertDialogHeader>
+            <AlertDialogMedia>
+              <Trash2Icon />
+            </AlertDialogMedia>
             <AlertDialogTitle>Delete Referenced Assets?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the selected assets and changes their references in {deleteInboundRefs.length} remaining assets or settings. This cannot be undone.
-              None clears Class references; placed actors and components keep their data with a base Class, and child Classes fall back to BObject. Other deleted asset references are cleared.
+              Updates references in {deleteInboundRefs.length === 1 ? "1 asset or setting" : `${deleteInboundRefs.length} assets or settings`}. This cannot be undone.
+              With None, placed actors keep their data on a base Class and child Classes fall back to BObject.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <ul className="max-h-60 overflow-y-auto overscroll-y-contain text-sm">
-            {classReplacements.map((entry) => <li key={entry.guid}>{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
+          <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">
+            {classReplacements.map((entry) => <li key={entry.guid} className="px-3 py-1.5">{resolveAssetName(entry.guid)} → {entry.replacement ? resolveAssetName(entry.replacement.guid) : "None"}</li>)}
           </ul>
           <AlertDialogFooter>
             <AlertDialogCancel>Back</AlertDialogCancel>

@@ -125,6 +125,14 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(1.5, Math.max(0.1, value));
   }, z.number().min(0.1).max(1.5).default(0.5)),
+  /**
+   * Editor command id → chords that replace its defaults. An empty list
+   * unassigns the command; commands without an entry keep their defaults.
+   */
+  keybinds: z
+    .record(z.string(), z.array(z.string()))
+    .catch({})
+    .default({}),
   debuggerDefaults: z
     .object({
       showFps: z.boolean().default(false),

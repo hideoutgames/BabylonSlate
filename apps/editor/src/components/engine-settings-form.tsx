@@ -1,5 +1,6 @@
 import { TemplateLibrarySettings } from "./template-library-settings";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
+import { KeybindSettings } from "./keybind-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import type { EngineSettings } from "@babylonslate/vfs";
@@ -35,6 +36,12 @@ import {
   type FocusDocumentKind,
 } from "../shell/layout-ops";
 import type { DockWindowOptions } from "../shell/window-catalog";
+
+const THEME_LABELS: Record<EngineSettings["appearance"]["theme"], string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
 
 type FocusKeepSettingKey = keyof EngineSettings["focusKeepPanels"];
 
@@ -135,6 +142,7 @@ export type EngineSettingsCategoryId =
   | "templates"
   | "plugins"
   | "focus"
+  | "keybinds"
   | "graph";
 
 export function EngineSettingsForm({
@@ -201,7 +209,7 @@ export function EngineSettingsForm({
                 className="min-h-[var(--chrome-row,28px)] w-full"
                 data-testid="setting-theme"
               >
-                <SelectValue />
+                <SelectValue>{THEME_LABELS[settings.appearance.theme]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="system" data-testid="setting-theme-system">
@@ -270,7 +278,7 @@ export function EngineSettingsForm({
           <FieldLegend>Viewport</FieldLegend>
           <Field orientation="horizontal" className="settings-field">
             <FieldContent><FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
-              <FieldDescription>Use local resolution, texture budget and post-processing preferences in editor previews. Runtime quality commands take precedence.</FieldDescription>
+              <FieldDescription>Use local resolution, texture budget and post-processing in editor previews.</FieldDescription>
             </FieldContent>
             <Switch id="setting-rendering-overrides" checked={settings.renderingOverridesEnabled}
               onCheckedChange={(renderingOverridesEnabled) => void onChange({ renderingOverridesEnabled })} />
@@ -302,7 +310,7 @@ export function EngineSettingsForm({
               onChange={(viewportDropDistance) => void onChange({ viewportDropDistance })}
             />
             <FieldDescription>
-              World units. Scene and Prefab objects drop only to surfaces closer than this distance.
+              Placed objects drop onto surfaces within this many world units.
             </FieldDescription>
           </Field>
           <Field className="settings-field">
@@ -346,7 +354,7 @@ export function EngineSettingsForm({
                 Post-Processing
               </FieldLabel>
               <FieldDescription>
-                Editor and Play preview only; exported games are unchanged.
+                Editor and Play preview only. Exported games are unchanged.
               </FieldDescription>
             </FieldContent>
             <Switch
@@ -590,31 +598,35 @@ export function EngineSettingsForm({
       ) : null}
 
       {categoryId === "focus" ? (
-        <FieldDescription>
-          Keep these windows visible in Focus when they are open.
-        </FieldDescription>
+        <FieldSet>
+          <FieldLegend>Focus</FieldLegend>
+          <FieldDescription>Windows that stay visible in Focus.</FieldDescription>
+          <div className="flex flex-col">
+            {FOCUS_KEEP_SETTING_ROWS.map((row) => (
+              <FocusKeepPanelList
+                key={row.keepKey}
+                kind={row.kind}
+                keepKey={row.keepKey}
+                label={row.label}
+                options={row.options}
+                ids={settings.focusKeepPanels[row.keepKey]}
+                onChange={(ids) =>
+                  void onChange({
+                    focusKeepPanels: {
+                      ...settings.focusKeepPanels,
+                      [row.keepKey]: ids,
+                    },
+                  })
+                }
+              />
+            ))}
+          </div>
+        </FieldSet>
       ) : null}
-      {categoryId === "focus"
-        ? FOCUS_KEEP_SETTING_ROWS.map((row) => (
-            <FocusKeepPanelList
-              key={row.keepKey}
-              kind={row.kind}
-              keepKey={row.keepKey}
-              label={row.label}
-              options={row.options}
-              ids={settings.focusKeepPanels[row.keepKey]}
-              onChange={(ids) =>
-                void onChange({
-                  focusKeepPanels: {
-                    ...settings.focusKeepPanels,
-                    [row.keepKey]: ids,
-                  },
-                })
-              }
-            />
-          ))
-        : null}
 
+      {categoryId === "keybinds" ? (
+        <KeybindSettings settings={settings} onChange={onChange} />
+      ) : null}
       {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
       {categoryId === "plugins" ? <EnginePluginsSettings /> : null}
     </FieldGroup>
@@ -651,40 +663,45 @@ function FocusKeepPanelList({
     (candidate) => !ids.includes(candidate.id),
   );
   return (
-    <FieldSet>
-      <FieldLegend>{label}</FieldLegend>
-      {ids.map((id) => {
-        const title = focusKeepTitle(kind, id, options);
-        return (
-          <Field
-            key={id}
-            orientation="horizontal"
-            data-testid={`focus-keep-${keepKey}-${id}`}
-          >
-            <FieldLabel>{title}</FieldLabel>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch-icon"
-              aria-label={`Remove ${title}`}
-              data-testid={`focus-keep-${keepKey}-remove-${id}`}
-              onClick={() => onChange(ids.filter((entry) => entry !== id))}
+    <div
+      role="group"
+      aria-label={label}
+      className="grid grid-cols-[minmax(8rem,15rem)_minmax(0,1fr)] items-start gap-3 border-b py-2 max-[480px]:grid-cols-1 max-[480px]:gap-1.5"
+    >
+      <span className="text-sm font-medium leading-7">{label}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {ids.map((id) => {
+          const title = focusKeepTitle(kind, id, options);
+          return (
+            <span
+              key={id}
+              className="inline-flex h-7 items-center gap-0.5 rounded-md border bg-muted/40 pr-0.5 pl-2 text-sm pointer-coarse:h-auto"
+              data-testid={`focus-keep-${keepKey}-${id}`}
             >
-              <XIcon />
-            </Button>
-          </Field>
-        );
-      })}
-      {remaining.length > 0 ? (
-        <Field>
+              {title}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground"
+                aria-label={`Remove ${title}`}
+                data-testid={`focus-keep-${keepKey}-remove-${id}`}
+                onClick={() => onChange(ids.filter((entry) => entry !== id))}
+              >
+                <XIcon />
+              </Button>
+            </span>
+          );
+        })}
+        {remaining.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="min-h-[var(--chrome-row,28px)] w-full"
+                  className="text-muted-foreground"
                   data-testid={`focus-keep-${keepKey}-add`}
                 />
               }
@@ -706,8 +723,8 @@ function FocusKeepPanelList({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-        </Field>
-      ) : null}
-    </FieldSet>
+        ) : null}
+      </div>
+    </div>
   );
 }

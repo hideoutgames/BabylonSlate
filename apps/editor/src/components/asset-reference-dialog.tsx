@@ -7,7 +7,6 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -17,8 +16,14 @@ import { displayAssetTitle } from "../lib/content-browser-helpers";
 
 const referenceEdges = {
   markerEnd: { type: "arrowclosed" as const, color: "var(--muted-foreground)" },
-  style: { stroke: "var(--muted-foreground)" },
 };
+
+/** Edge ids are `JSON.stringify([source, target])`, so prefix/suffix selectors find a node's wires. */
+function selectedEdgeStyles(guid: string | null): string {
+  if (!guid) return "";
+  const id = JSON.stringify(guid).replace(/[\\']/g, "\\$&");
+  return `.asset-reference-canvas .react-flow__edge:is([data-id^='[${id},'], [data-id$=',${id}]']) .react-flow__edge-path { stroke: var(--graph-state-selected) !important; stroke-opacity: 1; stroke-width: 1.75px !important; }`;
+}
 
 export function AssetReferenceDialog({
   rootGuid,
@@ -64,14 +69,13 @@ export function AssetReferenceDialog({
         data-testid="content-browser-refs-dialog"
       >
         <DialogHeader className="shrink-0">
-          <DialogTitle>References</DialogTitle>
-          <DialogDescription>
-            {displayAssetTitle(root?.header.name ?? rootGuid)} — Read Only.
-            Arrows Point To Dependencies.
-          </DialogDescription>
+          <DialogTitle>
+            {displayAssetTitle(root?.header.name ?? rootGuid)} References
+          </DialogTitle>
         </DialogHeader>
+        <style>{selectedEdgeStyles(selectedGuid)}</style>
         <div
-          className="min-h-0 flex-1 overflow-hidden rounded-md border border-border"
+          className="asset-reference-canvas min-h-0 flex-1 overflow-hidden rounded-md border border-border"
           data-testid="asset-reference-canvas"
         >
           <GraphEditor
@@ -89,40 +93,40 @@ export function AssetReferenceDialog({
             deleteKeyCode={null}
           />
         </div>
-        <div className="flex shrink-0 flex-col gap-1 text-xs text-muted-foreground">
-          <SelectableText>
-            {graph.nodes.length} Assets · {graph.edges.length} References
-          </SelectableText>
-          <span className="truncate" title={selected?.path ?? selectedGuid ?? ""}>
-            <SelectableText>
-              {selected?.path ??
-                (selectedGuid
-                  ? `${selectedGuid} (Missing Asset)`
-                  : "Select An Asset To Inspect")}
-            </SelectableText>
-          </span>
-        </div>
-        <DialogFooter className="shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSelectedGuid(rootGuid);
-              setFocusVersion((version) => version + 1);
-            }}
-          >
-            Focus Asset
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canOpen(selected)}
-            onClick={() => {
-              if (selectedGuid) openAsset(selectedGuid);
-            }}
-          >
-            Open Asset
-          </Button>
+        <DialogFooter className="shrink-0 justify-between">
+          <div className="flex min-w-0 flex-1 flex-col text-xs">
+            <span className="truncate" title={selected?.path ?? selectedGuid ?? ""}>
+              <SelectableText>
+                {selected?.path ??
+                  (selectedGuid ? `${selectedGuid} (Missing Asset)` : "No Selection")}
+              </SelectableText>
+            </span>
+            <span className="text-muted-foreground tabular-nums">
+              {graph.nodes.length} Assets, {graph.edges.length} Links
+            </span>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedGuid(rootGuid);
+                setFocusVersion((version) => version + 1);
+              }}
+            >
+              Focus Asset
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canOpen(selected)}
+              onClick={() => {
+                if (selectedGuid) openAsset(selectedGuid);
+              }}
+            >
+              Open Asset
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

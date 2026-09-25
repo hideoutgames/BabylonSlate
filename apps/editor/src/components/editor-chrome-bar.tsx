@@ -30,15 +30,16 @@ import {
   Maximize2Icon,
   EllipsisIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
   type SerializedGraph,
 } from "@babylonslate/core";
 import {
+  ShortcutKeys,
   TypeVisualIcon,
-  documentHistoryHotkey,
+  ariaKeyShortcuts,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -52,6 +53,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuGroup,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import {
@@ -63,6 +65,7 @@ import {
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
+import { BrandIcon } from "./brand-icon";
 import { DocumentSwitcher } from "./document-switcher";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
@@ -86,6 +89,7 @@ import {
 import { canFocusLayout } from "../shell/layout-ops";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { documentTypeVisual } from "../lib/document-type-visual";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import "../shell/editor-chrome.css";
 
 function kindIcon(ref: DocumentRef, assets: readonly IndexedAsset[]) {
@@ -319,40 +323,31 @@ export function EditorChromeBar({
     reorderClosableTabs(fromIndex, toIndex);
   };
 
-  useEffect(() => {
-    if (!projectName) return;
-    const pointers = new Set<number>();
-    const onPointerDown = (event: PointerEvent) => {
-      pointers.add(event.pointerId);
-    };
-    const onPointerUp = (event: PointerEvent) => {
-      pointers.delete(event.pointerId);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setSearchOpen((current) => !current);
-        return;
-      }
-      const history = documentHistoryHotkey(event, {
-        activePointerCount: pointers.size,
-      });
-      if (!history) return;
-      event.preventDefault();
-      if (history === "undo") undoActiveDocument();
-      else redoActiveDocument();
-    };
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [projectName, redoActiveDocument, undoActiveDocument]);
+  const searchChord = useKeybindChord("editor.search");
+  const focusChord = useKeybindChord("editor.focusLayout");
+  const playChord = useKeybindChord("play.start");
+  const projectSettingsChord = useKeybindChord("editor.projectSettings");
+  const engineSettingsChord = useKeybindChord("editor.engineSettings");
+  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay;
+  const launchPlay = () => {
+    const inject =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("previewThrow") === "1";
+    void requestPlay({ injectFixtureThrow: inject });
+  };
+  useKeybindCommand("editor.search", () => setSearchOpen((current) => !current), {
+    enabled: Boolean(projectName),
+  });
+  useKeybindCommand("editor.focusLayout", () => toggleLayoutFocus(), {
+    enabled: Boolean(projectName) && canFocus && !phone,
+  });
+  useKeybindCommand("editor.projectSettings", () => setSettingsScope("project"), {
+    enabled: Boolean(projectName),
+  });
+  useKeybindCommand("editor.engineSettings", () => setSettingsScope("engine"), {
+    enabled: Boolean(projectName),
+  });
+  useKeybindCommand("play.start", launchPlay, { enabled: playEnabled });
 
   const openSearch = () => {
     setToolsOpen(false);
@@ -417,6 +412,7 @@ export function EditorChromeBar({
                 variant="outline"
                 size="sm"
                 aria-label="Focus"
+                aria-keyshortcuts={focusChord ? ariaKeyShortcuts(focusChord) : undefined}
                 pressed={isLayoutFocused}
                 disabled={!projectName || !canFocus}
                 onPressedChange={() => toggleLayoutFocus()}
@@ -427,7 +423,10 @@ export function EditorChromeBar({
               </Toggle>
             }
           />
-          <TooltipContent>Focus</TooltipContent>
+          <TooltipContent>
+            Focus
+            <ShortcutKeys chord={focusChord} decorative />
+          </TooltipContent>
         </Tooltip>
       ) : null}
       {phone ? (
@@ -442,7 +441,8 @@ export function EditorChromeBar({
         </Button>
       ) : (
         <IconActionButton
-          label="Search project"
+          label="Search Project"
+          shortcut={searchChord}
           data-testid="global-search"
           className="chrome-icon-button"
           disabled={!projectName}
@@ -468,19 +468,29 @@ export function EditorChromeBar({
           Settings
           <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-max min-w-44 whitespace-nowrap">
           <DropdownMenuGroup>
             <DropdownMenuItem
               data-testid="project-settings"
               onClick={() => openSettings("project")}
             >
               Project Settings
+              {projectSettingsChord ? (
+                <DropdownMenuShortcut className="pl-4 tracking-normal">
+                  <ShortcutKeys chord={projectSettingsChord} decorative />
+                </DropdownMenuShortcut>
+              ) : null}
             </DropdownMenuItem>
             <DropdownMenuItem
               data-testid="engine-settings"
               onClick={() => openSettings("engine")}
             >
               Engine Settings
+              {engineSettingsChord ? (
+                <DropdownMenuShortcut className="pl-4 tracking-normal">
+                  <ShortcutKeys chord={engineSettingsChord} decorative />
+                </DropdownMenuShortcut>
+              ) : null}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
@@ -497,7 +507,10 @@ export function EditorChromeBar({
             data-testid="project-name"
             title={projectName ? displayProjectName(projectName) : undefined}
           >
-            {projectName ? displayProjectName(projectName) : ""}
+            <BrandIcon className="editor-chrome-brand" />
+            <span className="editor-chrome-project">
+              {projectName ? displayProjectName(projectName) : ""}
+            </span>
           </div>
         ) : null}
         {phone ? (
@@ -607,6 +620,7 @@ export function EditorChromeBar({
                   ? "Save All (unsaved changes)"
                   : "Save All"
               }
+              command="editor.saveAll"
               data-testid="save-all-project"
               className="chrome-icon-button"
               disabled={
@@ -627,6 +641,7 @@ export function EditorChromeBar({
             iconOnly
             showSuccessIcon={false}
             label="Undo"
+            command="editor.undo"
             data-testid="undo-document"
             className="chrome-icon-button"
             disabled={!canUndoActiveDocument}
@@ -638,6 +653,7 @@ export function EditorChromeBar({
             iconOnly
             showSuccessIcon={false}
             label="Redo"
+            command="editor.redo"
             data-testid="redo-document"
             className="chrome-icon-button"
             disabled={!canRedoActiveDocument}
@@ -648,6 +664,7 @@ export function EditorChromeBar({
               <ActionFeedbackButton
                 key={`compile:${activeDocumentId}`}
                 icon={HammerIcon}
+                command="graph.compile"
                 data-testid="compile-graph"
                 className="chrome-action-button"
                 label="Compile"
@@ -715,44 +732,50 @@ export function EditorChromeBar({
 
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="play-preview"
-              className="chrome-action-button chrome-play-button relative"
-              aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay, {
-                playFromScene,
-              })}
-              title={
-                canPlay
-                  ? undefined
-                  : playFromScene && !previewBuild
-                    ? "Open a scene to play"
-                    : "Set Startup Scene in Project Settings."
-              }
-              disabled={!projectName || playing || preparing || !canPlay}
-              onClick={() => {
-                const inject =
-                  typeof window !== "undefined" &&
-                  new URLSearchParams(window.location.search).get(
-                    "previewThrow",
-                  ) === "1";
-                void requestPlay({ injectFixtureThrow: inject });
-              }}
-            >
-              <PlayIcon data-icon="inline-start" fill="currentColor" />
-              {phone && previewBuild
-                ? "Build"
-                : playChromeLaunchLabel(previewBuild)}
-              {errorCount > 0 ? (
-                <span
-                  className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
-                  data-testid="play-error-badge"
-                >
-                  {errorCount > 9 ? "9+" : errorCount}
-                </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="play-preview"
+                    className="chrome-action-button chrome-play-button relative"
+                    aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay, {
+                      playFromScene,
+                    })}
+                    title={
+                      canPlay
+                        ? undefined
+                        : playFromScene && !previewBuild
+                          ? "Open a scene to play"
+                          : "Set Startup Scene in Project Settings."
+                    }
+                    aria-keyshortcuts={playChord ? ariaKeyShortcuts(playChord) : undefined}
+                    disabled={!playEnabled}
+                    onClick={launchPlay}
+                  />
+                }
+              >
+                <PlayIcon data-icon="inline-start" fill="currentColor" />
+                {phone && previewBuild
+                  ? "Build"
+                  : playChromeLaunchLabel(previewBuild)}
+                {errorCount > 0 ? (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
+                    data-testid="play-error-badge"
+                  >
+                    {errorCount > 9 ? "9+" : errorCount}
+                  </span>
+                ) : null}
+              </TooltipTrigger>
+              {canPlay ? (
+                <TooltipContent>
+                  {phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
+                  <ShortcutKeys chord={playChord} decorative />
+                </TooltipContent>
               ) : null}
-            </Button>
+            </Tooltip>
             {!phone ? debugMenu : null}
           </div>
         </div>

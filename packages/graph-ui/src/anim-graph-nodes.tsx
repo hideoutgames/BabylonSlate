@@ -8,6 +8,7 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
+import { Repeat2Icon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
@@ -24,6 +25,9 @@ const ANIM_STATE_SIDES: readonly AnimStateSide[] = [
 type AnimStateData = {
   title?: string;
   entry?: boolean;
+  loop?: boolean;
+  /** Host-supplied clip summary shown under the title. */
+  clipLabel?: string;
   __nodeType?: string;
 };
 
@@ -53,7 +57,7 @@ export function AnimStateNode({
       data-testid={`anim-state-node-${id}`}
     >
       {ANIM_STATE_SIDES.map((side) => (
-        <span key={side}>
+        <span key={side} className="contents">
           <Handle
             type="target"
             position={SIDE_POSITION[side]}
@@ -75,10 +79,22 @@ export function AnimStateNode({
         </span>
       ))}
       <div className="anim-state-node-title">{title}</div>
-      {data.entry === true ? (
-        <div className="anim-state-node-entry-mark" aria-hidden>
-          Entry
+      {typeof data.clipLabel === "string" ? (
+        <div
+          className={cn(
+            "anim-state-node-clip",
+            data.clipLabel === "No Clip" && "anim-state-node-clip-empty",
+          )}
+          data-testid={`anim-state-node-clip-${id}`}
+        >
+          <span className="truncate">{data.clipLabel}</span>
+          {data.loop !== false ? (
+            <Repeat2Icon aria-label="Loops" className="anim-state-node-loop" />
+          ) : null}
         </div>
+      ) : null}
+      {data.entry === true ? (
+        <div className="anim-state-node-entry-mark">Entry</div>
       ) : null}
     </div>
   );

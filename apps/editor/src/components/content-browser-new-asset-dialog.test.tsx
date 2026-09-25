@@ -47,6 +47,32 @@ describe("ContentBrowserNewAssetDialog", () => {
     layout.phone = false;
   });
 
+  it("summarizes the destination folder and the file the name will create", () => {
+    const { rerender } = renderDialog({ destinationFolder: "assets/Levels" });
+    const summary = screen.getByTestId("new-asset-summary");
+    expect(summary.textContent).toContain("assets/Levels");
+    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("Enter a name");
+    expect(summary.textContent).toContain("Opens in a new tab");
+
+    rerender(
+      <ContentBrowserNewAssetDialog
+        open
+        onOpenChange={() => {}}
+        type={"Class" as CreatableAssetType}
+        onTypeChange={() => {}}
+        name="My Hero"
+        onNameChange={() => {}}
+        parentClass="BObject"
+        onParentClassChange={() => {}}
+        nameTaken={false}
+        destinationFolder="assets/Levels"
+        onCreate={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("new-asset-summary-file").textContent).toBe("My_Hero.class.babasset");
+    expect(screen.getByTestId("new-asset-summary").textContent).toContain("Appears in this folder");
+  });
+
   it("shows type selection and asset details one at a time on phones", () => {
     layout.phone = true;
     const { onCreate } = renderDialog({ type: "Class", name: "Hero" });

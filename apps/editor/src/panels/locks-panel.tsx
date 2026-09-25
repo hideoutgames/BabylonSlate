@@ -171,7 +171,7 @@ export function LocksPanelContents({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction data-testid="locks-force-unlock-confirm-action" onClick={() => {
+            <AlertDialogAction variant="destructive" data-testid="locks-force-unlock-confirm-action" onClick={() => {
               if (!confirmForceUnlock) return;
               const id = confirmForceUnlock.id;
               setConfirmForceUnlock(null);

@@ -38,8 +38,7 @@ export function TemplateLibrarySettings() {
     <FieldSet>
       <FieldLegend>Templates</FieldLegend>
       <FieldDescription>
-        Available in the project creator. Import an exported Slate project to
-        add a template.
+        Shown in the project creator. Add an exported Slate project to create one.
       </FieldDescription>
       <div className="divide-y rounded-lg border px-3">
         {["Blank", "Basic 3D", "Basic 2D"].map((name) => (

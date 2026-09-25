@@ -437,6 +437,7 @@ export function PropertyGrid({
       data-slot="property-grid"
       data-readonly={readOnly || undefined}
       data-hide-labels={hideLabels || undefined}
+      data-density={density}
       data-testid={testId}
     >
       {title ? (
@@ -468,6 +469,8 @@ export function PropertyGrid({
               orientation={orientation}
               data-testid={row.testId ?? `property-row-${row.id}`}
               data-disabled={row.disabled || undefined}
+              data-kind={row.kind}
+              data-described={row.description ? true : undefined}
               className={
                 compact
                   ? "gap-0.5 px-0 py-0"

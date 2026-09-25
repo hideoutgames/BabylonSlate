@@ -252,6 +252,25 @@ export function nodeChangesMutateGraph(
   );
 }
 
+/**
+ * React Flow `setNodes` / `setEdges` report every item as `replace`, built from
+ * its rendered store snapshot. That snapshot carries display decoration and can
+ * trail a host refresh by a render, so graph edits never go through it: only
+ * the selection of a `replace` is applied.
+ */
+export function replaceChangesAsSelection<C extends { type: string }>(
+  changes: readonly C[],
+): C[] {
+  return changes.map((change) => {
+    if (change.type !== "replace") return change;
+    const { id, item } = change as unknown as {
+      id: string;
+      item: { selected?: boolean };
+    };
+    return { type: "select", id, selected: item.selected === true } as unknown as C;
+  });
+}
+
 export type GraphChangeKind = "position" | "graph";
 
 export type GraphChangeMeta = {

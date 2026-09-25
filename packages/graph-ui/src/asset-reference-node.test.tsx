@@ -49,7 +49,7 @@ it("renders asset identities and missing references in a selectable, immutable g
     expect(texture.getAttribute("data-selected")).toBe("true"),
   );
   expect(texture.textContent).toContain("Stone");
-  expect(texture.querySelector("svg")?.getAttribute("width")).toBe("40");
+  expect(texture.textContent).toContain("Texture");
   expect(texture.title).toContain("assets/Stone.babasset");
   expect(getByText("Missing Asset")).toBeTruthy();
   expect(queryByTestId("graph-add-node")).toBeNull();

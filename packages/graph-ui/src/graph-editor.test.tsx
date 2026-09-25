@@ -2781,7 +2781,7 @@ describe("GraphEditor", () => {
 
   it("notifies the host when Add Node opens and closes", () => {
     const onPaletteOpenChange = vi.fn();
-    const { getByTestId, getByRole } = render(
+    const { getByTestId } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
@@ -2790,21 +2790,28 @@ describe("GraphEditor", () => {
     );
     fireEvent.click(getByTestId("graph-add-node"));
     expect(onPaletteOpenChange).toHaveBeenCalledWith(true);
-    fireEvent.click(getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(getByTestId("node-palette-search"), { key: "Escape" });
     expect(onPaletteOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("opens Add node from an empty-pane context menu without node items", () => {
+  it("opens Add Node at an empty-pane right click and places the node there", () => {
+    const onChange = vi.fn();
     const { container, getByTestId } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        onChange={onChange}
       />,
     );
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
-    fireEvent.contextMenu(pane!);
-    expect(getByTestId("node-palette-body")).toBeTruthy();
+    fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
+    const palette = getByTestId("node-palette");
+    expect([palette.style.left, palette.style.top]).toEqual(["200px", "150px"]);
+    const expected = flowPositionFromScreen(container, { x: 200, y: 150 });
+    fireEvent.click(getByTestId("node-palette-item-debug.log"));
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.nodes.map((node) => node.position)).toEqual([expected]);
   });
 
   it("opens Add Node on empty-pane double-click without zooming the canvas", () => {

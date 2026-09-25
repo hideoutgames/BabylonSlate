@@ -323,17 +323,19 @@ describe("Graphite theme tokens", () => {
 });
 
 describe("compact dock tab strips", () => {
-  it("halves dockview tab min-heights", () => {
-    expect(dockviewCss).toMatch(/min-height:\s*18px/);
-    expect(dockviewCss).toMatch(/min-height:\s*26px/);
-    expect(dockviewCss).not.toMatch(/min-height:\s*36px/);
-    expect(dockviewCss).not.toMatch(/min-height:\s*52px/);
+  it("sizes dockview strips from the theme height token per pointer", () => {
+    const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
+    expect(tokenValue(theme, "--dv-tabs-and-actions-container-height")).toBe(
+      "26px",
+    );
+    expect(dockviewCss).toMatch(
+      /@media \(pointer: coarse\)[\s\S]*--dv-tabs-and-actions-container-height:\s*30px/,
+    );
   });
 
-  it("keeps dockview tabs wide enough to click when titles are short", () => {
-    expect(dockviewCss).toMatch(/min-width:\s*56px/);
-    expect(dockviewCss).toMatch(/min-width:\s*64px/);
-    expect(dockviewCss).not.toMatch(/min-width:\s*28px/);
+  it("keeps dockview tabs wide enough to hit when titles are short", () => {
+    expect(dockviewCss).toMatch(/min-width:\s*96px/);
+    expect(dockviewCss).toMatch(/min-width:\s*128px/);
   });
 
   it("gives dockview tabs slight horizontal margins without changing height", () => {

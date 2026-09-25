@@ -22,6 +22,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/asset-registry.md](architecture/asset-registry.md) | Header-only guid index and importers |
 | [architecture/plugins.md](architecture/plugins.md) | PluginSettings, content roots, `.babplugin`, Starter Content |
 | [architecture/global-search.md](architecture/global-search.md) | Project-wide text search |
+| [architecture/keybinds.md](architecture/keybinds.md) | Desktop shortcuts, keycaps, overrides |
 | [architecture/object-model.md](architecture/object-model.md) | World, actors, tick |
 | [architecture/bridge.md](architecture/bridge.md) | Bridge transports, snapshot layout, channels |
 | [architecture/render.md](architecture/render.md) | Snapshot sync, visibility-gated editor loop, resource cache |

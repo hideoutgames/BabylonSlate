@@ -72,7 +72,7 @@ const LIGHTS = ["point", "directional", "spot"] as const;
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   ...SHAPES.map((meshKind) => ({
     id: `shape-${meshKind}`,
-    title: meshKind,
+    title: `${meshKind[0]!.toUpperCase()}${meshKind.slice(1)}`,
     category: "Shapes",
     kind: { type: "shape" as const, meshKind },
   })),

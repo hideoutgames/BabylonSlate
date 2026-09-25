@@ -36,7 +36,8 @@ test(
     const box = await bounds(divider);
     const folders = await bounds(page.getByTestId("content-browser-sidebar"));
     const assets = await bounds(page.getByTestId("content-browser-assets"));
-    expect(assets.x - (folders.x + folders.width)).toBeCloseTo(1, 1);
+    // A 4px gutter plus the 1px border of the framed Folders pane.
+    expect(assets.x - (folders.x + folders.width)).toBeCloseTo(5, 1);
     const style = await divider.evaluate((element) => ({
       padding: getComputedStyle(element).padding,
       background: getComputedStyle(element).backgroundColor,

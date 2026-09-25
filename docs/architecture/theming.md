@@ -29,12 +29,16 @@ Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark 
 
 ## Adaptive editor layout
 
-- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Dock tabs retain their 18px fine-pointer / 26px coarse-pointer strips; semantic borders and surfaces separate tools from content.
+- iPad and desktop retain the compact 28px global bars, small Primary actions, pinned Content Browser/Scene tabs, and resizable dock layout. Dock tabs use 26px fine-pointer / 30px coarse-pointer strips with wide tab minimums; semantic borders and surfaces separate tools from content.
+- The editor shares the launcher's window language: the title bar leads with the Slate mark and project name, and a 22px status bar reports save state, compile errors, the active document, and the build label.
+- Docked groups and the Content Browser's Folders/Assets panes are rounded `--sidebar` panels with a 1px border, separated by 4px `--background` gutters (Dockview theme `gap`). Sashes and dividers keep their widened hit areas inside the gutters. Phone layouts keep edge-to-edge panes and omit the status bar.
 - Phone layout activates below 768px wide, or at 500px tall or less with a coarse pointer. The global bars use 44px targets; Content Browser and Open Documents provide navigation, with secondary commands under More Tools.
 - Phone Dockview shows one window with a bottom **Window** picker. Window switching uses Dockview visibility and keeps the tablet layout separate; returning to a larger window restores its splits. Focus is unnecessary in this mode.
 - Phone Outliner and My Class trees use 44px rows and actions; tablet and desktop retain their compact 28px rows.
 - Content Browser keeps its tile appearance. Folders open in a Sheet, selected items have an explicit **Open** action, and **New Asset** separates type selection from details. Catalog dialogs replace their category sidebar with a picker.
-- Dialogs and sheets fit the dynamic viewport and safe areas. Menu rows expand for coarse pointers. Feedback uses color and restrained fades, without button movement; reduced-motion preferences are respected.
+- Dialogs and sheets fit the dynamic viewport and safe areas. Menu rows expand for coarse pointers.
+- Context menus (pointer-anchored `NestedMenu`) use a rounded `--popover` panel with a soft two-layer shadow and a short fade/scale-in. Rows are `--chrome-row` tall (44px on coarse pointers) with one shared leading icon column, a right-aligned `ShortcutKeys` group, and `--accent` hover/focus fills; destructive rows use `--destructive` text and a 12% tinted fill and sit after a separator. Touch-only pointers hide keycaps. Dropdown `NestedMenu`s size to their content on one line.
+- Shortcut keycaps (`Kbd`) are muted `--muted` chips; inside tooltips they switch to a translucent background chip so they read on the inverted tooltip surface. Feedback uses color and restrained fades, without button movement; reduced-motion preferences are respected.
 - Global Save All, Undo/Redo, Compile and Material Render keep their existing sizes and idle appearance. Activation uses a semantic fill; pending actions show an in-place spinner, completed actions briefly show a check except Undo/Redo, which retain their action icons, and failures show an error icon with an accessible explanation. Save/Compile await their actual result; Material Render follows its preview state. Pending work prevents repeated submission, while Undo/Redo remain repeatable. Feedback belongs to the current project/document and respects reduced motion.
 - These adaptations apply [Apple HIG layout](https://developer.apple.com/design/human-interface-guidelines/layout), [button](https://developer.apple.com/design/human-interface-guidelines/buttons), and [toolbar](https://developer.apple.com/design/human-interface-guidelines/toolbars) guidance while retaining professional editor density. Device input and safe areas determine presentation; the UI does not depend on an Apple-only host.
 
@@ -62,12 +66,12 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.963 0.004 85)` | `oklch(0.275 0.003 75)` |
-| Raised cards | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
-| Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
-| Menus / dialogs / floating tools | `--popover` | `oklch(0.978 0.003 85)` | `oklch(0.315 0.003 75)` |
-| Inputs / outline actions | `--control` | `oklch(0.978 0.003 85)` | `oklch(0.252 0.003 75)` |
+| App frame | `--background` | `oklch(0.905 0.006 85)` | `oklch(0.23 0.003 75)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.975 0.003 85)` | `oklch(0.275 0.003 75)` |
+| Raised cards | `--card` | `oklch(0.988 0.002 85)` | `oklch(0.30 0.003 75)` |
+| Panel toolbars / section headers | `--panel-header` | `oklch(0.952 0.004 85)` | `oklch(0.264 0.003 75)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.99 0.002 85)` | `oklch(0.315 0.003 75)` |
+| Inputs / outline actions | `--control` | `oklch(0.99 0.002 85)` | `oklch(0.252 0.003 75)` |
 | Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
 `--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px.
@@ -76,7 +80,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 
 ## Search and folder navigation
 
-- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. The active result remains visible while navigating. Indexing hides stale results.
+- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. Its footer shows these keys as `Kbd` keycaps. The active result remains visible while navigating. Indexing hides stale results.
 - Content Browser shows the current folder path and a Parent Folder action within the selected project/plugin root. Ancestor navigation clears tile selection and retains filters.
 - Empty folders offer New Asset and Import when writable. An unsuccessful asset search offers Clear Filters; Outliner distinguishes No Matching Actors from an empty scene and retains its search-clear action.
 - Engine and Project Settings search field names and categories. Results open the relevant category and focus a specific control when available; an unmatched query offers Clear Search.
@@ -90,7 +94,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 - Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
 - Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
-Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node assigns stripes by item order before virtualization, excluding category headers.
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node has no stripes; its tree rows use an accent fill for hover and the active row. Dialogs lift with `shadow-xl` and tint their footer band with `bg-muted/40`; they fade without scaling so layout measurements settle immediately.
 
 ## Action and status tokens
 
@@ -192,7 +196,7 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
-Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
+Dockview tab strips are **26px** tall on fine pointers and **30px** on coarse (`--dv-tabs-and-actions-container-height` in `apps/editor/src/shell/dockview-theme.css`). Tabs are segments inside the `--panel-header` strip: **20px / 26px** tall with **96px / 128px** minimum widths so short titles stay easy to hit on touch. The visible tab is a raised `--card` pill with a 1px `--border` edge; hidden tabs are transparent, fill with `--muted` on hover, and the close action appears on hover, focus, or the active tab (always on coarse pointers). Tabs use `--dv-tab-margin: 0 2px`. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip; in the framed desktop layout the group border draws that bound instead. Tree rows are 28px (`--chrome-row`).
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -18,11 +18,13 @@ import {
 } from "@babylonslate/ui/components/alert";
 import { ComponentGallery } from "../components/component-gallery";
 import { EditorChromeBar } from "../components/editor-chrome-bar";
+import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { PlayProvider, usePlay } from "../context/play-context";
+import { KeybindProvider } from "../context/keybind-context";
 import { ProjectSearchProvider } from "../context/project-search-context";
 import { ValidationProvider } from "../context/validation-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
@@ -34,6 +36,18 @@ import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
 } from "../lib/dirty-document-prompts";
+
+function PromptList({ items }: { items: string[] }) {
+  return (
+    <ul className="max-h-48 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm">
+      {items.map((item) => (
+        <li key={item} className="min-w-0 truncate px-3 py-1.5" title={item}>
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function DirtyCloseDialog({
   dirtyNames,
@@ -57,16 +71,12 @@ function DirtyCloseDialog({
     >
       <AlertDialogContent data-testid="dirty-close-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Unsaved documents</AlertDialogTitle>
+          <AlertDialogTitle>Unsaved Documents</AlertDialogTitle>
           <AlertDialogDescription>
-            Save before closing? Unsaved:
+            Save changes to these documents before closing?
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <ul className="list-disc pl-5 text-sm">
-          {dirtyNames.map((name) => (
-            <li key={name}>{name}</li>
-          ))}
-        </ul>
+        <PromptList items={dirtyNames} />
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="dirty-cancel">
             Cancel
@@ -107,23 +117,19 @@ function MigrationPrompt({
     >
       <AlertDialogContent data-testid="migrate-on-save-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Schema migration required</AlertDialogTitle>
+          <AlertDialogTitle>Schema Migration Required</AlertDialogTitle>
           <AlertDialogDescription>
             Some assets were made with an older schema. Migrate them on save?
             Files you do not save stay untouched.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <ul className="list-disc pl-5 text-sm">
-          {paths.map((path) => (
-            <li key={path}>{path}</li>
-          ))}
-        </ul>
+        <PromptList items={paths} />
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="migrate-cancel">
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction data-testid="migrate-approve" onClick={onApprove}>
-            Migrate on save
+            Migrate On Save
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -282,6 +288,7 @@ function EditorLayout() {
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>
+      <EditorStatusBar />
       <DirtyCloseDialog
         dirtyNames={promptNames}
         open={
@@ -366,6 +373,11 @@ function EditorLayout() {
   );
 }
 
+function PlayAwareKeybinds({ children }: { children: ReactNode }) {
+  const { playing } = usePlay();
+  return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
@@ -381,7 +393,9 @@ export default function EditorRoute({
             <TestParticleHostStats />
             <ModelThumbnailCaptureHost />
             <ProjectSearchProvider>
-              {gallery ? <ComponentGallery /> : <EditorLayout />}
+              <PlayAwareKeybinds>
+                {gallery ? <ComponentGallery /> : <EditorLayout />}
+              </PlayAwareKeybinds>
             </ProjectSearchProvider>
           </MaterialRenderControlProvider>
         </PlayProvider>

@@ -1,7 +1,9 @@
 import {
   DockviewReact,
+  themeAbyss,
   type DockviewApi,
   type DockviewReadyEvent,
+  type DockviewTheme,
 } from "dockview-react";
 import type { DockviewDocumentKind } from "./default-layout";
 import "dockview-react/dist/styles/dockview.css";
@@ -19,6 +21,8 @@ import {
 } from "./phone-dock-layout";
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
 import { listDockWindows } from "./window-catalog";
+
+const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
 
 export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
@@ -171,12 +175,18 @@ export function DockviewShell({
       className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
       data-layout={platformOptions.singleWindow ? "phone" : "docked"}
     >
-      <div className="min-h-0 min-w-0 flex-1">
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1",
+          !platformOptions.singleWindow && "dockview-frame",
+        )}
+      >
         <DockviewReact
           className={cn(
             "dockview-theme-babylonslate h-full w-full",
             platformOptions.singleWindow && "phone-dockview",
           )}
+          theme={platformOptions.singleWindow ? themeAbyss : SPACED_THEME}
           dndStrategy={platformOptions.dndStrategy}
           disableDnd={platformOptions.singleWindow}
           disableFloatingGroups={platformOptions.disableFloatingGroups}

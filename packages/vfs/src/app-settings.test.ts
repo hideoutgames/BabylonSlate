@@ -220,6 +220,22 @@ describe("app settings", () => {
     );
   });
 
+  it("keeps keybind overrides and drops a malformed map without losing other settings", () => {
+    const parsed = engineSettingsSchema.parse({
+      keybinds: { "editor.saveAll": ["Mod+Shift+S"], "edit.delete": [] },
+    });
+    expect(parsed.keybinds).toEqual({
+      "editor.saveAll": ["Mod+Shift+S"],
+      "edit.delete": [],
+    });
+    const recovered = engineSettingsSchema.parse({
+      undoHistoryLength: 12,
+      keybinds: { "editor.saveAll": "Mod+S" },
+    });
+    expect(recovered.keybinds).toEqual({});
+    expect(recovered.undoHistoryLength).toBe(12);
+  });
+
   it("fills focus keep-panel defaults when saved JSON omits the field", () => {
     const parsed = engineSettingsSchema.parse({
       undoHistoryLength: 50,

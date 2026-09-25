@@ -85,9 +85,7 @@ export function EnginePluginsSettings() {
     <FieldSet data-testid="engine-plugins-settings">
       <FieldLegend>Engine Plugins</FieldLegend>
       <FieldDescription>
-        These plugins are copied into new projects. Enabled By Default sets
-        their initial state. Existing projects keep their own copies and
-        settings.
+        Copied into new projects. Existing projects keep their own copies.
       </FieldDescription>
       {loading ? <p role="status">Loading Engine Plugins…</p> : null}
       {error ? (

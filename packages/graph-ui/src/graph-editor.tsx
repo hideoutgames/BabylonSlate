@@ -64,6 +64,7 @@ import {
   lockNodeDragAxis,
   allocateGraphDragTransaction,
   nodeChangesMutateGraph,
+  replaceChangesAsSelection,
   reconcileCanvasGraph,
   shouldEmitNodeChanges,
   toSerializedGraph,
@@ -587,6 +588,7 @@ function GraphEditorCanvas({
     nodeId?: string;
     position: { x: number; y: number };
   } | null>(null);
+  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null);
   const connectDragRef = useRef<{
     pointerId: number;
     pointer: { x: number; y: number };
@@ -762,15 +764,13 @@ function GraphEditorCanvas({
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
-        const constrained = lockNodeDragAxis(changes, current, lockDragAxis);
+        const constrained = replaceChangesAsSelection(
+          lockNodeDragAxis(changes, current, lockDragAxis),
+        );
         const applied = readOnly
-          ? constrained.flatMap((change): NodeChange<CanvasNode>[] => {
-              if (change.type === "select" || change.type === "dimensions") return [change];
-              // React Flow setNodes (focus/host selection/marquee) emits replace
-              // changes. In inspection mode accept only their selection state.
-              if (change.type === "replace") return [{ type: "select", id: change.id, selected: change.item.selected === true }];
-              return [];
-            })
+          ? constrained.filter(
+              (change) => change.type === "select" || change.type === "dimensions",
+            )
           : constrained;
         const next = applyNodeChanges(applied, current);
         const allocated = allocateGraphDragTransaction(
@@ -801,8 +801,9 @@ function GraphEditorCanvas({
     (changes: EdgeChange[]) => {
       if (readOnly) return;
       setEdges((current) => {
-        const next = applyEdgeChanges(changes, current);
-        if (nodeChangesMutateGraph(changes)) {
+        const effective = replaceChangesAsSelection(changes);
+        const next = applyEdgeChanges(effective, current);
+        if (nodeChangesMutateGraph(effective)) {
           emitChange(graphStateRef.current.nodes, next);
         }
         return next;
@@ -1492,6 +1493,7 @@ function GraphEditorCanvas({
       if (action === "add-node") {
         const position = screenToFlowPosition(point);
         setPendingConnect({ pin, nodeId: fromNode.id, position });
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
         finishGesture();
         return;
@@ -1834,7 +1836,7 @@ function GraphEditorCanvas({
   }, []);
 
   const handlePaneClick = useCallback(
-    () => {
+    (event?: { clientX: number; clientY: number }) => {
       if (skipPaneClickRef.current) {
         skipPaneClickRef.current = false;
         return;
@@ -1852,7 +1854,9 @@ function GraphEditorCanvas({
         !readOnly &&
         emptyPaneDoubleTapAddsNode
       ) {
-        setPendingConnect(null);
+        const point = event ? { x: event.clientX, y: event.clientY } : null;
+        setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
       }
       lastPaneTapRef.current = now;
@@ -1862,6 +1866,7 @@ function GraphEditorCanvas({
       connectEndMode,
       emptyPaneDoubleTapAddsNode,
       readOnly,
+      screenToFlowPosition,
     ],
   );
 
@@ -1889,11 +1894,19 @@ function GraphEditorCanvas({
         }
       }
       if (paletteNodes && paletteNodes.length > 0) {
-        setPendingConnect(null);
+        const point = { x: event.clientX, y: event.clientY };
+        setPendingConnect({ position: screenToFlowPosition(point) });
+        setPaletteAnchor(point);
         setPaletteOpenState(true);
       }
     },
-    [contextMenuItemsForNode, paletteNodes, paneMenu.openMenuAt, readOnly],
+    [
+      contextMenuItemsForNode,
+      paletteNodes,
+      paneMenu.openMenuAt,
+      readOnly,
+      screenToFlowPosition,
+    ],
   );
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
@@ -2218,8 +2231,10 @@ function GraphEditorCanvas({
               size="icon-sm"
               aria-label="Add Node"
               title="Add Node"
-              onClick={() => {
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
                 setPendingConnect(null);
+                setPaletteAnchor({ x: rect.left, y: rect.bottom + 4 });
                 setPaletteOpenState(true);
               }}
               data-testid="graph-add-node"
@@ -2410,6 +2425,7 @@ function GraphEditorCanvas({
           pinCompatibility={pinCompatibility}
           sourcePins={paletteSourcePins}
           onAddNode={handleAddPaletteNode}
+          anchor={paletteAnchor}
         />
         )}
         <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />

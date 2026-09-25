@@ -67,7 +67,7 @@ export function GridSizeDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent data-testid={testId}>
+      <AlertDialogContent data-testid={testId} className="sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>Grid Settings</AlertDialogTitle>
           <AlertDialogDescription>
@@ -76,7 +76,7 @@ export function GridSizeDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {open ? (
-          <FieldGroup>
+          <FieldGroup className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
             {FIELDS.map(({ key, label, testId: inputTestId }) => (
               <Field key={key}>
                 <FieldLabel htmlFor={`${id}-${key}`}>{label}</FieldLabel>

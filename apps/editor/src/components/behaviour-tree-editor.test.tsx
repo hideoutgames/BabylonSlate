@@ -308,6 +308,7 @@ describe("BehaviourTreeEditor", () => {
       ],
     }));
     fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Move To" } });
     fireEvent.click(await screen.findByTestId("node-palette-item-bt.task.moveToBlackboardKey"));
     await waitFor(() => expect(screen.queryByTestId("node-palette")).toBeNull());
     const added = lastCommit().nodes.find((node) => node.classId === "bt.task.moveToBlackboardKey")!;
@@ -494,6 +495,7 @@ describe("BehaviourTreeEditor", () => {
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
     fireEvent.click(screen.getByRole("button", { name: "Add Node" }));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Wait" } });
     fireEvent.click(screen.getByTestId("node-palette-item-bt.task.wait"));
     await waitFor(() => {
       expect(screen.getByTestId("property-durationMs")).toBeTruthy();
@@ -506,6 +508,7 @@ describe("BehaviourTreeEditor", () => {
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
     fireEvent.click(screen.getByRole("button", { name: "Add Node" }));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "custom" } });
     expect(screen.getByTestId("node-palette-item-BTTask_Custom")).toBeTruthy();
   });
 
@@ -515,6 +518,7 @@ describe("BehaviourTreeEditor", () => {
     expect(pane).not.toBeNull();
     fireEvent.click(pane!);
     fireEvent.click(screen.getByRole("button", { name: "Add Node" }));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "brain" } });
     fireEvent.click(screen.getByTestId("node-palette-item-MyBrain"));
     await waitFor(() => {
       expect(

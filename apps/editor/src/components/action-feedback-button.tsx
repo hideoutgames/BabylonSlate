@@ -12,7 +12,10 @@ import {
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { ariaKeyShortcuts, ShortcutKeys } from "@babylonslate/editor-kit";
 import type { ActionFeedback, ActionResult } from "../lib/action-feedback";
+import type { EditorCommandId } from "../lib/editor-keybinds";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 
 const IDLE: ActionFeedback = { status: "idle" };
 
@@ -24,6 +27,7 @@ export function ActionFeedbackButton({
   feedback: controlledFeedback,
   iconOnly = false,
   showSuccessIcon = true,
+  command,
   disabled,
   className,
   children,
@@ -35,6 +39,8 @@ export function ActionFeedbackButton({
   feedback?: ActionFeedback;
   iconOnly?: boolean;
   showSuccessIcon?: boolean;
+  /** Editor command whose chord runs this action and appears in its tooltip. */
+  command?: EditorCommandId;
 }) {
   const [localFeedback, setLocalFeedback] = useState<ActionFeedback>(IDLE);
   const pending = useRef(false);
@@ -67,6 +73,7 @@ export function ActionFeedbackButton({
         ? CircleAlertIcon
         : Icon;
 
+  const chord = useKeybindChord(command);
   const run = async () => {
     if (pending.current || disabled || busy) return;
     if (controlledFeedback) {
@@ -97,6 +104,8 @@ export function ActionFeedbackButton({
     }
   };
 
+  useKeybindCommand(command, () => void run(), { enabled: !disabled && !busy });
+
   return (
     <>
       <Tooltip>
@@ -108,6 +117,7 @@ export function ActionFeedbackButton({
               {...props}
               className={cn("chrome-action-feedback", className)}
               aria-label={label}
+              aria-keyshortcuts={chord ? ariaKeyShortcuts(chord) : undefined}
               aria-describedby={message ? statusId : undefined}
               aria-busy={busy}
               data-action-state={feedback.status}
@@ -122,7 +132,10 @@ export function ActionFeedbackButton({
           />
           {children}
         </TooltipTrigger>
-        <TooltipContent>{message || label}</TooltipContent>
+        <TooltipContent>
+          {message || label}
+          {message ? null : <ShortcutKeys chord={chord} decorative />}
+        </TooltipContent>
       </Tooltip>
       <span id={statusId} className="sr-only" role="status" aria-live="polite">
         {message}

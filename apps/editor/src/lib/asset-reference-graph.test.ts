@@ -71,7 +71,7 @@ describe("buildAssetReferenceGraph", () => {
     expect(assets).toEqual(before);
   });
 
-  it("terminates cycles, deduplicates edges, and retains self references and missing endpoints", () => {
+  it("terminates cycles, merges mutual references, and retains self references and missing endpoints", () => {
     const graph = buildAssetReferenceGraph(
       "a",
       [asset("a", ["b", "b", "a"]), asset("b", ["a", "missing"])],
@@ -82,11 +82,12 @@ describe("buildAssetReferenceGraph", () => {
       "b",
       "missing",
     ]);
-    expect(graph.edges.map(({ source, target }) => [source, target])).toEqual([
-      ["a", "a"],
-      ["a", "b"],
-      ["b", "a"],
-      ["b", "missing"],
+    expect(
+      graph.edges.map(({ source, target, type }) => [source, target, type]),
+    ).toEqual([
+      ["a", "a", "asset-reference-self"],
+      ["a", "b", "asset-reference-mutual"],
+      ["b", "missing", undefined],
     ]);
     expect(
       graph.nodes.find((node) => node.id === "missing")?.data,
@@ -98,6 +99,21 @@ describe("buildAssetReferenceGraph", () => {
     expect(
       buildAssetReferenceGraph("placeholder", [placeholder], []).nodes[0]?.data,
     ).toMatchObject({ missing: true });
+  });
+
+  it("lays cycles out in one column per dependency depth with wires running left to right", () => {
+    const graph = buildAssetReferenceGraph(
+      "a",
+      [asset("a", ["b"]), asset("b", ["c"]), asset("c", ["a", "d"]), asset("d")],
+      [],
+    );
+    const x = new Map(graph.nodes.map((node) => [node.id, node.position.x]));
+    expect(new Set(x.values()).size).toBe(4);
+    for (const { source, target } of graph.edges) {
+      if (source === "c" && target === "a") continue;
+      expect(x.get(source)!).toBeLessThan(x.get(target)!);
+    }
+    expect(x.get("a")).toBe(0);
   });
 
   it("includes unsaved typed references alongside saved references without mutating documents", () => {

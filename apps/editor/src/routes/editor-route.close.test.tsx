@@ -89,6 +89,9 @@ vi.mock("../context/project-search-context", () => ({
 vi.mock("../components/component-gallery", () => ({
   ComponentGallery: () => null,
 }));
+vi.mock("../components/editor-status-bar", () => ({
+  EditorStatusBar: () => null,
+}));
 vi.mock("../components/document-workspace", () => ({
   DocumentWorkspace: () => null,
 }));

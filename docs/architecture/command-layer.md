@@ -57,7 +57,7 @@ interface EditCommand<TDoc = unknown> {
 
 - One `DocumentEditStack` per open document id — **never** a global undo stack.
 - Closing a document drops its history.
-- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance. Desktop **Mod+Z** undoes, **Mod+Shift+Z** / **Mod+Y** redo (`documentHistoryHotkey`); skipped in text fields / `SelectableText` and while three pointers are down. Graph canvases reconcile the restored document so node add/move/connect/delete is visible (same path as scene / UI Design / tilemap).
+- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance. Desktop **Mod+Z** undoes, **Mod+Shift+Z** / **Mod+Y** redo (rebindable, see [keybinds.md](keybinds.md)); skipped in text fields / `SelectableText` and while three pointers are down. Graph canvases reconcile the restored document so node add/move/connect/delete is visible (same path as scene / UI Design / tilemap).
 - Caps (both enforced; drop from the oldest end when either is exceeded):
   - **Entry limit** from Engine Settings `undoHistoryLength` (default 50).
   - **Byte budget** across recorded `byteSize` values (snapshot fallbacks).

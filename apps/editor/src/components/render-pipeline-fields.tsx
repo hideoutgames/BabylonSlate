@@ -50,7 +50,7 @@ export function RenderPipelineFields(props: Props) {
             </SelectGroup></SelectContent>
           </Select>
           <FieldDescription id={`${pathId}-description`}>
-            Choose how lights are processed. PBR and CEL are independent of this preference.
+            How lights are processed. Independent of Render Mode.
           </FieldDescription>
         </Field>
         <Field className="settings-field">
@@ -66,16 +66,19 @@ export function RenderPipelineFields(props: Props) {
             </SelectGroup></SelectContent>
           </Select>
           <FieldDescription id="project-gpu-backend-description">
-            Shared by the project's viewports, previews, Play, and exported games.
+            Used by viewports, previews, Play, and exported games.
           </FieldDescription>
         </Field>
-        <Field>
-          <FieldLabel>Active Scene Selection</FieldLabel>
-          <FieldDescription role="status" data-testid={`${props.scope}-render-pipeline-status`}>
-            {pathLabels[effective.renderPath]} · {backendLabels[effective.gpuBackend]}
-            {limits.length ? `. ${limits.join(" ")} Your preferences are retained.` : ""}
-            {" Selection is resolved for the active scene."}
-          </FieldDescription>
+        <Field className="settings-field">
+          <FieldLabel>Active Scene</FieldLabel>
+          <div role="status" className="contents" data-testid={`${props.scope}-render-pipeline-status`}>
+            <span className="text-sm tabular-nums">
+              {pathLabels[effective.renderPath]} · {backendLabels[effective.gpuBackend]}
+            </span>
+            {limits.length ? (
+              <FieldDescription>{limits.join(" ")} Your preferences are retained.</FieldDescription>
+            ) : null}
+          </div>
         </Field>
       </FieldGroup>
     </FieldSet>
