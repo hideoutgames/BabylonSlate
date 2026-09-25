@@ -281,7 +281,7 @@ export function NodePalette({
     setActiveKey(rows[next]!.key);
   };
 
-  const frame = open && !modal ? popupFrame(anchor) : null;
+  const frame = modal ? null : popupFrame(anchor);
   const activeDescendant = activeIndex >= 0 ? rowId(listId, rows[activeIndex]!.key) : undefined;
 
   return (
@@ -290,12 +290,12 @@ export function NodePalette({
         data-testid="node-palette"
         data-presentation={presentation}
         showCloseButton={modal}
-        overlayClassName={cn("data-closed:animate-none", !modal && "bg-transparent")}
+        overlayClassName={cn("node-palette-overlay", !modal && "bg-transparent")}
         initialFocus={(interaction) =>
           coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current
         }
         className={cn(
-          "flex max-w-none flex-col gap-0 overflow-hidden p-0 data-closed:animate-none sm:max-w-none",
+          "flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
           modal
             ? "node-palette-modal editor-dialog-large"
             : "node-palette-popup translate-x-0 translate-y-0 rounded-lg",
