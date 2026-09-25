@@ -4,7 +4,6 @@ import {
   emitterPreviewLibrary,
   loadEmittersForPreview,
   particleLibraryChangeTier,
-  playParticleLibraryFromAssets,
   systemPreviewLibrary,
 } from "./play-particles";
 import {
@@ -24,21 +23,7 @@ const withMaterial = (materialGuid: string): ParticleEmitterPayload => {
   return { ...payload, render: { ...payload.render, materialGuid } };
 };
 
-describe("playParticleLibraryFromAssets", () => {
-  it("normalizes Particle Emitter and Particle System payloads", () => {
-    const library = playParticleLibraryFromAssets({
-      assets: [
-        { guid: "em-1", type: "ParticleEmitter", payload: { emitter: { capacity: 64 } } },
-        { guid: "sys-1", type: "ParticleSystem", payload: { emitterGuids: ["em-1"] } },
-      ],
-    });
-    expect(library.emitters.get("em-1")).toMatchObject({
-      kind: "basic",
-      payload: { emitter: { capacity: 64 } },
-    });
-    expect(library.systems.get("sys-1")?.emitterGuids).toEqual(["em-1"]);
-  });
-
+describe("preview libraries", () => {
   it("wraps a single Emitter as a Preview Particle System", () => {
     const library = emitterPreviewLibrary(basic(withMaterial("mat-1")));
     const slots = library.systems.get(PREVIEW_SYSTEM_GUID)?.emitterGuids ?? [];

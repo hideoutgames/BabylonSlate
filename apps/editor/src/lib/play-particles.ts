@@ -3,23 +3,12 @@ import {
   isParticleEmitterAssetType,
   particleEmitterChangeTier,
   particleLibraryEmitter,
-  particleLibraryFromAssets,
   stableStringify,
   type ParticleEmitterChangeTier,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
 } from "@babylonslate/assets";
-
-/** @deprecated Use `ParticleLibrary` from `@babylonslate/assets`. */
-export type PlayParticleLibrary = ParticleLibrary;
-
-/** Build a Play particle library from registry/open-document payloads. */
-export function playParticleLibraryFromAssets(options: {
-  assets: ReadonlyArray<{ guid: string; type: string; payload: unknown }>;
-}): ParticleLibrary {
-  return particleLibraryFromAssets(options.assets);
-}
 
 export const PREVIEW_EMITTER_GUID = "preview-em";
 export const PREVIEW_SYSTEM_GUID = "preview-sys";

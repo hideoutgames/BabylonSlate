@@ -337,7 +337,7 @@ describe("material compiler", () => {
     disposers.push(() => texture.dispose());
     const result = compileMaterialPlan(planFor(doc), {
       scene,
-      name: "particleTexture",
+      name: "particleSample",
       resolveTexture: () => texture,
     });
     expect(result.ok).toBe(true);
