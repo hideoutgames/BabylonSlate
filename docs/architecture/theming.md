@@ -64,12 +64,12 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| App frame | `--background` | `oklch(0.938 0.005 85)` | `oklch(0.23 0.003 75)` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.963 0.004 85)` | `oklch(0.275 0.003 75)` |
-| Raised cards | `--card` | `oklch(0.972 0.003 85)` | `oklch(0.30 0.003 75)` |
-| Panel toolbars / section headers | `--panel-header` | `oklch(0.953 0.005 85)` | `oklch(0.264 0.003 75)` |
-| Menus / dialogs / floating tools | `--popover` | `oklch(0.978 0.003 85)` | `oklch(0.315 0.003 75)` |
-| Inputs / outline actions | `--control` | `oklch(0.978 0.003 85)` | `oklch(0.252 0.003 75)` |
+| App frame | `--background` | `oklch(0.905 0.006 85)` | `oklch(0.23 0.003 75)` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.975 0.003 85)` | `oklch(0.275 0.003 75)` |
+| Raised cards | `--card` | `oklch(0.988 0.002 85)` | `oklch(0.30 0.003 75)` |
+| Panel toolbars / section headers | `--panel-header` | `oklch(0.952 0.004 85)` | `oklch(0.264 0.003 75)` |
+| Menus / dialogs / floating tools | `--popover` | `oklch(0.99 0.002 85)` | `oklch(0.315 0.003 75)` |
+| Inputs / outline actions | `--control` | `oklch(0.99 0.002 85)` | `oklch(0.252 0.003 75)` |
 | Hover / selection wash | `--accent` | `oklch(0.898 0.006 85)` | `oklch(0.35 0.004 75)` |
 
 `--primary` is ink in both schemes: light `oklch(0.30 0.006 70)`, dark `oklch(0.92 0.003 85)`. The compact dimensions stay unchanged; `--radius` is 8px.
@@ -194,7 +194,7 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
-Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip; in the framed desktop layout the group border draws that bound instead. Tree rows are 28px (`--chrome-row`).
+Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--panel-header` with a 1px `--border` bottom rule. Each group's visible tab shares the panel's `--sidebar` surface with rounded top corners; hidden tabs are transparent and fill with `--muted` on hover. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip; in the framed desktop layout the group border draws that bound instead. Tree rows are 28px (`--chrome-row`).
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 
