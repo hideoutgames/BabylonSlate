@@ -26,7 +26,7 @@ import {
   type ShadowSettings,
 } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-readiness-signal";
 import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
 import {
   authoredShadowParticipation,

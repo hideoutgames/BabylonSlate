@@ -27,7 +27,7 @@ import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
-import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot

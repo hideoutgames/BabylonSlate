@@ -13,7 +13,7 @@ import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayl
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */

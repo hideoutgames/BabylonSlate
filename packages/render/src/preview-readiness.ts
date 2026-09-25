@@ -1,5 +1,5 @@
 import type { AbstractMesh } from "@babylonjs/core";
-import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { visualMeshes } from "./visual-meshes";
 
 /** Compile only drawn preview parts, excluding hidden placeholders and other Scenes. */
