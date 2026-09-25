@@ -100,6 +100,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument,
     projectGuid,
     collectPlaySpritePayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -673,6 +674,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const sprites = await collectPlaySpritePayloads(scene);
         controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
+        const waters = await collectPlayWaterContent();
         controller.signal.throwIfAborted();
         const modelBytes = await collectPlayModelBytes(scene);
         controller.signal.throwIfAborted();
@@ -681,7 +683,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const materials = await collectPlayMaterialLibrary(
           scene,
           [],
-          modelSlotMaterialGuidsFromPayloads(modelPayloads),
+          [...modelSlotMaterialGuidsFromPayloads(modelPayloads), ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
         );
         controller.signal.throwIfAborted();
         const extraTextureGuids = [
@@ -718,6 +720,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
+          waters,
           tilesets: tileContent.tilesets,
           textureBytes,
           texturePixelSizes,
@@ -820,6 +823,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     areaEmissionKey,
     textureLodKey,
     collectPlaySpritePayloads,
+    collectPlayWaterContent,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,

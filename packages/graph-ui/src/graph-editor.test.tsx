@@ -2777,6 +2777,10 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
     fireEvent.click(getByTestId("graph-add-node"));
     expect(getByTestId("node-palette-body")).toBeTruthy();
+    const palette = getByTestId("node-palette");
+    expect(palette.classList.contains("editor-dialog-large")).toBe(true);
+    expect([palette.style.left, palette.style.top]).toEqual(["", ""]);
+    expect(getByRole("button", { name: "Close" })).toBeTruthy();
   });
 
   it("notifies the host when Add Node opens and closes", () => {
@@ -2796,7 +2800,7 @@ describe("GraphEditor", () => {
 
   it("opens Add Node at an empty-pane right click and places the node there", () => {
     const onChange = vi.fn();
-    const { container, getByTestId } = render(
+    const { container, getByTestId, queryByRole } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
@@ -2808,6 +2812,8 @@ describe("GraphEditor", () => {
     fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
     const palette = getByTestId("node-palette");
     expect([palette.style.left, palette.style.top]).toEqual(["200px", "150px"]);
+    expect(palette.classList.contains("editor-dialog-large")).toBe(false);
+    expect(queryByRole("button", { name: "Close" })).toBeNull();
     const expected = flowPositionFromScreen(container, { x: 200, y: 150 });
     fireEvent.click(getByTestId("node-palette-item-debug.log"));
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;

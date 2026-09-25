@@ -76,6 +76,7 @@ describe("Add Component catalog", () => {
       "Camera",
       "Audio",
       "Particles",
+      "Water",
       "Overlay",
       "Physics",
     ]);

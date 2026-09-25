@@ -46,6 +46,8 @@ export interface NodePaletteProps {
    * Node button). Without one the menu is centered.
    */
   anchor?: { x: number; y: number } | null;
+  /** `modal` fills the viewport like other large catalogs and ignores `anchor`. */
+  presentation?: "popup" | "modal";
 }
 
 type PaletteRow =
@@ -146,7 +148,9 @@ export function NodePalette({
   sourcePins,
   pinCompatibility,
   anchor,
+  presentation = "popup",
 }: NodePaletteProps) {
+  const modal = presentation === "modal";
   const [search, setSearch] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -277,23 +281,34 @@ export function NodePalette({
     setActiveKey(rows[next]!.key);
   };
 
-  const frame = open ? popupFrame(anchor) : null;
+  const frame = modal ? null : popupFrame(anchor);
   const activeDescendant = activeIndex >= 0 ? rowId(listId, rows[activeIndex]!.key) : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="node-palette"
-        showCloseButton={false}
-        overlayClassName="bg-transparent"
+        data-presentation={presentation}
+        showCloseButton={modal}
+        overlayClassName={cn("node-palette-overlay", !modal && "bg-transparent")}
         initialFocus={(interaction) =>
           coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current
         }
-        className="node-palette-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        className={cn(
+          "flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          modal
+            ? "node-palette-modal editor-dialog-large"
+            : "node-palette-popup translate-x-0 translate-y-0 rounded-lg",
+        )}
         style={frame ?? undefined}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2 px-2 pt-2 pb-1.5">
-          <DialogTitle className="text-sm">Add Node</DialogTitle>
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-between gap-2",
+            modal ? "min-h-14 px-4 py-3 pr-14" : "px-2 pt-2 pb-1.5",
+          )}
+        >
+          <DialogTitle className={modal ? undefined : "text-sm"}>Add Node</DialogTitle>
           <label className="node-palette-context flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
             <Checkbox
               checked={contextSensitive}
@@ -303,7 +318,7 @@ export function NodePalette({
             Context Sensitive
           </label>
         </div>
-        <div className="shrink-0 border-b px-2 pb-2">
+        <div className={cn("shrink-0 border-b pb-2", modal ? "px-4" : "px-2")}>
           <SearchInput
             ref={searchRef}
             role="combobox"
@@ -327,7 +342,10 @@ export function NodePalette({
         <div
           ref={bodyRef}
           tabIndex={-1}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-1 outline-none"
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-y-contain outline-none",
+            modal ? "px-3 py-1" : "p-1",
+          )}
           style={{ overflowY: "auto" }}
           data-testid="node-palette-body"
         >
@@ -398,6 +416,11 @@ export function NodePalette({
                     >
                       <NodeRoleMark node={node} />
                       <span className="min-w-0 flex-1 truncate">{node.title}</span>
+                      {modal && node.description ? (
+                        <span className="min-w-0 flex-[2] truncate text-xs text-muted-foreground">
+                          {node.description}
+                        </span>
+                      ) : null}
                       {row.nested ? null : (
                         <span className="truncate text-xs text-muted-foreground">
                           {humanizePropertyLabel(node.category)}
@@ -410,7 +433,12 @@ export function NodePalette({
             </div>
           )}
         </div>
-        <div className="node-palette-hints shrink-0 items-center gap-3 border-t px-2 py-1.5 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "node-palette-hints shrink-0 items-center gap-3 border-t py-1.5 text-xs text-muted-foreground",
+            modal ? "px-4" : "px-2",
+          )}
+        >
           <span className="flex items-center gap-1">
             <Kbd>↑</Kbd>
             <Kbd>↓</Kbd>

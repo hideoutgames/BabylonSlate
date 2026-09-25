@@ -81,6 +81,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         ref: { kind: string; path: string; label: string };
         content: unknown;
       }>,
+      collectPlayWaterContent: vi.fn(async () => new Map()),
       collectPlaySpritePayloads: vi.fn(async () => []),
       collectPlayTilemapContent: vi.fn(async () => ({
         tilesets: [],
@@ -143,6 +144,7 @@ vi.mock("../context/document-context", () => ({
     applySceneChange: documents.applySceneChange,
     projectDocument: documents.projectDocument,
     collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
+    collectPlayWaterContent: documents.collectPlayWaterContent,
     collectPlayTilemapContent: documents.collectPlayTilemapContent,
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
     collectPlayTexturePixelSizes: documents.collectPlayTexturePixelSizes,

@@ -59,6 +59,7 @@ export const docsSidebar: SidebarItem[] = [
         link: "/design/renderer-qualification",
       },
       { text: "Gestures", link: "/design/gestures" },
+      { text: "Particle emitters", link: "/design/particle-emitters" },
     ],
   },
   {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createActor,
+  createDefaultWaterDefinition,
   createDefaultSceneLayer,
   createDefaultSceneSettings,
   createMeshComponent,
@@ -36,6 +37,27 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 }
 
 describe("component script API", () => {
+  it("updates Water dimensions through normal component variables and queries the changed footprint", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      playScene: sceneOf([createActor("lake", "Lake", { classId: "Hero", components: [
+        { id: "surface", classId: "WaterLakeComponent", properties: { assetGuid: "water", width: 20 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "surface"); ctx.setVariable("before", ctx.sampleWater({x:5,y:0,z:0}).found); ctx.setVariableOn(c, "width", 2); ctx.setVariable("after", ctx.sampleWater({x:5,y:0,z:0}).found); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().findActor("lake")!;
+      runtime.invokeScriptEvent("Hero", "Update", actor);
+      expect(actor.getVariable("before")).toBe(true);
+      expect(actor.getVariable("after")).toBe(false);
+      expect(commands.filter((command) => command.type === "assignMesh").at(-1)).toMatchObject({
+        parts: [{ componentId: "surface", meshKind: "water", water: { width: 2, assetGuid: "water" } }],
+      });
+    } finally { runtime.stop(); }
+  });
   it("changes an actor's authored outline without rebuilding its mesh or changing a sibling", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,

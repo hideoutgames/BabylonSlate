@@ -2,6 +2,7 @@ import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
+import { WaterSurfaceBlock } from "./water-surface-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -630,6 +631,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       ? AnimatedInputBlockTypes.RealTime
       : AnimatedInputBlockTypes.Time;
     return single(block, {}, { time: block.output });
+  },
+  "input.waterSurface": ({ name }) => {
+    const block = new WaterSurfaceBlock(name);
+    return single(block, {}, Object.fromEntries(block.outputs.map((output) => [output.name, output])));
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition
