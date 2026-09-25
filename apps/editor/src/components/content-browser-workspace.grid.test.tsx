@@ -276,6 +276,9 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     await waitFor(() => {
       expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
     });
+    expect(screen.getByRole("alertdialog", { name: "Delete Actors?" })).toBeTruthy();
+    const rows = screen.getByTestId("content-browser-delete-list").querySelectorAll("li");
+    expect([...rows].map((row) => row.textContent)).toEqual(["Actorsassets/Actors2 Assets"]);
   });
 
   it("keeps referenced material deletion available", () => {

@@ -1273,7 +1273,7 @@ export function ContentBrowserWorkspace({
           count: count === 1 ? "1 Asset" : `${count} Assets`,
           visual: { ...resolveTypeVisual({ family: "folder" }), icon: FolderIcon, iconKey: "Folder" } };
       }),
-      ...deleteTarget.guids.map((guid) => {
+      ...(deleteTarget.kind === "folder" ? [] : deleteTarget.guids).map((guid) => {
         const asset = assetRegistry?.getByGuid(guid);
         return { key: guid, name: resolveAssetName(guid), detail: asset?.path ?? guid,
           count: null, visual: resolveTypeVisual({ assetType: asset?.header.type }) };
@@ -2707,14 +2707,12 @@ export function ContentBrowserWorkspace({
               <Trash2Icon className="size-4" />
             </AlertDialogMedia>
             <div className="flex min-w-0 flex-col gap-1">
-              <AlertDialogTitle>
-                {deleteTarget?.kind === "folder"
-                  ? "Delete Folder"
+              <AlertDialogTitle className="break-words">
+                {deleteListItems.length === 1
+                  ? `Delete ${deleteListItems[0]!.name}?`
                   : deleteTarget?.kind === "selection" && deleteTarget.folders.length > 0
                     ? `Delete ${deleteListNames.length} Items`
-                    : deleteListNames.length === 1
-                      ? "Delete Asset"
-                      : `Delete ${deleteListNames.length} Assets`}
+                    : `Delete ${deleteListNames.length} Assets`}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {checkingDeleteReferences ? "Checking references…"
