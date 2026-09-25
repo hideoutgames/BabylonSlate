@@ -14,7 +14,8 @@ const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 type AnimatedChunk = {
   mesh: Mesh;
-  uvs: number[];
+  /** Typed so an upload does not convert the whole array each frame change. */
+  uvs: Float32Array;
   tiles: ReturnType<typeof tilemapChunkVertexData>["animatedTiles"];
   frames: number[];
 };
@@ -24,17 +25,23 @@ const parallaxChunks = new WeakMap<Scene, Set<Mesh>>();
 
 /** Seek only animated UVs. Static geometry, collision and atlas materials stay intact. */
 export function updateSceneTilemapAnimations(scene: Scene, elapsedMs: number): void {
-  for (const chunk of animatedChunks.get(scene) ?? []) {
+  const chunks = animatedChunks.get(scene);
+  if (!chunks) return;
+  for (const chunk of chunks) {
     let changed = false;
-    chunk.tiles.forEach((tile, index) => {
+    for (let index = 0; index < chunk.tiles.length; index++) {
+      const tile = chunk.tiles[index]!;
       const frame = tilesetAnimationFrame(tile.tileset, tile.tile, elapsedMs);
-      if (frame === chunk.frames[index]) return;
+      if (frame === chunk.frames[index]) continue;
       const uv = tilesetTileUv(tile.tileset, frame);
-      if (!uv) return;
+      if (!uv) continue;
       chunk.frames[index] = frame;
-      chunk.uvs.splice(tile.uvOffset, 8, uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
+      const uvs = chunk.uvs;
+      const at = tile.uvOffset;
+      uvs[at] = uv.u0; uvs[at + 1] = uv.v0; uvs[at + 2] = uv.u1; uvs[at + 3] = uv.v0;
+      uvs[at + 4] = uv.u1; uvs[at + 5] = uv.v1; uvs[at + 6] = uv.u0; uvs[at + 7] = uv.v1;
       changed = true;
-    });
+    }
     if (changed) chunk.mesh.updateVerticesData(VertexBuffer.UVKind, chunk.uvs);
   }
 }
@@ -223,7 +230,7 @@ function appendChunkMesh(
       animatedChunks.set(scene, chunks);
     }
     const chunk: AnimatedChunk = {
-      mesh, uvs: [...data.uvs], tiles: data.animatedTiles,
+      mesh, uvs: new Float32Array(data.uvs), tiles: data.animatedTiles,
       frames: data.animatedTiles.map((tile) => tilesetAnimationFrame(tile.tileset, tile.tile, 0)),
     };
     chunks.add(chunk);
