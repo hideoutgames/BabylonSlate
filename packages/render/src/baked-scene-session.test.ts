@@ -357,6 +357,43 @@ describe("per-Scene baked lighting session", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[render]"));
   });
 
+  it("reports only the current bake's stale reasons", async () => {
+    const { scene, document, sync, host } = await fixture();
+    const session = new BakedSceneSession(scene);
+    disposers.push(() => session.dispose());
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    session.apply(document, {
+      ...host,
+      readAsset: async () => {
+        throw new Error("packed payload missing");
+      },
+    });
+    await waitForState(session, "stale");
+    expect(session.diagnostics().staleReasons).toEqual([
+      "packed payload missing",
+    ]);
+    session.apply(structuredClone(document), host);
+    expect(session.diagnostics().staleReasons).toEqual([]);
+    await waitForState(session, "applied");
+    expect(session.diagnostics().staleReasons).toEqual([]);
+    const mesh = sync.meshForComponent("receiver", "mesh")!;
+    // Static receivers load with a frozen world matrix; a live move thaws it.
+    mesh.unfreezeWorldMatrix();
+    mesh.position.x += 1;
+    // The applied-to-stale transition is driven by the readiness probe.
+    await vi.waitFor(
+      () => {
+        scene.isReady();
+        expect(session.sessionState).toBe("stale");
+      },
+      { timeout: 5000, interval: 10 },
+    );
+    expect(session.diagnostics().staleReasons).toEqual([
+      "A baked receiver moved or was replaced.",
+    ]);
+    expect(session.staleReason).toBe("A baked receiver moved or was replaced.");
+  });
+
   it("fails stale within the pending budget when receivers never realize", async () => {
     const { document, host } = await fixture();
     const { scene } = engineScene();

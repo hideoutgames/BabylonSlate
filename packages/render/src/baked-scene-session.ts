@@ -142,12 +142,7 @@ export class BakedSceneSession {
 
   /** Why the last rebind failed, for diagnostics and the bake panel. */
   get staleReason(): string | null {
-    return this.state === "stale"
-      ? (this.staleReasons[0] ??
-          (this.owner.validity.status !== "valid"
-            ? [...Object.values(this.owner.validity)].join(" ")
-            : null))
-      : null;
+    return this.state === "stale" ? (this.staleReasons[0] ?? null) : null;
   }
 
   get bakedLighting(): SceneBakedLighting {
@@ -199,6 +194,7 @@ export class BakedSceneSession {
     this.abort = new AbortController();
     this.sceneData = sceneData;
     this.host = host ?? undefined;
+    this.staleReasons = [];
     if (!sceneData.settings.bakedLightingAssetGuid || !host) {
       // Nothing was ever bound: receivers and owner are already empty, so
       // releasing them would only dirty strict readiness for no reason.
@@ -225,10 +221,12 @@ export class BakedSceneSession {
     if (this.scene.isDisposed || this.disposed) return true;
     if (this.state === "applied") {
       this.receivers.sync();
-      if (this.owner.validity.status !== "valid") {
+      const validity = this.owner.validity;
+      if (validity.status !== "valid") {
         // A live-source change invalidated the admitted bake; realtime wins.
         this.receivers.release();
         this.receivers = new BakedReceiverMaterials(this.scene);
+        this.staleReasons = validityReasons(validity);
         this.state = "stale";
         markSceneReadinessDirty(this.scene);
         return true;
@@ -311,13 +309,7 @@ export class BakedSceneSession {
       });
       if (this.epoch !== epoch || this.disposed) return;
       if (!applied) {
-        const validity = this.owner.validity;
-        this.staleReasons =
-          validity.status === "stale"
-            ? [...validity.reasons]
-            : validity.status === "missing"
-              ? [validity.reason]
-              : ["The bake did not apply."];
+        this.staleReasons = validityReasons(this.owner.validity);
         console.warn(
           `[render] Baked lighting did not apply: ${this.staleReasons.join(" ")}`,
         );
@@ -364,6 +356,7 @@ export class BakedSceneSession {
   release(): void {
     this.epoch++;
     this.abort?.abort();
+    this.staleReasons = [];
     if (this.state !== "idle") {
       this.receivers.release();
       this.receivers = new BakedReceiverMaterials(this.scene);
@@ -384,6 +377,14 @@ export class BakedSceneSession {
     this.owner.dispose();
     this.state = "idle";
   }
+}
+
+function validityReasons(validity: BakedLightingValidity): string[] {
+  return validity.status === "stale"
+    ? [...validity.reasons]
+    : validity.status === "missing"
+      ? [validity.reason]
+      : ["The bake did not apply."];
 }
 
 function receiverIdentities(sceneData: SerializedScene): Array<{
