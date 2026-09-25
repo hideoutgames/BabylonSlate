@@ -513,6 +513,18 @@ describe("parseGlbForBrowse", () => {
   });
 });
 
+describe("encodeGlbJsonBin", () => {
+  it("pads the JSON chunk by UTF-8 bytes so non-ASCII names keep the BIN chunk aligned", () => {
+    const bin = Uint8Array.from([1, 2, 3, 4]);
+    const glb = encodeGlbJsonBin({ asset: { version: "2.0" }, nodes: [{ name: "é" }] }, bin);
+    const jsonLength = new DataView(glb.buffer, glb.byteOffset, glb.byteLength).getUint32(12, true);
+    expect(jsonLength % 4).toBe(0);
+    const split = splitGlbJsonBin(glb);
+    expect(split?.json.nodes).toEqual([{ name: "é" }]);
+    expect(split?.bin).toEqual(bin);
+  });
+});
+
 describe("embedGlbExternalImages", () => {
   it("rewrites an image uri into a bufferView using a sidecar PNG", () => {
     const png = Uint8Array.from([
