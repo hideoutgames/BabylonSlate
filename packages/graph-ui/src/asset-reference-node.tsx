@@ -1,8 +1,16 @@
-import { BaseEdge, Handle, Position, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import {
+  BaseEdge,
+  Handle,
+  Position,
+  getBezierPath,
+  type EdgeProps,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
 import {
   TypeVisualIcon,
+  humanizePropertyLabel,
   resolveTypeVisual,
-  TYPE_VISUAL_ICON_TILE_SIZE,
 } from "@babylonslate/editor-kit";
 import { cn } from "@babylonslate/ui/lib/utils";
 
@@ -20,11 +28,14 @@ export function AssetReferenceNode({
   data,
   selected,
 }: NodeProps<Node<AssetReferenceData>>) {
+  const typeLabel = data.missing
+    ? "Missing Asset"
+    : humanizePropertyLabel((data.assetType ?? "Unresolved").replace(/([a-z])([A-Z])/g, "$1 $2"));
   return (
     <div
       className={cn(
-        "flex h-36 w-48 flex-col items-center justify-center gap-3 rounded-md border border-border bg-graph-node p-3 text-card-foreground shadow-sm",
-        selected && "ring-2 ring-primary",
+        "asset-reference-node flex h-12 w-56 items-center gap-2.5 rounded-md border border-border bg-graph-node px-2.5 text-card-foreground shadow-sm",
+        data.missing && "border-dashed",
       )}
       title={`${data.title ?? id}\n${data.assetType ?? "Unresolved"}\n${data.path ?? id}`}
       data-testid={`asset-reference-node-${id}`}
@@ -41,16 +52,15 @@ export function AssetReferenceNode({
           assetType: data.assetType,
           parentClass: data.parentClass,
         })}
-        size={TYPE_VISUAL_ICON_TILE_SIZE}
         className="shrink-0"
       />
-      <div className="flex w-full min-w-0 flex-col items-center gap-1 text-center">
-        <span className="line-clamp-2 w-full break-all text-sm font-medium">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium leading-5">
           {data.title ?? id}
         </span>
-        {data.missing ? (
-          <span className="text-xs text-muted-foreground">Missing Asset</span>
-        ) : null}
+        <span className="truncate text-xs leading-4 text-muted-foreground">
+          {typeLabel}
+        </span>
       </div>
       <Handle
         id="uses"
@@ -68,9 +78,28 @@ export const assetReferenceNodeTypes = {
 
 /** Route a self-reference above its node so the opaque body cannot hide it. */
 function AssetSelfReferenceEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, style }: EdgeProps) {
-  const top = Math.min(sourceY, targetY) - 96;
+  const top = Math.min(sourceY, targetY) - 48;
   const path = `M ${sourceX} ${sourceY} C ${sourceX + 64} ${sourceY}, ${sourceX + 64} ${top}, ${sourceX} ${top} L ${targetX} ${top} C ${targetX - 64} ${top}, ${targetX - 64} ${targetY}, ${targetX} ${targetY}`;
   return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
 }
 
-export const assetReferenceEdgeTypes = { "asset-reference-self": AssetSelfReferenceEdge };
+/** Two assets that reference each other share one wire with an arrow at each end. */
+function AssetMutualReferenceEdge({
+  id,
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  markerEnd,
+  style,
+}: EdgeProps) {
+  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  return <BaseEdge id={id} path={path} markerStart={markerEnd} markerEnd={markerEnd} style={style} />;
+}
+
+export const assetReferenceEdgeTypes = {
+  "asset-reference-self": AssetSelfReferenceEdge,
+  "asset-reference-mutual": AssetMutualReferenceEdge,
+};

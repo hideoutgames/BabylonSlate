@@ -277,3 +277,15 @@
     display: none;
   }
 }
+
+.asset-reference-node[data-selected="true"] {
+  border-color: var(--graph-state-selected);
+  box-shadow: 0 0 0 1px var(--graph-state-selected);
+}
+
+/* GraphEditor paints pin-colored inline strokes; reference wires stay neutral. */
+.asset-reference-canvas .react-flow__edge-path {
+  stroke: var(--muted-foreground) !important;
+  stroke-opacity: 0.35;
+  stroke-width: 1.25px !important;
+}
