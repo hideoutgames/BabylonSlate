@@ -41,6 +41,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(result.differences.realistic).toBeLessThan(2);
     expect(result.differences.stylized).toBeLessThan(2);
+    // The preview lights plus a sun must still shade the water, not collapse it to black.
+    expect(result.brightness.realistic).toBeGreaterThan(20);
+    expect(result.brightness.stylized).toBeGreaterThan(40);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

@@ -2,13 +2,13 @@ import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, PBRMate
 import { waterWaveComponents, type WaterBodyProperties, type WaterColor, type WaterDefinition } from "@babylonslate/core";
 
 /**
- * Detail octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
+ * Six detail octaves (WebGL shader-size budget, with headroom for four lights): [heading offset (radians), wavenumber multiplier, slope, speed, phase].
  * Sharp-crested `exp(sin - 1)` waves with a little domain drag read as wind chop rather than
  * the regular interference of plain sines. All are world-space and advect with the current.
  */
 const DETAIL_OCTAVES = [
-  [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.53, 0.2, 0.93, 1.7], [-0.7, 2.31, 0.18, 1.07, 4.1], [2.1, 3.37, 0.15, 0.9, 2.3],
-  [-1.9, 4.93, 0.13, 1.1, 5.6], [0.35, 7.21, 0.11, 0.95, 0.9], [-2.6, 10.3, 0.09, 1.05, 3.3], [1.4, 14.9, 0.07, 1.0, 6.0],
+  [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.61, 0.2, 0.93, 1.7], [-0.7, 2.59, 0.17, 1.07, 4.1],
+  [2.1, 4.17, 0.14, 0.9, 2.3], [-1.9, 6.71, 0.11, 1.1, 5.6], [0.35, 10.8, 0.08, 0.95, 0.9],
 ] as const;
 
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
@@ -105,12 +105,12 @@ float swRealFoam = clamp(swShoreFoam, 0.0, 1.0);
 // Stylized foam: a crisp wobbling outline plus a travelling second ring.
 float swEdgeUnit = swBank / swFoamWidth;
 float swEdgeAA = fwidth(swEdgeUnit) + 0.015;
-float swWobble = (swNoise(swWorld * 0.9 + vec2(swTime * 0.21, swTime * 0.13)) - 0.5) * 0.45 + sin(swTime * 1.7 + swLarge * 18.0) * 0.08;
+float swWobble = (swMedium - 0.5) * 0.5 + sin(swTime * 1.7 + swLarge * 18.0) * 0.08;
 float swEdge = swEdgeUnit + swWobble;
 float swOutline = 1.0 - smoothstep(0.55 - swEdgeAA, 0.55 + swEdgeAA, swEdge);
 float swRingAge = fract(swTime * 0.16);
 float swRing = (1.0 - smoothstep(0.07, 0.07 + swEdgeAA * 1.5, abs(swEdge - 0.95 - swRingAge * 1.4))) * (1.0 - swRingAge);
-swRing *= smoothstep(0.32, 0.42, swNoise(swWorld * 1.1 + vec2(swTime * 0.1, 0.0)));
+swRing *= smoothstep(0.3, 0.42, swFine * 0.6 + swMedium * 0.4);
 float swToonFoam = max(swOutline, swRing);
 float swFoam = clamp(mix(swRealFoam, swToonFoam, swStylized) * U.slateWaterFoam.w * mix(1.35, 1.0, swStylized), 0.0, 1.0);
 
