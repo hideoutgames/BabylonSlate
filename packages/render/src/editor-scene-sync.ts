@@ -336,8 +336,9 @@ export class EditorSceneSync {
                 if (!ownsLoad()) return;
                 if (modelGuid) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
                 else onAdopted();
-              }, () => {
+              }, (error: unknown) => {
                 if (ownsLoad()) this.rejectedVisuals.set(actor.id, descriptor);
+                if (actor.components.some((component) => component.classId === "FoliageComponent") && ownsLoad()) throw error;
                 // The exact texture owner reports preparation failure once.
               }).finally(() => {
                 if (this.pendingVisuals.get(actor.id) === candidate) this.pendingVisuals.delete(actor.id);
