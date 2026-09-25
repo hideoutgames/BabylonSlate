@@ -1970,16 +1970,27 @@ describe("Play createEngine view", () => {
     document.settings.bakeSettings = { resolution: 32, paddingTexels: 2, samples: 1, bounces: 2 };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const preparation = vi.spyOn(sceneBakePreparation, "prepareSceneBake");
+    // Browsers confirm native release only after a frame drain; hold it so
+    // preparation settles while the Scene's deferred release is still pending.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
+    vi.spyOn(SceneRenderCoordinator.prototype, "whenReleased").mockImplementation(function (this: SceneRenderCoordinator) {
+      return whenReleased.call(this).then(() => held);
+    });
     try {
       handle.loadScene(document, { sceneAssetGuid: "scene-1" });
       expect(handle.bakedSessionDiagnostics().state).toBe("pending");
       expect(preparation).toHaveBeenCalledOnce();
       handle.dispose();
-      await handle.whenReleased();
-      expect(handle.scene.isDisposed).toBe(true);
       // Preparation hashes asynchronously; let it settle before checking reports.
       await Promise.allSettled(preparation.mock.results.map((result) => result.value));
       await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(handle.scene.isDisposed).toBe(false);
+      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
+      release();
+      await handle.whenReleased();
+      await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
       expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
     } finally {
       warn.mockRestore();
@@ -3403,6 +3414,11 @@ describe("Play createEngine view", () => {
     // Decoder statics are page-global, so a Play view on another Engine holds them too.
     const first = playHandle(engine).handle;
     const second = playHandle(sharedEngine()).handle;
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
+    // A Scene or Prefab view mounted during Play keeps Play's decoding.
+    const remounted = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(remounted);
     expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
     expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
     first.dispose();

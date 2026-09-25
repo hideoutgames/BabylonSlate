@@ -350,7 +350,8 @@ export class BakedSceneSession {
       this.state = "applied";
       markSceneReadinessDirty(this.scene);
     } catch (error) {
-      if (this.epoch !== epoch || this.disposed) return;
+      // A host that stopped being current cancelled this bake; that is not a failure.
+      if (this.epoch !== epoch || this.disposed || !host.isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
       // A bake participant whose visual has not spawned yet stays pending and
       // retries on the next readiness probe.
@@ -382,16 +383,25 @@ export class BakedSceneSession {
     this.state = "idle";
   }
 
+  /** Abandon in-flight preparation and IO without releasing applied receivers.
+   * A stopping view calls this at once; dispose() still releases later. */
+  cancel(): void {
+    this.epoch++;
+    this.abort?.abort();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.epoch++;
-    this.abort?.abort();
+    this.cancel();
     this.unregisterReadiness();
-    this.receivers.release();
-    this.owner.dispose();
     this.state = "idle";
     this.staleReasons = [];
+    try {
+      this.receivers.release();
+    } finally {
+      this.owner.dispose();
+    }
   }
 }
 

@@ -747,11 +747,13 @@ function initializeEngine(
       })
     : null;
   onRollback(() => releaseMainThreadDecoding?.());
+  // Views mounted while any Play view is live keep Play's main-thread decoding.
+  const mainThreadDecoding = mainThreadDecodingViews > 0;
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
-    playMode: options.playMode === true,
+    playMode: mainThreadDecoding,
   });
 
   const ownsEngine = !options.sharedEngine;
@@ -812,7 +814,7 @@ function initializeEngine(
   const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
   onRollback(() => releasePlayRenderPath?.());
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
-    mainThread: options.playMode === true,
+    mainThread: mainThreadDecoding,
     ...ktx2Runtime,
   });
 
@@ -2574,6 +2576,8 @@ function initializeEngine(
       // Host-side timers and DOM stop now; the preview RTT and meshes wait
       // for native release with the Scene.
       debugOverlay?.stop();
+      // In-flight bake preparation stops now; receivers restore with the Scene.
+      bakedSession.cancel();
       playCursor?.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
