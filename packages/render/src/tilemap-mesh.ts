@@ -8,9 +8,8 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { applyComponentSorting } from "./sorting";
-
-const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 type AnimatedChunk = {
   mesh: Mesh;

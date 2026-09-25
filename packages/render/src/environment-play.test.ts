@@ -4,7 +4,7 @@ import { identitySerializedTransform, parseLandscapeProperties } from "@babylons
 import { createTestEngine } from "./create-null-engine";
 import { createSnapshotSceneBinding, applyAssignMesh, retirePlaySlot } from "./snapshot-apply";
 import { installModelSources } from "./mesh-assets";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 
 it("realizes terrain heights and instanced foliage from Play parts before publishing the actor", async () => {
   const { scene, engine } = createTestEngine();

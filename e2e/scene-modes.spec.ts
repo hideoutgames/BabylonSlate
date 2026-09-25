@@ -4,7 +4,7 @@ import { createDefaultScene, MAIN_SCENE_FILE } from "../packages/core/src/projec
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { normalizeModelPayload } from "../packages/assets/src/model-payload";
-import { encodeTriangleGlb } from "../packages/render/src/model-mesh";
+import { encodeTriangleGlb } from "../packages/render/src/glb-test-fixtures";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady, waitForEditorInteractive } from "./open-test-project";
 import { closeProjectViaSettings } from "./close-project";

@@ -6,7 +6,7 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { GRID_MESH_NAME } from "./editor-grid";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });

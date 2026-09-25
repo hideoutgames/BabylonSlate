@@ -495,15 +495,11 @@ export class ForwardSceneFrameGraph {
         (!this.effectsOwner.hasEnabledEntries ||
           (this.effectsOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) };
     }
-    const output = this.output(camera);
-    if (this.graph &&
-      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth))
-      this.markReadinessDirty();
+    const outputCurrent = this.outputMatches(this.output(camera));
+    if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() || this.shadows?.needsPreparation() ||
-      this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-      this.outputColor !== output.color || this.outputDepth !== output.depth)
+      !outputCurrent)
       return { path: "frameGraph", ready: false };
     this.objects!.camera = camera;
     this.cull!.camera = camera;
@@ -529,7 +525,7 @@ export class ForwardSceneFrameGraph {
       this.syncShadowAdmission(camera);
     const engine = this.scene.getEngine();
     this.refreshFailure(camera);
-    const output = this.output(camera);
+    const outputCurrent = this.outputMatches(this.output(camera));
     const reason =
       this.unsupported(camera) ??
       this.failure ??
@@ -540,16 +536,10 @@ export class ForwardSceneFrameGraph {
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
-      this.preparedWidth !== output.width ||
-      this.preparedHeight !== output.height ||
-      this.outputColor !== output.color ||
-      this.outputDepth !== output.depth
+      !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
-    if (this.graph &&
-      (this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth))
-      this.markReadinessDirty();
+    if (this.graph && !outputCurrent) this.markReadinessDirty();
     this.setActiveCamera(camera);
     if (reason) {
       const blocked =
@@ -992,6 +982,12 @@ export class ForwardSceneFrameGraph {
       color: target?.getInternalTexture() ?? null,
       depth: target?.depthStencilTexture ?? null,
     };
+  }
+
+  /** Whether the prepared graph was built for this exact output size and attachments. */
+  private outputMatches(output: ReturnType<ForwardSceneFrameGraph["output"]>): boolean {
+    return this.preparedWidth === output.width && this.preparedHeight === output.height &&
+      this.outputColor === output.color && this.outputDepth === output.depth;
   }
 
   private isReady(): boolean {

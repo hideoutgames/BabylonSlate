@@ -797,7 +797,10 @@ describe("shared shadow lifecycle", () => {
     const baselineRenderPasses = engine.getRenderPassNames().filter(Boolean);
     const allocation = vi.spyOn(engine, "createRenderTargetCubeTexture");
     for (let attempt = 0; attempt < 3; attempt++)
-      allocation.mockImplementationOnce(() => {
+      allocation.mockImplementationOnce((...args) => {
+        // Unpatched NullEngine registers a wrapper and a cube texture it never
+        // attaches: a driver rejection after upload leaves both orphaned.
+        NullEngine.prototype.createRenderTargetCubeTexture.apply(engine, args);
         throw new Error("allocation failed");
       });
     controller.sync();

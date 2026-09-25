@@ -4,7 +4,7 @@ import { createActor, createDefaultScene, identitySerializedTransform } from "@b
 import { installAssetBytes, normalizeModelPayload } from "@babylonslate/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./create-null-engine";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 const disposers: Array<() => void> = [];

@@ -7,7 +7,6 @@ import {
 import type { SpriteFrame } from "@babylonslate/assets";
 import { spriteFrameUvs } from "@babylonslate/assets";
 
-export const SPRITE_QUAD_NAME_PREFIX = "spriteQuad:";
 const spriteQuads = new WeakSet<Mesh>();
 export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Mesh && spriteQuads.has(mesh); }
 
@@ -63,8 +62,4 @@ export function applySpriteFrameUvs(mesh: Mesh, frame: SpriteFrame): void {
   if (!mesh.getVertexBuffer(VertexBuffer.UVKind)?.isUpdatable()) mesh.markVerticesDataAsUpdatable(VertexBuffer.UVKind, true);
   mesh.updateVerticesData(VertexBuffer.UVKind, state.uvs, false, false);
   state.u0 = u0; state.v0 = v0; state.u1 = u1; state.v1 = v1;
-}
-
-export function spriteWorldX(mesh: Mesh): number {
-  return mesh.getAbsolutePosition().x;
 }

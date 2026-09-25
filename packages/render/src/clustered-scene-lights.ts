@@ -1,7 +1,5 @@
 import {
   Light,
-  DirectionalLight,
-  HemisphericLight,
   NodeMaterial,
   PBRMaterial,
   PBRMetallicRoughnessBlock,
@@ -22,7 +20,8 @@ import {
 } from "./clustered-light-capabilities";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import {
-  isAuthoredLightEnabled,
+  isGlobalLight,
+  isIlluminatingLight,
   setClusteredLightMember,
   compareLightAdmission,
 } from "./light-policy";
@@ -212,11 +211,8 @@ export class ClusteredSceneLights {
       const requestedLocals = this.registry.filter(
         (light) =>
           !light.isDisposed() &&
-          !(light instanceof DirectionalLight) &&
-          !(light instanceof HemisphericLight) &&
-          isAuthoredLightEnabled(light) &&
-          light.intensity > 0 &&
-          (!light.parent || light.parent.isEnabled()),
+          !isGlobalLight(light) &&
+          isIlluminatingLight(light),
       );
       const localBudget = sceneRenderingSettings(this.scene).localLightBudget;
       if (requestedLocals.length > localBudget)
@@ -395,11 +391,11 @@ export class ClusteredSceneLights {
           container._updateBatches(this.scene.activeCamera),
           unbounded,
         );
-        this.lightOrder ??= new ClusteredLightOrder(container);
-        this.lightOrder.sync(
-          container._updateBatches(this.scene.activeCamera),
-          this.authoredOrder,
+        this.lightOrder ??= new ClusteredLightOrder(
+          container,
+          this.compareAuthored,
         );
+        this.lightOrder.sync(container._updateBatches(this.scene.activeCamera));
         if (this.orderDirty) this.restoreAuthoredOrder(container);
       }
       const clustered = this.container?.lights.length ?? 0;
@@ -682,9 +678,7 @@ export class ClusteredSceneLights {
     return (
       !light.isDisposed() &&
       (light instanceof PointLight || light instanceof SpotLight) &&
-      isAuthoredLightEnabled(light) &&
-      light.intensity > 0 &&
-      (!light.parent || light.parent.isEnabled()) &&
+      isIlluminatingLight(light) &&
       isClusterableLocalLight(light) &&
       !light.getShadowGenerators()?.size
     );
@@ -699,24 +693,11 @@ export class ClusteredSceneLights {
     // The cluster itself requires one ordinary light UBO. Global sun/fill keep
     // their conventional priority; do not borrow children if no slot remains.
     const globals = this.scene.lights.filter(
-      (light) =>
-        (light instanceof DirectionalLight ||
-          light instanceof HemisphericLight) &&
-        isAuthoredLightEnabled(light) &&
-        light.intensity > 0 &&
-        (!light.parent || light.parent.isEnabled()),
+      (light) => isGlobalLight(light) && isIlluminatingLight(light),
     ).length;
     if (globals >= forwardLightBudget(this.scene.getEngine()).slots)
       return "No conventional shader slot remains for the clustered light container.";
-    if (
-      !camera ||
-      camera.getScene() !== this.scene ||
-      camera.isDisposed() ||
-      camera.mode !== Camera.PERSPECTIVE_CAMERA ||
-      camera.minZ <= 0 ||
-      !Number.isFinite(camera.maxZ) ||
-      camera.maxZ <= camera.minZ
-    )
+    if (!isClusterableCamera(this.scene, camera))
       return "Clustered prototype requires a live perspective camera with a finite positive depth interval.";
 
     return undefined;
@@ -750,6 +731,22 @@ function sameConfiguration(
     )
       return false;
   return true;
+}
+
+/** A live perspective camera of this scene with a finite positive depth interval. */
+export function isClusterableCamera(
+  scene: Scene,
+  camera: Camera | null,
+): boolean {
+  return !(
+    !camera ||
+    camera.getScene() !== scene ||
+    camera.isDisposed() ||
+    camera.mode !== Camera.PERSPECTIVE_CAMERA ||
+    camera.minZ <= 0 ||
+    !Number.isFinite(camera.maxZ) ||
+    camera.maxZ <= camera.minZ
+  );
 }
 
 export function isClusterableLocalLight(light: Light): boolean {

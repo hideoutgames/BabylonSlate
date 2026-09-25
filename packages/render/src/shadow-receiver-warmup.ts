@@ -1,6 +1,6 @@
 import { Mesh, SubMesh, type AbstractMesh, type Light, type Material, type MaterialDefines, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
-import { withSceneReadinessState } from "./scene-perf";
+import { withSceneReadinessState } from "./scene-readiness-signal";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
 type Probe = { mesh: AbstractMesh; source: SubMesh; part?: SubMesh; material: Material; instances: boolean; pass: number; ready: boolean };

@@ -13,7 +13,7 @@ import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayl
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
 import { foliagePreparation } from "./foliage-mesh";
 
@@ -207,7 +207,6 @@ interface AlbedoBinding {
   failed?: string;
   pending?: ResourceLease<Texture | CubeTexture>;
   preparation?: Promise<void>;
-  cancel?: () => void;
 }
 const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 
@@ -273,7 +272,6 @@ export function applyAlbedoTexture(
     binding = { material: null };
     albedoBindings.set(mesh, binding);
     mesh.onDisposeObservable.addOnce(() => {
-      binding!.cancel?.();
       binding!.pending?.release();
       binding!.material?.dispose(false, false);
       binding!.lease?.release();
@@ -281,7 +279,6 @@ export function applyAlbedoTexture(
     });
   }
   if (!textureGuid) {
-    binding.cancel?.(); binding.cancel = undefined;
     binding.pending?.release(); binding.pending = undefined;
     binding.preparation = undefined;
     binding.lease?.release(); binding.lease = undefined;
@@ -310,13 +307,12 @@ export function applyAlbedoTexture(
     console.error("Sprite texture replacement failed", error);
     return;
   }
-  binding.cancel?.(); binding.pending?.release();
+  binding.pending?.release();
   binding.source = source; binding.guid = textureGuid; binding.identity = identity;
   binding.pending = next;
   binding.preparation = next.ready;
   const publish = () => {
     if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
-    binding.cancel?.(); binding.cancel = undefined;
     const publishToMesh = !mesh.material || mesh.material === binding.material || (!binding.material && !isSpriteQuad(mesh));
     let material = binding.material;
     if (!material) {

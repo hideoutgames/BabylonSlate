@@ -9,7 +9,6 @@ export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";
 export * from "./viewport";
-export * from "./texture-bytes";
 export * from "./perf-ceilings";
 export * from "./resource-cache";
 export * from "./render-scheduler";

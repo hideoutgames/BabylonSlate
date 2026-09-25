@@ -16,7 +16,7 @@ import { createTestEngine } from "./create-null-engine";
 import { ResourceCache } from "./resource-cache";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import type { MeshAssetContext } from "./mesh-assets";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import { setupDefaultViewport } from "./viewport";
 

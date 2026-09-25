@@ -10,7 +10,7 @@ import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 /** Reject invalid writes before replacing a component's replayable value. */
 export function validMaterialParameterValue(
