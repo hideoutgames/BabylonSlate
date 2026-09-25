@@ -47,6 +47,7 @@ export function applySpriteAnimFrame(
 }
 
 const spritePivots = new WeakMap<Mesh, { x: number; y: number }>();
+const spritePivot = new Vector3();
 
 /** Bind a Sprite Animation asset frame (full UVs, texture, pivot) onto the sprite quad. */
 export function applySpriteAnimationAssetFrame(
@@ -83,7 +84,9 @@ export function applySpriteAnimationAssetFrame(
   const y = (0.5 - frame.pivot.y) * worldHeight;
   const previous = spritePivots.get(mesh);
   if (!previous || previous.x !== x || previous.y !== y) {
-    mesh.setPivotPoint(new Vector3(x, y, 0));
+    mesh.setPivotPoint(spritePivot.set(x, y, 0));
+    // A static actor's frozen matrix would otherwise keep the previous pivot.
+    if (mesh.isWorldMatrixFrozen) mesh.freezeWorldMatrix();
     spritePivots.set(mesh, { x, y });
   }
 }
