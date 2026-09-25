@@ -171,6 +171,9 @@ export function attachViewportFlyKeys(
   const onKeyDown = (event: Event) => {
     const keyboard = event as KeyboardEvent;
     if (!FLY_CODES.has(keyboard.code)) return;
+    // Command chords such as Mod+S are editor shortcuts; macOS also drops the
+    // letter's keyup while Command is held, which would leave the camera flying.
+    if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey) return;
     if (isEditableTarget(keyboard.target)) return;
     if (!enabled()) return;
     keys.add(keyboard.code);

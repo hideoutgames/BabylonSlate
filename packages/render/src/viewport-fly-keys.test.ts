@@ -163,6 +163,16 @@ describe("attachViewportFlyKeys", () => {
     expect(controller.camera.target.equals(targetBefore)).toBe(true);
   });
 
+  it("leaves command chords such as Mod+S and Mod+D to editor shortcuts", () => {
+    const { controller } = attach();
+    const targetBefore = controller.camera.target.clone();
+
+    target.emit("keydown", { ...key("KeyS"), ctrlKey: true });
+    target.emit("keydown", { ...key("KeyD"), metaKey: true });
+    expect(frames).toHaveLength(0);
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
+  });
+
   it("ignores WASD when isEnabled returns false", () => {
     const { controller } = attach("3d", { isEnabled: () => false });
     const targetBefore = controller.camera.target.clone();
