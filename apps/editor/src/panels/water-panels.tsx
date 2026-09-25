@@ -13,8 +13,17 @@ const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
   ["depthColorDistance", 0.01, 1000], ["waveHeight", 0, 20], ["waveLength", 0.1, 1000],
   ["waveSpeed", 0, 20], ["waveDirection", -360, 360], ["rippleStrength", 0, 1],
-  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["colorBands", 0, 12], ["density", 1, 20000],
+  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
 ] as const;
+const descriptions: Partial<Record<(typeof controls)[number][0], string>> = {
+  opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
+  depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
+  rippleScale: "Higher values make smaller wind ripples.",
+  foamWidth: "Metres of shoreline foam measured from the bank.",
+  colorBands: "Stylized depth bands. Zero or one keeps a smooth gradient.",
+  sparkles: "Twinkling sun glints on the surface.",
+  density: "Kilograms per cubic metre. Fresh water is approximately 1000.",
+};
 
 export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -30,7 +39,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   const rows: PropertyRow[] = [
     { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Stylized" }], description: "Changes shading style. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
     ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }) })),
-    ...controls.map(([key, min, max]): PropertyRow => ({ id: `water-${key}`, kind: "number", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], min, max, ...(key === "density" ? { description: "Kilograms per cubic metre. Fresh water is approximately 1000." } : {}), onChange: (value) => commit({ ...water, [key]: value }) })),
+    ...controls.map(([key, min, max]): PropertyRow => ({ id: `water-${key}`, kind: "number", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], min, max, ...(descriptions[key] ? { description: descriptions[key] } : {}), onChange: (value) => commit({ ...water, [key]: value }) })),
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>

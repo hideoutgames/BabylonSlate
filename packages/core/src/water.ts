@@ -81,11 +81,11 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
   const stylized = style === "stylized";
   return {
     style,
-    shallowColor: stylized ? [0.16, 0.62, 0.86] : [0.1, 0.34, 0.26],
-    deepColor: stylized ? [0.02, 0.13, 0.52] : [0.004, 0.028, 0.045],
+    shallowColor: stylized ? [0.3, 0.76, 0.95] : [0.14, 0.42, 0.34],
+    deepColor: stylized ? [0.03, 0.27, 0.66] : [0.02, 0.1, 0.13],
     foamColor: stylized ? [1, 1, 1] : [0.86, 0.9, 0.9],
     opacity: stylized ? 0.92 : 0.97, roughness: stylized ? 0.18 : 0.05,
-    reflectionStrength: 1, depthColorDistance: stylized ? 2.5 : 3,
+    reflectionStrength: 1, depthColorDistance: stylized ? 1.6 : 3,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
     foamAmount: stylized ? 1 : 0.35, foamWidth: stylized ? 0.7 : 0.8,
