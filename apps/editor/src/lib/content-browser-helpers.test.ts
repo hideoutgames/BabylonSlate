@@ -1361,6 +1361,7 @@ describe("content-browser-helpers", () => {
       "InputAxis",
       "ParticleEmitter",
       "ParticleSystem",
+      "Water",
       "SkyboxCreator",
     ]);
   });

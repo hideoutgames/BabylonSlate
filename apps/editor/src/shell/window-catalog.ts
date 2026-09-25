@@ -870,7 +870,7 @@ export function listDockWindows(
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }
-  if (kind === "water") return WATER_WINDOWS;
+  if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }
