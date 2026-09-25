@@ -20,8 +20,8 @@ Until PR2 lands, the code is the P17 surface described in particles.md (Texture 
 | D2 | GPU/CPU is chosen **per emitter**. Basic is GPU (`emitRateControl: true`), with the existing CPU fallback (`min(capacity, 512)`) only when the owning engine lacks transform feedback and compute. Particle Graph is CPU. A Particle System mixes both kinds in its slots. | Babylon's only system constructor under `Particles/Node` is `new ParticleSystem(...)` (`Particles/Node/Blocks/Emitters/createParticleBlock.pure.js:89`), and the GPU update shader (`gpuUpdateParticles`) is a fixed effect with no hook for custom code. Mixing per slot is Niagara's own model and needs no parity between backends. |
 | D3 | Graph documents never store a backend. | A GPU tier for declarative graphs can be added later without a format change. |
 | D4 | The look is a **Material**. Both kinds require a particle-domain Material; emitters have no Texture field. Textures are sampled inside the Material with **Texture Sample** + **UV** (UV reads `particle_uv` in Particle mode). The **Particle Texture** material node is removed; **Particle Color** stays. | One look path. Babylon still requires a ready `particleTexture` (`isReady` in `thinParticleSystem.pure.js` and `gpuParticleSystem.pure.js`), so each native system owns a 1×1 white readiness texture that no shader samples. |
-| D5 | No emitter without a Material renders. The editor shows **No Material**; the runtime skips the slot with `particle.missing_material` (asset guid = the emitter). No default Material or Texture ships. | The user supplies materials; generated artwork is not allowed ([no-ai-artwork](../../.agents/rules/no-ai-artwork.md)). |
-| D6 | **Seconds** for both kinds: `updateSpeed = 1/60`. Rate is per second, lifetime and duration are seconds, gravity is m/s², angular speed is rad/s. | Babylon's defaults differ (classic 0.01, `SystemBlock` 0.0167), so today 1 unit ≈ 1.67 s. |
+| D5 | No emitter without a Material renders. The editor shows **No Material**; the runtime skips the slot with `particle.missing_material` (`assetGuid` = the emitter; covers an unset, missing or non-particle Material). No default Material or Texture ships. | The user supplies materials; generated artwork is not allowed ([no-ai-artwork](../../.agents/rules/no-ai-artwork.md)). |
+| D6 | **Seconds** for both kinds: `updateSpeed = 1/60`. Rate is per second, lifetime and duration are seconds, gravity is m/s², angular speed is rad/s (angles are stored in radians and shown in degrees). | Babylon's defaults differ (classic 0.01, `SystemBlock` 0.0167), so today 1 unit ≈ 1.67 s. |
 | D7 | Blend and billboard options map to Babylon constants **by name** (`ParticleSystem.BLENDMODE_*`, `BILLBOARDMODE_*`), never repo-local numbers. | The P17 constants are swapped (`BLENDMODE_ONEONE` is 0 and `STANDARD` is 1 in Babylon), so saved "Additive" renders alpha-blended today. |
 | D8 | **No migration.** The project is unreleased. Header versions stay 1; normalizers read only the new shape and fill defaults, so existing emitters load with new defaults and may change look. | A chain step would force a save-approval prompt for a format nobody shipped. |
 | D9 | Lifecycle belongs to the **emitter**: Loop, Duration and Pre Warm live on each emitter of either kind. The Particle System keeps its slots, **Space** and **Preview Skybox**. | Emitter previews show their own timeline, and one System can hold a one-shot flash next to looping smoke. |
@@ -49,7 +49,7 @@ Until PR2 lands, the code is the P17 surface described in particles.md (Texture 
 | Alpha Blend | `standard` | `BLENDMODE_STANDARD` (1) | src·α + dst·(1−α) |
 | Alpha Additive | `add` | `BLENDMODE_ADD` (2) | src·α + dst |
 | Multiply | `multiply` | `BLENDMODE_MULTIPLY` (3) | dst·src |
-| Subtract | `subtract` | `BLENDMODE_SUBTRACT` (−1) | dst − src |
+| Subtract | `subtract` | `BLENDMODE_SUBTRACT` (−1) | dst·(1−src) |
 
 - `NodeMaterial.createEffectForParticles` compiles only the ONEONE and MULTIPLY effects. Other modes reuse the ONEONE effect (identical defines apart from `BLENDMULTIPLYMODE`) under the correct engine alpha state.
 - Particle Materials insert Babylon's `ParticleBlendMultiplyBlock` before the fragment output, so a transparent texel leaves the destination unchanged under Multiply.
@@ -73,7 +73,7 @@ Stages render in this order. **Always** modules have no switch; **Toggle** modul
 
 | Stage | Module | Kind | Fields (modes) | Babylon |
 | --- | --- | --- | --- | --- |
-| Emitter | Emitter | Always | Material; Capacity; Loop (Infinite, Once); Duration (s); Pre Warm (s) | Material effect; capacity; `targetStopDuration` (Once only); `preWarmCycles` × `preWarmStepOffset` |
+| Emitter | Emitter | Always | Material; Capacity; Loop (Infinite, Once); Duration (s); Pre Warm (s, Infinite only) | Material effect; capacity; `targetStopDuration` (Once only); `preWarmCycles` × `preWarmStepOffset` |
 | Spawn | Spawn Rate | Always | Rate /s (Constant, Curve over cycle) | `emitRate` |
 | Spawn | Bursts | Toggle (off) | Up to 8 entries: Time (s), Count, Cycles, Interval (s) | `manualEmitCount`, scheduled by the service |
 | Shape | Shape | Always | Point, Box, Sphere, Hemisphere, Cylinder, Cone; radius, radius range, height, angle, height range, spawn point only; Direction Radial (randomizer) or Directed (Direction Min/Max) | `create*Emitter` / `createDirected*Emitter` and instance fields |
@@ -92,9 +92,9 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 
 - **Bursts:** Babylon has no burst schedule. The service's emission driver sets `manualEmitCount` after a frame renders and restores rate emission (`-1`) once Babylon has consumed the count (it leaves `0`, which would otherwise mute rate emission forever). Bursts are one frame late by design, so GPU prewarm does not consume them. They are not simulated during prewarm.
 - **GPU slot ring:** under `emitRateControl`, Babylon sizes the GPU ring from rate × lifetime and overwrites live particles when bursts overlap. The owned GPU system claims the full ring (`capacity`) at construction and after `reset()`, guarded by a runtime layout check that fails the slot with `particle.apply_failed` after a Babylon upgrade. On GPU the oldest particle is recycled at capacity; on CPU new particles are dropped.
-- **Loop and drain:** Once emitters set `targetStopDuration = duration` and drain individually; Infinite emitters wrap the service's cycle clock. A System drains when every slot has stopped.
-- **Live edits in Preview:** value edits apply in place and keep particles. Edits that change GPU update defines or gradient key counts restart GPU particles (Babylon releases its buffers). Capacity, Loop, Pre Warm, Material, Billboard and adding or removing a curve rebuild the emitter.
-- Hemisphere direction is not normalized on the WebGL2 transform-feedback backend, so the plan divides Speed by the radius there to match WebGPU compute and CPU.
+- **Loop and drain:** Once emitters set `targetStopDuration = duration` and drain individually; Infinite emitters wrap the service's cycle clock. A System drains when every slot has stopped. Pre Warm applies to Infinite emitters only; on Once it would consume Duration.
+- **Live edits in Preview:** value edits are designed to apply in place and keep particles (to be proven in the browser lifecycle proof; on CPU, live particles pick up an edited curve at their next key). Edits that change GPU update defines or gradient key counts restart GPU particles (Babylon releases its buffers). Capacity, Loop, Pre Warm, Material, Billboard and adding or removing a curve rebuild the emitter.
+- Hemisphere direction is not normalized on the WebGL2 transform-feedback backend, so the plan divides Speed by the radius there. This matches compute and CPU only for surface spawns (Radius Range 0) with a small Direction Randomizer; interior particles stay slower on WebGL2.
 
 ## Particle Graph
 
@@ -103,7 +103,7 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 - `@babylonslate/particle-graph` is Babylon-free and React-free, like `@babylonslate/shader-graph`, and depends only on `@babylonslate/core`. `render` lowers its plan onto Node Particle blocks.
 - The document holds `schemaVersion`, `name`, `materialGuid`, document-level `settings` (Capacity, Loop, Duration, Pre Warm, Blend Mode, Billboard) and `nodes` / `edges` in the Material graph shape. Positions never enter the compile key, so dragging a node never rebuilds the preview.
 - Exactly one protected **Emitter Output** terminal (`particle.output`, Babylon `SystemBlock`) with inputs Particle and Emit Rate (/s). Its texture input is never exposed.
-- The default graph is Create Particle → Sphere Shape → Update Position (Position + Scaled Direction) → Update Color (Gradient over Normalized Age) → Emitter Output.
+- The default graph is Create Particle → Sphere Shape → Apply Velocity → Update Color (Gradient over Normalized Age) → Emitter Output.
 
 ### Catalog (v1)
 
@@ -111,11 +111,11 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 | --- | --- |
 | Emitter | Create Particle (`CreateParticleBlock`); Emitter Output (`SystemBlock`) |
 | Shape | Point, Box, Sphere (Hemispheric option), Cone, Cylinder Shape (`*ShapeBlock`). Sphere, Cone and Cylinder emit radially unless both directions are set |
-| Update | Update Position, Direction, Color, Size, Scale, Angle; Basic Position Update; Basic Color Update; Align Angle |
+| Update | Update Position, Direction, Color, Size, Scale, Angle; Apply Velocity (`BasicPositionUpdateBlock`); Fade To Dead Color (`BasicColorUpdateBlock`); Align Angle |
 | Forces | Gravity (Babylon's own Direction + acceleration × Delta recipe); Attractor (`UpdateAttractorBlock`) |
 | Particle Attributes | Position, Direction, Scaled Direction, Age, Lifetime, Normalized Age, Particle Color, Initial Color, Dead Color, Size, Scale, Angle (contextual `ParticleInputBlock`s) |
-| System Values | Time, Delta Time, Emitter Position, Camera Position (system-source `ParticleInputBlock`s, in seconds) |
-| Constants and Utility | Float, Vector 2, Vector 3, Color; Random (Per Particle or Every Read); Gradient (2–8 stops edited in Details, lowered to `ParticleGradientBlock` + value blocks) |
+| System Values | Time, Delta Time, Emitter Position, Camera Position (system-source `ParticleInputBlock`s; Time and Delta Time in seconds, positions in world space) |
+| Constants and Utility | Float, Vector 2, Vector 3, Color; Random (Per Particle: one roll per particle evaluation, fixed in Create Particle inputs but re-rolled every frame in Update inputs; or Every Read); Gradient (2–8 stops edited in Details, lowered to `ParticleGradientBlock` + value blocks) |
 | Math | Add, Subtract, Multiply, Divide, Minimum, Maximum, Modulo, Power, Lerp, Smooth Step, Step, Clamp, and the 21 unary operations (`ParticleTrigonometryBlock`) |
 | Vector and Logic | Length, Dot Product, Distance, Split, Combine (`ParticleConverterBlock`), Condition |
 
@@ -124,16 +124,16 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 
 ### Validation (`particle.*`)
 
-- Errors block lowering: `unknownNode`, `unsupportedNode`, `unknownPin`, `danglingEdge`, `duplicateConnection`, `cycle`, `typeMismatch`, `genericConflict`, `missingInput`, `noOutput`, `multipleOutputs`, `spineFanOut` (a Particle output may feed one input; Babylon rebuilds a block per consumer).
-- Warnings: `cpuBudget` (capacity above 512), `missingMaterial`, `materialDomain`, `perParticleInEmitRate` (Emit Rate reads a stale particle context), `attractorParticleInput`, `shapeDirectionPair`, `multipleShapes`, `noMotion` (nothing moves without a position update), `unreachable`.
+- Errors block lowering: `unknownNode`, `unsupportedNode`, `unknownPin`, `danglingEdge`, `duplicateConnection`, `cycle`, `typeMismatch`, `genericConflict`, `missingInput`, `noOutput`, `multipleOutputs`, `spineFanOut` (a Particle output may feed one input; a second branch never reaches Emitter Output, so Babylon never builds it), `perParticleInEmitRate` (Emit Rate is evaluated without a particle context, so particle reads return null and the emitter may never spawn).
+- Warnings: `cpuBudget` (capacity above 512), `missingMaterial`, `materialDomain`, `attractorParticleInput`, `shapeDirectionPair`, `multipleShapes`, `noMotion` (nothing moves without a position update), `unreachable`.
 - Render adds node-anchored `particle.compile.*` diagnostics for Babylon's string throws.
 
 ### Lowering and runtime
 
 - Each prepared slot builds **its own** `NodeParticleSystemSet` and fresh blocks, synchronously inside `ParticleService.prepare` (`SystemBlock.createSystem` + `emitErrors`); `buildAsync` is not used. Every created block is attached to the set, and retiring the slot disposes the set.
-- A small `SystemBlock` subclass seeds Babylon's uninitialised `_buildId`, so shared value nodes build once instead of once per consumer.
-- Capacity, `updateSpeed = 1/60`, blend, billboard, Loop/Duration and Pre Warm are written before the build; the actor emitter, sorting and Space are applied after it, never through `ParticleSystemSet.emitterNode` (its dispose would destroy the actor mesh).
-- A failed build disposes its partial system and reports a node-anchored diagnostic; the other slots still play.
+- A small `SystemBlock` subclass seeds Babylon's uninitialised `_buildId`, so shared value nodes build once instead of once per consumer (proven by the PR3 build-count test).
+- Capacity, `updateSpeed = 1/60`, blend, billboard, Loop/Duration (`targetStopDuration.value`), Pre Warm and Space (`isLocal`) are written before the build; the actor emitter and sorting are applied after it, never through `ParticleSystemSet.emitterNode` (its dispose would destroy the actor mesh). When Space is Local, render lowers Apply Velocity through Babylon's `LocalPositionUpdated` source; Position and Emitter Position reads stay world-space.
+- A failed build disposes its partial system and reports a node-anchored diagnostic; the other slots still play (PR3 cleanup test).
 
 ## Runtime (`ParticleService`)
 
@@ -154,7 +154,7 @@ Defaults give a visible fountain once a Material is picked: Cone shape, 20 /s, L
 
 ### Shared stage colours
 
-The Basic stage accents and the Particle Graph node headers use one role map onto the existing `--node-*` tokens, so a reader sees the same colour sequence in both editors.
+The Basic stage accents and the Particle Graph node headers use one role map onto the existing `--node-*` tokens, so each stage has the same colour in both editors (Basic runs Shape before Initialize; the graph spine runs Create before Shape).
 
 | Stage | Basic stages | Graph nodes | Token |
 | --- | --- | --- | --- |
@@ -181,7 +181,7 @@ The Basic stage accents and the Particle Graph node headers use one role map ont
 
 ### Preview
 
-- One preview surface for all three documents: Restart, Play/Pause, a GPU / CPU / GPU + CPU badge and an active-count badge (approximate on GPU), polled at 4 Hz.
+- One preview surface for all three documents: Restart, Play/Pause, a GPU / CPU / GPU + CPU badge and an active-count badge (exact for CPU slots; GPU slots show their claimed capacity), polled at 4 Hz.
 - Empty and failure states: **No Material** (with Pick Material), **No Emitters**, **Missing Emitter**, **Graph Has Errors**, **Loading Preview** (first boot only), **Preview Failed** with Retry.
 - Edits apply to the running preview after a 220ms debounce instead of rebuilding the scene.
 
@@ -215,7 +215,9 @@ The Basic stage accents and the Particle Graph node headers use one role map ont
 | Risk | Mitigation |
 | --- | --- |
 | CPU Particle Graphs on the A16 iPad (per-particle JS closures) | Curated catalog without noise, flow maps or sub-emitters; `cpuBudget` warning above 512; backend-free documents so a GPU tier can follow. Device cost is unmeasured. |
-| The GPU ring claim relies on a Babylon internal | Runtime layout guard; the browser lifecycle proof covers overlapping bursts after any upgrade |
-| `particle_color` on GPU with a NodeMaterial, and Standard/Add/Subtract on the ONEONE effect, are proven only in the browser | The rewritten lifecycle proof draws red/blue Particle Color materials and blend cases on WebGL2/WebGPU × CPU/GPU in CI |
-| Node Particle blocks under the production bundle | Blocks are constructed directly (no `Parse` / class registry); the PR3 browser cases prove it |
+| The GPU ring claim relies on a Babylon internal; that never-emitted slots draw nothing on real drivers, and the iPad cost of full-capacity rings, are read from source only | Runtime layout guard; the browser lifecycle proof covers overlapping bursts and unused slots after any upgrade |
+| `particle_color` on GPU with a NodeMaterial, Standard/Add/Subtract on the ONEONE effect, and Multiply leaving the destination unchanged under a transparent texel are read from source only | The rewritten lifecycle proof draws red/blue Particle Color materials and blend cases on WebGL2/WebGPU × CPU/GPU in CI |
+| Node Particle blocks under the production bundle, and NodeMaterial binding on graph-built CPU systems (including WebGPU), are backed by a NullEngine probe and code reading only | Blocks are constructed directly (no `Parse` / class registry); the PR3 browser cases prove both |
+| Local-space graph lowering is unproven | PR3 test moves the emitter after spawn and checks particles follow |
+| Old particle Materials that still contain Particle Texture fail validation (`material.unknownNode`) and render nothing until edited | Documented; no migration by decision D8 |
 | Editing a gradient restarts GPU preview particles | Change tiers keep value edits live; restarts are documented |
