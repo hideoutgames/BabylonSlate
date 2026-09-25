@@ -444,6 +444,7 @@ export class EditorSceneSync {
     for (const actor of sceneData.actors) {
       const root = this.meshes.get(actor.id);
       if (root && !root.isDisposed()) {
+        this.refreshEnvironmentComponents(actor, root, this.meshAssetsForScene(sceneData));
         this.restoreMeshComponentConstruction(actor, root);
         this.applyModelSlots(actor, root);
         this.bindActorMeshMaterials(actor, root);
@@ -469,7 +470,7 @@ export class EditorSceneSync {
     const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
     const component = actor?.components.find((entry) => entry.id === componentId);
     const root = this.meshes.get(actorId);
-    return root && component?.classId === "MeshComponent"
+    return root && component && ["MeshComponent", "LandscapeComponent", "FoliageComponent"].includes(component.classId)
       ? visualForMeshComponent(root, actorId, componentId) : null;
   }
 
@@ -527,7 +528,18 @@ export class EditorSceneSync {
     this.pendingTextureLoads.clear();
   }
 
+  private refreshEnvironmentComponents(actor: SerializedActor, root: Mesh, assets?: MeshAssetContext): void {
+    for (const component of actor.components) {
+      const visual = visualForMeshComponent(root, actor.id, component.id);
+      if (!visual) continue;
+      const context = { ...assets, resolveMaterial: this.resolveMaterial ?? assets?.resolveMaterial };
+      if (component.classId === "LandscapeComponent") updateLandscapeMesh(visual, component.properties, context);
+      if (component.classId === "FoliageComponent") refreshFoliageMaterials(visual, context);
+    }
+  }
+
   private prepareActorVisual(actor: SerializedActor, mesh: Mesh): void {
+    this.refreshEnvironmentComponents(actor, mesh, this.assets);
     applyActorTransform(mesh, actor);
     applyComponentChildTransforms(mesh, actor);
     applyEditorBillboardFromActor(mesh, actor);
@@ -862,3 +874,5 @@ function meshAndDescendantMeshes(root: Mesh): Mesh[] {
     .filter((child): child is Mesh => child instanceof Mesh);
   return [root, ...children];
 }
+import { updateLandscapeMesh } from "./landscape-mesh";
+import { refreshFoliageMaterials } from "./foliage-mesh";

@@ -16,6 +16,9 @@ describe("dockviewApiKey", () => {
     );
     expect(dockviewApiKey("anim-graph:loco", "animationObject")).toBe(
       "anim-graph:loco::animationObject",
+      "anim-graph:loco::design",
+      "anim-graph:loco::landscape",
+      "anim-graph:loco::foliage",
     );
   });
 });

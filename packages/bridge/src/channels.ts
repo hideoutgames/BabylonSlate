@@ -353,6 +353,8 @@ export type CommandMessage =
       };
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        landscape?: import("@babylonslate/core").LandscapeProperties;
+        foliage?: import("@babylonslate/core").FoliageProperties;
         componentId: string;
         castShadows?: boolean;
         receiveShadows?: boolean;

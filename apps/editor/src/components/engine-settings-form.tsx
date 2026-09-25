@@ -51,7 +51,9 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   label: string;
   options?: DockWindowOptions;
 }> = [
-  { kind: "scene", keepKey: "scene", label: "Scene" },
+  { kind: "scene", keepKey: "scene", label: "Scene — Design" },
+  { kind: "scene", keepKey: "sceneLandscape", label: "Scene — Landscape", options: { sceneMode: "landscape" } },
+  { kind: "scene", keepKey: "sceneFoliage", label: "Scene — Foliage", options: { sceneMode: "foliage" } },
   { kind: "scene-layer", keepKey: "scene-layer", label: "Scene Layer" },
   { kind: "graph", keepKey: "graph", label: "Class" },
   { kind: "enum", keepKey: "enum", label: "Enum" },

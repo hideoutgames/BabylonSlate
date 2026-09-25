@@ -1,4 +1,6 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
+import { parseLandscapeProperties } from "./landscape";
+import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } from "./foliage";
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
@@ -104,6 +106,8 @@ export interface SceneCameraBounds2D {
 }
 
 export interface SceneSettings {
+  /** Model-only brush palettes, shared by this scene's Foliage mode. */
+  foliageGroups?: FoliageGroup[];
   shadowOverrides?: import("./shadows").ShadowOverrides;
   /** Absent CEL fields inherit from Project Settings. Inactive in PBR mode. */
   celShading?: import("./cel-shading").CelShadingOverrides;
@@ -327,6 +331,8 @@ function normalizeComponent(
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
+      source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
+      source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
@@ -534,6 +540,7 @@ export function normalizeSceneSettings(
     showNavmesh: source.showNavmesh === true,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
     sceneLayers: normalizeSceneLayerSpawnList(source.sceneLayers),
+    ...(source.foliageGroups !== undefined ? { foliageGroups: normalizeFoliageGroups(source.foliageGroups) } : {}),
   };
 }
 

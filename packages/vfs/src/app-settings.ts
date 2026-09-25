@@ -3,6 +3,8 @@ import { DEFAULT_EDITOR_DROP_DISTANCE, normalizeProjectAppearance } from "@babyl
 
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
+  sceneLandscape: ["viewport"],
+  sceneFoliage: ["viewport"],
   "scene-layer": ["viewport"],
   graph: ["graph"],
   enum: ["enum-members"],
@@ -157,6 +159,8 @@ export const engineSettingsSchema = z.object({
   focusKeepPanels: z
     .object({
       scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
+      sceneLandscape: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneLandscape),
+      sceneFoliage: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneFoliage),
       "scene-layer": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["scene-layer"]),
       graph: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.graph),
       enum: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.enum),

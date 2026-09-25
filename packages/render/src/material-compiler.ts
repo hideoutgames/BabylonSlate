@@ -214,7 +214,7 @@ export function compileMaterialPlan(
 ): CompileMaterialResult {
   const { scene } = options;
   const outlineMask = options.surfaceVariant === "outlineMask";
-  const cacheableShadowShape = !outlineMask && plan.domain === "surface" && plan.blendMode === "opaque" &&
+  const cacheableShadowShape = !outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: scene.getEngine().isWebGPU
@@ -514,7 +514,7 @@ export function compileMaterialPlan(
     return true;
   };
 
-  if (plan.domain === "surface") {
+  if ((plan.domain === "surface" || plan.domain === "landscape")) {
     const vertexIds = collectWorldPositionOffsetOperationIds(plan);
     if (!realizeOperations(vertexIds)) return fail();
     const offsetOperand = plan.outputs.worldPositionOffset ?? null;
@@ -591,7 +591,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if (plan.domain === "surface" && !outlineMask) {
+    if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) {
       const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
       if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
     }
@@ -726,7 +726,7 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
-      if (!outlineMask && plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
+      if (!outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });
@@ -842,7 +842,7 @@ export function compileMaterialPlan(
     if (value) variant?.compiled.setParameter(name, value);
     return true;
   };
-  if (plan.domain === "surface" && !outlineMask) authoredOutlineFactories.set(material, () => {
+  if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) authoredOutlineFactories.set(material, () => {
     if (disposed) throw new Error("Cannot outline a disposed authored material.");
     if (!variant) {
       const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:outlineMask`, surfaceVariant: "outlineMask" });

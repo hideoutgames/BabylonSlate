@@ -4918,6 +4918,8 @@ function isPlayRenderable(
   if (component.destroyed) return false;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
+    component.classId === "LandscapeComponent" ||
+    component.classId === "FoliageComponent" ||
     component.classId === "MeshComponent" ||
     component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent" ||
@@ -4987,6 +4989,8 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (component.classId === "LandscapeComponent") return "landscape";
+  if (component.classId === "FoliageComponent") return "foliage";
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
@@ -5035,6 +5039,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
     components.length > 1 ||
+    components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     components.some((component) => !isIdentityComponentTransform(component))
   );
 }
@@ -5101,6 +5106,10 @@ function playMeshPartOf(
   const { position, rotation, scale } = component.transform;
   return {
     componentId: component.guid,
+    ...(component.classId === "LandscapeComponent" ? { landscape: parseLandscapeProperties(Object.fromEntries(
+      ["width", "depth", "subdivisions", "heights", "weights", "materialGuid"].map((key) => [key, component.getVariable(key)]),
+    )) } : {}),
+    ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
     castShadows: component.getVariable("castShadows") !== false,
     receiveShadows: component.getVariable("receiveShadows") !== false,
     meshKind: playMeshKindOf(component),
@@ -5245,3 +5254,4 @@ function* remapOverlaySerializedActors(
   }
   return remapped;
 }
+import { parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";

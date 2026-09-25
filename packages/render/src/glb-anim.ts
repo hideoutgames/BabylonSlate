@@ -265,7 +265,7 @@ function releaseUnusedSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (!entry.references && cache.current.get(entry.guid) !== entry) retireSource(cache, entry);
 }
 
-function acquireGlbContainer(
+export function acquireGlbContainer(
   scene: Scene,
   guid: string,
   source: Blob,

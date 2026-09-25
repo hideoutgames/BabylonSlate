@@ -1,0 +1,86 @@
+import "@babylonjs/core/Meshes/thinInstanceMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
+import { parseFoliageProperties, type FoliageBatch } from "@babylonslate/core";
+import type { MeshAssetContext } from "./mesh-assets";
+import { acquireGlbContainer } from "./glb-anim";
+import { installAssetBytes } from "@babylonslate/assets";
+import { applyModelMaterialSlots } from "./model-preview";
+import { RENDERING_GROUP } from "./sorting";
+
+const preparations = new WeakMap<Mesh, Promise<void>>();
+const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
+
+export function foliagePreparation(root: Mesh): Promise<void> | undefined { return preparations.get(root); }
+
+export function refreshFoliageMaterials(root: Mesh, assets?: MeshAssetContext): void {
+  for (const entry of batchesByRoot.get(root) ?? []) {
+    const payload = assets?.modelPayloads?.get(entry.batch.modelGuid);
+    const resolve = (guid: string) => assets?.resolveMaterial?.(guid, { scene: root.getScene() }) ?? null;
+    if (payload) applyModelMaterialSlots(entry.root, payload.materialSlots, resolve);
+    const override = entry.batch.materialGuid ? resolve(entry.batch.materialGuid) : null;
+    if (override) for (const mesh of entry.root.getChildMeshes()) mesh.material = override;
+  }
+}
+
+/** One thin-instance draw per model primitive/material/spatial cell; never one actor per plant. */
+export function createFoliageMesh(scene: Scene, name: string, properties: unknown, assets?: MeshAssetContext): Mesh {
+  const data = parseFoliageProperties(properties);
+  const root = new Mesh(name, scene);
+  root.isPickable = false;
+  const held: Array<{ release(): void }> = [];
+  const batches: Array<{ root: Mesh; batch: FoliageBatch }> = [];
+  batchesByRoot.set(root, batches);
+  root.onDisposeObservable.addOnce(() => held.forEach((lease) => lease.release()));
+  const ready = (async () => {
+    for (const [batchIndex, batch] of data.batches.entries()) {
+      if (root.isDisposed()) return;
+      const bytes = assets?.modelBytes?.get(batch.modelGuid);
+      const source = assets?.modelSources?.get(batch.modelGuid) ?? (bytes ? installAssetBytes(bytes, "model/gltf-binary") : undefined);
+      if (!source) continue;
+      const lease = acquireGlbContainer(scene, batch.modelGuid, source);
+      held.push(lease);
+      const container = await lease.load;
+      if (root.isDisposed()) return;
+      const batchRoot = new Mesh(`${name}:batch:${batchIndex}`, scene);
+      batchRoot.parent = root;
+      batchRoot.isPickable = false;
+      batches.push({ root: batchRoot, batch });
+      const scale = assets?.modelPayloads?.get(batch.modelGuid)?.importScale ?? 1;
+      const cells = new Map<string, typeof batch.transforms>();
+      for (const transform of batch.transforms) {
+        const key = `${Math.floor(transform.position[0] / 32)}:${Math.floor(transform.position[2] / 32)}`;
+        const cell = cells.get(key) ?? [];
+        cell.push(transform); cells.set(key, cell);
+      }
+      for (const sourceMesh of container.meshes) {
+        const geometry = sourceMesh instanceof InstancedMesh ? sourceMesh.sourceMesh : sourceMesh;
+        if (!(geometry instanceof Mesh) || !geometry.getTotalVertices()) continue;
+        const modelMatrix = sourceMesh.computeWorldMatrix(true).multiply(Matrix.Scaling(scale, scale, scale));
+        for (const [cell, transforms] of cells) {
+          const mesh = geometry.clone(`${name}:foliage:${batchIndex}:${sourceMesh.uniqueId}:${cell}`, batchRoot, true);
+          mesh.position.setAll(0); mesh.rotation.setAll(0); mesh.rotationQuaternion = Quaternion.Identity(); mesh.scaling.setAll(1);
+          mesh.skeleton = null; mesh.morphTargetManager = null;
+          mesh.setEnabled(true); mesh.isVisible = true; mesh.visibility = 1;
+          mesh.renderingGroupId = RENDERING_GROUP.world;
+          mesh.receiveShadows = true;
+          mesh.isPickable = true;
+          mesh.thinInstanceEnablePicking = true;
+          mesh.metadata = { foliageRoot: root };
+          const matrices = new Float32Array(transforms.length * 16);
+          transforms.forEach((transform, i) => {
+            modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);
+          });
+          mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
+          mesh.thinInstanceRefreshBoundingInfo(true);
+        }
+      }
+    }
+    if (!root.isDisposed()) refreshFoliageMaterials(root, assets);
+  })();
+  preparations.set(root, ready);
+  void ready.catch(() => {});
+  return root;
+}

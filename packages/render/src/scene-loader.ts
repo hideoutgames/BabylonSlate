@@ -212,6 +212,8 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -235,6 +237,8 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -362,6 +366,7 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
+    visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
     visuals.some((component) => component.classId === "ColliderComponent") ||
@@ -379,6 +384,8 @@ function componentVisualKind(
   actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
+  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"
@@ -624,6 +631,8 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
+  if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
   if (component.classId === "SpriteComponent") {
     return createSpriteComponentMesh(scene, name, component, assets);
   }
@@ -1297,3 +1306,5 @@ export function countSceneMeshes(scene: Scene): number {
 export function toVector3(value: [number, number, number]): Vector3 {
   return new Vector3(value[0], value[1], value[2]);
 }
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh } from "./foliage-mesh";

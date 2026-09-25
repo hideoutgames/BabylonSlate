@@ -104,3 +104,4 @@ export * from "./baked-receiver-materials";
 export * from "./baked-scene-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
+export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
