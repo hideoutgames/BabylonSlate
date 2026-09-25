@@ -3,6 +3,7 @@ import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import {
   TEXTURE_BYTE_CEILING,
@@ -43,7 +44,6 @@ interface CacheEntry {
   pending?: number;
   preparations?: Set<(reason: string) => void>;
   lastUsed: number;
-  contentKey: string;
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
   samplingDisposers?: Map<string, () => void>;
@@ -78,8 +78,6 @@ export function createEngineTextureFromUrl(
   texture.hasAlpha = true;
   return texture;
 }
-
-import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
@@ -423,9 +421,8 @@ export class ResourceCache {
     return !entry.pending && entry.refCount === 0;
   }
 
-  private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob): string {
-    const nextKey = contentKey(bytes);
-    const key = `${assetGuid}\0${nextKey}`;
+  private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob, identity = contentKey(bytes)): string {
+    const key = `${assetGuid}\0${identity}`;
     const existing = this.entries.get(key);
     if (existing) {
       existing.refCount += 1;
@@ -461,7 +458,6 @@ export class ResourceCache {
       bytes: 0,
       refCount: 1,
       lastUsed: ++this.clock,
-      contentKey: nextKey,
       textures: new Map(),
     };
     this.entries.set(key, entry);
@@ -485,7 +481,8 @@ export class ResourceCache {
     if (environment && !options.isCube) throw new Error("Environment cube textures cannot be used as 2D textures.");
     if (environment && bytes instanceof Uint8Array) readEnvironmentTextureInfo(bytes);
     const key = samplingKey(options);
-    const variantKey = `${assetGuid}\0${contentKey(bytes)}`;
+    const identity = contentKey(bytes);
+    const variantKey = `${assetGuid}\0${identity}`;
     const existing = this.entries.get(variantKey);
     const reused = existing ? liveTexture(existing, key) : undefined;
     if (reused) {
@@ -493,7 +490,7 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    this.prepareBlobUrl(assetGuid, bytes);
+    this.prepareBlobUrl(assetGuid, bytes, identity);
     const entry = this.entries.get(variantKey)!;
     const uploadKey = uploadSamplingKey(options);
     const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
@@ -605,7 +602,7 @@ export class ResourceCache {
     }
     const entry: CacheEntry = existing ?? {
       assetGuid, key: variantKey, blobUrl: "", extraBlobUrls: [], bytes: 0,
-      refCount: 0, lastUsed: ++this.clock, contentKey: files.join(":"), textures: new Map(),
+      refCount: 0, lastUsed: ++this.clock, textures: new Map(),
     };
     this.entries.set(variantKey, entry);
     entry.refCount++;
@@ -654,7 +651,6 @@ export class ResourceCache {
         bytes,
         refCount: 1,
         lastUsed: ++this.clock,
-        contentKey: "",
         textures: new Map(),
       });
       this.totalBytes += bytes;
@@ -805,8 +801,8 @@ export class ResourceCache {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) return;
     this.totalBytes -= entry.bytes;
-    this.entries.delete(assetGuid);
-    this.blobs.delete(assetGuid);
+    this.entries.delete(entry.key);
+    this.blobs.delete(entry.key);
     this.urlKeys.delete(entry.blobUrl);
     for (const cancel of [...entry.preparations ?? []]) cancel("Texture preparation cancelled during cache retirement");
     disposeEntryTextures(entry);
