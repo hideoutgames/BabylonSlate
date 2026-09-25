@@ -39,6 +39,8 @@ import {
   ContextMenuOverlay,
   FolderBreadcrumbs,
   SearchInput,
+  ShortcutKeys,
+  ariaKeyShortcuts,
   SelectableText,
   TreeView,
   TypeVisualIcon,
@@ -127,6 +129,7 @@ import {
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -1084,6 +1087,7 @@ export function ContentBrowserWorkspace({
       {
         id: "show-references" as const,
         label: "Show References",
+        shortcut: keybinds.get("browser.references")?.[0],
         icon: <WaypointsIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
@@ -1765,25 +1769,28 @@ export function ContentBrowserWorkspace({
       {
         id: "new-folder",
         label: "New Folder",
+        shortcut: keybinds.get("edit.newFolder")?.[0],
         icon: <FolderPlusIcon />,
         onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
       },
       {
         id: "new-asset",
         label: "New Asset",
+        shortcut: keybinds.get("browser.newAsset")?.[0],
         icon: <PlusIcon />,
         onSelect: openNewAssetDialog,
       },
       {
         id: "import",
         label: "Import",
+        shortcut: keybinds.get("browser.import")?.[0],
         icon: <UploadIcon />,
         onSelect: () => {
           void handleImport();
         },
       },
     ],
-    [handleImport, openNewAssetDialog],
+    [handleImport, openNewAssetDialog, keybinds],
   );
   const {
     menu: emptyGridMenu,
@@ -1893,7 +1900,8 @@ export function ContentBrowserWorkspace({
   );
 
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const runSelectionAction = (actionId: "duplicate" | "rename" | "delete") => {
+  const searchRef = useRef<HTMLInputElement>(null);
+  const runSelectionAction = (actionId: "duplicate" | "rename" | "delete" | "show-references") => {
     const guids = [...selectedGuids];
     const folders = [...selectedFolderPaths].filter(
       (path) => !isFolderTreeRoot(path, rootPrefixes),
@@ -1908,6 +1916,18 @@ export function ContentBrowserWorkspace({
   useKeybindCommand("edit.duplicate", () => runSelectionAction("duplicate"), selectionKeys);
   useKeybindCommand("edit.rename", () => runSelectionAction("rename"), selectionKeys);
   useKeybindCommand("edit.delete", () => runSelectionAction("delete"), selectionKeys);
+  useKeybindCommand("browser.references", () => runSelectionAction("show-references"), selectionKeys);
+  useKeybindCommand("edit.find", () => {
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, selectionKeys);
+  const creationKeys = { ...selectionKeys, enabled: !busy && selectedRootWritable };
+  useKeybindCommand("browser.newAsset", openNewAssetDialog, creationKeys);
+  useKeybindCommand("browser.import", () => void handleImport(), creationKeys);
+  useKeybindCommand("edit.newFolder", () => {
+    setFoldersOpen(false);
+    setNameDialog({ kind: "folder", value: "NewFolder" });
+  }, creationKeys);
 
   const handleTreeSelect = useCallback(
     (id: string, options?: { additive?: boolean; range?: boolean }) => {
@@ -2098,21 +2118,31 @@ export function ContentBrowserWorkspace({
 
   const folderNavigation = (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size={phone ? "touch" : "sm"}
-        className="w-full justify-start"
-        data-testid="content-browser-new-folder"
-        disabled={busy || !selectedRootWritable}
-        onClick={() => {
-          setFoldersOpen(false);
-          setNameDialog({ kind: "folder", value: "NewFolder" });
-        }}
-      >
-        <FolderPlusIcon data-icon="inline-start" />
-        New Folder
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size={phone ? "touch" : "sm"}
+              className="w-full justify-start"
+              data-testid="content-browser-new-folder"
+              aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.newFolder")?.[0] ?? "")}
+              disabled={busy || !selectedRootWritable}
+              onClick={() => {
+                setFoldersOpen(false);
+                setNameDialog({ kind: "folder", value: "NewFolder" });
+              }}
+            >
+              <FolderPlusIcon data-icon="inline-start" />
+              New Folder
+            </Button>
+          }
+        />
+        <TooltipContent>
+          New Folder <ShortcutKeys chord={keybinds.get("edit.newFolder")?.[0]} decorative />
+        </TooltipContent>
+      </Tooltip>
       <div className="min-h-0 flex-1">
         <TreeView
           nodes={treeNodes}
@@ -2197,28 +2227,48 @@ export function ContentBrowserWorkspace({
             </SheetContent>
           </Sheet>
         ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          size={phone ? "touch-icon" : "sm"}
-          aria-label="Import"
-          data-testid="content-browser-import"
-          disabled={busy || !selectedRootWritable}
-          onClick={() => void handleImport()}
-        >
-          <UploadIcon data-icon="inline-start" />
-          {!phone ? "Import" : null}
-        </Button>
-        <Button
-          type="button"
-          size={phone ? "touch" : "sm"}
-          data-testid="content-browser-new-asset"
-          disabled={busy || !selectedRootWritable}
-          onClick={openNewAssetDialog}
-        >
-          <PlusIcon data-icon="inline-start" />
-          New Asset
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size={phone ? "touch-icon" : "sm"}
+                aria-label="Import"
+                data-testid="content-browser-import"
+                aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.import")?.[0] ?? "")}
+                disabled={busy || !selectedRootWritable}
+                onClick={() => void handleImport()}
+              >
+                <UploadIcon data-icon="inline-start" />
+                {!phone ? "Import" : null}
+              </Button>
+            }
+          />
+          <TooltipContent>
+            Import <ShortcutKeys chord={keybinds.get("browser.import")?.[0]} decorative />
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size={phone ? "touch" : "sm"}
+                data-testid="content-browser-new-asset"
+                aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("browser.newAsset")?.[0] ?? "")}
+                disabled={busy || !selectedRootWritable}
+                onClick={openNewAssetDialog}
+              >
+                <PlusIcon data-icon="inline-start" />
+                New Asset
+              </Button>
+            }
+          />
+          <TooltipContent>
+            New Asset <ShortcutKeys chord={keybinds.get("browser.newAsset")?.[0]} decorative />
+          </TooltipContent>
+        </Tooltip>
         <div
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2",
@@ -2226,10 +2276,12 @@ export function ContentBrowserWorkspace({
           )}
         >
           <SearchInput
+            ref={searchRef}
             value={search}
             onChange={setSearch}
             placeholder="Search assets…"
             aria-label="Search Assets"
+            aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.find")?.[0] ?? "")}
             className={cn(
               "min-h-[var(--chrome-row,28px)]",
               phone ? "h-11 min-w-0" : "min-w-40",

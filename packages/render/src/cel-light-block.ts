@@ -19,23 +19,10 @@ import {
   celEnvironmentAccumulation,
   CEL_UNIFORMS,
 } from "./cel-shader";
-import {
-  bindBakedIrradiance,
-  emitBakedIrradianceInputs,
-  prepareBakedIrradianceDefines,
-  type BakedIrradianceSampling,
-} from "./baked-irradiance";
 import { syncSceneLightSamplers } from "./scene-light-samplers";
 
 /** Native CEL light evaluation inside authored surface graphs. */
 export class CelLightBlock extends LightBlock {
-  /**
-   * Per-receiver baked atlas sampling for one cloned graph. The clone's
-   * `SLATE_BAKED` sample joins the environment accumulation; the authored
-   * material and every other receiver keep the realtime-only path.
-   */
-  bakedIrradiance: BakedIrradianceSampling | null = null;
-
   constructor(name: string) {
     super(name);
     this.registerInput("environmentInfluence", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
@@ -56,13 +43,11 @@ export class CelLightBlock extends LightBlock {
   ): void {
     super.prepareDefines(defines, material, mesh);
     defines.setValue("SLATE_CEL_TWO_SIDED", !material.backFaceCulling, true);
-    prepareBakedIrradianceDefines(defines, this.bakedIrradiance);
   }
 
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
     bindCelSettings(effect, material.getScene());
-    bindBakedIrradiance(effect, this.bakedIrradiance);
   }
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
@@ -86,7 +71,6 @@ export class CelLightBlock extends LightBlock {
     const start = state.compilationString.length;
     super._buildBlock(state);
     bindNodeShadowView(state, start, this.view.associatedVariableName);
-    if (this.bakedIrradiance) emitBakedIrradianceInputs(state);
     if (state.target === NodeMaterialBlockTargets.Fragment) {
       const key = Object.keys(state.functions).find((name) =>
         name.startsWith("lightsFragmentFunctions"),

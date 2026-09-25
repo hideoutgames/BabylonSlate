@@ -1,8 +1,4 @@
 import { Constants, ShaderStore, type Effect, type Scene } from "@babylonjs/core";
-import {
-  BAKED_IRRADIANCE_INV_PI,
-  bakedIrradianceTexelSample,
-} from "./baked-irradiance";
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
 import { lightFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/lightFragment";
 import { lightsFragmentFunctions } from "@babylonjs/core/Shaders/ShadersInclude/lightsFragmentFunctions";
@@ -32,26 +28,9 @@ export const CEL_UNIFORMS = [
   ...CEL_IRRADIANCE_UNIFORMS,
 ];
 
-/**
- * One diffuse environmental contribution enters the same final CEL ramp.
- * Under `SLATE_BAKED` a second baked-irradiance contribution joins it — same
- * wins/peak/total update, no smooth lobes — at the atlas's raw `E` scale so
- * it lands in the same unnormalized units as realtime `I * cos * attenuation`
- * light terms. Under `SLATE_BAKED_ENV` the atlas also carries environment
- * irradiance, so the baked sample replaces the spherical-polynomial
- * environment instead of double-counting it; the polynomial it substitutes
- * for is already `E / PI`-scaled, so that branch keeps the division.
- */
+/** Diffuse environment light enters the same final CEL ramp as authored lights. */
 export function celEnvironmentAccumulation(wgsl: boolean, influence = "1.0"): string {
-  const texel = wgsl
-    ? `var slateBakedTexel: vec4f=${bakedIrradianceTexelSample(true)};`
-    : `vec4 slateBakedTexel=${bakedIrradianceTexelSample(false)};`;
-  return `#ifdef SLATE_BAKED_ENV
-${texel}
-${wgsl ? "var slateEnvironmentColor: vec3f" : "vec3 slateEnvironmentColor"}=slateBakedTexel.rgb*slateBakedTexel.a*${BAKED_IRRADIANCE_INV_PI}*clamp(${influence},0.0,1.0);
-#else
-${wgsl ? "var slateEnvironmentColor: vec3f" : "vec3 slateEnvironmentColor"}=slateCelEnvironmentLight(normalW)*clamp(${influence},0.0,1.0);
-#endif
+  return `${wgsl ? "var slateEnvironmentColor: vec3f" : "vec3 slateEnvironmentColor"}=slateCelEnvironmentLight(normalW)*clamp(${influence},0.0,1.0);
 ${wgsl ? "var slateEnvironmentStrength: f32" : "float slateEnvironmentStrength"}=slateCelStrength(slateEnvironmentColor);
 slateCelWins=0.0;
 if (slateEnvironmentStrength>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
@@ -60,19 +39,6 @@ slateCelTotal+=slateEnvironmentStrength;
 diffuseBase=slateCelAccumulate(diffuseBase,slateEnvironmentColor,slateCelWins);
 #ifdef SPECULARTERM
 specularBase=slateCelAccumulate(specularBase,${wgsl ? "vec3f" : "vec3"}(0.0),slateCelWins);
-#endif
-#if defined(SLATE_BAKED) && !defined(SLATE_BAKED_ENV)
-${texel}
-${wgsl ? "var slateBakedColor: vec3f" : "vec3 slateBakedColor"}=slateBakedTexel.rgb*slateBakedTexel.a;
-${wgsl ? "var slateBakedStrength: f32" : "float slateBakedStrength"}=slateCelStrength(slateBakedColor);
-slateCelWins=0.0;
-if (slateBakedStrength>slateCelPeak+max(1.0,slateCelPeak)*0.00001) { slateCelWins=1.0; }
-slateCelPeak=max(slateCelPeak,slateBakedStrength);
-slateCelTotal+=slateBakedStrength;
-diffuseBase=slateCelAccumulate(diffuseBase,slateBakedColor,slateCelWins);
-#ifdef SPECULARTERM
-specularBase=slateCelAccumulate(specularBase,${wgsl ? "vec3f" : "vec3"}(0.0),slateCelWins);
-#endif
 #endif`;
 }
 

@@ -1,5 +1,3 @@
-import { readScenePipelineStatus, registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
-import { resolveRenderingPipeline } from "@babylonslate/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
@@ -458,24 +456,7 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 
-  it("shows the active scene's actual clustered selection and concrete fallback", () => {
-    const owner = registerScenePipelineStatus(scenePipelineKey("test-project", "active-scene"));
-    try {
-      owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined,
-        { gpuBackend: "webgl2" }, { supported: true, autoEligible: true }));
-      expect(readScenePipelineStatus(scenePipelineKey("test-project", "active-scene"))?.effective.renderPath).toBe("clusteredForward");
-      render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-      fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Clustered Forward \u00b7 WebGL2");
-      act(() => owner.publish(resolveRenderingPipeline({ renderPath: "auto" }, undefined,
-        { gpuBackend: "webgl2" }, { supported: false, reason: "The active material requires Forward." })));
-      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward \u00b7 WebGL2");
-      expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("active material requires Forward");
-      expect(updateProjectSettings).not.toHaveBeenCalled();
-    } finally { act(() => owner.dispose()); }
-  });
-
-  it("stages independent pipeline preferences until Done and displays their effective fallback", async () => {
+  it("stages independent pipeline preferences until Done", async () => {
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     const select = async (id: string, name: string) => {
@@ -488,8 +469,6 @@ describe("SettingsModal project authoring", () => {
     await select("project-render-path", "Clustered Forward");
     await select("project-gpu-backend", "WebGPU");
     await select("setting-render-mode", "CEL");
-    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Forward · WebGL2");
-    expect(screen.getByTestId("project-render-pipeline-status").textContent).toContain("Your preferences are retained.");
     expect(lastProjectRender.current).toBeNull();
     // Unrelated provider rerenders must not commit or discard the active draft.
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);

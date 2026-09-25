@@ -6,10 +6,14 @@ import {
   render,
   screen,
   within,
+  waitFor,
 } from "@testing-library/react";
 import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
+import { KeybindProvider } from "../context/keybind-context";
+import { AppSettingsProvider } from "../context/app-settings-context";
+import { MemoryAppSettingsStore, defaultEngineSettings } from "@babylonslate/vfs";
 
 if (
   typeof window !== "undefined" &&
@@ -189,6 +193,49 @@ const GIZMO_LABELS = [
 ] as const;
 
 describe("ViewportToolbar", () => {
+  it("uses customized chords for both scene edits and shortcut hints", async () => {
+    const store = new MemoryAppSettingsStore();
+    await store.save({ ...defaultEngineSettings(), keybinds: {
+      "viewport.toggleSnap": ["Shift+H"], "viewport.toggleGrid": ["Shift+J"],
+    } });
+    render(<AppSettingsProvider store={store}><KeybindProvider><TooltipProvider>
+      <ViewportToolbar />
+    </TooltipProvider></KeybindProvider></AppSettingsProvider>);
+    await waitFor(() => expect(screen.getByTestId("gizmo-snap-toggle").getAttribute("aria-keyshortcuts")).toBe("Shift+H"));
+    fireEvent.keyDown(document.body, { key: "g", code: "KeyG" });
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: "H", code: "KeyH", shiftKey: true });
+    expect(harness.applySceneChange).toHaveBeenCalledWith("scene:assets/Main.scene.babasset", expect.objectContaining({
+      settings: expect.objectContaining({ grid: expect.objectContaining({ snapEnabled: true }) }),
+    }));
+    fireEvent.keyDown(document.body, { key: "J", code: "KeyJ", shiftKey: true });
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith("scene:assets/Main.scene.babasset", expect.objectContaining({
+      settings: expect.objectContaining({ grid: expect.objectContaining({ showGrid: false }) }),
+    }));
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    const grid = screen.getByTestId("viewport-show-grid-toggle");
+    expect(grid.getAttribute("aria-keyshortcuts")).toBe("Shift+J");
+    expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("J");
+  });
+
+  it("keeps unavailable viewport actions disabled when their keys are pressed", () => {
+    const drop = vi.fn();
+    const view = render(<KeybindProvider><TooltipProvider>
+      <ViewportToolbar showDragSelect={false} showViewportModeToggle={false} onDrop={drop} dropDisabled />
+    </TooltipProvider></KeybindProvider>);
+    fireEvent.keyDown(document.body, { key: "End", code: "End" });
+    fireEvent.keyDown(document.body, { key: "q", code: "KeyQ" });
+    fireEvent.keyDown(document.body, { key: "v", code: "KeyV", altKey: true });
+    expect(drop).not.toHaveBeenCalled();
+    expect(harness.setDragSelectActive).not.toHaveBeenCalled();
+    expect(harness.setViewportMode).not.toHaveBeenCalled();
+    view.rerender(<KeybindProvider><TooltipProvider>
+      <ViewportToolbar onDrop={drop} dropDisabled={false} />
+    </TooltipProvider></KeybindProvider>);
+    fireEvent.keyDown(document.body, { key: "End", code: "End" });
+    expect(drop).toHaveBeenCalledOnce();
+  });
+
   it("opens snap settings by right-click without toggling, and Cancel discards edits", () => {
     harness.scene!.settings.grid.tileSize = 4;
     harness.scene!.settings.grid.snapTranslate = 0.5;
