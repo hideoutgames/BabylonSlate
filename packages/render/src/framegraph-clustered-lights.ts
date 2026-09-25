@@ -10,6 +10,14 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { clusteredLightTarget } from "./clustered-light-policy";
 import { withSceneReadinessState } from "./scene-perf";
 import type { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
+import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
+
+/** The mask pass also restores blend state and always wraps a failed draw. */
+const MASK_DRAW: BorrowedDrawPolicy = {
+  restoreAlpha: true,
+  wrapDrawFailure: true,
+  message: "Clustered mask rendering failed.",
+};
 
 /** One ordered borrowed mask draw; readiness never executes the native proxy pass. */
 export class FrameGraphClusteredLightsTask extends FrameGraphTask {
@@ -65,47 +73,16 @@ export class FrameGraphClusteredLightsTask extends FrameGraphTask {
         throw new Error(
           "Clustered allocation changed before its ordered draw.",
         );
-      const engine = this.scene.getEngine();
-      const target = engine._currentRenderTarget;
-      const intermediate = this.scene._intermediateRendering;
-      const stages = this.target._disableEngineStages;
-      const depth = engine.getDepthBuffer(),
-        write = engine.getDepthWrite();
-      // Babylon uses -1 after a cache reset while alphaState is disabled.
-      // Passing that sentinel back to setAlphaMode enables stale additive blend.
-      const alpha = Math.max(0, engine.getAlphaMode());
-      const equation = engine.getAlphaEquation();
-      const errors: unknown[] = [];
-      try {
-        this.target._disableEngineStages = true;
-        withSceneReadinessState(this.scene, () =>
-          context.renderUnmanaged(this.target!),
-        );
-      } catch (error) {
-        errors.push(error);
-      } finally {
-        const restore = (action: () => void) => {
-          try {
-            action();
-          } catch (error) {
-            errors.push(error);
-          }
-        };
-        this.target._disableEngineStages = stages;
-        this.scene._intermediateRendering = intermediate;
-        restore(() => engine.setAlphaMode(alpha, true));
-        if (equation >= 0) restore(() => engine.setAlphaEquation(equation));
-        restore(() => engine.setDepthBuffer(depth));
-        restore(() => engine.setDepthWrite(write));
-        restore(() => {
-          if (engine._currentRenderTarget !== target) {
-            if (target) engine.bindFramebuffer(target);
-            else engine.restoreDefaultFramebuffer(true);
-          }
-        });
-      }
-      if (errors.length)
-        throw new AggregateError(errors, "Clustered mask rendering failed.");
+      const target = this.target;
+      drawBorrowedTarget(
+        this.scene,
+        target,
+        () =>
+          withSceneReadinessState(this.scene, () =>
+            context.renderUnmanaged(target),
+          ),
+        MASK_DRAW,
+      );
     });
   }
 
