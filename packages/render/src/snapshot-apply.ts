@@ -1,7 +1,6 @@
 import { sceneShadowController } from "./shadow-controller";
 import { applyMaterialBounds } from "./material-bounds";
 import {
-  Color3,
   DirectionalLight,
   HemisphericLight,
   Mesh,
@@ -10,7 +9,6 @@ import {
   Quaternion,
   Scene,
   SpotLight,
-  StandardMaterial,
   UniversalCamera,
   Vector3,
   type AbstractMesh,
@@ -45,7 +43,11 @@ import {
   meshAssetFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
-import { createOverlayTextureQuad } from "./overlay-texture-quad";
+import {
+  createOverlayTextureQuad,
+  createOverlayUnlitMaterial,
+} from "./overlay-texture-quad";
+import { VisualBundle } from "./visual-bundle";
 import {
   createOverlayPanelMesh,
   type OverlayPanelMeshOptions,
@@ -1306,12 +1308,9 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const material = new StandardMaterial(`${name}-unlit`, scene);
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.White();
-    material.backFaceCulling = false;
-    mesh.material = material;
+    const bundle = new VisualBundle();
+    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {

@@ -69,6 +69,23 @@ export function overlayTextureVisualKind(
   return `2dtexture:${guid ?? ""}:${size.width}x${size.height}:${String(hitTest ?? "ignore")}`;
 }
 
+/**
+ * White unlit double-sided construction material owned by the visual's bundle,
+ * so it retires with the mesh even after an authored material replaces it.
+ */
+export function createOverlayUnlitMaterial(
+  scene: Scene,
+  name: string,
+  bundle: VisualBundle,
+): StandardMaterial {
+  const material = bundle.ownMaterial(new StandardMaterial(`${name}-unlit`, scene));
+  material.disableLighting = true;
+  material.emissiveColor = Color3.White();
+  material.diffuseColor = Color3.White();
+  material.backFaceCulling = false;
+  return material;
+}
+
 /** Unlit overlay plane sized to the texture, then albedo if bytes are cached. */
 export function createOverlayTextureQuad(
   scene: Scene,
@@ -91,12 +108,7 @@ export function createOverlayTextureQuad(
   bundle.ownRenderUser(mesh);
   mesh.onDisposeObservable.addOnce(() => bundle.dispose());
   try {
-    const material = bundle.ownMaterial(new StandardMaterial(`${name}-unlit`, scene));
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.White();
-    material.backFaceCulling = false;
-    mesh.material = material;
+    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     applyAlbedoTexture(mesh, scene, textureGuid, assets);
     return mesh;
   } catch (error) {

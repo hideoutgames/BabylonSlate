@@ -813,6 +813,8 @@ describe("scene-loader", () => {
     expect(scene.getMeshByName("origin:axis-x")).not.toBeNull();
     expect(scene.getMeshByName("origin:axis-y")).not.toBeNull();
     expect(scene.getMeshByName("origin:axis-z")).not.toBeNull();
+    mesh.dispose();
+    expect(scene.getMaterialByName("origin-pivot")).toBeNull();
   });
 
   it("clearSceneMeshes is safe on an already empty scene", () => {
@@ -900,6 +902,10 @@ describe("scene-loader", () => {
     expect((button!.material as StandardMaterial).disableLighting).toBe(true);
     expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
     expect(panel!.getTotalVertices()).toBeGreaterThan(8);
+    for (const mesh of [material!, button!, panel!]) {
+      mesh.dispose();
+      expect(scene.getMaterialByName(`${mesh.name}-unlit`)).toBeNull();
+    }
   });
 
   it("fingerprints 2DPanel dest from actor scale so 9-slice rebuilds on resize", () => {
