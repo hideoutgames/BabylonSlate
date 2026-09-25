@@ -18,6 +18,8 @@ export interface NumericDragFieldProps {
   mixed?: boolean;
   /** World units (or degrees) per pixel of horizontal drag. */
   sensitivity?: number;
+  /** Maximum displayed decimal places while idle; stored values are never rounded. */
+  precision?: number;
   step?: number;
   min?: number;
   max?: number;
@@ -50,6 +52,7 @@ export function NumericDragField({
   value,
   mixed = false,
   sensitivity = 0.01,
+  precision = 2,
   min,
   max,
   disabled = false,
@@ -162,7 +165,7 @@ export function NumericDragField({
           aria-describedby={error ? errorId : undefined}
           data-testid={testId}
           disabled={disabled}
-          value={draft ?? (mixed ? "" : formatNumericDisplay(value))}
+          value={draft ?? (mixed ? "" : formatNumericDisplay(value, precision))}
           placeholder={mixed ? "Mixed" : undefined}
           onChange={(event) => {
             const raw = event.target.value;

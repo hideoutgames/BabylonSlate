@@ -1,7 +1,7 @@
-/** Idle Details numerics: round to two decimals and strip trailing zeros. */
-export function formatNumericDisplay(value: number): string {
+/** Idle Details numerics: round to the requested precision and strip trailing zeros. */
+export function formatNumericDisplay(value: number, precision = 2): string {
   if (!Number.isFinite(value)) return "0";
-  const [intPart, frac = ""] = value.toFixed(2).split(".");
+  const [intPart, frac = ""] = value.toFixed(Math.max(0, Math.min(20, precision))).split(".");
   const trimmedFrac = frac.replace(/0+$/, "");
   const formatted = trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
   return formatted === "-0" ? "0" : formatted;

@@ -89,6 +89,17 @@ describe("TilesetEditor", () => {
     expect(screen.queryByText(/Loading texture/i)).toBeNull();
   });
 
+  it("assigns a Texture from the empty Preview", async () => {
+    const onChange = vi.fn();
+    render(<TilesetPreview payload={twoTilePayload()} onChange={onChange} />);
+    expect(screen.getByText("No Texture")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("tileset-preview-pick-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-1"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ textureGuid: "tex-1" }),
+    );
+  });
+
   it("waits for confirmation before applying both tile dimensions", () => {
     const onChange = vi.fn();
     render(<TilesetHarness initial={twoTilePayload()} onChange={onChange} />);

@@ -385,6 +385,22 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return body ? { linear: { ...body.linearVelocity }, angular: { ...body.angularVelocity } } : null;
   }
 
+  getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return null;
+    const mass = Math.max(body.desc.mass, 1e-6);
+    const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
+    return {
+      linear: { x: impulse.x / mass, y: impulse.y / mass, z: this.kind === "3d" ? impulse.z / mass : 0 },
+      angular: {
+        x: this.kind === "3d" ? (r.y * impulse.z - r.z * impulse.y) / mass : 0,
+        y: this.kind === "3d" ? (r.z * impulse.x - r.x * impulse.z) / mass : 0,
+        z: (r.x * impulse.y - r.y * impulse.x) / mass,
+      },
+      centerOfMass: { ...body.transform.position },
+    };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;

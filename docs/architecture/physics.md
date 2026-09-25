@@ -23,6 +23,8 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 
 Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics V2 and `@babylonjs/havok` for 3D. No React, no Capacitor, no editor Babylon packages (gui/loaders/inspector). `@babylonslate/runtime` still must not import Babylon.
 
+The optional `getBodyImpulseResponse(bodyId, impulse, point)` query returns the predicted world linear/angular velocity change and world centre of mass without changing the body. Havok uses native collider inertia (including principal-axis rotation and mass); software uses its unit-inertia model. [Water buoyancy](render.md#water) uses this to solve its support forces together while leaving collision response to the native solver.
+
 ## Backends
 
 | Kind | Engine | When loaded |
