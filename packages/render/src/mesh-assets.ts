@@ -15,6 +15,7 @@ import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
+import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -176,7 +177,7 @@ export function modelSlotFingerprint(
         .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
         .join(",");
       const colliders = JSON.stringify(payload.simpleColliders ?? []);
-      return `${guid}:${slots}:${colliders}`;
+      return `${guid}:${payload.importScale}:${slots}:${colliders}`;
     })
     .sort()
     .join(";");
@@ -213,6 +214,8 @@ const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void> | undefined {
   const pending: Promise<void>[] = [];
   for (const mesh of [root, ...root.getChildMeshes()]) {
+    const foliage = foliagePreparation(mesh as Mesh);
+    if (foliage) pending.push(foliage);
     const binding = albedoBindings.get(mesh);
     const albedo = binding?.preparation;
     const skybox = skyboxMeshPreparation(mesh);

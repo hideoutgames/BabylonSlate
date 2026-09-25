@@ -1,4 +1,5 @@
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
+import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect } from "react";
@@ -44,6 +45,7 @@ import {
 import { AnimEditorModeBar } from "./anim-editor-mode-bar";
 import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { parseSceneDocumentLayout, type SceneMode } from "../shell/scene-document-layout";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -72,6 +74,7 @@ function RegisteredDockviewShell({
   initialLayout,
   actorPrefab,
   animEditorMode,
+  sceneMode,
   surface,
 }: {
   id: string;
@@ -79,6 +82,7 @@ function RegisteredDockviewShell({
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
   animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
+  sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
   const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId, sourceControl } =
@@ -104,6 +108,7 @@ function RegisteredDockviewShell({
       actorPrefab={actorPrefab}
       sourceControl={sourceControl.enabled}
       animEditorMode={animEditorMode}
+      sceneMode={sceneMode}
       onReady={onReady}
     />
   );
@@ -130,6 +135,18 @@ function DocumentShell({
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
   );
+}
+
+export function SceneDocumentDocks({ id, layout }: { id: string; layout: Record<string, unknown> | null }) {
+  const parsed = parseSceneDocumentLayout(layout);
+  return <RegisteredDockviewShell
+    key={parsed.sceneMode}
+    id={id}
+    documentKind="scene"
+    sceneMode={parsed.sceneMode}
+    surface={parsed.sceneMode}
+    initialLayout={parsed[parsed.sceneMode]}
+  />;
 }
 
 export function AnimDocumentDocks({
@@ -587,6 +604,7 @@ export function DocumentWorkspace() {
                 documentGridVisible={sceneContent?.settings?.grid?.showGrid}
                 documentNavmeshVisible={sceneContent?.settings?.showNavmesh}
               >
+              <SceneToolsProvider>
               <NavBakeProvider>
               <PrefabEditingProvider>
               <GraphEditingProvider>
@@ -598,22 +616,21 @@ export function DocumentWorkspace() {
                 testId={`document-workspace-${doc.ref.kind}`}
                 active={active}
               >
-                <RegisteredDockviewShell
+                {doc.ref.kind === "scene" ? <SceneDocumentDocks id={id} layout={doc.layout} /> : <RegisteredDockviewShell
                   id={id}
                   documentKind={
                     doc.ref.kind === "scene-layer"
                       ? "scene-layer"
-                      : doc.ref.kind === "scene"
-                        ? "scene"
-                        : "graph"
+                      : "graph"
                   }
                   initialLayout={doc.layout}
                   actorPrefab={actorPrefab}
-                />
+                />}
               </DocumentShell>
               </GraphEditingProvider>
               </PrefabEditingProvider>
               </NavBakeProvider>
+              </SceneToolsProvider>
             </SceneEditingProvider>
             </DocumentWorkspaceProvider>
           </WorkspaceErrorBoundary>

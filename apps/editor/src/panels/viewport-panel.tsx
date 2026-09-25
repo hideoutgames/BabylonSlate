@@ -1,4 +1,8 @@
 import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
+import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
+import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
+import { useSceneTools } from "../context/scene-tools-context";
+import { attachSceneBrushInput, type SceneBrushState } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -22,7 +26,7 @@ import {
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
@@ -91,6 +95,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const {
     openDocuments,
+    activeDocumentId,
     applySceneChange,
     projectDocument,
     projectGuid,
@@ -245,10 +250,28 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const sceneMode = doc?.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : "design";
+  const sceneTools = useSceneTools();
   const overlayTransformBox = doc?.ref.kind === "scene-layer";
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const brushStateRef = useRef<SceneBrushState | null>(null);
+  const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
+  brushStateRef.current = {
+    ...sceneTools, scene, mode: sceneMode,
+    enabled: activeDocumentId === documentId && sceneReady && !sceneLoad.open && !playing && !preparing,
+    group: group ? { ...group, models: group.models.filter((model) => assetRegistry?.list({ type: "Model" }).some((asset) => asset.header.guid === model.modelGuid)) } : undefined,
+  };
+  useEffect(() => {
+    const handle = engineRef.current; const canvas = canvasRef.current;
+    if (!handle || !canvas || sceneMode === "design" || activeDocumentId !== documentId || playing || preparing) return;
+    return attachSceneBrushInput(handle, canvas, {
+      getState: () => brushStateRef.current!,
+      commit: (next, before) => brushStateRef.current?.scene === before ? applySceneChange(documentId, next) : Promise.resolve(false),
+      onError: (error) => engineCommandBus.dispatch({ type: "log", message: `Scene brush could not apply: ${String(error)}` }),
+    });
+  }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, activeDocumentId, playing, preparing, applySceneChange]);
   const sceneAssetGuidRef = useRef<string | undefined>(undefined);
   sceneAssetGuidRef.current = doc?.ref.path
     ? assetRegistry?.list().find((asset) => asset.path === doc.ref.path)?.header.guid
@@ -834,17 +857,17 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [openDocuments, assetRegistry, engineEpoch]);
 
   useEffect(() => {
-    engineRef.current?.editor?.setSelectedActors(selectedActorIds);
+    engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);
     engineRef.current?.editor?.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds,
       audioLibrary,
     });
-  }, [scene, selectedActorIds, engineEpoch, audioLibrary]);
+  }, [scene, selectedActorIds, engineEpoch, audioLibrary, sceneMode]);
 
   useEffect(() => {
-    engineRef.current?.editor?.setViewportMode(viewportMode);
-  }, [viewportMode, engineEpoch]);
+    engineRef.current?.editor?.setViewportMode(sceneMode === "design" ? viewportMode : "3d");
+  }, [viewportMode, engineEpoch, sceneMode]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
@@ -1308,12 +1331,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           className="pointer-events-auto rounded-lg border border-border bg-popover p-1 shadow-md"
           data-testid="viewport-panel-frame"
         >
-          <ViewportToolbar
+          {sceneMode !== "design" ? <SceneBrushToolbar mode={sceneMode} disabled={!sceneReady || playing || preparing} /> : <ViewportToolbar
             onDrop={dropSelection}
             dropDisabled={dropDisabled}
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
             showGizmoTools={!overlayTransformBox}
-          />
+          />}
         </div>
       </div>
       <canvas

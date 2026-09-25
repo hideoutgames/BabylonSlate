@@ -14,6 +14,8 @@ import {
   SPRING_ARM_COMPONENT_CLASS_ID,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh, foliageSourceFingerprint } from "./foliage-mesh";
 import {
   extractGltfCollisionMesh,
   meshCollisionFingerprint,
@@ -215,6 +217,8 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -239,6 +243,8 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -366,6 +372,7 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
+    visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
     visuals.some((component) => component.classId === "ColliderComponent") ||
@@ -384,6 +391,8 @@ function componentVisualKind(
   actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
+  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"
@@ -631,6 +640,8 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
+  if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
   if (component.classId === "SpriteComponent") {
     return createSpriteComponentMesh(scene, name, component, assets);
   }
@@ -1098,7 +1109,16 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   mesh.isVisible = actor.visible;
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
+  const environmentRoots = new Set(actor.components
+    .filter((entry) => entry.classId === "LandscapeComponent" || entry.classId === "FoliageComponent")
+    .map((entry) => editorComponentMeshName(actor.id, entry.id)));
   for (const child of childMeshesOf(mesh)) {
+    const environmentRoot = child.metadata?.landscapeRoot ?? child.metadata?.foliageRoot;
+    if (environmentRoot && environmentRoots.has(environmentRoot.name)) {
+      child.isVisible = actor.visible;
+      child.isPickable = actor.visible && !actor.locked;
+      continue;
+    }
     if (isEditorBillboardMesh(child)) {
       applyEditorBillboardPass(child);
       syncEditorBillboardParentScale(child);

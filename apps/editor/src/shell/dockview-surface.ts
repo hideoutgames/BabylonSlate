@@ -1,5 +1,8 @@
 export type DockviewSurface =
   | "default"
+  | "design"
+  | "landscape"
+  | "foliage"
   | "stateMachine"
   | "animationObject";
 
@@ -26,5 +29,8 @@ export function dockviewApiKeysForDocument(documentId: string): string[] {
     dockviewApiKey(documentId),
     dockviewApiKey(documentId, "stateMachine"),
     dockviewApiKey(documentId, "animationObject"),
+    dockviewApiKey(documentId, "design"),
+    dockviewApiKey(documentId, "landscape"),
+    dockviewApiKey(documentId, "foliage"),
   ];
 }

@@ -512,6 +512,7 @@ function partsNeedOrigin(
   if (parts.length > 1) return true;
   const part = parts[0]!;
   return (
+    Boolean(part.landscape || part.foliage) ||
     part.position[0] !== 0 ||
     part.position[1] !== 0 ||
     part.position[2] !== 0 ||
@@ -742,7 +743,7 @@ export function applyAssignMesh(
   }
   const ownsTexture = (kind: string | null | undefined) =>
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
-  const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
+  const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
       part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
@@ -1252,6 +1253,8 @@ function createPlayVisual(
         deferredModels,
         retainedBitmapBytes,
         targets,
+        part.landscape,
+        part.foliage,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1369,8 +1372,12 @@ export function createPlayMesh(
   deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
+  landscape?: import("@babylonslate/core").LandscapeProperties,
+  foliage?: import("@babylonslate/core").FoliageProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
+  if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
     const tilesets = binding.tilesets ?? new Map();
@@ -1834,3 +1841,5 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
   }
 }
 import { AreaRectLightGroup } from "./area-rect-light";
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh } from "./foliage-mesh";

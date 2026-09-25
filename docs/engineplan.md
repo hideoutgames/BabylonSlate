@@ -1,5 +1,7 @@
 # BabylonSlate Engine Plan
 
+Scene authoring includes **Design**, **Landscape**, and **Foliage** modes with separate layouts and Focus settings. Landscape heightfields and painted material layers, plus Model-only instanced foliage strokes, persist as scene components and render in editor and Play/player. See [Scene modes](architecture/scene-editing.md#scene-modes) and [Landscape materials](architecture/shader-graph.md#landscape-materials).
+
 > **Status:** Living document — authoritative architecture and delivery plan for BabylonSlate.
 > **Audience:** Contributors and autonomous agents implementing the engine.
 > **Baseline device:** 11-inch A16 iPad (6 GB RAM, WebGL2, WKWebView).
