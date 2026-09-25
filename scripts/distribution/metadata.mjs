@@ -1,4 +1,5 @@
 import { createIdentity } from "./contract.mjs";
+import { validatePatchNotes } from "./changelog.mjs";
 
 export function buildManifest(declared, request) {
   const toolchains = {};
@@ -9,5 +10,7 @@ export function buildManifest(declared, request) {
       toolchains[key] = value;
     }
   }
-  return { ...createIdentity({ ...request, version: declared.version, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset }), toolchains };
+  const patchNotes = request.channel === "release" || request.patchNotes
+    ? validatePatchNotes(request.patchNotes, declared.version) : undefined;
+  return { ...createIdentity({ ...request, version: declared.version, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset }), ...(patchNotes ? { patchNotes } : {}), toolchains };
 }

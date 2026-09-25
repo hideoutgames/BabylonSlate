@@ -49,6 +49,9 @@ File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope 
 
 Global Engine Settings stored **outside** any project:
 
+- `automaticUpdatesEnabled` defaults to `true` for legacy and new settings. The Electron main process reads it before its first release check and applies saved changes immediately. Web/iOS update delivery is unchanged.
+- `seenReleaseVersions` stores dismissed news versions (default `[]`) through the same localStorage, Electron userData, or Capacitor Preferences backend. The launcher waits for hydration before showing version news; opening the account menu's **Changelog** remains available after dismissal and offline.
+
 - `viewportDropDistance` is the positive finite Scene/Prefab Drop cutoff exposed under Viewport ? Drop Distance. Older settings default to 10,000 world units; changes persist and take effect on the next Drop click.
 
 - `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
