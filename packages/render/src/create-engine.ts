@@ -2583,6 +2583,12 @@ function initializeEngine(
       // Document FontFaces are host state; sibling views keep their own faces.
       fontRegistry.dispose();
       audioService?.dispose();
+      const reportRetirementFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
+      };
+      const reportReleaseFailure = (error: unknown) => {
+        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
+      };
       const releaseSceneResources = () => {
         playFreeCam?.dispose();
         playViz?.dispose();
@@ -2590,19 +2596,14 @@ function initializeEngine(
         debugOverlay?.dispose();
         debugOverlay = null;
         // Rollback order: bake receivers restore before the library disposes.
-        bakedSession.dispose();
+        // A failed receiver restore is reported; the remaining owners still release.
+        try { bakedSession.dispose(); } catch (error) { reportReleaseFailure(error); }
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose();
-      };
-      const reportRetirementFailure = (error: unknown) => {
-        console.warn(`[render] Scene resource cleanup report is uncertain: ${String(error)}`);
-      };
-      const reportReleaseFailure = (error: unknown) => {
-        console.warn(`[render] Scene resource cleanup is quarantined: ${String(error)}`);
       };
       if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
         // Pending native work may still borrow Scene, library and cache
