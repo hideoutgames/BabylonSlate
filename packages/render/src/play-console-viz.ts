@@ -6,6 +6,7 @@ import {
   StandardMaterial,
   Vector3,
   VertexData,
+  type AbstractMesh,
   type LinesMesh,
   type Material,
   type Scene,
@@ -29,12 +30,12 @@ function markDebugOverlay(mesh: Mesh | LinesMesh): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
 }
 
-function playMeshes(scene: Scene): Mesh[] {
-  return scene.meshes.filter(
-    (mesh): mesh is Mesh =>
-      mesh instanceof Mesh &&
-      !mesh.name.startsWith(DEBUG_OVERLAY_PREFIX) &&
-      !isPlayConsoleVizSkipMesh(mesh),
+// Refresh runs per applied snapshot; callers walk scene.meshes in place.
+function isPlayMesh(mesh: AbstractMesh): mesh is Mesh {
+  return (
+    mesh instanceof Mesh &&
+    !mesh.name.startsWith(DEBUG_OVERLAY_PREFIX) &&
+    !isPlayConsoleVizSkipMesh(mesh)
   );
 }
 
@@ -52,7 +53,8 @@ export function applyPlayWireframe(scene: Scene, enabled: boolean): void {
     originals = new Map();
     wireframeRestore.set(scene, originals);
   }
-  for (const mesh of playMeshes(scene)) {
+  for (const mesh of scene.meshes) {
+    if (!isPlayMesh(mesh)) continue;
     const material = mesh.material;
     if (!material || typeof material.wireframe !== "boolean") continue;
     if (!originals.has(material)) originals.set(material, material.wireframe);
@@ -61,8 +63,8 @@ export function applyPlayWireframe(scene: Scene, enabled: boolean): void {
 }
 
 export function applyPlayShowBounds(scene: Scene, enabled: boolean): void {
-  for (const mesh of playMeshes(scene)) {
-    mesh.showBoundingBox = enabled;
+  for (const mesh of scene.meshes) {
+    if (isPlayMesh(mesh)) mesh.showBoundingBox = enabled;
   }
 }
 
