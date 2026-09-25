@@ -20,10 +20,18 @@ export interface WaterDefinition {
   waveLength: number;
   waveSpeed: number;
   waveDirection: number;
+  /** 0 is rounded sine swell; 1 is sharp crests with flat troughs. */
+  choppiness: number;
+  /** Angular spread of the swell components: 0 is one heading, 1 is a confused sea. */
+  waveSpread: number;
   rippleStrength: number;
   rippleScale: number;
   foamAmount: number;
   foamWidth: number;
+  /** Whitecaps on steep crests. */
+  crestFoam: number;
+  /** Metres of foam around objects and terrain that intersect the surface. */
+  contactFoamWidth: number;
   colorBands: number;
   /** Twinkling sun glints, mostly for Stylized water. */
   sparkles: number;
@@ -87,8 +95,10 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
     opacity: stylized ? 0.92 : 0.97, roughness: stylized ? 0.18 : 0.05,
     reflectionStrength: 1, depthColorDistance: stylized ? 1.6 : 3,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
+    choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
     foamAmount: stylized ? 1 : 0.35, foamWidth: stylized ? 0.7 : 0.8,
+    crestFoam: stylized ? 0.3 : 0.2, contactFoamWidth: stylized ? 0.6 : 1.2,
     colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.7 : 0, density: 1000, materialGuid: null,
   };
 }
@@ -109,10 +119,14 @@ export function normalizeWaterDefinition(value: unknown): WaterDefinition {
     waveLength: number(v.waveLength, d.waveLength, 0.1, 1000),
     waveSpeed: number(v.waveSpeed, d.waveSpeed, 0, 20),
     waveDirection: number(v.waveDirection, d.waveDirection, -360, 360),
+    choppiness: number(v.choppiness, d.choppiness, 0, 1),
+    waveSpread: number(v.waveSpread, d.waveSpread, 0, 1),
     rippleStrength: number(v.rippleStrength, d.rippleStrength, 0, 1),
     rippleScale: number(v.rippleScale, d.rippleScale, 0.1, 100),
     foamAmount: number(v.foamAmount, d.foamAmount, 0, 1),
     foamWidth: number(v.foamWidth, d.foamWidth, 0, 20),
+    crestFoam: number(v.crestFoam, d.crestFoam, 0, 1),
+    contactFoamWidth: number(v.contactFoamWidth, d.contactFoamWidth, 0, 8),
     colorBands: Math.round(number(v.colorBands, d.colorBands, 0, 12)),
     sparkles: number(v.sparkles, d.sparkles, 0, 1),
     density: number(v.density, d.density, 1, 20000),
@@ -188,21 +202,39 @@ export const waterWaveComponents = [
   [0, 1, 0.5, 0], [0.62, 1.37, 0.27, 1.2], [-0.81, 1.93, 0.16, 2.7], [1.47, 2.71, 0.09, 4.1], [-1.72, 3.53, 0.05, 0.6],
 ] as const;
 
+/** Mean and half-range of `exp(sin p - 1)`, used to centre the sharp-crest profile. */
+export const WATER_CREST_MEAN = 0.465760;
+export const WATER_CREST_RANGE = 0.534240;
+
+/**
+ * Wave profile blended from a sine towards sharp crests, and its phase derivative.
+ * The same expression drives rendered geometry, per-pixel normals, queries and buoyancy.
+ */
+export function waterWaveProfile(p: number, choppiness: number): { value: number; slope: number } {
+  const sin = Math.sin(p), cos = Math.cos(p), crest = Math.exp(sin - 1);
+  return {
+    value: sin + ((crest - WATER_CREST_MEAN) / WATER_CREST_RANGE - sin) * choppiness,
+    slope: cos + (crest * cos / WATER_CREST_RANGE - cos) * choppiness,
+  };
+}
+
 /** World-space metres, independent of the volume's transform. Spacing filters distant geometry only. */
 export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1, spacing = 0) {
   const angle = water.waveDirection * Math.PI / 180;
   let height = 0, dx = 0, dz = 0, velocity = 0;
   for (const [turn, frequency, amplitude, phase] of waterWaveComponents) {
     const k = 2 * Math.PI * frequency! / water.waveLength;
-    const ax = Math.cos(angle + turn!), az = Math.sin(angle + turn!);
+    const heading = angle + turn! * water.waveSpread * 2;
+    const ax = Math.cos(heading), az = Math.sin(heading);
     const omega = Math.sqrt(9.81 * k) * water.waveSpeed;
     const filter = clamp(2 - spacing * frequency * 4 / water.waveLength, 0, 1);
     const a = water.waveHeight * scale * amplitude! * filter * filter * (3 - 2 * filter);
     const p = k * (ax * x + az * z) - omega * time + phase!;
-    height += a * Math.sin(p);
-    dx += a * k * ax * Math.cos(p);
-    dz += a * k * az * Math.cos(p);
-    velocity -= a * omega * Math.cos(p);
+    const wave = waterWaveProfile(p, water.choppiness);
+    height += a * wave.value;
+    dx += a * k * ax * wave.slope;
+    dz += a * k * az * wave.slope;
+    velocity -= a * omega * wave.slope;
   }
   const n = Math.hypot(dx, 1, dz);
   return { height, normal: { x: -dx / n, y: 1 / n, z: -dz / n }, velocity };

@@ -43,6 +43,7 @@ export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from
 export * from "./area-rect-light";
 export * from "./outline-component";
 export * from "./water";
+export * from "./water-removal";
 export * from "./landscape";
 export * from "./foliage";
 export * from "./spring-arm-component";
