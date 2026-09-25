@@ -102,7 +102,6 @@ export interface MaterialPlumbing {
   worldNormal?: NodeMaterialConnectionPoint;
   /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
   worldNormal4?: NodeMaterialConnectionPoint;
-  worldTangent?: NodeMaterialConnectionPoint;
   cameraPosition?: NodeMaterialConnectionPoint;
   viewDirection?: NodeMaterialConnectionPoint;
   uv?: NodeMaterialConnectionPoint;
@@ -807,37 +806,35 @@ ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
 };
 
 ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
-  if (plumbing.worldTangent) {
-    return { blocks: [], inputs: {}, outputs: { tangent: plumbing.worldTangent } };
+  const blocks: NodeMaterialBlock[] = [];
+  let tangent = plumbing.localTangent;
+  if (!tangent) {
+    const attribute = attributeVector(name, "tangent", 4);
+    blocks.push(attribute);
+    tangent = attribute.output;
   }
-  const block = attributeVector(name, "tangent", 4);
   const split = new VectorSplitterBlock(`${name}_xyz`);
   const direction = new VectorMergerBlock(`${name}_direction`);
   const world = new TransformBlock(`${name}_world`);
   const normal = new NormalizeBlock(`${name}_unit`);
-  (plumbing.localTangent ?? block.output).connectTo(split.xyzw);
+  tangent.connectTo(split.xyzw);
   split.xyzOut.connectTo(direction.xyzIn);
   direction.xyzw.connectTo(world.vector);
   plumbing.world?.connectTo(world.transform);
   world.xyz.connectTo(normal.input);
-  return { blocks: [block, split, direction, world, normal], inputs: {}, outputs: { tangent: normal.output } };
+  blocks.push(split, direction, world, normal);
+  return { blocks, inputs: {}, outputs: { tangent: normal.output } };
 };
 
-ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
-  if (plumbing.viewDirection) {
-    return {
-      blocks: [],
-      inputs: {},
-      outputs: { direction: plumbing.viewDirection },
-    };
+ADAPTERS["input.viewDirection"] = ({ plumbing }) => {
+  if (!plumbing.viewDirection) {
+    throw new Error("View Direction requires surface plumbing");
   }
-  const block = new InputBlock(
-    name,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector3,
-  );
-  block.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
-  return single(block, {}, { direction: block.output });
+  return {
+    blocks: [],
+    inputs: {},
+    outputs: { direction: plumbing.viewDirection },
+  };
 };
 
 ADAPTERS["input.sceneDepth"] = ({ name, plumbing }) => {
