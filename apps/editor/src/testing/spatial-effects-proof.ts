@@ -7,6 +7,8 @@ import { applyAuthoredLightProperties, createAppWebGpuEngine, MaterialLibrary, s
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind: "reflections" | "point" | "spot" | "sun") {
@@ -93,6 +95,17 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         if (kind === "reflections") effects.reflections.enabled = true;
         else effects.volumetricLighting.enabled = true;
         const on = await draw();
+        const buffers: Record<string, { minimum: number; maximum: number; nonzero: number }> = {};
+        if (path === "frameGraph") {
+          const owned = graph as unknown as { graph: FrameGraph; effectsGraph: { spatial: { geometry: FrameGraphGeometryRendererTask } } };
+          const geometry = owned.effectsGraph.spatial.geometry;
+          for (const [name, handle] of Object.entries({ depth: geometry.geometryViewDepthTexture, ...(kind === "reflections" ? { normal: geometry.geometryWorldNormalTexture, reflectivity: geometry.geometryReflectivityTexture } : {}) })) {
+            const texture = owned.graph.textureManager.getTextureFromHandle(handle)!;
+            const data = await engine._readTexturePixels(texture, canvas.width, canvas.height);
+            const values = Array.from(data as unknown as ArrayLike<number>);
+            buffers[name] = { minimum: Math.min(...values), maximum: Math.max(...values), nonzero: values.filter((v) => v > 0).length };
+          }
+        }
         let changed: number[];
         if (light) {
           applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
@@ -106,7 +119,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         }
         effects.reflections.enabled = effects.volumetricLighting.enabled = false;
         const disabled = await draw();
-        captures.push({ path, off, on, changed, disabled });
+        captures.push({ path, off, on, changed, disabled, buffers });
       } finally {
         graph.dispose(); await graph.whenReleased();
         library.dispose(); scene.dispose();
