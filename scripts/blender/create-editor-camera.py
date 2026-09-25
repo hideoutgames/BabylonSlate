@@ -27,10 +27,10 @@ rings = [
     (-.648, rectangle(.133, .141, .018)),
     (-.178, rectangle(.160, .173, .018)),
     (-.162, rectangle(.151, .155, .012)),
-    (-.162, rectangle(.145, .104, .012)),
-    (-.050, rectangle(.196, .118, .014)),
-    (-.030, rectangle(.196, .118, .014)),
-    (-.043, rectangle(.172, .094, .012)),
+    (-.162, rectangle(.133, .117, .012)),
+    (-.050, rectangle(.180, .132, .014)),
+    (-.030, rectangle(.180, .132, .014)),
+    (-.043, rectangle(.158, .105, .012)),
 ]
 vertices = [(x, -z, y) for z, ring in rings for x, y in ring]
 faces = [tuple(reversed(range(8)))]
@@ -54,11 +54,11 @@ def grip_vertex(x, z, rise):
 
 grip_base = len(vertices)
 vertices.extend(grip_vertex(x, z, 0) for x, z in [
-    (.059, -.558), (-.059, -.558), (-.059, -.266), (.059, -.266),
+    (.053, -.558), (-.053, -.558), (-.053, -.266), (.053, -.266),
 ])
 grip_top = len(vertices)
 vertices.extend(grip_vertex(x, z, .035) for x, z in [
-    (.045, -.528), (-.045, -.528), (-.045, -.286), (.045, -.286),
+    (.040, -.528), (-.040, -.528), (-.040, -.286), (.040, -.286),
 ])
 outer = (12, 13, 21, 20)
 for i in range(4):
