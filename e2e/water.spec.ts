@@ -62,11 +62,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
       await expect(canvas).toBeVisible();
       await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible();
-      await expect.poll(async () => {
-        const [r, g, b] = await centerColor(canvas);
-        return style === "custom" ? Math.min(r! - g!, b! - g!) : Math.min(g! - r!, b! - r!);
-      }, { timeout: 20_000 }).toBeGreaterThan(8);
-      await canvas.screenshot({ path: testInfo.outputPath(`${style}-${backend}.png`) });
+      try {
+        await expect.poll(async () => {
+          const [r, g, b] = await centerColor(canvas);
+          return style === "custom" ? Math.min(r! - g!, b! - g!) : Math.min(g! - r!, b! - r!);
+        }, { timeout: 20_000 }).toBeGreaterThan(8);
+      } finally {
+        await canvas.screenshot({ path: testInfo.outputPath(`${style}-${backend}.png`) });
+        await testInfo.attach(`${style}-shader-errors`, { body: JSON.stringify(errors), contentType: "application/json" });
+      }
       await expect(page.getByText("Preview Failed", { exact: true })).toHaveCount(0);
     }
     expect(errors).toEqual([]);

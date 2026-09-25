@@ -4,7 +4,7 @@ import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } 
 import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
-import { compileMaterialPlan } from "./material-compiler";
+import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
 
 describe("Water rendering", () => {
   it("realizes and resizes an identity-transform Water component received from Play", () => {
@@ -39,6 +39,8 @@ describe("Water rendering", () => {
       if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
       expect(await result.ready).toEqual([]);
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), undefined, result.material);
+      await prewarmMaterial(result.material, mesh);
+      console.log(result.material.compiledShaders);
       const data = mesh.getVerticesData("slateWaterData")!;
       expect(data[1]).toBeCloseTo(0);
       expect(data[(4 * 9 + 4) * 4 + 1]).toBeCloseTo(15);
