@@ -14,7 +14,11 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
   sun.intensity = 1.4;
   camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
   camera.maxZ = 1200;
+  for (const mesh of scene.meshes) if (mesh.metadata?.skybox) mesh.infiniteDistance = true;
   const capture = async () => {
+    await scene.whenReadyAsync();
+    camera.getViewMatrix(true);
+    updateSceneWater(scene);
     await scene.whenReadyAsync();
     engine.beginFrame();
     try {
@@ -52,10 +56,10 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       evidence[style + "-ocean"] = (await capture()).png;
       ocean.dispose();
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), water);
-      camera.setTarget(new Vector3(4000, 0, -2000));
+      camera.setTarget(new Vector3(4000, 0, -2000), false, false, true);
       evidence[style + "-global"] = (await capture()).png;
       global.dispose();
-      camera.setTarget(Vector3.Zero()); camera.beta = 1.03; camera.radius = 24;
+      camera.setTarget(Vector3.Zero(), false, false, true); camera.beta = 1.03; camera.radius = 24;
     }
     return { evidence, differences };
   } finally {

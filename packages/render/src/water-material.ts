@@ -70,7 +70,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       decl(v2, "swRipple", `${v2}(0.0)`),
       ...[[0.94, 0.34, 1, 1.2], [-0.42, 0.91, 1.63, -0.9], [0.74, -0.67, 2.37, 1.5], [0.2, 0.98, 3.91, -1.1]].flatMap(([x, z, frequency, speed], i) => [
         decl(v2, `swRD${i}`, `${v2}(${x!.toFixed(4)}, ${z!.toFixed(4)})`),
-        decl(f, `swRP${i}`, `dot(swUV, swRD${i}) * ${frequency!.toFixed(4)} + swWarp * ${1 + i * .3} - swTime * ${speed!.toFixed(4)}`),
+        decl(f, `swRP${i}`, `dot(swUV, swRD${i}) * ${frequency!.toFixed(4)} + swWarp * ${(1 + i * .3).toFixed(4)} - swTime * ${speed!.toFixed(4)}`),
         `swRipple += swRD${i} * cos(swRP${i}) * ${(0.5 / (1 + i * .6)).toFixed(5)};`,
       ]),
       decl(f, "swPixel", "length(fwidth(swUV))"),

@@ -1,14 +1,16 @@
 import { Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
 import { configureWaterMaterial, WaterMaterialPlugin } from "./water-material";
+import { WaterReflection } from "./water-reflection";
 
 type Surface = {
   mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null;
-  layout: string; base: Float32Array; positions: Float32Array; normals: Float32Array;
+  layout: string; frame: string; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
+const reflections = new WeakMap<Scene, WaterReflection>();
 
 export function sceneHasWater(scene: Scene): boolean { return (surfaces.get(scene)?.size ?? 0) > 0; }
 export function setSceneWaterTime(scene: Scene, seconds: number): void {
@@ -20,6 +22,7 @@ export function updateSceneWater(scene: Scene): void {
   const clock = clocks.get(scene) ?? { time: 0, runtime: false };
   if (!clock.runtime) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
   clocks.set(scene, clock);
+  reflections.get(scene)?.sync();
   for (const surface of surfaces.get(scene) ?? []) if (surface.mesh.isEnabled()) updateSurface(surface, clock.time);
 }
 
@@ -102,6 +105,7 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
     }
   }
   s.base = new Float32Array(positions); s.positions = new Float32Array(positions);
+  s.worldBase = new Float32Array(positions.length);
   s.normals = new Float32Array(positions.length); s.baseNormals = new Float32Array(positions.length);
   s.data = new Float32Array(positions.length / 3 * 4); s.flow = new Float32Array(positions.length);
   s.spacing = new Float32Array(positions.length / 3);
@@ -129,34 +133,43 @@ function updateSurface(s: Surface, time: number): void {
   if (Math.abs(world.determinant()) < 1e-12) return;
   const inverse = world.clone().invert(), normalMatrix = Matrix.Transpose(inverse), toLocalNormal = Matrix.Transpose(world);
   updateLayout(s, world, inverse);
+  const frame = s.layout + ":" + [world.m[12], world.m[13], world.m[14]].join(",");
+  const moved = frame !== s.frame;
+  s.frame = frame;
   const up = Vector3.TransformNormal(Vector3.Up(), inverse);
   const depth = s.body.depth * Vector3.TransformNormal(Vector3.Up(), world).length();
   const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vector3(), flow = new Vector3(), edge = new Vector3();
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
-    point.set(x, y, z); Vector3.TransformCoordinatesToRef(point, world, point);
-    const footprint = waterFootprint(s.body, x, z);
-    const wave = sampleWaterWaves(s.water, point.x, point.z, time, s.body.waveScale, s.spacing[i / 3]);
+    const d = i / 3 * 4;
+    if (moved) {
+      point.set(x, y, z); Vector3.TransformCoordinatesToRef(point, world, point); point.toArray(s.worldBase, i);
+      const footprint = waterFootprint(s.body, x, z);
+      baseNormal.set(-footprint.slopeX, 1, -footprint.slopeZ);
+      Vector3.TransformNormalToRef(baseNormal, normalMatrix, baseNormal);
+      baseNormal.scaleInPlace(baseNormal.y < 0 ? -1 : 1).normalize();
+      baseNormal.toArray(s.baseNormals, i);
+      edge.set(footprint.edgeX, 0, footprint.edgeZ); Vector3.TransformNormalToRef(edge, normalMatrix, edge);
+      flow.set(footprint.flowX, footprint.flowY, footprint.flowZ); Vector3.TransformNormalToRef(flow, world, flow);
+      flow.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flow.x, flow.z))).toArray(s.flow, i);
+      s.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / (edge.length() || 1)));
+      s.data[d + 2] = depth;
+    }
+    const wave = sampleWaterWaves(s.water, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.body.waveScale, s.spacing[i / 3]);
     s.positions[i] = x + up.x * wave.height; s.positions[i + 1] = y + up.y * wave.height; s.positions[i + 2] = z + up.z * wave.height;
-    baseNormal.set(-footprint.slopeX, 1, -footprint.slopeZ);
-    Vector3.TransformNormalToRef(baseNormal, normalMatrix, baseNormal);
-    baseNormal.scaleInPlace(baseNormal.y < 0 ? -1 : 1).normalize();
-    baseNormal.toArray(s.baseNormals, i);
+    baseNormal.copyFromFloats(s.baseNormals[i]!, s.baseNormals[i + 1]!, s.baseNormals[i + 2]!);
     const ny = Math.max(1e-6, baseNormal.y);
     localNormal.set(baseNormal.x / ny + wave.normal.x / wave.normal.y, 1, baseNormal.z / ny + wave.normal.z / wave.normal.y);
     Vector3.TransformNormalToRef(localNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(s.normals, i);
-    edge.set(footprint.edgeX, 0, footprint.edgeZ); Vector3.TransformNormalToRef(edge, normalMatrix, edge);
-    flow.set(footprint.flowX, footprint.flowY, footprint.flowZ); Vector3.TransformNormalToRef(flow, world, flow);
-    flow.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flow.x, flow.z))).toArray(s.flow, i);
-    const d = i / 3 * 4;
-    s.data[d] = wave.height; s.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / (edge.length() || 1)));
-    s.data[d + 2] = depth; s.data[d + 3] = time;
+    s.data[d] = wave.height; s.data[d + 3] = time;
   }
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, true);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
   s.mesh.updateVerticesData("slateWaterData", s.data);
-  s.mesh.updateVerticesData("slateWaterFlow", s.flow);
-  s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
+  if (moved) {
+    s.mesh.updateVerticesData("slateWaterFlow", s.flow);
+    s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
+  }
   if (s.plugin) s.plugin.time = time;
 }
 
@@ -172,16 +185,19 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     const material = new PBRMaterial(`${name}:water`, scene);
     configureWaterMaterial(material, water);
     plugin = new WaterMaterialPlugin(material, water, body);
+    let reflection = reflections.get(scene);
+    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
+    reflection.add(material);
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, layout: "", base: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
+  const surface: Surface = { mesh, water, body, plugin, layout: "", frame: "", base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
     const observer = scene.onBeforeRenderObservable.add(() => updateSceneWater(scene));
-    scene.onDisposeObservable.addOnce(() => { scene.onBeforeRenderObservable.remove(observer); surfaces.delete(scene); clocks.delete(scene); });
+    scene.onDisposeObservable.addOnce(() => { scene.onBeforeRenderObservable.remove(observer); surfaces.delete(scene); clocks.delete(scene); reflections.delete(scene); });
   }
   entries.add(surface);
   mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
