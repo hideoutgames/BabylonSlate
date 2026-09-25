@@ -181,7 +181,7 @@ float slatePcfPointDepth(vec2 tap, vec3 origin, vec3 plane) {
           wgsl ? "frustumEdgeFalloff: f32)" : "float frustumEdgeFalloff)",
           wgsl ? "frustumEdgeFalloff: f32,slatePlane: vec3f)" : "float frustumEdgeFalloff,vec3 slatePlane)",
         );
-      const samples = kernel === 1 ? 1 : kernel === 3 ? 4 : 9;
+      const samples = kernel === 3 ? 4 : 9;
       if (kernel === 1) {
         const v2 = wgsl ? "vec2f" : "vec2";
         const declaration = (type: string, name: string, value: string) => wgsl ? `var ${name}: ${type}=${value};` : `${type} ${name}=${value};`;
@@ -210,7 +210,7 @@ ${declaration(wgsl ? "f32" : "float", "shadow", "0.")}
 ${taps}`,
         );
       } else if (wgsl) {
-        const uvPattern = kernel === 1 ? "uvDepth\\.xy" : "base_uv\\.xy\\+ vec2f\\(u\\[(\\d)\\],v\\[(\\d)\\]\\)";
+        const uvPattern = "base_uv\\.xy\\+ vec2f\\(u\\[(\\d)\\],v\\[(\\d)\\]\\)";
         adapted.replace(
           new RegExp(`(${uvPattern}),${cascaded ? "layer," : ""}uvDepth\\.z`, "g"),
           (_match, uv) => `${uv},${cascaded ? "layer," : ""}${depth(uv)}`,
