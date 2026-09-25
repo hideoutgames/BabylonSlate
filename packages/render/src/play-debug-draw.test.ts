@@ -1,3 +1,4 @@
+import { StandardMaterial } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { createTestEngine } from "./create-null-engine";
@@ -121,11 +122,67 @@ describe("play debug draw", () => {
       draw({
         kind: "line",
         duration: 0,
+        frameId: 2,
         start: { x: 0, y: 1, z: 0 },
         end: { x: 1, y: 1, z: 0 },
       }),
     );
     expect(overlayMeshes(scene)).toHaveLength(1);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("keeps every duration-0 draw from one runtime tick until the next tick replaces them", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    overlay.applyCommand(
+      draw({ kind: "circle", duration: 0, center: { x: 1, y: 0, z: 0 }, radius: 0.1 }),
+    );
+    expect(overlayMeshes(scene)).toHaveLength(2);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        frameId: 2,
+        start: { x: 0, y: 1, z: 0 },
+        end: { x: 1, y: 1, z: 0 },
+      }),
+    );
+    expect(overlayMeshes(scene)).toHaveLength(1);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("disposes the thick line material when the line expires", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    const materialCount = scene.materials.length;
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        thickness: 2,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    const line = scene.meshes.find((mesh) => mesh.name.startsWith(PLAY_DEBUG_DRAW_PREFIX));
+    expect(line?.material).toBeInstanceOf(StandardMaterial);
+    scene.render();
+    overlay.noteSimTick(1);
+    overlay.noteSimTick(2);
+    expect(overlayMeshes(scene)).toHaveLength(0);
+    expect(scene.materials).toHaveLength(materialCount);
     overlay.dispose();
     engine.dispose();
   });
