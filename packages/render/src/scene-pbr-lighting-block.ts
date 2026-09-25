@@ -1,7 +1,6 @@
 import {
   PBRMetallicRoughnessBlock,
   NodeMaterialBlockTargets,
-  NodeMaterialBlockConnectionPointTypes,
   type Effect,
   type Mesh,
   type NodeMaterial,
@@ -15,6 +14,9 @@ import { syncSceneLightSamplers } from "./scene-light-samplers";
 import {
   BAKED_IRRADIANCE_INV_PI_GLSL,
   bakedIrradianceTexelSample,
+  bindBakedIrradiance,
+  emitBakedIrradianceInputs,
+  prepareBakedIrradianceDefines,
   type BakedIrradianceSampling,
 } from "./baked-irradiance";
 
@@ -38,26 +40,12 @@ export class ScenePbrLightingBlock extends PBRMetallicRoughnessBlock {
     mesh?: Mesh,
   ): void {
     super.prepareDefines(defines, material, mesh);
-    defines.setValue("SLATE_BAKED", !!this.bakedIrradiance, true);
-    defines.setValue(
-      "SLATE_BAKED_ENV",
-      !!this.bakedIrradiance?.includesEnvironment,
-      true,
-    );
+    prepareBakedIrradianceDefines(defines, this.bakedIrradiance);
   }
 
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
-    if (this.bakedIrradiance) {
-      effect.setTexture("slateBakedIrradiance", this.bakedIrradiance.texture);
-      effect.setFloat4(
-        "slateBakedRect",
-        this.bakedIrradiance.scale[0],
-        this.bakedIrradiance.scale[1],
-        this.bakedIrradiance.offset[0],
-        this.bakedIrradiance.offset[1],
-      );
-    }
+    bindBakedIrradiance(effect, this.bakedIrradiance);
   }
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
@@ -70,31 +58,9 @@ export class ScenePbrLightingBlock extends PBRMetallicRoughnessBlock {
     super._buildBlock(state);
     bindNodeShadowView(state, start, this.view.associatedVariableName);
     if (!this.bakedIrradiance) return this;
-    const wgsl = state.shaderLanguage === 1;
-    if (state.target === NodeMaterialBlockTargets.Vertex) {
-      state._emitVaryingFromString(
-        "vSlateBakedUV",
-        NodeMaterialBlockConnectionPointTypes.Vector2,
-        "SLATE_BAKED",
-      );
-      if (!state.attributes.includes("uv2")) state.attributes.push("uv2");
-      state.compilationString += wgsl
-        ? "\nvertexOutputs.vSlateBakedUV=vertexInputs.uv2;"
-        : "\nvSlateBakedUV=uv2;";
-      return this;
-    }
+    emitBakedIrradianceInputs(state);
     if (state.target !== NodeMaterialBlockTargets.Fragment) return this;
-    state._emitVaryingFromString(
-      "vSlateBakedUV",
-      NodeMaterialBlockConnectionPointTypes.Vector2,
-      "SLATE_BAKED",
-    );
-    state._emitUniformFromString(
-      "slateBakedRect",
-      NodeMaterialBlockConnectionPointTypes.Vector4,
-      "SLATE_BAKED",
-    );
-    state._emit2DSampler("slateBakedIrradiance", "SLATE_BAKED");
+    const wgsl = state.shaderLanguage === 1;
     // The texel sample lands inline so WGSL can read `fragmentInputs` and the
     // `uniforms` block — a top-level fn could not see either. `finalDiffuse`
     // is declared unconditionally by pbrBlockFinalUnlitComponents; joining

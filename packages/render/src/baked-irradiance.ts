@@ -1,4 +1,11 @@
-import type { BaseTexture } from "@babylonjs/core";
+import {
+  NodeMaterialBlockConnectionPointTypes,
+  NodeMaterialBlockTargets,
+  type BaseTexture,
+  type Effect,
+  type NodeMaterialDefines,
+} from "@babylonjs/core";
+import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 
 /**
  * The atlas asset stores linear rgba32float diffuse irradiance (the GPU
@@ -187,4 +194,58 @@ export function bakedIrradianceFragmentDeclarations(wgsl: boolean): string {
   return wgsl
     ? `var slateBakedIrradiance: texture_2d<f32>;\nvar slateBakedIrradianceSampler: sampler;\nvarying vSlateBakedUV: vec2f;\nfn slateBakedIrradianceSample() -> vec3f {\nvar slateBakedTexel: vec4f=${bakedIrradianceTexelSample(true)};\nreturn slateBakedTexel.rgb*slateBakedTexel.a;\n}`
     : `uniform sampler2D slateBakedIrradiance;\nvarying vec2 vSlateBakedUV;\nvec3 slateBakedIrradianceSample() {\nvec4 slateBakedTexel=${bakedIrradianceTexelSample(false)};\nreturn slateBakedTexel.rgb*slateBakedTexel.a;\n}`;
+}
+
+/** Graph-block defines for one receiver's sampling; `null` keeps realtime only. */
+export function prepareBakedIrradianceDefines(
+  defines: NodeMaterialDefines,
+  sampling: BakedIrradianceSampling | null,
+): void {
+  defines.setValue("SLATE_BAKED", !!sampling, true);
+  defines.setValue("SLATE_BAKED_ENV", !!sampling?.includesEnvironment, true);
+}
+
+/** Bind a graph block's atlas and rect when it samples the bake. */
+export function bindBakedIrradiance(
+  effect: Effect,
+  sampling: BakedIrradianceSampling | null,
+): void {
+  if (!sampling) return;
+  effect.setTexture("slateBakedIrradiance", sampling.texture);
+  effect.setFloat4(
+    "slateBakedRect",
+    sampling.scale[0],
+    sampling.scale[1],
+    sampling.offset[0],
+    sampling.offset[1],
+  );
+}
+
+/**
+ * Graph-block inputs of the shared sample: the vertex stage passes `uv2`
+ * through, and the fragment stage declares the varying, rect and atlas.
+ * Each block keeps its own rewrite of the generated lighting code.
+ */
+export function emitBakedIrradianceInputs(state: NodeMaterialBuildState): void {
+  if (state.target === NodeMaterialBlockTargets.Vertex) {
+    state._emitVaryingFromString(
+      "vSlateBakedUV",
+      NodeMaterialBlockConnectionPointTypes.Vector2,
+      "SLATE_BAKED",
+    );
+    if (!state.attributes.includes("uv2")) state.attributes.push("uv2");
+    state.compilationString += `\n${bakedIrradianceVertexMain(state.shaderLanguage === 1)}`;
+  } else if (state.target === NodeMaterialBlockTargets.Fragment) {
+    state._emitVaryingFromString(
+      "vSlateBakedUV",
+      NodeMaterialBlockConnectionPointTypes.Vector2,
+      "SLATE_BAKED",
+    );
+    state._emitUniformFromString(
+      "slateBakedRect",
+      NodeMaterialBlockConnectionPointTypes.Vector4,
+      "SLATE_BAKED",
+    );
+    state._emit2DSampler("slateBakedIrradiance", "SLATE_BAKED");
+  }
 }
