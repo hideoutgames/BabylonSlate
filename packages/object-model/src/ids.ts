@@ -22,6 +22,8 @@ export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
 
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
+  "LandscapeComponent",
+  "FoliageComponent",
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -79,6 +81,8 @@ const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "WaterRiverComponent",
   "WaterPuddleComponent",
   "WaterBuoyancyComponent",
+  "LandscapeComponent",
+  "FoliageComponent",
   "SkyboxComponent",
   "CameraComponent",
   "SpringArmComponent",

@@ -9,7 +9,6 @@ export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";
 export * from "./viewport";
-export * from "./texture-bytes";
 export * from "./perf-ceilings";
 export * from "./resource-cache";
 export * from "./render-scheduler";
@@ -101,3 +100,4 @@ export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from
 export * from "./shared-outline";
 export * from "./shared-outline-task";
 export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

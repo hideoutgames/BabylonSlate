@@ -8,7 +8,6 @@ import {
   releaseResourceCacheForEngine,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { accountedTextureBytes } from "./texture-bytes";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
 
@@ -579,7 +578,7 @@ describe("Play texture cache invariant with getTexture", () => {
     const bytes = new Uint8Array(32 * 32 * 4);
     // Editor retain
     const editorLease = cache.acquireTexture("shared", engine, bytes);
-    cache.account("shared", accountedTextureBytes(32, 32, "rgba8", true));
+    cache.account("shared", Math.ceil(32 * 32 * 4 * (4 / 3)));
     // Play retain (same guid + sampling → same Texture)
     const playLease = cache.acquireTexture("shared", engine, bytes);
     // Play release

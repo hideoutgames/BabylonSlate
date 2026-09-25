@@ -1,5 +1,6 @@
 import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type TransformNode } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
+import { isRigJointNode } from "./skeleton-preview";
 import type { SampledAudioPose } from "./snapshot-sync";
 
 export type BoneAttachmentCommand = Extract<CommandMessage, { type: "attachToBone" }>;
@@ -75,9 +76,7 @@ function resolveBone(root: Mesh, name: string): BoneAttachment["resolved"] {
   }
   // Rigid animated model parts form hierarchy rigs without a skin.
   const node = root.getChildTransformNodes(false).find((child) =>
-    child.name === name && child.name !== "__root__" &&
-    child.name !== "materialPreviewMesh" && !child.name.endsWith("_overlay") &&
-    !child.getClassName().includes("Camera") && !child.getClassName().includes("Light"),
+    child.name === name && isRigJointNode(child),
   );
   return node ? { node } : undefined;
 }

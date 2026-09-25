@@ -42,30 +42,6 @@ export function skyboxCubeCacheGuid(faces?: SkyboxFaces | null): string {
   return `skybox:${SKYBOX_FACE_KEYS.map((key) => parsed[key] ?? "default").join(",")}`;
 }
 
-export function skyboxCubeCacheGuidsFromScene(
-  scene:
-    | {
-        actors: ReadonlyArray<{
-          components: ReadonlyArray<{
-            classId: string;
-            properties: Record<string, unknown>;
-          }>;
-        }>;
-      }
-    | null
-    | undefined,
-): string[] {
-  const guids = new Set<string>();
-  for (const actor of scene?.actors ?? []) {
-    for (const component of actor.components) {
-      if (component.classId !== "SkyboxComponent") continue;
-      guids.add(skyboxCubeCacheGuid(parseSkyboxFaces(component.properties.faces)));
-    }
-  }
-  return [...guids];
-}
-
-
 export function isSkyboxMesh(mesh: AbstractMesh): boolean {
   return Boolean((mesh.metadata as { skybox?: boolean } | null)?.skybox);
 }

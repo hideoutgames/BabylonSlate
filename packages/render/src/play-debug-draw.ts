@@ -11,7 +11,7 @@ import {
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion } from "@babylonslate/core";
-import { RENDERING_GROUP } from "./sorting";
+import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
@@ -70,20 +70,6 @@ function asColor(value: unknown): Color3 {
   );
 }
 
-function markOverlay(mesh: AbstractMesh): void {
-  mesh.isPickable = false;
-  mesh.receiveShadows = false;
-  mesh.applyFog = false;
-  mesh.renderingGroupId = RENDERING_GROUP.world;
-  mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
-  for (const child of mesh.getChildMeshes()) {
-    child.renderingGroupId = RENDERING_GROUP.world;
-    child.isPickable = false;
-    child.receiveShadows = false;
-    child.applyFog = false;
-  }
-}
-
 function posePoint(local: Vector3, origin: Vector3, rotation: Quaternion): Vector3 {
   return local.applyRotationQuaternion(rotation).addInPlace(origin);
 }
@@ -137,7 +123,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         scene,
       );
       mesh.color = group.color;
-      markOverlay(mesh);
+      markPlayDebugOverlay(mesh);
       meshes.push(mesh);
     }
   };
@@ -282,7 +268,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         // Capture the source before a CEL sync can swap in a wrapper; disposing
         // the source also disposes that wrapper.
         if (mesh.material) materials.push(mesh.material);
-        markOverlay(mesh);
+        markPlayDebugOverlay(mesh);
         meshes.push(mesh);
         return;
       } catch {

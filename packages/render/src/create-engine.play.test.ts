@@ -24,7 +24,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
@@ -899,7 +899,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(live.resourceCache, "releaseGpuTextures");
+    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);

@@ -597,6 +597,8 @@ export function materialAssetGuidsFromScene(
   const seen = new Set<string>();
   for (const guid of [
     ...componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
   ]) {
@@ -718,7 +720,10 @@ export function materialClosureFromGuids(
 export function modelAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
-  return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+  return [...new Set([
+    ...componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.map((batch) => batch.modelGuid) : [])) ?? []),
+  ])];
 }
 
 /** Scene Models plus source Models required to Play retargeted Animation rows. */
@@ -913,3 +918,4 @@ export function playLoadTilemapsControl(
       : {}),
   };
 }
+import { parseFoliageProperties } from "@babylonslate/core";

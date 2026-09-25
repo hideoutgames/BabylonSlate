@@ -1,9 +1,6 @@
 import type { Scene } from "@babylonjs/core";
-import { PickingInfo, Vector3 } from "@babylonjs/core";
+import { PickingInfo } from "@babylonjs/core";
 import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
-
-const scratchOrigin = new Vector3();
-const scratchDir = new Vector3();
 
 /** Resolve an imported part through its named actor ancestor. */
 export function actorMeshName(mesh: { name: string; parent: unknown }): string {
@@ -49,9 +46,4 @@ export function pickAtCanvas(
     slotId: match ? Number(match[1]) : null,
     hit: pick,
   };
-}
-
-/** Expose scratch vectors for tests without allocating in hot paths. */
-export function _pickingScratch(): { origin: Vector3; dir: Vector3 } {
-  return { origin: scratchOrigin, dir: scratchDir };
 }

@@ -6,6 +6,7 @@ import {
   type PixelPerfectSettings,
 } from "./pixel-perfect";
 import { worldPositionFromCanvas } from "./editor-place";
+import { EDITOR_CAMERA_MODEL_LAYER } from "./editor-camera-model";
 
 export const DEFAULT_CAMERA_RADIUS = 12;
 export const MIN_CAMERA_RADIUS = 0.5;
@@ -133,6 +134,7 @@ export function createEditorCamera(
     scene,
   );
   camera.lowerRadiusLimit = MIN_CAMERA_RADIUS;
+  camera.layerMask |= EDITOR_CAMERA_MODEL_LAYER;
   camera.upperRadiusLimit = MAX_CAMERA_RADIUS;
   camera.inertia = 0;
   camera.panningInertia = 0;

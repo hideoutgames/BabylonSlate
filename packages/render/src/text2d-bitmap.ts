@@ -192,6 +192,8 @@ function softwareGlyphSize(style: RichTextStyle) {
   return {
     width: ASCII_BITMAP_COLS * scale + (style.bold ? scale : 0) + outlinePx * 2 + 2,
     height: ASCII_BITMAP_ROWS * scale + outlinePx * 2 + 2,
+    scale,
+    outlinePx,
   };
 }
 
@@ -241,7 +243,7 @@ export function measureBitmapGlyph(
   scratch?: BitmapCanvasScratch,
 ): BitmapGlyphMeasurement {
   const software = softwareGlyphSize(style);
-  let layout = software;
+  let layout: { width: number; height: number } = software;
   const ctx = glyphCanvas(scratch)?.ctx;
   if (ctx) {
     ctx.font = cssFontForText2D(style, stack);
@@ -263,12 +265,8 @@ function rasterizeSoftwareBitmapGlyph(
   style: RichTextStyle,
   key: string,
 ): BitmapGlyphCell {
-  const scale = Math.max(1, Math.round(style.size / ASCII_BITMAP_ROWS));
-  const outlinePx = Math.max(0, Math.round(style.outline));
-  const boldExtra = style.bold ? scale : 0;
-  const width =
-    ASCII_BITMAP_COLS * scale + boldExtra + outlinePx * 2 + 2;
-  const height = ASCII_BITMAP_ROWS * scale + outlinePx * 2 + 2;
+  // The allocation preflight reserved this cell size; paint with the same numbers.
+  const { width, height, scale, outlinePx } = softwareGlyphSize(style);
   const pixels = new Uint8ClampedArray(width * height * 4);
   const rows = asciiBitmapRows(ch);
   const paint = (

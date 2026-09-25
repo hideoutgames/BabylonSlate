@@ -78,6 +78,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
+  composeActorComponentTransformToRef,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -114,8 +115,6 @@ import type { MaterialResolveOptions } from "./material-library";
 const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
-const scratchLocalPos = new Vector3();
-const scratchPartQuat = new Quaternion();
 const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
 const scratchBoneSlot: ActorSlot = {
   slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
@@ -514,6 +513,7 @@ function partsNeedOrigin(
   if (parts.length > 1 || parts.some((part) => part.meshKind === "water")) return true;
   const part = parts[0]!;
   return (
+    Boolean(part.landscape || part.foliage) ||
     part.position[0] !== 0 ||
     part.position[1] !== 0 ||
     part.position[2] !== 0 ||
@@ -744,7 +744,7 @@ export function applyAssignMesh(
   }
   const ownsTexture = (kind: string | null | undefined) =>
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
-  const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
+  const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
       part.meshAssetGuid && !["water", "sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
@@ -1254,6 +1254,8 @@ function createPlayVisual(
         deferredModels,
         retainedBitmapBytes,
         targets,
+        part.landscape,
+        part.foliage,
         part.water,
       );
       child.parent = root;
@@ -1372,6 +1374,8 @@ export function createPlayMesh(
   deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
+  landscape?: import("@babylonslate/core").LandscapeProperties,
+  foliage?: import("@babylonslate/core").FoliageProperties,
   water?: import("@babylonslate/core").WaterBodyProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
@@ -1380,6 +1384,8 @@ export function createPlayMesh(
     const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
     return createWaterMesh(scene, name, water, definition, material);
   }
+  if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
+  if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
     const tilesets = binding.tilesets ?? new Map();
@@ -1803,29 +1809,11 @@ function composeSlotPartTransform(
     scratchComposedPart.rotation.copyFromFloats(actor.rotation.x, actor.rotation.y, actor.rotation.z, actor.rotation.w);
     return scratchComposedPart;
   }
-  scratchQuat.set(
-    actor.rotation.x,
-    actor.rotation.y,
-    actor.rotation.z,
-    actor.rotation.w,
-  );
-  scratchLocalPos.set(
-    part.position[0] * actor.scale.x,
-    part.position[1] * actor.scale.y,
-    part.position[2] * actor.scale.z,
-  );
-  scratchLocalPos.applyRotationQuaternionInPlace(scratchQuat);
-  scratchPartQuat.set(
-    part.rotation[0],
-    part.rotation[1],
-    part.rotation[2],
-    part.rotation[3],
-  );
-  scratchQuat.multiplyToRef(scratchPartQuat, scratchComposedPart.rotation);
-  scratchComposedPart.position.set(
-    actor.position.x + scratchLocalPos.x,
-    actor.position.y + scratchLocalPos.y,
-    actor.position.z + scratchLocalPos.z,
+  composeActorComponentTransformToRef(
+    actor,
+    part,
+    scratchComposedPart.position,
+    scratchComposedPart.rotation,
   );
   return scratchComposedPart;
 }
@@ -1861,3 +1849,5 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
   }
 }
 import { AreaRectLightGroup } from "./area-rect-light";
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh } from "./foliage-mesh";

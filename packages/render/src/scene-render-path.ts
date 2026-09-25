@@ -1,11 +1,5 @@
 import { engineBackendStatus } from "./backend-status";
-import {
-  Camera,
-  DirectionalLight,
-  HemisphericLight,
-  type Light,
-  type Scene,
-} from "@babylonjs/core";
+import type { Light, Scene } from "@babylonjs/core";
 import {
   resolveRenderingPipeline,
   type ClusteredRenderingAvailability,
@@ -13,12 +7,14 @@ import {
 } from "@babylonslate/core";
 import {
   ClusteredSceneLights,
+  isClusterableCamera,
   isClusterableLocalLight,
 } from "./clustered-scene-lights";
 import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { isGlobalLight } from "./light-policy";
 import { renderPathSession } from "./render-path-session";
 import { sceneRenderingSettings } from "./render-settings";
 import { findSceneShadowController } from "./shadow-controller";
@@ -210,16 +206,7 @@ class SceneRenderPath {
     const scene = this.scene;
     const capability = clusteredLightCapabilities(scene.getEngine());
     if (capability.supported === false) return capability;
-    const camera = scene.activeCamera;
-    if (
-      !camera ||
-      camera.getScene() !== scene ||
-      camera.isDisposed() ||
-      camera.mode !== Camera.PERSPECTIVE_CAMERA ||
-      camera.minZ <= 0 ||
-      !Number.isFinite(camera.maxZ) ||
-      camera.maxZ <= camera.minZ
-    )
+    if (!isClusterableCamera(scene, scene.activeCamera))
       return {
         supported: false,
         reason:
@@ -234,10 +221,7 @@ class SceneRenderPath {
         !shadows?.requestsShadow(light) &&
         !light.getShadowGenerators()?.size,
     ).length;
-    const globals = this.registry.filter(
-      (light) =>
-        light instanceof DirectionalLight || light instanceof HemisphericLight,
-    ).length;
+    const globals = this.registry.filter(isGlobalLight).length;
     // Count authored structure, not positions, intensity, effective Enabled or
     // camera-selected shadow maps. Auto does not thrash on ordinary movement.
     const slots = Math.max(

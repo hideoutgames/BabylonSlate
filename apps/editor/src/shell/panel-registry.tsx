@@ -288,4 +288,10 @@ export const panelComponents = {
   ),
   "trace-log": (props: IDockviewPanelProps) => <TraceLogPanel {...props} />,
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
+  "landscape-outliner": LandscapeOutlinerPanel,
+  "landscape-settings": LandscapeSettingsPanel,
+  "foliage-groups": FoliageGroupsPanel,
+  "foliage-settings": FoliageSettingsPanel,
+  "foliage-outliner": FoliageOutlinerPanel,
 };
+import { LandscapeOutlinerPanel, LandscapeSettingsPanel, FoliageGroupsPanel, FoliageSettingsPanel, FoliageOutlinerPanel } from "../panels/scene-environment-panels";

@@ -73,7 +73,7 @@ describe("Water rendering", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const body = normalizeWaterBody({ width: 2, waveScale: 0, points: [[0, 4, 0], [0, 2, 10]], resolution: 8 }, "river");
     try {
-      const mesh = createPlayMesh(scene, 1, "water", null, undefined, undefined, undefined, undefined, undefined, undefined, undefined, body);
+      const mesh = createPlayMesh(scene, 1, "water", null, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, body);
       const box = mesh.getBoundingInfo().boundingBox;
       expect(box.minimum.x).toBeCloseTo(-1);
       expect(box.maximum.x).toBeCloseTo(1);

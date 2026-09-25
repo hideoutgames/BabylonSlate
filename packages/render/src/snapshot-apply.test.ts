@@ -9,7 +9,7 @@ import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset
 import { DEFAULT_SORTING_LAYERS, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
-import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
+import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
 import { RENDERING_GROUP, resolveSortingLayer } from "./sorting";
@@ -66,11 +66,6 @@ describe("createPlayMesh", () => {
       handle?.scene.dispose();
       handle?.engine.dispose();
     }
-  });
-
-  it("lists named clips from an animated GLB and none from a static triangle", () => {
-    expect(glbClipNames(encodeAnimatedTriangleGlb("Walk"))).toEqual(["Walk"]);
-    expect(glbClipNames(encodeTriangleGlb())).toEqual([]);
   });
 
   it("binds a sprite texture and loads a GLB assetGuid instead of a box", () => {
@@ -315,7 +310,6 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
     binding.modelSources = installModelSources(binding);
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
-    expect(glbClipNames(encodeTriangleGlb())).toEqual([]);
     await binding.slotAnimLoads?.get(2);
     expect(model.visibility).toBe(0);
     expect(model.getChildMeshes().length).toBeGreaterThan(0);
