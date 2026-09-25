@@ -14,6 +14,8 @@ export function applyMaterialBounds(mesh: AbstractMesh): void {
     mesh.setBoundingInfo(new BoundingInfo(base.boundingBox.minimum.subtract(extent), base.boundingBox.maximum.add(extent), mesh.getWorldMatrix()));
   } else {
     mesh.setBoundingInfo(base);
+    // World updates went to the padded info; refresh even when the world matrix is frozen.
+    base.update(mesh.getWorldMatrix());
     originals.delete(mesh);
   }
 }
