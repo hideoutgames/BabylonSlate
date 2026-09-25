@@ -1,6 +1,6 @@
 import {
   Constants, EffectFallbacks, Material, ShaderLanguage, VertexBuffer,
-  type AbstractMesh, type BaseTexture, type DrawWrapper, type SubMesh,
+  type AbstractMesh, type BaseTexture, type DrawWrapper, type Effect, type Matrix, type SmartArray, type SubMesh,
 } from "@babylonjs/core";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { AddClipPlaneUniforms, BindClipPlane, PrepareStringDefinesForClipPlanes } from "@babylonjs/core/Materials/clipPlaneMaterialHelper";
@@ -21,6 +21,11 @@ export class SharedOutlineMaskRenderer {
   private readonly renderer: ObjectRenderer;
   private readonly view: SharedOutlineView;
   private readonly group: SharedOutlineGroup;
+  /** Instancing mode of the most recent instances() call. */
+  private hardware = false;
+  private currentEffect: Effect | undefined;
+  // One callback for every submission; _processRendering invokes it synchronously.
+  private readonly setInstanceWorld = (_instance: boolean, world: Matrix) => this.currentEffect!.setMatrix("world", world);
   constructor(renderer: ObjectRenderer, view: SharedOutlineView, group: SharedOutlineGroup) {
     this.renderer = renderer; this.view = view; this.group = group;
     renderer.customIsReadyFunction = (mesh) => {
@@ -37,10 +42,9 @@ export class SharedOutlineMaskRenderer {
         engine.setAlphaMode(Constants.ALPHA_DISABLE);
         engine.setDepthBuffer(true); engine.setDepthWrite(true);
         engine.setColorWrite(false);
-        for (let i = 0; i < depthOnly.length; i++) this.draw(depthOnly.data[i]!);
+        this.drawList(depthOnly);
         engine.setColorWrite(true);
-        for (const list of [opaque, tested, transparent])
-          for (let i = 0; i < list.length; i++) this.draw(list.data[i]!);
+        this.drawList(opaque); this.drawList(tested); this.drawList(transparent);
       } finally {
         engine.setAlphaMode(alpha); engine.setColorWrite(color);
         engine.setDepthBuffer(depth); engine.setDepthWrite(write);
@@ -73,15 +77,17 @@ export class SharedOutlineMaskRenderer {
     // Readiness precedes visibility dispatch and the first ID VBO. Registration
     // keeps async compilation on the same variant before and during drawing.
     // Mirrored replacement draws retain Babylon's noninstanced world transform.
-    return { batch, hardware: !replacement && (!!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances ||
-      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined) };
+    this.hardware = !replacement && (!!batch.hardwareInstancedRendering[subMesh._id] || mesh.hasThinInstances ||
+      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined);
+    return batch;
   }
   private ready(subMesh: SubMesh): boolean {
     const source = this.source(subMesh);
     if (!source) return true;
     const mesh = subMesh.getRenderingMesh();
     this.view.owner.prepareRenderSource(mesh);
-    const { hardware } = this.instances(subMesh);
+    this.instances(subMesh);
+    const hardware = this.hardware;
     let program = this.programs.get(subMesh);
     if (program && program.source !== source) {
       this.retire(subMesh, program); this.programs.delete(subMesh); program = undefined;
@@ -180,7 +186,8 @@ export class SharedOutlineMaskRenderer {
     if (!original) return;
     const mesh = subMesh.getRenderingMesh(), effective = subMesh.getEffectiveMesh();
     effective._internalAbstractMeshDataInfo._isActiveIntermediate = false;
-    const { batch, hardware } = this.instances(subMesh);
+    // Keep this submission's mode; ready() refreshes the field after source admission.
+    const batch = this.instances(subMesh), hardware = this.hardware;
     if (batch.mustReturn || !this.ready(subMesh)) { this.renderer.resetRefreshCounter(); return; }
     const engine = this.view.scene.getEngine();
     let orientation = original._getEffectiveOrientation(mesh);
@@ -219,7 +226,11 @@ export class SharedOutlineMaskRenderer {
     effect.setFloat("discardNonmembers", this.group === "strict" ? 0 : 1);
     effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
     effect.setTexture("styleSampler", this.view.styleTexture(this.group));
-    mesh._processRendering(effective, subMesh, effect, original.fillMode, batch, hardware, (_instance, world) => effect.setMatrix("world", world));
+    this.currentEffect = effect;
+    mesh._processRendering(effective, subMesh, effect, original.fillMode, batch, hardware, this.setInstanceWorld);
+  }
+  private drawList(list: SmartArray<SubMesh>): void {
+    for (let i = 0; i < list.length; i++) this.draw(list.data[i]!);
   }
   private retireWrapper(subMesh: SubMesh, program: MaskProgram): void {
     const wrapper = program.wrapper ?? subMesh._getDrawWrapper(this.renderer.renderPassId);
