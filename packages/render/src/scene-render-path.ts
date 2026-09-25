@@ -38,6 +38,24 @@ function requested(
   );
 }
 
+/** Equal exactly when the published status content is equal. */
+function samePipeline(
+  a: ResolvedRenderingPipeline,
+  b: ResolvedRenderingPipeline,
+): boolean {
+  if (
+    a.requested.renderPath !== b.requested.renderPath ||
+    a.requested.gpuBackend !== b.requested.gpuBackend ||
+    a.effective.renderPath !== b.effective.renderPath ||
+    a.effective.gpuBackend !== b.effective.gpuBackend ||
+    a.limits.length !== b.limits.length
+  )
+    return false;
+  for (let index = 0; index < a.limits.length; index++)
+    if (a.limits[index] !== b.limits[index]) return false;
+  return true;
+}
+
 /** Read-only metadata. Renderer preparation resolves the actual capabilities first. */
 export function sceneRenderPathStatus(scene: Scene): ResolvedRenderingPipeline {
   return owners.get(scene)?.status ?? requested(scene);
@@ -87,8 +105,11 @@ class SceneRenderPath {
   private registry: Light[] = [];
   private cluster: ClusteredSceneLights | undefined;
   private selection: ResolvedRenderingPipeline;
+  private cachedPreference:
+    | { project: unknown; session: unknown; backend: unknown; pipeline: ResolvedRenderingPipeline }
+    | undefined;
   private syncing = false;
-  private published = "";
+  private published: ResolvedRenderingPipeline | undefined;
 
   private readonly scene: Scene;
 
@@ -109,7 +130,7 @@ class SceneRenderPath {
     this.syncing = true;
     try {
       const scene = this.scene;
-      const preference = requested(scene);
+      const preference = this.requestedPreference();
       if (preference.requested.renderPath === "forward") {
         this.selection = preference;
         this.cluster?.dispose();
@@ -140,7 +161,8 @@ class SceneRenderPath {
         registry.length !== this.registry.length ||
         registry.some((light, index) => light !== this.registry[index]);
       this.registry = registry;
-      this.selection = requested(scene, this.availability());
+      const selection = requested(scene, this.availability());
+      if (!samePipeline(selection, this.selection)) this.selection = selection;
       if (this.selection.effective.renderPath === "clusteredForward") {
         if (!this.cluster)
           this.cluster = new ClusteredSceneLights(scene, registry);
@@ -160,10 +182,28 @@ class SceneRenderPath {
     this.status = failure
       ? requested(this.scene, { supported: false, reason: failure })
       : this.selection;
-    const key = JSON.stringify(this.status);
-    if (key === this.published) return;
-    this.published = key;
+    if (this.published && samePipeline(this.status, this.published)) return;
+    // Compare later statuses against the notified content, not a shared object.
+    this.published = {
+      requested: { ...this.status.requested },
+      effective: { ...this.status.effective },
+      limits: [...this.status.limits],
+    };
     for (const listener of this.listeners) listener(this.status);
+  }
+
+  /** requested() without availability, reused while its inputs keep their identity. */
+  private requestedPreference(): ResolvedRenderingPipeline {
+    const engine = this.scene.getEngine();
+    const project = sceneRenderingSettings(this.scene).project;
+    const session = renderPathSession(engine);
+    const backend = engineBackendStatus(engine);
+    const cached = this.cachedPreference;
+    if (cached && cached.project === project && cached.session === session && cached.backend === backend)
+      return cached.pipeline;
+    const pipeline = requested(this.scene);
+    this.cachedPreference = { project, session, backend, pipeline };
+    return pipeline;
   }
 
   private availability(): ClusteredRenderingAvailability {

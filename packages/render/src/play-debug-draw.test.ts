@@ -1,3 +1,4 @@
+import type { LinesMesh } from "@babylonjs/core";
 import { describe, expect, it } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { createTestEngine } from "./create-null-engine";
@@ -289,6 +290,13 @@ describe("play debug draw", () => {
       expect(overlay.applyCommand(command)).toBe(true);
       expect(overlayMeshes(scene).length).toBeGreaterThan(before);
     }
+    const drawn = (kind: string) =>
+      scene.meshes.filter((mesh): mesh is LinesMesh => mesh.name.startsWith(`${PLAY_DEBUG_DRAW_PREFIX}${kind}:`));
+    // Thin segments of one color share a line system: all 12 box edges.
+    expect(drawn("box")).toHaveLength(1);
+    expect(drawn("box")[0]!.getIndices()).toHaveLength(24);
+    // Each coordinate axis keeps its own color.
+    expect(new Set(drawn("coordinateSystem").map((axis) => axis.color.toHexString())).size).toBe(3);
     overlay.dispose();
     expect(overlayMeshes(scene)).toHaveLength(0);
     engine.dispose();

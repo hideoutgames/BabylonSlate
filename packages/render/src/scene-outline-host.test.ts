@@ -151,6 +151,8 @@ describe("authored scene outline host", () => {
     const loaded = MeshBuilder.CreateBox("loaded-part", {}, scene);
     host.setActor("a", [loaded], bindings);
     expect(host.selection.selected()).toEqual([loaded]);
+    expect(host.view.contributions.get("component:a:ink")?.targets[0]?.meshes).toEqual([loaded]);
+    expect(host.view.meshesForGroup("strict")).toEqual([loaded, b]);
     expect(host.view.contributions.get("component:b:ink")?.targets[0]?.meshes).toEqual([b]);
     host.removeActor("a");
     expect(host.selection.selected()).toEqual([]);

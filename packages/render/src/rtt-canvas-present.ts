@@ -1,6 +1,6 @@
 import { Constants, NullEngine, RenderTargetTexture, type Scene } from "@babylonjs/core";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
-import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { createRttCanvasBlitter } from "./flip-read-pixels";
 
 export type RttCanvasPresent = {
   /** Size the RTT from the canvas and assign `camera.outputRenderTarget`. */
@@ -31,6 +31,7 @@ export function createRttCanvasPresent(
   let generation = new AbortController();
   let disposed = false;
   let lastReadbackMs: number | null = null;
+  const blitter = createRttCanvasBlitter();
 
   const release = () => {
     disposed = true;
@@ -83,7 +84,7 @@ export function createRttCanvasPresent(
     const work = (async () => {
       const start = performance.now();
       try {
-        const buffer = await texture.readPixels();
+        const buffer = await blitter.read(texture);
         signal.throwIfAborted();
         if (!buffer) {
           if (scene.getEngine() instanceof NullEngine) return;
@@ -94,11 +95,7 @@ export function createRttCanvasPresent(
         const { width, height } = texture.getSize();
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        ctx.putImageData(
-          new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
-          0,
-          0,
-        );
+        blitter.put(ctx, buffer, width, height);
         lastReadbackMs = performance.now() - start;
       } catch (error) {
         lastReadbackMs = null;

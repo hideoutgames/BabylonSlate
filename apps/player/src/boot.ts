@@ -93,9 +93,6 @@ export type PlayerBootHandle = {
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
-  bakedSession: () => ReturnType<
-    EngineHandle["bakedSessionDiagnostics"]
-  > | null;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
   /** Prepared FrameGraph task names, or null once halted. */
@@ -111,7 +108,7 @@ export type PlayerBootHandle = {
 
 /** Browser qualification surface installed only in test-mode player builds. */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" | "bakedSession" |
+  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 >;
 
@@ -249,11 +246,6 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
-    // Baked lighting/geometry pack as self-contained babasset containers.
-    bakeAssetReader: async (guid) => {
-      const bytes = game.payloads.get(guid);
-      return bytes ? { bytes } : undefined;
-    },
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
@@ -760,8 +752,6 @@ function initializePlayer(
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
-      bakedSession: () =>
-        halted ? null : handle.bakedSessionDiagnostics(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
       renderTasks: () => (halted ? null : handle.renderTaskNames()),

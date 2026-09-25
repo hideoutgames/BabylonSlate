@@ -36,6 +36,7 @@ import { runSceneWork, type SceneWorkOptions } from "./scene-work";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import {
   freezeEditorActiveMeshes,
+  hasEditorActiveMeshFreeze,
   isStructuralEditorChange,
   unfreezeEditorActiveMeshes,
 } from "./scene-perf";
@@ -255,7 +256,9 @@ export class EditorSceneSync {
     rebuild ||= this.assetsNeedRebuild;
     // Blocking loads already require final readiness; skip the immediate path's
     // full-document structural pre-scan and unfreeze before phased planning.
-    if (cooperative || rebuild || isStructuralEditorChange(this.lastScene, sceneData)) unfreezeEditorActiveMeshes(this.scene);
+    // Without a freeze to release, the pre-scan would decide nothing.
+    if (cooperative || rebuild || (hasEditorActiveMeshFreeze(this.scene) &&
+      isStructuralEditorChange(this.lastScene, sceneData))) unfreezeEditorActiveMeshes(this.scene);
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
     const nextKinds = new Map<string, string | null>();

@@ -328,6 +328,13 @@ describe("EditorDebugOverlay", () => {
     origin.position.x = 20;
     overlay.followLivePose();
     expect(root.position.asArray()).toEqual([122, 0, 0]);
+    // A rebuilt emitter replaces the one the overlay was following.
+    visual.dispose();
+    const rebuilt = MeshBuilder.CreateBox(editorComponentMeshName(actor.id, "audio"), {}, scene);
+    rebuilt.parent = origin;
+    rebuilt.position.x = 3;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.position.asArray()).toEqual([126, 0, 0]);
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [], audioLibrary });
     expect(root.isDisposed()).toBe(true);
     expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);

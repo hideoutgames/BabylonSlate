@@ -6,6 +6,7 @@ import {
   StandardMaterial,
   Vector3,
   VertexData,
+  type AbstractMesh,
   type LinesMesh,
   type Material,
   type Scene,
@@ -29,12 +30,12 @@ function markDebugOverlay(mesh: Mesh | LinesMesh): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
 }
 
-function playMeshes(scene: Scene): Mesh[] {
-  return scene.meshes.filter(
-    (mesh): mesh is Mesh =>
-      mesh instanceof Mesh &&
-      !mesh.name.startsWith(DEBUG_OVERLAY_PREFIX) &&
-      !isPlayConsoleVizSkipMesh(mesh),
+// Refresh runs per applied snapshot; callers walk scene.meshes in place.
+function isPlayMesh(mesh: AbstractMesh): mesh is Mesh {
+  return (
+    mesh instanceof Mesh &&
+    !mesh.name.startsWith(DEBUG_OVERLAY_PREFIX) &&
+    !isPlayConsoleVizSkipMesh(mesh)
   );
 }
 
@@ -52,7 +53,8 @@ export function applyPlayWireframe(scene: Scene, enabled: boolean): void {
     originals = new Map();
     wireframeRestore.set(scene, originals);
   }
-  for (const mesh of playMeshes(scene)) {
+  for (const mesh of scene.meshes) {
+    if (!isPlayMesh(mesh)) continue;
     const material = mesh.material;
     if (!material || typeof material.wireframe !== "boolean") continue;
     if (!originals.has(material)) originals.set(material, material.wireframe);
@@ -61,44 +63,85 @@ export function applyPlayWireframe(scene: Scene, enabled: boolean): void {
 }
 
 export function applyPlayShowBounds(scene: Scene, enabled: boolean): void {
-  for (const mesh of playMeshes(scene)) {
-    mesh.showBoundingBox = enabled;
+  for (const mesh of scene.meshes) {
+    if (isPlayMesh(mesh)) mesh.showBoundingBox = enabled;
   }
 }
 
-function colliderShapeKey(collider: DebugColliderPrimitive): string | null {
-  if (collider.shape === "box" && collider.halfExtents) {
-    const { x, y, z } = collider.halfExtents;
-    return `box:${x}:${y}:${z}`;
+function hasColliderShape(collider: DebugColliderPrimitive): boolean {
+  switch (collider.shape) {
+    case "box":
+      return Boolean(collider.halfExtents);
+    case "sphere":
+    case "circle":
+      return collider.radius != null;
+    case "polyline":
+      return Boolean(collider.points && collider.points.length > 1);
+    case "capsule":
+    case "capsule2d":
+      return collider.radius != null && collider.halfHeight != null;
+    case "cylinder":
+      return collider.radius != null && collider.height != null;
+    case "mesh":
+      return Boolean(collider.points && collider.indices && collider.indices.length >= 3);
+    case "convex":
+      return Boolean(collider.points && collider.points.length >= 4);
+    default:
+      return false;
   }
-  if (collider.shape === "sphere" && collider.radius != null) {
-    return `sphere:${collider.radius}`;
+}
+
+/** Equal like their string forms were: NaN matches NaN and -0 matches 0. */
+function sameValue(a: number | undefined, b: number | undefined): boolean {
+  return a === b || Object.is(a, b);
+}
+
+function samePoints(
+  a: readonly { x: number; y: number; z: number }[] | undefined,
+  b: readonly { x: number; y: number; z: number }[] | undefined,
+): boolean {
+  if (!a || !b || a.length !== b.length) return a === b;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]!;
+    const q = b[i]!;
+    if (!sameValue(p.x, q.x) || !sameValue(p.y, q.y) || !sameValue(p.z, q.z)) return false;
   }
-  if (collider.shape === "circle" && collider.radius != null) {
-    return `circle:${collider.radius}`;
+  return true;
+}
+
+/**
+ * Compares only the fields that shape the overlay mesh, without building a
+ * key string of every vertex on each debugColliders tick. Pose is excluded.
+ */
+function sameColliderShape(a: DebugColliderPrimitive, b: DebugColliderPrimitive): boolean {
+  if (a.shape !== b.shape) return false;
+  switch (b.shape) {
+    case "box":
+      return sameValue(a.halfExtents?.x, b.halfExtents?.x) &&
+        sameValue(a.halfExtents?.y, b.halfExtents?.y) &&
+        sameValue(a.halfExtents?.z, b.halfExtents?.z);
+    case "sphere":
+    case "circle":
+      return sameValue(a.radius, b.radius);
+    case "capsule":
+    case "capsule2d":
+      return sameValue(a.radius, b.radius) && sameValue(a.halfHeight, b.halfHeight);
+    case "cylinder":
+      return sameValue(a.radius, b.radius) && sameValue(a.height, b.height);
+    case "polyline":
+    case "convex":
+      return samePoints(a.points, b.points);
+    case "mesh": {
+      if (!samePoints(a.points, b.points)) return false;
+      const ai = a.indices ?? [];
+      const bi = b.indices ?? [];
+      if (ai.length !== bi.length) return false;
+      for (let i = 0; i < ai.length; i++) if (!sameValue(ai[i], bi[i])) return false;
+      return true;
+    }
+    default:
+      return false;
   }
-  if (collider.shape === "polyline") {
-    const points = collider.points;
-    if (!points || points.length <= 1) return null;
-    return `line:${points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
-  }
-  if (
-    (collider.shape === "capsule" || collider.shape === "capsule2d") &&
-    collider.radius != null &&
-    collider.halfHeight != null
-  ) {
-    return `${collider.shape}:${collider.radius}:${collider.halfHeight}`;
-  }
-  if (collider.shape === "cylinder" && collider.radius != null && collider.height != null) {
-    return `cylinder:${collider.radius}:${collider.height}`;
-  }
-  if (collider.shape === "mesh" && collider.points && collider.indices && collider.indices.length >= 3) {
-    return `mesh:${collider.points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}:${collider.indices.join(",")}`;
-  }
-  if (collider.shape === "convex" && collider.points && collider.points.length >= 4) {
-    return `convex:${collider.points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
-  }
-  return null;
 }
 
 function applyColliderPose(
@@ -125,7 +168,9 @@ export function createPlayCollisionOverlay(scene: Scene): {
   sync(colliders: readonly DebugColliderPrimitive[]): void;
   dispose(): void;
 } {
-  const slots = new Map<string, { mesh: Mesh | LinesMesh; key: string }>();
+  // Runtime primitives are fresh objects per tick, so the slot keeps its source.
+  const slots = new Map<string, { mesh: Mesh | LinesMesh; shape: DebugColliderPrimitive }>();
+  const seen = new Set<string>();
   const material = new StandardMaterial(`${DEBUG_OVERLAY_PREFIX}collisionMat`, scene);
   material.diffuseColor = new Color3(0.2, 0.95, 0.35);
   material.disableLighting = true;
@@ -267,17 +312,16 @@ export function createPlayCollisionOverlay(scene: Scene): {
 
   return {
     sync(colliders) {
-      const seen = new Set<string>();
+      seen.clear();
       for (const collider of colliders) {
-        const key = colliderShapeKey(collider);
-        if (!key) continue;
+        if (!hasColliderShape(collider)) continue;
         seen.add(collider.id);
         let slot = slots.get(collider.id);
-        if (!slot || slot.key !== key) {
+        if (!slot || !sameColliderShape(slot.shape, collider)) {
           slot?.mesh.dispose();
           const mesh = createMesh(collider);
           if (!mesh) continue;
-          slot = { mesh, key };
+          slot = { mesh, shape: collider };
           slots.set(collider.id, slot);
         }
         if (collider.shape !== "polyline") {

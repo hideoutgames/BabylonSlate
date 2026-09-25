@@ -11,7 +11,6 @@ import {
   useSceneEditing,
 } from "../context/scene-editing-context";
 import { NavBakeProvider } from "../context/nav-bake-context";
-import { SceneBakeProvider } from "../context/scene-bake-context";
 import { AudioReverbBakeProvider } from "../context/audio-reverb-bake-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -607,7 +606,6 @@ export function DocumentWorkspace() {
               >
               <SceneToolsProvider>
               <NavBakeProvider>
-              <SceneBakeProvider>
               <PrefabEditingProvider>
               <GraphEditingProvider>
               {doc.ref.kind === "scene" ? (
@@ -631,7 +629,6 @@ export function DocumentWorkspace() {
               </DocumentShell>
               </GraphEditingProvider>
               </PrefabEditingProvider>
-              </SceneBakeProvider>
               </NavBakeProvider>
               </SceneToolsProvider>
             </SceneEditingProvider>

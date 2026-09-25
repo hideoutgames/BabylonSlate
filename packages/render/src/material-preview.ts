@@ -17,7 +17,7 @@ import {
 } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
-import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
 import {
   gltfLoaderExtension,
@@ -529,6 +529,7 @@ export function createMaterialPreviewPresenter(
   let disposed = false;
   let renderError: string | null = null;
   let readbackError: string | null = null;
+  const blitter = createRttCanvasBlitter();
 
   const releaseRtt = () => {
     rttGeneration += 1;
@@ -569,7 +570,7 @@ export function createMaterialPreviewPresenter(
     const generation = rttGeneration;
     void (async () => {
       try {
-        const buffer = await texture.readPixels();
+        const buffer = await blitter.read(texture);
         // An RTT recreation supersedes in-flight readbacks: pixels from an
         // older generation must never reach the canvas.
         if (disposed || generation !== rttGeneration || !canvas.getContext)
@@ -586,15 +587,7 @@ export function createMaterialPreviewPresenter(
         }
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        ctx.putImageData(
-          new ImageData(
-            flipReadPixelsRgba(buffer, width, height),
-            width,
-            height,
-          ),
-          0,
-          0,
-        );
+        blitter.put(ctx, buffer, width, height);
         if (readbackError) {
           readbackError = null;
           options.onError?.(null);

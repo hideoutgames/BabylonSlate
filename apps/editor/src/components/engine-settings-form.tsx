@@ -3,7 +3,7 @@ import { EnginePluginsSettings } from "./engine-plugins-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
-import type { EngineSettings } from "@babylonslate/vfs";
+import { getHostPlatform, type EngineSettings } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -187,6 +187,17 @@ export function EngineSettingsForm({
             </>
           ) : (
             <FieldDescription>Development Build</FieldDescription>
+          )}
+          {getHostPlatform() === "electron" && (
+            <Field orientation="horizontal" className="settings-field">
+              <FieldContent>
+                <FieldLabel htmlFor="setting-automatic-updates">Automatic Updates</FieldLabel>
+                <FieldDescription>
+                  Download new releases from GitHub and install them when you exit BabylonSlate. Applies to desktop release builds.
+                </FieldDescription>
+              </FieldContent>
+              <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
+            </Field>
           )}
         </FieldSet>
       ) : null}

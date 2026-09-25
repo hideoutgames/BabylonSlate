@@ -50,6 +50,8 @@ import {
   overlayPanelDestFromScale,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseSpringArmProperties,
+  SPRING_ARM_COMPONENT_CLASS_ID,
   parseText2DProperties,
   parseText3DProperties,
   normalizeSceneLayer,
@@ -3580,6 +3582,25 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private cameraAssignPayload(
+    actor: Actor,
+    camera: ActorComponent,
+  ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
+    const projection = camera.getVariable("projectionMode");
+    const settings = this.playScene?.settings;
+    return {
+      projectionMode:
+        projection === "orthographic" ? "orthographic" : "perspective",
+      fieldOfView: Number(camera.getVariable("fieldOfView") ?? 60),
+      orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
+      nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
+      farClip: Number(camera.getVariable("farClip") ?? 1000),
+      isDefault:
+        settings?.mainCameraActorId === actor.guid &&
+        settings.mainCameraComponentId === camera.guid,
+    };
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
     this.emitActorOutlines(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
@@ -3600,9 +3621,7 @@ class InProcessRuntime implements RuntimeDriver {
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.world);
-    const renderables = actor.components.filter((component) =>
-      isPlayRenderable(component, skipButtonMesh),
-    );
+    const renderables = playRenderablesOf(actor.components, skipButtonMesh);
     if (renderables.length > 0) {
       const primary = renderables[0]!;
       const meshKind = playMeshKindOf(primary);
@@ -3634,7 +3653,8 @@ class InProcessRuntime implements RuntimeDriver {
       const componentsByGuid = new Map(
         actor.components.map((component) => [component.guid, component]),
       );
-      const parts = playPartsNeeded(renderables)
+      const parts = playPartsNeeded(renderables) ||
+        renderables.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID)
         ? renderables.map((component) =>
             playMeshPartOf(
               component,
@@ -3656,6 +3676,9 @@ class InProcessRuntime implements RuntimeDriver {
         (component) =>
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
+      );
+      const armCamera = renderables.find(
+        (component) => component.classId === "CameraComponent",
       );
       this.emit({
         type: "assignMesh",
@@ -3693,6 +3716,7 @@ class InProcessRuntime implements RuntimeDriver {
             }
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
+        ...(armCamera ? { camera: this.cameraAssignPayload(actor, armCamera) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
@@ -3754,25 +3778,12 @@ class InProcessRuntime implements RuntimeDriver {
         component.classId === "CameraComponent" && !component.destroyed,
     );
     if (camera) {
-      const projection = camera.getVariable("projectionMode");
-      const settings = this.playScene?.settings;
-      const isDefault =
-        settings?.mainCameraActorId === actor.guid &&
-        settings.mainCameraComponentId === camera.guid;
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: null,
         meshKind: "camera",
-        camera: {
-          projectionMode:
-            projection === "orthographic" ? "orthographic" : "perspective",
-          fieldOfView: Number(camera.getVariable("fieldOfView") ?? 60),
-          orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
-          nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
-          farClip: Number(camera.getVariable("farClip") ?? 1000),
-          isDefault,
-        },
+        camera: this.cameraAssignPayload(actor, camera),
         parts: [playMeshPartOf(camera)],
       });
       return;
@@ -4939,6 +4950,35 @@ function isPlayRenderable(
   );
 }
 
+/**
+ * Renderable components, then spring arms and the first camera attached below
+ * one, so the camera follows the lagged arm socket.
+ */
+function playRenderablesOf(
+  components: readonly ActorComponent[],
+  skipButtonMesh: boolean,
+): ActorComponent[] {
+  const renderables = components.filter((component) =>
+    isPlayRenderable(component, skipButtonMesh),
+  );
+  const arms = components.filter(
+    (component) =>
+      component.classId === SPRING_ARM_COMPONENT_CLASS_ID && !component.destroyed,
+  );
+  if (arms.length === 0) return renderables;
+  const armIds = new Set(arms.map((component) => component.guid));
+  const componentsByGuid = new Map(
+    components.map((component) => [component.guid, component]),
+  );
+  const camera = components.find(
+    (component) =>
+      component.classId === "CameraComponent" &&
+      !component.destroyed &&
+      nearestVisualParentId(component, componentsByGuid, armIds) !== null,
+  );
+  return [...renderables, ...arms, ...(camera ? [camera] : [])];
+}
+
 function overlayHitTestOf(
   actor: Actor,
   world?: World,
@@ -5013,6 +5053,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
     return `light:${typeof kind === "string" ? kind : "point"}`;
   }
   if (component.classId === "CameraComponent") return "camera";
+  if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return "springarm";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";
   if (component.classId === "RigidBodyComponent") return "rigidbody";
@@ -5131,7 +5172,24 @@ function playMeshPartOf(
     component.classId === "TilemapComponent"
       ? playSortingOf(component)
       : {}),
+    ...(component.classId === SPRING_ARM_COMPONENT_CLASS_ID
+      ? { springArm: springArmAssignPayload(component) }
+      : {}),
   };
+}
+
+function springArmAssignPayload(
+  component: ActorComponent,
+): ReturnType<typeof parseSpringArmProperties> {
+  return parseSpringArmProperties({
+    armLength: component.getVariable("armLength"),
+    enableLocationLag: component.getVariable("enableLocationLag"),
+    locationLagSpeed: component.getVariable("locationLagSpeed"),
+    maxLocationLagDistance: component.getVariable("maxLocationLagDistance"),
+    enableRotationLag: component.getVariable("enableRotationLag"),
+    rotationLagSpeed: component.getVariable("rotationLagSpeed"),
+    drawDebugLag: component.getVariable("drawDebugLag"),
+  });
 }
 
 function nearestVisualParentId(

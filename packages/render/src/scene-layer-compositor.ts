@@ -90,6 +90,8 @@ export class SceneLayerCompositor {
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
   private readonly retiredLayers = new PostProcessRetirement();
+  /** Draw order, rebuilt only when layers are created or removed. */
+  private sortedCache: LayerRecord[] | null = null;
   private outputWidth = 0;
   private outputHeight = 0;
 
@@ -140,6 +142,7 @@ export class SceneLayerCompositor {
     };
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
+    this.sortedCache = null;
     this.rebuildPostProcess(layer, false);
     return layer;
   }
@@ -151,6 +154,7 @@ export class SceneLayerCompositor {
       if (id === layerId) this.slotLayer.delete(slotId);
     }
     this.byId.delete(layerId);
+    this.sortedCache = null;
     this.releaseFallback(layer);
     this.releasePostProcess(layer);
     // Bounded cleanup reports stay separate from actual release: the Scene is
@@ -237,10 +241,16 @@ export class SceneLayerCompositor {
   }
 
   sortedLayers(): SceneLayerView[] {
-    return [...this.byId.values()].sort((a, b) => {
+    return [...this.orderedLayers()];
+  }
+
+  /** Cached draw order for per-frame and per-pointer walks; never mutated in place. */
+  private orderedLayers(): readonly LayerRecord[] {
+    this.sortedCache ??= [...this.byId.values()].sort((a, b) => {
       if (a.zOrder !== b.zOrder) return a.zOrder - b.zOrder;
       return a.layerId < b.layerId ? -1 : a.layerId > b.layerId ? 1 : 0;
     });
+    return this.sortedCache;
   }
 
   resize(): void {
@@ -276,11 +286,10 @@ export class SceneLayerCompositor {
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
     this.resize();
-    for (const layer of this.sortedLayers()) {
-      if (!this.isLayerReady(layer.layerId) && !presentingLayers.has(layer.layerId)) continue;
-      const record = layer as LayerRecord;
+    for (const record of this.orderedLayers()) {
+      if (!this.isLayerReady(record.layerId) && !presentingLayers.has(record.layerId)) continue;
       this.bindHudCamera(record);
-      draw(layer.layerId, () => {
+      draw(record.layerId, () => {
         let readyForPresentation: boolean;
         if (record.rtt) {
           record.scene.autoClear = true;
@@ -362,9 +371,11 @@ export class SceneLayerCompositor {
       });
     };
 
-    for (const layer of [...this.sortedLayers()].reverse()) {
+    const ordered = this.orderedLayers();
+    for (let index = ordered.length - 1; index >= 0; index--) {
+      const layer = ordered[index]!;
       if (!this.isLayerReady(layer.layerId)) continue;
-      this.bindHudCamera(layer as LayerRecord);
+      this.bindHudCamera(layer);
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
       if (pick?.hit && pick.pickedMesh) {
         let mesh: {
@@ -519,7 +530,7 @@ export class SceneLayerCompositor {
     if (layer.camera.rotationQuaternion) {
       layer.camera.rotationQuaternion.set(0, 0, 0, 1);
     }
-    layer.camera.setTarget(Vector3.Zero());
+    layer.camera.setTarget(Vector3.ZeroReadOnly);
     layer.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     layer.scene.activeCamera = layer.camera;
     this.applyOrtho(layer);

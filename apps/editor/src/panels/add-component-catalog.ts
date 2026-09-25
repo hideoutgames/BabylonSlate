@@ -10,6 +10,7 @@ import {
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseOutlineProperties,
+  parseSpringArmProperties,
   createRichText2DComponent,
   createText2DComponent,
 } from "@babylonslate/core";
@@ -107,6 +108,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Rendering",
   ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
+  engineComponent(
+    "SpringArmComponent",
+    "Spring Arm",
+    "Holds child components at the end of an arm with optional location and rotation lag",
+    "Camera",
+  ),
   engineComponent(
     "AudioComponent",
     "Audio",
@@ -229,6 +236,8 @@ export function defaultPropertiesFor(
       return { ...parseAreaRectLightProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
+    case "SpringArmComponent":
+      return { ...parseSpringArmProperties({}) };
     case "HemisphericFillLightComponent":
       return {
         intensity: 0.9,

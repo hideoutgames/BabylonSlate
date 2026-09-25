@@ -117,6 +117,11 @@ export function unfreezeEditorActiveMeshes(scene: Scene): void {
   scene.unfreezeActiveMeshes();
 }
 
+/** True while an active-mesh freeze is in place or waiting for a ready frame. */
+export function hasEditorActiveMeshFreeze(scene: Scene): boolean {
+  return scene._activeMeshesFrozen || pendingFrameFreezes.has(scene);
+}
+
 export function materialLibraryAssetGuid(material: Material): string | null {
   if (!material.name.startsWith(MATERIAL_LIBRARY_PREFIX)) return null;
   return material.name.slice(MATERIAL_LIBRARY_PREFIX.length);
