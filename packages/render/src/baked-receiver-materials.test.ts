@@ -208,13 +208,15 @@ describe("baked receiver materials", () => {
     expect(mesh.material).toBe(cel);
   });
 
-  it("clones MultiMaterial children and restores the shared material on release", () => {
+  it("clones supported MultiMaterial children, keeps unsupported ones shared and restores the shared material on release", () => {
     const scene = host();
     const receivers = new BakedReceiverMaterials(scene);
     const multi = new MultiMaterial("multi", scene);
     const pbr = new PBRMaterial("pbr", scene);
     const standard = new StandardMaterial("standard", scene);
-    multi.subMaterials = [pbr, standard];
+    // An unsupported child stays the shared original; release must not dispose it.
+    const plain = new Material("plain", scene);
+    multi.subMaterials = [pbr, standard, plain];
     const mesh = MeshBuilder.CreateBox("multi-mesh", {}, scene);
     mesh.material = multi;
     const variant = receivers.apply(
@@ -229,6 +231,7 @@ describe("baked receiver materials", () => {
     expect(variant).toBeInstanceOf(MultiMaterial);
     expect(variant.subMaterials[0]).not.toBe(pbr);
     expect(variant.subMaterials[1]).not.toBe(standard);
+    expect(variant.subMaterials[2]).toBe(plain);
     expect(
       variant.subMaterials[0]!.pluginManager!.getPlugin("SlateBakedIrradiance"),
     ).not.toBeNull();
@@ -239,6 +242,7 @@ describe("baked receiver materials", () => {
     expect(scene.materials).not.toContain(children[1]);
     expect(scene.materials).toContain(pbr);
     expect(scene.materials).toContain(standard);
+    expect(scene.materials).toContain(plain);
   });
 
   it("leaves a MultiMaterial whose children cannot consume the bake on realtime lighting", () => {
