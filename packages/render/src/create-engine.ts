@@ -2601,7 +2601,9 @@ function initializeEngine(
         debugOverlay = null;
         // Rollback order: bake receivers restore before the library disposes.
         // A failed receiver restore is reported; the remaining owners still release.
-        try { bakedSession.dispose(); } catch (error) { reportReleaseFailure(error); }
+        try { bakedSession.dispose(); } catch (error) {
+          console.warn(`[render] Baked lighting receiver restore failed during view disposal: ${String(error)}`);
+        }
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
