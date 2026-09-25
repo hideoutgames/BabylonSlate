@@ -2,12 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDownIcon,
   ArrowUpRightIcon,
+  BoneIcon,
+  CopyIcon,
+  CopyPlusIcon,
+  FileInputIcon,
   FolderIcon,
+  FolderInputIcon,
   FolderPlusIcon,
+  LinkIcon,
   ListFilterIcon,
   OctagonAlertIcon,
+  PencilIcon,
   PlusIcon,
+  Trash2Icon,
   UploadIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
@@ -34,6 +43,7 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
+  type ContextMenuItem,
   AssetPicker,
   ClassPicker,
   PickerIdentity,
@@ -115,6 +125,7 @@ import {
   oursLockPaths,
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -159,7 +170,6 @@ import {
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
   runWithContentBrowserImportBusy,
-  type ContentBrowserContextAction,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
@@ -915,11 +925,13 @@ export function ContentBrowserWorkspace({
     [assetRegistry, classParentOf, selectedFolderPath],
   );
 
+  const keybinds = useKeybindings();
   const tileContextItems = useMemo(
     () => [
       {
         id: "open" as const,
         label: "Open",
+        icon: <ArrowUpRightIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
@@ -931,6 +943,7 @@ export function ContentBrowserWorkspace({
       {
         id: "import-msdf-atlas" as const,
         label: "Import MSDF Atlas…",
+        icon: <FileInputIcon />,
         onSelect: () => {
           void (async () => {
             const guid = menuTargetGuidsRef.current[0];
@@ -973,6 +986,8 @@ export function ContentBrowserWorkspace({
       {
         id: "duplicate" as const,
         label: "Duplicate",
+        icon: <CopyPlusIcon />,
+        shortcut: keybinds.get("edit.duplicate")?.[0],
         onSelect: () => {
           void (async () => {
             if (!assetRegistry) return;
@@ -1009,6 +1024,8 @@ export function ContentBrowserWorkspace({
       {
         id: "rename" as const,
         label: "Rename",
+        icon: <PencilIcon />,
+        shortcut: keybinds.get("edit.rename")?.[0],
         onSelect: () => {
           const folders = menuTargetFoldersRef.current.filter(
             (path) => !isFolderTreeRoot(path, rootPrefixes),
@@ -1037,22 +1054,26 @@ export function ContentBrowserWorkspace({
       {
         id: "retarget" as const,
         label: "Retarget…",
+        icon: <BoneIcon />,
         testId: "content-browser-retarget",
         onSelect: () => setRetargetPickerOpen(true),
       },
       {
         id: "move" as const,
         label: "Move…",
+        icon: <FolderInputIcon />,
         onSelect: () => openMoveForSnapshot("move"),
       },
       {
         id: "copy" as const,
         label: "Copy to Folder…",
+        icon: <CopyIcon />,
         onSelect: () => openMoveForSnapshot("copy"),
       },
       {
         id: "copy-asset-reference" as const,
         label: "Copy Asset Reference",
+        icon: <LinkIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid) return;
@@ -1062,6 +1083,7 @@ export function ContentBrowserWorkspace({
       {
         id: "show-references" as const,
         label: "Show References",
+        icon: <WaypointsIcon />,
         onSelect: () => {
           const guid = menuTargetGuidsRef.current[0];
           if (!guid || !assetRegistry) return;
@@ -1071,6 +1093,9 @@ export function ContentBrowserWorkspace({
       {
         id: "delete" as const,
         label: "Delete",
+        icon: <Trash2Icon />,
+        variant: "destructive" as const,
+        shortcut: keybinds.get("edit.delete")?.[0],
         onSelect: () =>
           requestDeleteSnapshot(
             menuTargetGuidsRef.current,
@@ -1089,6 +1114,7 @@ export function ContentBrowserWorkspace({
       selectedFolderPath,
       browserRoots,
       setImportErrors,
+      keybinds,
     ],
   );
 
@@ -1738,16 +1764,19 @@ export function ContentBrowserWorkspace({
       {
         id: "new-folder",
         label: "New Folder",
+        icon: <FolderPlusIcon />,
         onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
       },
       {
         id: "new-asset",
         label: "New Asset",
+        icon: <PlusIcon />,
         onSelect: openNewAssetDialog,
       },
       {
         id: "import",
         label: "Import",
+        icon: <UploadIcon />,
         onSelect: () => {
           void handleImport();
         },
@@ -1781,6 +1810,28 @@ export function ContentBrowserWorkspace({
     onPaint: applyTileSelection,
   });
 
+  const selectionActionIds = useCallback(
+    (guids: string[], folders: string[]) =>
+      new Set<string>(
+        contentBrowserContextActions({
+          assetCount: guids.length,
+          folderCount: folders.length,
+          singleAssetType:
+            guids.length === 1 && folders.length === 0
+              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
+              : undefined,
+          canRetarget: canRetargetSelectedAssets(
+            guids.flatMap((guid) => {
+              const asset = assetRegistry?.getByGuid(guid);
+              if (!asset) return [];
+              return [{ type: asset.header.type, payload: asset.header.payload }];
+            }),
+          ),
+        }),
+      ),
+    [assetRegistry],
+  );
+
   const openSelectionMenu = useCallback(
     (
       clientX: number,
@@ -1807,26 +1858,13 @@ export function ContentBrowserWorkspace({
       }
       menuTargetGuidsRef.current = guids;
       menuTargetFoldersRef.current = folders;
-      const actionIds = new Set(
-        contentBrowserContextActions({
-          assetCount: guids.length,
-          folderCount: folders.length,
-          singleAssetType:
-            guids.length === 1 && folders.length === 0
-              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
-              : undefined,
-          canRetarget: canRetargetSelectedAssets(
-            guids.flatMap((guid) => {
-              const asset = assetRegistry?.getByGuid(guid);
-              if (!asset) return [];
-              return [{ type: asset.header.type, payload: asset.header.payload }];
-            }),
-          ),
-        }),
+      const actionIds = selectionActionIds(guids, folders);
+      const items: ContextMenuItem[] = tileContextItems.filter((item) =>
+        actionIds.has(item.id),
       );
-      const items = tileContextItems.filter((item) =>
-        actionIds.has(item.id as ContentBrowserContextAction),
-      );
+      const deleteIndex = items.findIndex((item) => item.id === "delete");
+      if (deleteIndex > 0)
+        items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
       openMenuAt(clientX, clientY, items);
     },
     [
@@ -1835,7 +1873,7 @@ export function ContentBrowserWorkspace({
       selectedFolderPaths,
       selectedGuids,
       tileContextItems,
-      assetRegistry,
+      selectionActionIds,
     ],
   );
 
@@ -1852,6 +1890,23 @@ export function ContentBrowserWorkspace({
     },
     [openSelectionMenu],
   );
+
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const runSelectionAction = (actionId: "duplicate" | "rename" | "delete") => {
+    const guids = [...selectedGuids];
+    const folders = [...selectedFolderPaths].filter(
+      (path) => !isFolderTreeRoot(path, rootPrefixes),
+    );
+    if (guids.length + folders.length === 0) return;
+    if (!selectionActionIds(guids, folders).has(actionId)) return;
+    menuTargetGuidsRef.current = guids;
+    menuTargetFoldersRef.current = folders;
+    tileContextItems.find((item) => item.id === actionId)?.onSelect();
+  };
+  const selectionKeys = { enabled: !busy, focusWithinRef: workspaceRef };
+  useKeybindCommand("edit.duplicate", () => runSelectionAction("duplicate"), selectionKeys);
+  useKeybindCommand("edit.rename", () => runSelectionAction("rename"), selectionKeys);
+  useKeybindCommand("edit.delete", () => runSelectionAction("delete"), selectionKeys);
 
   const handleTreeSelect = useCallback(
     (id: string, options?: { additive?: boolean; range?: boolean }) => {
@@ -2089,6 +2144,7 @@ export function ContentBrowserWorkspace({
 
   return (
     <div
+      ref={workspaceRef}
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-testid="content-browser-workspace"
     >

@@ -13,28 +13,53 @@
 .context-menu-panel {
   position: fixed;
   z-index: 101;
-  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 13rem;
   max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 16px);
   max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--popover);
-  padding: 0.25rem;
-  box-shadow: 0 4px 12px color-mix(in oklch, var(--background) 40%, transparent);
+  padding: 4px;
+  box-shadow:
+    0 1px 2px color-mix(in oklch, black 12%, transparent),
+    0 8px 24px color-mix(in oklch, black 18%, transparent);
+  outline: none;
+  animation: context-menu-in 100ms ease-out;
 }
 
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Compact rows for mouse and trackpad; coarse pointers keep 44px targets. */
 .context-menu-item {
   display: flex;
-  min-height: 44px;
+  min-height: var(--chrome-row, 28px);
   width: 100%;
   align-items: center;
+  gap: 8px;
   border-radius: var(--radius-sm);
-  padding-inline: 0.5rem;
-  text-align: left;
+  padding-inline: 8px;
+  text-align: start;
   font-size: 0.8125rem;
   color: var(--popover-foreground);
+  outline: none;
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .context-menu-item {
+    min-height: var(--touch-target, 44px);
+    padding-inline: 10px;
+  }
 }
 
 .context-menu-item:disabled {
@@ -47,6 +72,83 @@
   height: 1rem;
 }
 
-.context-menu-item:hover {
+.context-menu-item:not(:disabled):hover,
+.context-menu-item:focus-visible,
+.context-menu-item[aria-expanded="true"] {
   background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.context-menu-item[data-variant="destructive"] {
+  color: var(--destructive);
+}
+
+.context-menu-item[data-variant="destructive"]:not(:disabled):hover,
+.context-menu-item[data-variant="destructive"]:focus-visible {
+  background: color-mix(in oklch, var(--destructive) 12%, transparent);
+  color: var(--destructive);
+}
+
+.context-menu-item-leading {
+  display: flex;
+  width: 1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.context-menu-item:is(:hover, :focus-visible) .context-menu-item-leading,
+.context-menu-item[aria-checked="true"] .context-menu-item-leading {
+  color: inherit;
+}
+
+.context-menu-item-radio {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.context-menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-item-shortcut {
+  margin-inline-start: 16px;
+}
+
+.context-menu-item-chevron {
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+}
+
+.context-menu-separator {
+  margin-block: 3px;
+  margin-inline: -4px;
+  width: auto;
+}
+
+.context-menu-label {
+  padding: 6px 8px 2px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+/* Shortcuts are for keyboards; touch-only devices skip the keycaps. */
+@media (hover: none) and (pointer: coarse) {
+  .context-menu-item-shortcut {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu-panel {
+    animation: none;
+  }
 }

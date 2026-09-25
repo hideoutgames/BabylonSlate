@@ -4,6 +4,7 @@ import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
+import { FocusIcon, RefreshCwIcon } from "lucide-react";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -24,6 +25,7 @@ import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { bakeRuntimeAssetReader } from "@babylonslate/assets";
 import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
 import {
   materialViewportTestSnapshot,
@@ -214,11 +216,23 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => observer.disconnect();
   }, []);
 
+  const frameSelection = () => {
+    const actorId = selectedActorIds[0];
+    if (actorId) {
+      engineRef.current?.editor?.frameActor(actorId);
+    }
+  };
+  const frameChord = useKeybindChord("viewport.frameSelection");
+  useKeybindCommand("viewport.frameSelection", frameSelection, {
+    enabled: selectedActorIds.length > 0,
+    scopeRef: panelRef,
+  });
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
       {
         id: "reload-scene",
         label: "Reload Scene",
+        icon: <RefreshCwIcon />,
         onSelect: () => {
           setReloadVersion((version) => version + 1);
         },
@@ -226,12 +240,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       {
         id: "frame-selection",
         label: "Frame Selection",
-        onSelect: () => {
-          const actorId = selectedActorIds[0];
-          if (actorId) {
-            engineRef.current?.editor?.frameActor(actorId);
-          }
-        },
+        icon: <FocusIcon />,
+        shortcut: frameChord,
+        onSelect: frameSelection,
       },
     ],
   });

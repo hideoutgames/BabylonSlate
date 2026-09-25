@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   NamePromptDialog,
   NestedMenu,
@@ -39,17 +39,24 @@ import {
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
+  CopyPlusIcon,
   EyeIcon,
   EyeOffIcon,
+  FocusIcon,
   FolderIcon,
   FolderPlusIcon,
   LockIcon,
+  MousePointerClickIcon,
   MoreHorizontalIcon,
+  PencilIcon,
+  SquareArrowOutUpRightIcon,
+  Trash2Icon,
   UnlockIcon,
   PlusIcon,
 } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   FALLBACK_PLACE_POSITION,
@@ -281,6 +288,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     frameActor,
     viewportDropApi,
   } = useSceneEditing();
+  const keybinds = useKeybindings();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
@@ -672,6 +680,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         items.push({
           id: "open-actor",
           label: "Open Actor",
+          icon: <SquareArrowOutUpRightIcon />,
           testId: `outliner-open-actor-${actorId}`,
           onSelect: () => {
             void openDocument({
@@ -686,18 +695,23 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         {
           id: "select-actor",
           label: selectedActorIds.includes(actorId) ? "Deselect" : "Select",
+          icon: <MousePointerClickIcon />,
           testId: `outliner-select-${actorId}`,
           onSelect: () => selectActor(actorId, true),
         },
         {
           id: "frame-actor",
           label: "Frame Selection",
+          icon: <FocusIcon />,
+          shortcut: keybinds.get("viewport.frameSelection")?.[0],
           testId: `outliner-frame-${actorId}`,
           onSelect: () => frameActor(actorId),
         },
         {
           id: "duplicate-actor",
           label: "Duplicate",
+          icon: <CopyPlusIcon />,
+          shortcut: keybinds.get("edit.duplicate")?.[0],
           testId: `outliner-duplicate-${actorId}`,
           onSelect: () => {
             if (!scene) return;
@@ -711,9 +725,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             selectActor(copy.id);
           },
         },
+        { type: "separator", id: "delete-separator" },
         {
           id: "delete-actor",
           label: "Delete",
+          icon: <Trash2Icon />,
+          variant: "destructive",
+          shortcut: keybinds.get("edit.delete")?.[0],
           testId: `outliner-delete-${actorId}`,
           onSelect: () => {
             if (selectedActorIds.length > 1) {
@@ -726,7 +744,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       );
       return items;
     },
-    [assetRegistry, frameActor, mutate, openDocument, removeActors, scene, selectActor, selectedActorIds],
+    [assetRegistry, frameActor, keybinds, mutate, openDocument, removeActors, scene, selectActor, selectedActorIds],
   );
 
   const folderMenuItems = useCallback(
@@ -734,17 +752,69 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       {
         id: "rename-folder",
         label: "Rename",
+        icon: <PencilIcon />,
+        shortcut: keybinds.get("edit.rename")?.[0],
         testId: `outliner-rename-folder-${folderId}`,
         onSelect: () => setRenameFolderId(folderId),
       },
+      { type: "separator", id: "delete-separator" },
       {
         id: "delete-folder",
         label: "Delete",
+        icon: <Trash2Icon />,
+        variant: "destructive",
+        shortcut: keybinds.get("edit.delete")?.[0],
         testId: `outliner-delete-folder-${folderId}`,
         onSelect: () => setDeleteFolderId(folderId),
       },
     ],
-    [],
+    [keybinds],
+  );
+
+  const outlinerRef = useRef<HTMLDivElement>(null);
+  const outlinerKeys = { enabled: Boolean(scene), focusWithinRef: outlinerRef };
+  useKeybindCommand(
+    "edit.delete",
+    () => {
+      if (selectedActorIds.length > 1) {
+        setDeleteActorChoice({
+          actorId: selectedActorIds[0]!,
+          selectedIds: [...selectedActorIds],
+        });
+      } else if (selectedActorIds.length === 1) {
+        removeActors([selectedActorIds[0]!]);
+      } else if (selectedFolderIds.length === 1) {
+        setDeleteFolderId(selectedFolderIds[0]!);
+      }
+    },
+    outlinerKeys,
+  );
+  useKeybindCommand(
+    "edit.duplicate",
+    () => {
+      if (!scene || selectedActorIds.length === 0) return;
+      let next = scene;
+      const copies: string[] = [];
+      for (const id of selectedActorIds) {
+        const source = scene.actors.find((entry) => entry.id === id);
+        if (!source) continue;
+        const copy = duplicateSceneActor(next, source);
+        next = { ...next, actors: [...next.actors, copy] };
+        copies.push(copy.id);
+      }
+      if (copies.length === 0) return;
+      mutate(next);
+      setSelectedActorIds(copies);
+    },
+    outlinerKeys,
+  );
+  useKeybindCommand(
+    "edit.rename",
+    () => {
+      if (selectedActorIds.length === 0 && selectedFolderIds.length === 1)
+        setRenameFolderId(selectedFolderIds[0]!);
+    },
+    outlinerKeys,
   );
 
   const deletingFolder = deleteFolderId
@@ -761,7 +831,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame data-testid="scene-outliner-panel">
-      <div className="flex h-full min-h-0 flex-col">
+      <div ref={outlinerRef} className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
             className={cn(
