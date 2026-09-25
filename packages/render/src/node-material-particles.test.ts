@@ -39,7 +39,7 @@ describe("compiled particle effect bindings", () => {
     });
     const effects = new Set<NonNullable<ReturnType<typeof system.getCustomEffect>>>();
     for (const billboard of [ParticleSystem.BILLBOARDMODE_Y, ParticleSystem.BILLBOARDMODE_ALL,
-      ParticleSystem.BILLBOARDMODE_Y, ParticleSystem.BILLBOARDMODE_ALL]) {
+      ParticleSystem.BILLBOARDMODE_STRETCHED, ParticleSystem.BILLBOARDMODE_ALL]) {
       creations = 0;
       const previous = system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)!;
       effects.add(previous);

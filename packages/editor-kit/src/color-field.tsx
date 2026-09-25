@@ -106,8 +106,8 @@ export function ColorField({
           }}
         />
         {alpha !== undefined ? (
-          // Phones widen the scrub handle to 44px, so coarse pointers keep room to type.
-          <div className="w-16 shrink-0 pointer-coarse:w-28 max-md:w-28">
+          // The phone layout widens the scrub handle to 44px; keep room to type.
+          <div className="w-16 shrink-0 max-md:w-28">
             <NumericDragField
               label="A"
               id={id ? `${id}-alpha` : undefined}

@@ -257,6 +257,26 @@ describe("per-emitter lifecycle", () => {
     expect(f.service.stats()).toMatchObject({ systems: 2, playing: 1 });
   });
 
+  it("queues bursts after a rendered frame, restores rate emission, and keeps a drain muted", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ burst: { spawn: { rate: { mode: "constant", value: 0 },
+      bursts: { enabled: true, entries: [{ time: 0, count: 8, cycles: 1, interval: 0.5 }] } } } }));
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    f.frame();
+    expect(system.manualEmitCount).toBe(8);
+    simulate([system], 1);
+    expect(system.getActiveCount()).toBe(8);
+    f.frame();
+    expect(system.manualEmitCount).toBe(-1);
+    f.play(false);
+    f.frame();
+    f.frame();
+    expect(system.manualEmitCount).toBe(0);
+    expect(f.service.stats()).toMatchObject({ systems: 1, playing: 0 });
+  });
+
   it("drains a System whose Once slots have all finished", async () => {
     const f = fixture();
     f.service.setLibrary(libraryOf({

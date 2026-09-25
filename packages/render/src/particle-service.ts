@@ -507,7 +507,8 @@ export class ParticleService {
     if (!entry.systems.length) {
       this.releaseBundle(entry);
       entry.state = "failed";
-    } else this.startIfReady(entry);
+    } else if (entry.state === "playing" && entry.systems.every((other) => other.stopped)) this.beginDrain(entry);
+    else this.startIfReady(entry);
     this.publishStats();
   }
 
