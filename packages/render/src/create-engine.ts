@@ -2294,7 +2294,7 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        const result = worldRenderer.render();
+        const result = worldRenderer.render(pendingPresentations.has("world"));
         coherentFrame = result.rendered;
         return result.readyForPresentation;
       }, () => {
