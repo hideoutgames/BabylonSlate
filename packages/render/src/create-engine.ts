@@ -789,13 +789,28 @@ function initializeEngine(
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
   const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
   onRollback(() => releasePlayRenderPath?.());
-  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
-    mainThread: options.playMode === true,
+  const ktx2Runtime = {
     caps: engine.getCaps(),
     renderer: (
       engine as { getGlInfo?: () => { renderer?: string } }
     ).getGlInfo?.().renderer,
+  };
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    mainThread: options.playMode === true,
+    ...ktx2Runtime,
   });
+  // Decoder statics are page-global. Overlay Play borrows the editor Engine,
+  // so its last Play view returns later editor decodes to workers.
+  const releaseMainThreadDecoding = options.playMode
+    ? retainMainThreadDecoding(engine, () => {
+        configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
+          dracoBasePath: options.dracoBasePath,
+          meshoptBasePath: options.meshoptBasePath,
+        });
+        configureKtx2DecoderRuntime(KhronosTextureContainer2, ktx2Runtime);
+      })
+    : null;
+  onRollback(() => releaseMainThreadDecoding?.());
 
   const sharedViewBlit = !presentRtt && visibleContext &&
     (options.sharedEngine || constructorCanvas !== canvas);
@@ -2517,6 +2532,7 @@ function initializeEngine(
       releaseOffscreenDispatch?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
+      releaseMainThreadDecoding?.();
       engine.stopRenderLoop(renderLoop);
       // Bounded cleanup reporting (`bounded`) stays separate from confirmed
       // actual native release (`actual`): an uncertain report never proves a
@@ -3239,6 +3255,21 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
 /** World scenes also use these kinds; hold off until spawn classifies the slot. */
 function isAmbiguousHudMeshKind(meshKind: string | null | undefined): boolean {
   return meshKind === "sprite" || meshKind === "tilemap";
+}
+
+const mainThreadDecodingViews = new WeakMap<AbstractEngine, number>();
+
+/** Hold main-thread decoding for one Play view; the last release restores workers. */
+function retainMainThreadDecoding(engine: AbstractEngine, restoreWorkers: () => void): () => void {
+  mainThreadDecodingViews.set(engine, (mainThreadDecodingViews.get(engine) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const views = (mainThreadDecodingViews.get(engine) ?? 1) - 1;
+    mainThreadDecodingViews.set(engine, views);
+    if (views === 0) restoreWorkers();
+  };
 }
 
 function setOtherEngineViewsEnabled(

@@ -1,6 +1,7 @@
 import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -3291,6 +3292,24 @@ describe("Play createEngine view", () => {
     expect(resourceCacheForEngine(play.engine)).toBe(
       resourceCacheForEngine(editor.engine),
     );
+  });
+
+  it("returns shared-Engine glTF and KTX2 decoding to workers after the last Play view stops", () => {
+    const engine = sharedEngine();
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(editor);
+    const ktx2Workers = KhronosTextureContainer2.DefaultNumWorkers;
+    expect(ktx2Workers).toBeGreaterThan(0);
+    const first = playHandle(engine).handle;
+    const second = playHandle(engine).handle;
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(0);
+    first.dispose();
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBe(0);
+    second.dispose();
+    // Undefined lets Babylon choose its default worker pool size.
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(ktx2Workers);
   });
 
   it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
