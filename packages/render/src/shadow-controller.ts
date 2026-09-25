@@ -95,6 +95,19 @@ type Entry = {
 const SHADOW_MIN_RESIDENCY_MS = 250;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
+/** An admitted map's allocation shape; a change replaces the generator. */
+function allocationKey(
+  mapSize: number,
+  light: ShadowLight,
+  cascades: number,
+): string {
+  return JSON.stringify([
+    mapSize,
+    light.needCube(),
+    light instanceof DirectionalLight ? cascades : 1,
+  ]);
+}
+
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
 function shadowAllocationCheckpoint(
   scene: Scene,
@@ -443,7 +456,8 @@ export class SceneShadowController {
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
       entry.reason = null;
-      if (entry.recovery?.requestKey !== allocationRequestKey(entry))
+      // Healthy entries build no request key.
+      if (entry.recovery && entry.recovery.requestKey !== allocationRequestKey(entry))
         entry.recovery = null;
       if (isDirectionalLightExcluded(entry.light)) {
         entry.status = "non-illuminating";
@@ -458,7 +472,7 @@ export class SceneShadowController {
         entry.status = "shadows-disabled";
         return false;
       }
-      if (entry.failedKey === allocationRequestKey(entry)) {
+      if (entry.failedKey !== "" && entry.failedKey === allocationRequestKey(entry)) {
         entry.status = "allocation-failed";
         entry.reason =
           "shadow allocation failed at minimum size; awaiting settings change or context recovery";
@@ -636,7 +650,7 @@ export class SceneShadowController {
     const canWarm = this.receiverPass !== undefined && camera && !cameraChanged &&
       this.authoredRevision === this.appliedAuthoredRevision && incoming.length > 0 && incoming.length === outgoing.length &&
       owners.every((entry) => candidates.includes(entry) && !entry.resetAllocation &&
-        entry.key === JSON.stringify([entry.mapSize, entry.light.needCube(), entry.light instanceof DirectionalLight ? settings.cascades : 1]) &&
+        entry.key === allocationKey(entry.mapSize, entry.light, settings.cascades) &&
         entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
       outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
     // CSM freezes caster bounds; retained owners refresh them every sync.
@@ -686,12 +700,10 @@ export class SceneShadowController {
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
     for (const entry of this.entries.values()) {
-      const key = JSON.stringify([
-        entry.mapSize,
-        entry.light.needCube(),
-        entry.light instanceof DirectionalLight ? settings.cascades : 1,
-      ]);
-      if (entry.status !== "active" || entry.key !== key) {
+      if (
+        entry.status !== "active" ||
+        entry.key !== allocationKey(entry.mapSize, entry.light, settings.cascades)
+      ) {
         if (entry.generator) {
           entry.generator.dispose();
           markSceneReadinessDirty(scene);
@@ -907,11 +919,7 @@ export class SceneShadowController {
           markSceneReadinessDirty(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = JSON.stringify([
-            mapSize,
-            entry.light.needCube(),
-            directionalLight ? settings.cascades : 1,
-          ]);
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";
