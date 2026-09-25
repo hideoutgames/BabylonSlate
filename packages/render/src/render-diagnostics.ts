@@ -9,7 +9,7 @@ import {
   type AbstractEngine,
   type Scene,
 } from "@babylonjs/core";
-import { findSceneShadowController, type SceneShadowController } from "./shadow-controller";
+import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
@@ -50,7 +50,7 @@ export type RenderDiagnostics = {
   shadowDrawCalls: number;
   shadowTriangles: number;
   readbackMs: number | null;
-  shadowLights: ReturnType<SceneShadowController["diagnostics"]>;
+  shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
   pipeline: ResolvedRenderingPipeline;
   clusteredLights: number;
@@ -136,7 +136,7 @@ export function createRenderDiagnostics(
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,
-      shadowLights: state.lightsDebug ? (shadows?.diagnostics() ?? []) : [],
+      shadowLights: state.lightsDebug ? shadowLightDiagnostics(scene, shadows) : [],
       qualityLimits: [
         ...pipeline.limits,
         ...sceneLightingLimits(scene),

@@ -135,6 +135,38 @@ function generatorPasses(generator: ShadowGenerator): number {
       : 1;
 }
 
+/** Illumination state and shadow allocation of one light; no entry is "unsupported". */
+function shadowLightRow(light: Light, entry?: Entry) {
+  const generator = entry?.generator;
+  return {
+    name: light.name,
+    illumination: isDirectionalLightExcluded(light)
+      ? "directional-limit"
+      : isForwardLightExcluded(light)
+        ? "forward-limit"
+      : !light.isEnabled() || light.intensity <= 0
+        ? "disabled"
+        : "active",
+    status: entry?.status ?? "unsupported",
+    reason: entry?.reason ?? null,
+    allocationError: entry?.recovery?.error ?? null,
+    refreshMode: generator
+      ? generator.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE
+        ? "on-change"
+        : "continuous"
+      : null,
+    effectiveFilter: !generator
+      ? null
+      : generator.usePoissonSampling
+        ? "poisson"
+        : generator.useContactHardeningShadow
+          ? "pcss"
+          : "pcf",
+    passes: generator ? generatorPasses(generator) : 0,
+    mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
+  };
+}
+
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
 function shadowAllocationCheckpoint(
   scene: Scene,
@@ -344,37 +376,7 @@ export class SceneShadowController {
     return { passes, bytes };
   }
   diagnostics(lights: readonly Light[] = this.scene.lights) {
-    return lights.map((light) => {
-      const entry = this.entries.get(light);
-      const generator = entry?.generator;
-      return {
-        name: light.name,
-        illumination: isDirectionalLightExcluded(light)
-          ? "directional-limit"
-          : isForwardLightExcluded(light)
-            ? "forward-limit"
-          : !light.isEnabled() || light.intensity <= 0
-            ? "disabled"
-            : "active",
-        status: entry?.status ?? "unsupported",
-        reason: entry?.reason ?? null,
-        allocationError: entry?.recovery?.error ?? null,
-        refreshMode: generator
-          ? generator.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE
-            ? "on-change"
-            : "continuous"
-          : null,
-        effectiveFilter: !generator
-          ? null
-          : generator.usePoissonSampling
-            ? "poisson"
-            : generator.useContactHardeningShadow
-              ? "pcss"
-              : "pcf",
-        passes: generator ? generatorPasses(generator) : 0,
-        mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
-      };
-    });
+    return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
   sync(): void {
     const scene = this.scene;
@@ -973,6 +975,14 @@ export class SceneShadowController {
 /** Internal renderer lookup; observing a scene never installs a second owner. */
 export function findSceneShadowController(scene: Scene): SceneShadowController | undefined {
   return controllers.get(scene);
+}
+
+/** Per-light rows for a read path; a Scene without an owner lists every light unsupported. */
+export function shadowLightDiagnostics(
+  scene: Scene,
+  controller?: SceneShadowController,
+) {
+  return controller?.diagnostics() ?? scene.lights.map((light) => shadowLightRow(light));
 }
 
 export function sceneShadowController(scene: Scene): SceneShadowController {
