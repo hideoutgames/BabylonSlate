@@ -5,6 +5,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { parseLandscapeProperties, type LandscapeProperties } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { RENDERING_GROUP } from "./sorting";
+import { applyMaterialBounds } from "./material-bounds";
 
 const CHUNK_CELLS = 32;
 type Chunk = { mesh: Mesh; x: number; z: number; width: number; depth: number };
@@ -29,7 +30,8 @@ function chunkData(data: LandscapeProperties, chunk: Omit<Chunk, "mesh">): Verte
     colors.push(...data.weights.slice(i * 4, i * 4 + 4));
     if (x < chunk.width && z < chunk.depth) {
       const a = z * (chunk.width + 1) + x; const b = a + chunk.width + 1;
-      indices.push(a, b, a + 1, a + 1, b, b + 1);
+      // Babylon's left-handed front face must face above the heightfield.
+      indices.push(a, a + 1, b, a + 1, b + 1, b);
     }
   }
   const vertex = new VertexData();
@@ -80,6 +82,7 @@ export function updateLandscapeMesh(root: Mesh, properties: unknown, assets?: Me
     }
     const material = data.materialGuid ? assets?.resolveMaterial?.(data.materialGuid, { scene: root.getScene() }) : null;
     chunk.mesh.material = material ?? root.getScene().defaultMaterial;
+    applyMaterialBounds(chunk.mesh, dirty);
     chunk.mesh.useVertexColors = Boolean(material);
     chunk.mesh.receiveShadows = true;
   }

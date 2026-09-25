@@ -243,7 +243,7 @@ export function compileMaterialPlan(
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
-  if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
+  if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     const zero = Vector3.Zero();
     origin.valueCallback = () => scene.floatingOriginMode ? scene.floatingOriginOffset : zero;

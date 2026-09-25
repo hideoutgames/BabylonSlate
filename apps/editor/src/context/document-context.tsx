@@ -1007,7 +1007,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           if (api) {
             const live = captureAdaptiveDockviewLayout(api);
             layout[mode] = beforeFocus?.layout ?? live;
-            if (beforeFocus) sceneFocusedLayoutsRef.current.set(key, live);
+            if (beforeFocus) sceneFocusedLayoutsRef.current.set(key, api.toJSON() as unknown as Record<string, unknown>);
           } else if (beforeFocus) layout[mode] = beforeFocus.layout;
         }
         documentService.setLayout(id, layout);

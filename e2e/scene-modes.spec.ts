@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { SerializedScene } from "../packages/core/src/scene";
+import { createDefaultScene, MAIN_SCENE_FILE } from "../packages/core/src/project";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { normalizeModelPayload } from "../packages/assets/src/model-payload";
 import { encodeTriangleGlb } from "../packages/render/src/model-mesh";
 import { openMinimalTestProject } from "./minimal-project";
@@ -18,6 +19,29 @@ async function selectMode(page: Page, label: string) {
 }
 async function content(page: Page): Promise<SerializedScene> {
   return page.evaluate(() => (globalThis as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
+}
+async function landscapeProjectFiles() {
+  const files = await minimalProjectFiles();
+  const document = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
+  const scene = document.payload as unknown as SerializedScene;
+  scene.actors.push(...createDefaultScene().actors.filter((actor) => actor.components.some((component) => component.classId === "LightComponent")));
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument(document, { dependencies: ["00000000-0000-4000-8000-000000000002"] }));
+  return files;
+}
+async function terrainPixelFraction(page: Page) {
+  return page.getByTestId("viewport-canvas").evaluate((node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width; copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+    let terrain = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const channels = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!];
+      if (pixels[i + 3]! > 0 && Math.max(...channels) - Math.min(...channels) < 15) terrain++;
+    }
+    return terrain / (copy.width * copy.height);
+  });
 }
 async function stroke(page: Page, touch: boolean) {
   const box = await page.getByTestId("viewport-canvas").boundingBox();
@@ -43,12 +67,13 @@ async function toggleWindow(page: Page, id: string) {
 test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
   test("sculpts terrain and restores independent mode layouts, Focus, and saved content", async ({ page, isMobile }, testInfo) => {
     test.setTimeout(150_000);
-    await openMinimalTestProject(page); await openMainScene(page);
+    await openMinimalTestProject(page, await landscapeProjectFiles()); await openMainScene(page);
     await expect(page.getByTestId("scene-mode-select")).toContainText("Design");
     await selectMode(page, "Landscape");
     await page.getByRole("button", { name: "Create Landscape", exact: true }).click();
     await expect(page.getByRole("treeitem", { name: /Landscape 1/ })).toBeVisible();
     await page.getByRole("button", { name: "Frame", exact: true }).click();
+    await expect.poll(() => terrainPixelFraction(page)).toBeGreaterThan(0.02);
     await page.getByRole("button", { name: "Raise", exact: true }).click();
     const heightSum = async () => (await content(page)).actors.flatMap((actor) => actor.components).filter((c) => c.classId === "LandscapeComponent").flatMap((c) => c.properties.heights as number[]).reduce((sum, value) => sum + value, 0);
     await stroke(page, isMobile);
@@ -58,6 +83,13 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await page.getByTestId("redo-document").click();
     await expect.poll(heightSum).toBeGreaterThan(0);
     if (isMobile) expect((await page.getByRole("button", { name: "Create Landscape", exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const row = page.getByRole("treeitem", { name: /Landscape 1/ });
+    await expect(row).toBeInViewport();
+    const rowBox = (await row.boundingBox())!;
+    const treeBox = (await page.getByRole("tree", { name: "Landscape Components" }).boundingBox())!;
+    expect(rowBox.y).toBeGreaterThanOrEqual(treeBox.y);
+    expect(rowBox.y + rowBox.height).toBeLessThanOrEqual(treeBox.y + treeBox.height);
+    if (isMobile) expect(rowBox.height).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: testInfo.outputPath("landscape.png") });
     await toggleWindow(page, "landscape-outliner");
     await selectMode(page, "Foliage");
@@ -82,7 +114,7 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
 
   test("selects only Models and paints one undoable foliage component per stroke", async ({ page, isMobile }) => {
     test.setTimeout(120_000);
-    const files = await minimalProjectFiles();
+    const files = await landscapeProjectFiles();
     const guid = "00000000-0000-4000-8000-000000000010";
     files.set("assets/brush.model.babasset", await encodeAssetDocument({ guid, name: "Brush Model", type: "Model", version: 1, payload: {} }, {
       headerPayload: { ...normalizeModelPayload({}) },

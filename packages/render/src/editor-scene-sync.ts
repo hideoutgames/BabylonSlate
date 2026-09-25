@@ -332,18 +332,23 @@ export class EditorSceneSync {
                   this.onAfterApply?.();
                 }
               };
+              let failedFoliage = false;
               const load = (textureReady ?? Promise.resolve()).then(async () => {
                 if (!ownsLoad()) return;
                 if (modelGuid) await this.beginEditorModelLoad(actor, candidate, { ownsLoad, onAdopted });
                 else onAdopted();
               }, (error: unknown) => {
                 if (ownsLoad()) this.rejectedVisuals.set(actor.id, descriptor);
-                if (actor.components.some((component) => component.classId === "FoliageComponent") && ownsLoad()) throw error;
+                if (actor.components.some((component) => component.classId === "FoliageComponent") && ownsLoad()) {
+                  failedFoliage = true;
+                  throw error;
+                }
                 // The exact texture owner reports preparation failure once.
               }).finally(() => {
                 if (this.pendingVisuals.get(actor.id) === candidate) this.pendingVisuals.delete(actor.id);
                 if (this.meshes.get(actor.id) !== candidate) candidate.dispose();
-                this.pendingTextureLoads.delete(load);
+                // Keep a settled rejection observable until the next scene generation.
+                if (!failedFoliage) this.pendingTextureLoads.delete(load);
               });
               this.pendingTextureLoads.add(load);
               void load.catch((error: unknown) => console.warn(`[render] Visual publication failed: ${String(error)}`));

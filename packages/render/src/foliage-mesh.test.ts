@@ -1,19 +1,20 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createActor, createDefaultScene, identitySerializedTransform } from "@babylonslate/core";
 import { installAssetBytes, normalizeModelPayload } from "@babylonslate/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./create-null-engine";
 import { encodeTriangleGlb } from "./model-mesh";
-import { createFoliageMesh, foliagePreparation } from "./foliage-mesh";
+import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 const disposers: Array<() => void> = [];
-afterEach(() => { while (disposers.length) disposers.pop()!(); });
+afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
 it("shares model geometry across strokes and batches transforms with a Material override", async () => {
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const material = new StandardMaterial("leaves", scene);
+  material.metadata = { boundsPadding: 2 };
   const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]), resolveMaterial: () => material };
   const data = { groupId: "forest", batches: [{ modelGuid: "tree", materialGuid: "leaf-material", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }] }] };
   const a = createFoliageMesh(scene, "stroke-a", data, assets);
@@ -26,6 +27,10 @@ it("shares model geometry across strokes and batches transforms with a Material 
   expect(am.geometry).toBe(bm.geometry);
   expect(glbContainerLoadCount(scene)).toBe(1);
   expect(am.thinInstanceGetWorldMatrices()[1]!.getTranslation().x).toBe(4);
+  const paddedMaximum = am.getBoundingInfo().boundingBox.maximum.clone();
+  refreshFoliageMaterials(a, { ...assets, resolveMaterial: () => null });
+  expect(am.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(paddedMaximum.x - 2);
+  expect(am.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(paddedMaximum.y - 2);
   a.dispose();
   expect(bm.isDisposed()).toBe(false);
   expect(scene.materials).toContain(material);
@@ -67,4 +72,20 @@ it("waits for initial foliage and refreshes late model sources and import scale 
   sync.apply({ ...data, actors: [{ ...data.actors[0]!, visible: true, locked: false }] });
   await sync.whenEditorModelsReady();
   expect(resized.isVisible && resized.isPickable).toBe(true);
+});
+
+it("preserves the last foliage visual and reports a replacement failure even after the load settles", async () => {
+  const { scene, engine } = createTestEngine();
+  const sync = new EditorSceneSync(scene);
+  disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
+  const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+  sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) });
+  sync.apply({ ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: { batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform()] }] } }] })] });
+  await sync.whenEditorModelsReady();
+  const previous = sync.meshForComponent("stroke", "foliage")!;
+  sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(new Uint8Array([0, 1, 2]), "model/gltf-binary")]]) });
+  await vi.waitFor(() => expect(warnings.mock.calls.some(([message]) => String(message).includes("Visual publication failed"))).toBe(true));
+  await expect(sync.whenEditorModelsReady()).rejects.toThrow();
+  expect(sync.meshForComponent("stroke", "foliage")).toBe(previous);
+  expect(previous.isDisposed()).toBe(false);
 });

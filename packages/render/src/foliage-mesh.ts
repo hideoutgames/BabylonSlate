@@ -11,6 +11,7 @@ import { applyModelMaterialSlots } from "./model-preview";
 import { RENDERING_GROUP } from "./sorting";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 import { VisualBundle } from "./visual-bundle";
+import { applyMaterialBounds } from "./material-bounds";
 
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
@@ -31,7 +32,10 @@ export function refreshFoliageMaterials(root: Mesh, assets?: MeshAssetContext): 
     const resolve = (guid: string) => assets?.resolveMaterial?.(guid, { scene: root.getScene() }) ?? null;
     applyModelMaterialSlots(entry.root, payload?.materialSlots ?? [], resolve);
     const override = entry.batch.materialGuid ? resolve(entry.batch.materialGuid) : null;
-    if (override) for (const mesh of entry.root.getChildMeshes()) mesh.material = override;
+    if (override) for (const mesh of entry.root.getChildMeshes()) {
+      mesh.material = override;
+      applyMaterialBounds(mesh);
+    }
   }
 }
 

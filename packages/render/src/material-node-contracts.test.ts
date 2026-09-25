@@ -8,9 +8,9 @@ import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/ima
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.restoreAllMocks(); });
 
-async function compile(doc: MaterialDocument, particlePreview = false) {
+async function compile(doc: MaterialDocument, particlePreview = false, floatingOrigin = false) {
   const engine = new NullEngine();
-  const scene = new Scene(engine);
+  const scene = new Scene(engine, { useFloatingOrigin: floatingOrigin });
   dispose.push(() => { scene.dispose(); engine.dispose(); });
   const plan = lowerMaterialDocument(doc);
   if (!plan.ok) throw new Error(JSON.stringify(plan.diagnostics));
@@ -29,6 +29,23 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  it.each(["uv", "height"])("keeps Landscape %s anchored to absolute scene coordinates when the render origin moves", async (kind) => {
+    const doc = createDefaultMaterialDocument("Terrain", "landscape");
+    doc.edges = [];
+    node(doc, "coordinate", `landscape.${kind}`);
+    wire(doc, "coordinate", kind, "output", "emissive");
+    const result = await compile(doc, false, true);
+    const origin = result.material.getBlockByName("slateFloatingOrigin") as InputBlock;
+    expect(origin).toBeDefined();
+    expect(origin.output.endpoints.length).toBeGreaterThan(0);
+    expect(result.material.compiledShaders).toContain(origin.associatedVariableName);
+    const scene = result.material.getScene();
+    scene.floatingOriginOffset.copyFromFloats(1000, 20, -300);
+    expect(origin.valueCallback?.()).toEqual(new Vector3(1000, 20, -300));
+    scene.floatingOriginOffset.copyFromFloats(1001, 22, -301);
+    expect(origin.valueCallback?.()).toEqual(new Vector3(1001, 22, -301));
+  });
+
   it.each(["layer1", "layer2", "layer3", "layer4"])("compiles Landscape coordinates, height, slope and painted %s into a surface", async (layer) => {
     const doc = createDefaultMaterialDocument("Terrain", "landscape");
     doc.edges = [];

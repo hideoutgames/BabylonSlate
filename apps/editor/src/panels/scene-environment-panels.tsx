@@ -10,6 +10,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { useCoarsePointer } from "../shell/use-platform-layout";
 
 function useEnvironmentScene() {
   const { documentId } = useDocumentWorkspace();
@@ -23,6 +24,7 @@ export function LandscapeOutlinerPanel(_props: IDockviewPanelProps) { void _prop
 export function FoliageOutlinerPanel(_props: IDockviewPanelProps) { void _props; return <EnvironmentOutliner classId="FoliageComponent" />; }
 
 function EnvironmentOutliner({ classId }: { classId: string }) {
+  const coarsePointer = useCoarsePointer();
   const { scene, commit } = useEnvironmentScene();
   const { selectedActorIds, selectActor, frameActor } = useSceneEditing();
   const { landscapeSelection, setLandscapeSelection } = useSceneTools();
@@ -30,20 +32,25 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
   const landscape = classId === "LandscapeComponent";
   const selection = entries.find((entry) => landscape ? entry.id === landscapeSelection : selectedActorIds.includes(entry.actor.id));
   return <PanelFrame className="scene-environment-panel">
+    <div className="flex h-full min-h-0 flex-col">
+    <div className="min-h-0 flex-1">
     <TreeView aria-label={landscape ? "Landscape Components" : "Foliage Components"}
+      rowHeight={coarsePointer ? 44 : undefined}
       nodes={entries.map(({ actor, component, id }) => ({ id, label: `${actor.name}${actor.components.filter((c) => c.classId === classId).length > 1 ? ` · ${component.id}` : ""}`, depth: 0, hasChildren: false, expanded: false, muted: actor.locked || !actor.visible, icon: landscape ? <MountainIcon /> : <TreesIcon /> }))}
       selectedId={selection?.id}
       onSelect={(id) => { const entry = entries.find((e) => e.id === id); if (!entry) return; selectActor(entry.actor.id); if (landscape) setLandscapeSelection(id); }}
       onActivate={(id) => { const entry = entries.find((e) => e.id === id); if (entry) frameActor(entry.actor.id); }}
     />
+    </div>
     {!entries.length && <Empty><EmptyTitle>{landscape ? "No Landscapes" : "No Foliage"}</EmptyTitle><EmptyDescription>{landscape ? "Create a landscape in Landscape Settings." : "Add Models to a group, then select Paint in the viewport."}</EmptyDescription></Empty>}
-    {selection && <div className="flex gap-1 p-2">
+    {selection && <div className="flex shrink-0 gap-1 p-2">
       <Button size="sm" variant="outline" onClick={() => frameActor(selection.actor.id)}>Frame</Button>
       <Button size="sm" variant="outline" disabled={selection.actor.locked} onClick={() => {
         if (!scene) return;
         void commit({ ...scene, actors: scene.actors.flatMap((actor) => actor.id !== selection.actor.id ? [actor] : actor.components.length === 1 && !scene.actors.some((child) => child.parentId === actor.id) ? [] : [{ ...actor, components: actor.components.filter((c) => c.id !== selection.component.id) }]) });
       }}>Delete Component</Button>
     </div>}
+    </div>
   </PanelFrame>;
 }
 
