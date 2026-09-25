@@ -180,9 +180,6 @@ describe("material graph serialization", () => {
     expect(palette.some((entry) => entry.id === "input.particleColor")).toBe(
       true,
     );
-    expect(palette.some((entry) => entry.id === "input.particleTexture")).toBe(
-      true,
-    );
     expect(palette.some((entry) => entry.id === "output.particle")).toBe(true);
     expect(palette.some((entry) => entry.id === "output.surface")).toBe(false);
     expect(palette.some((entry) => entry.id === "input.worldPosition")).toBe(

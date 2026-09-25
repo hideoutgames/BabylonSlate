@@ -1,15 +1,34 @@
-import { Color4, Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, RawTexture, Scene } from "@babylonjs/core";
+import { Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  PARTICLE_BLENDMODE_ONEONE,
-  PARTICLE_BILLBOARDMODE_ALL,
-  PARTICLE_CPU_FALLBACK_CAPACITY,
-  createDefaultParticleEmitterPayload,
-  createDefaultParticleSystemPayload,
   normalizeParticleEmitterPayload,
+  type ParticleLibrary,
+  type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
+import { PARTICLE_CPU_CAPACITY_BUDGET, PARTICLE_UPDATE_SPEED } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { ParticleService } from "./particle-service";
+import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
+import type { ResourceLease } from "./resource-cache";
+
+/** A Basic emitter using the "mat" Material unless the payload names another. */
+function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
+  return { kind: "basic", payload: normalizeParticleEmitterPayload({ ...payload, render: { materialGuid: "mat", ...payload.render } }) };
+}
+
+function library(emitters: Record<string, ParticleLibraryEmitter>, slots: string[] = Object.keys(emitters)): ParticleLibrary {
+  return {
+    emitters: new Map(Object.entries(emitters)),
+    systems: new Map([["sys-1", { emitterGuids: slots, space: "world", previewSkybox: true }]]),
+  };
+}
+
+/** Particle-domain stand-in: binding completes without compiling a shader. */
+function particleMaterial(scene: Scene): NodeMaterial {
+  const material = new NodeMaterial("particle", scene);
+  material.mode = NodeMaterialModes.Particle;
+  material.createEffectForParticles = () => {};
+  return material;
+}
 
 describe("ParticleService", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -23,612 +42,276 @@ describe("ParticleService", () => {
     }
   });
 
-  function host() {
+  function host(options: {
+    ready?: (guid: string) => Promise<void> | undefined;
+    sceneForSlot?: (slotId: number) => Scene | null;
+    statsScope?: "global" | "local";
+  } = {}) {
     const handle = createTestEngine();
     handles.push(handle);
-    const texture = RawTexture.CreateRGBATexture(
-      new Uint8Array([255, 255, 255, 255]),
-      1,
-      1,
-      handle.scene,
-    );
     const emitterMesh = MeshBuilder.CreateBox("emitter", { size: 0.1 }, handle.scene);
+    const leases = { acquired: 0, released: 0 };
+    const diagnostics: ParticleServiceDiagnostic[] = [];
+    const acquireMaterial = (guid: string, owner: ParticleMaterialOwner): ResourceLease<NodeMaterial> | null => {
+      if (!guid.startsWith("mat")) return null;
+      const resource = particleMaterial(owner.scene);
+      leases.acquired += 1;
+      return { key: owner.instanceKey, resource, ready: options.ready?.(guid),
+        release: () => { leases.released += 1; resource.dispose(); } };
+    };
     const service = new ParticleService({
       scene: handle.scene,
       gpuSupported: false,
-      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
+      acquireMaterial,
       resolveEmitter: (slotId) => (slotId === 1 ? emitterMesh : null),
+      sceneForSlot: options.sceneForSlot,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      statsScope: options.statsScope,
     });
-    return { ...handle, service, texture, emitterMesh };
+    const assign = (slotId = 1, play = true) => service.handleCommand({ type: "assignParticle", slotId, actorGuid: "fx",
+      componentId: "particle-1", particleSystemGuid: "sys-1", play });
+    return { ...handle, service, emitterMesh, leases, diagnostics, assign };
   }
 
-  it("constructs a CPU ParticleSystem, applies billboard quads, and starts on play", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-            capacity: 128,
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          {
-            ...createDefaultParticleSystemPayload(),
-            emitterGuids: ["em-1"],
-          },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
+  const started = (system: unknown) => (system as ParticleSystem | undefined)?.isStarted() === true;
+
+  it("constructs a CPU ParticleSystem, applies billboard quads, and starts on play once its Material binds", async () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic({ emitter: { capacity: 128 } }) }));
+    assign();
     expect(scene.particleSystems).toHaveLength(1);
     const system = scene.particleSystems[0] as ParticleSystem;
     expect(system).toBeInstanceOf(ParticleSystem);
+    expect(system.getCapacity()).toBe(128);
     expect(system.isBillboardBased).toBe(true);
-    expect(system.billboardMode).toBe(PARTICLE_BILLBOARDMODE_ALL);
-    expect(system.blendMode).toBe(PARTICLE_BLENDMODE_ONEONE);
-    expect(system.particleTexture).toBeTruthy();
-    expect(system.isStarted()).toBe(true);
-    expect(service.stats()).toMatchObject({ systems: 1, playing: 1, gpu: false });
+    expect(system.billboardMode).toBe(ParticleSystem.BILLBOARDMODE_ALL);
+    expect(system.blendMode).toBe(ParticleSystem.BLENDMODE_ONEONE);
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    expect(service.stats()).toEqual({ systems: 1, playing: 1, gpu: false, gpuSystems: 0 });
     service.dispose();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().systems).toBe(0);
   });
 
-  it("keeps the Play emitter enabled at zero visibility and marks particleTexture hasAlpha", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    const system = scene.particleSystems[0] as ParticleSystem;
-    const emitter = system.emitter as Mesh;
+  it("keeps the Play emitter enabled at zero visibility", () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    const emitter = scene.particleSystems[0]!.emitter as Mesh;
     expect(emitter.isEnabled()).toBe(true);
     expect(emitter.isVisible).toBe(true);
     expect(emitter.visibility).toBe(0);
     expect(emitter.alwaysSelectAsActiveMesh).toBe(true);
     expect(emitter.isPickable).toBe(false);
-    expect(system.particleTexture?.hasAlpha).toBe(true);
-    service.dispose();
-  });
-
-  it("does not start until particleTexture is ready", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const texture = RawTexture.CreateRGBATexture(
-      new Uint8Array([255, 255, 255, 255]),
-      1,
-      1,
-      handle.scene,
-    );
-    let ready = false;
-    Object.defineProperty(texture, "url", {
-      configurable: true,
-      get: () => "blob:particle-pending",
-    });
-    texture.isReady = () => ready;
-    const service = new ParticleService({
-      scene: handle.scene,
-      gpuSupported: false,
-      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
-    });
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    expect(handle.scene.particleSystems).toHaveLength(1);
-    const system = handle.scene.particleSystems[0] as ParticleSystem;
-    expect(system.isStarted()).toBe(false);
-    ready = true;
-    texture.onLoadObservable.notifyObservers(texture);
-    expect(system.isStarted()).toBe(true);
     service.dispose();
   });
 
   it("caps CPU fallback capacity at 512", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-            capacity: 4096,
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    const system = scene.particleSystems[0] as ParticleSystem;
-    expect(system.getCapacity()).toBe(PARTICLE_CPU_FALLBACK_CAPACITY);
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic({ emitter: { capacity: 4096 } }) }));
+    assign();
+    expect(scene.particleSystems[0]!.getCapacity()).toBe(PARTICLE_CPU_CAPACITY_BUDGET);
     service.dispose();
   });
 
-  it("diagnoses a missing texture without throwing and skips that emitter", () => {
-    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
-    const { scene, service } = host();
-    service.setOnDiagnostic((entry) => diagnostics.push(entry));
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "missing",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    expect(() =>
-      service.handleCommand({
-        type: "assignParticle",
-        slotId: 1,
-        actorGuid: "fx",
-        componentId: "particle-1",
-        particleSystemGuid: "sys-1",
-        play: true,
-      }),
-    ).not.toThrow();
-    expect(scene.particleSystems).toHaveLength(0);
+  it("skips a slot without a usable Material and keeps playing the others", async () => {
+    const { scene, service, diagnostics, assign } = host();
+    service.setLibrary(library({
+      unset: basic({ render: { materialGuid: null } }),
+      missing: basic({ render: { materialGuid: "gone" } }),
+      "em-1": basic(),
+    }));
+    expect(() => assign()).not.toThrow();
     expect(diagnostics).toEqual([
-      expect.objectContaining({
-        code: "particle.missing_texture",
-        assetGuid: "em-1",
-      }),
+      expect.objectContaining({ code: "particle.missing_material", assetGuid: "unset", message: expect.stringMatching(/no Material/i) }),
+      expect.objectContaining({ code: "particle.missing_material", assetGuid: "missing", message: expect.stringMatching(/no usable Material/i) }),
     ]);
+    expect(scene.particleSystems).toHaveLength(1);
+    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    expect(service.stats()).toMatchObject({ systems: 1, playing: 1 });
     service.dispose();
   });
 
-  it("stops with stop() and disposes on resetSession so GPU leftovers cannot linger", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
+  it("creates no native system when the only slot has no Material", () => {
+    const { scene, service, diagnostics, assign } = host();
+    service.setLibrary(library({ "em-1": basic({ render: { materialGuid: null } }) }));
+    assign();
+    expect(scene.particleSystems).toHaveLength(0);
+    expect(service.stats().systems).toBe(0);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["particle.missing_material"]);
+    service.dispose();
+  });
+
+  it("retires only the slot whose Material fails to compile", async () => {
+    const { scene, service, diagnostics, leases, assign } = host({
+      ready: (guid) => guid === "mat-broken" ? Promise.reject(new Error("controlled compile failure")) : undefined,
     });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
+    service.setLibrary(library({ broken: basic({ render: { materialGuid: "mat-broken" } }), "em-1": basic() }));
+    assign();
+    await vi.waitFor(() => expect(diagnostics).toEqual([
+      { code: "particle.apply_failed", assetGuid: "broken", message: "controlled compile failure" },
+    ]));
+    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    expect(scene.particleSystems).toHaveLength(1);
+    expect(leases.released).toBe(1);
+    expect(service.stats()).toMatchObject({ systems: 1, playing: 1 });
+    service.dispose();
+    expect(leases.released).toBe(leases.acquired);
+  });
+
+  it("stops with stop() and disposes on resetSession so GPU leftovers cannot linger", async () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
     const system = scene.particleSystems[0] as ParticleSystem;
-    service.handleCommand({
-      type: "setParticlePlaying",
-      actorGuid: "fx",
-      componentId: "particle-1",
-      playing: false,
-    });
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", componentId: "particle-1", playing: false });
     expect(service.stats().playing).toBe(0);
     expect(scene.particleSystems).toHaveLength(1);
-    service.handleCommand({
-      type: "setParticlePlaying",
-      actorGuid: "fx",
-      playing: true,
-    });
+    service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: true });
     expect(service.stats().playing).toBe(1);
-    expect(scene.particleSystems[0]?.isStarted()).toBe(true);
     expect(scene.particleSystems[0]).not.toBe(system);
+    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
     service.resetSession();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().playing).toBe(0);
   });
 
   it("starts one Babylon system per Particle Emitter slot", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-        [
-          "em-2",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-            blendMode: "standard",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          {
-            ...createDefaultParticleSystemPayload(),
-            emitterGuids: ["em-1", "em-2"],
-          },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic(), "em-2": basic({ render: { blendMode: "standard" } }) }));
+    assign();
     expect(scene.particleSystems).toHaveLength(2);
     expect(service.stats().systems).toBe(2);
     service.dispose();
   });
 
   it("disposes live systems when assignParticle clears the guid", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: null,
-    });
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: null });
     expect(scene.particleSystems).toHaveLength(0);
-    service.dispose();
-  });
-
-  it("applies color gradients onto the live system", () => {
-    const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-            colorGradient: [
-              { t: 0, color: [1, 0, 0, 1] },
-              { t: 1, color: [0, 0, 1, 0] },
-            ],
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    const system = scene.particleSystems[0] as ParticleSystem;
-    const colors = system.getColorGradients();
-    expect(colors?.length).toBeGreaterThanOrEqual(2);
-    expect(colors?.[0]?.color1).toBeInstanceOf(Color4);
     service.dispose();
   });
 
   it("diagnoses unknown Particle System and Emitter assets", () => {
-    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
-    const { scene, service } = host();
-    service.setOnDiagnostic((entry) => diagnostics.push(entry));
-    service.setLibrary({
-      emitters: new Map(),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["missing"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "missing-sys",
-      play: true,
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
+    const { scene, service, diagnostics } = host();
+    service.setLibrary(library({}, ["missing"]));
+    service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "missing-sys", play: true });
+    service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "sys-1", play: true });
     expect(scene.particleSystems).toHaveLength(0);
     expect(diagnostics).toEqual([
-      expect.objectContaining({
-        code: "particle.unknown_system",
-        assetGuid: "missing-sys",
-      }),
-      expect.objectContaining({
-        code: "particle.unknown_emitter",
-        assetGuid: "missing",
-      }),
+      expect.objectContaining({ code: "particle.unknown_system", assetGuid: "missing-sys" }),
+      expect.objectContaining({ code: "particle.unknown_emitter", assetGuid: "missing" }),
     ]);
     service.dispose();
   });
 
-  it("assigns without starting when play is false, then parents onto bindSlot", () => {
-    const { scene, service, emitterMesh } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 2,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: false,
-    });
-    expect(service.stats().playing).toBe(0);
-    expect(scene.particleSystems).toHaveLength(1);
+  it("assigns without starting when play is false, then parents onto bindSlot", async () => {
+    const { scene, service, emitterMesh, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign(2, false);
     const system = scene.particleSystems[0] as ParticleSystem;
+    await Promise.resolve();
+    expect(service.stats().playing).toBe(0);
     expect(system.isStarted()).toBe(false);
     service.bindSlot(2, emitterMesh);
-    const emitter = system.emitter as { parent?: unknown };
-    expect(emitter.parent).toBe(emitterMesh);
+    expect((system.emitter as { parent?: unknown }).parent).toBe(emitterMesh);
     service.dispose();
   });
 
   it("maps ParticleComponent sorting layer onto renderingGroupId", () => {
     const { scene, service } = host();
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-      sortingLayer: "UI",
-      orderInLayer: 3,
-    });
-    const system = scene.particleSystems[0] as ParticleSystem;
-    expect(system.renderingGroupId).toBe(3);
+    service.setLibrary(library({ "em-1": basic() }));
+    service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "sys-1",
+      play: true, sortingLayer: "UI", orderInLayer: 3 });
+    expect(scene.particleSystems[0]!.renderingGroupId).toBe(3);
     service.dispose();
   });
 
-  it("applies a particle-domain material with createEffectForParticles", async () => {
-    const { scene, service, texture } = host();
-    const attached: unknown[] = [];
-    const material = new NodeMaterial("particle", scene);
-    material.mode = NodeMaterialModes.Particle;
-    material.createEffectForParticles = (system) => { attached.push(system); };
-    const withMaterial = new ParticleService({
-      scene,
-      gpuSupported: false,
-      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
-      acquireMaterial: (guid) =>
-        guid === "mat-1" ? { resource: material, key: "material", release: () => material.dispose() } : null,
-    });
-    withMaterial.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-            materialGuid: "mat-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    withMaterial.handleCommand({
-      type: "assignParticle",
-      slotId: 1,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
-    await vi.waitFor(() => expect(attached).toHaveLength(1));
-    expect(attached[0]).toBe(scene.particleSystems[0]);
-    withMaterial.dispose();
-    service.dispose();
-  });
-
-  it("hosts overlay-slot particles on the overlay scene, not the world scene", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const overlay = new Scene(handle.engine);
-    const texture = RawTexture.CreateRGBATexture(
-      new Uint8Array([255, 255, 255, 255]),
-      1,
-      1,
-      overlay,
-    );
+  it("hosts overlay-slot particles on the overlay scene, not the world scene", async () => {
+    let overlay: Scene | null = null;
+    const { scene, service, engine } = host({ sceneForSlot: (slotId) => (slotId === 4 ? overlay : null) });
+    overlay = new Scene(engine);
     const emitterMesh = MeshBuilder.CreateBox("overlay-emitter", { size: 0.1 }, overlay);
-    const service = new ParticleService({
-      scene: handle.scene,
-      gpuSupported: false,
-      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
-      resolveEmitter: (slotId) => (slotId === 4 ? emitterMesh : null),
-      sceneForSlot: (slotId) => (slotId === 4 ? overlay : null),
-    });
-    service.setLibrary({
-      emitters: new Map([
-        [
-          "em-1",
-          normalizeParticleEmitterPayload({
-            ...createDefaultParticleEmitterPayload(),
-            textureGuid: "tex-1",
-          }),
-        ],
-      ]),
-      systems: new Map([
-        [
-          "sys-1",
-          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
-        ],
-      ]),
-    });
-    service.handleCommand({
-      type: "assignParticle",
-      slotId: 4,
-      actorGuid: "fx",
-      componentId: "particle-1",
-      particleSystemGuid: "sys-1",
-      play: true,
-    });
+    service.bindSlot(4, emitterMesh);
+    service.setLibrary(library({ "em-1": basic() }));
+    service.handleCommand({ type: "assignParticle", slotId: 4, actorGuid: "fx", componentId: "particle-1", particleSystemGuid: "sys-1", play: true });
     expect(overlay.particleSystems).toHaveLength(1);
-    expect(handle.scene.particleSystems).toHaveLength(0);
-    const emitter = overlay.particleSystems[0]?.emitter as Mesh;
+    expect(scene.particleSystems).toHaveLength(0);
+    const emitter = overlay.particleSystems[0]!.emitter as Mesh;
     expect(emitter.getScene()).toBe(overlay);
-    expect(handle.scene.getMeshByName(emitter.name)).toBeNull();
+    expect(scene.getMeshByName(emitter.name)).toBeNull();
+    await vi.waitFor(() => expect(started(overlay!.particleSystems[0])).toBe(true));
     service.dispose();
     overlay.dispose();
+  });
+
+  it("applies value edits in place without restarting the running system", async () => {
+    const { scene, service, assign } = host();
+    service.updateLibrary(library({ "em-1": basic() }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    const start = vi.spyOn(system, "start");
+    const edit = service.updateLibrary(library({ "em-1": basic({ spawn: { rate: { mode: "constant", value: 45 } } }) }));
+    expect(edit.tier).toBe("live");
+    expect(scene.particleSystems).toEqual([system]);
+    expect(system.emitRate).toBe(45);
+    expect(start).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
+  it("keeps a paused preview frozen through live edits", async () => {
+    const { scene, service, assign } = host();
+    service.updateLibrary(library({ "em-1": basic() }));
+    service.setPaused(true);
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    service.updateLibrary(library({ "em-1": basic({ initialize: { speed: { mode: "constant", value: 4 } } }) }));
+    expect(system.updateSpeed).toBe(0);
+    service.setPaused(false);
+    expect(system.updateSpeed).toBe(PARTICLE_UPDATE_SPEED);
+    service.dispose();
+  });
+
+  it("re-prepares the bundle for a Capacity edit and keeps its play state", async () => {
+    const { scene, service, leases, assign } = host();
+    service.updateLibrary(library({ "em-1": basic() }));
+    assign();
+    const first = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(first.isStarted()).toBe(true));
+    expect(service.updateLibrary(library({ "em-1": basic({ emitter: { capacity: 64 } }) })).tier).toBe("rebuild");
+    const rebuilt = scene.particleSystems[0] as ParticleSystem;
+    expect(scene.particleSystems).toHaveLength(1);
+    expect(rebuilt).not.toBe(first);
+    expect(rebuilt.getCapacity()).toBe(64);
+    expect(leases.released).toBe(1);
+    await vi.waitFor(() => expect(rebuilt.isStarted()).toBe(true));
+    service.dispose();
+  });
+
+  it("re-prepares a skipped slot once its emitter gains a Material", async () => {
+    const { scene, service, assign } = host();
+    service.updateLibrary(library({ "em-1": basic({ render: { materialGuid: null } }) }));
+    assign();
+    expect(scene.particleSystems).toHaveLength(0);
+    expect(service.updateLibrary(library({ "em-1": basic({ render: { materialGuid: null } }) })).tier).toBe("none");
+    expect(service.updateLibrary(library({ "em-1": basic() })).tier).toBe("rebuild");
+    expect(scene.particleSystems).toHaveLength(1);
+    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    service.dispose();
+  });
+
+  it("keeps preview stats out of the Play stats hook", () => {
+    Object.assign(particleStats, { systems: 0, playing: 0, gpu: false, gpuSystems: 0 });
+    const { service, assign } = host({ statsScope: "local" });
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    expect(service.stats().systems).toBe(1);
+    expect(particleStats.systems).toBe(0);
+    expect(service.previewStats()).toMatchObject({ capacity: 256, backend: "cpu", approximate: false });
+    service.dispose();
   });
 });

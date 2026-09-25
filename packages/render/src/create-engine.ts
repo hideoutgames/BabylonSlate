@@ -1173,11 +1173,6 @@ function initializeEngine(
   const particleService = options.playMode
     ? new ParticleService({
         scene,
-        acquireTexture: (guid) => {
-          const bytes = binding.textureBytes?.get(guid);
-          if (!bytes) return null;
-          return acquireMaterialTexture(resourceCache, guid, engine, bytes, { hasAlpha: true });
-        },
         acquireMaterial: (guid, owner) => {
           const document = materialDocuments.get(guid);
           return document ? acquireParticleMaterial(materialLibrary, guid, document, owner) : null;

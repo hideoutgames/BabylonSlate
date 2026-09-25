@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
@@ -16,6 +17,7 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { Slider } from "@babylonslate/ui/components/slider";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { NumericDragField } from "./numeric-drag-field";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField, type ColorValue } from "./color-field";
@@ -23,10 +25,15 @@ import { FlagsField } from "./flags-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
+import { CurveField, type CurveKey } from "./curve-field";
+import { GradientField, type GradientStop } from "./gradient-field";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
   [number, number, number] | [number, number, number, number];
+
+export type RangeValue = [number, number];
+export type Color4Value = [number, number, number, number];
 
 interface PropertyRowBase {
   id: string;
@@ -38,6 +45,13 @@ interface PropertyRowBase {
   description?: string;
   /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
   testId?: string;
+  /** Rendered verbatim after the label, e.g. "s", "/s", "deg"; never humanized. */
+  unit?: string;
+  /**
+   * Compact control on the label line before Reset (e.g. ValueModeField).
+   * Vertical orientation only; no horizontal caller passes one.
+   */
+  labelAccessory?: ReactNode;
 }
 
 export type PropertyRow =
@@ -123,6 +137,45 @@ export type PropertyRow =
       visual?: TypeVisualQuery;
       onPick: () => void;
       onChange: (value: string | null) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "range";
+      /** `[min, max]`; editing one past the other moves both. */
+      value: RangeValue;
+      defaultValue?: RangeValue;
+      min?: number;
+      max?: number;
+      sensitivity?: number;
+      onChange: (value: RangeValue) => void;
+      onCommit?: (value: RangeValue) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "curve";
+      value: CurveKey[];
+      defaultValue?: CurveKey[];
+      valueMin?: number;
+      valueMax?: number;
+      axisLabels?: { start: string; end: string };
+      minKeys?: number;
+      maxKeys?: number;
+      defaultExpanded?: boolean;
+      onChange: (value: CurveKey[]) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "gradient";
+      value: GradientStop[];
+      defaultValue?: GradientStop[];
+      minStops?: number;
+      maxStops?: number;
+      defaultExpanded?: boolean;
+      onChange: (value: GradientStop[]) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "color4";
+      /** RGBA, each 0–1; color and alpha edits emit one value. */
+      value: Color4Value;
+      defaultValue?: Color4Value;
+      onChange: (value: Color4Value) => void;
     });
 
 export interface PropertyGridProps {
@@ -187,6 +240,33 @@ function resetRow(row: PropertyRow): void {
     case "asset":
       row.onChange(row.defaultValue ?? null);
       break;
+    case "range":
+      row.onChange(row.defaultValue!);
+      row.onCommit?.(row.defaultValue!);
+      break;
+    case "curve":
+      row.onChange(row.defaultValue!);
+      break;
+    case "gradient":
+      row.onChange(row.defaultValue!);
+      break;
+    case "color4":
+      row.onChange(row.defaultValue!);
+      break;
+  }
+}
+
+/** Labels point only at a single real control; compound rows name their parts. */
+function rowHasLabelTarget(row: PropertyRow): boolean {
+  switch (row.kind) {
+    case "vector3":
+    case "flags":
+    case "range":
+    case "curve":
+    case "gradient":
+      return false;
+    default:
+      return true;
   }
 }
 
@@ -392,6 +472,86 @@ function RowControl({ row }: { row: PropertyRow }) {
         </AssetPickerControl>
       );
     }
+    case "range": {
+      const [low, high] = row.value;
+      const name = humanizePropertyLabel(row.label);
+      return (
+        <div className="grid min-w-0 grid-cols-2 gap-1">
+          <NumericDragField
+            label="Min"
+            aria-label={`${name} Min`}
+            value={low}
+            mixed={row.mixed}
+            min={row.min}
+            max={row.max}
+            sensitivity={row.sensitivity}
+            disabled={row.disabled}
+            onChange={(next) => row.onChange([next, Math.max(high, next)])}
+            onDragEnd={(next) => row.onCommit?.([next, Math.max(high, next)])}
+            data-testid={`property-${row.id}-min`}
+          />
+          <NumericDragField
+            label="Max"
+            aria-label={`${name} Max`}
+            value={high}
+            mixed={row.mixed}
+            min={row.min}
+            max={row.max}
+            sensitivity={row.sensitivity}
+            disabled={row.disabled}
+            onChange={(next) => row.onChange([Math.min(low, next), next])}
+            onDragEnd={(next) => row.onCommit?.([Math.min(low, next), next])}
+            data-testid={`property-${row.id}-max`}
+          />
+        </div>
+      );
+    }
+    case "curve":
+      return (
+        <CurveField
+          id={`property-${row.id}`}
+          aria-label={humanizePropertyLabel(row.label)}
+          value={row.value}
+          valueMin={row.valueMin}
+          valueMax={row.valueMax}
+          axisLabels={row.axisLabels}
+          minKeys={row.minKeys}
+          maxKeys={row.maxKeys}
+          defaultExpanded={row.defaultExpanded}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          data-testid={`property-${row.id}`}
+        />
+      );
+    case "gradient":
+      return (
+        <GradientField
+          id={`property-${row.id}`}
+          aria-label={humanizePropertyLabel(row.label)}
+          value={row.value}
+          minStops={row.minStops}
+          maxStops={row.maxStops}
+          defaultExpanded={row.defaultExpanded}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          data-testid={`property-${row.id}`}
+        />
+      );
+    case "color4": {
+      const [r, g, b, a] = row.value;
+      return (
+        <ColorField
+          id={`property-${row.id}`}
+          aria-label={humanizePropertyLabel(row.label)}
+          value={[r, g, b]}
+          alpha={a}
+          disabled={row.disabled}
+          onChange={([nextR, nextG, nextB]) => row.onChange([nextR, nextG, nextB, a])}
+          onAlphaChange={(alpha) => row.onChange([r, g, b, alpha])}
+          data-testid={`property-${row.id}`}
+        />
+      );
+    }
   }
 }
 
@@ -451,16 +611,19 @@ export function PropertyGrid({
           const label = (
             <FieldLabel
               id={`property-${row.id}-caption`}
-              htmlFor={
-                row.kind === "vector3" || row.kind === "flags"
-                  ? undefined
-                  : `property-${row.id}`
-              }
+              htmlFor={rowHasLabelTarget(row) ? `property-${row.id}` : undefined}
               className={
-                hideLabels ? "sr-only" : "w-auto min-w-0 flex-1 truncate"
+                hideLabels
+                  ? "sr-only"
+                  : cn("w-auto min-w-0 flex-1 truncate", row.unit && "gap-1")
               }
             >
               {humanizePropertyLabel(row.label)}
+              {row.unit ? (
+                <span className="font-normal text-muted-foreground">
+                  {` (${row.unit})`}
+                </span>
+              ) : null}
             </FieldLabel>
           );
           return (
@@ -491,6 +654,7 @@ export function PropertyGrid({
                 <>
                   <div className="flex min-w-0 items-center gap-1">
                     {label}
+                    {row.labelAccessory}
                     {rowResetButton(row)}
                   </div>
                   <div className="min-w-0">
