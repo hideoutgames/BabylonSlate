@@ -19,6 +19,20 @@ export interface SeekableAnimationGroup {
   reset?(): void;
   goToFrame(frame: number): void;
   setWeightForAllAnimatables?(weight: number): void;
+  /** Weighted seek blended by the next render's animation pass; a later seek or reset replaces it. */
+  blendToFrame?(frame: number, weight: number): void;
+}
+
+function gameplayFrame(
+  group: SeekableAnimationGroup,
+  normalisedTime: number,
+  durationFrames: number,
+): number {
+  const span = Math.max(0, durationFrames);
+  const t = Number.isFinite(normalisedTime)
+    ? Math.min(1, Math.max(0, normalisedTime))
+    : 0;
+  return (group.from ?? 0) + t * span;
 }
 
 export function seekGameplayAnimation(
@@ -28,11 +42,7 @@ export function seekGameplayAnimation(
   weight = 1,
 ): void {
   group.pause();
-  const span = Math.max(0, durationFrames);
-  const t = Number.isFinite(normalisedTime)
-    ? Math.min(1, Math.max(0, normalisedTime))
-    : 0;
-  group.goToFrame((group.from ?? 0) + t * span);
+  group.goToFrame(gameplayFrame(group, normalisedTime, durationFrames));
   group.setWeightForAllAnimatables?.(weight);
 }
 
@@ -256,6 +266,8 @@ export function applyAnimStateToScene(
     // Restore channels absent from the incoming clip before its pose is applied.
     if (!activeGroups.has(group)) group.reset?.();
   }
+  // Layers sharing a clip seek it once, at the current state's time.
+  const seeks = new Map<NamedSeekableGroup, { layer: AnimClipLayer; weight: number }>();
   for (const { layer, group } of resolved) {
     if (!group) {
       scene.onMissingClip?.({
@@ -266,12 +278,21 @@ export function applyAnimStateToScene(
       });
       continue;
     }
-    seekGameplayAnimation(
-      group,
-      layer.normalisedTime,
-      group.to - group.from,
-      layer.weight,
-    );
+    const seek = seeks.get(group);
+    if (!seek) {
+      seeks.set(group, { layer, weight: layer.weight });
+      continue;
+    }
+    seek.weight += layer.weight;
+    if (seek.layer.stateId !== command.stateId) seek.layer = layer;
+  }
+  // A lone clip keeps the immediate pose write; a crossfade needs Babylon's
+  // weighted blend, which only its render-time animation pass computes.
+  const blend = seeks.size > 1 && [...seeks.keys()].every((group) => group.blendToFrame);
+  for (const [group, { layer, weight }] of seeks) {
+    const span = group.to - group.from;
+    if (blend) group.blendToFrame?.(gameplayFrame(group, layer.normalisedTime, span), weight);
+    else seekGameplayAnimation(group, layer.normalisedTime, span, weight);
   }
   if (spriteLayers.length > 0) {
     applySpriteLayers(scene, command.slotId, spriteLayers);

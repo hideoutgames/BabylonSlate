@@ -321,6 +321,32 @@ function acquireGlbContainer(
   };
 }
 
+const pendingBlends = new WeakMap<Scene, Map<NamedSeekableGroup, () => void>>();
+
+/** Latest weighted seek per group, applied as the Scene's next animation pass starts. */
+function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
+  const existing = pendingBlends.get(scene);
+  if (existing) return existing;
+  const blends = new Map<NamedSeekableGroup, () => void>();
+  pendingBlends.set(scene, blends);
+  // Late bindings keep each weight fixed at registration. Registering them
+  // right before animate() lets that pass consume them, so a later command
+  // cannot mix with a stale weighted seek.
+  const observer = scene.onBeforeAnimationsObservable.add(() => {
+    if (!blends.size || !scene.animationsEnabled) return;
+    // Pinned Babylon 9.20 adapter: Scene._animate skips its first pass,
+    // late bindings included, while pending data exists.
+    if (!scene._animationTimeLast && scene._pendingData.length > 0) return;
+    for (const apply of blends.values()) apply();
+    blends.clear();
+  });
+  scene.onDisposeObservable.addOnce(() => {
+    scene.onBeforeAnimationsObservable.remove(observer);
+    blends.clear();
+  });
+  return blends;
+}
+
 function wrapGroup(
   group: {
     name: string;
@@ -331,8 +357,9 @@ function wrapGroup(
     pause(): void;
     reset(): void;
     stop(): void;
-    goToFrame(frame: number): void;
+    goToFrame(frame: number, useWeight?: boolean): void;
     setWeightForAllAnimatables?(weight: number): void;
+    getScene(): Scene;
     dispose(): void;
   },
   clipAssetGuid: string,
@@ -355,27 +382,39 @@ function wrapGroup(
     group.setWeightForAllAnimatables?.(0);
   };
   let active = false;
-  return {
+  const cancelBlend = () => pendingBlends.get(group.getScene())?.delete(wrapped);
+  const wrapped: NamedSeekableGroup & { dispose(): void } = {
     name: group.name,
     from: group.from,
     to: group.to,
     clipAssetGuid,
     pause: () => group.pause(),
     reset: () => {
+      cancelBlend();
       if (!active) return;
       group.reset();
       group.setWeightForAllAnimatables?.(0);
       active = false;
     },
     goToFrame: (frame) => {
+      cancelBlend();
       initialize();
       active = true;
       group.goToFrame(frame);
+    },
+    blendToFrame: (frame, weight) => {
+      blendsFor(group.getScene()).set(wrapped, () => {
+        initialize();
+        active = true;
+        group.setWeightForAllAnimatables?.(weight);
+        group.goToFrame(frame, true);
+      });
     },
     setWeightForAllAnimatables: (weight) =>
       group.setWeightForAllAnimatables?.(weight),
     dispose: () => group.dispose(),
   };
+  return wrapped;
 }
 
 export function adoptLoadedHierarchy(
