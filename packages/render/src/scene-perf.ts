@@ -18,8 +18,9 @@ import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
-// Kept on the ./scene-perf subpath. Modules that scene-perf imports must use
-// the leaves directly, or they close an import cycle back through this file.
+// Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
+// graph must import these from the leaves, or they close an import cycle back
+// through this file.
 export { markSceneReadinessDirty, onSceneReadinessDirty, withSceneReadinessState } from "./scene-readiness-signal";
 export { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS, type StallDeadline } from "./stall-deadline";
 

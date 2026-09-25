@@ -1,8 +1,9 @@
 import type { AbstractEngine } from "@babylonjs/core";
 import { managedRenderReservations } from "./managed-render-resources";
 
-// Existing lighting callers share the generic Engine ledger and keep their
-// narrower category policy. No second ceiling or duplicate reservations.
+// Lighting callers share the generic Engine ledger; this module re-exports its
+// limit/shadow helpers and a lighting view of its reservations. No second
+// ceiling or duplicate reservations.
 export {
   availableManagedRenderBytes as availableManagedLightingBytes,
   limitManagedRenderBytes as limitManagedLightingBytes,
