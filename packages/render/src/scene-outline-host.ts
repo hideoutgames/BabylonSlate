@@ -1,5 +1,5 @@
 import { Material, type AbstractMesh, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import type { OutlineBinding, SerializedScene } from "@babylonslate/core";
+import type { CelShadingSettings, OutlineBinding, RenderMode, SerializedScene } from "@babylonslate/core";
 import { isColliderVisualTree } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
@@ -40,6 +40,8 @@ export class SceneOutlineHost {
   private actors = new Map<string, ActorOutline>();
   private selectedActors: string[] = [];
   private settingsKey = "";
+  private settingsMode: RenderMode | undefined;
+  private settingsCel: CelShadingSettings | undefined;
   private disposed = false;
   private readonly detach: () => void;
   private readonly scene: Scene;
@@ -89,10 +91,14 @@ export class SceneOutlineHost {
   refreshSettings(): void {
     if (this.disposed) return;
     const { mode, cel } = sceneRenderingSettings(this.scene);
+    // Settings updates replace the resolved CEL object; they never mutate it.
+    if (mode === this.settingsMode && cel === this.settingsCel) return;
     const key = `${mode}|${cel.outlinesEnabled}|${cel.outlineWidth}|${cel.outlineColor.join(",")}|${cel.outlineDistanceFadeEnabled}|${cel.outlineFadeStart}|${cel.outlineFadeEnd}`;
-    if (key === this.settingsKey) return;
-    this.sync();
-    this.settingsKey = key;
+    if (key !== this.settingsKey) {
+      this.sync();
+      this.settingsKey = key;
+    }
+    this.settingsMode = mode; this.settingsCel = cel;
   }
 
   private eligible(mesh: AbstractMesh): boolean {
@@ -121,7 +127,8 @@ export class SceneOutlineHost {
         color: binding.color, width: binding.width, throughMeshes: binding.throughMeshes,
       });
     }
-    const selected = targets.filter((target) => selectedActors.includes(target.key));
+    const selectedKeys = new Set(selectedActors);
+    const selected = targets.filter((target) => selectedKeys.has(target.key));
     if (selected.length) contributions.set("selection", { kind: "selection", targets: selected,
       color: [0.42, 0.78, 1], width: 1, throughMeshes: true });
     // Publish a complete validated snapshot before committing host state. A
