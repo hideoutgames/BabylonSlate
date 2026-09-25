@@ -394,6 +394,47 @@ describe("per-Scene baked lighting session", () => {
     expect(session.staleReason).toBe("A baked receiver moved or was replaced.");
   });
 
+  it("withdraws a pending bake when its load is cancelled", async () => {
+    const { scene, document, sync, host } = await fixture();
+    const session = new BakedSceneSession(scene);
+    disposers.push(() => session.dispose());
+    const mesh = sync.meshForComponent("receiver", "mesh")!;
+    const original = mesh.material;
+    const baselineReady = scene.isReady();
+    const load = new AbortController();
+    let reading!: () => void;
+    const read = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let settled = false;
+    session.apply(document, {
+      ...host,
+      signal: load.signal,
+      readAsset: async (guid) => {
+        reading();
+        await gate;
+        const bytes = await host.readAsset(guid);
+        settled = true;
+        return bytes;
+      },
+    });
+    await read;
+    load.abort();
+    expect(session.sessionState).toBe("idle");
+    expect(scene.isReady()).toBe(baselineReady);
+    // The cancelled read completing later must not bind the bake.
+    finish();
+    await vi.waitFor(() => expect(settled).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(session.sessionState).toBe("idle");
+    expect(session.bakedLighting.bindingFor(mesh)).toBeUndefined();
+    expect(mesh.material).toBe(original);
+  });
+
   it("fails stale within the pending budget when receivers never realize", async () => {
     const { document, host } = await fixture();
     const { scene } = engineScene();

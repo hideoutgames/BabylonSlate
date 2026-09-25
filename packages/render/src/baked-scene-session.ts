@@ -207,6 +207,10 @@ export class BakedSceneSession {
       this.state = "idle";
       return;
     }
+    if (host.signal?.aborted) {
+      this.release();
+      return;
+    }
     this.receivers.release();
     this.receivers = new BakedReceiverMaterials(this.scene);
     this.owner.invalidate("Scene loading superseded the applied bake.");
@@ -214,6 +218,16 @@ export class BakedSceneSession {
     this.state = "pending";
     this.pendingSince = performance.now();
     markSceneReadinessDirty(this.scene);
+    // A cancelled load withdraws its still-pending bake so readiness and the
+    // next apply are not held by superseded work; an applied bake stays bound.
+    host.signal?.addEventListener(
+      "abort",
+      () => {
+        if (!this.disposed && this.epoch === epoch && this.state === "pending")
+          this.release();
+      },
+      { once: true, signal: this.abort.signal },
+    );
     void this.progress(epoch);
   }
 
