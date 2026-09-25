@@ -219,7 +219,7 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
-  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
+  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
   "MeshComponent",
@@ -246,7 +246,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
-  "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
+  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
   "MeshComponent",

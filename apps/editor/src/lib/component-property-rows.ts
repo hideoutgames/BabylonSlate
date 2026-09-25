@@ -478,8 +478,8 @@ export function componentPropertyRows(
     const rows: PropertyRow[] = [
       assetRow(actorId, component, "assetGuid", "Water", ["Water"], update, context, "Pick Water"),
       { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: body.enabled, onChange: (value) => update("enabled", value) },
-      numeric(["width", "Width", 0.1, 10000]),
-      ...(waterKind !== "river" ? [numeric(["length", "Length", 0.1, 10000])] : []),
+      ...(waterKind !== "global" ? [numeric(["width", "Width", 0.1, 10000])] : []),
+      ...(waterKind !== "river" && waterKind !== "global" ? [numeric(["length", "Length", 0.1, 10000])] : []),
       numeric(["depth", "Depth", 0.01, 10000]), numeric(["waveScale", "Wave Scale", 0, 10]),
       numeric(["flowSpeed", "Flow Speed", -100, 100]),
       ...(waterKind !== "river" ? [numeric(["flowDirection", "Flow Direction", -360, 360])] : []),

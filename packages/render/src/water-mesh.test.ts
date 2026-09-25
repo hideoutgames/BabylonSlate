@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
+import { FreeCamera, NullEngine, Quaternion, Scene, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -7,6 +7,49 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonsl
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
 
 describe("Water rendering", () => {
+  it("resizes tessellation with a stretched volume while rendered waves still match world-space queries", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 12, length: 10, waveScale: 1 }, "ocean");
+    try {
+      const mesh = createWaterMesh(scene, "ocean", body, water), initialVertices = mesh.getTotalVertices();
+      mesh.position.set(7, 3, -4); mesh.scaling.set(-3, 4, 2);
+      mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.2, 0.12, -0.05);
+      setSceneWaterTime(scene, 1.7); updateSceneWater(scene);
+      expect(mesh.getTotalVertices()).toBeGreaterThan(initialVertices * 3);
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const matrix = mesh.computeWorldMatrix(true);
+      const transform = { position: mesh.position, rotation: mesh.rotationQuaternion, scale: mesh.scaling };
+      // Interior vertices compare the renderer and the public physics query, not a duplicate wave formula.
+      for (let i = 15; i < positions.length - 15; i += 57) {
+        const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, i), matrix);
+        const sample = sampleWaterSurface(water, body, point, 1.7, transform);
+        expect(sample.found).toBe(true);
+        expect(sample.height).toBeCloseTo(point.y, 4);
+      }
+      mesh.scaling.setAll(0); updateSceneWater(scene);
+      expect(Array.from(mesh.getVerticesData(VertexBuffer.PositionKind)!).every(Number.isFinite)).toBe(true);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("keeps Ocean bounds fixed when the camera moves and lets Global Water Volume cover the horizon", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    camera.maxZ = 1500;
+    try {
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 60, length: 40 }, "ocean"));
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      const before = ocean.getBoundingInfo().boundingBox;
+      expect([before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z]).toEqual([-30, 30, -20, 20]);
+      camera.position.set(10000, 4, -5000); updateSceneWater(scene);
+      const after = ocean.getBoundingInfo().boundingBox;
+      expect([after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z]).toEqual([-30, 30, -20, 20]);
+      const horizon = global.getBoundingInfo().boundingBox;
+      expect(horizon.minimum.x).toBeLessThan(8500);
+      expect(horizon.maximum.x).toBeGreaterThan(11500);
+      expect(horizon.minimum.z).toBeLessThan(-6500);
+      expect(horizon.maximum.z).toBeGreaterThan(-3500);
+      expect(global.getTotalVertices()).toBeLessThan(20000);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("realizes and resizes an identity-transform Water component received from Play", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const binding = createSnapshotSceneBinding();
