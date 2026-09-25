@@ -25,6 +25,8 @@ export interface WaterDefinition {
   foamAmount: number;
   foamWidth: number;
   colorBands: number;
+  /** Twinkling sun glints, mostly for Stylized water. */
+  sparkles: number;
   density: number;
   materialGuid: string | null;
 }
@@ -39,8 +41,12 @@ export interface WaterBodyProperties {
   waveScale: number;
   flowSpeed: number;
   flowDirection: number;
-  /** River centreline in component-local coordinates, including elevation. */
+  /** River control points in component-local coordinates, including elevation. */
   points: [number, number, number][];
+  /** Per-point multipliers of Width, aligned with `points`. */
+  widthScales: number[];
+  /** River path smoothing: 0 is straight segments, 1 is a centripetal Catmull-Rom spline. */
+  curvature: number;
   resolution: number;
 }
 
@@ -72,17 +78,18 @@ const tuple = (value: unknown, fallback: WaterColor, min: number, max: number): 
 };
 
 export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): WaterDefinition {
+  const stylized = style === "stylized";
   return {
     style,
-    shallowColor: style === "stylized" ? [0.08, 0.72, 0.76] : [0.08, 0.38, 0.42],
-    deepColor: style === "stylized" ? [0.015, 0.22, 0.44] : [0.015, 0.065, 0.12],
-    foamColor: [0.9, 0.98, 1],
-    opacity: 0.86, roughness: style === "stylized" ? 0.28 : 0.09,
-    reflectionStrength: 1, depthColorDistance: 5,
+    shallowColor: stylized ? [0.16, 0.62, 0.86] : [0.1, 0.34, 0.26],
+    deepColor: stylized ? [0.02, 0.13, 0.52] : [0.004, 0.028, 0.045],
+    foamColor: stylized ? [1, 1, 1] : [0.86, 0.9, 0.9],
+    opacity: stylized ? 0.92 : 0.97, roughness: stylized ? 0.18 : 0.05,
+    reflectionStrength: 1, depthColorDistance: stylized ? 2.5 : 3,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
-    rippleStrength: 0.12, rippleScale: 2.5,
-    foamAmount: style === "stylized" ? 0.55 : 0.2, foamWidth: 0.6,
-    colorBands: style === "stylized" ? 4 : 0, density: 1000, materialGuid: null,
+    rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
+    foamAmount: stylized ? 1 : 0.35, foamWidth: stylized ? 0.7 : 0.8,
+    colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.7 : 0, density: 1000, materialGuid: null,
   };
 }
 
@@ -107,6 +114,7 @@ export function normalizeWaterDefinition(value: unknown): WaterDefinition {
     foamAmount: number(v.foamAmount, d.foamAmount, 0, 1),
     foamWidth: number(v.foamWidth, d.foamWidth, 0, 20),
     colorBands: Math.round(number(v.colorBands, d.colorBands, 0, 12)),
+    sparkles: number(v.sparkles, d.sparkles, 0, 1),
     density: number(v.density, d.density, 1, 20000),
     materialGuid: guid(v.materialGuid),
   };
@@ -129,6 +137,8 @@ export function normalizeWaterBody(value: unknown, kind: WaterKind = "lake"): Wa
   const points = Array.isArray(v.points) ? v.points.slice(0, 128).filter((p) =>
     Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number" && Number.isFinite(n)),
   ).map((p) => tuple(p, [0, 0, 0], -100000, 100000)) : [];
+  const riverPoints: [number, number, number][] = points.length >= 2 ? points : [[0, 0, -15], [0, 0, 15]];
+  const scales = Array.isArray(v.widthScales) ? v.widthScales : [];
   return {
     kind, assetGuid: guid(v.assetGuid), enabled: v.enabled !== false,
     width: number(v.width, openWater ? 256 : kind === "river" ? 6 : kind === "puddle" ? 3 : 30, 0.1, 10000),
@@ -137,7 +147,9 @@ export function normalizeWaterBody(value: unknown, kind: WaterKind = "lake"): Wa
     waveScale: number(v.waveScale, kind === "puddle" ? 0.03 : kind === "lake" ? 0.35 : kind === "river" ? 0.15 : 1, 0, 10),
     flowSpeed: number(v.flowSpeed, kind === "river" ? 1.5 : 0, -100, 100),
     flowDirection: number(v.flowDirection, 0, -360, 360),
-    points: points.length >= 2 ? points : [[0, 0, -15], [0, 0, 15]],
+    points: riverPoints,
+    widthScales: riverPoints.map((_, i) => number(scales[i], 1, 0.05, 20)),
+    curvature: number(v.curvature, 1, 0, 1),
     resolution: Math.round(number(v.resolution, openWater ? 96 : 48, 8, 128)),
   };
 }
@@ -172,7 +184,9 @@ export const emptyWaterSample = (): WaterSample => ({
 });
 
 /** Identical analytic waves drive the visible mesh, queries and buoyancy. */
-export const waterWaveComponents = [[0, 1, 0.65, 0], [1.1, 1.73, 0.25, 1.2], [-0.7, 2.41, 0.1, 2.7]] as const;
+export const waterWaveComponents = [
+  [0, 1, 0.5, 0], [0.62, 1.37, 0.27, 1.2], [-0.81, 1.93, 0.16, 2.7], [1.47, 2.71, 0.09, 4.1], [-1.72, 3.53, 0.05, 0.6],
+] as const;
 
 /** World-space metres, independent of the volume's transform. Spacing filters distant geometry only. */
 export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, time: number, scale = 1, spacing = 0) {
@@ -207,23 +221,76 @@ export function waterFootprint(body: WaterBodyProperties, x: number, z: number) 
     const gx = x / (body.width * body.width / 4), gz = z / (body.length * body.length / 4), gradient = Math.hypot(gx, gz);
     return { ...plane, inside: radius <= 1 + 1e-7, edge: gradient > 1e-6 ? (1 - radius) * radius / gradient : Math.min(body.width, body.length) / 2, edgeX: gradient > 1e-6 ? gx / gradient : 1, edgeZ: gradient > 1e-6 ? gz / gradient : 0 };
   }
-  let best = Infinity, height = 0, flowX = 0, flowZ = 1, slopeX = 0, slopeZ = 0, flowY = 0, edgeX = 1, edgeZ = 0;
-  for (let i = 1; i < body.points.length; i++) {
-    const a = body.points[i - 1]!, b = body.points[i]!;
-    const vx = b[0] - a[0], vz = b[2] - a[2], length = Math.hypot(vx, vz);
+  const line = waterRiverCentreline(body);
+  let edge = -Infinity, height = 0, flowX = 0, flowZ = 1, slopeX = 0, slopeZ = 0, flowY = 0, edgeX = 1, edgeZ = 0;
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1]!, b = line[i]!;
+    const vx = b.x - a.x, vz = b.z - a.z, length = Math.hypot(vx, vz);
     if (length < 1e-6) continue;
-    const t = clamp(((x - a[0]) * vx + (z - a[2]) * vz) / (length * length), 0, 1);
-    const distance = Math.hypot(x - a[0] - t * vx, z - a[2] - t * vz);
-    if (distance < best) {
-      best = distance; height = a[1] + t * (b[1] - a[1]); flowX = vx / length; flowZ = vz / length;
-      edgeX = distance > 1e-6 ? (x - a[0] - t * vx) / distance : -flowZ;
-      edgeZ = distance > 1e-6 ? (z - a[2] - t * vz) / distance : flowX;
-      flowY = (b[1] - a[1]) / length;
-      const slope = t > 0 && t < 1 ? flowY : 0;
+    const t = clamp(((x - a.x) * vx + (z - a.z) * vz) / (length * length), 0, 1);
+    const distance = Math.hypot(x - a.x - t * vx, z - a.z - t * vz);
+    // Deepest inside the swept banks, so a narrow reach beside a wide one keeps its own edge.
+    const inset = a.halfWidth + t * (b.halfWidth - a.halfWidth) - distance;
+    if (inset > edge) {
+      edge = inset; height = a.y + t * (b.y - a.y); flowX = vx / length; flowZ = vz / length;
+      edgeX = distance > 1e-6 ? (x - a.x - t * vx) / distance : -flowZ;
+      edgeZ = distance > 1e-6 ? (z - a.z - t * vz) / distance : flowX;
+      flowY = (b.y - a.y) / length;
+      const slope = (t > 0 || i > 1) && (t < 1 || i < line.length - 1) ? flowY : 0;
       slopeX = slope * flowX; slopeZ = slope * flowZ;
     }
   }
-  return { inside: best <= body.width / 2 + 1e-7, height, edge: body.width / 2 - best, edgeX, edgeZ, flowX, flowY, flowZ, slopeX, slopeZ };
+  return { inside: edge >= -1e-7, height, edge, edgeX, edgeZ, flowX, flowY, flowZ, slopeX, slopeZ };
+}
+
+export interface WaterRiverSample { x: number; y: number; z: number; halfWidth: number }
+
+/** Sub-segments per control segment of a curved river. */
+export const WATER_RIVER_SUBDIVISIONS = 8;
+const riverLines = new WeakMap<WaterBodyProperties, { points: unknown; scales: unknown; width: number; curvature: number; line: WaterRiverSample[] }>();
+
+/**
+ * Sampled river centreline shared by rendering, queries and editor handles.
+ * Elevation and width interpolate linearly between control points so water never overshoots uphill.
+ */
+export function waterRiverCentreline(body: WaterBodyProperties): WaterRiverSample[] {
+  const cached = riverLines.get(body);
+  if (cached && cached.points === body.points && cached.scales === body.widthScales && cached.width === body.width && cached.curvature === body.curvature) return cached.line;
+  const points = body.points, count = points.length, line: WaterRiverSample[] = [];
+  const half = (i: number) => body.width * (body.widthScales?.[i] ?? 1) / 2;
+  const at = (i: number): [number, number, number] => {
+    if (i >= 0 && i < count) return points[i]!;
+    // Reflected phantom ends keep the first and last segments' tangents.
+    const [a, b] = i < 0 ? [points[0]!, points[1]!] : [points[count - 1]!, points[count - 2]!];
+    return [2 * a[0] - b[0], a[1], 2 * a[2] - b[2]];
+  };
+  const steps = body.curvature > 0 && count > 2 ? WATER_RIVER_SUBDIVISIONS : 1;
+  for (let i = 0; i < count - 1; i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    // Centripetal knots avoid cusps and loops on unevenly spaced points.
+    const knot = (a: [number, number, number], b: [number, number, number]) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[2] - a[2])));
+    const t1 = knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3);
+    for (let s = 0; s < steps; s++) {
+      const u = s / steps, t = t1 + (t2 - t1) * u;
+      const lerp = (a: number, b: number, ta: number, tb: number, value: number) => ta === tb ? a : (a * (tb - value) + b * (value - ta)) / (tb - ta);
+      const spline = [0, 2].map((axis) => {
+        const a1 = lerp(p0[axis]!, p1[axis]!, 0, t1, t), a2 = lerp(p1[axis]!, p2[axis]!, t1, t2, t), a3 = lerp(p2[axis]!, p3[axis]!, t2, t3, t);
+        const b1 = lerp(a1, a2, 0, t2, t), b2 = lerp(a2, a3, t1, t3, t);
+        return lerp(b1, b2, t1, t2, t);
+      });
+      const linearX = p1[0] + (p2[0] - p1[0]) * u, linearZ = p1[2] + (p2[2] - p1[2]) * u;
+      line.push({
+        x: linearX + (spline[0]! - linearX) * body.curvature,
+        y: p1[1] + (p2[1] - p1[1]) * u,
+        z: linearZ + (spline[1]! - linearZ) * body.curvature,
+        halfWidth: half(i) + (half(i + 1) - half(i)) * u,
+      });
+    }
+  }
+  const last = points[count - 1]!;
+  line.push({ x: last[0], y: last[1], z: last[2], halfWidth: half(count - 1) });
+  riverLines.set(body, { points: body.points, scales: body.widthScales, width: body.width, curvature: body.curvature, line });
+  return line;
 }
 
 /** Intersect the transformed volume's base, then add world-vertical waves. */
