@@ -1541,6 +1541,8 @@ Water assets share one definition between the renderer and game worker. Realisti
 
 Explicit Volume is multiplied by the component's absolute world scale on all three axes. At the default density, `0.002 m³` supports a `1 kg` body halfway submerged; increasing it to `0.004 m³` leaves a quarter submerged. A fully submerged hull supports at most `Density × scaled Volume` kilograms, so insufficient capacity sinks. Changes apply during Play. Details shows six decimal places and a fine scrub increment for small hulls; Reset returns to automatic (`0`). Lift and drag use implicit surface integration to prevent large displacement-to-mass ratios launching objects out of the water.
 
+The four support forces are solved together against native collider inertia, including offset centres of mass. The optional physics-port `getBodyImpulseResponse` query predicts linear/angular velocity changes and returns the world centre of mass without applying an impulse. Havok supplies its native principal inertia; the software backend uses its unit-inertia model. Custom backends without the query use that same fallback. Native collision resolution still owns contact and load transfer after the water impulses.
+
 Surface queries and buoyancy use the same analytic waves and simulation clock as rendering. Overlapping surfaces select the highest water surface, or the explicitly selected water actor. Disabled water does not participate in queries or buoyancy. Puddle depth limits its buoyant volume.
 
 
