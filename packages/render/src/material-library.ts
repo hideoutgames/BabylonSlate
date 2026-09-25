@@ -608,17 +608,6 @@ export class MaterialLibrary {
     entry.dispose();
   }
 
-  /** Compile shaders before first draw so a mobile GPU does not stall. */
-  async prewarm(
-    scene: Scene,
-    assetGuid: string,
-    mesh: Mesh | null,
-  ): Promise<void> {
-    const entry = this.pending.get(scene)?.get(assetGuid) ?? this.scenes.get(scene)?.get(assetGuid);
-    if (!entry) return;
-    await prewarmMaterial(entry.material, mesh);
-  }
-
   materialFor(
     scene: Scene,
     assetGuid: string,
@@ -632,6 +621,6 @@ export class MaterialLibrary {
   }
 
   dispose(): void {
-    for (const scene of [...this.tracked]) this.releaseScene(scene);
+    this.invalidate();
   }
 }
