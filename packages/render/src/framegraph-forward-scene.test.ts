@@ -664,6 +664,23 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   graph.dispose();
 });
 
+it("keeps a graph stale when settings change while it is being prepared", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  const pending = graph.prepare(camera);
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true },
+  });
+  expect(await pending).toEqual({ path: "frameGraph" });
+  // The finished graph was built from the previous settings.
+  expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toContain("Scene Effects FXAA");
+  graph.dispose();
+});
+
 it("gives the settings effect chain's offscreen scene color a real depth attachment", async () => {
   const { scene, camera } = host();
   updateSceneRenderingSettings(scene, {

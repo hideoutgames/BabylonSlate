@@ -732,6 +732,10 @@ export class ForwardSceneFrameGraph {
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
+      // Record the inputs the tasks are built from; a change during the awaits
+      // below must leave this graph stale.
+      const postProcessRevision = this.postProcessRevision;
+      const effectsKey = this.effectsKey();
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -907,8 +911,8 @@ export class ForwardSceneFrameGraph {
         };
       this.readinessDirtyFlag = false;
       assertCurrent();
-      this.preparedPostProcessRevision = this.postProcessRevision;
-      this.preparedEffectsKey = this.effectsKey();
+      this.preparedPostProcessRevision = postProcessRevision;
+      this.preparedEffectsKey = effectsKey;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
