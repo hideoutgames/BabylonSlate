@@ -798,6 +798,26 @@ describe("material compiler", () => {
       expect(result.buildState).toBe("ready");
     });
 
+    it("still applies the shader compile budget once loaded textures let the effect start", async () => {
+      vi.useFakeTimers();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      loaded.mockReturnValue(true);
+      // The real readiness check creates the probe effect, which never compiles.
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        return false;
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      vi.advanceTimersByTime(14_000);
+      expect(result.buildState).toBe("pending");
+      vi.advanceTimersByTime(2_000);
+      expect(result.buildState).toBe("failed");
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+    });
+
     it("reports a texture diagnostic instead of a GLSL timeout when textures never become ready", async () => {
       vi.useFakeTimers();
       const { result } = await compileWithLoadingTexture();
