@@ -40,7 +40,6 @@ describe("Water rendering", () => {
       expect(await result.ready).toEqual([]);
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), undefined, result.material);
       await prewarmMaterial(result.material, mesh);
-      console.log(result.material.compiledShaders);
       const data = mesh.getVerticesData("slateWaterData")!;
       expect(data[1]).toBeCloseTo(0);
       expect(data[(4 * 9 + 4) * 4 + 1]).toBeCloseTo(15);

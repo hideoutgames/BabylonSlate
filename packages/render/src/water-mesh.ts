@@ -83,7 +83,11 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     slopes.push(footprint.slopeX, footprint.slopeZ);
     if (row < rows && column < columns) {
       const a = row * (columns + 1) + column, b = a + columns + 1;
-      indices.push(a, b, a + 1, a + 1, b, b + 1);
+      // Rivers traverse the left side of their centreline first; ellipse/ocean
+      // grids traverse X from left to right. Keep both top faces front-facing
+      // under Babylon's clockwise convention, including single-sided materials.
+      if (body.kind === "river") indices.push(a, b, a + 1, a + 1, b, b + 1);
+      else indices.push(a, a + 1, b, a + 1, b + 1, b);
     }
   }
   const data = new VertexData();
