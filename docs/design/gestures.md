@@ -28,7 +28,7 @@ iOS 13+ standalone / Add to Home Screen maps three-finger swipe and tap to syste
 - `useSuppressIosEditingGestures` (applied once at the shell) `preventDefault`s 3+ finger `touchstart`/`touchmove` and `beforeinput` `historyUndo`/`historyRedo` document-wide.
 - Inputs, textareas, `contenteditable`, and `SelectableText` keep system typing undo.
 - Editor canvases (scene and Prefab Preview) also `preventDefault` every `touchstart`/`touchmove` with a non-passive listener so iOS does not hold pointer events for gesture recognition. The canvas already uses `touch-none` and does not scroll.
-- Desktop document history binds **Mod+Z** (undo) and **Mod+Shift+Z** / **Mod+Y** (redo) on the chrome bar. `documentHistoryHotkey` no-ops inside native-editing targets and while `activePointerCount >= 3` so a three-finger viewport pan cannot fire document undo.
+- Desktop document history binds **Mod+Z** (undo) and **Mod+Shift+Z** / **Mod+Y** (redo) through the editor keybind dispatcher ([keybinds.md](../architecture/keybinds.md)). It no-ops inside native-editing targets and while three or more pointers are down, so a three-finger viewport pan cannot fire document undo.
 
 ### Cancellation
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -24,6 +24,7 @@ import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { PlayProvider, usePlay } from "../context/play-context";
+import { KeybindProvider } from "../context/keybind-context";
 import { ProjectSearchProvider } from "../context/project-search-context";
 import { ValidationProvider } from "../context/validation-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
@@ -368,6 +369,11 @@ function EditorLayout() {
   );
 }
 
+function PlayAwareKeybinds({ children }: { children: ReactNode }) {
+  const { playing } = usePlay();
+  return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
@@ -383,7 +389,9 @@ export default function EditorRoute({
             <TestParticleHostStats />
             <ModelThumbnailCaptureHost />
             <ProjectSearchProvider>
-              {gallery ? <ComponentGallery /> : <EditorLayout />}
+              <PlayAwareKeybinds>
+                {gallery ? <ComponentGallery /> : <EditorLayout />}
+              </PlayAwareKeybinds>
             </ProjectSearchProvider>
           </MaterialRenderControlProvider>
         </PlayProvider>

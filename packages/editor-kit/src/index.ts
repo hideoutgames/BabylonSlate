@@ -31,9 +31,21 @@ export {
   shouldSuppressIosHistoryInput,
 } from "./ios-editing-gestures";
 export {
-  documentHistoryHotkey,
-  type DocumentHistoryHotkeyEvent,
-} from "./document-history-hotkey";
+  ariaKeyShortcuts,
+  chordFromEvent,
+  chordHasCommandModifier,
+  chordMatchesEvent,
+  describeChord,
+  formatChord,
+  isApplePlatform,
+  normalizeChord,
+  parseChord,
+  type ChordModifier,
+  type KeybindEvent,
+  type KeyChord,
+  type ParsedChord,
+} from "./keybinds";
+export { ShortcutKeys, type ShortcutKeysProps } from "./shortcut-keys";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
   canScrollInDirection,

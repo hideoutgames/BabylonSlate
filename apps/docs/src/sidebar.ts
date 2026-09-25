@@ -20,6 +20,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Asset registry", link: "/architecture/asset-registry" },
       { text: "Plugins", link: "/architecture/plugins" },
       { text: "Global search", link: "/architecture/global-search" },
+      { text: "Keybinds", link: "/architecture/keybinds" },
       { text: "Object model", link: "/architecture/object-model" },
       { text: "Bridge", link: "/architecture/bridge" },
       { text: "Render", link: "/architecture/render" },

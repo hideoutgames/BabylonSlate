@@ -1,6 +1,8 @@
 import {
   NestedMenu,
   NumberPromptDialog,
+  ShortcutKeys,
+  ariaKeyShortcuts,
   type NestedMenuItem,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -28,13 +30,15 @@ import {
   Settings2Icon,
   SquareDashedMousePointerIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { GridSizeDialog } from "./grid-size-dialog";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
+import { useKeybindings, useKeybindCommand } from "../context/keybind-context";
+import type { EditorCommandId } from "../lib/editor-keybinds";
 import {
   patchEngineViewportPrefs,
   useEditorViewportPrefs,
@@ -44,10 +48,11 @@ const TOOLS: Array<{
   id: GizmoTool;
   label: string;
   icon: typeof MoveIcon;
+  command: EditorCommandId;
 }> = [
-  { id: "translate", label: "Move", icon: MoveIcon },
-  { id: "rotate", label: "Rotate", icon: RotateCwIcon },
-  { id: "scale", label: "Scale", icon: ScalingIcon },
+  { id: "translate", label: "Move", icon: MoveIcon, command: "viewport.translate" },
+  { id: "rotate", label: "Rotate", icon: RotateCwIcon, command: "viewport.rotate" },
+  { id: "scale", label: "Scale", icon: ScalingIcon, command: "viewport.scale" },
 ];
 
 function ToolbarSeparator() {
@@ -109,6 +114,13 @@ export function ViewportToolbar({
     viewportShadingMode,
     setViewportShadingMode,
   } = useSceneEditing();
+
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const bindings = useKeybindings();
+  const gizmoKeys = { enabled: showGizmoTools, scopeRef: toolbarRef };
+  useKeybindCommand("viewport.translate", () => setGizmoTool("translate"), gizmoKeys);
+  useKeybindCommand("viewport.rotate", () => setGizmoTool("rotate"), gizmoKeys);
+  useKeybindCommand("viewport.scale", () => setGizmoTool("scale"), gizmoKeys);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
@@ -289,6 +301,7 @@ export function ViewportToolbar({
 
   return (
     <div
+      ref={toolbarRef}
       className="flex flex-wrap items-center gap-1"
       data-testid={`${testIdPrefix}viewport-toolbar`}
     >
@@ -306,6 +319,7 @@ export function ViewportToolbar({
         >
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
+            const chord = bindings.get(tool.command)?.[0];
             return (
               <Tooltip key={tool.id}>
                 <TooltipTrigger
@@ -313,13 +327,17 @@ export function ViewportToolbar({
                     <ToggleGroupItem
                       value={tool.id}
                       aria-label={tool.label}
+                      aria-keyshortcuts={chord ? ariaKeyShortcuts(chord) : undefined}
                       data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
                     >
                       <Icon />
                     </ToggleGroupItem>
                   }
                 />
-                <TooltipContent>{tool.label}</TooltipContent>
+                <TooltipContent>
+                  {tool.label}
+                  <ShortcutKeys chord={chord} decorative />
+                </TooltipContent>
               </Tooltip>
             );
           })}
