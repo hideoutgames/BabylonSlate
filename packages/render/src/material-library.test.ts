@@ -378,6 +378,25 @@ describe("material library", () => {
     expect(second.material).not.toBe(first.material);
   });
 
+  it("recompiles a material document that was edited in place", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "tint", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [1, 0, 0] } });
+    const first = library.acquire(scene, "mat-1", doc);
+    if (!first.ok) throw new Error("Expected a compiled material");
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(true);
+    doc.edges = [
+      ...doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === "baseColor")),
+      { id: "e-tint-out", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    expect(library.isCompiled(scene, "mat-1", doc)).toBe(false);
+    const second = library.acquire(scene, "mat-1", doc);
+    if (!second.ok) throw new Error("Expected a compiled material");
+    expect(second.material).not.toBe(first.material);
+  });
+
   it("never shares one material instance across two scenes", () => {
     const first = host();
     const second = host();
