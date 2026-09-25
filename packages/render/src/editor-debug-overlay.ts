@@ -44,20 +44,6 @@ type OverlaySync = {
   audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
 };
 
-function actorPosition(actor: SerializedActor): Vector3 {
-  const [x, y, z] = actor.transform.position;
-  return new Vector3(x, y, z);
-}
-
-function actorRotation(actor: SerializedActor): Quaternion {
-  const [x, y, z, w] = actor.transform.rotation;
-  return new Quaternion(x, y, z, w);
-}
-
-function actorForward(actor: SerializedActor): Vector3 {
-  return Vector3.Forward().applyRotationQuaternion(actorRotation(actor));
-}
-
 const DEBUG_FAR_MIN = 8;
 const DEBUG_FAR_NEAR_SCALE = 40;
 
@@ -415,8 +401,10 @@ export class EditorDebugOverlay {
     }
     const kind = String(component.properties.lightKind ?? "point") as LightDebugKind;
     const range = Math.max(0.1, asNumber(component.properties.range, 10));
-    const origin = actorPosition(actor);
-    const forward = actorForward(actor);
+    // Match the authored light: actor TRS × component transform.
+    const composed = composeActorComponentTransform(actor, component);
+    const origin = composed.position;
+    const forward = Vector3.Forward().applyRotationQuaternion(composed.rotation);
     const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
     this.lightDebugKind = kind === "spot" || kind === "directional" ? kind : "point";
     if (this.lightDebugKind === "directional") {

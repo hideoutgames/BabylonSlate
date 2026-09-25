@@ -395,6 +395,37 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
+  it("aims light debug from the composed LightComponent transform", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    const sceneData = sceneWith([
+      createActor("spot", "Spot", {
+        transform: { ...identitySerializedTransform(), position: [2, 0, 0] },
+        components: [
+          {
+            id: "light",
+            classId: "LightComponent",
+            transform: {
+              ...identitySerializedTransform(),
+              position: [1, 0, 0],
+              rotation: eulerDegreesToQuaternion([0, 90, 0]),
+            },
+            properties: { lightKind: "spot", range: 10, outerAngle: 45 },
+          },
+        ],
+      }),
+    ]);
+    overlay.sync({ sceneData, selectedActorIds: ["spot"] });
+    const axis = scene.getMeshByName("debugLight:spot:axis")!;
+    axis.computeWorldMatrix(true);
+    const data = axis.getVerticesData(VertexBuffer.PositionKind)!;
+    const start = Vector3.TransformCoordinates(Vector3.FromArray(data, 0), axis.getWorldMatrix());
+    const end = Vector3.TransformCoordinates(Vector3.FromArray(data, data.length - 3), axis.getWorldMatrix());
+    expect(start.subtract(new Vector3(3, 0, 0)).length()).toBeCloseTo(0, 5);
+    expect(end.subtract(start).normalize().subtract(Vector3.Right()).length()).toBeCloseTo(0, 5);
+    overlay.dispose();
+  });
+
   it("uses a selected CameraComponent on the prefab root", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);
