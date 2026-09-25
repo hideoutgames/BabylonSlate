@@ -1,5 +1,6 @@
 import type { ResourceLease } from "./resource-cache";
 import {
+  Vector3,
   type AbstractEngine,
   type NodeMaterial,
   type Scene,
@@ -34,6 +35,11 @@ export function createParticlePreviewScene(
   const host = createMaterialPreviewScene(engine);
   host.mesh.isVisible = false;
   host.mesh.isPickable = false;
+  // Effects rise and spread from the emitter, unlike a material swatch: frame
+  // above the origin and allow pulling back far enough for large effects.
+  host.camera.setTarget(new Vector3(0, 1, 0));
+  host.camera.radius = 7;
+  host.camera.upperRadiusLimit = 40;
   if (options?.skybox) {
     installPreviewEnvironment(host.scene);
   }
