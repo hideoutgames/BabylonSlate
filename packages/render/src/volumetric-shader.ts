@@ -21,6 +21,7 @@ export function volumetricShader(wgsl: boolean, shadows: readonly VolumeShadow[]
 ${texture("depthSampler")}
 ${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
 ${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}
+${field(v3, "volumeShadowOffset")}
 `;
   let functions = "", lighting = "";
   shadows.forEach((shadow, i) => {
@@ -48,7 +49,7 @@ if (metric > depth) { return 0.0; } return 1.0;`;
 ${Array.from({ length: shadow.cascades - 1 }, (_, n) => `if (viewZ > ${u(`viewFrustumZ${i}`)}[${n}]) { layer = ${n + 1}; }`).join("\n")}
 if (viewZ > ${u(`viewFrustumZ${i}`)}[${shadow.cascades - 1}]) { return 1.0; }
 ` : "";
-      visibility += `${decl(v4, "projected", `${u(`lightMatrix${i}`)}${cascaded ? "[layer]" : ""} * ${v4}(p, 1.0)`)}
+      visibility += `${decl(v4, "projected", `${u(`lightMatrix${i}`)}${cascaded ? "[layer]" : ""} * ${v4}(p - ${u("volumeShadowOffset")}, 1.0)`)}
 if (projected.w <= 0.0) { return 1.0; }
 ${decl(v3, "clip", "projected.xyz / projected.w")}
 ${decl(v3, "coord", `${v3}(clip.xy * 0.5 + ${v2}(0.5), ${halfZ ? "clip.z" : "clip.z * 0.5 + 0.5"})`)}

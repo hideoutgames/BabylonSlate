@@ -136,7 +136,7 @@ export function createSpatialStages(scene: Scene, camera: Camera, plan: SceneEff
   if (volume) {
     const lights = selectVolumetricLights(scene, camera, volume);
     const shadows = lights.map((light) => volumeShadowLayout(scene, light));
-    const uniforms = ["inverseProjection", "inverseView", "volumeView", "volumeSettings", "volumeCamera"];
+    const uniforms = ["inverseProjection", "inverseView", "volumeView", "volumeSettings", "volumeCamera", "volumeShadowOffset"];
     const samplers = ["depthSampler"];
     shadows.forEach((shadow, i) => {
       uniforms.push(`volumePosition${i}`, `volumeDirection${i}`, `volumeColor${i}`, `volumeCone${i}`, `volumeDepth${i}`, `lightMatrix${i}`, `viewFrustumZ${i}`);
@@ -153,6 +153,11 @@ export function createSpatialStages(scene: Scene, camera: Camera, plan: SceneEff
       effect.setMatrix("inverseProjection", inverseProjection);
       effect.setMatrix("inverseView", inverseView);
       effect.setMatrix("volumeView", camera.getViewMatrix());
+      // Babylon rebases shadow matrices in large-world mode. Ray positions and
+      // light attenuation stay in world space; only shadow lookup is rebased.
+      const offset = scene.floatingOriginOffset;
+      effect.setFloat3("volumeShadowOffset", scene.floatingOriginMode ? offset.x : 0,
+        scene.floatingOriginMode ? offset.y : 0, scene.floatingOriginMode ? offset.z : 0);
       effect.setFloat4("volumeSettings", volume.density, volume.intensity, volume.maxDistance, volume.anisotropy);
       effect.setFloat4("volumeCamera", camera.minZ, camera.maxZ, scene.useRightHandedSystem ? -1 : 1, camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0);
       bindVolumetricLights(effect, scene, camera, lights);
