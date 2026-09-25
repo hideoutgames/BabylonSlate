@@ -305,7 +305,11 @@ export class SharedOutlineView {
   maximumWidth = 0;
   distanceFadeEnabled = false;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
-  get active(): boolean { return !this.isDisposed && [...this.contributions.values()].some((entry) => entry.targets.length > 0); }
+  get active(): boolean {
+    if (this.isDisposed) return false;
+    for (const entry of this.contributions.values()) if (entry.targets.length > 0) return true;
+    return false;
+  }
   /** Hosts supply authored world occluders, excluding editor helpers and guides. */
   setOccluders(meshes: readonly AbstractMesh[] | null): void {
     const next = meshes ? [...new Set(meshes)] : null;
@@ -359,8 +363,9 @@ export class SharedOutlineView {
   }
   /** Style data changes are independent of graph/material topology. */
   prepare(): void {
-    if (!this.active) { this.releaseStyles(); return; }
+    // Only an active prepare records its revision; every activity change bumps it.
     if (this.preparedRevision === this.revision) return;
+    if (!this.active) { this.releaseStyles(); return; }
     const count = 2 ** Math.ceil(Math.log2(Math.max(16, this.owner.maximumIdentity + 1)));
     const maxSize = this.scene.getEngine().getCaps().maxTextureSize;
     // Second half stores fade metadata in the same sampler. Keeping this layout
