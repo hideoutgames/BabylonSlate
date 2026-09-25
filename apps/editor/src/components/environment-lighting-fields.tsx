@@ -23,24 +23,24 @@ const fields = [
     key: "enabled",
     label: "Image-Based Lighting",
     description:
-      "Light surfaces with the Scene's prefiltered environment texture.",
+      "Lights surfaces with the Scene's prefiltered environment texture.",
   },
   {
     key: "intensity",
     label: "Environment Intensity",
     description:
-      "Scale automatic environment lighting. Explicit Environment Sample nodes return the original linear radiance.",
+      "Scales automatic environment lighting. Environment Sample nodes are unaffected.",
   },
   {
     key: "rotationYDegrees",
     label: "Environment Rotation",
-    description: "Rotate the environment around world Y, in degrees.",
+    description: "Rotation around world Y, in degrees.",
   },
   {
     key: "celStrength",
     label: "CEL Environment Strength",
     description:
-      "Feed diffuse environment light into CEL bands. Zero preserves direct-light-only CEL shading.",
+      "Adds diffuse environment light to CEL bands. Zero uses direct light only.",
   },
 ] as const;
 

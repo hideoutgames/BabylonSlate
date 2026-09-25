@@ -603,7 +603,6 @@ export function SettingsModal({
               <Input id="settings-project-version" data-testid="settings-project-version"
                 value={projectDocument.metadata.version}
                 onChange={event => updateProjectVersion(event.target.value)} />
-              <FieldDescription>Included in packaged builds.</FieldDescription>
             </Field>
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-compile-on-save">
@@ -634,8 +633,7 @@ export function SettingsModal({
                 data-testid="settings-infinite-loop-detection"
               />
               <FieldDescription id="settings-infinite-loop-description">
-                Stops runaway scripts during Play and Preview. Excluded from
-                release exports.
+                Stops runaway scripts in Play and Preview. Off in release exports.
               </FieldDescription>
             </Field>
               <Field className="settings-field">
@@ -767,7 +765,7 @@ export function SettingsModal({
                 data-testid="settings-integer-zoom"
               />
               <FieldDescription id="settings-integer-zoom-description">
-                Applies to game cameras; editor zoom stays continuous.
+                Game cameras only. Editor zoom stays continuous.
               </FieldDescription>
             </Field>
             <Field>
@@ -779,7 +777,8 @@ export function SettingsModal({
                     twoD: { ...twoD, sortingLayers },
                   })
                 }
-                addPlaceholder="Layer"
+                itemLabel="Sorting Layer"
+                addPlaceholder="New Layer"
                 addLabel="Add Layer"
                 data-testid="settings-sorting-layers"
               />
@@ -809,13 +808,13 @@ export function SettingsModal({
                     },
                   })
                 }
-                addPlaceholder="Layer"
+                itemLabel="Collision Layer"
+                addPlaceholder="New Layer"
                 addLabel="Add Layer"
                 data-testid="settings-collision-layers"
               />
               <FieldDescription>
-                  Names used by Layer and Collides With. Up to{" "}
-                  {MAX_COLLISION_LAYERS} layers.
+                  Up to {MAX_COLLISION_LAYERS} layers.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -861,7 +860,7 @@ export function SettingsModal({
                 </Button>
               </AssetPickerControl>
               <FieldDescription>
-                  Fallback when the requested font is unavailable.
+                  Used when a requested font is unavailable.
               </FieldDescription>
             </Field>
               <Field className="settings-field">
@@ -901,9 +900,6 @@ export function SettingsModal({
                     ))}
                 </SelectContent>
               </Select>
-              <FieldDescription>
-                  Used when no matching font is available.
-              </FieldDescription>
             </Field>
           </FieldSet>
         </FieldGroup>
@@ -1037,8 +1033,7 @@ export function SettingsModal({
               </Field>
             ))}
             <FieldDescription>
-              Multiplies baked environment-reverb wet, decay, and damping
-              (0–2). Channel-less stays dry.
+              Scales baked environment reverb. Sounds without a channel stay dry.
             </FieldDescription>
           </FieldSet>
         </FieldGroup>
@@ -1066,7 +1061,7 @@ export function SettingsModal({
                   <SelectItem value="cel">CEL</SelectItem>
                 </SelectGroup></SelectContent>
               </Select>
-              <FieldDescription>CEL uses native banded surface lighting. Scene Defaults can override individual style settings.</FieldDescription>
+              <FieldDescription>CEL uses banded lighting. Scenes can override its style.</FieldDescription>
             </Field>
 <RenderQualityFields settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
 <ShadowSettingsFields project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
@@ -1203,15 +1198,20 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Textures</FieldLegend>
-            <Button
-              variant="outline"
-                className="min-h-[var(--chrome-row,28px)] w-fit"
-              data-testid="retry-texture-encoding"
-              id="retry-texture-encoding"
-              onClick={() => void retryFailedTextureEncoding()}
-            >
-              Retry Encoding
-            </Button>
+            <Field orientation="horizontal" className="settings-field">
+              <FieldLabel htmlFor="retry-texture-encoding">Failed Encodes</FieldLabel>
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-[var(--chrome-row,28px)] w-fit justify-self-end"
+                data-testid="retry-texture-encoding"
+                id="retry-texture-encoding"
+                onClick={() => void retryFailedTextureEncoding()}
+              >
+                Retry Encoding
+              </Button>
+              <FieldDescription>Queues textures whose compression failed.</FieldDescription>
+            </Field>
           </FieldSet>
         </FieldGroup>
       ) : null}
@@ -1261,8 +1261,7 @@ export function SettingsModal({
                 </Button>
               </AssetPickerControl>
               <FieldDescription>
-                  Startup scene for exported games. Editor Play uses the open
-                  scene.
+                  Exported games start here. Editor Play uses the open scene.
               </FieldDescription>
             </Field>
             <Field>
@@ -1554,22 +1553,20 @@ export function SettingsModal({
                 data-testid="settings-source-control-token"
               />
               <FieldDescription data-testid="settings-source-control-token-help">
-                On GitHub, create a personal access token from{" "}
+                Create one in{" "}
                 <a
                   href="https://github.com/settings/tokens"
                   target="_blank"
                   rel="noreferrer"
                 >
                   GitHub Token Settings
-                </a>
-                . Use a classic token with the repo scope, or a fine-grained
-                token with Contents: Read and Write on this repository. GitLab
-                and Gitea tokens with push access also work.
+                </a>{" "}
+                with repo scope, or Contents: Read and Write for a fine-grained
+                token. GitLab and Gitea tokens with push access also work.
               </FieldDescription>
               <FieldDescription data-testid="settings-source-control-token-copy">
                 {sourceControl.hasToken ? "Token Saved. " : ""}
-                  Stored on this device for this project. Never included in
-                  project files or Git.
+                  Stored on this device for this project. Never included in project files or Git.
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">

@@ -47,19 +47,19 @@ const fields: {
   {
     key: "enabled",
     label: "Shadows Enabled",
-    description: "Allow eligible lights to cast real-time shadows.",
+    description: "Lets eligible lights cast real-time shadows.",
   },
   {
     key: "distance",
     label: "Shadow Distance",
     description:
-      "Camera-relative directional shadow coverage in world units. Does not limit scene size.",
+      "Directional shadow coverage around the camera, in world units.",
   },
   {
     key: "fadeFraction",
     label: "Shadow Distance Fade",
     description:
-      "Fraction of the directional shadow distance used to fade the far cutoff. Zero disables fading.",
+      "Fades the far edge over this fraction of the distance. Zero disables fading.",
   },
   {
     key: "mapSize",
@@ -70,13 +70,13 @@ const fields: {
   {
     key: "cascades",
     label: "Shadow Cascades",
-    description: "Split directional coverage to retain detail near the camera.",
+    description: "Splits directional coverage to keep detail near the camera.",
   },
   {
     key: "filter",
     label: "Shadow Filter",
     description:
-      "PCF filters shadow edges. PCSS adds distance-dependent penumbra in PBR. CEL uses PCF; point lights use the supported cube-map filter.",
+      "PCF softens edges. PCSS adds contact-hardening penumbra in PBR. CEL always uses PCF.",
   },
   {
     key: "filterQuality",
@@ -86,36 +86,36 @@ const fields: {
   {
     key: "softness",
     label: "Contact Hardening Size",
-    description: "PBR PCSS light size; larger values widen the penumbra.",
+    description: "PCSS light size. Larger values widen the penumbra.",
   },
   {
     key: "depthBias",
     label: "Shadow Depth Bias",
     description:
-      "Advanced depth offset. Excessive values detach shadows from surfaces.",
+      "Depth offset. High values detach shadows from surfaces.",
   },
   {
     key: "autoBias",
     label: "Automatic Shadow Bias",
     description:
-      "Adapt directional maps and cascades to their projection and resolution, using Depth Bias as a minimum. Normal Bias stays as authored. Point and spot lights use authored offsets. Disable for manual directional offsets.",
+      "Scales directional bias per cascade, with Depth Bias as the minimum. Turn off for manual offsets.",
   },
   {
     key: "normalBias",
     label: "Shadow Normal Bias",
-    description: "Advanced geometric normal offset in world units.",
+    description: "Normal offset in world units.",
   },
   {
     key: "localLightMode",
     label: "Local Shadow Budget Mode",
     description:
-      "Auto selects local shadow capacity from the quality tier. Manual sets an authored upper limit within the effective device budget.",
+      "Auto follows the quality tier. Manual sets an upper limit within the device budget.",
   },
   {
     key: "maxLocalLights",
     label: "Local Shadow Light Budget",
     description:
-      "Maximum simultaneous point and spot shadow lights. A point light renders six faces.",
+      "Point and spot lights that can cast shadows at once. A point light renders six faces.",
   },
   {
     key: "localMapSize",

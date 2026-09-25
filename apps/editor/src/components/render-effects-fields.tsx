@@ -71,7 +71,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false }: Pr
             </SelectGroup></SelectContent>
           </Select>
           <FieldDescription id="project-effects-pipeline-description">
-            Scene Linear renders PBR lighting in HDR and resolves tone mapping, exposure and contrast in a display stage. CEL stays display-space.
+            Scene Linear renders PBR in HDR, then applies tone mapping, exposure and contrast. CEL stays in display space.
           </FieldDescription>
         </Field>
         <Field className="settings-field">

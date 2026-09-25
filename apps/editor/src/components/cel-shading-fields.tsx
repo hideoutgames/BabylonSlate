@@ -38,12 +38,12 @@ const fields: {
   {
     key: "outlinesEnabled",
     label: "Outlines",
-    description: "Outline eligible scene geometry. Global outlines are hidden by other geometry; disabling preserves their appearance settings.",
+    description: "Outlines eligible scene geometry. Other geometry hides them.",
   },
   {
     key: "outlineColor",
     label: "Outline Color",
-    description: "Default silhouette color. An enabled Outline component supplies its own style.",
+    description: "Default silhouette color. Outline components use their own.",
   },
   {
     key: "outlineWidth",
@@ -53,7 +53,7 @@ const fields: {
   {
     key: "outlineDistanceFadeEnabled",
     label: "Outline Distance Fade",
-    description: "Shrink global CEL outlines smoothly to zero with distance. Outline components and editor selection keep their own style.",
+    description: "Shrinks outlines to zero with distance. Outline components keep their own style.",
   },
   {
     key: "outlineFadeStart",
@@ -89,7 +89,7 @@ const fields: {
   {
     key: "specularEnabled",
     label: "Specular",
-    description: "Enable stylized highlights. Turning this off preserves the highlight settings.",
+    description: "Adds stylized highlights.",
   },
   {
     key: "specularStrength",

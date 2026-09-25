@@ -523,7 +523,7 @@ describe("SettingsModal project authoring", () => {
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/],
     ["twoD", "settings-pixel-perfect", /Keeps pixels sharp/],
-    ["twoD", "settings-integer-zoom", /Applies to game cameras/],
+    ["twoD", "settings-integer-zoom", /Game cameras only/],
     ["audio", "settings-audio-occlusion", /Wall muffling/],
     ["rendering", "setting-render-custom", /Sets the design size/],
     ["rendering", "setting-render-black-bars", /Adds bars to preserve/],
