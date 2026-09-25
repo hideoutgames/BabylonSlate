@@ -468,7 +468,7 @@ export function EditorChromeBar({
           Settings
           <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-max min-w-44 whitespace-nowrap">
           <DropdownMenuGroup>
             <DropdownMenuItem
               data-testid="project-settings"
@@ -476,7 +476,7 @@ export function EditorChromeBar({
             >
               Project Settings
               {projectSettingsChord ? (
-                <DropdownMenuShortcut>
+                <DropdownMenuShortcut className="pl-4 tracking-normal">
                   <ShortcutKeys chord={projectSettingsChord} decorative />
                 </DropdownMenuShortcut>
               ) : null}
@@ -487,7 +487,7 @@ export function EditorChromeBar({
             >
               Engine Settings
               {engineSettingsChord ? (
-                <DropdownMenuShortcut>
+                <DropdownMenuShortcut className="pl-4 tracking-normal">
                   <ShortcutKeys chord={engineSettingsChord} decorative />
                 </DropdownMenuShortcut>
               ) : null}

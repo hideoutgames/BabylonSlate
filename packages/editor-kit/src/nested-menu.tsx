@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { Separator } from "@babylonslate/ui/components/separator";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { ariaKeyShortcuts, type KeyChord } from "./keybinds";
 import { ShortcutKeys } from "./shortcut-keys";
 import {
@@ -204,7 +205,7 @@ function NestedMenuItems({
             {item.icon}
             {item.label}
             {item.shortcut ? (
-              <DropdownMenuShortcut>
+              <DropdownMenuShortcut className="pl-4 tracking-normal">
                 <ShortcutKeys chord={item.shortcut} decorative />
               </DropdownMenuShortcut>
             ) : null}
@@ -727,7 +728,10 @@ export function NestedMenu({
       )}
       <DropdownMenuContent
         align={align}
-        className={contentClassName}
+        className={cn(
+          size === "touch" ? "w-auto min-w-48" : "w-max min-w-40 whitespace-nowrap",
+          contentClassName,
+        )}
         data-testid={contentTestId}
       >
         <NestedMenuItems items={items} size={size} />
