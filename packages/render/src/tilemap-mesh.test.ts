@@ -5,7 +5,7 @@ import {
   normalizeTilesetPayload,
   setTile,
 } from "@babylonslate/assets";
-import { applyTilemapParallaxToMesh, createTilemapMeshes, updateSceneTilemapAnimations } from "./tilemap-mesh";
+import { createTilemapMeshes, updateSceneTilemapAnimations, updateSceneTilemapParallax } from "./tilemap-mesh";
 
 describe("createTilemapMeshes", () => {
   let engine: NullEngine;
@@ -124,18 +124,22 @@ describe("createTilemapMeshes", () => {
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = {
       ...tilemap,
-      layers: tilemap.layers.map((layer) => ({
-        ...layer,
-        parallax: { x: 0.5, y: 0.25 },
-      })),
+      layers: tilemap.layers.flatMap((layer) => [
+        { ...layer, parallax: { x: 0.5, y: 0.25 } },
+        // A layer that scrolls with the camera on X still follows parallax on Y.
+        { ...layer, id: "layer-2", parallax: { x: 1, y: 0.5 } },
+      ]),
     };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
+    tilemap = setTile(tilemap, "layer-2", 0, 0, 1);
     const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
-    const child = root.getChildMeshes()[0]!;
-    expect(child.metadata?.tilemapParallax).toEqual({ x: 0.5, y: 0.25 });
-    applyTilemapParallaxToMesh(root, { position: { x: 10, y: 4 } });
-    expect(child.position.x).toBeCloseTo(5, 6);
-    expect(child.position.y).toBeCloseTo(3, 6);
+    const [child, vertical] = root.getChildMeshes();
+    expect(child!.metadata?.tilemapParallax).toEqual({ x: 0.5, y: 0.25 });
+    updateSceneTilemapParallax(scene, { x: 10, y: 4 });
+    expect(child!.position.x).toBeCloseTo(5, 6);
+    expect(child!.position.y).toBeCloseTo(3, 6);
+    expect(vertical!.position.x).toBeCloseTo(0, 6);
+    expect(vertical!.position.y).toBeCloseTo(2, 6);
   });
 
   it("skips hidden layers", () => {

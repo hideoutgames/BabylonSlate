@@ -602,3 +602,13 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
   });
 });
+
+
+describe("Water editor docks", () => {
+  it("offers independent Preview and Details windows with Preview as the primary panel", () => {
+    const windows = listDockWindows("water");
+    expect(windows.map((entry) => entry.id)).toEqual(["water-preview", "water-details"]);
+    expect(primaryDockPanel("water")).toBe("water-preview");
+    expect(windows.find((entry) => entry.id === "water-details")?.defaultPosition).toMatchObject({ referencePanelId: "water-preview", direction: "right" });
+  });
+});

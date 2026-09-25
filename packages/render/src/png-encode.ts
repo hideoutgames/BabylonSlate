@@ -3,23 +3,40 @@ export const PNG_SIGNATURE = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
 
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
   for (let i = 0; i < bytes.length; i += 1) {
-    crc ^= bytes[i]!;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
+    crc = CRC_TABLE[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** zlib's NMAX: the longest run whose Adler sums cannot exceed 32 bits. */
+const ADLER_BLOCK = 5552;
+
 function adler32(bytes: Uint8Array): number {
   let a = 1;
   let b = 0;
-  for (let i = 0; i < bytes.length; i += 1) {
-    a = (a + bytes[i]!) % 65521;
-    b = (b + a) % 65521;
+  for (let start = 0; start < bytes.length; start += ADLER_BLOCK) {
+    const end = Math.min(start + ADLER_BLOCK, bytes.length);
+    for (let i = start; i < end; i += 1) {
+      a += bytes[i]!;
+      b += a;
+    }
+    a %= 65521;
+    b %= 65521;
   }
   return ((b << 16) | a) >>> 0;
 }
@@ -31,36 +48,37 @@ function writeUint32(target: Uint8Array, offset: number, value: number): void {
   target[offset + 3] = value & 0xff;
 }
 
-function chunk(type: string, data: Uint8Array): Uint8Array {
-  const typeBytes = new TextEncoder().encode(type);
-  const out = new Uint8Array(4 + 4 + data.length + 4);
-  writeUint32(out, 0, data.length);
-  out.set(typeBytes, 4);
-  out.set(data, 8);
-  const crcInput = new Uint8Array(4 + data.length);
-  crcInput.set(typeBytes, 0);
-  crcInput.set(data, 4);
-  writeUint32(out, 8 + data.length, crc32(crcInput));
-  return out;
+/** Write a chunk whose data `writeData` fills in place; returns the next offset. */
+function writeChunk(
+  out: Uint8Array,
+  offset: number,
+  type: string,
+  length: number,
+  writeData: (dataOffset: number) => void,
+): number {
+  writeUint32(out, offset, length);
+  for (let i = 0; i < 4; i += 1) out[offset + 4 + i] = type.charCodeAt(i);
+  writeData(offset + 8);
+  // Type and data are contiguous, so the CRC needs no separate input copy.
+  writeUint32(out, offset + 8 + length, crc32(out.subarray(offset + 4, offset + 8 + length)));
+  return offset + 12 + length;
+}
+
+const STORED_BLOCK_BYTES = 65535;
+
+function storedBlockCount(length: number): number {
+  return Math.max(1, Math.ceil(length / STORED_BLOCK_BYTES));
 }
 
 /** Store-only zlib so we do not take a deflate dependency in `@babylonslate/render`. */
-function zlibStore(data: Uint8Array): Uint8Array {
-  const max = 65535;
-  const blockCount = Math.max(1, Math.ceil(data.length / max));
-  let total = 2 + 4;
+function writeZlibStore(out: Uint8Array, offset: number, data: Uint8Array): void {
+  out[offset] = 0x78;
+  out[offset + 1] = 0x01;
+  offset += 2;
+  const blockCount = storedBlockCount(data.length);
   for (let i = 0; i < blockCount; i += 1) {
-    const start = i * max;
-    const len = Math.min(max, data.length - start);
-    total += 5 + len;
-  }
-  const out = new Uint8Array(total);
-  out[0] = 0x78;
-  out[1] = 0x01;
-  let offset = 2;
-  for (let i = 0; i < blockCount; i += 1) {
-    const start = i * max;
-    const slice = data.subarray(start, start + max);
+    const start = i * STORED_BLOCK_BYTES;
+    const slice = data.subarray(start, start + STORED_BLOCK_BYTES);
     const last = i === blockCount - 1 ? 1 : 0;
     out[offset] = last;
     out[offset + 1] = slice.length & 0xff;
@@ -72,7 +90,6 @@ function zlibStore(data: Uint8Array): Uint8Array {
     offset += 5 + slice.length;
   }
   writeUint32(out, offset, adler32(data));
-  return out;
 }
 
 /** Encode unpremultiplied RGBA8 into a PNG (filter 0, store-only IDAT). */
@@ -88,24 +105,17 @@ export function encodeRgbaPng(
     raw[dest] = 0;
     raw.set(rgba.subarray(y * rowBytes, (y + 1) * rowBytes), dest + 1);
   }
-  const ihdr = new Uint8Array(13);
-  writeUint32(ihdr, 0, width);
-  writeUint32(ihdr, 4, height);
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  const parts = [
-    PNG_SIGNATURE,
-    chunk("IHDR", ihdr),
-    chunk("IDAT", zlibStore(raw)),
-    chunk("IEND", new Uint8Array(0)),
-  ];
-  let total = 0;
-  for (const part of parts) total += part.length;
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
+  const zlibLength = 2 + storedBlockCount(raw.length) * 5 + raw.length + 4;
+  // Signature, then IHDR, IDAT and IEND chunks (12 bytes of framing each).
+  const out = new Uint8Array(PNG_SIGNATURE.length + 12 + 13 + 12 + zlibLength + 12);
+  out.set(PNG_SIGNATURE, 0);
+  let offset = writeChunk(out, PNG_SIGNATURE.length, "IHDR", 13, (data) => {
+    writeUint32(out, data, width);
+    writeUint32(out, data + 4, height);
+    out[data + 8] = 8;
+    out[data + 9] = 6;
+  });
+  offset = writeChunk(out, offset, "IDAT", zlibLength, (data) => writeZlibStore(out, data, raw));
+  writeChunk(out, offset, "IEND", 0, () => {});
   return out;
 }

@@ -116,6 +116,7 @@ type RapierRigidBody = {
   handle: number;
   translation(): { x: number; y: number };
   linvel(): { x: number; y: number };
+  angvel(): number;
   setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
   rotation(): number;
@@ -123,6 +124,7 @@ type RapierRigidBody = {
   setAngvel(velocity: number, wakeUp: boolean): void;
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
+  applyImpulseAtPoint(impulse: { x: number; y: number }, point: { x: number; y: number }, wakeUp: boolean): void;
   setNextKinematicTranslation(t: { x: number; y: number }): void;
   setNextKinematicRotation(angle: number): void;
   setGravityScale(scale: number, wakeUp: boolean): void;
@@ -363,6 +365,20 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: impulse.x * strength, y: impulse.y * strength },
       true,
     );
+  }
+
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    if (![impulse.x, impulse.y, point.x, point.y].every(Number.isFinite)) return;
+    record.body.applyImpulseAtPoint({ x: impulse.x, y: impulse.y }, { x: point.x, y: point.y }, true);
+  }
+
+  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null {
+    const body = this.bodies.get(bodyId)?.body;
+    if (!body) return null;
+    const linear = body.linvel();
+    return { linear: { x: linear.x, y: linear.y, z: 0 }, angular: { x: 0, y: 0, z: body.angvel() } };
   }
 
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {

@@ -4,7 +4,6 @@ import {
   type Observer,
   type RenderTargetTexture,
 } from "@babylonjs/core";
-import { LightConstants } from "@babylonjs/core/Lights/lightConstants";
 import type { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
 
 type PackedLights = {
@@ -19,8 +18,6 @@ type PackedLights = {
 export class ClusteredLightOrder {
   private map: RenderTargetTexture | undefined;
   private observer: Observer<RenderTargetTexture> | undefined;
-  private registry: readonly Light[] | undefined;
-  private readonly authored = new Map<Light, number>();
   private readonly destination = new Map<Light, number>();
   private readonly ordered: Light[] = [];
   private scratch = new Float32Array(0);
@@ -30,9 +27,15 @@ export class ClusteredLightOrder {
   private readonly native: PackedLights;
 
   private readonly container: ClusteredLightContainer;
+  /** The owner's authored scene-light order, so packed rows cannot diverge from it. */
+  private readonly compare: (a: Light, b: Light) => number;
 
-  constructor(container: ClusteredLightContainer) {
+  constructor(
+    container: ClusteredLightContainer,
+    compare: (a: Light, b: Light) => number,
+  ) {
     this.container = container;
+    this.compare = compare;
     const native = container as unknown as PackedLights;
     if (
       !Array.isArray(native._sortedLights) ||
@@ -45,12 +48,7 @@ export class ClusteredLightOrder {
     this.native = native;
   }
 
-  sync(map: RenderTargetTexture, registry: readonly Light[]): void {
-    if (this.registry !== registry) {
-      this.registry = registry;
-      this.authored.clear();
-      registry.forEach((light, index) => this.authored.set(light, index));
-    }
+  sync(map: RenderTargetTexture): void {
     if (this.map === map) return;
     if (this.map && this.observer)
       this.map.onBeforeBindObservable.remove(this.observer);
@@ -85,17 +83,14 @@ export class ClusteredLightOrder {
       throw new Error("Clustered light row or slice layout changed.");
     this.ordered.length = source.length;
     for (let i = 0; i < source.length; i++) this.ordered[i] = source[i]!;
-    this.ordered.sort(
-      (a, b) =>
-        (this.container.getScene().requireLightSorting
-          ? LightConstants.CompareLightsPriority(a, b)
-          : 0) ||
-        (this.authored.get(a) ?? a.uniqueId) -
-          (this.authored.get(b) ?? b.uniqueId),
-    );
-    if (this.ordered.every((light, index) => light === source[index])) return;
+    this.ordered.sort(this.compare);
+    let reordered = false;
+    for (let index = 0; index < source.length && !reordered; index++)
+      reordered = this.ordered[index] !== source[index];
+    if (!reordered) return;
     this.destination.clear();
-    this.ordered.forEach((light, index) => this.destination.set(light, index));
+    for (let index = 0; index < source.length; index++)
+      this.destination.set(this.ordered[index]!, index);
     if (this.scratch.length !== native._lightDataBuffer.length)
       this.scratch = new Float32Array(native._lightDataBuffer.length);
     if (this.indices.length < source.length)

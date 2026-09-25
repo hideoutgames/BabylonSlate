@@ -21,7 +21,7 @@ import {
   encodeParentedAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
   encodeTriangleGlb,
-} from "./model-mesh";
+} from "./glb-test-fixtures";
 import { accountedGeometryBytes } from "./perf-ceilings";
 import {
   applySnapshotToScene,

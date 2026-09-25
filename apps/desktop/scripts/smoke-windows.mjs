@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, cp } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, cp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,8 @@ try {
   await cp(join(desktop, `dist/public/BabylonSlate-${manifest.windowsVersion}-x64.exe`), installer);
   await run(installer, ["/S", `/D=${installDir}`]);
   await mkdir(userData);
+  // Installed-app acceptance must not install a different published version.
+  await writeFile(join(userData, "engine-settings.json"), JSON.stringify({ automaticUpdatesEnabled: false }));
   const archive = join(installDir, "resources/app.asar");
   const names = listPackage(archive).map(name => name.replaceAll("\\", "/").replace(/^\//, ""));
   for (const name of names) {
@@ -58,6 +60,9 @@ try {
   let page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
+  const news = page.getByRole("dialog", { name: "What's New" });
+  await expect(news).toContainText(manifest.applicationVersion);
+  await news.getByRole("button", { name: "Done", exact: true }).click();
   assert.equal(page.url(), "app://babylonslate/index.html");
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
   await page.getByTestId("engine-settings").click();
@@ -104,6 +109,7 @@ try {
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "What's New" })).toHaveCount(0);
   await page.getByTestId(/^open-listed-project-DistributionSmoke(?:\.babproject)?$/).click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.babylonslate.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);

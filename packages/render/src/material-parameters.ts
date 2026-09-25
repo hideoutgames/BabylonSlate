@@ -10,7 +10,7 @@ import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type { MaterialBuildPlan } from "@babylonslate/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 /** Reject invalid writes before replacing a component's replayable value. */
 export function validMaterialParameterValue(
@@ -145,10 +145,18 @@ export function createMaterialParameterBindings(
       }
       const block = realized.get(operation.id)?.blocks[0];
       if (!(block instanceof InputBlock)) return false;
+      // Resolve replays every stored value; an unchanged uniform must not
+      // reset readiness for every mesh using this material.
+      const current: unknown = block.value;
       if (parameter.kind === "float") {
+        if (current === parameter.value) { values.set(name, copy(parameter)); return true; }
         block.value = parameter.value;
       } else {
         const [r, g, b, a] = parameter.value;
+        if (current instanceof Color4 && current.r === r && current.g === g && current.b === b && current.a === a) {
+          values.set(name, copy(parameter));
+          return true;
+        }
         block.value = new Color4(r, g, b, a);
       }
       dirty();

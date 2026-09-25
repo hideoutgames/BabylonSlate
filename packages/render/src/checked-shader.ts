@@ -4,6 +4,10 @@ type Replacement = string | ((match: string, ...groups: string[]) => string);
 export function checkedShader(source: string, label: string) {
   return {
     value: source,
+    /**
+     * `expected` is the total occurrence count of `search`. Only the first
+     * match is replaced unless `search` is a global RegExp.
+     */
     replace(search: string | RegExp, replacement: Replacement, expected = 1) {
       const count =
         typeof search === "string"
@@ -20,7 +24,7 @@ export function checkedShader(source: string, label: string) {
             ).length;
       if (count !== expected)
         throw new Error(
-          `CEL shader contract failed (${label}): expected ${expected} matches for ${String(search)}, found ${count}. Review the Babylon shader adapter before enabling CEL.`,
+          `Shader adapter contract failed (${label}): expected ${expected} matches for ${String(search)}, found ${count}. Review the Babylon shader adapter.`,
         );
       this.value =
         typeof replacement === "string"
@@ -32,7 +36,7 @@ export function checkedShader(source: string, label: string) {
       const count = this.value.split(search).length - 1;
       if (count !== expected)
         throw new Error(
-          `CEL shader contract failed (${label}): expected ${expected} matches for ${search}, found ${count}. Review the Babylon shader adapter before enabling CEL.`,
+          `Shader adapter contract failed (${label}): expected ${expected} matches for ${search}, found ${count}. Review the Babylon shader adapter.`,
         );
       this.value = this.value.replaceAll(search, replacement);
       return this;

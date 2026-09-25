@@ -1,11 +1,5 @@
 import { engineBackendStatus } from "./backend-status";
-import {
-  Camera,
-  DirectionalLight,
-  HemisphericLight,
-  type Light,
-  type Scene,
-} from "@babylonjs/core";
+import type { Light, Scene } from "@babylonjs/core";
 import {
   resolveRenderingPipeline,
   type ClusteredRenderingAvailability,
@@ -13,12 +7,14 @@ import {
 } from "@babylonslate/core";
 import {
   ClusteredSceneLights,
+  isClusterableCamera,
   isClusterableLocalLight,
 } from "./clustered-scene-lights";
 import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { isGlobalLight } from "./light-policy";
 import { renderPathSession } from "./render-path-session";
 import { sceneRenderingSettings } from "./render-settings";
 import { findSceneShadowController } from "./shadow-controller";
@@ -36,6 +32,24 @@ function requested(
     { gpuBackend: scene.getEngine().isWebGPU ? "webgpu" : "webgl2", reason: engineBackendStatus(scene.getEngine())?.fallbackReason },
     availability,
   );
+}
+
+/** Equal exactly when the published status content is equal. */
+function samePipeline(
+  a: ResolvedRenderingPipeline,
+  b: ResolvedRenderingPipeline,
+): boolean {
+  if (
+    a.requested.renderPath !== b.requested.renderPath ||
+    a.requested.gpuBackend !== b.requested.gpuBackend ||
+    a.effective.renderPath !== b.effective.renderPath ||
+    a.effective.gpuBackend !== b.effective.gpuBackend ||
+    a.limits.length !== b.limits.length
+  )
+    return false;
+  for (let index = 0; index < a.limits.length; index++)
+    if (a.limits[index] !== b.limits[index]) return false;
+  return true;
 }
 
 /** Read-only metadata. Renderer preparation resolves the actual capabilities first. */
@@ -87,8 +101,11 @@ class SceneRenderPath {
   private registry: Light[] = [];
   private cluster: ClusteredSceneLights | undefined;
   private selection: ResolvedRenderingPipeline;
+  private cachedPreference:
+    | { project: unknown; session: unknown; backend: unknown; pipeline: ResolvedRenderingPipeline }
+    | undefined;
   private syncing = false;
-  private published = "";
+  private published: ResolvedRenderingPipeline | undefined;
 
   private readonly scene: Scene;
 
@@ -109,7 +126,7 @@ class SceneRenderPath {
     this.syncing = true;
     try {
       const scene = this.scene;
-      const preference = requested(scene);
+      const preference = this.requestedPreference();
       if (preference.requested.renderPath === "forward") {
         this.selection = preference;
         this.cluster?.dispose();
@@ -140,7 +157,8 @@ class SceneRenderPath {
         registry.length !== this.registry.length ||
         registry.some((light, index) => light !== this.registry[index]);
       this.registry = registry;
-      this.selection = requested(scene, this.availability());
+      const selection = requested(scene, this.availability());
+      if (!samePipeline(selection, this.selection)) this.selection = selection;
       if (this.selection.effective.renderPath === "clusteredForward") {
         if (!this.cluster)
           this.cluster = new ClusteredSceneLights(scene, registry);
@@ -160,26 +178,35 @@ class SceneRenderPath {
     this.status = failure
       ? requested(this.scene, { supported: false, reason: failure })
       : this.selection;
-    const key = JSON.stringify(this.status);
-    if (key === this.published) return;
-    this.published = key;
+    if (this.published && samePipeline(this.status, this.published)) return;
+    // Compare later statuses against the notified content, not a shared object.
+    this.published = {
+      requested: { ...this.status.requested },
+      effective: { ...this.status.effective },
+      limits: [...this.status.limits],
+    };
     for (const listener of this.listeners) listener(this.status);
+  }
+
+  /** requested() without availability, reused while its inputs keep their identity. */
+  private requestedPreference(): ResolvedRenderingPipeline {
+    const engine = this.scene.getEngine();
+    const project = sceneRenderingSettings(this.scene).project;
+    const session = renderPathSession(engine);
+    const backend = engineBackendStatus(engine);
+    const cached = this.cachedPreference;
+    if (cached && cached.project === project && cached.session === session && cached.backend === backend)
+      return cached.pipeline;
+    const pipeline = requested(this.scene);
+    this.cachedPreference = { project, session, backend, pipeline };
+    return pipeline;
   }
 
   private availability(): ClusteredRenderingAvailability {
     const scene = this.scene;
     const capability = clusteredLightCapabilities(scene.getEngine());
     if (capability.supported === false) return capability;
-    const camera = scene.activeCamera;
-    if (
-      !camera ||
-      camera.getScene() !== scene ||
-      camera.isDisposed() ||
-      camera.mode !== Camera.PERSPECTIVE_CAMERA ||
-      camera.minZ <= 0 ||
-      !Number.isFinite(camera.maxZ) ||
-      camera.maxZ <= camera.minZ
-    )
+    if (!isClusterableCamera(scene, scene.activeCamera))
       return {
         supported: false,
         reason:
@@ -194,10 +221,7 @@ class SceneRenderPath {
         !shadows?.requestsShadow(light) &&
         !light.getShadowGenerators()?.size,
     ).length;
-    const globals = this.registry.filter(
-      (light) =>
-        light instanceof DirectionalLight || light instanceof HemisphericLight,
-    ).length;
+    const globals = this.registry.filter(isGlobalLight).length;
     // Count authored structure, not positions, intensity, effective Enabled or
     // camera-selected shadow maps. Auto does not thrash on ordinary movement.
     const slots = Math.max(

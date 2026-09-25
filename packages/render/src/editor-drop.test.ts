@@ -10,6 +10,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   identitySerializedTransform,
+  parseLandscapeProperties,
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -66,6 +67,19 @@ function setup(
 }
 
 describe("editor Drop", () => {
+  it("drops onto the sculpted Landscape only when its collisions are enabled", () => {
+    const data = parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights: Array(25).fill(2) });
+    const component = { id: "terrain", classId: "LandscapeComponent", properties: { ...data } };
+    const { drop, sceneData } = setup([box("selected", [0, 10, 0]), createActor("landscape", "Landscape", {
+      transform: { ...identitySerializedTransform(), position: [0, 1, 0] }, components: [component],
+    })]);
+    expect(drop(["selected"])).toEqual([]);
+    sceneData.actors[1]!.components[0]!.properties.collisionsEnabled = true;
+    expect(drop(["selected"])[0]?.position).toEqual([0, 3.75, 0]); // Built-in box is 1.5 units tall.
+    sceneData.actors[1]!.components[0]!.properties.heights = Array(25).fill(4);
+    expect(drop(["selected"])[0]?.position).toEqual([0, 5.75, 0]);
+  });
+
   it("uses a configurable strict limit, including distances above the default", () => {
     const { drop } = setup([box("selected", [0, 20_000, 0]), box("floor", [0, 0, 0])]);
     expect(drop(["selected"])).toEqual([]);
@@ -100,6 +114,15 @@ describe("editor Drop", () => {
     expect(
       setup([raised, box("floor", [0, 0, 0])]).drop(["raised"])[0]?.position,
     ).toEqual([0, -0.5, 0]);
+  });
+
+  it("drops a camera's optical origin, without treating its editor model as collision", () => {
+    const camera = createActor("camera", "Camera", {
+      transform: { ...identitySerializedTransform(), position: [0, 10, 0] },
+      components: [{ id: "camera", classId: "CameraComponent", properties: {} }],
+    });
+    expect(setup([camera, box("floor", [0, 0, 0])]).drop(["camera"])[0]?.position)
+      .toEqual([0, 0.75, 0]);
   });
 
   it("uses imported visual bounds through TransformNode wrappers and ignores debug lines", () => {

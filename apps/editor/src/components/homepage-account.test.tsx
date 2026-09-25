@@ -117,10 +117,12 @@ describe("Homepage account", () => {
     clerk.signedIn = true;
     const onApplicationSettings = vi.fn();
     const onEngineSettings = vi.fn();
+    const onChangelog = vi.fn();
     const { unmount } = render(
       <HomepageAccount
         onApplicationSettings={onApplicationSettings}
         onEngineSettings={onEngineSettings}
+        onChangelog={onChangelog}
       />,
     );
     const trigger = await screen.findByRole("button", { name: "Profile" });
@@ -150,6 +152,10 @@ describe("Homepage account", () => {
       within(menu).getByRole("menuitem", { name: "Engine Settings" }),
     );
     expect(onEngineSettings).toHaveBeenCalledOnce();
+
+    menu = await open();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Changelog" }));
+    expect(onChangelog).toHaveBeenCalledOnce();
 
     menu = await open();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign Out" }));

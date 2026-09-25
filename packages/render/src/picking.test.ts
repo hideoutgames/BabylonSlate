@@ -13,7 +13,7 @@ import {
 } from "@babylonslate/core";
 import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { encodeTranslatedTetrahedronGlb } from "./model-mesh";
+import { encodeTranslatedTetrahedronGlb } from "./glb-test-fixtures";
 import { pickAtCanvas } from "./picking";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { meshNamesInCanvasRect, projectToCanvas } from "./two-d";

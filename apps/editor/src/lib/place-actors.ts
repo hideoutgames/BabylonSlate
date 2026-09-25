@@ -37,6 +37,7 @@ export type PlaceActorKind =
   | { type: "blocking-volume" }
   | { type: "audio" }
   | { type: "particle" }
+  | { type: "water"; classId: string }
   | { type: "tilemap" }
   | { type: "empty" }
   | {
@@ -70,6 +71,8 @@ const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
+  ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
+  { id: "water-global", title: "Global Water Volume", category: "Water", kind: { type: "water", classId: "GlobalWaterVolumeComponent" } },
   ...SHAPES.map((meshKind) => ({
     id: `shape-${meshKind}`,
     title: `${meshKind[0]!.toUpperCase()}${meshKind.slice(1)}`,
@@ -203,7 +206,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "light" &&
         item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
-        item.kind.type !== "skybox",
+        item.kind.type !== "skybox" && item.kind.type !== "water",
     ),
     ...OVERLAY_PLACE_ACTORS,
   ];
@@ -214,6 +217,7 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "Model",
   "Audio",
   "ParticleSystem",
+  "Water",
   "Tilemap",
 ]);
 
@@ -284,7 +288,7 @@ export function projectPlaceActors(
   );
   const overlay = options?.overlay === true;
   return assets
-    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? ""))
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && asset.header.type === "Water"))
     .filter((asset) => {
       if (asset.header.type !== "Class") return true;
       const classId = classIdFromClassAsset({
@@ -358,6 +362,7 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "audio") {
     return resolveTypeVisual({ classId: "AudioComponent", family: "class" });
   }
+  if (kind.type === "water") return resolveTypeVisual({ classId: kind.classId, family: "class" });
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
@@ -521,6 +526,9 @@ export function spawnPlacedActor(
       ],
     }));
   }
+  if (kind.type === "water") {
+    return finish(createActor(id, item.title, { transform, components: [{ id: id + "-water", classId: kind.classId, properties: defaultPropertiesFor(kind.classId) }] }));
+  }
   if (kind.type === "overlay-2d") {
     return finish(createActor(id, item.title, {
       transform,
@@ -573,6 +581,9 @@ export function spawnPlacedActor(
           },
         ],
       }));
+    }
+    if (kind.assetType === "Water") {
+      return finish(createActor(id, kind.name, { transform, components: [{ id: id + "-water", classId: "WaterLakeComponent", properties: { ...defaultPropertiesFor("WaterLakeComponent"), assetGuid: kind.guid } }] }));
     }
     if (kind.assetType === "ParticleSystem") {
       return finish(createActor(id, kind.name, {

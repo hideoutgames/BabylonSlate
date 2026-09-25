@@ -2,7 +2,7 @@ import { CubeTexture, Material, type Scene } from "@babylonjs/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import type { TextureResources, ResourceLease } from "./resource-cache";
 import { ownEnvironmentIrradiance } from "./environment-irradiance";
 

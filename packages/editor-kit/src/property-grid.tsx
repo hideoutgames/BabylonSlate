@@ -62,6 +62,7 @@ export type PropertyRow =
       min?: number;
       max?: number;
       sensitivity?: number;
+      precision?: number;
       onChange: (value: number) => void;
       onCommit?: (value: number) => void;
     })
@@ -281,6 +282,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           min={row.min}
           max={row.max}
           sensitivity={row.sensitivity}
+          precision={row.precision}
           disabled={row.disabled}
           onChange={row.onChange}
           onDragEnd={row.onCommit}
@@ -580,6 +582,22 @@ function readOnlyPropertyRow(row: PropertyRow): PropertyRow {
   return next;
 }
 
+/** PropertyGrid section band, for Details sections that mix property rows with lists or summaries. */
+export function PropertySectionTitle({
+  children,
+  aside,
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+}) {
+  return (
+    <h3 className="flex min-w-0 items-center gap-2 bg-panel-header px-2 py-1.5 text-xs font-semibold text-foreground">
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {aside}
+    </h3>
+  );
+}
+
 /** Typed property rows with per-property reset-to-default (engineplan §7.4). */
 export function PropertyGrid({
   rows,
@@ -600,11 +618,7 @@ export function PropertyGrid({
       data-density={density}
       data-testid={testId}
     >
-      {title ? (
-        <h3 className="bg-panel-header px-2 py-1.5 text-xs font-semibold text-foreground">
-          {title}
-        </h3>
-      ) : null}
+      {title ? <PropertySectionTitle>{title}</PropertySectionTitle> : null}
       <FieldGroup className="gap-0">
         {rows.map((source) => {
           const row = readOnly ? readOnlyPropertyRow(source) : source;

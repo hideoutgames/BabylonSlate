@@ -122,6 +122,7 @@ export {
 export {
   PropertyGrid,
   type Color4Value,
+  PropertySectionTitle,
   type PropertyGridProps,
   type PropertyRow,
   type RangeValue,

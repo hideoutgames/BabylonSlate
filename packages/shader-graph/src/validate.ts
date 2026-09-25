@@ -10,6 +10,7 @@ import {
 } from "./catalog";
 
 function materialDomainLabel(domain: MaterialDomain): string {
+  if (domain === "landscape") return "landscape";
   if (domain === "postProcess") return "post-process";
   if (domain === "particle") return "particle";
   return "surface";
@@ -575,7 +576,7 @@ export function validateMaterialDocument(
     });
   }
 
-  if (doc.domain === "surface" && !dependencies.recursion) {
+  if ((doc.domain === "surface" || doc.domain === "landscape") && !dependencies.recursion) {
     diagnostics.push(
       ...validateWorldPositionOffsetStage(doc, context.functions ?? {}),
     );

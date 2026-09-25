@@ -15,10 +15,7 @@ import {
   managedRenderReservations,
   reserveManagedShadowBytes,
 } from "./managed-render-resources";
-import {
-  beginManagedLightingAllocation,
-  managedLightingReservations,
-} from "./managed-lighting-resources";
+import { managedLightingReservations } from "./managed-lighting-resources";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -128,8 +125,8 @@ describe("managed render-target storage", () => {
     const engine = engineWithLimit(128);
     const shadow = {};
     reserveManagedShadowBytes(engine, shadow, 24);
-    const cluster = beginManagedLightingAllocation(engine, 8)!;
-    cluster.commit([{ handle: {}, bytes: 8 }]);
+    const cluster = beginManagedRenderAllocation(engine, 8)!;
+    cluster.commit([{ handle: {}, bytes: 8, category: "cluster" }]);
     const initial = beginManagedRenderAllocation(
       engine,
       renderTargetAllocationBytes(rgba),

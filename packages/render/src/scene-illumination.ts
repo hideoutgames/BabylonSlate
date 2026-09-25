@@ -1,10 +1,9 @@
 import { setAuthoredLightEnabled } from "./light-policy";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { authoredActorMatrices } from "./authored-transform-matrices";
+import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import {
   Camera,
   Color3,
-  Color4,
   DirectionalLight,
   HemisphericLight,
   PointLight,
@@ -30,18 +29,13 @@ import {
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
 import { applyEnvironmentLighting } from "./environment-lighting";
+import { sceneClearColor } from "./editor-clear-color";
 import { updateSceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
 export const HEMISPHERIC_FILL_LIGHT_CLASS_ID = "HemisphericFillLightComponent";
 export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
-
-
-
-export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
-
-
 
 export type AuthoredLightProperties = {
   color?: [number, number, number] | number[];
@@ -120,53 +114,84 @@ function actorRotation(actor: SerializedActor): Quaternion {
   return new Quaternion(x, y, z, w);
 }
 
+const scratchComposeRotation = new Quaternion();
+const scratchComposeLocalRotation = new Quaternion();
+const scratchComposeOffset = new Vector3();
+
+/** Actor pose times a component-local pose, shared by the editor and Play:
+ * the local position is scaled by the actor scale and rotated by the actor
+ * rotation, then the rotations compose. Writes into the outputs. */
+export function composeActorComponentTransformToRef(
+  actor: {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number; w: number };
+    scale: { x: number; y: number; z: number };
+  },
+  local: {
+    position: readonly [number, number, number];
+    rotation: readonly [number, number, number, number];
+  },
+  outPosition: Vector3,
+  outRotation: Quaternion,
+): void {
+  const { position, rotation, scale } = actor;
+  scratchComposeRotation.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  scratchComposeOffset
+    .set(
+      local.position[0] * scale.x,
+      local.position[1] * scale.y,
+      local.position[2] * scale.z,
+    )
+    .applyRotationQuaternionInPlace(scratchComposeRotation);
+  outPosition.set(
+    position.x + scratchComposeOffset.x,
+    position.y + scratchComposeOffset.y,
+    position.z + scratchComposeOffset.z,
+  );
+  const [lx, ly, lz, lw] = local.rotation;
+  scratchComposeLocalRotation.set(lx, ly, lz, lw);
+  scratchComposeRotation.multiplyToRef(scratchComposeLocalRotation, outRotation);
+}
+
 export function composeActorComponentTransform(
   actor: SerializedActor,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
-  const local = component?.transform ?? identitySerializedTransform();
-  const parentPos = actorPosition(actor);
-  const parentRot = actorRotation(actor);
-  const [sx, sy, sz] = actor.transform.scale;
-  const localPos = new Vector3(
-    local.position[0] * sx,
-    local.position[1] * sy,
-    local.position[2] * sz,
+  const composed = { position: new Vector3(), rotation: new Quaternion() };
+  composeActorComponentTransformToRef(
+    {
+      position: actorPosition(actor),
+      rotation: actorRotation(actor),
+      scale: Vector3.FromArray(actor.transform.scale),
+    },
+    component ? authoredComponentActorTransform(actor, component) : identitySerializedTransform(),
+    composed.position,
+    composed.rotation,
   );
-  const rotated = localPos.applyRotationQuaternion(parentRot);
-  const [lx, ly, lz, lw] = local.rotation;
-  return {
-    position: parentPos.add(rotated),
-    rotation: parentRot.multiply(new Quaternion(lx, ly, lz, lw)),
-  };
+  return composed;
 }
 
-const scratchWorldScale = new Vector3();
-const scratchWorldRotation = new Quaternion();
-const scratchWorldPosition = new Vector3();
-const scratchComponentRotation = new Quaternion();
+const scratchWorldPose = {
+  position: new Vector3(),
+  rotation: new Quaternion(),
+  scale: new Vector3(),
+};
 const scratchWorldComponent = { position: new Vector3(), rotation: new Quaternion() };
 
 /** The same local offset as composeActorComponentTransform, applied to a
  * parent-resolved actor world matrix. Callers copy the reused result. */
 function composeWorldComponentTransform(
   world: Matrix,
+  actor: Pick<SerializedActor, "components">,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
-  world.decompose(scratchWorldScale, scratchWorldRotation, scratchWorldPosition);
-  const local = component?.transform ?? identitySerializedTransform();
-  const { position, rotation } = scratchWorldComponent;
-  position
-    .copyFromFloats(
-      local.position[0] * scratchWorldScale.x,
-      local.position[1] * scratchWorldScale.y,
-      local.position[2] * scratchWorldScale.z,
-    )
-    .applyRotationQuaternionInPlace(scratchWorldRotation)
-    .addInPlace(scratchWorldPosition);
-  const [lx, ly, lz, lw] = local.rotation;
-  scratchComponentRotation.set(lx, ly, lz, lw);
-  scratchWorldRotation.multiplyToRef(scratchComponentRotation, rotation);
+  world.decompose(scratchWorldPose.scale, scratchWorldPose.rotation, scratchWorldPose.position);
+  composeActorComponentTransformToRef(
+    scratchWorldPose,
+    component ? authoredComponentActorTransform(actor, component) : identitySerializedTransform(),
+    scratchWorldComponent.position,
+    scratchWorldComponent.rotation,
+  );
   return scratchWorldComponent;
 }
 
@@ -187,7 +212,7 @@ function composeAttachedComponentTransform(
 ): { position: Vector3; rotation: Quaternion } {
   if (!actor.parentId) return composeActorComponentTransform(actor, component);
   try {
-    return composeWorldComponentTransform(actorWorld(actor), component);
+    return composeWorldComponentTransform(actorWorld(actor), actor, component);
   } catch (error) {
     const label = ATTACHED_COMPONENT_LABELS[component.classId] ?? component.classId;
     onDiagnostic?.(`${label} ${actor.id}: ${String(error)}`);
@@ -466,7 +491,7 @@ export function syncAuthoredCamerasFromMeshes(
     const world = mesh.computeWorldMatrix(true);
     if (mesh.parent) {
       // Attached actor meshes hold parent-local TRS; follow their world pose.
-      const composed = composeWorldComponentTransform(world, component);
+      const composed = composeWorldComponentTransform(world, actor, component);
       updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
       continue;
     }
@@ -504,10 +529,7 @@ export function applySceneEnvironment(
   options: { applyClearColor?: boolean; assets?: MeshAssetContext } = {},
 ): void {
   const settings = sceneData.settings;
-  if (options.applyClearColor) {
-    const [r, g, b] = settings.environmentColor;
-    scene.clearColor = new Color4(r, g, b, 1);
-  }
+  if (options.applyClearColor) scene.clearColor = sceneClearColor(settings.environmentColor);
   if (settings.fogEnabled) {
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogEnabled = true;

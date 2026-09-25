@@ -27,7 +27,6 @@ import {
   TransformBlock,
   TextureBlock,
   VectorMergerBlock,
-  Vector3,
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
@@ -215,7 +214,7 @@ export function compileMaterialPlan(
 ): CompileMaterialResult {
   const { scene } = options;
   const outlineMask = options.surfaceVariant === "outlineMask";
-  const cacheableShadowShape = !outlineMask && plan.domain === "surface" && plan.blendMode === "opaque" &&
+  const cacheableShadowShape = !outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: scene.getEngine().isWebGPU
@@ -239,15 +238,15 @@ export function compileMaterialPlan(
         : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
-  const pendingTextures: Texture[] = [];
+  // Samples of one asset share a Texture; one load must rebuild once.
+  const pendingTextures = new Set<Texture>();
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
-  if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
+  if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
-    const zero = Vector3.Zero();
-    origin.valueCallback = () => scene.floatingOriginMode ? scene.floatingOriginOffset : zero;
+    origin.valueCallback = () => scene.floatingOriginOffset;
     plumbing.worldOrigin = origin.output;
     created.push(origin);
   }
@@ -515,7 +514,7 @@ export function compileMaterialPlan(
     return true;
   };
 
-  if (plan.domain === "surface") {
+  if ((plan.domain === "surface" || plan.domain === "landscape")) {
     const vertexIds = collectWorldPositionOffsetOperationIds(plan);
     if (!realizeOperations(vertexIds)) return fail();
     const offsetOperand = plan.outputs.worldPositionOffset ?? null;
@@ -590,7 +589,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if (plan.domain === "surface" && !outlineMask) {
+    if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) {
       const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
       if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
     }
@@ -725,7 +724,7 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
-      if (!outlineMask && plan.domain === "surface" && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
+      if (!outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });
@@ -841,7 +840,7 @@ export function compileMaterialPlan(
     if (value) variant?.compiled.setParameter(name, value);
     return true;
   };
-  if (plan.domain === "surface" && !outlineMask) authoredOutlineFactories.set(material, () => {
+  if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) authoredOutlineFactories.set(material, () => {
     if (disposed) throw new Error("Cannot outline a disposed authored material.");
     if (!variant) {
       const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:outlineMask`, surfaceVariant: "outlineMask" });
@@ -983,7 +982,7 @@ function bindTexture(
   realization: BlockRealization,
   options: CompileMaterialOptions,
   diagnostics: MaterialDiagnostic[],
-  pendingTextures: Texture[],
+  pendingTextures: Set<Texture>,
 ): boolean {
   const operand = operation.inputs.texture;
   const producerId =
@@ -1006,7 +1005,7 @@ function bindTexture(
     texture?: Texture | null;
   };
   block.texture = texture;
-  if (!isGpuTextureSampleReady(texture)) pendingTextures.push(texture);
+  if (!isGpuTextureSampleReady(texture)) pendingTextures.add(texture);
   return true;
 }
 
@@ -1249,10 +1248,6 @@ function createPostProcessPlumbing(
   return [vertexOutput];
 }
 
-/**
- * Wire the authored surface channels into either the PBR shading block or a
- * direct fragment write for unlit materials.
- */
 // ImageProcessingBlock normally expects display-space input and skips processing
 // when no effects are enabled. Our PBR sum is linear, so it still needs the
 // standard gamma conversion in that case, just like Babylon's PBR final output.
@@ -1275,6 +1270,10 @@ RegisterClass(
   LinearSurfaceImageProcessingBlock,
 );
 
+/**
+ * Wire the authored surface channels into either the PBR shading block or a
+ * direct fragment write for unlit materials.
+ */
 function attachSurfaceShading(
   plan: MaterialBuildPlan,
   options: CompileMaterialOptions,

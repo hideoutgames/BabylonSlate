@@ -140,6 +140,10 @@ export type ControlMessage =
       blackboards?: Array<{ guid: string; document: unknown }>;
     }
   | {
+      type: "loadWater";
+      waters: Array<{ guid: string; document: unknown }>;
+    }
+  | {
       type: "loadTilemaps";
       tilemaps: Array<{ guid: string; document: unknown }>;
       tilesets: Array<{ guid: string; document: unknown }>;
@@ -291,6 +295,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "waterTime"; seconds: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
@@ -353,6 +358,9 @@ export type CommandMessage =
       };
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        water?: import("@babylonslate/core").WaterBodyProperties;
+        landscape?: import("@babylonslate/core").LandscapeProperties;
+        foliage?: import("@babylonslate/core").FoliageProperties;
         componentId: string;
         castShadows?: boolean;
         receiveShadows?: boolean;
@@ -363,6 +371,16 @@ export type CommandMessage =
         rotation: [number, number, number, number];
         scale: [number, number, number];
         hitTest?: "ignore" | "block" | "passThrough";
+        /** Present on `springarm` parts; children attach to the arm socket. */
+        springArm?: {
+          armLength: number;
+          enableLocationLag: boolean;
+          locationLagSpeed: number;
+          maxLocationLagDistance: number;
+          enableRotationLag: boolean;
+          rotationLagSpeed: number;
+          drawDebugLag: boolean;
+        };
         text3d?: {
           text: string;
           size: number;

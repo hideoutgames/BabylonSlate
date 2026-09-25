@@ -92,7 +92,7 @@ A scalar is **Constant** `{value}`, **Random Range** `{min, max}` or **Curve** `
 - **Direction** is Radial (Direction Randomizer 0–1) or Directed (Direction Min / Max). Directions are not normalized: their length multiplies Speed.
 - Radius is 0.001–100; a zero radius with a zero randomizer would normalize a zero vector on the GPU. Radius Range and Height Range are 0–1 (0 spawns on the surface, 1 fills the volume).
 - Changing the shape keeps the fields both shapes share.
-- Babylon does not normalize the hemisphere direction on WebGL2 transform feedback, so the plan divides Speed by the radius there to match WebGPU compute and the CPU.
+- Babylon does not normalize the hemisphere direction on WebGL2 transform feedback, so the plan divides Speed by the radius there. This matches WebGPU compute and the CPU only for surface spawns (Radius Range 0) with a small Direction Randomizer; interior particles stay slower on WebGL2.
 
 ### Bursts
 
@@ -117,7 +117,7 @@ A scalar is **Constant** `{value}`, **Random Range** `{min, max}` or **Curve** `
 | Alpha Blend | `standard` | `BLENDMODE_STANDARD` | src·α + dst·(1−α) |
 | Alpha Additive | `add` | `BLENDMODE_ADD` | src·α + dst |
 | Multiply | `multiply` | `BLENDMODE_MULTIPLY` | dst·src |
-| Subtract | `subtract` | `BLENDMODE_SUBTRACT` | dst − src |
+| Subtract | `subtract` | `BLENDMODE_SUBTRACT` | dst·(1−src) |
 
 | Billboard | Id | Babylon constant | Notes |
 | --- | --- | --- | --- |

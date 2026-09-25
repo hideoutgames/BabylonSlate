@@ -2,6 +2,7 @@ import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
+import { WaterSurfaceBlock } from "./water-surface-block";
 import {
   AddBlock,
   AnimatedInputBlockTypes,
@@ -65,7 +66,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
-import { componentCount, customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
+import { componentCount, customGlslInterface, materialGradientStops, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
@@ -101,7 +102,6 @@ export interface MaterialPlumbing {
   worldNormal?: NodeMaterialConnectionPoint;
   /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
   worldNormal4?: NodeMaterialConnectionPoint;
-  worldTangent?: NodeMaterialConnectionPoint;
   cameraPosition?: NodeMaterialConnectionPoint;
   viewDirection?: NodeMaterialConnectionPoint;
   uv?: NodeMaterialConnectionPoint;
@@ -159,7 +159,7 @@ export function babylonValueFor(
   }
 }
 
-function constantInput(
+export function createConstantBlock(
   name: string,
   type: MaterialValueType,
   components: readonly number[],
@@ -179,15 +179,6 @@ function constantInput(
   block.value = babylonValueFor(type, components, asColor);
   block.convertToLinearSpace = asColor;
   return block;
-}
-
-export function createConstantBlock(
-  name: string,
-  type: MaterialValueType,
-  components: readonly number[],
-  asColor = false,
-): InputBlock {
-  return constantInput(name, type, components, asColor);
 }
 
 function attributeVector(
@@ -276,8 +267,8 @@ function conditional(condition: ConditionalBlockConditions): BlockAdapter {
   return componentwise(({ name }) => {
     const block = new ConditionalBlock(name);
     block.condition = condition;
-    const trueValue = constantInput(`${name}_true`, "float", [1]);
-    const falseValue = constantInput(`${name}_false`, "float", [0]);
+    const trueValue = createConstantBlock(`${name}_true`, "float", [1]);
+    const falseValue = createConstantBlock(`${name}_false`, "float", [0]);
     trueValue.output.connectTo(block.true);
     falseValue.output.connectTo(block.false);
     return {
@@ -301,7 +292,7 @@ const reflectAdapter: BlockAdapter = (context) => {
   incident.output.connectTo(dot.inputs.a!);
   normal.output.connectTo(dot.inputs.b!);
   const twice = new ScaleBlock(`${name}_twice`);
-  const two = constantInput(`${name}_two`, "float", [2]);
+  const two = createConstantBlock(`${name}_two`, "float", [2]);
   dot.outputs.out!.connectTo(twice.input);
   two.output.connectTo(twice.factor);
   const projected = new ScaleBlock(`${name}_projected`);
@@ -341,7 +332,7 @@ const log2Adapter: BlockAdapter = ({ name }) => {
   const log = new TrigonometryBlock(name);
   log.operation = TrigonometryBlockOperations.Log;
   const scale = new ScaleBlock(`${name}_scale`);
-  const factor = constantInput(`${name}_factor`, "float", [Math.LOG2E]);
+  const factor = createConstantBlock(`${name}_factor`, "float", [Math.LOG2E]);
   log.output.connectTo(scale.input);
   factor.output.connectTo(scale.factor);
   return {
@@ -569,7 +560,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "logic.select": ({ name }) => {
     const block = new ConditionalBlock(name);
     block.condition = ConditionalBlockConditions.GreaterThan;
-    const threshold = constantInput(`${name}_threshold`, "float", [0.5]);
+    const threshold = createConstantBlock(`${name}_threshold`, "float", [0.5]);
     threshold.output.connectTo(block.b);
     return {
       blocks: [block, threshold],
@@ -625,6 +616,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       ? AnimatedInputBlockTypes.RealTime
       : AnimatedInputBlockTypes.Time;
     return single(block, {}, { time: block.output });
+  },
+  "input.waterSurface": ({ name }) => {
+    const block = new WaterSurfaceBlock(name);
+    return single(block, {}, Object.fromEntries(block.outputs.map((output) => [output.name, output])));
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition
@@ -791,38 +786,77 @@ ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
   return single(block, {}, { normal: block.output });
 };
 
+ADAPTERS["landscape.uv"] = (context) => {
+  const position = ADAPTERS["input.worldPosition"]!(context);
+  const split = new VectorSplitterBlock(`${context.name}_split`);
+  position.outputs.position!.connectTo(split.xyzIn);
+  const merge = new VectorMergerBlock(`${context.name}_xz`);
+  split.x.connectTo(merge.x); split.z.connectTo(merge.y);
+  const scale = new ScaleBlock(context.name);
+  merge.xyOut.connectTo(scale.input);
+  return { blocks: [...position.blocks, split, merge, scale], inputs: { scale: scale.factor }, outputs: { uv: scale.output } };
+};
+ADAPTERS["landscape.height"] = (context) => {
+  const position = ADAPTERS["input.worldPosition"]!(context);
+  const split = new VectorSplitterBlock(context.name);
+  position.outputs.position!.connectTo(split.xyzIn);
+  return { blocks: [...position.blocks, split], inputs: {}, outputs: { height: split.y } };
+};
+ADAPTERS["landscape.slope"] = (context) => {
+  const normal = ADAPTERS["input.worldNormal"]!(context);
+  const unit = new NormalizeBlock(`${context.name}_unit`);
+  normal.outputs.normal!.connectTo(unit.input);
+  const split = new VectorSplitterBlock(`${context.name}_split`);
+  unit.output.connectTo(split.xyzIn);
+  const abs = new TrigonometryBlock(`${context.name}_abs`);
+  abs.operation = TrigonometryBlockOperations.Abs;
+  split.y.connectTo(abs.input);
+  const one = new InputBlock(`${context.name}_one`); one.value = 1;
+  const slope = new SubtractBlock(context.name);
+  one.output.connectTo(slope.left); abs.output.connectTo(slope.right);
+  return { blocks: [...normal.blocks, unit, split, abs, one, slope], inputs: {}, outputs: { slope: slope.output } };
+};
+ADAPTERS["landscape.layers"] = ({ name }) => {
+  const color = new InputBlock(`${name}_weights`, undefined, NodeMaterialBlockConnectionPointTypes.Color4);
+  color.setAsAttribute("color");
+  const split = new VectorSplitterBlock(name); color.output.connectTo(split.xyzw);
+  return { blocks: [color, split], inputs: {}, outputs: { layer1: split.x, layer2: split.y, layer3: split.z, layer4: split.w } };
+};
+ADAPTERS["landscape.blend"] = ({ name }) => {
+  const blend = new LerpBlock(name);
+  return single(blend, { base: blend.left, layer: blend.right, weight: blend.gradient }, { color: blend.output });
+};
+
 ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
-  if (plumbing.worldTangent) {
-    return { blocks: [], inputs: {}, outputs: { tangent: plumbing.worldTangent } };
+  const blocks: NodeMaterialBlock[] = [];
+  let tangent = plumbing.localTangent;
+  if (!tangent) {
+    const attribute = attributeVector(name, "tangent", 4);
+    blocks.push(attribute);
+    tangent = attribute.output;
   }
-  const block = attributeVector(name, "tangent", 4);
   const split = new VectorSplitterBlock(`${name}_xyz`);
   const direction = new VectorMergerBlock(`${name}_direction`);
   const world = new TransformBlock(`${name}_world`);
   const normal = new NormalizeBlock(`${name}_unit`);
-  (plumbing.localTangent ?? block.output).connectTo(split.xyzw);
+  tangent.connectTo(split.xyzw);
   split.xyzOut.connectTo(direction.xyzIn);
   direction.xyzw.connectTo(world.vector);
   plumbing.world?.connectTo(world.transform);
   world.xyz.connectTo(normal.input);
-  return { blocks: [block, split, direction, world, normal], inputs: {}, outputs: { tangent: normal.output } };
+  blocks.push(split, direction, world, normal);
+  return { blocks, inputs: {}, outputs: { tangent: normal.output } };
 };
 
-ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
-  if (plumbing.viewDirection) {
-    return {
-      blocks: [],
-      inputs: {},
-      outputs: { direction: plumbing.viewDirection },
-    };
+ADAPTERS["input.viewDirection"] = ({ plumbing }) => {
+  if (!plumbing.viewDirection) {
+    throw new Error("View Direction requires surface plumbing");
   }
-  const block = new InputBlock(
-    name,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector3,
-  );
-  block.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
-  return single(block, {}, { direction: block.output });
+  return {
+    blocks: [],
+    inputs: {},
+    outputs: { direction: plumbing.viewDirection },
+  };
 };
 
 ADAPTERS["input.sceneDepth"] = ({ name, plumbing }) => {
@@ -921,9 +955,3 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
 export function blockAdapterFor(nodeType: string): BlockAdapter | undefined {
   return ADAPTERS[nodeType];
 }
-
-export function hasBlockAdapter(nodeType: string): boolean {
-  return nodeType in ADAPTERS || nodeType.startsWith("const.") ||
-    nodeType.startsWith("param.");
-}
-import { vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";

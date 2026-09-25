@@ -1,3 +1,4 @@
+import { isEditorCameraModel } from "./editor-camera-model";
 import {
   Color3,
   FreeCamera,
@@ -6,6 +7,7 @@ import {
   RenderTargetTexture,
   TransformNode,
   Vector3,
+  type AbstractMesh,
   type LinesMesh,
   type Node,
   type Observer,
@@ -14,7 +16,6 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-  identitySerializedTransform,
   parseAreaRectLightProperties,
   type SerializedActor,
   type SerializedComponent,
@@ -27,7 +28,8 @@ import {
   type AuthoredCameraProperties,
 } from "./scene-illumination";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
-import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { authoredComponentActorTransform } from "./authored-transform-matrices";
+import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
 import type { AudioLibrary } from "./audio-service";
 
@@ -152,10 +154,15 @@ export class EditorDebugOverlay {
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
+  private readonly previewBlitter = createRttCanvasBlitter();
+  // The shared blitter reuses one buffer: draw each readback before the next.
+  private previewBlitInFlight = false;
   private audioDebug: Array<{
     root: TransformNode;
     actor: SerializedActor;
     component: SerializedComponent;
+    visual: AbstractMesh | null;
+    origin: AbstractMesh | null;
   }> = [];
 
   constructor(scene: Scene, options?: { now?: () => number }) {
@@ -308,7 +315,7 @@ export class EditorDebugOverlay {
     const root = new TransformNode(`debugFrustum:${actor.id}`, this.scene);
     const origin = this.scene.getMeshByName(editorMeshName(actor.id));
     if (origin) {
-      const local = component.transform ?? identitySerializedTransform();
+      const local = authoredComponentActorTransform(actor, component);
       root.parent = origin;
       root.position.set(local.position[0], local.position[1], local.position[2]);
       root.rotationQuaternion = new Quaternion(
@@ -374,7 +381,7 @@ export class EditorDebugOverlay {
     );
     rtt.activeCamera = camera;
     rtt.renderList = this.scene.meshes.filter(
-      (mesh) => !mesh.name.startsWith("debug"),
+      (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
     );
     this.previewTexture = rtt;
     this.tick(this.now());
@@ -439,16 +446,25 @@ export class EditorDebugOverlay {
   }
 
   private updateAudioDebugPoses(): void {
-    for (const { root, actor, component } of this.audioDebug) {
-      const visual = this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
-      const origin = this.scene.getMeshByName(editorMeshName(actor.id));
+    for (const entry of this.audioDebug) {
+      const { root, actor, component } = entry;
+      // Runs every frame: keep resolved meshes until they are disposed, and
+      // re-scan unresolved ones so an emitter realized later is still followed.
+      if (entry.visual?.isDisposed()) entry.visual = null;
+      entry.visual ??= this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+      const visual = entry.visual;
       if (visual) {
         visual.computeWorldMatrix(true);
         root.position.copyFrom(visual.getAbsolutePosition());
-      } else if (origin) {
+        continue;
+      }
+      if (entry.origin?.isDisposed()) entry.origin = null;
+      entry.origin ??= this.scene.getMeshByName(editorMeshName(actor.id));
+      const origin = entry.origin;
+      if (origin) {
         origin.computeWorldMatrix(true);
-        const local = component.transform?.position ?? [0, 0, 0];
-        root.position.copyFrom(Vector3.TransformCoordinates(Vector3.FromArray(local), origin.getWorldMatrix()));
+        const local: readonly [number, number, number] = component.transform?.position ?? [0, 0, 0];
+        Vector3.TransformCoordinatesFromFloatsToRef(local[0], local[1], local[2], origin.getWorldMatrix(), root.position);
       } else {
         root.position.copyFrom(composeActorComponentTransform(actor, component).position);
       }
@@ -478,7 +494,7 @@ export class EditorDebugOverlay {
         mesh.color = color;
       }
     }
-    this.audioDebug.push({ root, actor, component });
+    this.audioDebug.push({ root, actor, component, visual: null, origin: null });
   }
 
   private updatePreviewCanvasVisibility(): void {
@@ -492,9 +508,10 @@ export class EditorDebugOverlay {
   private async blitPreview(): Promise<void> {
     const canvas = this.previewCanvas;
     const texture = this.previewTexture;
-    if (!canvas || !texture) return;
+    if (!canvas || !texture || this.previewBlitInFlight) return;
+    this.previewBlitInFlight = true;
     try {
-      const buffer = await texture.readPixels();
+      const buffer = await this.previewBlitter.read(texture);
       // A stopped overlay or replaced canvas must not receive a late readback.
       if (!buffer || !canvas.getContext || this.previewCanvas !== canvas) return;
       const ctx = canvas.getContext("2d");
@@ -502,13 +519,11 @@ export class EditorDebugOverlay {
       const { width, height } = texture.getSize();
       canvas.width = width;
       canvas.height = height;
-      ctx.putImageData(
-        new ImageData(flipReadPixelsRgba(buffer, width, height), width, height),
-        0,
-        0,
-      );
+      this.previewBlitter.put(ctx, buffer, width, height);
     } catch {
       // NullEngine / missing GPU readback is fine — tests assert the RTT itself.
+    } finally {
+      this.previewBlitInFlight = false;
     }
   }
 }

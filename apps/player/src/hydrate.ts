@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   parseAnimGraphDocument,
@@ -61,6 +62,7 @@ export type PackedAudioLibrary = {
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
+  waterPayloads: Map<string, WaterDefinition>;
   tilemapPayloads: Map<string, TilemapPayload>;
   tilesetPayloads: Map<string, TilesetPayload>;
   animGraphs: Array<{ guid: string; document: unknown }>;
@@ -139,6 +141,7 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
+  const waterPayloads = new Map<string, WaterDefinition>();
   const tilemapPayloads = new Map<string, TilemapPayload>();
   const tilesetPayloads = new Map<string, TilesetPayload>();
   const animGraphs: Array<{ guid: string; document: unknown }> = [];
@@ -168,6 +171,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       if (animation) spriteAnimationPayloads.set(entry.guid, animation);
       continue;
     }
+    if (entry.type === "Water" && parsed) waterPayloads.set(entry.guid, normalizeWaterDefinition(parsed));
     if (entry.type === "Tilemap" && parsed) {
       tilemapPayloads.set(entry.guid, normalizeTilemapPayload(parsed));
       continue;
@@ -286,6 +290,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   return {
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
+    waterPayloads,
     tilemapPayloads,
     tilesetPayloads,
     animGraphs: resolvedAnimGraphs,
@@ -347,6 +352,7 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
       blackboards: [...content.blackboards],
     });
   }
+  if (content.waterPayloads.size > 0) controls.push({ type: "loadWater", waters: [...content.waterPayloads].map(([guid, document]) => ({ guid, document })) });
   if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
     controls.push({
       type: "loadTilemaps",

@@ -152,10 +152,18 @@ test.describe("Phone Editor", () => {
     await expect(
       page.getByRole("combobox", { name: "Category" }),
     ).toBeVisible();
+    await page.getByRole("combobox", { name: "Category" }).tap();
+    await page.getByRole("option", { name: "Rendering", exact: true }).tap();
+    await page.getByTestId("project-render-path").tap();
+    await page.getByRole("option", { name: "Forward", exact: true }).tap();
+    await expect(page.getByTestId("project-render-path")).toContainText("Forward");
+    await expectWithinViewport(page, "project-render-path");
     await page.screenshot({
       path: "test-results/phone-project-settings.png",
       animations: "disabled",
     });
+    await page.getByRole("button", { name: "Done", exact: true }).tap();
+    await expect(page.getByTestId("settings-modal")).toHaveCount(0);
   });
 
   test("shows one scene window, switches windows, and restores the tablet arrangement", async ({

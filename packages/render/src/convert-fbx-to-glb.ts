@@ -33,13 +33,6 @@ async function convertFbxFile(
   });
 }
 
-export async function convertFbxToGlb(
-  file: ModelImportFile,
-  sidecars: ModelImportFile[] = [],
-): Promise<Uint8Array> {
-  return (await convertFbxFile(file, sidecars)).bytes;
-}
-
 /** Converted models enter the existing canonical GLB asset importer. */
 export async function convertFbxImportBatch(
   files: ModelImportFile[],

@@ -1,7 +1,6 @@
 import { Mesh, Scene, VertexBuffer, VertexData, type AbstractMesh } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
-  tilemapParallaxOffset,
   decodeTileGid,
   tilemapTilesetGuids,
   tilesetAnimationFrame,
@@ -9,31 +8,39 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { applyComponentSorting } from "./sorting";
-
-const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 type AnimatedChunk = {
   mesh: Mesh;
-  uvs: number[];
+  /** Typed so an upload does not convert the whole array each frame change. */
+  uvs: Float32Array;
   tiles: ReturnType<typeof tilemapChunkVertexData>["animatedTiles"];
   frames: number[];
 };
 const animatedChunks = new WeakMap<Scene, Set<AnimatedChunk>>();
+/** Chunks whose layer parallax moves them; a parallax of 1 always stays at 0. */
+const parallaxChunks = new WeakMap<Scene, Set<Mesh>>();
 
 /** Seek only animated UVs. Static geometry, collision and atlas materials stay intact. */
 export function updateSceneTilemapAnimations(scene: Scene, elapsedMs: number): void {
-  for (const chunk of animatedChunks.get(scene) ?? []) {
+  const chunks = animatedChunks.get(scene);
+  if (!chunks) return;
+  for (const chunk of chunks) {
     let changed = false;
-    chunk.tiles.forEach((tile, index) => {
+    for (let index = 0; index < chunk.tiles.length; index++) {
+      const tile = chunk.tiles[index]!;
       const frame = tilesetAnimationFrame(tile.tileset, tile.tile, elapsedMs);
-      if (frame === chunk.frames[index]) return;
+      if (frame === chunk.frames[index]) continue;
       const uv = tilesetTileUv(tile.tileset, frame);
-      if (!uv) return;
+      if (!uv) continue;
       chunk.frames[index] = frame;
-      chunk.uvs.splice(tile.uvOffset, 8, uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
+      const uvs = chunk.uvs;
+      const at = tile.uvOffset;
+      uvs[at] = uv.u0; uvs[at + 1] = uv.v0; uvs[at + 2] = uv.u1; uvs[at + 3] = uv.v0;
+      uvs[at + 4] = uv.u1; uvs[at + 5] = uv.v1; uvs[at + 6] = uv.u0; uvs[at + 7] = uv.v1;
       changed = true;
-    });
+    }
     if (changed) chunk.mesh.updateVerticesData(VertexBuffer.UVKind, chunk.uvs);
   }
 }
@@ -179,19 +186,21 @@ export function worldTileSize(
   };
 }
 
-/** Offset chunk children so per-layer parallax tracks the Play camera. */
-export function applyTilemapParallaxToMesh(
-  mesh: Mesh,
-  camera: { position: { x: number; y: number } },
+/** Offset this Scene's parallax chunks so each layer tracks the Play camera. */
+export function updateSceneTilemapParallax(
+  scene: Scene,
+  camera: { x: number; y: number },
 ): void {
-  for (const child of mesh.getChildMeshes()) {
-    const parallax = child.metadata?.tilemapParallax as
+  const chunks = parallaxChunks.get(scene);
+  if (!chunks) return;
+  for (const chunk of chunks) {
+    const parallax = chunk.metadata?.tilemapParallax as
       | { x: number; y: number }
       | undefined;
     if (!parallax) continue;
-    const offset = tilemapParallaxOffset(parallax, camera.position);
-    child.position.x = offset.x;
-    child.position.y = offset.y;
+    // Same offset as tilemapParallaxOffset, without a result object per chunk.
+    chunk.position.x = camera.x * (1 - parallax.x);
+    chunk.position.y = camera.y * (1 - parallax.y);
   }
 }
 
@@ -220,11 +229,20 @@ function appendChunkMesh(
       animatedChunks.set(scene, chunks);
     }
     const chunk: AnimatedChunk = {
-      mesh, uvs: [...data.uvs], tiles: data.animatedTiles,
+      mesh, uvs: new Float32Array(data.uvs), tiles: data.animatedTiles,
       frames: data.animatedTiles.map((tile) => tilesetAnimationFrame(tile.tileset, tile.tile, 0)),
     };
     chunks.add(chunk);
     mesh.onDisposeObservable.addOnce(() => chunks.delete(chunk));
+  }
+  if (parallax.x !== 1 || parallax.y !== 1) {
+    let chunks = parallaxChunks.get(scene);
+    if (!chunks) {
+      chunks = new Set();
+      parallaxChunks.set(scene, chunks);
+    }
+    chunks.add(mesh);
+    mesh.onDisposeObservable.addOnce(() => chunks.delete(mesh));
   }
   mesh.parent = root;
   mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };

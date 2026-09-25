@@ -3,7 +3,8 @@ import { BoundingInfo, Vector3, type AbstractMesh } from "@babylonjs/core";
 const originals = new WeakMap<AbstractMesh, BoundingInfo>();
 
 /** Expand culling bounds for vertex displacement, and restore on reassignment. */
-export function applyMaterialBounds(mesh: AbstractMesh): void {
+export function applyMaterialBounds(mesh: AbstractMesh, geometryChanged = false): void {
+  if (geometryChanged) originals.delete(mesh);
   const padding = Number(mesh.material?.metadata?.boundsPadding ?? 0);
   const original = originals.get(mesh);
   if (!(padding > 0) && !original) return;

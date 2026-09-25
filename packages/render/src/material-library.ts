@@ -9,6 +9,7 @@ import {
   type MaterialDiagnostic,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialLowerResult,
 } from "@babylonslate/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
@@ -79,6 +80,10 @@ function cacheKey(
     : instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
+const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
+
+type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; content: string; result: MaterialLowerResult };
+
 function documentForPlan(
   doc: MaterialDocument,
   unlit?: boolean,
@@ -92,6 +97,8 @@ export interface MaterialLibraryOptions {
   acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
   textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
+  /** Return a new record whenever a function document changes; lowering is
+   * memoized on the record's identity, so in-place mutation is not observed. */
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
   onMaterialReady?: (scene: Scene, assetGuid: string) => void;
@@ -125,6 +132,9 @@ export class MaterialLibrary {
   private readonly pending = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly tracked = new Set<Scene>();
   private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
+  // Reuse one lowering per document, shading variant and functions record
+  // while the document content is unchanged (hosts may edit documents in place).
+  private readonly plans = new WeakMap<MaterialDocument, { lit?: PlanSlot; unlit?: PlanSlot }>();
   private readonly options: MaterialLibraryOptions;
 
   constructor(options: MaterialLibraryOptions = {}) {
@@ -150,11 +160,20 @@ export class MaterialLibrary {
     return created;
   }
 
-  /** Resolve the same function-aware plan as acquire, without taking GPU ownership. */
-  planFor(doc: MaterialDocument, unlit?: boolean) {
-    return lowerMaterialDocument(documentForPlan(doc, unlit), {
-      functions: this.options.functions?.() ?? {},
-    });
+  /** Resolve the same function-aware plan as acquire, without taking GPU ownership.
+   * The lowering is memoized per document content and functions-record identity. */
+  planFor(doc: MaterialDocument, unlit?: boolean): MaterialLowerResult {
+    const functions = this.options.functions?.() ?? NO_FUNCTIONS;
+    let slots = this.plans.get(doc);
+    if (!slots) this.plans.set(doc, (slots = {}));
+    const variant = unlit ? "unlit" : "lit";
+    const cached = slots[variant];
+    // Serializing is far cheaper than lowering and catches in-place edits.
+    const content = JSON.stringify(doc);
+    if (cached?.functions === functions && cached.content === content) return cached.result;
+    const result = lowerMaterialDocument(documentForPlan(doc, unlit), { functions });
+    slots[variant] = { functions, content, result };
+    return result;
   }
 
   isCompiled(
@@ -361,7 +380,8 @@ export class MaterialLibrary {
         }
       }
       const accepted = compiled.setParameter(name, value);
-      pruneTextures();
+      // Only texture writes can change sampled textures or pending requests.
+      if (value.kind === "texture") pruneTextures();
       return accepted;
     };
     const candidate: CacheEntry = {
@@ -588,17 +608,6 @@ export class MaterialLibrary {
     entry.dispose();
   }
 
-  /** Compile shaders before first draw so a mobile GPU does not stall. */
-  async prewarm(
-    scene: Scene,
-    assetGuid: string,
-    mesh: Mesh | null,
-  ): Promise<void> {
-    const entry = this.pending.get(scene)?.get(assetGuid) ?? this.scenes.get(scene)?.get(assetGuid);
-    if (!entry) return;
-    await prewarmMaterial(entry.material, mesh);
-  }
-
   materialFor(
     scene: Scene,
     assetGuid: string,
@@ -612,6 +621,6 @@ export class MaterialLibrary {
   }
 
   dispose(): void {
-    for (const scene of [...this.tracked]) this.releaseScene(scene);
+    this.invalidate();
   }
 }

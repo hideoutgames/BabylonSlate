@@ -20,7 +20,8 @@ const OCTAHEDRON_INDICES = [
   0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 2, 1, 3, 2, 1, 4, 3, 1, 5, 4, 1, 2, 5,
 ];
 
-function isPreviewJoint(node: Node): node is TransformNode {
+/** Rig joints exclude loader/import wrappers, preview helpers, overlays, cameras and lights. */
+export function isRigJointNode(node: Node): node is TransformNode {
   return (
     node instanceof TransformNode &&
     !["__root__", "__importScale", "materialPreviewMesh"].includes(node.name) &&
@@ -123,7 +124,7 @@ export function attachSkeletonPreview(
     }
   } else {
     const nodes = [root, ...root.getChildTransformNodes(false)].filter(
-      isPreviewJoint,
+      isRigJointNode,
     );
     const indexByNode = new Map<Node, number>(
       nodes.map((node, index) => [node, index]),

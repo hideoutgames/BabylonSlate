@@ -1,4 +1,6 @@
+import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
+import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
 import { isInputAssetType, normalizeInputAssetPayload, type InputAssetDefinition } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
@@ -101,7 +103,6 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
-import { getSessionLiveness } from "../lib/session-liveness";
 import {
   afterMutatingApply,
   isMutatingApplyBlocked,
@@ -281,7 +282,6 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { captureSceneBakeDocument, type SceneBakeDocumentOwner } from "../services/scene-bake-document";
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
@@ -395,7 +395,6 @@ interface DocumentContextValue {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
   updateScene: (id: string, scene: SerializedScene) => void;
-  captureSceneBakeOwner: (id: string) => SceneBakeDocumentOwner;
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
@@ -465,6 +464,8 @@ interface DocumentContextValue {
   captureLayoutForId: (id: string) => void;
   animEditorMode: AnimEditorMode;
   setAnimEditorMode: (id: string, mode: AnimEditorMode) => void;
+  sceneMode: SceneMode;
+  setSceneMode: (id: string, mode: SceneMode) => void;
   activateDockPanel: (panelId: string) => void;
   toggleDockWindow: (panelId: string) => void;
   isDockWindowOpen: (panelId: string) => boolean;
@@ -521,6 +522,7 @@ interface DocumentContextValue {
     graphs: readonly PlayAnimGraphEntry[],
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
+  collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -651,6 +653,7 @@ function dockOptionsForIndexed(
   parentOf: (id: string) => string | null | undefined,
   sourceControlEnabled = false,
   animEditorMode?: AnimEditorMode,
+  sceneMode?: SceneMode,
 ): DockWindowOptions {
   return {
     actorPrefab:
@@ -660,6 +663,7 @@ function dockOptionsForIndexed(
         assetType: indexed.header.type,
       }),
     sourceControl: sourceControlEnabled,
+    sceneMode: kind === "scene" ? (sceneMode ?? "design") : undefined,
     animEditorMode:
       kind === "anim-graph" ? (animEditorMode ?? "stateMachine") : undefined,
   };
@@ -743,6 +747,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
+  const sceneFocusedLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
   const [animEditorModes, setAnimEditorModes] = useState<
     Record<string, AnimEditorMode>
   >({});
@@ -769,15 +774,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
-  const livenessGuid = projectService.guid;
-  const livenessName = projectDocument?.metadata.name ?? null;
-  useEffect(() => {
-    getSessionLiveness()?.setProject(
-      livenessGuid
-        ? { guid: livenessGuid, name: livenessName ?? livenessGuid }
-        : null,
-    );
-  }, [livenessGuid, livenessName]);
   const [registryVersion, setRegistryVersion] = useState(0);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
@@ -990,6 +986,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const captureLayoutForId = useCallback(
     (id: string) => {
       const doc = documentService.getDocument(id);
+      if (doc?.ref.kind === "scene") {
+        const layout = parseSceneDocumentLayout(doc.layout);
+        for (const mode of SCENE_MODES) {
+          const key = dockviewApiKey(id, mode);
+          const api = dockviewApisRef.current.get(key);
+          const beforeFocus = preFocusLayoutsRef.current.get(key);
+          if (api) {
+            const live = captureAdaptiveDockviewLayout(api);
+            layout[mode] = beforeFocus?.layout ?? live;
+            if (beforeFocus) sceneFocusedLayoutsRef.current.set(key, api.toJSON() as unknown as Record<string, unknown>);
+          } else if (beforeFocus) layout[mode] = beforeFocus.layout;
+        }
+        documentService.setLayout(id, layout);
+        return;
+      }
       if (doc?.ref.kind === "anim-graph") {
         const parsed = parseAnimDocumentLayout(doc.layout);
         const mode = animEditorModeForDocument(id, animEditorModes, doc);
@@ -1274,6 +1285,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dockviewApisRef.current.clear();
       disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
+      sceneFocusedLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       try {
@@ -1704,6 +1716,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.clear();
     disposeDockSubscriptions();
     preFocusLayoutsRef.current.clear();
+    sceneFocusedLayoutsRef.current.clear();
     setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
@@ -1875,6 +1888,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       for (const key of dockviewApiKeysForDocument(id)) {
         dockviewApisRef.current.delete(key);
+        preFocusLayoutsRef.current.delete(key);
+        sceneFocusedLayoutsRef.current.delete(key);
       }
       disposeDockSubscriptions(id);
       preFocusLayoutsRef.current.delete(id);
@@ -1885,9 +1900,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return next;
       });
       setFocusedLayoutIds((current) => {
-        if (!current.has(id)) return current;
         const next = new Set(current);
-        next.delete(id);
+        for (const key of dockviewApiKeysForDocument(id)) next.delete(key);
         return next;
       });
       documentService.closeDocument(id);
@@ -2409,26 +2423,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const captureSceneBakeOwner = useCallback((id: string) => {
-    const registry = projectService.registry;
-    if (!registry) throw new Error("Open a project before baking lighting.");
-    return captureSceneBakeDocument({
-      documents: documentService, edits: editSessionRef.current, registry, documentId: id,
-      projectIdentity: () => ({ guid: projectService.guid, registryCurrent: projectService.registry === registry,
-        environment: projectDocumentRef.current?.settings.render.environmentLighting }),
-      canWrite: () => {
-        const doc = documentService.getDocument(id);
-        return !!doc && !isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path,
-          isPluginDocumentReadOnly(projectService.plugins, doc.ref.path));
-      },
-      onApplied: (command) => {
-        void notifyAppliedCommand(id, command);
-        const doc = documentService.getDocument(id);
-        if (doc) void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-      },
-    });
-  }, [documentService, notifyAppliedCommand, projectService]);
-
   applySceneChangeRef.current = applySceneChange;
   syncPrefabInstancesRef.current = async (options) => {
     const open = [...documentService.getState().openDocuments.values()];
@@ -2780,6 +2774,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "water"
         | "model"
         | "skeleton"
         | "animation"
@@ -2982,6 +2977,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [loadPlayAssetContent, projectService],
   );
+
+  const collectPlayWaterContent = useCallback(async (): Promise<Map<string, WaterDefinition>> => {
+    const waters = new Map<string, WaterDefinition>();
+    for (const asset of projectService.registry?.list() ?? []) {
+      if (asset.header.type !== "Water") continue;
+      const content = await loadPlayAssetContent("water", asset.path);
+      if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
+    }
+    return waters;
+  }, [loadPlayAssetContent, projectService]);
 
   const collectPlayTilemapContent = useCallback(
     async (
@@ -3934,12 +3939,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   ) => {
     const key = dockviewApiKey(id, surface);
     dockviewApisRef.current.set(key, api);
+    const sceneFocusedLayout = sceneFocusedLayoutsRef.current.get(key);
+    if (preFocusLayoutsRef.current.has(key) && sceneFocusedLayout) {
+      api.fromJSON(sceneFocusedLayout as never);
+    }
     for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
       sub.dispose();
     }
     dockSubscriptionsRef.current.delete(key);
     const rememberPlacements = () => {
-      if (preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
+      if (preFocusLayoutsRef.current.has(key) || preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
       const dock = asDockWindowApi(api);
       const kind = documentService.getDocument(id)?.ref.kind;
       const doc = documentService.getDocument(id);
@@ -3959,6 +3968,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         parentOf,
         sourceControlRef.current.enabled,
         animSurfaceMode,
+        surface === "design" || surface === "landscape" || surface === "foliage" ? surface : undefined,
       );
       for (const panel of listDockPanels(dock)) {
         const def = isDockviewDocumentKind(kind)
@@ -3966,7 +3976,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           : undefined;
         const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
-          documentService.setPanelPlacement(id, panel.id, placement);
+          documentService.setPanelPlacement(id, kind === "scene" ? `${surface}:${panel.id}` : panel.id, placement);
         }
       }
     };
@@ -3996,6 +4006,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!activeDocumentId) return undefined;
     const doc = documentService.getDocument(activeDocumentId);
     if (!doc) return undefined;
+    if (doc.ref.kind === "scene") {
+      return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, parseSceneDocumentLayout(doc.layout).sceneMode));
+    }
     if (doc.ref.kind === "anim-graph") {
       const mode = animEditorModeForDocument(
         activeDocumentId,
@@ -4046,6 +4059,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bumpDockWindows, captureLayoutForId, documentService, animEditorModes],
   );
 
+  const setSceneMode = useCallback((id: string, mode: SceneMode) => {
+    if (documentService.getDocument(id)?.ref.kind !== "scene") return;
+    captureLayoutForId(id);
+    const layout = parseSceneDocumentLayout(documentService.getDocument(id)?.layout);
+    documentService.setLayout(id, { ...layout, sceneMode: mode });
+    bump();
+    bumpDockWindows();
+  }, [bump, bumpDockWindows, captureLayoutForId, documentService]);
+
   const activateDockPanel = useCallback((panelId: string) => {
     activeDockApi()?.getPanel(panelId)?.api.setActive();
   }, [activeDockApi]);
@@ -4071,11 +4093,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       doc.ref.kind === "anim-graph"
         ? animEditorModeForDocument(activeDocumentId, animEditorModes, doc)
         : undefined,
+      doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined,
     );
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
     if (!def) return;
-    const remembered =
-      documentService.getPanelPlacements(activeDocumentId)[panelId] ?? null;
+    const placementKey = doc.ref.kind === "scene" ? `${dockOptions.sceneMode}:${panelId}` : panelId;
+    const placements = documentService.getPanelPlacements(activeDocumentId);
+    const remembered = placements[placementKey] ?? (dockOptions.sceneMode === "design" ? placements[panelId] : null) ?? null;
     const result = toggleDockWindowOnApi(
       asDockWindowApi(api),
       def,
@@ -4084,7 +4108,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (result.placement && !isPhoneDockLayout(api)) {
       documentService.setPanelPlacement(
         activeDocumentId,
-        panelId,
+        placementKey,
         result.placement,
       );
     }
@@ -4113,9 +4137,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const api = activeDockApi();
     if (!api) return;
 
-    if (preFocusLayoutsRef.current.has(activeDocumentId)) {
-      const snapshot = preFocusLayoutsRef.current.get(activeDocumentId);
-      preFocusLayoutsRef.current.delete(activeDocumentId);
+    const sceneMode = doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined;
+    const focusKey = sceneMode ? dockviewApiKey(activeDocumentId, sceneMode) : activeDocumentId;
+    if (preFocusLayoutsRef.current.has(focusKey)) {
+      const snapshot = preFocusLayoutsRef.current.get(focusKey);
+      preFocusLayoutsRef.current.delete(focusKey);
+      sceneFocusedLayoutsRef.current.delete(focusKey);
       if (snapshot) {
         restorePreFocusSnapshot(
           activeDocumentId,
@@ -4125,14 +4152,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       setFocusedLayoutIds((current) => {
         const next = new Set(current);
-        next.delete(activeDocumentId);
+        next.delete(focusKey);
         return next;
       });
       return;
     }
 
     const settings = await settingsStore.load();
-    if (preFocusLayoutsRef.current.has(activeDocumentId)) {
+    if (preFocusLayoutsRef.current.has(focusKey) || activeDockApi() !== api) {
       return;
     }
     const dock = api;
@@ -4150,11 +4177,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentOf,
       sourceControlRef.current.enabled,
       animMode,
+      sceneMode,
     );
 
-    preFocusLayoutsRef.current.set(activeDocumentId, {
+    preFocusLayoutsRef.current.set(focusKey, {
       layout: dock.toJSON() as unknown as Record<string, unknown>,
-      surface: animMode ? dockviewSurfaceForAnimMode(animMode) : "default",
+      surface: sceneMode ?? (animMode ? dockviewSurfaceForAnimMode(animMode) : "default"),
     });
     applyFocusLayout(
       doc.ref.kind,
@@ -4164,7 +4192,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     );
     setFocusedLayoutIds((current) => {
       const next = new Set(current);
-      next.add(activeDocumentId);
+      next.add(focusKey);
       return next;
     });
   }, [activeDockApi, documentService, projectService, settingsStore, animEditorModes]);
@@ -4268,7 +4296,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
-      captureSceneBakeOwner,
       applyAssetDocumentChange,
       readAssetChunk,
       writeAudioClipChunk,
@@ -4310,6 +4337,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
       })(),
       setAnimEditorMode,
+      sceneMode: parseSceneDocumentLayout(documentService.getDocument(documentService.getState().activeDocumentId ?? "")?.layout).sceneMode,
+      setSceneMode,
       activateDockPanel,
       toggleDockWindow,
       isDockWindowOpen,
@@ -4317,7 +4346,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
-        return activeId ? focusedLayoutIds.has(activeId) : false;
+        const doc = activeId ? documentService.getDocument(activeId) : undefined;
+        const key = activeId && doc?.ref.kind === "scene" ? dockviewApiKey(activeId, parseSceneDocumentLayout(doc.layout).sceneMode) : activeId;
+        return key ? focusedLayoutIds.has(key) : false;
       })(),
       toggleLayoutFocus,
       getAvailableDocuments,
@@ -4355,6 +4386,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
+      collectPlayWaterContent,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4421,6 +4453,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
+      collectPlayWaterContent,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4485,7 +4518,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       reparentClassDocument,
       applySceneChange,
-      captureSceneBakeOwner,
       applyAssetDocumentChange,
       readAssetChunk,
       writeAudioClipChunk,
@@ -4506,6 +4538,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       unregisterDockviewApi,
       captureLayoutForId,
       setAnimEditorMode,
+      setSceneMode,
       animEditorModes,
       activateDockPanel,
       toggleDockWindow,

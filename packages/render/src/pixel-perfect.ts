@@ -38,18 +38,6 @@ export function snapToPixelGrid(value: number, pixelsPerUnit: number): number {
   return Math.round(value * pixelsPerUnit) / pixelsPerUnit;
 }
 
-export function snapPointToPixelGrid(
-  point: { x: number; y: number; z: number },
-  pixelsPerUnit: number,
-): { x: number; y: number; z: number } {
-  return {
-    x: snapToPixelGrid(point.x, pixelsPerUnit),
-    y: snapToPixelGrid(point.y, pixelsPerUnit),
-    // Z is depth in 2D, not a screen axis, so it stays untouched.
-    z: point.z,
-  };
-}
-
 /**
  * Nearest sampling with mipmaps off and no wrap bleed: the sampling setup a
  * pixel-art project needs, applied to an already-loaded texture.

@@ -12,7 +12,6 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
-  SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS,
   SCENE_LAYER_HIT_TESTS,
   SCENE_LAYER_SCHEMA_VERSION,
 } from "./scene-layer";
@@ -46,7 +45,7 @@ describe("SceneLayer schema", () => {
     expect(SCENE_LAYER_SCHEMA_VERSION).toBe(1);
   });
 
-  it("normalizes a partial payload and drops Skybox, Camera, and Light components", () => {
+  it("normalizes a partial payload and drops unsupported 3D components", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
       actors: [
@@ -56,9 +55,11 @@ describe("SceneLayer schema", () => {
             { id: "sprite", classId: "SpriteComponent", properties: {} },
             { id: "sky", classId: "SkyboxComponent", properties: {} },
             { id: "cam", classId: "CameraComponent", properties: {} },
+            { id: "arm", classId: "SpringArmComponent", properties: {} },
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
+            ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent"].map((classId) => ({ id: classId, classId, properties: {} })),
             {
               id: "fill",
               classId: "HemisphericFillLightComponent",
@@ -79,14 +80,6 @@ describe("SceneLayer schema", () => {
     ]);
     expect(layer.settings.postProcessStack).toEqual([
       { id: expect.any(String), materialGuid: "pp-1", enabled: true },
-    ]);
-    expect(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS).toEqual([
-      "SkyboxComponent",
-      "CameraComponent",
-      "LightComponent",
-      "AreaRectLightComponent",
-      "OutlineComponent",
-      "HemisphericFillLightComponent",
     ]);
   });
 

@@ -4,7 +4,7 @@ import { createTestEngine } from "./create-null-engine";
 import {
   encodeParentedAnimatedTriangleGlb,
   encodeTriangleGlb,
-} from "./model-mesh";
+} from "./glb-test-fixtures";
 import {
   createModelPreviewScene,
   loadModelPreviewSource,

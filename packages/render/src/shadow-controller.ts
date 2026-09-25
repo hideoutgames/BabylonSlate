@@ -12,11 +12,11 @@ import {
   Vector3,
   Frustum,
   Material,
+  Plane,
   RenderTargetTexture,
   type AbstractMesh,
   type Light,
   type Scene,
-  type Plane,
   type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
@@ -26,7 +26,7 @@ import {
   type ShadowSettings,
 } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-readiness-signal";
 import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
 import {
   authoredShadowParticipation,
@@ -37,10 +37,14 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
-import { resolveDirectionalShadowBias } from "./shadow-bias";
+import {
+  resolveDirectionalShadowBias,
+  type DirectionalShadowBiasInput,
+} from "./shadow-bias";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
+import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
@@ -95,44 +99,88 @@ type Entry = {
 const SHADOW_MIN_RESIDENCY_MS = 250;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
+/** An admitted map's allocation shape; a change replaces the generator. */
+function allocationKey(
+  mapSize: number,
+  light: ShadowLight,
+  cascades: number,
+): string {
+  return JSON.stringify([
+    mapSize,
+    light.needCube(),
+    light instanceof DirectionalLight ? cascades : 1,
+  ]);
+}
+
+/** Faces admission charges a light under the effective settings. */
+function admissionPasses(light: ShadowLight, settings: ShadowSettings): number {
+  return light instanceof DirectionalLight
+    ? settings.cascades
+    : light.needCube()
+      ? 6
+      : 1;
+}
+
+/** Material samplers admission charges a light under the effective settings. */
+function admissionSamplers(light: ShadowLight, settings: ShadowSettings): number {
+  return settings.filter === "pcss" && !light.needCube() ? 2 : 1;
+}
+
+/** Faces a live generator renders: its cascades, a cube's six, otherwise one. */
+function generatorPasses(generator: ShadowGenerator): number {
+  return generator instanceof CascadedShadowGenerator
+    ? generator.numCascades
+    : generator.getLight().needCube()
+      ? 6
+      : 1;
+}
+
+/** Illumination state and shadow allocation of one light; no entry is "unsupported". */
+function shadowLightRow(light: Light, entry?: Entry) {
+  const generator = entry?.generator;
+  return {
+    name: light.name,
+    illumination: isDirectionalLightExcluded(light)
+      ? "directional-limit"
+      : isForwardLightExcluded(light)
+        ? "forward-limit"
+      : !light.isEnabled() || light.intensity <= 0
+        ? "disabled"
+        : "active",
+    status: entry?.status ?? "unsupported",
+    reason: entry?.reason ?? null,
+    allocationError: entry?.recovery?.error ?? null,
+    refreshMode: generator
+      ? generator.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE
+        ? "on-change"
+        : "continuous"
+      : null,
+    effectiveFilter: !generator
+      ? null
+      : generator.usePoissonSampling
+        ? "poisson"
+        : generator.useContactHardeningShadow
+          ? "pcss"
+          : "pcf",
+    passes: generator ? generatorPasses(generator) : 0,
+    mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
+  };
+}
+
 /** Construction is synchronous: no other renderer can allocate between checkpoints. */
 function shadowAllocationCheckpoint(
   scene: Scene,
 ): (generator: { dispose(): void } | null) => void {
-  const engine = scene.getEngine();
-  const textures = new Set(scene.textures);
-  const internals = new Set(engine.getLoadedTexturesCache());
-  // Babylon 9.20 has no public wrapper enumeration. Read the typed cache only;
-  // all ownership release goes through public dispose methods, never cache edits.
-  const wrappers = new Set(engine._renderTargetWrapperCache);
+  const rollback = beginEngineAllocationCheckpoint(scene);
   return (generator) => {
-    const failures: unknown[] = [];
-    const dispose = (resource: { dispose(): void }) => {
-      try {
-        resource.dispose();
-      } catch (error) {
-        failures.push(error);
-      }
-    };
-    if (generator) dispose(generator);
-    // A throwing RTT constructor has already registered itself and its observers
-    // on the Scene, but has not returned into ShadowGenerator._shadowMap yet.
-    for (const texture of [...scene.textures])
-      if (!textures.has(texture) && texture instanceof RenderTargetTexture)
-        dispose(texture);
-    // Re-read after RTT disposal so each remaining orphan is released only once.
-    for (const wrapper of [...engine._renderTargetWrapperCache])
-      if (!wrappers.has(wrapper)) dispose(wrapper);
-    for (const texture of [...engine.getLoadedTexturesCache()])
-      if (
-        !internals.has(texture) &&
-        !engine._renderTargetWrapperCache.some(
-          (wrapper) =>
-            wrapper.textures?.includes(texture) ||
-            wrapper.depthStencilTexture === texture,
-        )
-      )
-        dispose(texture);
+    const failures = rollback({
+      before: (attempt) => {
+        if (generator) attempt(() => generator.dispose());
+      },
+      // A throwing RTT constructor has already registered itself and its observers
+      // on the Scene, but has not returned into ShadowGenerator._shadowMap yet.
+      textureFilter: (texture) => texture instanceof RenderTargetTexture,
+    });
     if (failures.length)
       throw new AggregateError(
         failures,
@@ -186,7 +234,8 @@ export class SceneShadowController {
     });
     scene.onMeshRemovedObservable.add((mesh) => {
       this.pending.delete(mesh);
-      this.meshes.delete(mesh);
+      // Only casters own a spatial leaf or generator render-list membership.
+      if (!this.meshes.delete(mesh)) return;
       this.spatial.remove(mesh);
       for (const entry of this.entries.values())
         entry.generator?.removeShadowCaster(mesh, false);
@@ -315,14 +364,9 @@ export class SceneShadowController {
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
     let bytes = 0;
-    for (const { light, generator } of this.entries.values()) {
+    for (const { generator } of this.entries.values()) {
       if (!generator) continue;
-      const count =
-        generator instanceof CascadedShadowGenerator
-          ? generator.numCascades
-          : light instanceof PointLight
-            ? 6
-            : 1;
+      const count = generatorPasses(generator);
       passes += count;
       bytes +=
         count *
@@ -332,43 +376,7 @@ export class SceneShadowController {
     return { passes, bytes };
   }
   diagnostics(lights: readonly Light[] = this.scene.lights) {
-    return lights.map((light) => {
-      const entry = this.entries.get(light);
-      const generator = entry?.generator;
-      return {
-        name: light.name,
-        illumination: isDirectionalLightExcluded(light)
-          ? "directional-limit"
-          : isForwardLightExcluded(light)
-            ? "forward-limit"
-          : !light.isEnabled() || light.intensity <= 0
-            ? "disabled"
-            : "active",
-        status: entry?.status ?? "unsupported",
-        reason: entry?.reason ?? null,
-        allocationError: entry?.recovery?.error ?? null,
-        refreshMode: generator
-          ? generator.getShadowMap()?.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE
-            ? "on-change"
-            : "continuous"
-          : null,
-        effectiveFilter: !generator
-          ? null
-          : generator.usePoissonSampling
-            ? "poisson"
-            : generator.useContactHardeningShadow
-              ? "pcss"
-              : "pcf",
-        passes: generator
-          ? generator instanceof CascadedShadowGenerator
-            ? generator.numCascades
-            : light instanceof PointLight
-              ? 6
-              : 1
-          : 0,
-        mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
-      };
-    });
+    return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
   sync(): void {
     const scene = this.scene;
@@ -379,19 +387,21 @@ export class SceneShadowController {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
       if (!participatesInShadows(mesh)) {
         mesh.receiveShadows = false;
-        this.meshes.delete(mesh);
-        this.spatial.remove(mesh);
-        for (const entry of this.entries.values())
-          entry.generator?.removeShadowCaster(mesh, false);
+        if (this.meshes.delete(mesh)) {
+          this.spatial.remove(mesh);
+          for (const entry of this.entries.values())
+            entry.generator?.removeShadowCaster(mesh, false);
+        }
         continue;
       }
       const participation = authoredShadowParticipation(mesh);
       mesh.receiveShadows = participation.receiveShadows !== false;
       if (participation.castShadows === false) {
-        this.meshes.delete(mesh);
-        this.spatial.remove(mesh);
-        for (const entry of this.entries.values())
-          entry.generator?.removeShadowCaster(mesh, false);
+        if (this.meshes.delete(mesh)) {
+          this.spatial.remove(mesh);
+          for (const entry of this.entries.values())
+            entry.generator?.removeShadowCaster(mesh, false);
+        }
         continue;
       }
       this.meshes.add(mesh);
@@ -443,7 +453,8 @@ export class SceneShadowController {
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
       entry.reason = null;
-      if (entry.recovery?.requestKey !== allocationRequestKey(entry))
+      // Healthy entries build no request key.
+      if (entry.recovery && entry.recovery.requestKey !== allocationRequestKey(entry))
         entry.recovery = null;
       if (isDirectionalLightExcluded(entry.light)) {
         entry.status = "non-illuminating";
@@ -458,7 +469,7 @@ export class SceneShadowController {
         entry.status = "shadows-disabled";
         return false;
       }
-      if (entry.failedKey === allocationRequestKey(entry)) {
+      if (entry.failedKey !== "" && entry.failedKey === allocationRequestKey(entry)) {
         entry.status = "allocation-failed";
         entry.reason =
           "shadow allocation failed at minimum size; awaiting settings change or context recovery";
@@ -518,7 +529,6 @@ export class SceneShadowController {
     const reserveLocalMaps =
       settings.maxLocalLights > 0 &&
       candidates.some((entry) => !(entry.light instanceof DirectionalLight));
-    let local = 0;
     // Reserve the single sun before local maps regardless of local priorities.
     candidates.sort(
       (a, b) =>
@@ -531,13 +541,8 @@ export class SceneShadowController {
     let remainingLocalFaces = 0;
     const planned = candidates.filter((entry) => {
       const directional = entry.light instanceof DirectionalLight;
-      const passes = directional
-        ? settings.cascades
-        : entry.light.needCube()
-          ? 6
-          : 1;
-      const samplers =
-        settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
+      const passes = admissionPasses(entry.light, settings);
+      const samplers = admissionSamplers(entry.light, settings);
       entry.reason =
         !directional && plannedLocal >= settings.maxLocalLights
           ? "local light capacity"
@@ -555,24 +560,12 @@ export class SceneShadowController {
       }
       return true;
     });
+    // Admitted totals never exceed the planned ones, so every planned entry still
+    // fits the local, pass and sampler budgets; only memory can reject it here.
     for (const entry of planned) {
       const directional = entry.light instanceof DirectionalLight;
-      const passes = directional
-        ? settings.cascades
-        : entry.light.needCube()
-          ? 6
-          : 1;
-      const samplers =
-        settings.filter === "pcss" && !entry.light.needCube() ? 2 : 1;
-      entry.reason =
-        !directional && local >= settings.maxLocalLights
-          ? "local light capacity"
-          : admitted.passes + passes > passBudget
-            ? "shadow face/pass budget"
-            : admitted.samplers + samplers > samplerBudget
-              ? "material sampler headroom"
-              : null;
-      if (entry.reason) continue;
+      const passes = admissionPasses(entry.light, settings);
+      const samplers = admissionSamplers(entry.light, settings);
       const requestedSize = directional
         ? settings.mapSize
         : settings.localMapSize;
@@ -624,7 +617,6 @@ export class SceneShadowController {
       admitted.bytes += peakPasses * mapSize ** 2 * bytesPerTexel;
       admitted.passes += passes;
       admitted.samplers += samplers;
-      if (!directional) local++;
     }
     const owners = [...this.entries.values()].filter((entry) => entry.generator);
     const winners = [...this.entries.values()].filter((entry) => entry.status === "active");
@@ -636,7 +628,7 @@ export class SceneShadowController {
     const canWarm = this.receiverPass !== undefined && camera && !cameraChanged &&
       this.authoredRevision === this.appliedAuthoredRevision && incoming.length > 0 && incoming.length === outgoing.length &&
       owners.every((entry) => candidates.includes(entry) && !entry.resetAllocation &&
-        entry.key === JSON.stringify([entry.mapSize, entry.light.needCube(), entry.light instanceof DirectionalLight ? settings.cascades : 1]) &&
+        entry.key === allocationKey(entry.mapSize, entry.light, settings.cascades) &&
         entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
       outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
     // CSM freezes caster bounds; retained owners refresh them every sync.
@@ -686,12 +678,10 @@ export class SceneShadowController {
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
     for (const entry of this.entries.values()) {
-      const key = JSON.stringify([
-        entry.mapSize,
-        entry.light.needCube(),
-        entry.light instanceof DirectionalLight ? settings.cascades : 1,
-      ]);
-      if (entry.status !== "active" || entry.key !== key) {
+      if (
+        entry.status !== "active" ||
+        entry.key !== allocationKey(entry.mapSize, entry.light, settings.cascades)
+      ) {
         if (entry.generator) {
           entry.generator.dispose();
           markSceneReadinessDirty(scene);
@@ -702,6 +692,8 @@ export class SceneShadowController {
       }
     }
     reserveSceneShadows(scene, admitted);
+    // One scene-wide light invalidation covers every retained generator's defines.
+    let materialsDirty = false;
     for (const entry of this.entries.values()) {
       if (entry.status !== "active") continue;
       const directionalLight = entry.light instanceof DirectionalLight;
@@ -710,8 +702,9 @@ export class SceneShadowController {
       entry.settings = settings;
       if (entry.generator) {
         this.applySettings(entry.generator, settings);
-        if (previousSettings?.fadeFraction !== settings.fadeFraction ||
-            (directionalLight && previousSettings?.autoBias !== settings.autoBias)) {
+        if (!materialsDirty && (previousSettings?.fadeFraction !== settings.fadeFraction ||
+            (directionalLight && previousSettings?.autoBias !== settings.autoBias))) {
+          materialsDirty = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
         }
@@ -781,9 +774,11 @@ export class SceneShadowController {
             defines.rebuild();
           };
           validateAllocation(generator);
-          for (const mesh of this.meshes)
-            generator.addShadowCaster(mesh, false);
           const map = generator.getShadowMap();
+          // The new map's list is empty and the casters are unique, so skip
+          // addShadowCaster's per-mesh indexOf scan. The constructor has already
+          // light-dirtied every mesh that can bind this light's shadow defines.
+          if (map) map.renderList = Array.from(this.meshes);
           let drawsBefore = 0;
           let indicesBefore = 0;
           map?.onBeforeBindObservable.add(() => {
@@ -809,6 +804,11 @@ export class SceneShadowController {
           // bound yet. Never derive from the previous frame in applySettings.
           let preparedBias: EffectiveShadowBias | null = null;
           let clearedForDraw = false;
+          // The resolver reads its input synchronously; each map reuses one.
+          const biasInput: DirectionalShadowBiasInput = {
+            width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
+            poissonRadiusTexels: 0, depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
+          };
           map?.onBeforeRenderObservable.add((layer) => {
             clearedForDraw = false;
             const settings = entry.settings!;
@@ -818,22 +818,21 @@ export class SceneShadowController {
               : generator.projectionMatrix;
             const size = map.getSize();
             const matrix = projection?.m;
-            const effective = resolveDirectionalShadowBias({
-              width: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0,
-              height: automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0,
-              depth: matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0,
-              mapWidth: size.width,
-              mapHeight: size.height,
-              filter: generator.usePercentageCloserFiltering ? "pcf"
-                : generator.useContactHardeningShadow ? "pcss"
-                  : generator.usePoissonSampling ? "poisson" : "none",
-              filterQuality: generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
-                : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low",
-              poissonRadiusTexels: generator.blurScale,
-              depthClamp: generator instanceof CascadedShadowGenerator && generator.depthClamp,
-              authoredDepthBias: settings.depthBias,
-              authoredNormalBias: settings.normalBias,
-            });
+            biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
+            biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
+            biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
+            biasInput.mapWidth = size.width;
+            biasInput.mapHeight = size.height;
+            biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
+              : generator.useContactHardeningShadow ? "pcss"
+                : generator.usePoissonSampling ? "poisson" : "none";
+            biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
+              : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
+            biasInput.poissonRadiusTexels = generator.blurScale;
+            biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
+            biasInput.authoredDepthBias = settings.depthBias;
+            biasInput.authoredNormalBias = settings.normalBias;
+            const effective = resolveDirectionalShadowBias(biasInput);
             generator.bias = effective.bias;
             generator.normalBias = effective.normalBias;
             const record = preparedBias ??= {
@@ -858,13 +857,17 @@ export class SceneShadowController {
           map?.onAfterRenderObservable.add(() => {
             if (!clearedForDraw || !preparedBias) return;
             const record = entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
-            Object.assign(record, preparedBias, {
-              depthBias: generator.bias,
-              normalBias: generator.normalBias,
-            });
+            Object.assign(record, preparedBias);
+            record.depthBias = generator.bias;
+            record.normalBias = generator.normalBias;
             clearedForDraw = false;
           });
           let activePlanes: Plane[] | null = null;
+          // Babylon consumes each custom list synchronously, so every map reuses
+          // its planes and caster list; upstream views the same side/far planes.
+          const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
+          const upstream = planes.slice(1);
+          const casters: AbstractMesh[] = [];
           if (map)
             map.getCustomRenderList = (layer) => {
               const transform =
@@ -872,12 +875,12 @@ export class SceneShadowController {
                   ? generator.getCascadeTransformMatrix(layer)
                   : generator.getTransformMatrix();
               if (!transform) return null;
-              const planes = Frustum.GetPlanes(transform);
+              Frustum.GetPlanesToRef(transform, planes);
               activePlanes =
                 directionalLight && entry.settings!.filter === "pcf"
-                  ? planes.slice(1)
+                  ? upstream
                   : planes;
-              return this.spatial.queryPlanes(activePlanes);
+              return this.spatial.queryPlanes(activePlanes, casters);
             };
           generator.customAllowRendering = (part) => {
             if (hasDeformingShadowBounds(part.getMesh())) return true;
@@ -902,11 +905,7 @@ export class SceneShadowController {
           markSceneReadinessDirty(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = JSON.stringify([
-            mapSize,
-            entry.light.needCube(),
-            directionalLight ? settings.cascades : 1,
-          ]);
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";
@@ -943,12 +942,7 @@ export class SceneShadowController {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
       const cascaded = entry.generator instanceof CascadedShadowGenerator;
-      const passes =
-        entry.generator instanceof CascadedShadowGenerator
-          ? entry.generator.numCascades
-          : entry.light.needCube()
-            ? 6
-            : 1;
+      const passes = generatorPasses(entry.generator);
       live.bytes +=
         (cascaded ? 4 : passes) * entry.mapSize ** 2 * bytesPerTexel;
       live.passes += passes;
@@ -981,6 +975,14 @@ export class SceneShadowController {
 /** Internal renderer lookup; observing a scene never installs a second owner. */
 export function findSceneShadowController(scene: Scene): SceneShadowController | undefined {
   return controllers.get(scene);
+}
+
+/** Per-light rows for a read path; a Scene without an owner lists every light unsupported. */
+export function shadowLightDiagnostics(
+  scene: Scene,
+  controller?: SceneShadowController,
+) {
+  return controller?.diagnostics() ?? scene.lights.map((light) => shadowLightRow(light));
 }
 
 export function sceneShadowController(scene: Scene): SceneShadowController {

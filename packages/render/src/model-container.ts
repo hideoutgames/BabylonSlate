@@ -1,5 +1,8 @@
 import "./gltf-loader";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import { GLTFLoaderAnimationStartMode } from "@babylonjs/loaders/glTF/glTFFileLoader";
 import {
@@ -50,4 +53,26 @@ export async function loadModelContainer(
     }
   }
   return container;
+}
+
+/** Parent every loaded node that has no parent yet under `parent`. */
+export function parentContainerRoots(
+  parent: Node,
+  container: {
+    rootNodes?: readonly Node[];
+    transformNodes: readonly TransformNode[];
+    meshes: readonly AbstractMesh[];
+  },
+): void {
+  const candidates = [
+    ...(container.rootNodes ?? []),
+    ...container.transformNodes,
+    ...container.meshes,
+  ];
+  const seen = new Set<Node>();
+  for (const node of candidates) {
+    if (seen.has(node) || node === parent) continue;
+    seen.add(node);
+    if (!node.parent) node.parent = parent;
+  }
 }

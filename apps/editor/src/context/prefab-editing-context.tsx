@@ -19,6 +19,7 @@ import { useDocumentWorkspace } from "./document-workspace-context";
 import { useOptionalSceneEditing } from "./scene-editing-context";
 import {
   applyPrefabComponentTransform,
+  authoredTransformFromPreview,
   applyPrefabPivotDelta,
   componentSubtreeIds,
   mergePrefabComponents,
@@ -316,7 +317,11 @@ export function PrefabEditingProvider({
           )
         : components;
       upsertLocalFromViews(
-        applyPrefabComponentTransform(withProps, componentId, transform),
+        applyPrefabComponentTransform(
+          withProps,
+          componentId,
+          authoredTransformFromPreview(withProps, componentId, transform),
+        ),
       );
     },
     [components, upsertLocalFromViews],

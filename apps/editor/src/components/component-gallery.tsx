@@ -141,7 +141,7 @@ import {
 } from "@babylonslate/ui/components/tooltip";
 
 const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
-  { id: "rename", label: "Rename", onSelect: () => {} },
+  { id: "rename", label: "Rename", shortcut: "F2", onSelect: () => {} },
   {
     id: "view",
     type: "radio-group",
@@ -158,7 +158,7 @@ const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
     type: "submenu",
     label: "More",
     items: [
-      { id: "duplicate", label: "Duplicate", onSelect: () => {} },
+      { id: "duplicate", label: "Duplicate", shortcut: "Mod+D", onSelect: () => {} },
       {
         id: "export",
         type: "submenu",
@@ -401,8 +401,16 @@ function GalleryDisclosure() {
 }
 
 function GalleryNestedMenus() {
+  const [showGrid, setShowGrid] = useState(true);
+  const items: NestedMenuItem[] = [
+    ...GALLERY_NESTED_ITEMS,
+    {
+      id: "grid", type: "checkbox", label: "Show Grid", shortcut: "Shift+G",
+      checked: showGrid, onCheckedChange: setShowGrid, closeOnClick: false,
+    },
+  ];
   const { menu, closeMenu, openMenuAt } = useContextMenu({
-    items: GALLERY_NESTED_ITEMS,
+    items,
   });
 
   return (
@@ -410,7 +418,7 @@ function GalleryNestedMenus() {
       <h3 className="text-sm font-medium">Nested menu</h3>
       <div className="flex flex-wrap items-center gap-2">
         <NestedMenu
-          items={GALLERY_NESTED_ITEMS}
+          items={items}
           trigger={
             <Button variant="outline" data-testid="gallery-nested-menu">
               Nested Menu

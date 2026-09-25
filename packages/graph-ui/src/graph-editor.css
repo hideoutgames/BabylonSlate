@@ -294,6 +294,13 @@
   display: flex;
 }
 
+/* Add Node closes instantly: Base UI unmounts once no exit animation runs. */
+[data-slot="dialog-content"][data-closed]:is(.node-palette-popup, .node-palette-modal),
+.node-palette-overlay[data-closed] {
+  animation: none;
+  transition: none;
+}
+
 @media (pointer: coarse) {
   .node-palette-row {
     padding-inline: 10px;
