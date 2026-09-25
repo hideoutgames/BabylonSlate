@@ -61,7 +61,6 @@ describe("packed player backend lifetime", () => {
       shadowDiagnostics: () => null,
       visuals: () => [],
       meshMaterialNames: () => [],
-      bakedSession: () => null,
       postProcessPassCount: () => 0,
       renderTasks: () => null,
       setRenderSettings: vi.fn(),

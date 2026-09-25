@@ -81,7 +81,7 @@ describe("NestedMenu dropdown", () => {
     ).not.toBeNull();
   });
 
-  it("keeps the menu open when a checkbox sets closeOnClick false", () => {
+  it("shows a checkbox shortcut and keeps the menu open when toggled", () => {
     const onCheckedChange = vi.fn();
     const { getByTestId } = render(
       <NestedMenu
@@ -90,6 +90,7 @@ describe("NestedMenu dropdown", () => {
             id: "snap",
             type: "checkbox",
             label: "Snap",
+            shortcut: "Shift+G",
             checked: false,
             closeOnClick: false,
             onCheckedChange,
@@ -105,6 +106,8 @@ describe("NestedMenu dropdown", () => {
     );
 
     fireEvent.click(getByTestId("menu-trigger"));
+    expect(getByTestId("context-menu-item-snap").getAttribute("aria-keyshortcuts")).toBe("Shift+G");
+    expect(getByTestId("context-menu-item-snap").querySelector("kbd")?.textContent).toBeTruthy();
     fireEvent.click(getByTestId("context-menu-item-snap"));
     expect(onCheckedChange).toHaveBeenCalledWith(true);
     expect(getByTestId("menu-content")).toBeTruthy();
@@ -200,6 +203,22 @@ describe("NestedMenu dropdown", () => {
 });
 
 describe("NestedMenu context overlay", () => {
+  it("keeps checkbox shortcuts accessible and toggles the anchored menu item", () => {
+    function GridMenu() {
+      const [checked, setChecked] = useState(false);
+      return <NestedMenu open anchor={{ x: 20, y: 20 }} items={[{
+        id: "grid", type: "checkbox", label: "Show Grid", shortcut: "Shift+G",
+        checked, onCheckedChange: setChecked, closeOnClick: false,
+      }]} />;
+    }
+    const view = render(<GridMenu />);
+    const grid = view.getByRole("menuitemcheckbox", { name: "Show Grid" });
+    expect(grid.getAttribute("aria-keyshortcuts")).toBe("Shift+G");
+    expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("G");
+    fireEvent.click(grid);
+    expect(grid.getAttribute("aria-checked")).toBe("true");
+  });
+
   function KeyboardMenu({ items }: { items: NestedMenuItem[] }) {
     const [open, setOpen] = useState(false);
     return (
