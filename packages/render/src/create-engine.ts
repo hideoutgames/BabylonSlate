@@ -787,18 +787,12 @@ function initializeEngine(
   });
   const previousScaling = engine.getHardwareScalingLevel();
   onRollback(() => engine.setHardwareScalingLevel(previousScaling));
-  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
-  onRollback(() => releasePlayRenderPath?.());
   const ktx2Runtime = {
     caps: engine.getCaps(),
     renderer: (
       engine as { getGlInfo?: () => { renderer?: string } }
     ).getGlInfo?.().renderer,
   };
-  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
-    mainThread: options.playMode === true,
-    ...ktx2Runtime,
-  });
   // Decoder statics are page-global. Overlay Play borrows the editor Engine,
   // so its last Play view returns later editor decodes to workers.
   const releaseMainThreadDecoding = options.playMode
@@ -811,6 +805,12 @@ function initializeEngine(
       })
     : null;
   onRollback(() => releaseMainThreadDecoding?.());
+  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
+  onRollback(() => releasePlayRenderPath?.());
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    mainThread: options.playMode === true,
+    ...ktx2Runtime,
+  });
 
   const sharedViewBlit = !presentRtt && visibleContext &&
     (options.sharedEngine || constructorCanvas !== canvas);

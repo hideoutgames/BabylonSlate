@@ -37,6 +37,7 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
+import * as renderPathSession from "./render-path-session";
 import { SnapshotInterpolator } from "./snapshot-sync";
 
 /**
@@ -3386,6 +3387,17 @@ describe("Play createEngine view", () => {
     // Undefined lets Babylon choose its default worker pool size.
     expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
     expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(ktx2Workers);
+  });
+
+  it("returns decoding to workers when Play construction rolls back", () => {
+    const failure = new Error("Play render path could not start.");
+    const retain = vi.spyOn(renderPathSession, "retainPlayRenderPathSession").mockImplementation(() => { throw failure; });
+    try {
+      expect(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), playMode: true })).toThrow(failure);
+    } finally {
+      retain.mockRestore();
+    }
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
   });
 
   it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
