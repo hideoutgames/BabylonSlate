@@ -1,4 +1,4 @@
-import { Engine, Vector3 } from "@babylonjs/core";
+import { DirectionalLight, Engine, Vector3 } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateSceneWater } from "@babylonslate/render";
 
@@ -10,6 +10,8 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const host = createParticlePreviewScene(engine, { skybox: true });
   const { scene, camera } = host;
+  const sun = new DirectionalLight("sun", new Vector3(-0.3, -1, 0.6), scene);
+  sun.intensity = 1.4;
   camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
   camera.maxZ = 1200;
   const capture = async () => {

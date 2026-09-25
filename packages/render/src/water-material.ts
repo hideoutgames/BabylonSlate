@@ -4,8 +4,12 @@ import { waterWaveComponents, type WaterBodyProperties, type WaterDefinition } f
 /** World-space water shading on native PBR; both backends use the same wave spectrum. */
 export class WaterMaterialPlugin extends MaterialPluginBase {
   time = 0;
-  constructor(material: PBRMaterial, readonly water: WaterDefinition, readonly body: WaterBodyProperties) {
+  readonly water: WaterDefinition;
+  readonly body: WaterBodyProperties;
+  constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, { SLATE_WATER: true }, true, false);
+    this.water = water;
+    this.body = body;
     this.doNotSerialize = true;
     this.registerForExtraEvents = true;
     this._enable(true);
