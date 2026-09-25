@@ -3,7 +3,7 @@ import type { runSpatialEffectsProof } from "../apps/editor/src/testing/spatial-
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
-for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["reflections", "point", "spot", "sun"] as const) {
+for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["reflections", "point", "spot", "sun", "combined"] as const) {
   test(`${kind} spatial lighting renders and retires on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];
@@ -21,6 +21,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["reflec
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
     for (const capture of result.captures) {
+      expect(capture.cameraSwitchDifference, "camera switch uses the new camera matrices").toBeLessThan(1);
       const lit = capture.on.filter((value, i) => i % 4 === 0 && value > capture.off[i]! + 8).length;
       expect(lit, `${capture.path}: visible ${kind}`).toBeGreaterThan(20);
       const disabledDifference = capture.disabled.reduce((sum, value, i) => sum + Math.abs(value - capture.off[i]!), 0) / capture.off.length;

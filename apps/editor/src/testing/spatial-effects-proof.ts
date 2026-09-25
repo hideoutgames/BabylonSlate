@@ -9,7 +9,7 @@ import { managedRenderReservations } from "@babylonslate/render/managed-render-r
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
-export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind: "reflections" | "point" | "spot" | "sun") {
+export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind: "reflections" | "point" | "spot" | "sun" | "combined") {
   const canvas = document.createElement("canvas");
   canvas.width = 96; canvas.height = 72;
   document.getElementById("root")!.append(canvas);
@@ -31,7 +31,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       const floor = MeshBuilder.CreateGround("Floor", { width: 20, height: 20 }, scene);
       floor.material = black;
       let light: DirectionalLight | SpotLight | PointLight | undefined;
-      if (kind === "reflections") {
+      if (kind === "reflections" || kind === "combined") {
         const document = createDefaultMaterialDocument("Authored Mirror");
         document.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.9, 0.9, 0.9];
         Object.assign(document.nodes.find((node) => node.id === "output")!.properties, { "default:metallic": [1], "default:roughness": [0.05] });
@@ -42,10 +42,11 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         red.unlit = true; red.albedoColor = new Color3(0.6, 0, 0);
         const box = MeshBuilder.CreateBox("Reflection Subject", { size: 1.5 }, scene);
         box.position.y = 1.3; box.material = red;
-      } else {
+      }
+      if (kind !== "reflections") {
         const position = new Vector3(0, 3, 0);
         light = kind === "point" ? new PointLight("Fog Light", position, scene)
-          : kind === "spot" ? new SpotLight("Fog Light", position, Vector3.Down(), Math.PI / 2, 1, scene)
+          : kind === "spot" || kind === "combined" ? new SpotLight("Fog Light", position, Vector3.Down(), Math.PI / 2, 1, scene)
             : new DirectionalLight("Fog Light", new Vector3(0.2, -1, 0.1), scene);
         applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: true });
         const blocker = MeshBuilder.CreateBox("Beam Occluder", { width: 2, height: 0.2, depth: 2 }, scene);
@@ -58,12 +59,14 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       const settings = () => setSceneRenderSettings(scene, { mode: "pbr", effects, shadows: normalizeShadowSettings({ mapSize: 256, localMapSize: 256, cascades: 2, maxLocalLights: 1, distance: 20 }) });
       settings();
       const graph = new ForwardSceneFrameGraph(scene);
-      const draw = async () => {
+      const draw = async (activeCamera = camera) => {
+        scene.activeCamera = activeCamera;
+        if (path === "classic") scene.activeCameras = [activeCamera];
         settings();
-        const prepared = await graph.prepare(camera);
+        const prepared = await graph.prepare(activeCamera);
         if (prepared.path !== path) throw new Error(`Expected ${path}: ${JSON.stringify(prepared)}`);
         const deadline = performance.now() + 15_000;
-        while (!graph.readiness(camera).ready) {
+        while (!graph.readiness(activeCamera).ready) {
           if (performance.now() > deadline) throw new Error("Spatial readiness timed out");
           await new Promise<void>((resolve) => setTimeout(resolve, 16));
         }
@@ -72,14 +75,14 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
           engine.beginFrame();
           let rendered = false;
           try {
-            const result = graph.render(camera, false);
+            const result = graph.render(activeCamera, false);
             rendered = result.rendered !== false;
           } finally { engine.endFrame(); }
           if (rendered) presented++;
           else {
             if (performance.now() > deadline) throw new Error("Spatial presentation timed out");
             await new Promise<void>((resolve) => setTimeout(resolve, 16));
-            await graph.prepare(camera);
+            await graph.prepare(activeCamera);
           }
         }
         const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
@@ -90,8 +93,8 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       };
       try {
         const off = await draw();
-        if (kind === "reflections") effects.reflections.enabled = true;
-        else effects.volumetricLighting.enabled = true;
+        effects.reflections.enabled = kind === "reflections" || kind === "combined";
+        effects.volumetricLighting.enabled = kind !== "reflections";
         const on = await draw();
         effects.vignette.enabled = true;
         effects.vignette.weight = 0;
@@ -101,19 +104,34 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         const linear = await draw();
         effects.colorPipeline.mode = "legacyDisplay";
         let changed: number[];
+        let cameraSwitchDifference = 0;
         if (light) {
           applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
           changed = await draw();
+          applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: true });
         }
         else {
           camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
           camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 3; camera.orthoBottom = -3;
           changed = await draw();
+          const alternate = new FreeCamera("Alternate Spatial Camera", new Vector3(1, 2.5, -6), scene);
+          alternate.minZ = camera.minZ; alternate.maxZ = camera.maxZ;
+          alternate.mode = Camera.ORTHOGRAPHIC_CAMERA;
+          alternate.orthoLeft = -4; alternate.orthoRight = 4; alternate.orthoTop = 3; alternate.orthoBottom = -3;
+          alternate.setTarget(new Vector3(0, 0.6, 0));
+          const switched = await draw(alternate);
+          camera.position.copyFrom(alternate.position);
+          camera.setTarget(new Vector3(0, 0.6, 0));
+          const samePose = await draw();
+          cameraSwitchDifference = switched.reduce((sum, value, i) => sum + Math.abs(value - samePose[i]!), 0) / switched.length;
+          alternate.dispose();
+          camera.position.set(0, 2.5, -6);
+          camera.setTarget(new Vector3(0, 0.6, 0));
           camera.mode = Camera.PERSPECTIVE_CAMERA;
         }
         effects.reflections.enabled = effects.volumetricLighting.enabled = false;
         const disabled = await draw();
-        captures.push({ path, off, on, identityDisplay, linear, changed, disabled });
+        captures.push({ path, off, on, identityDisplay, linear, changed, disabled, cameraSwitchDifference });
       } finally {
         graph.dispose(); await graph.whenReleased();
         library.dispose(); scene.dispose();
