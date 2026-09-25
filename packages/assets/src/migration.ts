@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
@@ -245,6 +246,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     migrations: [
       (payload) => asRecord(normalizeParticleSystemPayload(payload)),
     ],
+  });
+  registry.register({
+    type: "Water",
+    migrations: [(payload) => asRecord(normalizeWaterDefinition(payload))],
   });
   registry.register({
     type: "SkyboxCreator",

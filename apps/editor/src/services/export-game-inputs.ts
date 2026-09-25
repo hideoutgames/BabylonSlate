@@ -42,6 +42,7 @@ const JSON_TYPES = new Set([
   "SoundAttenuation",
   "ParticleEmitter",
   "ParticleSystem",
+  "Water",
   "Animation",
   "SceneLayer",
 ]);

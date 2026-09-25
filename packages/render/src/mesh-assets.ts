@@ -19,6 +19,7 @@ import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
+  waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Validated native emission data, separate from original Texture bytes. */
@@ -129,6 +130,7 @@ export function meshAssetFingerprint(
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
     `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
     `tilemaps:${payloadMapFingerprint(assets.tilemaps)}`,
+    `waters:${payloadMapFingerprint(assets.waters)}`,
     `tilesets:${payloadMapFingerprint(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `area:${[...(assets.areaEmissions ?? [])].map(([guid, data]) => `${guid}:${data.metadata.pixelsHash}`).sort().join(",")}`,
@@ -155,6 +157,7 @@ export function meshAssetFingerprintWithoutModels(
     spritePayloads: assets?.spritePayloads,
     spriteAnimations: assets?.spriteAnimations,
     tilemaps: assets?.tilemaps,
+    waters: assets?.waters,
     tilesets: assets?.tilesets,
     textureBytes: assets?.textureBytes,
     texturePixelSizes: assets?.texturePixelSizes,

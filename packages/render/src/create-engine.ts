@@ -1,3 +1,18 @@
+import { PostProcessRetirement } from "./post-process-retirement";
+import type { AudioLibrary } from "./audio-service";
+import { AudioService } from "./audio-service";
+import type { ParticleLibrary } from "./particle-service";
+import { ParticleService } from "./particle-service";
+import { acquireParticleMaterial } from "./particle-material";
+import type { AudioPlaybackBackend } from "./audio-playback-backend";
+import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
+import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
+import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
+import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
+import { nodeMaterialTexturesSampleReady } from "./material-compiler";
+import { AreaRectLightGroup } from "./area-rect-light";
+import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
@@ -189,18 +204,6 @@ import {
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
-import { PostProcessRetirement } from "./post-process-retirement";
-import type { AudioLibrary } from "./audio-service";
-import { AudioService } from "./audio-service";
-import type { ParticleLibrary } from "./particle-service";
-import { ParticleService } from "./particle-service";
-import { acquireParticleMaterial } from "./particle-material";
-import type { AudioPlaybackBackend } from "./audio-playback-backend";
-import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
-import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
-import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
-import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
   pendingSceneTextures,
@@ -208,7 +211,6 @@ import {
   SCENE_LOOKUP_MAPS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
-import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 
 export interface EditorSceneLoadOptions {
   signal: AbortSignal;
@@ -410,6 +412,7 @@ export interface CreateEngineOptions {
   onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
@@ -1043,6 +1046,8 @@ function initializeEngine(
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   onRollback(() => disposeSnapshotBinding(binding));
   binding.tilemaps = options.tilemapPayloads;
+  binding.waters = options.waterPayloads;
+  if (options.playMode) setSceneWaterTime(scene, 0);
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;
@@ -1458,6 +1463,7 @@ function initializeEngine(
       binding.spriteAnimations =
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
+      binding.waters = assets.waters ?? binding.waters;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
       binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
       if (assets.materialTextureGuids) {
@@ -2771,6 +2777,10 @@ function initializeEngine(
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");
       }
+      if (command.type === "waterTime") {
+        setSceneWaterTime(scene, command.seconds);
+        scheduler.invalidate("snapshot");
+      }
       if (command.type === "animState") {
         appliedSnapshotIdentity = null;
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
@@ -3187,4 +3197,3 @@ export function createAppEngine(
   });
   return engine;
 }
-import { AreaRectLightGroup } from "./area-rect-light";

@@ -1,3 +1,4 @@
+import { normalizeWaterBody, normalizeWaterBuoyancy, waterKindForClass } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
   SerializedScene,
@@ -126,6 +127,11 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Plays a Particle System",
     "Particles",
   ),
+  engineComponent("WaterOceanComponent", "Water Ocean", "Open water with broad waves", "Water"),
+  engineComponent("WaterLakeComponent", "Water Lake", "Bounded water with gentle waves", "Water"),
+  engineComponent("WaterRiverComponent", "Water River", "Path-shaped water with a flowing current", "Water"),
+  engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
+  engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   engineComponent(
     "2DAnchorComponent",
     "2D Anchor",
@@ -187,6 +193,9 @@ export function defaultPropertiesFor(
   physicsWorld: PhysicsWorldKind = "3d",
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
+  const waterKind = waterKindForClass(classId);
+  if (waterKind) return { ...normalizeWaterBody({}, waterKind) };
+  if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   switch (classId) {
     case "MeshComponent":
       return {
@@ -314,6 +323,7 @@ const PROJECT_ASSET_BINDINGS: Record<
   Mesh: { classId: "MeshComponent", property: "assetGuid" },
   Audio: { classId: "AudioComponent", property: "audioAssetGuid" },
   ParticleSystem: { classId: "ParticleComponent", property: "particleSystemGuid" },
+  Water: { classId: "WaterLakeComponent", property: "assetGuid" },
   Sprite: { classId: "SpriteComponent", property: "assetGuid" },
   Tilemap: { classId: "TilemapComponent", property: "assetGuid" },
   AnimationGraph: { classId: "AnimationGraphComponent", property: "graphGuid" },

@@ -237,6 +237,7 @@ export function playSessionBootControls(options: {
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
+  waters?: Extract<ControlMessage, { type: "loadWater" }> | null;
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
   sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
   models?: Extract<ControlMessage, { type: "loadModels" }> | null;
@@ -267,6 +268,7 @@ export function playSessionBootControls(options: {
       blackboards: [...(options.blackboards ?? [])],
     });
   }
+  if (options.waters) controls.push(options.waters);
   if (options.tilemaps) controls.push(options.tilemaps);
   if (options.sprites) controls.push(options.sprites);
   if (options.models) controls.push(options.models);
@@ -477,6 +479,7 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
@@ -586,6 +589,7 @@ export function startPlaySession(options: {
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
+    waterPayloads: options.waterPayloads,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -907,6 +911,7 @@ export function startPlaySession(options: {
       animGraphs,
       behaviourTrees: options.behaviourTrees,
       blackboards: options.blackboards,
+      waters: { type: "loadWater", waters: [...(options.waterPayloads ?? [])].map(([guid, document]) => ({ guid, document })) },
       tilemaps: playLoadTilemapsControl(
         options.tilemapPayloads,
         options.tilesetPayloads,
@@ -959,6 +964,7 @@ export function startPlaySession(options: {
       const document = parseBehaviourTreeDocument(entry.document);
       if (document) inProcess.registerBehaviourTree(entry.guid, document);
     }
+    inProcess.registerWaterContent(options.waterPayloads ?? new Map());
     for (const entry of options.blackboards ?? []) {
       const document = parseBlackboardDocument(entry.document);
       if (document) inProcess.registerBlackboard(entry.guid, document);

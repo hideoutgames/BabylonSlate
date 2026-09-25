@@ -1,4 +1,5 @@
 import { sceneShadowController } from "./shadow-controller";
+import { createWaterMesh } from "./water-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -509,7 +510,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -745,7 +746,7 @@ export function applyAssignMesh(
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
   const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
-      part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+      part.meshAssetGuid && !["water", "sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
@@ -1255,6 +1256,7 @@ function createPlayVisual(
         targets,
         part.landscape,
         part.foliage,
+        part.water,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1374,8 +1376,14 @@ export function createPlayMesh(
   targets?: PlayVisualTargets,
   landscape?: import("@babylonslate/core").LandscapeProperties,
   foliage?: import("@babylonslate/core").FoliageProperties,
+  water?: import("@babylonslate/core").WaterBodyProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "water" && water) {
+    const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
+    const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
+    return createWaterMesh(scene, name, water, definition, material);
+  }
   if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
   if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
