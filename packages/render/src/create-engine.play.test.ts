@@ -1941,6 +1941,46 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("does not report a bake failure when a view is disposed during bake preparation", async () => {
+    const engine = sharedEngine();
+    // The bake Material closure admits only opaque two-sided surfaces.
+    const material = createDefaultMaterialDocument();
+    material.twoSided = true;
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      materialDocuments: new Map([["material-1", material]]),
+      bakeAssetReader: async () => undefined,
+    });
+    handles.push(handle);
+    const receiver = createMeshComponent("mesh", "ground");
+    receiver.properties.materialGuid = "material-1";
+    receiver.properties.bakeParticipation = "staticReceiver";
+    const document = createDefaultScene();
+    document.actors = [
+      createActor("receiver", "Ground", { components: [receiver] }),
+      createActor("lamp", "Lamp", {
+        transform: { position: [0, 2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [{ id: "light", classId: "LightComponent", properties: { mobility: "static", intensity: 4 } }],
+      }),
+    ];
+    document.settings.bakedLightingAssetGuid = "bake";
+    document.settings.bakeSettings = { resolution: 32, paddingTexels: 2, samples: 1, bounces: 2 };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      handle.loadScene(document, { sceneAssetGuid: "scene-1" });
+      expect(handle.bakedSessionDiagnostics().state).toBe("pending");
+      handle.dispose();
+      await handle.whenReleased();
+      expect(handle.scene.isDisposed).toBe(true);
+      // Preparation hashes asynchronously; wait until the session settles.
+      await vi.waitFor(() => { expect(handle.bakedSessionDiagnostics().state).not.toBe("pending"); });
+      expect(warn.mock.calls.filter(([message]) => String(message).includes("Baked lighting"))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {
     const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Blur", "postProcess");

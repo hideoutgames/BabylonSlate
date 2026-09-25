@@ -2589,6 +2589,8 @@ function initializeEngine(
         playDebugDraw?.dispose();
         debugOverlay?.dispose();
         debugOverlay = null;
+        // Rollback order: bake receivers restore before the library disposes.
+        bakedSession.dispose();
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
