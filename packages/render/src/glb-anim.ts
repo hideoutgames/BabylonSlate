@@ -335,7 +335,12 @@ function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
   const observer = scene.onBeforeAnimationsObservable.add(() => {
     if (!blends.size || !scene.animationsEnabled) return;
     // Pinned Babylon 9.20 adapter: Scene._animate skips its first pass,
-    // late bindings included, while pending data exists.
+    // late bindings included, while pending data exists. This observer also
+    // assumes an animation pass follows the notification. Babylon still
+    // notifies without one for `scene.render(_, true)` (ignoreAnimations) and
+    // for a deterministic-lockstep frame that takes zero steps. Neither runs in
+    // production; either would clear these blends and leave stale late
+    // bindings for the next pass.
     if (!scene._animationTimeLast && scene._pendingData.length > 0) return;
     for (const apply of blends.values()) apply();
     blends.clear();
