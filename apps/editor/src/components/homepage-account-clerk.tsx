@@ -14,6 +14,7 @@ type Props = {
   onSubscription: () => void;
   onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
+  onChangelog?: () => void;
   onOpenChange: (open: boolean) => void;
   onOverlayChange: (open: boolean) => void;
 };

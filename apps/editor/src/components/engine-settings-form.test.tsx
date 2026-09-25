@@ -29,6 +29,17 @@ afterEach(() => {
 });
 
 describe("EngineSettingsForm build identity", () => {
+  it("lets desktop users turn automatic updates off and back on", () => {
+    vi.stubGlobal("babylonslate", { userData: {} });
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="about" />);
+    fireEvent.click(view.getByRole("switch", { name: "Automatic Updates" }));
+    expect(onChange).toHaveBeenLastCalledWith({ automaticUpdatesEnabled: false });
+    view.rerender(<EngineSettingsForm settings={{ ...defaultEngineSettings(), automaticUpdatesEnabled: false }} onChange={onChange} categoryId="about" />);
+    fireEvent.click(view.getByRole("switch", { name: "Automatic Updates" }));
+    expect(onChange).toHaveBeenLastCalledWith({ automaticUpdatesEnabled: true });
+  });
+
   it("shows the exact channel, version, Apple build and source for support", () => {
     vi.stubGlobal("__BABYLONSLATE_BUILD__", { applicationVersion: "1.2.3", channel: "release", appleBuildNumber: "418.1.1", windowsVersion: "1.2.3", sourceSha: "a".repeat(40), runNumber: 418, runAttempt: 1 });
     const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={() => {}} categoryId="about" />);

@@ -59,6 +59,17 @@ afterEach(() => {
 
 const noop = async () => {};
 
+it.each(["web", "electron", "ios"])("opens the offline changelog from the %s launcher account menu", async host => {
+  getHostPlatform.mockReturnValue(host);
+  vi.stubGlobal("__BABYLONSLATE_VERSION__", "1.2.3");
+  vi.stubGlobal("__BABYLONSLATE_CHANGELOG__", [{ version: "1.2.3", title: "Release News", changes: ["Projects reopen faster."] }]);
+  renderHomepage();
+  fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Changelog" }));
+  const dialog = await screen.findByRole("dialog", { name: "Changelog" });
+  expect(within(dialog).getByText("Projects reopen faster.")).toBeTruthy();
+});
+
 function renderHomepage(
   overrides: Partial<ComponentProps<typeof Homepage>> = {},
 ) {

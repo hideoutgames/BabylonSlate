@@ -187,7 +187,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "about",
     label: "About",
-    keywords: "version channel build commit source release test",
+    keywords: "version channel build commit source release test automatic updates GitHub",
   },
   {
     id: "appearance",

@@ -1,4 +1,5 @@
 import { createIdentity, existingAppleIdentity, releaseDisposition, validateChecks, validateSource } from "./contract.mjs";
+import { validateChangelog } from "./changelog.mjs";
 
 const VERIFY_JOBS = ["static", "unit", ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`)];
 
@@ -20,6 +21,10 @@ export async function preflight(request, { api, git }) {
   validateSource({ ...request, protectedMain: main.protected, reachable: true });
   const declared = JSON.parse(await git(["show", `${request.sourceSha}:release/version.json`]));
   const identity = operation === "finalize-testflight" ? existingAppleIdentity(declared, request) : createIdentity({ ...request, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset });
+  if (identity.channel === "release" && operation === "distribute") {
+    const changelog = JSON.parse(await git(["show", `${request.sourceSha}:release/changelog.json`]));
+    identity.patchNotes = validateChangelog(changelog, identity.applicationVersion).find(notes => notes.version === identity.applicationVersion);
+  }
   if (operation === "distribute" && request.existingBuildNumber) throw new Error("Existing build number is only valid for finalization");
   const runs = await api(`/actions/workflows/verify.yml/runs?head_sha=${identity.sourceSha}&per_page=100`);
   const run = runs.workflow_runs.filter(item => item.head_sha === identity.sourceSha && ["push", "pull_request"].includes(item.event)).sort((a, b) => b.id - a.id)[0];
