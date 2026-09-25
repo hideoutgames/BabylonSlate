@@ -31,6 +31,7 @@ export * from "./input-keys";
 export * from "./default-input-assets";
 
 export * from "./sorting";
+export * from "./particle-settings";
 
 export * from "./render-quality";
 export * from "./scalability";
