@@ -1735,16 +1735,17 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     actor.rotation.w,
   );
   // Keep local TRS in sync for gizmos / picking later.
-  if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
   mesh.position.copyFrom(scratchPos);
   mesh.rotationQuaternion = mesh.rotationQuaternion ?? new Quaternion();
   mesh.rotationQuaternion.copyFrom(scratchQuat);
   mesh.scaling.copyFrom(scratchScale);
   // No shared Matrix argument: Babylon caches an independent world matrix for
   // every actor slot. Sharing the scratch matrix collapses all rendered meshes.
+  // It also lifts any freeze and recomputes once from the TRS written above.
   if (shouldFreezeStaticWorldMatrix(mesh)) {
     mesh.freezeWorldMatrix();
   } else {
+    if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
     // Update off-screen casters too: active-mesh evaluation does not necessarily
     // visit them before the shadow hierarchy is queried.
     mesh.computeWorldMatrix();
