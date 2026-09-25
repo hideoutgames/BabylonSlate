@@ -232,8 +232,38 @@ describe("baked receiver materials", () => {
     expect(
       variant.subMaterials[0]!.pluginManager!.getPlugin("SlateBakedIrradiance"),
     ).not.toBeNull();
+    const children = [...variant.subMaterials];
     receivers.release();
     expect(mesh.material).toBe(multi);
+    expect(scene.materials).not.toContain(children[0]);
+    expect(scene.materials).not.toContain(children[1]);
+    expect(scene.materials).toContain(pbr);
+    expect(scene.materials).toContain(standard);
+  });
+
+  it("leaves a MultiMaterial whose children cannot consume the bake on realtime lighting", () => {
+    const scene = host();
+    const receivers = new BakedReceiverMaterials(scene);
+    const multi = new MultiMaterial("multi", scene);
+    const unlit = new PBRMaterial("unlit", scene);
+    unlit.unlit = true;
+    multi.subMaterials = [unlit, new Material("plain", scene)];
+    const mesh = MeshBuilder.CreateBox("multi-unlit", {}, scene);
+    mesh.material = multi;
+    const light = new PointLight("lamp", Vector3.Zero(), scene);
+    expect(
+      receivers.apply(
+        mesh,
+        bindingFor(
+          scene,
+          contributions([{ sourceId: "sun", term: "directAndIndirect" }]),
+        ),
+        sources,
+        () => light,
+      ),
+    ).toBeNull();
+    expect(mesh.material).toBe(multi);
+    expect(light.excludedMeshes).not.toContain(mesh);
   });
 
   it("re-wraps around a foreign material assignment and restores the newer material on release", () => {
