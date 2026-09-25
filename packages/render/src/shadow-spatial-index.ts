@@ -91,6 +91,8 @@ export class ShadowSpatialIndex {
     };
   }
   remove(mesh: AbstractMesh): void {
+    // Observers and dirty entries exist only for leaves; others need no rebuild.
+    if (!this.leaves.has(mesh)) return;
     this.observers.get(mesh)?.();
     this.observers.delete(mesh);
     this.leaves.delete(mesh);

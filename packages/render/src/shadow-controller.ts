@@ -199,7 +199,8 @@ export class SceneShadowController {
     });
     scene.onMeshRemovedObservable.add((mesh) => {
       this.pending.delete(mesh);
-      this.meshes.delete(mesh);
+      // Only casters own a spatial leaf or generator render-list membership.
+      if (!this.meshes.delete(mesh)) return;
       this.spatial.remove(mesh);
       for (const entry of this.entries.values())
         entry.generator?.removeShadowCaster(mesh, false);
@@ -392,19 +393,21 @@ export class SceneShadowController {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
       if (!participatesInShadows(mesh)) {
         mesh.receiveShadows = false;
-        this.meshes.delete(mesh);
-        this.spatial.remove(mesh);
-        for (const entry of this.entries.values())
-          entry.generator?.removeShadowCaster(mesh, false);
+        if (this.meshes.delete(mesh)) {
+          this.spatial.remove(mesh);
+          for (const entry of this.entries.values())
+            entry.generator?.removeShadowCaster(mesh, false);
+        }
         continue;
       }
       const participation = authoredShadowParticipation(mesh);
       mesh.receiveShadows = participation.receiveShadows !== false;
       if (participation.castShadows === false) {
-        this.meshes.delete(mesh);
-        this.spatial.remove(mesh);
-        for (const entry of this.entries.values())
-          entry.generator?.removeShadowCaster(mesh, false);
+        if (this.meshes.delete(mesh)) {
+          this.spatial.remove(mesh);
+          for (const entry of this.entries.values())
+            entry.generator?.removeShadowCaster(mesh, false);
+        }
         continue;
       }
       this.meshes.add(mesh);
