@@ -27,6 +27,7 @@ class PreparedSSRCombine extends ThinSSRBlurCombinerPostProcess {
     const args = pendingDefines.get(this) ?? [];
     // Babylon's combiner omits the orthographic define used by its view-position helper.
     if (this.camera?.mode === Camera.ORTHOGRAPHIC_CAMERA) args[0] = `${args[0] ?? ""}\n#define ORTHOGRAPHIC_CAMERA\n`;
+    if (this.camera?.getScene().useRightHandedSystem) args[0] = `${args[0] ?? ""}\n#define SSRAYTRACE_RIGHT_HANDED_SCENE\n`;
     super.updateEffect(...args);
     pendingDefines.delete(this);
   }
@@ -70,7 +71,7 @@ export function liveSceneEffectsKey(scene: Scene, camera = scene.activeCamera): 
   if (!camera || !plan || (!plan.reflections && !plan.volumetricLighting)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  return `${state.effectsKey}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${
+  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${
     plan.volumetricLighting ? volumetricLayoutKey(scene, camera, plan.volumetricLighting) : ""
   }`;
 }

@@ -110,6 +110,10 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       } finally {
         graph.dispose(); await graph.whenReleased();
         library.dispose(); scene.dispose();
+        // This fixture owns the entire engine. Drain queued WebGPU destruction
+        // after CPU teardown, just as the host's next frame or Engine.dispose does.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        engine.beginFrame(); engine.endFrame();
       }
     }
     return { captures, reservations: managedRenderReservations(engine) };

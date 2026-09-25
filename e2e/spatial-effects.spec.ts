@@ -13,7 +13,10 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["reflec
     });
     await page.goto("/?test=1&spatialEffectsProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __spatialEffectsProof?: unknown }).__spatialEffectsProof === "function");
-    const result = await page.evaluate(({ backend, kind }) => (window as unknown as { __spatialEffectsProof: typeof runSpatialEffectsProof }).__spatialEffectsProof(backend, kind), { backend, kind });
+    const result = await page.evaluate(({ backend, kind }) => (window as unknown as { __spatialEffectsProof: typeof runSpatialEffectsProof }).__spatialEffectsProof(backend, kind), { backend, kind }).catch(async (error: unknown) => {
+      await testInfo.attach("spatial-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+      throw error;
+    });
     await testInfo.attach("spatial-pixels", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);

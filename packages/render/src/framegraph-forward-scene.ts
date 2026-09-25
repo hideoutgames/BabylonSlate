@@ -371,12 +371,12 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; a
     // graphless classic path has no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey() && this.outlineMatches()))
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()))
       return true;
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey() && this.outlineMatches()
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()
     ) {
       this.objects!.camera = camera;
       this.cull!.camera = camera;
@@ -481,7 +481,7 @@ export class ForwardSceneFrameGraph {
         this.outputColor !== output.color || this.outputDepth !== output.depth))
       this.markReadinessDirty();
     if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
       this.preparedWidth !== output.width || this.preparedHeight !== output.height ||
       this.outputColor !== output.color || this.outputDepth !== output.depth)
       return { path: "frameGraph", ready: false };
@@ -513,7 +513,7 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
       this.preparedWidth !== output.width ||
       this.preparedHeight !== output.height ||
       this.outputColor !== output.color ||
@@ -727,7 +727,7 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
-        this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
+        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
@@ -736,7 +736,7 @@ export class ForwardSceneFrameGraph {
       // Record the inputs the tasks are built from; a change during the awaits
       // below must leave this graph stale.
       const postProcessRevision = this.postProcessRevision;
-      const effectsKey = this.effectsKey();
+      const effectsKey = this.effectsKey(camera);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -945,8 +945,8 @@ export class ForwardSceneFrameGraph {
   /** The live settings key baked into the prepared graph's effect tasks. The
    * cached value only changes when updateSceneRenderingSettings runs, so a
    * steady-state frame compares strings without serializing the block. */
-  private effectsKey(): string {
-    return liveSceneEffectsKey(this.scene);
+  private effectsKey(camera: Camera): string {
+    return liveSceneEffectsKey(this.scene, camera);
   }
 
   /** Membership and style revisions update the fixed tasks in place. Only

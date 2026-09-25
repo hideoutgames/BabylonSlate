@@ -71,7 +71,7 @@ else {
   }
 }
 ${decl(f, "g", `${u("volumeSettings")}.w`)}
-${decl(f, "phase", `(1.0-g*g) / (12.5663706 * pow(max(0.001, 1.0+g*g-2.0*g*dot(lightDirection, -worldDirection)), 1.5))`)}
+${decl(f, "phase", `(1.0-g*g) / (12.5663706 * pow(max(0.001, 1.0+g*g-2.0*g*dot(lightDirection, worldDirection)), 1.5))`)}
 illumination += ${u(`volumeColor${i}`)}.rgb * (attenuation * phase * visibility${i}(p, abs((${u("volumeView")} * ${v4}(p,1.0)).z)));
 }
 `;

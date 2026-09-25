@@ -26,8 +26,8 @@ function planFor(scene: Scene): SceneEffectsPlan | null {
   return sceneRenderingSettings(scene).effectsPlan;
 }
 
-function keyFor(scene: Scene): string {
-  return liveSceneEffectsKey(scene);
+function keyFor(scene: Scene, camera: Camera): string {
+  return liveSceneEffectsKey(scene, camera);
 }
 
 /**
@@ -73,14 +73,14 @@ export class SceneEffectsOwner {
     return (
       !this.disposed &&
       this.nativeCamera === camera &&
-      this.nativeKey === keyFor(this.scene)
+      this.nativeKey === keyFor(this.scene, camera)
     );
   }
 
   /** Attach (or rebuild) the native chain for the live settings on camera. */
   useNative(camera: Camera): void {
     if (this.disposed || camera.getScene() !== this.scene) return;
-    const key = keyFor(this.scene);
+    const key = keyFor(this.scene, camera);
     if (this.nativeCamera === camera && this.nativeKey === key) return;
     this.detachNative();
     this.nativeCamera = camera;
@@ -310,8 +310,11 @@ export class SceneEffectsOwner {
     const lease = this.spatialLease;
     this.spatialLease = undefined;
     if (lease) {
-      const released = this.retirement.whenReleased().then(() => releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), lease));
-      this.retirement.add({ whenDisposed: () => released, whenReleased: () => released });
+      // CPU/native ownership can finish before the next WebGPU frame drain.
+      // Waiting for that drain here would deadlock teardown of the last view.
+      void this.retirement.whenReleased()
+        .then(() => releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), lease))
+        .catch((error: unknown) => { this.cleanupFailure = error; });
     }
     this.scene.prePassRenderer?.markAsDirty();
   }
