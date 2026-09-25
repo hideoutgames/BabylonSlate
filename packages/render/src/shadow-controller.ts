@@ -44,6 +44,7 @@ import {
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
+import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import {
@@ -138,40 +139,16 @@ function generatorPasses(generator: ShadowGenerator): number {
 function shadowAllocationCheckpoint(
   scene: Scene,
 ): (generator: { dispose(): void } | null) => void {
-  const engine = scene.getEngine();
-  const textures = new Set(scene.textures);
-  const internals = new Set(engine.getLoadedTexturesCache());
-  // Babylon 9.20 has no public wrapper enumeration. Read the typed cache only;
-  // all ownership release goes through public dispose methods, never cache edits.
-  const wrappers = new Set(engine._renderTargetWrapperCache);
+  const rollback = beginEngineAllocationCheckpoint(scene);
   return (generator) => {
-    const failures: unknown[] = [];
-    const dispose = (resource: { dispose(): void }) => {
-      try {
-        resource.dispose();
-      } catch (error) {
-        failures.push(error);
-      }
-    };
-    if (generator) dispose(generator);
-    // A throwing RTT constructor has already registered itself and its observers
-    // on the Scene, but has not returned into ShadowGenerator._shadowMap yet.
-    for (const texture of [...scene.textures])
-      if (!textures.has(texture) && texture instanceof RenderTargetTexture)
-        dispose(texture);
-    // Re-read after RTT disposal so each remaining orphan is released only once.
-    for (const wrapper of [...engine._renderTargetWrapperCache])
-      if (!wrappers.has(wrapper)) dispose(wrapper);
-    for (const texture of [...engine.getLoadedTexturesCache()])
-      if (
-        !internals.has(texture) &&
-        !engine._renderTargetWrapperCache.some(
-          (wrapper) =>
-            wrapper.textures?.includes(texture) ||
-            wrapper.depthStencilTexture === texture,
-        )
-      )
-        dispose(texture);
+    const failures = rollback({
+      before: (attempt) => {
+        if (generator) attempt(() => generator.dispose());
+      },
+      // A throwing RTT constructor has already registered itself and its observers
+      // on the Scene, but has not returned into ShadowGenerator._shadowMap yet.
+      textureFilter: (texture) => texture instanceof RenderTargetTexture,
+    });
     if (failures.length)
       throw new AggregateError(
         failures,
