@@ -9,6 +9,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
+import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
 
 function useEnvironmentScene() {
   const { documentId } = useDocumentWorkspace();
@@ -47,7 +48,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
 }
 
 export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
-  const { scene, commit, assetRegistry } = useEnvironmentScene();
+  const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
   const { selectActor, frameActor } = useSceneEditing();
   const tools = useSceneTools();
   const [materialPicker, setMaterialPicker] = useState(false);
@@ -69,7 +70,8 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
     { id: "height", label: "Flatten Height", kind: "number", value: brush.height, onChange: (height) => tools.setLandscapeBrush({ ...brush, height }) },
     { id: "layer", label: "Paint Layer", kind: "enum", value: String(brush.layer), options: [0, 1, 2, 3].map((i) => ({ value: String(i), label: `Layer ${i + 1}` })), onChange: (layer) => tools.setLandscapeBrush({ ...brush, layer: Number(layer) }) },
   ];
-  const materials = (assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => (entry.header.payload as Record<string, unknown>)?.domain === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
+  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  const materials = (assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => domains[entry.header.guid] === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
     <PropertyGrid rows={[
       { id: "size", label: "New Landscape Size", kind: "number", value: size, min: 1, max: 4096, onChange: setSize },
@@ -93,7 +95,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
 }
 
 export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
-  const { scene, commit, assetRegistry } = useEnvironmentScene();
+  const { scene, commit, assetRegistry, openDocuments } = useEnvironmentScene();
   const tools = useSceneTools();
   const [picker, setPicker] = useState<"model" | number | null>(null);
   const groups = scene?.settings.foliageGroups ?? [];
@@ -101,8 +103,9 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const setGroups = (foliageGroups: FoliageGroup[]) => { if (scene) void commit({ ...scene, settings: { ...scene.settings, foliageGroups } }); };
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
+  const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
   const surfaceMaterials = new Set((assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => {
-    const domain = (entry.header.payload as Record<string, unknown>)?.domain;
+    const domain = domains[entry.header.guid];
     return domain === undefined || domain === "surface";
   }).map((entry) => entry.header.guid));
   const pickerAssets = assets.filter((asset) => picker === "model" ? asset.type === "Model" : surfaceMaterials.has(asset.guid));
