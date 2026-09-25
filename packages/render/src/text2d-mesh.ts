@@ -33,6 +33,7 @@ import {
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
   type BitmapAllocationLimits,
+  type BitmapCanvasScratch,
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
 import {
@@ -485,11 +486,13 @@ export function createText2DMesh(
   const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
   const measured = new Map<string, ReturnType<typeof measureBitmapGlyph>>();
   const requests = new Map<string, { ch: string; style: RichTextStyle }>();
+  // One canvas serves every unique glyph of this build (Play rebuilds on text edits).
+  const canvasScratch: BitmapCanvasScratch = {};
   const measure = (ch: string, style: RichTextStyle) => {
     const key = bitmapGlyphKey(ch, style, fontStack);
     let cell = measured.get(key);
     if (!cell) {
-      cell = measureBitmapGlyph(ch, style, fontStack);
+      cell = measureBitmapGlyph(ch, style, fontStack, canvasScratch);
       measured.set(key, cell);
       requests.set(key, { ch, style });
     }
@@ -513,7 +516,7 @@ export function createText2DMesh(
   };
   const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
   for (const [key, request] of requests) {
-    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key)));
+    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
   }
   // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
   if (!options.metrics) layout = layoutText2DFromProperties(properties, layoutOptions).layout;
