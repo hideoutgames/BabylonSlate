@@ -102,7 +102,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         if (kind === "reflections") effects.reflections.enabled = true;
         else effects.volumetricLighting.enabled = true;
         const on = await draw();
-        const shadow = { passes: shadowPasses, enabled: light?.shadowEnabled, generator: light?.getShadowGenerator()?.getClassName() };
+        const shadow = { passes: shadowPasses, enabled: light?.shadowEnabled, generator: light?.getShadowGenerator()?.constructor.name };
         const buffers: Record<string, { minimum: number; maximum: number; nonzero: number }> = {};
         if (path === "frameGraph") {
           const owned = graph as unknown as { graph: FrameGraph; effectsGraph: { spatial: { geometry: FrameGraphGeometryRendererTask } } };

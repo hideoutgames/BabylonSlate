@@ -76,6 +76,7 @@ export class SpatialEffectsGraph {
     };
     this.clear = new FrameGraphClearTextureTask("Spatial Geometry Clear", graph);
     this.clear.clearColor = false;
+    this.clear.clearDepth = true;
     this.clear.clearStencil = false;
     this.clear.depthTexture = target("Spatial Geometry Z", 1, true);
     this.geometry = new LogicalGeometryTask("Spatial Geometry", graph, graph.scene, { doNotChangeAspectRatio: false });
