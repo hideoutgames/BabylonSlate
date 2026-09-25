@@ -114,31 +114,68 @@ function actorRotation(actor: SerializedActor): Quaternion {
   return new Quaternion(x, y, z, w);
 }
 
+const scratchComposeRotation = new Quaternion();
+const scratchComposeLocalRotation = new Quaternion();
+const scratchComposeOffset = new Vector3();
+
+/** Actor pose times a component-local pose, shared by the editor and Play:
+ * the local position is scaled by the actor scale and rotated by the actor
+ * rotation, then the rotations compose. Writes into the outputs. */
+export function composeActorComponentTransformToRef(
+  actor: {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number; w: number };
+    scale: { x: number; y: number; z: number };
+  },
+  local: {
+    position: readonly [number, number, number];
+    rotation: readonly [number, number, number, number];
+  },
+  outPosition: Vector3,
+  outRotation: Quaternion,
+): void {
+  const { position, rotation, scale } = actor;
+  scratchComposeRotation.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  scratchComposeOffset
+    .set(
+      local.position[0] * scale.x,
+      local.position[1] * scale.y,
+      local.position[2] * scale.z,
+    )
+    .applyRotationQuaternionInPlace(scratchComposeRotation);
+  outPosition.set(
+    position.x + scratchComposeOffset.x,
+    position.y + scratchComposeOffset.y,
+    position.z + scratchComposeOffset.z,
+  );
+  const [lx, ly, lz, lw] = local.rotation;
+  scratchComposeLocalRotation.set(lx, ly, lz, lw);
+  scratchComposeRotation.multiplyToRef(scratchComposeLocalRotation, outRotation);
+}
+
 export function composeActorComponentTransform(
   actor: SerializedActor,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
-  const local = component?.transform ?? identitySerializedTransform();
-  const parentPos = actorPosition(actor);
-  const parentRot = actorRotation(actor);
-  const [sx, sy, sz] = actor.transform.scale;
-  const localPos = new Vector3(
-    local.position[0] * sx,
-    local.position[1] * sy,
-    local.position[2] * sz,
+  const composed = { position: new Vector3(), rotation: new Quaternion() };
+  composeActorComponentTransformToRef(
+    {
+      position: actorPosition(actor),
+      rotation: actorRotation(actor),
+      scale: Vector3.FromArray(actor.transform.scale),
+    },
+    component?.transform ?? identitySerializedTransform(),
+    composed.position,
+    composed.rotation,
   );
-  const rotated = localPos.applyRotationQuaternion(parentRot);
-  const [lx, ly, lz, lw] = local.rotation;
-  return {
-    position: parentPos.add(rotated),
-    rotation: parentRot.multiply(new Quaternion(lx, ly, lz, lw)),
-  };
+  return composed;
 }
 
-const scratchWorldScale = new Vector3();
-const scratchWorldRotation = new Quaternion();
-const scratchWorldPosition = new Vector3();
-const scratchComponentRotation = new Quaternion();
+const scratchWorldPose = {
+  position: new Vector3(),
+  rotation: new Quaternion(),
+  scale: new Vector3(),
+};
 const scratchWorldComponent = { position: new Vector3(), rotation: new Quaternion() };
 
 /** The same local offset as composeActorComponentTransform, applied to a
@@ -147,20 +184,13 @@ function composeWorldComponentTransform(
   world: Matrix,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
-  world.decompose(scratchWorldScale, scratchWorldRotation, scratchWorldPosition);
-  const local = component?.transform ?? identitySerializedTransform();
-  const { position, rotation } = scratchWorldComponent;
-  position
-    .copyFromFloats(
-      local.position[0] * scratchWorldScale.x,
-      local.position[1] * scratchWorldScale.y,
-      local.position[2] * scratchWorldScale.z,
-    )
-    .applyRotationQuaternionInPlace(scratchWorldRotation)
-    .addInPlace(scratchWorldPosition);
-  const [lx, ly, lz, lw] = local.rotation;
-  scratchComponentRotation.set(lx, ly, lz, lw);
-  scratchWorldRotation.multiplyToRef(scratchComponentRotation, rotation);
+  world.decompose(scratchWorldPose.scale, scratchWorldPose.rotation, scratchWorldPose.position);
+  composeActorComponentTransformToRef(
+    scratchWorldPose,
+    component?.transform ?? identitySerializedTransform(),
+    scratchWorldComponent.position,
+    scratchWorldComponent.rotation,
+  );
   return scratchWorldComponent;
 }
 
