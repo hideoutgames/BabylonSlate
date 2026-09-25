@@ -310,13 +310,6 @@ export class SharedOutlineView {
     for (const entry of this.contributions.values()) if (entry.targets.length > 0) return true;
     return false;
   }
-  /** Hosts supply authored world occluders, excluding editor helpers and guides. */
-  setOccluders(meshes: readonly AbstractMesh[] | null): void {
-    const next = meshes ? [...new Set(meshes)] : null;
-    if (next === null ? this.occluders === null : this.occluders !== null &&
-      next.length === this.occluders.length && next.every((mesh) => this.occluders!.includes(mesh))) return;
-    this.occluders = next; this.revision++;
-  }
   setContribution(key: string, input: SharedOutlineContribution): void {
     if (this.isDisposed) throw new Error("Shared outline view is disposed.");
     const next = normalizedContribution(key, input);
@@ -336,7 +329,7 @@ export class SharedOutlineView {
       const previous = this.contributions.get(key); return !previous || !sameContribution(previous, value);
     });
     const occludersChanged = nextOccluders === null ? this.occluders !== null : this.occluders === null ||
-      nextOccluders.length !== this.occluders.length || nextOccluders.some((mesh) => !this.occluders!.includes(mesh));
+      !sameMeshes(nextOccluders, this.occluders);
     if (!contributionsChanged && !occludersChanged) return;
     if (contributionsChanged) {
       const previous = new Map(this.contributions);
@@ -498,6 +491,11 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
 }
 function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.targets.length === b.targets.length &&
-    a.targets.every((target, index) => target.key === b.targets[index]!.key && target.meshes.length === b.targets[index]!.meshes.length &&
-      target.meshes.every((mesh) => b.targets[index]!.meshes.includes(mesh)));
+    a.targets.every((target, index) => target.key === b.targets[index]!.key && sameMeshes(target.meshes, b.targets[index]!.meshes));
+}
+/** Equal length and membership; a Set keeps unchanged whole-scene snapshots linear. */
+function sameMeshes(a: readonly AbstractMesh[], b: readonly AbstractMesh[]): boolean {
+  if (a.length !== b.length) return false;
+  const members = new Set(b);
+  return a.every((mesh) => members.has(mesh));
 }
