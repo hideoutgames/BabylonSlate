@@ -195,22 +195,22 @@
   animation: none;
 }
 .slate-loading[data-scheme="light"] .slate-splash-card {
-  border-color: oklch(0.878 0.005 85);
-  background: oklch(0.972 0.003 85);
+  border-color: oklch(0.855 0.006 85);
+  background: oklch(0.988 0.002 85);
   box-shadow:
     0 30px 70px oklch(0.3 0.006 70 / 22%),
     0 6px 18px oklch(0.3 0.006 70 / 12%);
 }
 .slate-loading[data-scheme="light"] .slate-splash-titlebar {
-  border-color: oklch(0.878 0.005 85);
-  background: oklch(0.953 0.005 85);
+  border-color: oklch(0.855 0.006 85);
+  background: oklch(0.952 0.004 85);
 }
 .slate-loading[data-scheme="light"] .slate-splash-version,
 .slate-loading[data-scheme="light"] .slate-splash-status {
   color: oklch(0.465 0.008 70);
 }
 .slate-loading[data-scheme="light"] .slate-loading-track {
-  background: oklch(0.878 0.005 85);
+  background: oklch(0.855 0.006 85);
 }
 .slate-loading[data-scheme="light"] .slate-loading-track > span {
   background: linear-gradient(90deg, transparent, oklch(0.3 0.006 70), transparent);
