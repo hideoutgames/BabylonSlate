@@ -65,6 +65,12 @@ test("viewport shortcuts match menu hints and closing preserves the dirty docume
   await page.getByTestId("outliner-add-folder").focus();
   await page.keyboard.press("ControlOrMeta+f");
   await expect(page.getByTestId("outliner-search")).toBeFocused();
+  await page.getByTestId("outliner-add-actor").focus();
+  await page.keyboard.press("Alt+a");
+  await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+  await page.getByTestId("place-actors-item-shape-box").click();
+  await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
+  await expect(page.getByTestId("scene-outliner-panel").getByText("Box", { exact: true })).toBeVisible();
 });
 
 test.describe("phone shortcut affordances", () => {

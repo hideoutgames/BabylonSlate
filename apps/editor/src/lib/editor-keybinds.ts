@@ -45,7 +45,7 @@ const COMMAND_LIST = [
   { id: "edit.delete", label: "Delete", category: "Editing", defaultChords: ["Delete", "Backspace"] },
   { id: "edit.find", label: "Search Panel", category: "Editing", defaultChords: ["Mod+F"], allowInTextInput: true },
   { id: "edit.newFolder", label: "New Folder", category: "Editing", defaultChords: ["Alt+Shift+N"] },
-  { id: "scene.placeActor", label: "Place Actors", category: "Editing", defaultChords: ["Shift+A"] },
+  { id: "scene.placeActor", label: "Place Actors", category: "Editing", defaultChords: ["Alt+A"] },
   { id: "browser.newAsset", label: "New Asset", category: "Content Browser", defaultChords: ["Alt+N"] },
   { id: "browser.import", label: "Import Assets", category: "Content Browser", defaultChords: ["Alt+I"] },
   { id: "browser.references", label: "Show References", category: "Content Browser", defaultChords: ["Alt+R"] },

@@ -33,7 +33,7 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 | Viewport | Show Collisions, Show Navmesh, Game Camera | Alt+C; Shift+N; Shift+C |
 | Viewport | Switch 2D / 3D, Drop Selection | Alt+V; End |
 | Editing | Duplicate, Rename, Delete | Mod+D; F2; Delete or Backspace |
-| Editing | Search Panel, New Folder, Place Actors | Mod+F; Alt+Shift+N; Shift+A |
+| Editing | Search Panel, New Folder, Place Actors | Mod+F; Alt+Shift+N; Alt+A |
 | Content Browser | New Asset, Import Assets, Show References | Alt+N; Alt+I; Alt+R |
 
 ## Dispatch rules
