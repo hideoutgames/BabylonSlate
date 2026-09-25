@@ -27,10 +27,10 @@ rings = [
     (-.648, rectangle(.133, .141, .018)),
     (-.178, rectangle(.160, .173, .018)),
     (-.162, rectangle(.151, .155, .012)),
-    (-.162, rectangle(.133, .117, .012)),
-    (-.050, rectangle(.180, .132, .014)),
-    (-.030, rectangle(.180, .132, .014)),
-    (-.043, rectangle(.158, .105, .012)),
+    (-.162, rectangle(.133, .130, .012)),
+    (-.050, rectangle(.180, .145, .014)),
+    (-.030, rectangle(.180, .145, .014)),
+    (-.043, rectangle(.158, .118, .012)),
 ]
 vertices = [(x, -z, y) for z, ring in rings for x, y in ring]
 faces = [tuple(reversed(range(8)))]
