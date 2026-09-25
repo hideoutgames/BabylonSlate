@@ -25,6 +25,10 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["reflec
       expect(lit, `${capture.path}: visible ${kind}`).toBeGreaterThan(20);
       const disabledDifference = capture.disabled.reduce((sum, value, i) => sum + Math.abs(value - capture.off[i]!), 0) / capture.off.length;
       expect(disabledDifference, `${capture.path}: disabling restores scene color`).toBeLessThan(1);
+      const identityDifference = capture.identityDisplay.reduce((sum, value, i) => sum + Math.abs(value - capture.on[i]!), 0) / capture.on.length;
+      expect(identityDifference, `${capture.path}: an identity vignette preserves spatial color`).toBeLessThan(0.5);
+      const linearDifference = capture.linear.reduce((sum, value, i) => sum + Math.abs(value - capture.on[i]!), 0) / capture.on.length;
+      expect(linearDifference, `${capture.path}: default linear display preserves spatial color`).toBeLessThan(3);
       if (kind !== "reflections") {
         const occluded = capture.changed.filter((value, i) => i % 4 === 0 && value > capture.on[i]! + 3).length;
         expect(occluded, `${capture.path}: shadows occlude fog`).toBeGreaterThan(20);

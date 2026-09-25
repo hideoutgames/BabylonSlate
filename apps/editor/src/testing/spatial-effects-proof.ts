@@ -7,8 +7,6 @@ import { applyAuthoredLightProperties, createAppWebGpuEngine, MaterialLibrary, s
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
-import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind: "reflections" | "point" | "spot" | "sun") {
@@ -28,8 +26,8 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       camera.setTarget(new Vector3(0, 0.6, 0));
       scene.activeCamera = camera;
       if (path === "classic") scene.activeCameras = [camera];
-      const black = new PBRMaterial("Unlit Black", scene);
-      black.unlit = true; black.albedoColor = Color3.Black();
+      const black = new PBRMaterial("Neutral Occluders", scene);
+      black.unlit = true; black.albedoColor = new Color3(0.08, 0.08, 0.08);
       const floor = MeshBuilder.CreateGround("Floor", { width: 20, height: 20 }, scene);
       floor.material = black;
       let light: DirectionalLight | SpotLight | PointLight | undefined;
@@ -41,7 +39,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         if (!compiled.ok || (await compiled.ready).some((d) => d.severity === "error")) throw new Error("Mirror compilation failed");
         floor.material = compiled.material;
         const red = new PBRMaterial("Red Reflection Subject", scene);
-        red.unlit = true; red.albedoColor = new Color3(1, 0, 0);
+        red.unlit = true; red.albedoColor = new Color3(0.6, 0, 0);
         const box = MeshBuilder.CreateBox("Reflection Subject", { size: 1.5 }, scene);
         box.position.y = 1.3; box.material = red;
       } else {
@@ -60,17 +58,10 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       const settings = () => setSceneRenderSettings(scene, { mode: "pbr", effects, shadows: normalizeShadowSettings({ mapSize: 256, localMapSize: 256, cascades: 2, maxLocalLights: 1, distance: 20 }) });
       settings();
       const graph = new ForwardSceneFrameGraph(scene);
-      let shadowPasses = 0;
-      const observedMaps = new Set<unknown>();
       const draw = async () => {
         settings();
         const prepared = await graph.prepare(camera);
         if (prepared.path !== path) throw new Error(`Expected ${path}: ${JSON.stringify(prepared)}`);
-        const map = light?.getShadowGenerator()?.getShadowMap();
-        if (map && !observedMaps.has(map)) {
-          observedMaps.add(map);
-          map.onAfterUnbindObservable.add(() => { shadowPasses++; });
-        }
         const deadline = performance.now() + 15_000;
         while (!graph.readiness(camera).ready) {
           if (performance.now() > deadline) throw new Error("Spatial readiness timed out");
@@ -102,18 +93,13 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         if (kind === "reflections") effects.reflections.enabled = true;
         else effects.volumetricLighting.enabled = true;
         const on = await draw();
-        const shadow = { passes: shadowPasses, enabled: light?.shadowEnabled, generator: light?.getShadowGenerator()?.constructor.name };
-        const buffers: Record<string, { minimum: number; maximum: number; nonzero: number }> = {};
-        if (path === "frameGraph") {
-          const owned = graph as unknown as { graph: FrameGraph; effectsGraph: { spatial: { geometry: FrameGraphGeometryRendererTask } } };
-          const geometry = owned.effectsGraph.spatial.geometry;
-          for (const [name, handle] of Object.entries({ depth: geometry.geometryViewDepthTexture, ...(kind === "reflections" ? { normal: geometry.geometryWorldNormalTexture, reflectivity: geometry.geometryReflectivityTexture } : {}) })) {
-            const texture = owned.graph.textureManager.getTextureFromHandle(handle)!;
-            const data = await engine._readTexturePixels(texture, canvas.width, canvas.height);
-            const values = Array.from(data as unknown as ArrayLike<number>);
-            buffers[name] = { minimum: Math.min(...values), maximum: Math.max(...values), nonzero: values.filter((v) => v > 0).length };
-          }
-        }
+        effects.vignette.enabled = true;
+        effects.vignette.weight = 0;
+        const identityDisplay = await draw();
+        effects.vignette.enabled = false;
+        effects.colorPipeline.mode = "sceneLinear";
+        const linear = await draw();
+        effects.colorPipeline.mode = "legacyDisplay";
         let changed: number[];
         if (light) {
           applyAuthoredLightProperties(light, { intensity: kind === "sun" ? 5 : 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
@@ -127,7 +113,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         }
         effects.reflections.enabled = effects.volumetricLighting.enabled = false;
         const disabled = await draw();
-        captures.push({ path, off, on, changed, disabled, buffers, shadow });
+        captures.push({ path, off, on, identityDisplay, linear, changed, disabled });
       } finally {
         graph.dispose(); await graph.whenReleased();
         library.dispose(); scene.dispose();
