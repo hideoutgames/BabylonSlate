@@ -901,7 +901,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(live.resourceCache, "releaseGpuTextures");
+    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);

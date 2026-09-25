@@ -628,7 +628,8 @@ export class ResourceCache {
 
   /**
    * Drop GPU Texture wrappers but keep blob URLs so the next `acquireTexture`
-   * rebuilds. Used after WebGL context restore.
+   * rebuilds. WebGL restore does not call this: Babylon rebuilds retained
+   * textures before notifying, and a flush would destroy them.
    */
   releaseGpuTextures(): void {
     for (const entry of this.entries.values()) {
@@ -826,7 +827,8 @@ export interface ResourceLease<T> {
   release(): void;
 }
 
-export type TextureResources = Pick<ResourceCache, keyof ResourceCache>;
+/** A view cannot drop the wrappers and accounting every other view shares. */
+export type TextureResources = Omit<Pick<ResourceCache, keyof ResourceCache>, "releaseGpuTextures">;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {
@@ -858,7 +860,6 @@ export class ResourceCacheOwner implements TextureResources {
   resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
   flushUnreferenced() { this.inner.flushUnreferenced(); }
-  releaseGpuTextures() { this.inner.releaseGpuTextures(); }
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
