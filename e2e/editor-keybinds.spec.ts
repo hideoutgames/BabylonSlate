@@ -45,13 +45,18 @@ test("viewport shortcuts match menu hints and closing preserves the dirty docume
   const gridBefore = await grid.getAttribute("aria-checked");
   await page.screenshot({ path: testInfo.outputPath("viewport-shortcut-hints.png") });
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("viewport-settings-menu")).toBeHidden();
+  await expect(page.getByTestId("viewport-settings")).toBeFocused();
   await page.keyboard.press("Shift+g");
   await page.getByTestId("viewport-settings").click();
   await expect(grid).toHaveAttribute("aria-checked", gridBefore === "true" ? "false" : "true");
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("viewport-settings-menu")).toBeHidden();
+  await expect(page.getByTestId("viewport-settings")).toBeFocused();
   await page.keyboard.press("Alt+w");
   await expect(page.getByTestId("dirty-close-dialog")).toBeVisible();
   await page.getByTestId("dirty-cancel").click();
+  await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
   await expect(page.getByTestId("viewport-canvas")).toBeVisible();
   await page.keyboard.press("Alt+b");
   await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
@@ -84,6 +89,7 @@ test.describe("phone shortcut affordances", () => {
     await page.keyboard.press("Escape");
     await page.getByTestId("document-switcher").tap();
     await page.getByRole("menuitemradio", { name: "Content Browser" }).tap();
+    await expect(page.getByTestId("open-documents-menu")).toBeHidden();
     await page.getByTestId("content-browser-new-asset").tap();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("phone-new-asset.png") });

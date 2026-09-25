@@ -116,6 +116,7 @@ describe("DocumentSwitcher", () => {
         screen.getByRole("button", { name: "Open Documents" }).textContent,
       ).toContain("Main Scene"),
     );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
     expect(
       screen

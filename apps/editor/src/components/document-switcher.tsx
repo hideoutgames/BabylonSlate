@@ -114,6 +114,7 @@ export function DocumentSwitcher({
               <DropdownMenuRadioItem
                 key={doc.id}
                 value={doc.id}
+                closeOnClick
                 className="min-h-11"
                 data-document-id={doc.id}
                 aria-keyshortcuts={doc.id === CONTENT_BROWSER_ID && browserChord ? ariaKeyShortcuts(browserChord) : undefined}
