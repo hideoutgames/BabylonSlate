@@ -537,10 +537,13 @@ describe("attachViewportGestures", () => {
     const radius = controller.camera.radius;
     const halfHeight = controller.orthoHalfHeight();
 
-    canvas.emit("wheel", { deltaX: 40, deltaY: 0, clientX: 200, clientY: 150 });
+    const wheel = { deltaX: 40, deltaY: 0, clientX: 200, clientY: 150, preventDefault: vi.fn() };
+    canvas.emit("wheel", wheel);
 
     expect(controller.camera.radius).toBe(radius);
     expect(controller.orthoHalfHeight()).toBe(halfHeight);
+    // A sideways swipe still must not scroll the page or navigate back.
+    expect(wheel.preventDefault).toHaveBeenCalled();
   });
 
   it("2D wheel zoom keeps the world point under the cursor", () => {
