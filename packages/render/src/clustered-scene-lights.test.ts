@@ -231,6 +231,21 @@ describe("explicit clustered light ownership", () => {
     expect(managedLightingReservations(engine).reservedBytes).toBe(0);
   });
 
+  it("keeps released WebGPU cluster textures reserved until the native end-frame drain", async () => {
+    const { engine, scene, lights } = fixture();
+    const owner = new ClusteredSceneLights(scene, lights.slice(0, 2));
+    const bytes = managedLightingReservations(engine).clusterBytes;
+    expect(bytes).toBeGreaterThan(0);
+    // Babylon selects its container layout at construction; flip only the
+    // release boundary, where WebGPU defers physical texture destruction.
+    Object.defineProperty(engine, "isWebGPU", { get: () => true });
+    owner.dispose();
+    await Promise.resolve();
+    expect(managedLightingReservations(engine).clusterBytes).toBe(bytes);
+    engine.endFrame();
+    expect(managedLightingReservations(engine).clusterBytes).toBe(0);
+  });
+
   it("preserves same-scene shadow reservations while clusters contend and recover after context restoration", () => {
     const { engine, scene, lights } = fixture();
     const key = new SpotLight(
