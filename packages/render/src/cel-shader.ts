@@ -15,15 +15,21 @@ import {
   celClusteredLightingWGSL,
 } from "./clustered-cel-shader";
 
+const CEL_ROTATION_UNIFORMS = [
+  "slateCelEnvironmentRotation0",
+  "slateCelEnvironmentRotation1",
+  "slateCelEnvironmentRotation2",
+] as const;
+const CEL_IRRADIANCE_KEYS = ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const;
+const CEL_IRRADIANCE_UNIFORMS = CEL_IRRADIANCE_KEYS.map((key) => `slateCelIrradiance_${key}`);
+
 export const CEL_UNIFORMS = [
   "slateCelBands",
   "slateCelSpecular",
   "slateCelLight",
   "slateCelEnvironment",
-  "slateCelEnvironmentRotation0",
-  "slateCelEnvironmentRotation1",
-  "slateCelEnvironmentRotation2",
-  ...["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"].map((key) => `slateCelIrradiance_${key}`),
+  ...CEL_ROTATION_UNIFORMS,
+  ...CEL_IRRADIANCE_UNIFORMS,
 ];
 
 /**
@@ -248,7 +254,8 @@ export function bindCelSettings(
   unlit = false,
   environmentInfluence = 1,
 ): void {
-  const { cel } = sceneRenderingSettings(scene);
+  // Runs for every CEL draw: reuse the precomputed uniform names.
+  const { cel, environmentLighting } = sceneRenderingSettings(scene);
   effect.setFloat4(
     "slateCelBands",
     cel.shadowBands,
@@ -274,7 +281,6 @@ export function bindCelSettings(
     unlit || !scene.lightsEnabled ? 1 : 0,
     0,
   );
-  const { environmentLighting } = sceneRenderingSettings(scene);
   const environment = scene.environmentTexture;
   const polynomial = environment?.sphericalPolynomial;
   const strength = !unlit && scene.lightsEnabled && environmentLighting.enabled && polynomial
@@ -286,10 +292,10 @@ export function bindCelSettings(
   const invertY = environment?.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1;
   for (let row = 0; row < 3; row++) {
     const sign = row === 2 ? invertZ : row === 1 ? invertY : 1;
-    effect.setFloat4(`slateCelEnvironmentRotation${row}`, (matrix?.[row] ?? (row === 0 ? 1 : 0)) * sign, (matrix?.[row + 4] ?? (row === 1 ? 1 : 0)) * sign, (matrix?.[row + 8] ?? (row === 2 ? 1 : 0)) * sign, 0);
+    effect.setFloat4(CEL_ROTATION_UNIFORMS[row]!, (matrix?.[row] ?? (row === 0 ? 1 : 0)) * sign, (matrix?.[row + 4] ?? (row === 1 ? 1 : 0)) * sign, (matrix?.[row + 8] ?? (row === 2 ? 1 : 0)) * sign, 0);
   }
-  for (const key of ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const) {
-    const value = polynomial?.[key];
-    effect.setFloat4(`slateCelIrradiance_${key}`, value?.x ?? 0, value?.y ?? 0, value?.z ?? 0, 0);
+  for (let index = 0; index < CEL_IRRADIANCE_KEYS.length; index++) {
+    const value = polynomial?.[CEL_IRRADIANCE_KEYS[index]!];
+    effect.setFloat4(CEL_IRRADIANCE_UNIFORMS[index]!, value?.x ?? 0, value?.y ?? 0, value?.z ?? 0, 0);
   }
 }
