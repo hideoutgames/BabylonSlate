@@ -57,6 +57,33 @@ describe("component script API", () => {
       expect(commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "b").at(-1)).toBe(sibling);
     } finally { runtime.stop(); }
   });
+  it("emits a spring arm with its attached camera beside a mesh and re-emits script lag writes", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneOf([createActor("hero", "Hero", { classId: "Hero", components: [
+        createMeshComponent("body"),
+        { id: "arm", classId: "SpringArmComponent", properties: { armLength: 3, enableRotationLag: true } },
+        { id: "cam", classId: "CameraComponent", parentId: "arm", properties: { nearClip: 0.2 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "arm"); ctx.setVariableOn(c, "armLength", 6); ctx.setVariableOn(c, "rotationLagSpeed", 4); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const assigns = () => commands.filter((command): command is Extract<CommandMessage, { type: "assignMesh" }> =>
+        command.type === "assignMesh" && Boolean(command.parts?.some((part) => part.meshKind === "springarm")));
+      expect(assigns().at(-1)).toMatchObject({
+        camera: { nearClip: 0.2 },
+        parts: [
+          { componentId: "body", meshKind: "box" },
+          { componentId: "arm", meshKind: "springarm", parentId: null, springArm: { armLength: 3, enableRotationLag: true } },
+          { componentId: "cam", meshKind: "camera", parentId: "arm" },
+        ],
+      });
+      runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("hero")!);
+      expect(assigns().at(-1)?.parts?.[1]?.springArm).toMatchObject({ armLength: 6, rotationLagSpeed: 4 });
+    } finally { runtime.stop(); }
+  });
   it("updates a rectangular emitter alongside a render mesh through native component variables", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,

@@ -56,6 +56,7 @@ describe("SceneLayer schema", () => {
             { id: "sprite", classId: "SpriteComponent", properties: {} },
             { id: "sky", classId: "SkyboxComponent", properties: {} },
             { id: "cam", classId: "CameraComponent", properties: {} },
+            { id: "arm", classId: "SpringArmComponent", properties: {} },
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
@@ -83,6 +84,7 @@ describe("SceneLayer schema", () => {
     expect(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS).toEqual([
       "SkyboxComponent",
       "CameraComponent",
+      "SpringArmComponent",
       "LightComponent",
       "AreaRectLightComponent",
       "OutlineComponent",

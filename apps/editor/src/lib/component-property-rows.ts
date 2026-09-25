@@ -15,6 +15,9 @@ import {
   parseAreaRectLightProperties,
   parseOutlineProperties,
   OUTLINE_WIDTH_LIMITS,
+  parseSpringArmProperties,
+  SPRING_ARM_LAG_SPEED_LIMITS,
+  SPRING_ARM_LENGTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -1331,6 +1334,29 @@ export function componentPropertyRows(
           description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
         { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
+      ];
+    }
+    case "SpringArmComponent": {
+      const properties = parseSpringArmProperties(component.properties);
+      const lagSpeedRow = (key: "locationLagSpeed" | "rotationLagSpeed", label: string, enabled: boolean): PropertyRow => ({
+        kind: "number", id: rowId(actorId, component.id, key), label, value: properties[key],
+        min: SPRING_ARM_LAG_SPEED_LIMITS[0], max: SPRING_ARM_LAG_SPEED_LIMITS[1], sensitivity: 0.1, disabled: !enabled,
+        description: "Higher values catch up faster. The lag is frame-rate independent.", onChange: (next) => update(key, next) });
+      return [
+        { kind: "number", id: rowId(actorId, component.id, "armLength"), label: "Arm Length", value: properties.armLength,
+          min: SPRING_ARM_LENGTH_LIMITS[0], max: SPRING_ARM_LENGTH_LIMITS[1], sensitivity: 0.05,
+          description: "Distance behind the arm's origin, along its local -Z axis, where child components attach.", onChange: (next) => update("armLength", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableLocationLag"), label: "Enable Location Lag", value: properties.enableLocationLag,
+          description: "During Play, the arm trails behind its target position and children move smoothly.", onChange: (next) => update("enableLocationLag", next) },
+        lagSpeedRow("locationLagSpeed", "Location Lag Speed", properties.enableLocationLag),
+        { kind: "number", id: rowId(actorId, component.id, "maxLocationLagDistance"), label: "Max Location Lag Distance", value: properties.maxLocationLagDistance,
+          min: 0, sensitivity: 0.05, disabled: !properties.enableLocationLag,
+          description: "Furthest the arm may trail its target. 0 means unlimited.", onChange: (next) => update("maxLocationLagDistance", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableRotationLag"), label: "Enable Rotation Lag", value: properties.enableRotationLag,
+          description: "During Play, the arm eases toward its target rotation and children swing smoothly.", onChange: (next) => update("enableRotationLag", next) },
+        lagSpeedRow("rotationLagSpeed", "Rotation Lag Speed", properties.enableRotationLag),
+        { kind: "boolean", id: rowId(actorId, component.id, "drawDebugLag"), label: "Draw Debug Lag", value: properties.drawDebugLag,
+          description: "During Play, draw the target arm (yellow), the lagged arm (green), the lag offset (red), and recent socket trails.", onChange: (next) => update("drawDebugLag", next) },
       ];
     }
     case "AreaRectLightComponent": {

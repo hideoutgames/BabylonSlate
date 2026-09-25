@@ -4,6 +4,7 @@ import {
   createDefaultSceneSettings,
   createMeshComponent,
   identitySerializedTransform,
+  springArmChildOffset,
   wouldCreateComponentCycle,
   type PhysicsWorldKind,
   type SerializedComponent,
@@ -432,6 +433,44 @@ export function prefabPreviewLoadKey(
 }
 
 /** Preview: Prefab Root at the origin plus one actor per component. */
+function springArmOffsetOf(
+  components: readonly SerializedComponent[],
+  component: SerializedComponent,
+): [number, number, number] | null {
+  const parent = component.parentId
+    ? components.find((entry) => entry.id === component.parentId)
+    : undefined;
+  return parent ? springArmChildOffset(parent) : null;
+}
+
+/**
+ * Preview actors parent to their component parent's actor. Children of a spring
+ * arm sit at its socket, so their preview position includes the arm offset.
+ */
+function previewTransformFor(
+  components: readonly SerializedComponent[],
+  component: SerializedComponent,
+): SerializedTransform {
+  const transform = component.transform ?? identitySerializedTransform();
+  const offset = springArmOffsetOf(components, component);
+  if (!offset) return transform;
+  const [x, y, z] = transform.position;
+  return { ...transform, position: [x + offset[0], y + offset[1], z + offset[2]] };
+}
+
+/** Inverse of the preview placement: a gizmo transform back to the authored local transform. */
+export function authoredTransformFromPreview(
+  components: readonly SerializedComponent[],
+  componentId: string,
+  transform: SerializedTransform,
+): SerializedTransform {
+  const component = components.find((entry) => entry.id === componentId);
+  const offset = component ? springArmOffsetOf(components, component) : null;
+  if (!offset) return transform;
+  const [x, y, z] = transform.position;
+  return { ...transform, position: [x - offset[0], y - offset[1], z - offset[2]] };
+}
+
 export function previewSceneFor(
   components: SerializedComponent[],
   physicsWorld: PhysicsWorldKind = "3d",
@@ -450,7 +489,7 @@ export function previewSceneFor(
       ...components.map((component) =>
         createActor(component.id, component.classId, {
           parentId: component.parentId ?? null,
-          transform: component.transform ?? identitySerializedTransform(),
+          transform: previewTransformFor(components, component),
           components: [previewVisualComponent(component)],
         }),
       ),

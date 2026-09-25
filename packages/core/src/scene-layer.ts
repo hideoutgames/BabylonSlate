@@ -19,6 +19,7 @@ export const SCENE_LAYER_SCHEMA_VERSION = 1;
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "SkyboxComponent",
   "CameraComponent",
+  "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",
