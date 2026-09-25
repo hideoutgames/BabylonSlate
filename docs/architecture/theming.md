@@ -80,7 +80,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 
 ## Search and folder navigation
 
-- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. The active result remains visible while navigating. Indexing hides stale results.
+- Global Search keeps focus in the query: Up/Down selects a result across groups, Enter opens it, and Escape closes the dialog. Its footer shows these keys as `Kbd` keycaps. The active result remains visible while navigating. Indexing hides stale results.
 - Content Browser shows the current folder path and a Parent Folder action within the selected project/plugin root. Ancestor navigation clears tile selection and retains filters.
 - Empty folders offer New Asset and Import when writable. An unsuccessful asset search offers Clear Filters; Outliner distinguishes No Matching Actors from an empty scene and retains its search-clear action.
 - Engine and Project Settings search field names and categories. Results open the relevant category and focus a specific control when available; an unmatched query offers Clear Search.
@@ -94,7 +94,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 - Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
 - Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
-Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node assigns stripes by item order before virtualization, excluding category headers.
+Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch(0.43 0 0)`) and stronger `--input` (`oklch(0.50 0 0)`). Dialog outlines use the border token; settings fields have readable row dividers. `--list-stripe` is a faint black tint (2.5% light / 3.5% dark) so alternate catalog and picker rows subtly follow their containing surface instead of forming high-contrast bands. Add Node has no stripes; its tree rows use an accent fill for hover and the active row. Dialogs lift with `shadow-xl` and tint their footer band with `bg-muted/40`; they fade without scaling so layout measurements settle immediately.
 
 ## Action and status tokens
 
