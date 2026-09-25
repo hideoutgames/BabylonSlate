@@ -960,10 +960,20 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.copied && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
-  const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
+  const hasLoadingFrame = () => {
+    for (const pending of pendingPresentations.values()) {
+      if (!pending.copied && presentationReady(pending)) return scheduler.canPresentLoadingFrame();
+    }
+    return false;
+  };
+  const hasPendingOwners = () => {
+    if (worldLoading) return true;
+    for (const layer of layerLoads.values()) if (!layer.ready) return true;
+    return false;
+  };
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
-  const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
+  // renderLoop passes the loading permit it already evaluated for this frame.
+  const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
@@ -2217,7 +2227,7 @@ function initializeEngine(
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart)) {
+    if (!shouldRenderFrame(frameStart, loadingFrame)) {
       return;
     }
     frameWasLoading = loadingFrame;
