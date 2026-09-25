@@ -375,7 +375,8 @@ export class MaterialLibrary {
         }
       }
       const accepted = compiled.setParameter(name, value);
-      pruneTextures();
+      // Only texture writes can change sampled textures or pending requests.
+      if (value.kind === "texture") pruneTextures();
       return accepted;
     };
     const candidate: CacheEntry = {
