@@ -496,27 +496,37 @@ describe("Slate project browser", () => {
     ).toBe("light");
   });
 
-  it("keeps Auto-Update in Application Settings from the profile menu", async () => {
+  it("persists the Application Settings update toggle in shared Engine Settings", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     vi.stubGlobal("PointerEvent", MouseEvent);
+    getHostPlatform.mockReturnValue("electron");
     const openApplicationSettings = async () => {
       fireEvent.click(screen.getByRole("button", { name: "Profile" }));
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "Application Settings" }),
       );
-      return screen.findByRole("switch", { name: "Auto-Update" });
+      return screen.findByRole("switch", { name: "Automatic Updates" });
     };
     const { unmount } = renderHomepage();
     let autoUpdate = await openApplicationSettings();
+    await waitFor(() => expect(autoUpdate).toHaveProperty("disabled", false));
     expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(autoUpdate);
-    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByText("Off")).toBeTruthy();
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
+    expect(JSON.parse(localStorage.getItem("babylonslate:engine-settings")!).automaticUpdatesEnabled).toBe(false);
     unmount();
 
     renderHomepage();
     autoUpdate = await openApplicationSettings();
-    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
     vi.unstubAllEnvs();
+  });
+
+  it.each(["web", "ios"])("does not offer desktop update control on %s", async host => {
+    getHostPlatform.mockReturnValue(host);
+    renderHomepage();
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Application Settings" }));
+    expect(await screen.findByRole("switch", { name: "Automatic Updates" })).toHaveProperty("disabled", true);
   });
 });
