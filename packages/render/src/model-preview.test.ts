@@ -26,6 +26,8 @@ import { isEngineDefaultMaterial } from "./default-material";
 import {
   encodeTriangleGlb,
   encodeUvHierarchyGlb,
+} from "./glb-test-fixtures";
+import {
   isGltfModelBytes,
 } from "./model-mesh";
 import {

@@ -5,7 +5,7 @@ import { createActor, createDefaultScene, createMeshComponent, parseOverlayPanel
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, glbContainerLoadCount } from "./glb-anim";
 import * as modelContainer from "./model-container";
-import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createText2DMesh } from "./text2d-mesh";
 import * as bitmap from "./text2d-bitmap";

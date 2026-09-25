@@ -18,7 +18,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine } from "./create-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 

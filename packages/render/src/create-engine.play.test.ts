@@ -25,7 +25,7 @@ import { createEngine, syncEditorPlayState } from "./create-engine";
 import { BakedSceneSession } from "./baked-scene-session";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload, encodeGlbJsonBin } from "@babylonslate/assets";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
