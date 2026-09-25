@@ -83,10 +83,10 @@ import {
 } from "./scene-illumination";
 import { createSpriteQuad } from "./sprite-quad";
 import {
-  applyTilemapParallaxToMesh,
   createTilemapMeshes,
   isTilemapChunkMesh,
   updateSceneTilemapAnimations,
+  updateSceneTilemapParallax,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -1605,11 +1605,9 @@ export function applySnapshotToScene(
   // Camera-dependent passes wait for every camera pose, including later slots
   // and bone attachments, and for this snapshot's active camera.
   snapPlayCameraToPixelGrid(scene, binding);
-  for (let i = 0; i < count; i++) {
-    const mesh = binding.snapshotMeshes[i];
-    if (mesh?.getScene() !== scene) continue;
-    applyTilemapParallaxToMesh(mesh, scene.activeCamera ?? snapshot.actors[i]!);
-  }
+  // Only the world Scene: overlay slots skip world-camera parallax.
+  const activeCamera = scene.activeCamera;
+  if (activeCamera) updateSceneTilemapParallax(scene, activeCamera.position);
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }

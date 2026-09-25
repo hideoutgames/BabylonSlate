@@ -1,7 +1,6 @@
 import { Mesh, Scene, VertexBuffer, VertexData, type AbstractMesh } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
-  tilemapParallaxOffset,
   decodeTileGid,
   tilemapTilesetGuids,
   tilesetAnimationFrame,
@@ -20,6 +19,8 @@ type AnimatedChunk = {
   frames: number[];
 };
 const animatedChunks = new WeakMap<Scene, Set<AnimatedChunk>>();
+/** Chunks whose layer parallax moves them; a parallax of 1 always stays at 0. */
+const parallaxChunks = new WeakMap<Scene, Set<Mesh>>();
 
 /** Seek only animated UVs. Static geometry, collision and atlas materials stay intact. */
 export function updateSceneTilemapAnimations(scene: Scene, elapsedMs: number): void {
@@ -179,19 +180,21 @@ export function worldTileSize(
   };
 }
 
-/** Offset chunk children so per-layer parallax tracks the Play camera. */
-export function applyTilemapParallaxToMesh(
-  mesh: Mesh,
-  camera: { position: { x: number; y: number } },
+/** Offset this Scene's parallax chunks so each layer tracks the Play camera. */
+export function updateSceneTilemapParallax(
+  scene: Scene,
+  camera: { x: number; y: number },
 ): void {
-  for (const child of mesh.getChildMeshes()) {
-    const parallax = child.metadata?.tilemapParallax as
+  const chunks = parallaxChunks.get(scene);
+  if (!chunks) return;
+  for (const chunk of chunks) {
+    const parallax = chunk.metadata?.tilemapParallax as
       | { x: number; y: number }
       | undefined;
     if (!parallax) continue;
-    const offset = tilemapParallaxOffset(parallax, camera.position);
-    child.position.x = offset.x;
-    child.position.y = offset.y;
+    // Same offset as tilemapParallaxOffset, without a result object per chunk.
+    chunk.position.x = camera.x * (1 - parallax.x);
+    chunk.position.y = camera.y * (1 - parallax.y);
   }
 }
 
@@ -225,6 +228,15 @@ function appendChunkMesh(
     };
     chunks.add(chunk);
     mesh.onDisposeObservable.addOnce(() => chunks.delete(chunk));
+  }
+  if (parallax.x !== 1 || parallax.y !== 1) {
+    let chunks = parallaxChunks.get(scene);
+    if (!chunks) {
+      chunks = new Set();
+      parallaxChunks.set(scene, chunks);
+    }
+    chunks.add(mesh);
+    mesh.onDisposeObservable.addOnce(() => chunks.delete(mesh));
   }
   mesh.parent = root;
   mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };
