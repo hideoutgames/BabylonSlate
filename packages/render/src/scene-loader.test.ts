@@ -351,6 +351,38 @@ describe("scene-loader", () => {
     );
   });
 
+  it("keeps the default billboard for empty and RigidBody children of a mesh actor", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("gun", "Gun", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+        createActor("muzzle", "Muzzle", { parentId: "gun" }),
+        createActor("body", "Body", {
+          parentId: "gun",
+          components: [
+            {
+              id: "rb",
+              classId: "RigidBodyComponent",
+              properties: { motionType: "dynamic" },
+            },
+          ],
+        }),
+      ]),
+    );
+    for (const id of ["muzzle", "body"]) {
+      const origin = scene.getMeshByName(editorMeshName(id));
+      const icon = scene.getMeshByName(editorComponentMeshName(id, "billboard"));
+      expect(origin!.isPickable).toBe(true);
+      expect(
+        (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+      ).toBe("default");
+      expect(icon!.isVisible).toBe(true);
+    }
+  });
+
   it("draws a ColliderComponent as world-space dashed geometry parented with local TRS", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(

@@ -322,10 +322,8 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 
 export function helperBillboardIconOf(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
 ): EditorBillboardIcon | null {
   if (hasSurfaceVisual(actor)) return null;
-  if (skipOverlayButtonVisual(actor, allActors)) return null;
   const fill = actor.components.find(
     (component) => component.classId === "HemisphericFillLightComponent",
   );
@@ -358,7 +356,7 @@ export function needsOriginRoot(
 ): boolean {
   const visuals = visualComponentsOf(actor, allActors);
   return (
-    helperBillboardIconOf(actor, allActors) !== null ||
+    helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -610,7 +608,7 @@ export function editorMeshKindOf(
   if (actor.components.some((component) => component.classId === "NavMeshComponent")) {
     return editorBillboardKind("navmesh");
   }
-  const helper = helperBillboardIconOf(actor, allActors);
+  const helper = helperBillboardIconOf(actor);
   return helper ? editorBillboardKind(helper) : null;
 }
 
@@ -921,7 +919,7 @@ function createActorOriginHierarchy(
       const parentId = parentVisualMeshId(component, meshes, componentsById);
       mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
     }
-    const helperIcon = helperBillboardIconOf(actor, allActors);
+    const helperIcon = helperBillboardIconOf(actor);
     if (helperIcon && !visuals.some(isBillboardComponent)) {
       const billboard = createEditorBillboard(
         scene,
@@ -1021,7 +1019,7 @@ export function createActorMesh(
   if (
     skipOverlayButtonVisual(actor, allActors) &&
     visualComponentsOf(actor, allActors).length === 0 &&
-    helperBillboardIconOf(actor, allActors) === null
+    helperBillboardIconOf(actor) === null
   ) {
     const hidden = createOriginRootMesh(scene, actor);
     hidden.metadata = { ...(hidden.metadata ?? {}), editorUnpickable: true };
