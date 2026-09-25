@@ -32,9 +32,9 @@ Editor gizmo utility layers belong to their viewport, independently of graph
 rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
 the final world output on graph and classic paths, before the host copies the
 view or Prefab RTT. Preparation and skipped frames do not draw it.
-`render(validatePresentation = false)` draws without the post-draw readiness
-probe and never reports `readyForPresentation`; hosts pass `true` only while a
-world first-frame presentation is pending. Coordinated
+`render(false)` draws without the post-draw readiness probe and never reports
+`readyForPresentation` (the default validates). The world host passes
+`pendingPresentations.has("world")`; SceneLayer frames always validate. Coordinated
 layers disable Babylon's automatic camera callback; standalone model-collider
 previews retain it. Overlay draws preserve world color, clear depth for handles,
 and restore borrowed camera and Engine state even if drawing fails.

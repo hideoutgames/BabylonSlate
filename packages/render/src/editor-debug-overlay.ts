@@ -154,6 +154,8 @@ export class EditorDebugOverlay {
   private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
   private readonly previewBlitter = createRttCanvasBlitter();
+  // The shared blitter reuses one buffer: draw each readback before the next.
+  private previewBlitInFlight = false;
   private audioDebug: Array<{
     root: TransformNode;
     actor: SerializedActor;
@@ -505,7 +507,8 @@ export class EditorDebugOverlay {
   private async blitPreview(): Promise<void> {
     const canvas = this.previewCanvas;
     const texture = this.previewTexture;
-    if (!canvas || !texture) return;
+    if (!canvas || !texture || this.previewBlitInFlight) return;
+    this.previewBlitInFlight = true;
     try {
       const buffer = await this.previewBlitter.read(texture);
       // A stopped overlay or replaced canvas must not receive a late readback.
@@ -518,6 +521,8 @@ export class EditorDebugOverlay {
       this.previewBlitter.put(ctx, buffer, width, height);
     } catch {
       // NullEngine / missing GPU readback is fine — tests assert the RTT itself.
+    } finally {
+      this.previewBlitInFlight = false;
     }
   }
 }
