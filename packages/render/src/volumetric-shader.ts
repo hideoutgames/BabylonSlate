@@ -78,6 +78,7 @@ illumination += ${u(`volumeColor${i}`)}.rgb * (attenuation * phase * visibility$
   });
   const body = `
 ${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
+if (depth < 0.000001) { depth = ${u("volumeCamera")}.y; }
 ${decl(v2, "ndc", `${uv} * 2.0 - ${v2}(1.0)`)}
 ${decl(v4, "unprojected", `${u("inverseProjection")} * ${v4}(ndc, 0.5, 1.0)`)}
 ${decl(v3, "viewPoint", "unprojected.xyz / unprojected.w")}
@@ -113,12 +114,13 @@ export function volumetricCompositeShader(wgsl: boolean, linear: boolean): strin
   const decl = (type: string, name: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`;
   const uv = wgsl ? "input.vUV" : "vUV", texel = wgsl ? "uniforms.fogTexelSize" : "fogTexelSize";
   const f = wgsl ? "f32" : "float";
-  const header = wgsl ? `varying vUV: vec2f; uniform fogTexelSize: vec2f;
+  const header = wgsl ? `varying vUV: vec2f; uniform fogTexelSize: vec2f; uniform cameraFar: f32;
 ${["textureSampler", "mainSampler", "depthSampler"].map((name) => `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`).join("\n")}`
-    : "varying vec2 vUV; uniform vec2 fogTexelSize; uniform sampler2D textureSampler; uniform sampler2D mainSampler; uniform sampler2D depthSampler;";
+    : "varying vec2 vUV; uniform vec2 fogTexelSize; uniform float cameraFar; uniform sampler2D textureSampler; uniform sampler2D mainSampler; uniform sampler2D depthSampler;";
   const body = `
 ${decl(v4, "base", sample("mainSampler", uv))}
 ${decl(f, "depth", `min(abs(${sample("depthSampler", uv)}.r), 65000.0)`)}
+if (depth < 0.000001) { depth = ${wgsl ? "uniforms.cameraFar" : "cameraFar"}; }
 ${decl(v2, "grid", `${uv} / ${texel} - ${v2}(0.5)`)}
 ${decl(v2, "fraction", "fract(grid)")}
 ${decl(v2, "start", `(floor(grid) + ${v2}(0.5)) * ${texel}`)}
@@ -127,6 +129,7 @@ ${decl(f, "total", "0.0")}
 ${[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => `{
   ${decl(v2, "tap", `start + ${v2}(${x}.0, ${y}.0) * ${texel}`)}
   ${decl(f, "tapDepth", `min(abs(${sample("depthSampler", "tap")}.r), 65000.0)`)}
+  if (tapDepth < 0.000001) { tapDepth = ${wgsl ? "uniforms.cameraFar" : "cameraFar"}; }
   ${decl(f, "weight", `${x ? "fraction.x" : "(1.0-fraction.x)"} * ${y ? "fraction.y" : "(1.0-fraction.y)"} / (1.0 + 100.0 * abs(tapDepth-depth) / max(depth, 0.1))`)}
   fog += ${sample("textureSampler", "tap")} * weight;
   total += weight;

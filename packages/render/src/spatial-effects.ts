@@ -141,9 +141,10 @@ export function createSpatialStages(scene: Scene, camera: Camera, plan: SceneEff
       bindVolumetricLights(effect, scene, camera, lights);
     } });
     const scale = Math.max(0.25, volume.resolutionScale * quality);
-    const compose = own(customWrapper(scene, "Scene Volumetric Compose", volumetricCompositeShader(engine.isWebGPU, plan.sceneLinear), ["fogTexelSize"], ["mainSampler", "depthSampler"]));
+    const compose = own(customWrapper(scene, "Scene Volumetric Compose", volumetricCompositeShader(engine.isWebGPU, plan.sceneLinear), ["fogTexelSize", "cameraFar"], ["mainSampler", "depthSampler"]));
     stages.push({ wrapper: compose, scale: 1, mainInput, geometry: true, bind: (effect) => {
       effect.setFloat2("fogTexelSize", 1 / Math.max(1, Math.round(width * scale)), 1 / Math.max(1, Math.round(height * scale)));
+      effect.setFloat("cameraFar", Math.min(65000, camera.maxZ || 65000));
     } });
   }
   return stages;

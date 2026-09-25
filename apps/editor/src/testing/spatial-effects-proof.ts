@@ -34,8 +34,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       if (kind === "reflections") {
         const document = createDefaultMaterialDocument("Authored Mirror");
         document.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.9, 0.9, 0.9];
-        document.nodes.find((node) => node.id === "metallic")!.properties.value = 1;
-        document.nodes.find((node) => node.id === "roughness")!.properties.value = 0.05;
+        Object.assign(document.nodes.find((node) => node.id === "output")!.properties, { "default:metallic": [1], "default:roughness": [0.05] });
         const compiled = library.acquire(scene, "mirror", document);
         if (!compiled.ok || (await compiled.ready).some((d) => d.severity === "error")) throw new Error("Mirror compilation failed");
         floor.material = compiled.material;
@@ -69,12 +68,19 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
           await new Promise<void>((resolve) => setTimeout(resolve, 16));
         }
         // Warm the native prepass and updated shadow map before readback.
-        for (let i = 0; i < 2; i++) {
+        for (let presented = 0; presented < 2;) {
           engine.beginFrame();
+          let rendered = false;
           try {
             const result = graph.render(camera, false);
-            if (result.rendered === false) throw new Error(`Spatial frame was withheld: ${JSON.stringify(result)}`);
+            rendered = result.rendered !== false;
           } finally { engine.endFrame(); }
+          if (rendered) presented++;
+          else {
+            if (performance.now() > deadline) throw new Error("Spatial presentation timed out");
+            await new Promise<void>((resolve) => setTimeout(resolve, 16));
+            await graph.prepare(camera);
+          }
         }
         const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
         const result = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
