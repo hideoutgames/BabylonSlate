@@ -541,6 +541,27 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const presented = handle.presentFirstFrame();
+    renderViews(engine);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await presented;
+    // A stored preparation failure rethrows from readiness while the classic
+    // fallback still draws and copies the steady-state frame.
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
+      throw new Error("Scene rendering preparation timed out.");
+    });
+    try {
+      renderViews(engine);
+      expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
   it("restores the editor scale before readmitting shared views when Play stops", async () => {
     const engine = sharedEngine();
     let hardwareScaling = 1;
