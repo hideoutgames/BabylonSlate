@@ -26,7 +26,10 @@ import {
   setClusteredLightMember,
   compareLightAdmission,
 } from "./light-policy";
-import { findSceneShadowController } from "./shadow-controller";
+import {
+  findSceneShadowController,
+  type SceneShadowController,
+} from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { beginClusteredAllocation } from "./clustered-allocation";
 import { ClusteredCameraBounds } from "./clustered-camera-bounds";
@@ -69,7 +72,10 @@ export class ClusteredSceneLights {
   private authoredOrder: readonly Light[];
   private readonly authoredIndices = new Map<Light, number>();
   private orderDirty = true;
-  private celConfiguration = "";
+  /** Flat [budget, limit, sorting, then id, priority, shadow, candidate per
+   * light] of the resolved CEL order; empty forces the next resolve. */
+  private celConfiguration: unknown[] = [];
+  private nextCelConfiguration: unknown[] = [];
   private celCandidates: ReadonlySet<Light> | undefined;
   private celOrderFailure: string | undefined;
   private localSelection: Set<Light> | undefined;
@@ -114,7 +120,7 @@ export class ClusteredSceneLights {
     if (this.disposed) return;
     this.registry = this.validateRegistry(lights);
     this.registryMembership = new Set(this.registry);
-    this.celConfiguration = "";
+    this.celConfiguration.length = 0;
     this.watchLights();
     syncSceneLighting(this.scene);
   }
@@ -169,7 +175,8 @@ export class ClusteredSceneLights {
     this.syncing = true;
     try {
       for (const [material, restore] of this.materialBindings) {
-        if (!this.scene.materials.includes(material)) {
+        // Babylon 9.20 addMaterial/removeMaterial keep this index; -1 is absent.
+        if (material._indexInSceneMaterialArray === -1) {
           restore();
           this.materialBindings.delete(material);
         }
@@ -308,6 +315,8 @@ export class ClusteredSceneLights {
       for (const light of this.container?.lights.slice() ?? []) {
         if (!selected.has(light)) this.returnLight(light);
       }
+      // Materials do not change within one sync; scan them at most once.
+      let unbounded: boolean | undefined;
       if (!selected.size) {
         this.releaseContainer();
       } else {
@@ -343,9 +352,9 @@ export class ClusteredSceneLights {
         container.renderPriority = priority;
         container.shadowEnabled = false;
         // Never use Babylon's default maxRange clamp to change attenuation.
-        container.maxRange = Math.max(
-          ...[...selected].map((light) => light.range),
-        );
+        let maxRange = -Infinity;
+        for (const light of selected) maxRange = Math.max(maxRange, light.range);
+        container.maxRange = maxRange;
         for (const light of selected) {
           if (container.lights.includes(light)) continue;
           this.orderDirty = true;
@@ -381,9 +390,10 @@ export class ClusteredSceneLights {
             fail(error);
           }
         }
+        unbounded = this.usesUnboundedPhysicalLighting();
         this.cameraBounds.sync(
           container._updateBatches(this.scene.activeCamera),
-          this.usesUnboundedPhysicalLighting(),
+          unbounded,
         );
         this.lightOrder ??= new ClusteredLightOrder(container);
         this.lightOrder.sync(
@@ -415,7 +425,7 @@ export class ClusteredSceneLights {
           ...this.statusValue.reasons,
           `Local lighting quality budget: ${this.localSelection.size}/${requestedLocals.length} requested locals selected across clustered and conventional lighting.`,
         ];
-      if (clustered && this.usesUnboundedPhysicalLighting())
+      if (clustered && (unbounded ?? this.usesUnboundedPhysicalLighting()))
         this.statusValue = {
           ...this.statusValue,
           reasons: [
@@ -578,20 +588,27 @@ export class ClusteredSceneLights {
       this.authoredOrder.forEach((light, index) =>
         this.authoredIndices.set(light, index),
       );
-    const added = [...this.scene.lights, ...this.registry].filter((light) => {
-      if (
-        light.isDisposed() ||
-        light === this.container ||
-        this.authoredIndices.has(light)
-      )
-        return false;
-      this.authoredIndices.set(light, this.authoredIndices.size);
-      return true;
-    });
-    if (added.length) {
+    // Runs every sync; allocate only when a light is new.
+    let added: Light[] | undefined;
+    for (const light of this.scene.lights)
+      if (this.indexAuthored(light)) (added ??= []).push(light);
+    for (const light of this.registry)
+      if (this.indexAuthored(light)) (added ??= []).push(light);
+    if (added) {
       this.authoredOrder = [...this.authoredOrder, ...added];
       this.orderDirty = true;
     }
+  }
+
+  private indexAuthored(light: Light): boolean {
+    if (
+      light.isDisposed() ||
+      light === this.container ||
+      this.authoredIndices.has(light)
+    )
+      return false;
+    this.authoredIndices.set(light, this.authoredIndices.size);
+    return true;
   }
 
   /** Resolve only on authored topology/style/quality changes, never camera/map admission. */
@@ -601,33 +618,37 @@ export class ClusteredSceneLights {
     const strongest =
       state.mode === "cel" && state.cel.lightMixing === "strongest";
     if (!strongest) {
-      this.celConfiguration = "unrestricted";
+      this.celConfiguration.length = 0;
       this.celCandidates = undefined;
       this.celOrderFailure = undefined;
       return;
     }
     const controller = findSceneShadowController(this.scene);
+    // Runs every sync: compare into scratch, and build the order and candidate
+    // set only when the configuration changes.
+    const configuration = this.nextCelConfiguration;
+    configuration.length = 0;
+    configuration.push(
+      state.localLightBudget,
+      limit,
+      this.scene.requireLightSorting,
+    );
+    for (const light of this.authoredOrder)
+      if (!light.isDisposed())
+        configuration.push(
+          light.uniqueId,
+          light.renderPriority,
+          light.shadowEnabled,
+          this.celCandidate(light, controller),
+        );
+    if (sameConfiguration(configuration, this.celConfiguration)) return;
+    this.nextCelConfiguration = this.celConfiguration;
+    this.celConfiguration = configuration;
     const order = this.authoredOrder.filter((light) => !light.isDisposed());
     const candidates = new Set(
-      order.filter(
-        (light) =>
-          this.registryMembership.has(light) &&
-          isClusterableLocalLight(light) &&
-          !controller?.requestsShadow(light) &&
-          !light.getShadowGenerators()?.size,
-      ),
+      order.filter((light) => this.celCandidate(light, controller)),
     );
-    const configuration =
-      `${state.localLightBudget}:${limit}:${this.scene.requireLightSorting}:` +
-      order
-        .map(
-          (light) =>
-            `${light.uniqueId},${light.renderPriority},${light.shadowEnabled},${candidates.has(light)}`,
-        )
-        .join(";");
-    if (configuration === this.celConfiguration) return;
     this.orderDirty = true;
-    this.celConfiguration = configuration;
     this.celCandidates = candidates;
     this.celOrderFailure = undefined;
     order.sort(this.compareAuthored);
@@ -643,6 +664,18 @@ export class ClusteredSceneLights {
     if (candidates.size > limit && state.localLightBudget > limit)
       this.celOrderFailure =
         "CEL Strongest clustered tail exceeds storage capacity; conventional fallback preserves authored tie order.";
+  }
+
+  private celCandidate(
+    light: Light,
+    controller: SceneShadowController | undefined,
+  ): boolean {
+    return (
+      this.registryMembership.has(light) &&
+      isClusterableLocalLight(light) &&
+      !controller?.requestsShadow(light) &&
+      !light.getShadowGenerators()?.size
+    );
   }
 
   private eligible(light: Light): boolean {
@@ -702,6 +735,21 @@ export class ClusteredSceneLights {
           )),
     );
   }
+}
+
+/** Element-wise CEL key equality; NaN priorities stay equal as their strings did. */
+function sameConfiguration(
+  a: readonly unknown[],
+  b: readonly unknown[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++)
+    if (
+      a[index] !== b[index] &&
+      !(Number.isNaN(a[index]) && Number.isNaN(b[index]))
+    )
+      return false;
+  return true;
 }
 
 export function isClusterableLocalLight(light: Light): boolean {

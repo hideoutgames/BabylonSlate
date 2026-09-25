@@ -15,6 +15,7 @@ export {
   clearSnapshot,
   isPublishedSnapshot,
   readActorSlot,
+  readActorSlotInto,
   readSnapshotHeader,
   snapshotTickIndex,
   writeActorSlot,

@@ -170,10 +170,12 @@ export function applyEditorBillboardFromActor(
     material.emissiveColor.copyFrom(DEFAULT_FILL);
     return;
   }
+  // The actor snapshot is fixed per registration; only its properties are re-read.
+  const component = actor.components.find((entry) =>
+    entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent");
+  const lightName = component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
   const update = () => {
-    const component = actor.components.find((entry) =>
-      entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent");
-    const light = mesh.getScene().getLightByName(component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`);
+    const light = mesh.getScene().getLightByName(lightName);
     const illuminationLimited = light && isForwardLightExcluded(light);
     const disabled = light ? (!light.isEnabled() && !illuminationLimited) || light.intensity <= 0
       : component?.properties.enabled === false ||

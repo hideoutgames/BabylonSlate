@@ -25,7 +25,7 @@ import {
 } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 
-export { encodePngRgba } from "./default-skybox/png";
+export { encodeRgbaPng as encodePngRgba } from "./png-encode";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
 const preparations = new WeakMap<AbstractMesh, Promise<void>>();

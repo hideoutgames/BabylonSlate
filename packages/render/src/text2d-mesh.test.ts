@@ -238,21 +238,37 @@ describe("createText2DMesh", () => {
         chars: [{ id: 65, x: 0, y: 0, width: 16, height: 16, xoffset: 0, yoffset: 0, xadvance: 16 }],
       }),
     );
+    const assets = {
+      fontMsdfJson: new Map([["font-1", json]]),
+      fontMsdfPng: new Map([["font-1", new Uint8Array([1, 2, 3])]]),
+    };
     const mesh = createText2DMesh(
       handle.scene,
       "msdf",
-      { text: "AB", renderer: "msdf", size: 32, fontAssetGuid: "font-1" },
-      {
-        fontMsdfJson: new Map([["font-1", json]]),
-        fontMsdfPng: new Map([["font-1", new Uint8Array([1, 2, 3])]]),
-      },
+      { text: "AAB", renderer: "msdf", size: 32, fontAssetGuid: "font-1" },
+      assets,
     );
     expect((mesh.metadata as { text2dRenderer?: string }).text2dRenderer).toBe("msdf");
-    const sources = mesh
-      .getChildMeshes()
-      .map((child) => (child.metadata as { text2dSource?: string }).text2dSource);
+    const sourceOf = (child: { metadata: unknown }) =>
+      (child.metadata as { text2dSource?: string }).text2dSource;
+    const sources = mesh.getChildMeshes().map(sourceOf);
     expect(sources).toContain("msdf");
     expect(sources).toContain("bitmap");
+    // Same-style MSDF glyphs share one material; another color gets its own.
+    const msdfGlyphs = mesh.getChildMeshes().filter((child) => sourceOf(child) === "msdf");
+    expect(msdfGlyphs).toHaveLength(2);
+    expect(msdfGlyphs[0]!.material).toBe(msdfGlyphs[1]!.material);
+    const rich = createText2DMesh(
+      handle.scene,
+      "msdf-rich",
+      { text: "[color=FF0000]A[/color]A", renderer: "msdf", size: 32, fontAssetGuid: "font-1", color: [0, 1, 0] },
+      assets,
+      { rich: true },
+    );
+    const [red, green] = rich.getChildMeshes().map((child) => child.material as StandardMaterial);
+    expect(red).not.toBe(green);
+    expect(red!.emissiveColor.asArray()).toEqual([1, 0, 0]);
+    expect(green!.emissiveColor.asArray()).toEqual([0, 1, 0]);
   });
 
   it("freezes letter effects while Play is paused", () => {

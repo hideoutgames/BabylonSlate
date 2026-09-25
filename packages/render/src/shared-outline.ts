@@ -186,15 +186,17 @@ export class SharedOutlineOwner {
         replacement = true;
       } catch (error) { lease.release(); throw error; }
     }
+    const data = state.data;
     let first = capacity, last = -1, offset = 0;
-    const put = (id: number) => {
-      if (state!.data[offset] !== id || replacement) {
-        state!.data[offset] = id; first = Math.min(first, offset); last = offset;
-      }
-      offset++;
-    };
-    if (renderSelf) put(this.identityFor(source));
-    for (const instance of instances ?? []) put(this.identityFor(instance));
+    if (renderSelf) {
+      const id = this.identityFor(source);
+      if (data[0] !== id || replacement) { data[0] = id; first = 0; last = 0; }
+      offset = 1;
+    }
+    if (instances) for (let index = 0; index < instances.length; index++, offset++) {
+      const id = this.identityFor(instances[index]!);
+      if (data[offset] !== id || replacement) { data[offset] = id; if (offset < first) first = offset; last = offset; }
+    }
     if (last >= first) {
       state.buffer.updateDirectly(state.data.subarray(first, last + 1), first);
       this.uploads++;
@@ -305,13 +307,10 @@ export class SharedOutlineView {
   maximumWidth = 0;
   distanceFadeEnabled = false;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
-  get active(): boolean { return !this.isDisposed && [...this.contributions.values()].some((entry) => entry.targets.length > 0); }
-  /** Hosts supply authored world occluders, excluding editor helpers and guides. */
-  setOccluders(meshes: readonly AbstractMesh[] | null): void {
-    const next = meshes ? [...new Set(meshes)] : null;
-    if (next === null ? this.occluders === null : this.occluders !== null &&
-      next.length === this.occluders.length && next.every((mesh) => this.occluders!.includes(mesh))) return;
-    this.occluders = next; this.revision++;
+  get active(): boolean {
+    if (this.isDisposed) return false;
+    for (const entry of this.contributions.values()) if (entry.targets.length > 0) return true;
+    return false;
   }
   setContribution(key: string, input: SharedOutlineContribution): void {
     if (this.isDisposed) throw new Error("Shared outline view is disposed.");
@@ -332,7 +331,7 @@ export class SharedOutlineView {
       const previous = this.contributions.get(key); return !previous || !sameContribution(previous, value);
     });
     const occludersChanged = nextOccluders === null ? this.occluders !== null : this.occluders === null ||
-      nextOccluders.length !== this.occluders.length || nextOccluders.some((mesh) => !this.occluders!.includes(mesh));
+      !sameMeshes(nextOccluders, this.occluders);
     if (!contributionsChanged && !occludersChanged) return;
     if (contributionsChanged) {
       const previous = new Map(this.contributions);
@@ -359,8 +358,9 @@ export class SharedOutlineView {
   }
   /** Style data changes are independent of graph/material topology. */
   prepare(): void {
-    if (!this.active) { this.releaseStyles(); return; }
+    // Only an active prepare records its revision; every activity change bumps it.
     if (this.preparedRevision === this.revision) return;
+    if (!this.active) { this.releaseStyles(); return; }
     const count = 2 ** Math.ceil(Math.log2(Math.max(16, this.owner.maximumIdentity + 1)));
     const maxSize = this.scene.getEngine().getCaps().maxTextureSize;
     // Second half stores fade metadata in the same sampler. Keeping this layout
@@ -493,6 +493,11 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
 }
 function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.targets.length === b.targets.length &&
-    a.targets.every((target, index) => target.key === b.targets[index]!.key && target.meshes.length === b.targets[index]!.meshes.length &&
-      target.meshes.every((mesh) => b.targets[index]!.meshes.includes(mesh)));
+    a.targets.every((target, index) => target.key === b.targets[index]!.key && sameMeshes(target.meshes, b.targets[index]!.meshes));
+}
+/** Equal length and membership; a Set keeps unchanged whole-scene snapshots linear. */
+function sameMeshes(a: readonly AbstractMesh[], b: readonly AbstractMesh[]): boolean {
+  if (a.length !== b.length) return false;
+  const members = new Set(b);
+  return a.every((mesh) => members.has(mesh));
 }

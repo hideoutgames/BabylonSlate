@@ -179,8 +179,10 @@ export class SceneRenderCoordinator {
     return status.ready;
   }
 
-  /** Ready owners may draw a validated native frame while their graph rebuilds. */
-  render(): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
+  /** Ready owners may draw a validated native frame while their graph rebuilds.
+   * Without presentation validation a drawn frame skips the post-draw probe and
+   * is never readyForPresentation; the next frame's readiness admits again. */
+  render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
     this.refreshOutline();
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera ||
@@ -188,8 +190,11 @@ export class SceneRenderCoordinator {
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
-    const result = this.graph.render(camera);
+    // Draw on readiness's admission; graph preparation or invalidation re-admits.
+    const result = this.graph.render(camera, true, true);
     if (result.rendered !== false) this.editorOverlay?.(camera);
+    if (!validatePresentation && result.rendered !== false)
+      return { ...result, rendered: true, readyForPresentation: false };
     const after = this.graph.readiness(camera);
     return { ...result, rendered: result.rendered !== false,
       readyForPresentation: result.rendered !== false && !this.pending && status.ready && after.ready && result.path === status.path && result.path === after.path };

@@ -33,7 +33,6 @@ import type {
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
-import { SceneEffectsOwner } from "./scene-effects-owner";
 import type {
   BakeRuntimeAssetReader,
   SpriteAnimationPayload,
@@ -194,9 +193,7 @@ import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
 import {
-  attachPostProcessStack,
   normalizePostProcessStack,
-  probePostProcessDeviceBuffers,
   type AttachedPostProcessStack,
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
@@ -215,8 +212,6 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
-  freezeEditorActiveMeshes,
-  isSceneFrameReady,
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
@@ -837,7 +832,7 @@ function initializeEngine(
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   const worldRenderer = new SceneRenderCoordinator(scene);
-  onRollback(() => worldRenderer?.dispose());
+  onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
@@ -894,7 +889,7 @@ function initializeEngine(
   // A game-wide session render path request re-keys this view's shader and
   // presentation admission exactly like a project render-settings change.
   const unsubscribeRenderPathSession = subscribeRenderPathSession(engine, () => {
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     scheduler.invalidate("asset");
   });
   onRollback(unsubscribeRenderPathSession);
@@ -965,10 +960,20 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
-  const hasLoadingFrame = () => [...pendingPresentations.values()].some((pending) => !pending.copied && presentationReady(pending)) && scheduler.canPresentLoadingFrame();
-  const hasPendingOwners = () => worldLoading || [...layerLoads.values()].some((layer) => !layer.ready);
+  const hasLoadingFrame = () => {
+    for (const pending of pendingPresentations.values()) {
+      if (!pending.copied && presentationReady(pending)) return scheduler.canPresentLoadingFrame();
+    }
+    return false;
+  };
+  const hasPendingOwners = () => {
+    if (worldLoading) return true;
+    for (const layer of layerLoads.values()) if (!layer.ready) return true;
+    return false;
+  };
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
-  const shouldRenderFrame = (now: number) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && (hasLoadingFrame() || (hasReadyContent() &&
+  // renderLoop passes the loading permit it already evaluated for this frame.
+  const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
@@ -976,17 +981,16 @@ function initializeEngine(
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
-      if (worldRenderer) {
-        const css = cssCanvasPixelSize(canvas);
-        const scale = engine.getHardwareScalingLevel();
-        const size = scaledLockedViewSize() ?? {
-          width: Math.max(1, Math.floor(css.width / scale)),
-          height: Math.max(1, Math.floor(css.height / scale)),
-        };
-        if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
-          engine.setSize(size.width, size.height);
-      }
-      prepareSnapshot();
+      const css = cssCanvasPixelSize(canvas);
+      const scale = engine.getHardwareScalingLevel();
+      const size = scaledLockedViewSize() ?? {
+        width: Math.max(1, Math.floor(css.width / scale)),
+        height: Math.max(1, Math.floor(css.height / scale)),
+      };
+      if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
+        engine.setSize(size.width, size.height);
+      admittedSnapshot = prepareSnapshot();
+      snapshotAdmitted = true;
       return shouldRenderFrame(performance.now());
     }, {
       begin: () => { frameCopyReady = false; },
@@ -1124,6 +1128,9 @@ function initializeEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  // The library memoizes lowered plans per functions record identity; every
+  // accepted installMaterialDocuments replaces it.
+  let materialFunctionRecord = Object.fromEntries(materialFunctions);
   binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
   const compiledMaterialGuids = new Set<string>();
@@ -1134,7 +1141,7 @@ function initializeEngine(
   };
   const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
-    functions: () => Object.fromEntries(materialFunctions),
+    functions: () => materialFunctionRecord,
     acquireTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
@@ -1232,16 +1239,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  // Native mirror of the settings-driven effect chain for hosts without a
-  // SceneRenderCoordinator; coordinator hosts drive their own copy.
-  const sceneEffectsOwner = new SceneEffectsOwner(scene);
-  onRollback(() => {
-    try {
-      sceneEffectsOwner.dispose();
-    } finally {
-      nativeRetirement.add(sceneEffectsOwner);
-    }
-  });
   let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
@@ -1254,33 +1251,19 @@ function initializeEngine(
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
     lastPostProcessDiagnostics = [];
-    if (!postProcessingEnabled) {
-      if (!worldRenderer) sceneEffectsOwner.useGraph();
-      return;
-    }
-    if (!camera) {
-      if (!worldRenderer) sceneEffectsOwner.useGraph();
-      return;
-    }
-    const attach = worldRenderer
-      ? worldRenderer.attachPostProcess.bind(worldRenderer)
-      : attachPostProcessStack;
-    attachedStack = attach({
+    if (!postProcessingEnabled || !camera) return;
+    attachedStack = worldRenderer.attachPostProcess({
       scene,
       camera,
       library: materialLibrary,
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      ...(worldRenderer ? {} : { deviceBuffers: probePostProcessDeviceBuffers(scene, camera) }),
       onDiagnostic: (diagnostic) => {
         lastPostProcessDiagnostics.push(diagnostic);
         options.onPostProcessDiagnostic?.(diagnostic);
       },
     });
-    // Coordinator hosts own effects inside the graph/classic decision; the
-    // pure-native path mirrors the same settings through this owner.
-    if (!worldRenderer) sceneEffectsOwner.useNative(camera);
   };
 
   let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
@@ -1320,7 +1303,7 @@ function initializeEngine(
     const effectsKey = state.effectsKey;
     if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
       rebuildPostProcessStack();
-      worldRenderer?.invalidate();
+      worldRenderer.invalidate();
     }
     appliedEffectsKey = effectsKey;
   };
@@ -1546,7 +1529,7 @@ function initializeEngine(
       for (const group of binding.areaLights.values())
         emissionChanged = group.refreshEmissions(assets.areaEmissions) || emissionChanged;
       if (emissionChanged) {
-        worldRenderer?.invalidate();
+        worldRenderer.invalidate();
         scheduler.invalidate("asset");
       }
       binding.texturePixelSizes = assets.texturePixelSizes;
@@ -1596,6 +1579,7 @@ function initializeEngine(
           materialFunctions.set(guid, document);
         }
       }
+      materialFunctionRecord = Object.fromEntries(materialFunctions);
       return true;
   };
 
@@ -1604,7 +1588,7 @@ function initializeEngine(
     assertCurrent(loadGeneration);
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
     const generation = ++loadGeneration;
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
@@ -1642,7 +1626,7 @@ function initializeEngine(
       return;
     }
     loadGeneration += 1;
-    worldRenderer?.invalidate();
+    worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
     postProcessParameters.clear();
@@ -1888,9 +1872,6 @@ function initializeEngine(
         if (typeof settings.showGrid === "boolean") {
           grid.setVisible(settings.showGrid);
         }
-        if (!worldRenderer && scene._activeMeshesFrozen) {
-          freezeEditorActiveMeshes(scene);
-        }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
@@ -2049,6 +2030,10 @@ function initializeEngine(
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
   let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
+  // renderLoop reuses admission's sample until end-frame unless a push or
+  // command invalidated the applied identity in between.
+  let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
+  let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
@@ -2100,7 +2085,7 @@ function initializeEngine(
   };
   const presentationReady = (pending: PendingPresentation) => {
     try {
-      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer?.isReady() ?? isSceneFrameReady(scene);
+      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
       cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
@@ -2201,7 +2186,7 @@ function initializeEngine(
       },
       prepare: async (assertCurrent) => {
         assertCurrent();
-        await worldRenderer?.prepare(assertCurrent);
+        await worldRenderer.prepare(assertCurrent);
         for (const layer of sceneLayerCompositor?.layers() ?? []) {
           if (layerLoads.get(layer.layerId)?.ready !== false) await sceneLayerCompositor?.prepare(layer.layerId, assertCurrent);
         }
@@ -2224,9 +2209,9 @@ function initializeEngine(
       },
       invalidate: () => scheduler.invalidate("asset"),
       retainResources: () => {
-        const world = worldRenderer?.retainResources();
+        const world = worldRenderer.retainResources();
         const layers = sceneLayerCompositor?.retainResources();
-        return () => { try { world?.(); } finally { layers?.(); } };
+        return () => { try { world(); } finally { layers?.(); } };
       },
     });
     onRollback(() => runtimeScalability?.dispose());
@@ -2243,10 +2228,10 @@ function initializeEngine(
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
-    const sampled = prepareSnapshot();
+    const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart)) {
+    if (!shouldRenderFrame(frameStart, loadingFrame)) {
       return;
     }
     frameWasLoading = loadingFrame;
@@ -2309,13 +2294,9 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
-        if (worldRenderer) {
-          const result = worldRenderer.render();
-          coherentFrame = result.rendered;
-          return result.readyForPresentation;
-        }
-        scene.render();
-        return true;
+        const result = worldRenderer.render(pendingPresentations.has("world"));
+        coherentFrame = result.rendered;
+        return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
         // drawing. Only explicit world loading may present ready layers over a
@@ -2363,6 +2344,7 @@ function initializeEngine(
     if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
+    snapshotAdmitted = false;
     if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
       if (runtimeScalability && !worldLoading) {
@@ -2556,10 +2538,10 @@ function initializeEngine(
       track(bounded, () => retireAttachedStack());
       track(bounded, () => outlineHost.dispose());
       track(bounded, () => nativeRetirement.whenDisposed());
-      track(bounded, () => worldRenderer?.retire());
+      track(bounded, () => worldRenderer.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
       track(actual, () => nativeRetirement.whenReleased());
-      track(actual, () => worldRenderer?.whenReleased());
+      track(actual, () => worldRenderer.whenReleased());
       track(actual, () => outlineHost.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
       // Cancel graph preparation before restoring the editor's global request.
@@ -2615,7 +2597,7 @@ function initializeEngine(
         rttPresent?.dispose();
         cacheBinding.dispose();
       };
-      if (!ownsEngine && (worldRenderer || sceneLayerCompositor || !nativeRetirement.releasedConfirmed)) {
+      if (!ownsEngine) {
         // Pending native work may still borrow Scene, library and cache
         // resources. Stop the view immediately, but release these owners only
         // after actual release confirms; a rejected release quarantines them.
@@ -2723,7 +2705,7 @@ function initializeEngine(
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
         worldLoading = true;
-        worldRenderer?.invalidate();
+        worldRenderer.invalidate();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       if (command.type === "sceneLayerLoading") {
@@ -2784,7 +2766,7 @@ function initializeEngine(
         } else if (group) { group.dispose(); binding.areaLights.delete(command.slotId); changed = true; }
         if (changed) {
           appliedSnapshotIdentity = null;
-          worldRenderer?.invalidate();
+          worldRenderer.invalidate();
           scheduler.invalidate("asset");
         }
       }
@@ -3067,18 +3049,13 @@ function initializeEngine(
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
-      const previousMode = sceneRenderingSettings(scene).mode;
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();
-      if (options.editor && !worldRenderer && previousMode !== sceneRenderingSettings(scene).mode)
-        freezeEditorActiveMeshes(scene);
       outlineHost.refreshSettings();
       scheduler.invalidate("asset");
     },
-    postProcessPassCount: () =>
-      worldRenderer?.postProcessPassCount() ??
-      (attachedStack?.passes.length ?? 0) + sceneEffectsOwner.passes.length,
-    renderTaskNames: () => worldRenderer?.taskNames() ?? [],
+    postProcessPassCount: () => worldRenderer.postProcessPassCount(),
+    renderTaskNames: () => worldRenderer.taskNames(),
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,
@@ -3138,10 +3115,9 @@ function initializeEngine(
       await warmSceneMaterials(scope.target, scope.assert);
       scope.assert();
       freezeLibraryMaterials();
-      if (options.editor && !owner && !worldRenderer) freezeEditorActiveMeshes(scene);
       outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-      else await worldRenderer?.prepare(scope.assert);
+      else await worldRenderer.prepare(scope.assert);
       scope.assert();
     },
     whenMaterialTexturesReady: async (owner) => {
