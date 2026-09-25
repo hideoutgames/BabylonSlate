@@ -18,12 +18,13 @@ class SpatialTask extends FrameGraphPostProcessTask {
   }
   override record() {
     const pass = super.record(false, undefined, (context) => {
+      const effect = this.drawWrapper.effect!;
       if (this.stage.geometry) for (const [name, handle] of Object.entries(this.buffers)) {
         context.setTextureSamplingMode(handle, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
-        context.bindTextureHandle(this.drawWrapper.effect, name, handle);
+        context.bindTextureHandle(effect, name, handle);
       }
-      if (this.main !== undefined) context.bindTextureHandle(this.drawWrapper.effect, "mainSampler", this.main);
-      this.stage.bind(this.drawWrapper.effect);
+      if (this.main !== undefined) context.bindTextureHandle(effect, "mainSampler", this.main);
+      this.stage.bind(effect);
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
     if (this.main !== undefined) pass.addDependencies(this.main);

@@ -256,6 +256,8 @@ describe("SettingsModal project authoring", () => {
     ["play frame cap", /Play Frame Cap/, "Play Preview", "setting-play-frame-cap"],
     ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
+    ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
+    ["volumetric", /Volumetric Lighting/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: query } });
@@ -271,9 +273,14 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Post Processing" }));
     expect(screen.getByTestId("project-render-effects")).toBeTruthy();
     fireEvent.click(screen.getByTestId("project-effects-fxaa"));
+    fireEvent.click(screen.getByTestId("project-effects-reflections"));
+    fireEvent.click(screen.getByTestId("project-effects-volumetric"));
+    fireEvent.change(screen.getByLabelText("Fog Density"), { target: { value: "0.08" } });
+    fireEvent.blur(screen.getByLabelText("Fog Density"));
+    fireEvent.click(screen.getByTestId("project-effects-volumetric"));
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.08 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
