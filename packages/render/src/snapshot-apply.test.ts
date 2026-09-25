@@ -6,7 +6,7 @@ import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, 
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { DEFAULT_SORTING_LAYERS, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
@@ -1508,6 +1508,40 @@ describe("createPlayMesh", () => {
     expect(sphere?.isVisible).toBe(true);
     expect(box?.position.asArray()).toEqual([-4, 1, 0]);
     expect(sphere?.position.asArray()).toEqual([4, 2, 0]);
+  });
+
+  it("hides every drawn part of a hidden 2D Text or Model actor", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "2dtext",
+      meshAssetGuid: null,
+      text2d: parseText2DProperties({ text: "HI" }),
+    });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
+    const snapshot = (flags: number) => ({
+      frameId: 1, tickIndex: 1, alpha: 1, actorCount: 2,
+      actors: [1, 2].map((slotId) => ({
+        slotId, flags, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+      })),
+    });
+    // Hidden before the model loads: glTF parts adopted afterwards stay hidden.
+    applySnapshotToScene(scene, binding, snapshot(0));
+    await binding.slotAnimLoads?.get(2);
+    const glyphs = binding.meshes.get(1)!.getChildMeshes();
+    const parts = visualMeshes(binding.meshes.get(2)!);
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(parts.length).toBeGreaterThan(0);
+    const shown = () => [...glyphs, ...parts].filter((mesh) => mesh.isVisible).map((mesh) => mesh.name);
+    expect(shown()).toEqual([]);
+    applySnapshotToScene(scene, binding, snapshot(SNAPSHOT_FLAG_VISIBLE));
+    expect(shown()).toHaveLength(glyphs.length + parts.length);
   });
 
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {

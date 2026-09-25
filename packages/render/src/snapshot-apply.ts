@@ -1,6 +1,7 @@
 import { sceneShadowController } from "./shadow-controller";
 import { applyMaterialBounds } from "./material-bounds";
 import {
+  AbstractMesh,
   DirectionalLight,
   HemisphericLight,
   Mesh,
@@ -11,7 +12,6 @@ import {
   SpotLight,
   UniversalCamera,
   Vector3,
-  type AbstractMesh,
   type Camera,
   type Light,
   type Material,
@@ -714,7 +714,9 @@ export function applyAssignMesh(
       () => {
         stampOverlayPick(existing, command);
         applyPlayVisualSorting(existing, command.slotId, binding);
-        setPlayVisualVisibility(existing, binding.liveSlots.has(command.slotId));
+        // Adopted glTF parts inherit the last snapshot flag, not live membership.
+        setPlayVisualVisibility(binding, existing,
+          appliedPlayVisibility.get(existing) ?? binding.liveSlots.has(command.slotId), true);
         retireRemovedMaterials();
         releaseRetainedMaterialOwners(binding, command.slotId);
         binding.onVisualChanged?.(command.slotId);
@@ -804,7 +806,7 @@ export function applyAssignMesh(
       adopted = true;
       rejected.delete(command.slotId);
       staged.setEnabled(true);
-      setPlayVisualVisibility(staged, binding.liveSlots.has(command.slotId));
+      setPlayVisualVisibility(binding, staged, binding.liveSlots.has(command.slotId));
       if (deferred.length) publishModelHierarchyAnimations(scene, binding, command.slotId, staged);
       refreshPlayActiveCamera(scene, binding);
       applyPlayShadows(scene);
@@ -863,7 +865,7 @@ export function applyAssignMesh(
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   if (!stagedText) applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
-  setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
+  setPlayVisualVisibility(binding, rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   binding.onVisualChanged?.(command.slotId);
 }
@@ -882,7 +884,8 @@ export function migratePlaySlotVisual(
   const rotationQuaternion = existing.rotationQuaternion?.clone();
   const rotation = existing.rotation.clone();
   const scaling = existing.scaling.clone();
-  const visible = existing.isVisible;
+  // An origin root's own isVisible is always false; carry the snapshot flag.
+  const visible = appliedPlayVisibility.get(existing) ?? existing.isVisible;
   const metadata = existing.metadata;
   existing.dispose();
   binding.spriteOverlays?.get(slotId)?.dispose();
@@ -903,7 +906,7 @@ export function migratePlaySlotVisual(
   }
   binding.meshes.set(slotId, rebuilt);
   applyMaterialToActorMeshes(binding, slotId, rebuilt);
-  setPlayVisualVisibility(rebuilt, visible);
+  setPlayVisualVisibility(binding, rebuilt, visible);
   binding.onVisualChanged?.(slotId);
   return rebuilt;
 }
@@ -977,10 +980,6 @@ function playMeshMetadata(mesh: Mesh): {
   } | null;
 }
 
-function isPlayActorOrigin(mesh: Mesh): boolean {
-  return Boolean(playMeshMetadata(mesh)?.playActorOrigin);
-}
-
 function isPlayHelperVisual(mesh: Mesh): boolean {
   const meta = playMeshMetadata(mesh);
   return Boolean(meta?.playHelperVisual || meta?.playActorOrigin);
@@ -1024,20 +1023,41 @@ function markPlayHelperVisual(mesh: Mesh): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), playHelperVisual: true };
 }
 
-function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
-  const origin = isPlayActorOrigin(mesh);
-  const helper = isPlayHelperVisual(mesh);
-  mesh.isVisible = origin || helper ? false : visible;
-  if (!origin) return;
-  for (const child of mesh.getChildMeshes()) {
-    if (!child.name.includes("|")) continue;
-    const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
-    if (afterPipe.includes(":")) continue;
-    if (isMesh(child) && isPlayHelperVisual(child)) {
-      child.isVisible = false;
-      continue;
+/** Last snapshot visibility applied to each slot root's visual tree. */
+const appliedPlayVisibility = new WeakMap<Mesh, boolean>();
+
+/** Slot roots are named `actor-<slot>`; part, glyph and chunk names never resolve to one. */
+function isOtherSlotRoot(
+  binding: SnapshotSceneBinding,
+  root: Mesh,
+  node: import("@babylonjs/core").Node,
+): boolean {
+  if (node === root || !node.name.startsWith("actor-")) return false;
+  return binding.meshes.get(Number(node.name.slice("actor-".length))) === node;
+}
+
+/**
+ * Babylon does not inherit `isVisible`, so a hidden actor hides every drawn
+ * descendant: parts, glyphs, glTF meshes, tilemap chunks and sprite overlays.
+ * Helpers and origins stay hidden. Particle emitters and other actors' roots
+ * keep their own visibility. Unchanged values return without a tree walk.
+ */
+function setPlayVisualVisibility(
+  binding: SnapshotSceneBinding,
+  mesh: Mesh,
+  visible: boolean,
+  force = false,
+): void {
+  if (!force && appliedPlayVisibility.get(mesh) === visible) return;
+  appliedPlayVisibility.set(mesh, visible);
+  mesh.isVisible = isPlayHelperVisual(mesh) ? false : visible;
+  const pending = mesh.getChildren();
+  for (let node = pending.pop(); node; node = pending.pop()) {
+    if (node.name.startsWith("particleEmitter:") || isOtherSlotRoot(binding, mesh, node)) continue;
+    if (node instanceof AbstractMesh) {
+      node.isVisible = isMesh(node) && isPlayHelperVisual(node) ? false : visible;
     }
-    child.isVisible = visible;
+    pending.push(...node.getChildren());
   }
 }
 
@@ -1361,7 +1381,14 @@ export function createPlayMesh(
       } : binding;
       await beginSlotModelAnimLoad(
         scene, owner, slotId, assetGuid, bytes, root,
-        preparation ? undefined : () => binding.onVisualChanged?.(slotId),
+        preparation ? undefined : () => {
+          // Late glTF parts join an applied slot; unchanged samples are not
+          // re-applied (for example while paused), so hide or show them now.
+          const slotRoot = binding.meshes.get(slotId);
+          const visible = slotRoot ? appliedPlayVisibility.get(slotRoot) : undefined;
+          if (slotRoot && visible !== undefined) setPlayVisualVisibility(binding, slotRoot, visible, true);
+          binding.onVisualChanged?.(slotId);
+        },
         preparation?.ownsLoad,
         (prepared) => applyLoadedModelMaterials(binding, slotId, assetGuid, prepared),
       );
@@ -1529,6 +1556,7 @@ export function applySnapshotToScene(
     writeActorTransform(mesh, actor);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
+      binding,
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
