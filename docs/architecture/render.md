@@ -1542,7 +1542,7 @@ Surface queries and buoyancy use the same analytic waves and simulation clock as
 
 To start, create a **Water** asset and choose **Realistic** or **Stylized**. Open its Preview and Details to tune the look. Drag it from Place Actors into a 3D scene to create a lake, or add an Ocean, Lake, River, or Puddle component and select that asset. Components without an assigned asset use the Realistic defaults. A missing assigned asset also falls back to those defaults in rendering and simulation.
 
-- Ocean is an infinite query surface rendered as a camera-following grid. Width and Length set the visible patch; Resolution controls tessellation (8?128).
+- Ocean is an infinite query surface rendered as a camera-following grid. Width and Length set the visible patch; Resolution controls tessellation (8 to 128).
 - Lake and Puddle use elliptical surfaces. Puddle defaults are shallow and nearly still; its finite depth limits the displaced volume.
 - River uses component-local centreline points with elevation, a width and a directed current. Add points in Details; Flow Speed reverses with a negative value.
 - Water supports actor and component transforms, including signed scales. Vertical surfaces cannot be sampled as water height. Geometry updates and queries share the same analytic waves. Foam follows the authored banks and crests; color depth is estimated from bank distance and component Depth.
