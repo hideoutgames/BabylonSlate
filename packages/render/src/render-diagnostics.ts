@@ -9,7 +9,7 @@ import {
   type AbstractEngine,
   type Scene,
 } from "@babylonjs/core";
-import { sceneShadowController } from "./shadow-controller";
+import { findSceneShadowController, type SceneShadowController } from "./shadow-controller";
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
@@ -50,9 +50,7 @@ export type RenderDiagnostics = {
   shadowDrawCalls: number;
   shadowTriangles: number;
   readbackMs: number | null;
-  shadowLights: ReturnType<
-    ReturnType<typeof sceneShadowController>["diagnostics"]
-  >;
+  shadowLights: ReturnType<SceneShadowController["diagnostics"]>;
   qualityLimits: string[];
   pipeline: ResolvedRenderingPipeline;
   clusteredLights: number;
@@ -111,41 +109,43 @@ export function createRenderDiagnostics(
     const available = supported && !!counter?.count;
     const target = scene.activeCamera?.outputRenderTarget;
     const size = target?.getSize();
-    const metrics = sceneShadowController(scene).metrics();
+    // Reading must not install a shadow owner on a Scene that has none.
+    const shadows = findSceneShadowController(scene);
+    const metrics = shadows?.metrics() ?? { passes: 0, bytes: 0 };
     const state = sceneRenderingSettings(scene);
+    const pipeline = sceneRenderPathStatus(scene);
+    const { sample, gpuAttribution } = pressure();
     return {
       cpuMs: cpuMs(),
-      pipeline: sceneRenderPathStatus(scene),
+      pipeline,
       clusteredLights: clusteredLocalContributionCount(scene),
       readbackMs: readbackMs(),
-      shadowDrawCalls: sceneShadowController(scene).shadowDrawCalls(),
-      shadowTriangles: sceneShadowController(scene).shadowTriangles(),
+      shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
+      shadowTriangles: shadows?.shadowTriangles() ?? 0,
       gpuMs: available ? counter.current / 1_000_000 : null,
       gpuStatus: available
         ? "available"
         : supported
           ? "pending"
           : "unsupported",
-      pressure: pressure().sample,
-      gpuAttribution: pressure().gpuAttribution,
+      pressure: sample,
+      gpuAttribution,
       width: size?.width ?? engine.getRenderWidth(),
       height: size?.height ?? engine.getRenderHeight(),
       scalingLevel: engine.getHardwareScalingLevel(),
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,
-      shadowLights: state.lightsDebug
-        ? sceneShadowController(scene).diagnostics()
-        : [],
+      shadowLights: state.lightsDebug ? (shadows?.diagnostics() ?? []) : [],
       qualityLimits: [
-        ...sceneRenderPathStatus(scene).limits,
+        ...pipeline.limits,
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,
           engine._features.supportCSM,
           state.mode,
         ).limits,
-        ...sceneShadowController(scene).limits(),
+        ...(shadows?.limits() ?? []),
       ],
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),

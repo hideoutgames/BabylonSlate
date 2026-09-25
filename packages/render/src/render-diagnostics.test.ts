@@ -67,4 +67,24 @@ describe("render diagnostics qualification fields", () => {
     // live Engine reports, so a qualification run records the real value.
     expect(diagnostics.scalingLevel).toBe(engine.getHardwareScalingLevel());
   });
+
+  it("reads a Scene without authored lighting without taking over its shadow participation", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const box = MeshBuilder.CreateBox("unmanaged", { size: 1 }, scene);
+
+    const diagnostics = createRenderDiagnostics(scene, () => 1)();
+    scene.render();
+
+    expect(box.receiveShadows).toBe(false);
+    expect(diagnostics).toMatchObject({
+      shadowPasses: 0,
+      shadowMapBytes: 0,
+      shadowDrawCalls: 0,
+      shadowTriangles: 0,
+      shadowLights: [],
+    });
+  });
 });
