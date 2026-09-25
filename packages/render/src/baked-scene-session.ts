@@ -182,7 +182,8 @@ export class BakedSceneSession {
    */
   apply(sceneData: SerializedScene, host: BakedSceneHost | null): void {
     // `loadScene`/`applySceneEnvironment` pairs hand the same document through
-    // twice; only a new document or a stale release needs another pass.
+    // twice; only a new document or a stale release needs another pass. A
+    // deduped apply keeps the original load's cancellation signal.
     if (
       sceneData === this.sceneData &&
       (host?.sceneAssetGuid ?? null) === (this.host?.sceneAssetGuid ?? null) &&
@@ -390,6 +391,7 @@ export class BakedSceneSession {
     this.receivers.release();
     this.owner.dispose();
     this.state = "idle";
+    this.staleReasons = [];
   }
 }
 
