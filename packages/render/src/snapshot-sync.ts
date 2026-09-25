@@ -81,8 +81,8 @@ export class SnapshotInterpolator {
     if (readSnapshotHeader(buffer).layoutGeneration !== this.generation) return;
     const dest = this.pair[this.write]!;
     if (buffer.length > dest.length) return;
-    dest.fill(0);
     dest.set(buffer);
+    if (buffer.length < dest.length) dest.fill(0, buffer.length);
     this.prev = this.next;
     this.next = dest;
     this.write = 1 - this.write;
