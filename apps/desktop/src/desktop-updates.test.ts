@@ -23,6 +23,16 @@ function harness(initial: string | null = null) {
 
 afterEach(() => vi.useRealTimers());
 
+it.each([null, false])("does not download when a check reports no update (%s)", async available => {
+  vi.useFakeTimers();
+  const { driver, result, start, controller } = harness();
+  driver.checkForUpdates.mockResolvedValue(available === null ? null : { ...result, isUpdateAvailable: false });
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(driver.downloadUpdate).not.toHaveBeenCalled();
+  controller.setEnabled(false);
+});
+
 it("defaults legacy settings to background release downloads and normal-quit installation", async () => {
   vi.useFakeTimers();
   const { driver, start, controller } = harness('{"undoHistoryLength":50}');

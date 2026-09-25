@@ -1,6 +1,8 @@
 import type { AppUpdater, UpdateCheckResult } from "electron-updater";
 
-type Updater = Pick<AppUpdater, "autoDownload" | "autoInstallOnAppQuit" | "allowPrerelease" | "allowDowngrade" | "checkForUpdates" | "downloadUpdate" | "on">;
+type Updater = Pick<AppUpdater, "autoDownload" | "autoInstallOnAppQuit" | "allowPrerelease" | "allowDowngrade" | "checkForUpdates" | "downloadUpdate"> & {
+  on(event: "error", listener: (error: Error) => void): unknown;
+};
 
 /** Read only this preference: an unrelated legacy setting must not reset opt-out. */
 export function automaticUpdatesEnabled(json: string | null): boolean {
