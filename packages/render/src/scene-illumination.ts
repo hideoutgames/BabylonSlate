@@ -1,6 +1,6 @@
 import { setAuthoredLightEnabled } from "./light-policy";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { authoredActorMatrices } from "./authored-transform-matrices";
+import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import {
   Camera,
   Color3,
@@ -124,7 +124,7 @@ export function composeActorComponentTransform(
   actor: SerializedActor,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
-  const local = component?.transform ?? identitySerializedTransform();
+  const local = component ? authoredComponentActorTransform(actor, component) : identitySerializedTransform();
   const parentPos = actorPosition(actor);
   const parentRot = actorRotation(actor);
   const [sx, sy, sz] = actor.transform.scale;
@@ -151,10 +151,11 @@ const scratchWorldComponent = { position: new Vector3(), rotation: new Quaternio
  * parent-resolved actor world matrix. Callers copy the reused result. */
 function composeWorldComponentTransform(
   world: Matrix,
+  actor: Pick<SerializedActor, "components">,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
   world.decompose(scratchWorldScale, scratchWorldRotation, scratchWorldPosition);
-  const local = component?.transform ?? identitySerializedTransform();
+  const local = component ? authoredComponentActorTransform(actor, component) : identitySerializedTransform();
   const { position, rotation } = scratchWorldComponent;
   position
     .copyFromFloats(
@@ -187,7 +188,7 @@ function composeAttachedComponentTransform(
 ): { position: Vector3; rotation: Quaternion } {
   if (!actor.parentId) return composeActorComponentTransform(actor, component);
   try {
-    return composeWorldComponentTransform(actorWorld(actor), component);
+    return composeWorldComponentTransform(actorWorld(actor), actor, component);
   } catch (error) {
     const label = ATTACHED_COMPONENT_LABELS[component.classId] ?? component.classId;
     onDiagnostic?.(`${label} ${actor.id}: ${String(error)}`);
@@ -466,7 +467,7 @@ export function syncAuthoredCamerasFromMeshes(
     const world = mesh.computeWorldMatrix(true);
     if (mesh.parent) {
       // Attached actor meshes hold parent-local TRS; follow their world pose.
-      const composed = composeWorldComponentTransform(world, component);
+      const composed = composeWorldComponentTransform(world, actor, component);
       updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
       continue;
     }

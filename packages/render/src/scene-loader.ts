@@ -6,10 +6,12 @@ import {
   overlayPanelDestFromScale,
   parseOverlayPanelProperties,
   parseSkyboxFaces,
+  parseSpringArmProperties,
   parseSkyboxSize,
   parseText2DProperties,
   parseText3DProperties,
   SKYBOX_FACE_KEYS,
+  SPRING_ARM_COMPONENT_CLASS_ID,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import {
@@ -63,6 +65,7 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
+import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
 import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
   applyWorldVisualGroup,
@@ -218,6 +221,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "LightComponent",
   "HemisphericFillLightComponent",
   "CameraComponent",
+  SPRING_ARM_COMPONENT_CLASS_ID,
   "AudioComponent",
   "SkyboxComponent",
   "Text3DComponent",
@@ -365,6 +369,7 @@ export function needsOriginRoot(
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
     visuals.some((component) => component.classId === "ColliderComponent") ||
+    visuals.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID) ||
     visuals.some(
       (component) =>
         component.classId === "NavMeshBlockerComponent" ||
@@ -399,6 +404,9 @@ function componentVisualKind(
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
   if (component.classId === "CameraComponent") return editorBillboardKind("camera");
+  if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
+    return `springarm:${parseSpringArmProperties(component.properties).armLength}`;
+  }
   if (component.classId === "AudioComponent") return editorBillboardKind("audio");
   if (component.classId === "SkyboxComponent") {
     const size = parseSkyboxSize(component.properties.size);
@@ -646,6 +654,13 @@ export function createMeshForComponent(
   }
   if (component.classId === "CameraComponent") {
     return createEditorBillboard(scene, name, "camera");
+  }
+  if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
+    return createEditorSpringArmMesh(
+      scene,
+      name,
+      parseSpringArmProperties(component.properties).armLength,
+    );
   }
   if (component.classId === "AudioComponent") {
     return createEditorBillboard(scene, name, "audio");
@@ -915,7 +930,8 @@ function createActorOriginHierarchy(
       const mesh = meshes.get(component.id);
       if (!mesh) continue;
       const parentId = parentVisualMeshId(component, meshes, componentsById);
-      mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
+      const parent = parentId ? meshes.get(parentId) : undefined;
+      mesh.parent = parent ? attachmentParentFor(parent) : root;
     }
     const helperIcon = helperBillboardIconOf(actor);
     if (helperIcon && !visuals.some(isBillboardComponent)) {
