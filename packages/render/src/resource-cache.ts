@@ -527,10 +527,14 @@ export class ResourceCache {
     textureRequests.set(texture, { cache: this, assetGuid, engine, bytes, options });
     entry.textureUploads ??= new Map();
     const uploads = entry.textureUploads;
-    // A wrapper on another live wrapper's upload adds no accounted bytes. Check
-    // again at load: a rejected first wrapper leaves this one owning the upload.
+    // The earliest live wrapper on an upload owns its admission; later variants
+    // add no accounted bytes. Check again at load: a rejected owner is removed.
     const admit = () => {
-      if (![...uploads].some(([sampling, upload]) => sampling !== key && upload === uploadKey)) this.assertAdmitted();
+      for (const [sampling, upload] of uploads) {
+        if (sampling === key) break;
+        if (upload === uploadKey) return;
+      }
+      this.assertAdmitted();
     };
     uploads.set(key, uploadKey);
     entry.textures.set(key, texture);
