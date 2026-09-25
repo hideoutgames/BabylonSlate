@@ -92,8 +92,8 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
       <ToolbarStrip data-testid={landscape ? "landscape-outliner-toolbar" : "foliage-outliner-toolbar"}>
         {landscape
           ? <Button size="sm" variant="ghost" disabled={!scene} onClick={createLandscape}><PlusIcon data-icon="inline-start" />Create Landscape</Button>
-          : <span className="px-1 text-xs text-muted-foreground" data-testid="foliage-outliner-count">{plural(entries.length, "Stroke")}{entries.length ? ` · ${plural(entries.reduce((sum, entry) => sum + foliageInstanceCount(entry.component), 0), "Instance")}` : ""}</span>}
-        <span className="flex-1" />
+          : <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground" data-testid="foliage-outliner-count">{plural(entries.length, "Stroke")}{entries.length ? ` · ${plural(entries.reduce((sum, entry) => sum + foliageInstanceCount(entry.component), 0), "Instance")}` : ""}</span>}
+        {landscape && <span className="flex-1" />}
         <IconActionButton label="Frame" variant="ghost" disabled={!selection} onClick={() => { if (selection) frameActor(selection.actor.id); }}><ScanIcon /></IconActionButton>
         <IconActionButton label="Delete Component" variant="ghost" disabled={!selection || selection.actor.locked} onClick={deleteSelection}><Trash2Icon /></IconActionButton>
       </ToolbarStrip>
