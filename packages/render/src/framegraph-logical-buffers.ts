@@ -15,6 +15,7 @@ export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
       const depth = this.textureDescriptions.map((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE);
       if (this.targetTexture !== undefined) depth.push(...(Array.isArray(this.targetTexture) ? this.targetTexture : [this.targetTexture]).map(() => false));
       context.clearColorAttachments(new Color4(far, 0, 0, 1), this._frameGraph.engine.buildTextureLayout(depth));
+      context.restoreDefaultFramebuffer();
     }
     return layout;
   }
