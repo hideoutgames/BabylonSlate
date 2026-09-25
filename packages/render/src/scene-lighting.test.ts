@@ -237,7 +237,7 @@ describe("scene material lighting", () => {
     expect(sceneLightingLimits(scene)).toEqual([]);
   });
 
-  it.each(["point", "spot"] as const)(
+  it.each(["point", "spot", "area"] as const)(
     "ranks parented %s lights in current world space and promotes them after ancestor movement",
     (kind) => {
       const scene = host(false);
@@ -248,10 +248,14 @@ describe("scene material lighting", () => {
       parent.parent = ancestor;
       parent.position.x = 20;
       const position = new Vector3(50, 0, 0);
+      if (kind === "area") scene.onDisposeObservable.addOnce(retainAreaLightLookup(scene));
+      // Babylon's base Light.getAbsolutePosition() is the origin for area lights.
       const moving =
         kind === "point"
           ? new PointLight("moving", position, scene)
-          : new SpotLight("moving", position, Vector3.Down(), 1, 1, scene);
+          : kind === "spot"
+            ? new SpotLight("moving", position, Vector3.Down(), 1, 1, scene)
+            : new RectAreaLight("moving", position, 1, 1, scene);
       moving.parent = parent;
       const fixed = new PointLight("fixed", new Vector3(60, 0, 0), scene);
 
