@@ -43,7 +43,6 @@ function samePipeline(
   a: ResolvedRenderingPipeline,
   b: ResolvedRenderingPipeline,
 ): boolean {
-  if (a === b) return true;
   if (
     a.requested.renderPath !== b.requested.renderPath ||
     a.requested.gpuBackend !== b.requested.gpuBackend ||
@@ -184,7 +183,12 @@ class SceneRenderPath {
       ? requested(this.scene, { supported: false, reason: failure })
       : this.selection;
     if (this.published && samePipeline(this.status, this.published)) return;
-    this.published = this.status;
+    // Compare later statuses against the notified content, not a shared object.
+    this.published = {
+      requested: { ...this.status.requested },
+      effective: { ...this.status.effective },
+      limits: [...this.status.limits],
+    };
     for (const listener of this.listeners) listener(this.status);
   }
 
