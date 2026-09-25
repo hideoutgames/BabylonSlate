@@ -6,6 +6,7 @@ import {
   RenderTargetTexture,
   TransformNode,
   Vector3,
+  type AbstractMesh,
   type LinesMesh,
   type Node,
   type Observer,
@@ -157,6 +158,8 @@ export class EditorDebugOverlay {
     root: TransformNode;
     actor: SerializedActor;
     component: SerializedComponent;
+    visual: AbstractMesh | null;
+    origin: AbstractMesh | null;
   }> = [];
 
   constructor(scene: Scene, options?: { now?: () => number }) {
@@ -440,16 +443,25 @@ export class EditorDebugOverlay {
   }
 
   private updateAudioDebugPoses(): void {
-    for (const { root, actor, component } of this.audioDebug) {
-      const visual = this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
-      const origin = this.scene.getMeshByName(editorMeshName(actor.id));
+    for (const entry of this.audioDebug) {
+      const { root, actor, component } = entry;
+      // Runs every frame: keep resolved meshes until they are disposed, and
+      // re-scan unresolved ones so an emitter realized later is still followed.
+      if (entry.visual?.isDisposed()) entry.visual = null;
+      entry.visual ??= this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+      const visual = entry.visual;
       if (visual) {
         visual.computeWorldMatrix(true);
         root.position.copyFrom(visual.getAbsolutePosition());
-      } else if (origin) {
+        continue;
+      }
+      if (entry.origin?.isDisposed()) entry.origin = null;
+      entry.origin ??= this.scene.getMeshByName(editorMeshName(actor.id));
+      const origin = entry.origin;
+      if (origin) {
         origin.computeWorldMatrix(true);
-        const local = component.transform?.position ?? [0, 0, 0];
-        root.position.copyFrom(Vector3.TransformCoordinates(Vector3.FromArray(local), origin.getWorldMatrix()));
+        const local: readonly [number, number, number] = component.transform?.position ?? [0, 0, 0];
+        Vector3.TransformCoordinatesFromFloatsToRef(local[0], local[1], local[2], origin.getWorldMatrix(), root.position);
       } else {
         root.position.copyFrom(composeActorComponentTransform(actor, component).position);
       }
@@ -479,7 +491,7 @@ export class EditorDebugOverlay {
         mesh.color = color;
       }
     }
-    this.audioDebug.push({ root, actor, component });
+    this.audioDebug.push({ root, actor, component, visual: null, origin: null });
   }
 
   private updatePreviewCanvasVisibility(): void {
