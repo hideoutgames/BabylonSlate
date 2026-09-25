@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { CubeTexture, FreeCamera, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
-import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { createSkyboxMesh } from "./skybox";
+
+/** The vertex over the component origin; vertical waves never move it sideways. */
+function centreVertex(mesh: Mesh): number {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+  for (let i = 0; i < positions.length; i += 3) if (Math.hypot(positions[i]!, positions[i + 2]!) < 1e-6) return i / 3;
+  throw new Error("No centre vertex");
+}
 
 describe("Water rendering", () => {
   it("shares owned water reflection views without changing the skybox, and honors an explicit environment", () => {
@@ -76,10 +83,15 @@ describe("Water rendering", () => {
     camera.maxZ = 1500;
     try {
       const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 60, length: 40 }, "ocean"));
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 50, length: 30, waveScale: 1 }));
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      setSceneWaterTime(scene, 4); updateSceneWater(scene);
       const before = ocean.getBoundingInfo().boundingBox;
       expect([before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z]).toEqual([-30, 30, -20, 20]);
+      const lakeSurface = Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!);
       camera.position.set(10000, 4, -5000); updateSceneWater(scene);
+      // Finite water is anchored to the world: the camera neither reshapes nor flattens its waves.
+      expect(Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!)).toEqual(lakeSurface);
       const after = ocean.getBoundingInfo().boundingBox;
       expect([after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z]).toEqual([-30, 30, -20, 20]);
       const horizon = global.getBoundingInfo().boundingBox;
@@ -125,7 +137,7 @@ describe("Water rendering", () => {
       await prewarmMaterial(result.material, mesh);
       const data = mesh.getVerticesData("slateWaterData")!;
       expect(data[1]).toBeCloseTo(0);
-      expect(data[(4 * 9 + 4) * 4 + 1]).toBeCloseTo(15);
+      expect(data[centreVertex(mesh) * 4 + 1]).toBeCloseTo(15);
       mesh.dispose();
       expect(scene.materials).toContain(result.material);
       result.dispose();
@@ -140,7 +152,7 @@ describe("Water rendering", () => {
       setSceneWaterTime(scene, 2);
       updateSceneWater(scene);
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-      const middle = (4 * 9 + 4) * 3;
+      const middle = centreVertex(mesh) * 3;
       const height = positions[middle + 1]!;
       expect(height).toBeCloseTo(sampleWaterSurface(water, body, { x: 0, y: 0, z: 0 }, 2).height, 5);
       setSceneWaterTime(scene, 3);
@@ -150,6 +162,27 @@ describe("Water rendering", () => {
       mesh.dispose();
       expect(sceneHasWater(scene)).toBe(false);
       expect(scene.materials).not.toContain(material);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("fills a curved, widening river inside its query footprint and reshapes it live", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const water = { ...createDefaultWaterDefinition(), waveHeight: 0 };
+    const body = normalizeWaterBody({ width: 3, points: [[0, 0, 0], [0, 0, 20], [20, -1, 20]], widthScales: [1, 1, 3] }, "river");
+    try {
+      const mesh = createWaterMesh(scene, "river", body, water);
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      for (let i = 0; i < positions.length; i += 3) {
+        const sample = sampleWaterSurface(water, body, { x: positions[i]!, y: positions[i + 1]! - 1, z: positions[i + 2]! }, 0);
+        expect(sample.found).toBe(true);
+        expect(sample.height).toBeCloseTo(positions[i + 1]!, 3);
+      }
+      const box = mesh.getBoundingInfo().boundingBox;
+      // The downstream end is three times as wide and capped with a half-disc.
+      expect(box.maximum.x).toBeCloseTo(24.5, 1);
+      expect(box.maximum.z).toBeCloseTo(24.5, 1);
+      expect(updateWaterMeshBody(mesh, { ...body, points: [[0, 0, 0], [0, 0, 40]] })).toBe(true);
+      expect(waterMeshBody(mesh)?.points).toEqual([[0, 0, 0], [0, 0, 40]]);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.z).toBeCloseTo(41.5, 1);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("constructs a bounded river from a Play component without a model asset", () => {
