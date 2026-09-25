@@ -1,7 +1,7 @@
 import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEditorCamera } from "./editor-camera";
-import { createSpriteQuad, spriteWorldX } from "./sprite-quad";
+import { createSpriteQuad } from "./sprite-quad";
 import { projectToCanvas } from "./two-d";
 
 describe("sprite quad", () => {
@@ -43,7 +43,7 @@ describe("sprite quad", () => {
     const right = origin.clone("right")!;
     right.position = new Vector3(1, 0, 0);
     scene.updateTransformMatrix();
-    expect(spriteWorldX(right)).toBeGreaterThan(spriteWorldX(origin));
+    expect(right.getAbsolutePosition().x).toBeGreaterThan(origin.getAbsolutePosition().x);
     const originPx = projectToCanvas(scene, origin.position, 800, 600);
     const rightPx = projectToCanvas(scene, right.position, 800, 600);
     expect(originPx && rightPx).toBeTruthy();

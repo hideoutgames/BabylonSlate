@@ -25,7 +25,6 @@ import {
   TransformBlock,
   TextureBlock,
   VectorMergerBlock,
-  Vector3,
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
@@ -246,8 +245,7 @@ export function compileMaterialPlan(
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => operation.nodeType === "input.worldPosition" || operation.nodeType === "input.cameraPosition")) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
-    const zero = Vector3.Zero();
-    origin.valueCallback = () => scene.floatingOriginMode ? scene.floatingOriginOffset : zero;
+    origin.valueCallback = () => scene.floatingOriginOffset;
     plumbing.worldOrigin = origin.output;
     created.push(origin);
   }
@@ -1249,10 +1247,6 @@ function createPostProcessPlumbing(
   return [vertexOutput];
 }
 
-/**
- * Wire the authored surface channels into either the PBR shading block or a
- * direct fragment write for unlit materials.
- */
 // ImageProcessingBlock normally expects display-space input and skips processing
 // when no effects are enabled. Our PBR sum is linear, so it still needs the
 // standard gamma conversion in that case, just like Babylon's PBR final output.
@@ -1275,6 +1269,10 @@ RegisterClass(
   LinearSurfaceImageProcessingBlock,
 );
 
+/**
+ * Wire the authored surface channels into either the PBR shading block or a
+ * direct fragment write for unlit materials.
+ */
 function attachSurfaceShading(
   plan: MaterialBuildPlan,
   options: CompileMaterialOptions,

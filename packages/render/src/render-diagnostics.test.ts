@@ -1,4 +1,5 @@
 import {
+  HemisphericLight,
   MeshBuilder,
   NullEngine,
   Scene,
@@ -9,7 +10,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readEngineDrawCalls } from "./draw-calls";
 import { MANAGED_RENDER_BYTE_LIMIT } from "./managed-render-resources";
-import { createRenderDiagnostics } from "./render-diagnostics";
+import { createRenderDiagnostics, lightsDebugText } from "./render-diagnostics";
+import { sceneRenderingSettings } from "./render-settings";
+import { findSceneShadowController } from "./shadow-controller";
 import { setupDefaultViewport } from "./viewport";
 
 const engines: NullEngine[] = [];
@@ -66,5 +69,28 @@ describe("render diagnostics qualification fields", () => {
     // NullEngine does not apply the level; the field mirrors whatever the
     // live Engine reports, so a qualification run records the real value.
     expect(diagnostics.scalingLevel).toBe(engine.getHardwareScalingLevel());
+  });
+
+  it("lists lights on a Scene without a shadow owner and does not take over its shadow participation", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const box = MeshBuilder.CreateBox("unmanaged", { size: 1 }, scene);
+    new HemisphericLight("sky", Vector3.Up(), scene);
+    new HemisphericLight("fill", Vector3.Up(), scene).intensity = 0;
+    sceneRenderingSettings(scene).lightsDebug = true;
+
+    const diagnostics = createRenderDiagnostics(scene, () => 1)();
+    scene.render();
+
+    expect(findSceneShadowController(scene)).toBeUndefined();
+    expect(box.receiveShadows).toBe(false);
+    expect(lightsDebugText(diagnostics)).toBe(
+      [
+        "sky: illumination active; shadows unsupported; 0px / 0 passes",
+        "fill: illumination disabled; shadows unsupported; 0px / 0 passes",
+      ].join("\n"),
+    );
   });
 });

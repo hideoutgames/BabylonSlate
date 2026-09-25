@@ -1,5 +1,6 @@
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -45,8 +46,6 @@ import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { text2DBitmapBytes } from "./text2d-mesh";
-
-const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */

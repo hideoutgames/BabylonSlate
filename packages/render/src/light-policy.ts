@@ -32,6 +32,15 @@ export function isAuthoredLightEnabled(light: Light): boolean {
     : previous.enabled;
 }
 
+/** Authored Enabled, positive intensity and an enabled parent, before any budget. */
+export function isIlluminatingLight(light: Light): boolean {
+  return (
+    isAuthoredLightEnabled(light) &&
+    light.intensity > 0 &&
+    (!light.parent || light.parent.isEnabled())
+  );
+}
+
 function applyEnabled(light: Light, enabled: boolean): void {
   const effective =
     enabled &&
@@ -78,10 +87,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   for (const light of scene.lights) {
     if (!(light instanceof DirectionalLight)) continue;
     const enabled = isAuthoredLightEnabled(light);
-    const illuminating =
-      enabled &&
-      light.intensity > 0 &&
-      (!light.parent || light.parent.isEnabled());
+    const illuminating = isIlluminatingLight(light);
     const blocked = illuminating && owner !== undefined;
     if (illuminating && !owner) owner = light;
     if (blocked) excluded.add(light);
@@ -105,10 +111,7 @@ export function syncForwardLightPolicy(
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
   const eligible = (light: Light) =>
-    isAuthoredLightEnabled(light) &&
-    light.intensity > 0 &&
-    !excluded.has(light) &&
-    (!light.parent || light.parent.isEnabled());
+    isIlluminatingLight(light) && !excluded.has(light);
   const global = isGlobalLight;
   const local = (light: Light) =>
     !global(light) && !isManagedClusteredLight(scene, light);
@@ -182,7 +185,7 @@ function countLights(
   return count;
 }
 
-function isGlobalLight(light: Light): boolean {
+export function isGlobalLight(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof HemisphericLight;
 }
 

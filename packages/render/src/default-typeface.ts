@@ -151,10 +151,6 @@ function buildBundledAsciiTypeFace(): IFontData {
       o: outlineFor(rows),
     };
   }
-  glyphs["?"] = glyphs["?"] ?? {
-    ha: (COLS + 1) * PIXEL,
-    o: outlineFor(BITMAPS["?"]!),
-  };
   return {
     resolution: 1000,
     underlineThickness: 50,
@@ -170,24 +166,6 @@ export function asciiBitmapRows(ch: string): readonly number[] {
 
 /** Engine TypeFace used when a Font has no facetype chunk. */
 export const bundledAsciiTypeFace: IFontData = buildBundledAsciiTypeFace();
-
-export const TEXT3D_TEST_FONTFACE_T: IFontData = {
-  resolution: 1000,
-  underlineThickness: 50,
-  boundingBox: { yMin: 0, yMax: 700 },
-  glyphs: {
-    T: {
-      ha: 600,
-      o: [
-        clockwiseRect(50, 600, 550, 700),
-        clockwiseRect(250, 0, 350, 600),
-      ]
-        .join("")
-        .trimEnd(),
-    },
-    " ": { ha: 300, o: "" },
-  },
-};
 
 export function parseTypeFaceJson(bytes: Uint8Array): IFontData | null {
   try {

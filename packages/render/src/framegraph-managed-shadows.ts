@@ -12,6 +12,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
+import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
 
@@ -21,14 +22,12 @@ type BorrowedMap = {
   texture: InternalTexture;
 };
 
-/** Run one restoration step, collecting its failure without masking others. */
-function attempt(errors: unknown[], action: () => void): void {
-  try {
-    action();
-  } catch (error) {
-    errors.push(error);
-  }
-}
+/** A failed caster draw propagates as-is unless restoration also fails. */
+const SHADOW_DRAW: BorrowedDrawPolicy = {
+  restoreAlpha: false,
+  wrapDrawFailure: false,
+  message: "Managed shadow draw state restoration failed.",
+};
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
@@ -281,57 +280,24 @@ export class ManagedShadowsTask extends FrameGraphTask {
         const light = generator.getLight();
         if (!light.isEnabled() || !light.shadowEnabled || !map._shouldRender())
           continue;
-        const engine = this.scene.getEngine();
-        const target = engine._currentRenderTarget;
-        const intermediate = this.scene._intermediateRendering;
-        const stages = map._disableEngineStages;
-        const depthTest = engine.getDepthBuffer();
-        const depthWrite = engine.getDepthWrite();
-        let failed = false;
-        let failure: unknown;
-        const errors: unknown[] = [];
-        try {
-          // Same pinned RTT stage switch as the official shadow task, borrowed
-          // only for this draw so classic rendering retains its original state.
-          map._disableEngineStages = true;
-          context.setDepthStates(true, true);
-          withSceneReadinessState(this.scene, () => {
-            const output = this.objects.camera.outputRenderTarget?.renderTarget;
-            if (output) {
-              // CSM's before-bind hook reads the camera's cached projection.
-              // Match Scene.render's output binding before computing cascades.
-              engine.bindFramebuffer(output);
-              this.scene.updateTransformMatrix(true);
-            }
-            context.renderUnmanaged(map);
-          });
-        } catch (error) {
-          failed = true;
-          failure = error;
-        } finally {
-          attempt(errors, () => {
-            map._disableEngineStages = stages;
-          });
-          attempt(errors, () => {
-            this.scene._intermediateRendering = intermediate;
-          });
-          attempt(errors, () => engine.setDepthBuffer(depthTest));
-          attempt(errors, () => engine.setDepthWrite(depthWrite));
-          // renderUnmanaged lacks finally in 9.20. Restore the caller's target
-          // even when a caster callback throws; never mask the original failure.
-          attempt(errors, () => {
-            if (engine._currentRenderTarget !== target) {
-              if (target) engine.bindFramebuffer(target);
-              else engine.restoreDefaultFramebuffer(true);
-            }
-          });
-        }
-        if (errors.length)
-          throw new AggregateError(
-            failed ? [failure, ...errors] : errors,
-            "Managed shadow draw state restoration failed.",
-          );
-        if (failed) throw failure;
+        drawBorrowedTarget(
+          this.scene,
+          map,
+          () => {
+            context.setDepthStates(true, true);
+            withSceneReadinessState(this.scene, () => {
+              const output = this.objects.camera.outputRenderTarget?.renderTarget;
+              if (output) {
+                // CSM's before-bind hook reads the camera's cached projection.
+                // Match Scene.render's output binding before computing cascades.
+                this.scene.getEngine().bindFramebuffer(output);
+                this.scene.updateTransformMatrix(true);
+              }
+              context.renderUnmanaged(map);
+            });
+          },
+          SHADOW_DRAW,
+        );
       }
       // Do not sample an allocation replaced during another shadow's callback.
       // It has not participated in this pass and needs fresh preparation.

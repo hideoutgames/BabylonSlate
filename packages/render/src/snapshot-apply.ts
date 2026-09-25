@@ -77,6 +77,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
+  composeActorComponentTransformToRef,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -113,8 +114,6 @@ import type { MaterialResolveOptions } from "./material-library";
 const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
-const scratchLocalPos = new Vector3();
-const scratchPartQuat = new Quaternion();
 const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
 const scratchBoneSlot: ActorSlot = {
   slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
@@ -1795,29 +1794,11 @@ function composeSlotPartTransform(
     scratchComposedPart.rotation.copyFromFloats(actor.rotation.x, actor.rotation.y, actor.rotation.z, actor.rotation.w);
     return scratchComposedPart;
   }
-  scratchQuat.set(
-    actor.rotation.x,
-    actor.rotation.y,
-    actor.rotation.z,
-    actor.rotation.w,
-  );
-  scratchLocalPos.set(
-    part.position[0] * actor.scale.x,
-    part.position[1] * actor.scale.y,
-    part.position[2] * actor.scale.z,
-  );
-  scratchLocalPos.applyRotationQuaternionInPlace(scratchQuat);
-  scratchPartQuat.set(
-    part.rotation[0],
-    part.rotation[1],
-    part.rotation[2],
-    part.rotation[3],
-  );
-  scratchQuat.multiplyToRef(scratchPartQuat, scratchComposedPart.rotation);
-  scratchComposedPart.position.set(
-    actor.position.x + scratchLocalPos.x,
-    actor.position.y + scratchLocalPos.y,
-    actor.position.z + scratchLocalPos.z,
+  composeActorComponentTransformToRef(
+    actor,
+    part,
+    scratchComposedPart.position,
+    scratchComposedPart.rotation,
   );
   return scratchComposedPart;
 }

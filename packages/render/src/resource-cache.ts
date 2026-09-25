@@ -3,12 +3,12 @@ import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
 } from "./perf-ceilings";
-import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 
 export interface ResourceCacheOptions {
@@ -44,7 +44,6 @@ interface CacheEntry {
   pending?: number;
   preparations?: Set<(reason: string) => void>;
   lastUsed: number;
-  contentKey: string;
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
   samplingDisposers?: Map<string, () => void>;
@@ -79,8 +78,6 @@ export function createEngineTextureFromUrl(
   texture.hasAlpha = true;
   return texture;
 }
-
-import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
@@ -221,11 +218,10 @@ const caches = new WeakMap<AbstractEngine, ResourceCache>();
  */
 export function resourceCacheForEngine(
   engine: AbstractEngine,
-  options?: ResourceCacheOptions,
 ): ResourceCache {
   const existing = caches.get(engine);
   if (existing) return existing;
-  const cache = new ResourceCache(options);
+  const cache = new ResourceCache();
   caches.set(engine, cache);
   return cache;
 }
@@ -298,14 +294,19 @@ export class ResourceCache {
     } };
   }
 
-  private assertAdmitted(): void {
-    this.evictToCeiling();
+  /** Null when any view (or, without view flags, the cache) disables budgeting. */
+  private effectiveCeiling(): number | null {
     const policies = [...this.clientBudgets.values()];
     const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
-    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
+    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return null;
     const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
-    if (this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
+    return caps.length ? Math.max(...caps) : this.ceiling;
+  }
+
+  private assertAdmitted(): void {
+    this.evictToCeiling();
+    const ceiling = this.effectiveCeiling();
+    if (ceiling !== null && this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
   }
 
   resourceStats() {
@@ -420,9 +421,8 @@ export class ResourceCache {
     return !entry.pending && entry.refCount === 0;
   }
 
-  private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob): string {
-    const nextKey = contentKey(bytes);
-    const key = `${assetGuid}\0${nextKey}`;
+  private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob, identity = contentKey(bytes)): string {
+    const key = `${assetGuid}\0${identity}`;
     const existing = this.entries.get(key);
     if (existing) {
       existing.refCount += 1;
@@ -458,7 +458,6 @@ export class ResourceCache {
       bytes: 0,
       refCount: 1,
       lastUsed: ++this.clock,
-      contentKey: nextKey,
       textures: new Map(),
     };
     this.entries.set(key, entry);
@@ -482,7 +481,8 @@ export class ResourceCache {
     if (environment && !options.isCube) throw new Error("Environment cube textures cannot be used as 2D textures.");
     if (environment && bytes instanceof Uint8Array) readEnvironmentTextureInfo(bytes);
     const key = samplingKey(options);
-    const variantKey = `${assetGuid}\0${contentKey(bytes)}`;
+    const identity = contentKey(bytes);
+    const variantKey = `${assetGuid}\0${identity}`;
     const existing = this.entries.get(variantKey);
     const reused = existing ? liveTexture(existing, key) : undefined;
     if (reused) {
@@ -490,7 +490,7 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    this.prepareBlobUrl(assetGuid, bytes);
+    this.prepareBlobUrl(assetGuid, bytes, identity);
     const entry = this.entries.get(variantKey)!;
     const uploadKey = uploadSamplingKey(options);
     const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
@@ -602,7 +602,7 @@ export class ResourceCache {
     }
     const entry: CacheEntry = existing ?? {
       assetGuid, key: variantKey, blobUrl: "", extraBlobUrls: [], bytes: 0,
-      refCount: 0, lastUsed: ++this.clock, contentKey: files.join(":"), textures: new Map(),
+      refCount: 0, lastUsed: ++this.clock, textures: new Map(),
     };
     this.entries.set(variantKey, entry);
     entry.refCount++;
@@ -628,7 +628,8 @@ export class ResourceCache {
 
   /**
    * Drop GPU Texture wrappers but keep blob URLs so the next `acquireTexture`
-   * rebuilds. Used after WebGL context restore.
+   * rebuilds. WebGL restore does not call this: Babylon rebuilds retained
+   * textures before notifying, and a flush would destroy them.
    */
   releaseGpuTextures(): void {
     for (const entry of this.entries.values()) {
@@ -640,12 +641,7 @@ export class ResourceCache {
     }
   }
 
-  account(
-    assetGuid: string,
-    bytes: number,
-    format: TextureFormat = "rgba8",
-  ): void {
-    void format;
+  account(assetGuid: string, bytes: number): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) {
       this.entries.set(assetGuid, {
@@ -656,7 +652,6 @@ export class ResourceCache {
         bytes,
         refCount: 1,
         lastUsed: ++this.clock,
-        contentKey: "",
         textures: new Map(),
       });
       this.totalBytes += bytes;
@@ -668,16 +663,6 @@ export class ResourceCache {
     this.totalBytes += bytes;
     entry.lastUsed = ++this.clock;
     this.evictToCeiling();
-  }
-
-  accountTextureSize(
-    assetGuid: string,
-    width: number,
-    height: number,
-    format: TextureFormat,
-    withMips: boolean,
-  ): void {
-    this.account(assetGuid, accountedTextureBytes(width, height, format, withMips));
   }
 
   /** Resolve the exact acquired generation, including after a context restore. */
@@ -716,12 +701,8 @@ export class ResourceCache {
   }
 
   evictToCeiling(): void {
-    const policies = [...this.clientBudgets.values()];
-    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
-    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return;
-    const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    const ceiling = caps.length ? Math.max(...caps) : this.ceiling;
-    if (this.totalBytes <= ceiling) return;
+    const ceiling = this.effectiveCeiling();
+    if (ceiling === null || this.totalBytes <= ceiling) return;
     const target = ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
       .filter((e) => this.isUnreferenced(e))
@@ -821,8 +802,8 @@ export class ResourceCache {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) return;
     this.totalBytes -= entry.bytes;
-    this.entries.delete(assetGuid);
-    this.blobs.delete(assetGuid);
+    this.entries.delete(entry.key);
+    this.blobs.delete(entry.key);
     this.urlKeys.delete(entry.blobUrl);
     for (const cancel of [...entry.preparations ?? []]) cancel("Texture preparation cancelled during cache retirement");
     disposeEntryTextures(entry);
@@ -846,7 +827,8 @@ export interface ResourceLease<T> {
   release(): void;
 }
 
-export type TextureResources = Pick<ResourceCache, keyof ResourceCache>;
+/** A view cannot drop the wrappers and accounting every other view shares. */
+export type TextureResources = Omit<Pick<ResourceCache, keyof ResourceCache>, "releaseGpuTextures">;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {
@@ -873,13 +855,11 @@ export class ResourceCacheOwner implements TextureResources {
   setClientBudget(...args: Parameters<ResourceCache["setClientBudget"]>) { this.inner.setClientBudget(...args); }
   setClientBudgetEnabled(...args: Parameters<ResourceCache["setClientBudgetEnabled"]>) { this.inner.setClientBudgetEnabled(...args); }
   account(...args: Parameters<ResourceCache["account"]>) { this.inner.account(...args); }
-  accountTextureSize(...args: Parameters<ResourceCache["accountTextureSize"]>) { this.inner.accountTextureSize(...args); }
   releaseAccounting(key: string) { this.inner.releaseAccounting(key); }
   accountedBytes() { return this.inner.accountedBytes(); }
   resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
   flushUnreferenced() { this.inner.flushUnreferenced(); }
-  releaseGpuTextures() { this.inner.releaseGpuTextures(); }
   dispose() {
     if (this.disposed) return;
     this.disposed = true;

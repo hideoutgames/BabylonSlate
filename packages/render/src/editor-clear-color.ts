@@ -13,13 +13,6 @@ export function editorClearColor(scheme: EditorColorScheme): Color4 {
   return new Color4(36 / 255, 36 / 255, 36 / 255, 1);
 }
 
-export function applyEditorClearColor(
-  scene: { clearColor: Color4 },
-  scheme: EditorColorScheme,
-): void {
-  scene.clearColor = editorClearColor(scheme);
-}
-
 /** Opaque Babylon clear from a scene `environmentColor` RGB triple. */
 export function sceneClearColor(
   rgb: readonly [number, number, number],

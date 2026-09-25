@@ -27,7 +27,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
-import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;

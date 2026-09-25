@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
+    "./glb-test-fixtures": "./src/glb-test-fixtures.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./scene-perf": "./src/scene-perf.ts",
     "./framegraph-post-process": "./src/framegraph-post-process.ts",

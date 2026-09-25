@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial } from "@babylonjs/core";
+import { Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
 import { describe, expect, it, afterEach } from "vitest";
 import {
   createActor,
@@ -13,7 +13,6 @@ import {
   applySceneToBabylonScene,
   actorVisualFingerprint,
   clearSceneMeshes,
-  countSceneMeshes,
   createPrimitiveMesh,
   editorComponentMeshName,
   editorMeshKindOf,
@@ -37,6 +36,10 @@ function sceneWithActors(
   actors: SerializedScene["actors"],
 ): SerializedScene {
   return { ...createDefaultScene(), actors };
+}
+
+function countSceneMeshes(scene: Scene): number {
+  return scene.meshes.filter((mesh) => mesh.name !== "__root__").length;
 }
 
 describe("scene-loader", () => {

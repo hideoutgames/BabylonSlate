@@ -173,17 +173,3 @@ export function applySortingToParticleSystem(
 ): void {
   system.renderingGroupId = resolution.renderingGroupId;
 }
-
-/**
- * Sprites have no `alphaIndex`, so depth within a layer is a tiny Z offset:
- * one sub-pixel step per sort-key unit keeps ordering stable without moving
- * the sprite on screen.
- */
-export function applySortingToSprite(
-  sprite: { position: { z: number } },
-  resolution: SortingLayerResolution,
-  pixelsPerUnit: number,
-): void {
-  const scale = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
-  sprite.position.z = -resolution.sortKey / (scale * 1000);
-}

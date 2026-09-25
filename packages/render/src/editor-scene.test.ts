@@ -32,7 +32,7 @@ import {
 import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-anim";
-import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,

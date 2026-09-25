@@ -1,9 +1,7 @@
 import {
-  Frustum,
   TransformNode,
   Vector3,
   type AbstractMesh,
-  type Matrix,
   type Plane,
 } from "@babylonjs/core";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
@@ -151,13 +149,6 @@ export class ShadowSpatialIndex {
       this.root = this.build([...this.leaves.values()]);
       this.rebuild = false;
     }
-  }
-  query(transform: Matrix, preserveUpstream: boolean): AbstractMesh[] {
-    this.refit();
-    const planes = Frustum.GetPlanes(transform);
-    // Directional depth clamping permits upstream casters outside the near plane.
-    // Retain the side and far planes, so unrelated distant geometry is excluded.
-    return this.queryPlanes(preserveUpstream ? planes.slice(1) : planes);
   }
   bounds(): Bounds | undefined {
     this.refit();

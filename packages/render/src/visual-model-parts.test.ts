@@ -1,7 +1,7 @@
 import { installAssetBytes } from "@babylonslate/assets";
 import { NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeParentedAnimatedTriangleGlb } from "./model-mesh";
+import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";
 import * as modelContainer from "./model-container";
 import { applyAssignMesh, applyAssignMaterial, applySetMaterialParameter, createSnapshotSceneBinding, disposeSnapshotBinding, retirePlaySlot, type AssignMeshCommand } from "./snapshot-apply";
 

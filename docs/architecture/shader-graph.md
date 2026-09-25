@@ -322,8 +322,9 @@ already disposed (removed from `scene.materials` — NodeMaterial has no
 `isDisposed()`). Disposing a Scene releases its entries, pending builds and
 texture leases even without `releaseScene`; `acquire` on a disposed Scene returns
 `material.compile.cancelled`. `invalidate()` drops every cached instance so the next acquire
-compiles onto live GPU state. WebGL restore also calls `releaseGpuTextures()`
-so Texture Parameters bind new InternalTextures instead of a white cube.
+compiles onto live GPU state. On WebGL restore Babylon rebuilds retained GPU
+textures before notifying; the ResourceCache is not flushed, and `invalidate()`
+recompiles materials onto the rebuilt state.
 
 ## Preview and the Render button
 
