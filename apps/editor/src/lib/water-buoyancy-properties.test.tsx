@@ -11,7 +11,7 @@ function BuoyancyDetails() {
   return <PropertyGrid rows={componentPropertyRows("float", {
     id: "buoyancy", classId: "WaterBuoyancyComponent", properties,
   }, (key, value) => setProperties((previous) => ({ ...previous, [key]: value })), {
-    sortingLayers: [], assetLabel: () => undefined, onPickAsset: () => {},
+    sortingLayers: [], collisionLayers: [], physicsWorld: "3d", assetLabel: () => undefined, onPickAsset: () => {},
   })} />;
 }
 

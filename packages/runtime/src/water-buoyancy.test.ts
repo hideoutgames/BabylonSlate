@@ -35,7 +35,7 @@ describe("Water buoyancy with native collision response", () => {
     } finally { sync.dispose(); }
   });
 
-  it.each([1 / 60, 1 / 30])("keeps a light body stable entering water with a large explicit volume at dt=%s", async (dt) => {
+  it.each([{ dt: 1 / 60, tilt: 0 }, { dt: 1 / 30, tilt: 0 }, { dt: 1 / 60, tilt: Math.PI / 12 }])("keeps a light body stable entering water with a large explicit volume ($dt, $tilt)", async ({ dt, tilt }) => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
     const world = new World({ seed: 1, dt, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
@@ -43,7 +43,7 @@ describe("Water buoyancy with native collision response", () => {
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
     sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
     world.spawnActorNow(sea);
-    const float = world.createActor({ classId: "Actor", guid: "float", transform: { ...identityTransform(), position: { x: 0, y: 2, z: 0 } } });
+    const float = world.createActor({ classId: "Actor", guid: "float", transform: { ...identityTransform(), position: { x: 0, y: 2, z: 0 }, rotation: { x: 0, y: 0, z: Math.sin(tilt / 2), w: Math.cos(tilt / 2) } } });
     float.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { volume: 1 } }));
     world.spawnActorNow(float);
     const settled: number[] = [];
@@ -61,6 +61,7 @@ describe("Water buoyancy with native collision response", () => {
       // A 1 kg body displaces 0.001 m³: only the bottom millimetre stays submerged.
       expect(Math.min(...settled)).toBeGreaterThan(0.48);
       expect(Math.max(...settled)).toBeLessThan(0.52);
+      expect(Math.abs(float.transform.rotation.z)).toBeLessThan(0.05);
     } finally { sync.dispose(); }
   });
 
