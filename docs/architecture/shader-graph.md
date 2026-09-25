@@ -214,8 +214,8 @@ subscribes `onLoadObservable` and **rebuilds** so the mesh does not stay on
 Babylon’s error sampler. `texture.isReady()` is not enough — Babylon’s error
 sampler reports ready. Frozen NodeMaterials ignore dirty/`build()`: the load
 callback **unfreezes**, rebuilds, re-applies authored blend
-(`applyAuthoredSurfaceBlend`), **marks the material dirty** (only its own draw wrappers, so a blocked scene
-stays blocked), then restores freeze if the material was frozen.
+(`applyAuthoredSurfaceBlend`), **marks the material dirty with
+`blockMaterialDirtyMechanism` off**, then restores freeze if the material was frozen.
 `prewarmMaterial` / player `whenMaterialTexturesReady` skip
 `forceCompilationAsync` until TextureBlocks are sample-ready so Intermediate
 `checkReadyOnlyOnce` cannot bake the sampler. `onErrorObservable` (when the Texture exposes it) reports
