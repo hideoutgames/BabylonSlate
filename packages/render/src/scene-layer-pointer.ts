@@ -50,6 +50,24 @@ function dispatchOf(
   };
 }
 
+function updateHover(
+  state: OverlayPointerState,
+  nextHovered: Map<string, OverlayPointerHit>,
+  out: OverlayPointerDispatch[],
+): void {
+  for (const [guid, hit] of state.hovered) {
+    if (!nextHovered.has(guid)) {
+      out.push(dispatchOf(hit, "onMouseLeave"));
+    }
+  }
+  for (const [guid, hit] of nextHovered) {
+    if (!state.hovered.has(guid)) {
+      out.push(dispatchOf(hit, "onMouseEnter"));
+    }
+  }
+  state.hovered = nextHovered;
+}
+
 /** Hover / press state machine for overlay 2DButton actors. */
 export function applyOverlayPointer(
   state: OverlayPointerState,
@@ -62,32 +80,12 @@ export function applyOverlayPointer(
   const out: OverlayPointerDispatch[] = [];
 
   if (phase === "move") {
-    for (const [guid, hit] of state.hovered) {
-      if (!nextHovered.has(guid)) {
-        out.push(dispatchOf(hit, "onMouseLeave"));
-      }
-    }
-    for (const [guid, hit] of nextHovered) {
-      if (!state.hovered.has(guid)) {
-        out.push(dispatchOf(hit, "onMouseEnter"));
-      }
-    }
-    state.hovered = nextHovered;
+    updateHover(state, nextHovered, out);
     return out;
   }
 
   if (phase === "down") {
-    for (const [guid, hit] of state.hovered) {
-      if (!nextHovered.has(guid)) {
-        out.push(dispatchOf(hit, "onMouseLeave"));
-      }
-    }
-    for (const [guid, hit] of nextHovered) {
-      if (!state.hovered.has(guid)) {
-        out.push(dispatchOf(hit, "onMouseEnter"));
-      }
-    }
-    state.hovered = nextHovered;
+    updateHover(state, nextHovered, out);
     for (const hit of buttons) {
       out.push(dispatchOf(hit, "onPressStart"));
       state.pressed.set(keyOf(hit), hit);
@@ -98,9 +96,8 @@ export function applyOverlayPointer(
   for (const hit of state.pressed.values()) {
     out.push(dispatchOf(hit, "onPressEnd"));
   }
-  const pressed = new Set(state.pressed.keys());
   for (const hit of buttons) {
-    if (pressed.has(keyOf(hit))) {
+    if (state.pressed.has(keyOf(hit))) {
       out.push(dispatchOf(hit, "onClick"));
     }
   }
