@@ -355,10 +355,11 @@ export type Text2DEffectContext = {
   last?: Text2DEffectSample;
 };
 
-/** Stack shake / wave / hover / rotate in world units. */
+/** Stack shake / wave / hover / rotate in world units; `out` is reused when given. */
 export function combineText2DEffects(
   effects: RichTextEffects,
   context: Text2DEffectContext,
+  out?: Text2DEffectSample,
 ): Text2DEffectSample {
   if (context.paused && context.last) return context.last;
   const fontSize = context.fontSize > 0 ? context.fontSize : 0.32;
@@ -383,7 +384,11 @@ export function combineText2DEffects(
       ? Math.sin(context.time * ROTATE_SPEED + context.rotatePhase) *
         ((effects.rotate * Math.PI) / 180)
       : 0;
-  return { x, y, rotation };
+  if (!out) return { x, y, rotation };
+  out.x = x;
+  out.y = y;
+  out.rotation = rotation;
+  return out;
 }
 
 export function layoutHasLetterEffects(layout: Text2DLayout): boolean {

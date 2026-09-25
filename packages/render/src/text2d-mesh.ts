@@ -40,7 +40,7 @@ import {
   layoutHasLetterEffects,
   layoutText2DFromProperties,
   type GlyphMetricsProvider,
-  type Text2DEffectSample,
+  type Text2DEffectContext,
   type Text2DLayout,
   type Text2DLayoutItem,
 } from "./text2d-layout";
@@ -422,21 +422,27 @@ function attachEffects(
   bundle: VisualBundle,
   isPaused?: () => boolean,
 ): void {
-  if (!glyphs.some((entry) => hasLetterEffects(entry.item))) return;
-  const last = new Map<Mesh, Text2DEffectSample>();
+  // Glyphs without effects (and underlines) already rest at their layout pose.
+  const animated = glyphs
+    .filter((entry) => hasLetterEffects(entry.item))
+    .map((entry) => ({ ...entry, sample: { x: 0, y: 0, rotation: 0 }, sampled: false }));
+  if (animated.length === 0) return;
+  // Per-frame tick: one reused context and a preallocated sample per glyph.
+  const context: Text2DEffectContext = { time: 0, index: 0, fontSize: 0, hoverPhase: 0, rotatePhase: 0 };
   const tick = (time: number) => {
     const paused = isPaused?.() === true;
-    for (const { mesh, item, restRotation } of glyphs) {
-      const sample = combineText2DEffects(item.effects, {
-        time,
-        index: item.index,
-        fontSize: item.height,
-        hoverPhase: item.hoverPhase,
-        rotatePhase: item.rotatePhase,
-        paused,
-        last: last.get(mesh),
-      });
-      last.set(mesh, sample);
+    context.time = time;
+    for (const entry of animated) {
+      const { mesh, item, restRotation, sample } = entry;
+      // A paused glyph holds its last sample once it has one.
+      if (!paused || !entry.sampled) {
+        context.index = item.index;
+        context.fontSize = item.height;
+        context.hoverPhase = item.hoverPhase;
+        context.rotatePhase = item.rotatePhase;
+        combineText2DEffects(item.effects, context, sample);
+        entry.sampled = true;
+      }
       mesh.position.x = item.x + sample.x;
       mesh.position.y = item.y + sample.y;
       mesh.rotation.z = restRotation + sample.rotation;
