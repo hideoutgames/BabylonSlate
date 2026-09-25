@@ -45,7 +45,7 @@ export interface SpatialStage {
 export function spatialEffectsUnsupported(scene: Scene): string | undefined {
   const caps = scene.getEngine().getCaps();
   if (!caps.drawBuffersExtension || !caps.texelFetch || (caps.maxDrawBuffers ?? 0) < 4 ||
-    !caps.textureHalfFloatRender || !caps.depthTextureExtension)
+    !caps.textureHalfFloatRender || !caps.textureFloatRender || !caps.depthTextureExtension)
     return "Reflections and volumetric lighting require four render targets, half-float textures and depth sampling.";
   return undefined;
 }
@@ -59,7 +59,7 @@ export function reserveSpatialEffects(scene: Scene, plan: SceneEffectsPlan, widt
     Math.max(1, Math.round(height * Math.max(0.25, scale * quality))) * 8;
   // Native includes its half-float prepass color, R32 depth, padded depth/stencil
   // and a full-size PP input. Graph includes its scene color/depth and geometry Z.
-  let bytes = pixels * (native ? 28 : 18);
+  let bytes = pixels * (native ? 28 : 20);
   if (plan.reflections) bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting) bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
   return beginManagedRenderAllocation(scene.getEngine(), bytes);

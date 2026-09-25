@@ -60,10 +60,17 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
       const settings = () => setSceneRenderSettings(scene, { mode: "pbr", effects, shadows: normalizeShadowSettings({ mapSize: 256, localMapSize: 256, cascades: 2, maxLocalLights: 1, distance: 20 }) });
       settings();
       const graph = new ForwardSceneFrameGraph(scene);
+      let shadowPasses = 0;
+      const observedMaps = new Set<unknown>();
       const draw = async () => {
         settings();
         const prepared = await graph.prepare(camera);
         if (prepared.path !== path) throw new Error(`Expected ${path}: ${JSON.stringify(prepared)}`);
+        const map = light?.getShadowGenerator()?.getShadowMap();
+        if (map && !observedMaps.has(map)) {
+          observedMaps.add(map);
+          map.onAfterUnbindObservable.add(() => { shadowPasses++; });
+        }
         const deadline = performance.now() + 15_000;
         while (!graph.readiness(camera).ready) {
           if (performance.now() > deadline) throw new Error("Spatial readiness timed out");
@@ -95,6 +102,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         if (kind === "reflections") effects.reflections.enabled = true;
         else effects.volumetricLighting.enabled = true;
         const on = await draw();
+        const shadow = { passes: shadowPasses, enabled: light?.shadowEnabled, generator: light?.getShadowGenerator()?.getClassName() };
         const buffers: Record<string, { minimum: number; maximum: number; nonzero: number }> = {};
         if (path === "frameGraph") {
           const owned = graph as unknown as { graph: FrameGraph; effectsGraph: { spatial: { geometry: FrameGraphGeometryRendererTask } } };
@@ -119,7 +127,7 @@ export async function runSpatialEffectsProof(backend: "webgl2" | "webgpu", kind:
         }
         effects.reflections.enabled = effects.volumetricLighting.enabled = false;
         const disabled = await draw();
-        captures.push({ path, off, on, changed, disabled, buffers });
+        captures.push({ path, off, on, changed, disabled, buffers, shadow });
       } finally {
         graph.dispose(); await graph.whenReleased();
         library.dispose(); scene.dispose();

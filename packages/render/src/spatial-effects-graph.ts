@@ -84,7 +84,7 @@ export class SpatialEffectsGraph {
     this.geometry.depthTexture = this.clear.outputDepthTexture;
     this.geometry.size = { width, height };
     this.geometry.sizeIsPercentage = false;
-    this.geometry.textureDescriptions = [{ type: Constants.PREPASS_DEPTH_TEXTURE_TYPE, textureType: Constants.TEXTURETYPE_HALF_FLOAT, textureFormat: Constants.TEXTUREFORMAT_R }];
+    this.geometry.textureDescriptions = [{ type: Constants.PREPASS_DEPTH_TEXTURE_TYPE, textureType: Constants.TEXTURETYPE_FLOAT, textureFormat: Constants.TEXTUREFORMAT_R }];
     const buffers: Record<string, FrameGraphTextureHandle> = { depthSampler: this.geometry.geometryViewDepthTexture };
     if (plan.reflections) {
       this.geometry.textureDescriptions.push(
