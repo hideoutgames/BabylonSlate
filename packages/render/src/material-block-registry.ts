@@ -66,7 +66,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
-import { componentCount, customGlslInterface, materialGradientStops } from "@babylonslate/shader-graph";
+import { componentCount, customGlslInterface, materialGradientStops, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
@@ -159,7 +159,7 @@ export function babylonValueFor(
   }
 }
 
-function constantInput(
+export function createConstantBlock(
   name: string,
   type: MaterialValueType,
   components: readonly number[],
@@ -179,15 +179,6 @@ function constantInput(
   block.value = babylonValueFor(type, components, asColor);
   block.convertToLinearSpace = asColor;
   return block;
-}
-
-export function createConstantBlock(
-  name: string,
-  type: MaterialValueType,
-  components: readonly number[],
-  asColor = false,
-): InputBlock {
-  return constantInput(name, type, components, asColor);
 }
 
 function attributeVector(
@@ -276,8 +267,8 @@ function conditional(condition: ConditionalBlockConditions): BlockAdapter {
   return componentwise(({ name }) => {
     const block = new ConditionalBlock(name);
     block.condition = condition;
-    const trueValue = constantInput(`${name}_true`, "float", [1]);
-    const falseValue = constantInput(`${name}_false`, "float", [0]);
+    const trueValue = createConstantBlock(`${name}_true`, "float", [1]);
+    const falseValue = createConstantBlock(`${name}_false`, "float", [0]);
     trueValue.output.connectTo(block.true);
     falseValue.output.connectTo(block.false);
     return {
@@ -301,7 +292,7 @@ const reflectAdapter: BlockAdapter = (context) => {
   incident.output.connectTo(dot.inputs.a!);
   normal.output.connectTo(dot.inputs.b!);
   const twice = new ScaleBlock(`${name}_twice`);
-  const two = constantInput(`${name}_two`, "float", [2]);
+  const two = createConstantBlock(`${name}_two`, "float", [2]);
   dot.outputs.out!.connectTo(twice.input);
   two.output.connectTo(twice.factor);
   const projected = new ScaleBlock(`${name}_projected`);
@@ -341,7 +332,7 @@ const log2Adapter: BlockAdapter = ({ name }) => {
   const log = new TrigonometryBlock(name);
   log.operation = TrigonometryBlockOperations.Log;
   const scale = new ScaleBlock(`${name}_scale`);
-  const factor = constantInput(`${name}_factor`, "float", [Math.LOG2E]);
+  const factor = createConstantBlock(`${name}_factor`, "float", [Math.LOG2E]);
   log.output.connectTo(scale.input);
   factor.output.connectTo(scale.factor);
   return {
@@ -569,7 +560,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "logic.select": ({ name }) => {
     const block = new ConditionalBlock(name);
     block.condition = ConditionalBlockConditions.GreaterThan;
-    const threshold = constantInput(`${name}_threshold`, "float", [0.5]);
+    const threshold = createConstantBlock(`${name}_threshold`, "float", [0.5]);
     threshold.output.connectTo(block.b);
     return {
       blocks: [block, threshold],
@@ -933,9 +924,3 @@ ADAPTERS["custom.glsl"] = ({ name, operation }) => {
 export function blockAdapterFor(nodeType: string): BlockAdapter | undefined {
   return ADAPTERS[nodeType];
 }
-
-export function hasBlockAdapter(nodeType: string): boolean {
-  return nodeType in ADAPTERS || nodeType.startsWith("const.") ||
-    nodeType.startsWith("param.");
-}
-import { vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@babylonslate/shader-graph";
