@@ -412,7 +412,7 @@ export class ParticleService {
     try {
       // A particle system draws only while its emitter survives FrameGraph culling, which drops
       // `visibility = 0` meshes. A geometry-less Mesh stays visible, is always ready and draws nothing;
-      // its bounds are a point, so it bypasses the frustum test that its particles outgrow.
+      // `alwaysSelectAsActiveMesh` keeps it past the frustum test while only its particles are on screen.
       const node = new Mesh(`particleEmitter:${entry.key}`, host);
       entry.node = node;
       node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
