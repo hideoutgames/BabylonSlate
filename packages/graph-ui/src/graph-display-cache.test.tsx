@@ -23,7 +23,9 @@ function typedGraph(): GraphDocument {
         type: "test.source",
         position: { x: 0, y: 0 },
         data: {
-          __pins: [pin("out", "out", { kind: "array", element: { kind: "float" } })],
+          __pins: [
+            pin("out", "out", { kind: "array", element: { kind: "float" } }),
+          ],
         },
       },
       {
@@ -32,7 +34,10 @@ function typedGraph(): GraphDocument {
         position: { x: 300, y: 0 },
         data: {
           __pins: [
-            pin("array", "in", { kind: "array", element: { kind: "resolvingWildcard" } }),
+            pin("array", "in", {
+              kind: "array",
+              element: { kind: "resolvingWildcard" },
+            }),
             pin("out", "out", { kind: "resolvingWildcard" }),
           ],
         },
@@ -45,13 +50,28 @@ function typedGraph(): GraphDocument {
       },
     ],
     edges: [
-      { id: "feed", source: "source", sourceHandle: "out", target: "get", targetHandle: "array" },
-      { id: "result", source: "get", sourceHandle: "out", target: "sink", targetHandle: "value" },
+      {
+        id: "feed",
+        source: "source",
+        sourceHandle: "out",
+        target: "get",
+        targetHandle: "array",
+      },
+      {
+        id: "result",
+        source: "get",
+        sourceHandle: "out",
+        target: "sink",
+        targetHandle: "value",
+      },
     ],
   };
 }
 
-function renderGraph(initialGraph: GraphDocument, commitPositionsOnDragEnd = true) {
+function renderGraph(
+  initialGraph: GraphDocument,
+  commitPositionsOnDragEnd = true,
+) {
   let store!: ReturnType<typeof useStoreApi>;
   const onChange = vi.fn();
   function StoreProbe() {
@@ -72,52 +92,84 @@ function renderGraph(initialGraph: GraphDocument, commitPositionsOnDragEnd = tru
     onChange,
     state: () => store.getState(),
     setGraph: (graph: GraphDocument) => view.rerender(editor(graph)),
-    sinkColor: () => view.container.querySelector<HTMLElement>(
-      '.react-flow__node[data-id="sink"] [data-handleid="value"] .graph-pin-visual',
-    )?.style.background,
+    sinkColor: () =>
+      view.container.querySelector<HTMLElement>(
+        '.react-flow__node[data-id="sink"] [data-handleid="value"] .graph-pin-visual',
+      )?.style.background,
   };
 }
 
 describe("GraphEditor display caching", () => {
-  it.each([false, true])("reuses pin resolution and styled edges during dragging (deferred commits: %s)", (deferred) => {
-    const solve = vi.spyOn(wildcardDisplay, "displayPinTypesForGraph");
-    const graph = renderGraph(typedGraph(), deferred);
-    expect(graph.sinkColor()).toBe("var(--pin-float)");
-    const edges = graph.state().edges;
-    const solves = solve.mock.calls.length;
-    expect(solves).toBeGreaterThan(0);
+  it.each([false, true])(
+    "reuses pin resolution and styled edges during dragging (deferred commits: %s)",
+    (deferred) => {
+      const solve = vi.spyOn(wildcardDisplay, "displayPinTypesForGraph");
+      const graph = renderGraph(typedGraph(), deferred);
+      expect(graph.sinkColor()).toBe("var(--pin-float)");
+      const edges = graph.state().edges;
+      const solves = solve.mock.calls.length;
+      expect(solves).toBeGreaterThan(0);
 
-    act(() => graph.state().onNodesChange!([
-      { id: "source", type: "select", selected: true },
-      { id: "source", type: "dimensions", dimensions: { width: 100, height: 80 } },
-    ]));
-    for (const x of [10, 20, 30]) {
-      act(() => graph.state().onNodesChange!([
-        { id: "source", type: "position", position: { x, y: 40 }, dragging: true },
-      ]));
-    }
-    act(() => graph.state().onNodesChange!([
-      { id: "source", type: "position", position: { x: 30, y: 40 }, dragging: false },
-    ]));
+      act(() =>
+        graph.state().onNodesChange!([
+          { id: "source", type: "select", selected: true },
+          {
+            id: "source",
+            type: "dimensions",
+            dimensions: { width: 100, height: 80 },
+          },
+        ]),
+      );
+      for (const x of [10, 20, 30]) {
+        act(() =>
+          graph.state().onNodesChange!([
+            {
+              id: "source",
+              type: "position",
+              position: { x, y: 40 },
+              dragging: true,
+            },
+          ]),
+        );
+      }
+      act(() =>
+        graph.state().onNodesChange!([
+          {
+            id: "source",
+            type: "position",
+            position: { x: 30, y: 40 },
+            dragging: false,
+          },
+        ]),
+      );
 
-    expect(graph.state().nodes.find((node) => node.id === "source")?.position).toEqual({ x: 30, y: 40 });
-    expect(graph.onChange.mock.calls.at(-1)?.[0].nodes[0].position).toEqual({ x: 30, y: 40 });
-    expect(solve.mock.calls.length).toBe(solves);
-    // Stable input to XYFlow avoids rebuilding every wire while nodes move.
-    expect(graph.state().edges).toBe(edges);
-    expect(graph.sinkColor()).toBe("var(--pin-float)");
-  });
+      expect(
+        graph.state().nodes.find((node) => node.id === "source")?.position,
+      ).toEqual({ x: 30, y: 40 });
+      expect(graph.onChange.mock.calls.at(-1)?.[0].nodes[0].position).toEqual({
+        x: 30,
+        y: 40,
+      });
+      expect(solve.mock.calls.length).toBe(solves);
+      // Stable input to XYFlow avoids rebuilding every wire while nodes move.
+      expect(graph.state().edges).toBe(edges);
+      expect(graph.sinkColor()).toBe("var(--pin-float)");
+    },
+  );
 
   it("refreshes inferred colors for external pin edits, disconnects, and undo", () => {
     const original = typedGraph();
     const graph = renderGraph(original);
     const edited = structuredClone(original);
     (edited.nodes[0].data.__pins as SerializedPin[])[0].type = {
-      kind: "array", element: { kind: "string" },
+      kind: "array",
+      element: { kind: "string" },
     };
     graph.setGraph(edited);
     expect(graph.sinkColor()).toBe("var(--pin-string)");
-    expect(graph.state().edges.find((edge) => edge.id === "result")?.style?.stroke).toBe("var(--pin-string)");
+    expect(
+      graph.state().edges.find((edge) => edge.id === "result")?.style?.stroke,
+    ).toBe("var(--pin-string)");
 
     graph.setGraph({ ...edited, edges: [edited.edges[1]] });
     expect(graph.sinkColor()).toBe("var(--pin-wildcard)");
@@ -125,18 +177,27 @@ describe("GraphEditor display caching", () => {
 
     graph.setGraph(original);
     expect(graph.sinkColor()).toBe("var(--pin-float)");
-    expect(graph.state().edges.find((edge) => edge.id === "result")?.style?.stroke).toBe("var(--pin-float)");
+    expect(
+      graph.state().edges.find((edge) => edge.id === "result")?.style?.stroke,
+    ).toBe("var(--pin-float)");
     expect(graph.onChange).not.toHaveBeenCalled();
-    expect((original.nodes[1].data.__pins as SerializedPin[])[1].type).toEqual({ kind: "resolvingWildcard" });
+    expect((original.nodes[1].data.__pins as SerializedPin[])[1].type).toEqual({
+      kind: "resolvingWildcard",
+    });
   });
 
   it("keeps edge selection live when pin topology is unchanged", () => {
     const graph = renderGraph(typedGraph());
-    act(() => graph.state().onEdgesChange!([
-      { id: "result", type: "select", selected: true },
-    ]));
-    expect(graph.state().edges.find((edge) => edge.id === "result")).toMatchObject({
-      selected: true, style: { stroke: "var(--pin-float)", strokeWidth: 4 },
+    act(() =>
+      graph.state().onEdgesChange!([
+        { id: "result", type: "select", selected: true },
+      ]),
+    );
+    expect(
+      graph.state().edges.find((edge) => edge.id === "result"),
+    ).toMatchObject({
+      selected: true,
+      style: { stroke: "var(--pin-float)", strokeWidth: 4 },
     });
     expect(graph.onChange).not.toHaveBeenCalled();
   });
