@@ -150,6 +150,7 @@ class SceneMaterialConsumers {
     this.dirty = true;
     // Release removed/reassigned consumers even if the next request is Forward.
     this.groups.length = 0;
+    this.defaultMaterial = undefined;
     for (const [mesh, observer] of this.watched)
       mesh.onMaterialChangedObservable.remove(observer);
     this.watched.clear();
@@ -165,11 +166,10 @@ class SceneMaterialConsumers {
 
   current(): readonly MaterialConsumers[] {
     const scene = this.scene;
-    const fallback = scene.defaultMaterial;
     if (
       !this.dirty &&
       this.meshCount === scene.meshes.length &&
-      this.defaultMaterial === fallback
+      (!this.defaultMaterial || this.defaultMaterial === scene.defaultMaterial)
     )
       return this.groups;
 
@@ -181,7 +181,8 @@ class SceneMaterialConsumers {
       // Instances inherit assignments from their source, even if it is detached
       // from the scene. Their own material observable does not notify on edits.
       if (mesh instanceof InstancedMesh) this.watch(mesh.sourceMesh);
-      const material = mesh.material ?? fallback;
+      const material =
+        mesh.material ?? (this.defaultMaterial ??= scene.defaultMaterial);
       let group = byMaterial.get(material);
       if (!group) {
         group = { material, meshes: [] };
@@ -191,7 +192,6 @@ class SceneMaterialConsumers {
       group.meshes.push({ mesh, index });
     }
     this.meshCount = scene.meshes.length;
-    this.defaultMaterial = fallback;
     this.dirty = false;
     return this.groups;
   }

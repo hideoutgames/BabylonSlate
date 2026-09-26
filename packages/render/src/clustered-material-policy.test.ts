@@ -37,6 +37,7 @@ function fixture() {
 describe("clustered material consumers", () => {
   it("does not revisit meshes in an unchanged compatible scene", () => {
     const { scene, mesh } = fixture();
+    const materials = [...scene.materials];
     const meshes = [
       mesh,
       ...Array.from({ length: 31 }, (_, i) => mesh.clone(`copy-${i}`)),
@@ -49,6 +50,7 @@ describe("clustered material consumers", () => {
     for (let frame = 0; frame < 3; frame++)
       expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
     for (const read of reads) expect(read).not.toHaveBeenCalled();
+    expect(scene.materials).toEqual(materials);
   });
 
   it("tracks immediate additions, assignments, and equal-count mesh replacement", () => {
