@@ -133,15 +133,19 @@ export class PhysicsConstraintSync {
 
   private readProperties(component: ActorComponent): ConstraintProperties {
     const descriptor = this.propertyScratch;
-    descriptor.length = 0;
+    let length = 0;
     for (const name of PROPERTY_NAMES) {
       const value = component.getVariable(name);
-      descriptor.push(value);
+      descriptor[length++] = value;
       if (value && typeof value === "object") {
         const vector = value as Record<string, unknown>;
-        descriptor.push(vector.x, vector.y, vector.z, vector.w);
+        descriptor[length++] = vector.x;
+        descriptor[length++] = vector.y;
+        descriptor[length++] = vector.z;
+        descriptor[length++] = vector.w;
       }
     }
+    descriptor.length = length;
     const old = this.properties.get(component);
     if (old && sameDescriptor(old.descriptor, descriptor)) return old.value;
     // Only materialize parsed properties on edits. The scalar descriptor still
