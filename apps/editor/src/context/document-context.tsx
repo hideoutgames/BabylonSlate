@@ -59,8 +59,6 @@ import {
   type ModelPayload,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
-  isParticleAssetType,
-  particleLibraryFromAssets,
   type ParticleLibrary,
 } from "@babylonslate/assets";
 import { encodeRgbaPng } from "@babylonslate/render";
@@ -276,6 +274,7 @@ import {
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -2773,6 +2772,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "audio-channel"
         | "sound-attenuation"
         | "particle-emitter"
+        | "particle-graph"
         | "particle-system"
         | "water"
         | "model"
@@ -3285,27 +3285,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
   }, [loadPlayAssetContent, projectDocument, projectService]);
 
-  const collectPlayParticles = useCallback(async () => {
-    const assets = projectService.registry?.list() ?? [];
-    const particleAssets = assets.filter((asset) =>
-      isParticleAssetType(asset.header.type),
-    );
-    const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
-    for (const asset of particleAssets) {
-      const kind =
-        asset.header.type === "ParticleEmitter"
-          ? "particle-emitter"
-          : "particle-system";
-      const content =
-        (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
-      payloads.push({
-        guid: asset.header.guid,
-        type: asset.header.type,
-        payload: content,
-      });
-    }
-    return particleLibraryFromAssets(payloads);
-  }, [loadPlayAssetContent, projectService]);
+  const collectPlayParticles = useCallback(
+    () =>
+      loadPlayParticleLibrary({
+        assets: projectService.registry?.list() ?? [],
+        loadDocument: loadPlayAssetContent,
+      }),
+    [loadPlayAssetContent, projectService],
+  );
 
   const collectPlayMaterialLibrary = useCallback(
     async (

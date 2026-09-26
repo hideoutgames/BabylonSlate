@@ -116,6 +116,7 @@ export const ASSET_REF_PICKER_TYPES = [
   "Sprite",
   "SpriteAnimation",
   "ParticleEmitter",
+  "ParticleGraph",
   "ParticleSystem",
   "Water",
   "Model",

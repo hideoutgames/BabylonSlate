@@ -1,13 +1,17 @@
 /**
- * Particle System payload plus the reference helpers shared by both particle asset
+ * Particle System payload plus the reference helpers shared by the particle asset
  * types. Budgets and mode ids live in `@babylonslate/core` (`particle-settings.ts`) so
  * the Babylon-free Particle Graph IR can share them; the Basic emitter schema is in
- * `particle-basic-emitter.ts`.
+ * `particle-basic-emitter.ts` and the Particle Graph document in `@babylonslate/particle-graph`.
  */
 import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
   type ParticleSpace,
 } from "@babylonslate/core";
+import {
+  normalizeParticleGraphDocument,
+  particleGraphDependencies,
+} from "@babylonslate/particle-graph";
 import { normalizeParticleEmitterPayload } from "./particle-basic-emitter";
 
 export {
@@ -18,7 +22,11 @@ export {
 } from "@babylonslate/core";
 export type { ParticleBlendMode, ParticleSpace } from "@babylonslate/core";
 
-export const PARTICLE_ASSET_TYPES = ["ParticleEmitter", "ParticleSystem"] as const;
+export const PARTICLE_ASSET_TYPES = [
+  "ParticleEmitter",
+  "ParticleGraph",
+  "ParticleSystem",
+] as const;
 export type ParticleAssetType = (typeof PARTICLE_ASSET_TYPES)[number];
 
 /** Lifecycle (Loop, Duration, Pre Warm) belongs to each emitter; old `looping`/`duration` keys are ignored. */
@@ -78,7 +86,7 @@ function collectGuids(values: Array<string | null | undefined>): string[] {
   return [...unique].sort();
 }
 
-/** A Basic emitter depends only on its Material; a System on its emitters. */
+/** An emitter of either kind depends only on its Material; a System on its emitters. */
 export function particleAssetDependencies(
   assetType: string,
   payload: Record<string, unknown>,
@@ -86,6 +94,11 @@ export function particleAssetDependencies(
   if (assetType === "ParticleEmitter") {
     const emitter = normalizeParticleEmitterPayload(payload);
     return collectGuids([emitter.render.materialGuid]);
+  }
+  if (assetType === "ParticleGraph") {
+    return collectGuids(
+      particleGraphDependencies(normalizeParticleGraphDocument(payload)).all,
+    );
   }
   if (assetType === "ParticleSystem") {
     const system = normalizeParticleSystemPayload(payload);
@@ -109,6 +122,11 @@ export function remapParticlePayloadGuids(
         materialGuid: guid ? (remap.get(guid) ?? guid) : null,
       },
     };
+  }
+  if (assetType === "ParticleGraph") {
+    const graph = normalizeParticleGraphDocument(payload);
+    const guid = graph.materialGuid;
+    return { ...graph, materialGuid: guid ? (remap.get(guid) ?? guid) : null };
   }
   if (assetType === "ParticleSystem") {
     const system = normalizeParticleSystemPayload(payload);

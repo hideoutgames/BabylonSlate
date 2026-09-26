@@ -18,12 +18,18 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     this.registerInput("geometryNormal", Types.Vector3);
     this.registerInput("geometryView", Types.Matrix);
     this.registerInput("geometryCamera", Types.Vector4);
+    this.registerInput("geometryBaseColor", Types.Color3, true);
+    this.registerInput("geometryMetallic", Types.Float, true);
+    this.registerInput("geometryRoughness", Types.Float, true);
   }
 
   get geometryPosition() { return this.getInputByName("geometryPosition")!; }
   get geometryNormal() { return this.getInputByName("geometryNormal")!; }
   get geometryView() { return this.getInputByName("geometryView")!; }
   get geometryCamera() { return this.getInputByName("geometryCamera")!; }
+  get geometryBaseColor() { return this.getInputByName("geometryBaseColor")!; }
+  get geometryMetallic() { return this.getInputByName("geometryMetallic")!; }
+  get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -34,6 +40,12 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     const position = this.geometryPosition.associatedVariableName;
     const view = this.geometryView.associatedVariableName;
     const camera = this.geometryCamera.associatedVariableName;
+    const vec3 = state._getShaderType(Types.Vector3);
+    const metallic = this.geometryMetallic.isConnected ? this.geometryMetallic.associatedVariableName : "0.0";
+    const roughness = this.geometryRoughness.isConnected ? this.geometryRoughness.associatedVariableName : "0.5";
+    const reflectivity = this.geometryBaseColor.isConnected
+      ? `${vec4}(mix(${vec3}(0.04), ${this.geometryBaseColor.associatedVariableName}, clamp(${metallic}, 0.0, 1.0)), 1.0 - clamp(${roughness}, 0.0, 1.0))`
+      : `${vec4}(0.0)`;
     const color = wgsl ? "fragmentOutputsColor" : "gl_FragColor";
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
@@ -44,6 +56,8 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
       const target = wgsl ? `fragmentOutputs.fragData${index}` : `gl_FragData[${index}]`;
       for (const [define, value] of [
         ["PREPASS_COLOR", savedColor],
+        ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, 0.0, 0.0, 1.0)`],
+        ["PREPASS_REFLECTIVITY", reflectivity],
         ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, 1.0)`],
         ["PREPASS_WORLD_NORMAL", `${vec4}(normalize(${normal}) * 0.5 + 0.5, 1.0)`],
       ]) {

@@ -171,6 +171,10 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(FOCUS_PRIMARY_PANEL["particle-emitter"]).toBe(
       "particle-emitter-preview",
     );
+    expect(resolveFocusKeepPanelIds("particle-graph", [])).toEqual([
+      "particle-graph-canvas",
+    ]);
+    expect(FOCUS_PRIMARY_PANEL["particle-graph"]).toBe("particle-graph-canvas");
     expect(resolveFocusKeepPanelIds("model", [])).toEqual(["model-preview"]);
     expect(FOCUS_PRIMARY_PANEL.model).toBe("model-preview");
     expect(resolveFocusKeepPanelIds("skeleton", [])).toEqual(["skeleton-preview"]);

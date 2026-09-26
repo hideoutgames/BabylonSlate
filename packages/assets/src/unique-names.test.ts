@@ -85,4 +85,14 @@ describe("asset file suffix helpers", () => {
     );
     expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
   });
+
+  it("duplicates a Particle Graph under its own suffix", () => {
+    const fileName = "Embers.particlegraph.babasset";
+    const stem = stripAssetFileSuffix(fileName);
+    expect(stem).toBe("Embers");
+    expect(`${nextCopyName(stem, ["Embers"])}${assetFileSuffix(fileName)}`).toBe(
+      "Embers_1.particlegraph.babasset",
+    );
+    expect(assetFileSuffix("logic.graph.babasset")).toBe(".graph.babasset");
+  });
 });

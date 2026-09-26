@@ -6,6 +6,7 @@ import {
   normalizeSceneLayer,
   normalizeShadowOverrides,
 } from "@babylonslate/core";
+import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
@@ -237,6 +238,12 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     type: "ParticleEmitter",
     migrations: [
       (payload) => asRecord(normalizeParticleEmitterPayload(payload)),
+    ],
+  });
+  registry.register({
+    type: "ParticleGraph",
+    migrations: [
+      (payload) => asRecord(normalizeParticleGraphDocument(payload)),
     ],
   });
   registry.register({

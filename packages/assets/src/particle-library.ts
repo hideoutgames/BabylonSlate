@@ -1,8 +1,13 @@
 /**
  * The one particle library shape shared by editor Play, the emitter/system previews,
  * `@babylonslate/render` and the exported player. Emitter entries are tagged by kind so
- * a Particle System can mix emitter kinds per slot (PR3 adds `graph`).
+ * a Particle System can mix Basic emitters and Particle Graphs per slot.
  */
+import {
+  normalizeParticleGraphDocument,
+  particleGraphCompileKey,
+  type ParticleGraphDocument,
+} from "@babylonslate/particle-graph";
 import { stableStringify } from "./bytes";
 import {
   normalizeParticleEmitterPayload,
@@ -15,13 +20,12 @@ import {
   type ParticleSystemPayload,
 } from "./particle-payload";
 
-export const PARTICLE_EMITTER_ASSET_TYPES = ["ParticleEmitter"] as const;
+export const PARTICLE_EMITTER_ASSET_TYPES = ["ParticleEmitter", "ParticleGraph"] as const;
 export type ParticleEmitterAssetType = (typeof PARTICLE_EMITTER_ASSET_TYPES)[number];
 
-export type ParticleLibraryEmitter = {
-  kind: "basic";
-  payload: ParticleEmitterPayload;
-};
+export type ParticleLibraryEmitter =
+  | { kind: "basic"; payload: ParticleEmitterPayload }
+  | { kind: "graph"; document: ParticleGraphDocument };
 
 export type ParticleLibrary = {
   emitters: ReadonlyMap<string, ParticleLibraryEmitter>;
@@ -50,6 +54,9 @@ export function particleLibraryEmitter(
   if (type === "ParticleEmitter") {
     return { kind: "basic", payload: normalizeParticleEmitterPayload(payload) };
   }
+  if (type === "ParticleGraph") {
+    return { kind: "graph", document: normalizeParticleGraphDocument(payload) };
+  }
   return null;
 }
 
@@ -73,7 +80,9 @@ export function particleLibraryFromAssets(
 export function particleEmitterMaterialGuid(
   entry: ParticleLibraryEmitter,
 ): string | null {
-  return entry.payload.render.materialGuid;
+  return entry.kind === "graph"
+    ? entry.document.materialGuid
+    : entry.payload.render.materialGuid;
 }
 
 /** Unique Material guids in emitter insertion order. */
@@ -86,12 +95,30 @@ export function particleLibraryMaterialGuids(library: ParticleLibrary): string[]
   return [...guids];
 }
 
+/**
+ * Content key of one emitter entry. A Particle Graph keys on its position-free
+ * compile key plus its Material, so dragging a node never changes it while any
+ * simulation or Material edit does.
+ */
+export function particleLibraryEmitterKey(entry: ParticleLibraryEmitter): string {
+  if (entry.kind === "graph") {
+    return stableStringify({
+      kind: "graph",
+      compileKey: particleGraphCompileKey(entry.document),
+      materialGuid: entry.document.materialGuid,
+    });
+  }
+  return stableStringify(entry);
+}
+
 /** Order-independent key of the library content. */
 export function particleLibraryCompileKey(library: ParticleLibrary): string {
   const sorted = <T>(map: ReadonlyMap<string, T>): Array<[string, T]> =>
     [...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return stableStringify({
-    emitters: sorted(library.emitters),
+    emitters: sorted(library.emitters).map(
+      ([guid, entry]) => [guid, particleLibraryEmitterKey(entry)] as const,
+    ),
     systems: sorted(library.systems),
   });
 }

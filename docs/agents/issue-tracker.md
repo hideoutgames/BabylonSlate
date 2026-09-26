@@ -694,6 +694,6 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18, Appendix A `p-particle-*`.
 | --- | --- | --- | --- |
 | Design note + engineplan revision | Done (`p-particle-design`) | `docs/` | P20 Done |
 | Basic module stack, Material-only look, seconds | Done (`p-particle-basic`) | `core` (shared particle literals), `assets`, `render`, `shader-graph`, `ui` (stage role map), `editor-kit`, `exporter` (closure test), `apps/editor`, `apps/player`, `e2e` | design |
-| Particle Graph IR, lowering, editor | `p-particle-graph` | new `particle-graph`, `assets`, `core`, `vfs`, `render`, `ui`, `graph-ui`, `editor-kit`, `apps/editor`, `apps/player`, `exporter`, root lint/Vitest config, `e2e` | Basic |
+| Particle Graph IR, lowering, editor | Done (`p-particle-graph`) | new `particle-graph`, `assets`, `core`, `vfs`, `render`, `ui`, `graph-ui`, `editor-kit`, `apps/editor`, `apps/player`, `exporter`, root lint/Vitest config, `e2e` | Basic |
 
 Out of scope: sprite-sheet flipbooks, noise, flow maps, sub-emitters, mesh/custom emitters, `textureMask`, ramp/remap gradients, NPE UI/snippets/Babylon JSON, `ParticleHelper`, SPS, fluid renderer, GPU graph tier, generated default textures.

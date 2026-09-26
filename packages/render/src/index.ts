@@ -82,6 +82,7 @@ export * from "./audio-debug";
 export * from "./audio-unlock-hint";
 export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 export * from "./particle-service";
+export * from "./particle-graph-realize";
 export * from "./particle-system-factory";
 export * from "./particle-emission-driver";
 export * from "./particle-render-modes";

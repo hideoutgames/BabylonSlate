@@ -1340,6 +1340,7 @@ function attachSurfaceShading(
 
   if (baseColor) {
     baseColor.connectTo(pbr.baseColor);
+    baseColor.connectTo(fragment.geometryBaseColor);
   } else {
     const fallback = createConstantBlock(
       `${options.name}_baseColorFallback`,
@@ -1349,15 +1350,18 @@ function attachSurfaceShading(
     );
     created.push(fallback);
     fallback.output.connectTo(pbr.baseColor);
+    fallback.output.connectTo(fragment.geometryBaseColor);
   }
   const metallic = outputPoint("metallic", `${options.name}_metallic`, false);
   if (metallic) metallic.connectTo(pbr.metallic);
+  if (metallic) metallic.connectTo(fragment.geometryMetallic);
   const roughness = outputPoint(
     "roughness",
     `${options.name}_roughness`,
     false,
   );
   if (roughness) roughness.connectTo(pbr.roughness);
+  if (roughness) roughness.connectTo(fragment.geometryRoughness);
   const normal = outputPoint("normal", `${options.name}_normalInput`, false);
   if (normal) {
     // PBR registers a Vector 4 perturbed normal; the authored channel is a

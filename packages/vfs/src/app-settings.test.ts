@@ -75,6 +75,7 @@ describe("app settings", () => {
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
       "particle-emitter": ["particle-emitter-preview"],
+      "particle-graph": ["particle-graph-canvas"],
       "particle-system": ["particle-system-preview"],
       model: ["model-preview"],
       skeleton: ["skeleton-preview"],
@@ -263,6 +264,9 @@ describe("app settings", () => {
     ]);
     expect(parsed.focusKeepPanels["particle-emitter"]).toEqual([
       "particle-emitter-preview",
+    ]);
+    expect(parsed.focusKeepPanels["particle-graph"]).toEqual([
+      "particle-graph-canvas",
     ]);
     expect(parsed.focusKeepPanels["particle-system"]).toEqual([
       "particle-system-preview",

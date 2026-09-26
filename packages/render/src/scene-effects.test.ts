@@ -31,6 +31,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
   });
   expect(planSceneEffects(linear, "pbr")).toEqual({
     sceneLinear: true,
+    reflections: null, volumetricLighting: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null },
     fxaa: false,
@@ -49,6 +50,7 @@ it("keeps CEL effects display-space with identity processing", () => {
   const plan = planSceneEffects(linear, "cel")!;
   expect(plan).toEqual({
     sceneLinear: false,
+    reflections: null, volumetricLighting: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
     fxaa: false,
@@ -138,4 +140,12 @@ it("changes the effects key on mode, settings and the session toggle", () => {
     sceneEffectsKey(effects({ exposure: 2 }), "pbr", true),
   ).not.toBe(sceneEffectsKey(effects({ exposure: 1 }), "pbr", true));
   expect(sceneEffectsKey(linear, "pbr", true)).toBe(base);
+});
+
+it("enables PBR scene reflections and scene-light fog independently", () => {
+  const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } });
+  expect(planSceneEffects(settings, "pbr")).toMatchObject({ reflections: settings.reflections, volumetricLighting: settings.volumetricLighting });
+  expect(planSceneEffects(settings, "cel")).toMatchObject({ reflections: null, volumetricLighting: settings.volumetricLighting });
+  expect(planSceneEffects(settings, "pbr", false)).toBeNull();
 });

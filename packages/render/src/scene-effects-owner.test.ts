@@ -140,7 +140,7 @@ it("rebuilds on a settings change and detaches on useGraph", async () => {
     owner.useNative(camera);
     expect(owner.passes.some((pass) => first.includes(pass))).toBe(false);
     expect(passNames(camera)).toEqual([
-      "ImageProcessingPostProcess",
+      "DisplaySpaceImageProcessingPostProcess",
       "FxaaPostProcess",
     ]);
     owner.useGraph();

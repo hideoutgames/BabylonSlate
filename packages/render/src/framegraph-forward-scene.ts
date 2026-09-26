@@ -5,6 +5,7 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsOwner } from "./scene-effects-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
+import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -387,12 +388,12 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; a
     // graphless classic path has no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey() && this.outlineMatches()))
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()))
       return true;
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey() && this.outlineMatches()
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()
     ) {
       this.objects!.camera = camera;
       this.cull!.camera = camera;
@@ -498,7 +499,7 @@ export class ForwardSceneFrameGraph {
     const outputCurrent = this.outputMatches(this.output(camera));
     if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
       !outputCurrent)
       return { path: "frameGraph", ready: false };
     this.objects!.camera = camera;
@@ -535,7 +536,7 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
       !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
@@ -750,7 +751,7 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
-        this.preparedEffectsKey !== this.effectsKey() || !this.outlineMatches() ||
+        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
@@ -759,7 +760,7 @@ export class ForwardSceneFrameGraph {
       // Record the inputs the tasks are built from; a change during the awaits
       // below must leave this graph stale.
       const postProcessRevision = this.postProcessRevision;
-      const effectsKey = this.effectsKey();
+      const effectsKey = this.effectsKey(camera);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -825,6 +826,7 @@ export class ForwardSceneFrameGraph {
             frameGraph: this.graph,
             plan: effectsPlan,
             effects: effectsState.effects,
+            camera,
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
             width: output.width,
             height: output.height,
@@ -869,6 +871,10 @@ export class ForwardSceneFrameGraph {
         this.graph.addTask(this.clear);
         this.graph.addTask(this.cull);
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
+        if (this.effectsGraph?.spatial) {
+          this.graph.addTask(this.effectsGraph.spatial.clear);
+          this.graph.addTask(this.effectsGraph.spatial.geometry);
+        }
         this.graph.addTask(this.objects);
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
@@ -918,6 +924,7 @@ export class ForwardSceneFrameGraph {
         finally { for (const action of restore) action(); }
         assertCurrent();
         this.postProcessGraph?.reconcile();
+        this.effectsGraph?.spatial?.reconcile();
         this.outlineTask?.reconcileResources();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
@@ -962,8 +969,8 @@ export class ForwardSceneFrameGraph {
   /** The live settings key baked into the prepared graph's effect tasks. The
    * cached value only changes when updateSceneRenderingSettings runs, so a
    * steady-state frame compares strings without serializing the block. */
-  private effectsKey(): string {
-    return sceneRenderingSettings(this.scene).effectsKey;
+  private effectsKey(camera: Camera): string {
+    return liveSceneEffectsKey(this.scene, camera);
   }
 
   /** Membership and style revisions update the fixed tasks in place. Only
@@ -1004,11 +1011,14 @@ export class ForwardSceneFrameGraph {
     const objectList = this.objects!.objectList;
     const geometry = this.postProcessGraph?.geometryTask;
     const geometryObjects = geometry?.objectList;
+    const spatial = this.effectsGraph?.spatial?.geometry;
+    const spatialObjects = spatial?.objectList;
     try {
       // The previous frame's culled list may omit a newly visible mesh. Probe
       // all current candidates before presenting; culling itself never draws.
       this.objects!.objectList = this.cull!.objectList;
       if (geometry) geometry.objectList = this.cull!.objectList;
+      if (spatial) spatial.objectList = this.cull!.objectList;
       return withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
         // Keep scene-owned camera/material/pass readiness alongside the task's
@@ -1024,6 +1034,7 @@ export class ForwardSceneFrameGraph {
     } finally {
       this.objects!.objectList = objectList;
       if (geometry && geometryObjects) geometry.objectList = geometryObjects;
+      if (spatial && spatialObjects) spatial.objectList = spatialObjects;
       // ObjectRenderer's shadow toggles also lack finally around readiness
       // hooks. The common guard owns camera/matrices/UBO/Engine state.
       this.scene.activeCameras = cameras;
@@ -1047,10 +1058,17 @@ export class ForwardSceneFrameGraph {
       geometry.objectList = this.cull!.outputObjectList;
       geometry.camera = this.objects!.camera;
     }
+    if (this.effectsGraph?.spatial) {
+      this.effectsGraph.spatial.geometry.objectList = this.cull!.outputObjectList;
+      this.effectsGraph.spatial.geometry.camera = this.objects!.camera;
+    }
   }
 
   private releasePostProcessOwner(): void {
     try {
+      // Native effects borrow authored prepass buffers and follow the authored
+      // chain. Detach them before replacing either that owner or its buffers.
+      this.effectsOwner.useGraph();
       if (this.postProcessOwner) {
         this.postProcessOwner.dispose();
         this.postProcessRetirement.add(this.postProcessOwner);
@@ -1081,6 +1099,7 @@ export class ForwardSceneFrameGraph {
       if (postProcessGraph) this.postProcessRetirement.add(postProcessGraph);
       if (effectsGraph) this.postProcessRetirement.add(effectsGraph);
       void postProcessGraph?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
+      void effectsGraph?.spatial?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       void outlineTask?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       if (outlineTask) this.postProcessRetirement.add(outlineTask);
     };

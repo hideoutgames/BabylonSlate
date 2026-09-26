@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
 import {
+  PARTICLE_OUTPUT_NODE_TYPE,
+  normalizeParticleGraphDocument,
+  validateParticleGraphDocument,
+} from "@babylonslate/particle-graph";
+import {
   CREATABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPE_GROUPS,
   ENGINE_BASE_CLASSES,
@@ -1176,6 +1181,9 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("ParticleEmitter", "Sparks")).toBe(
       "Sparks.emitter.babasset",
     );
+    expect(newAssetFileName("ParticleGraph", "Embers")).toBe(
+      "Embers.particlegraph.babasset",
+    );
     expect(newAssetFileName("ParticleSystem", "Fire")).toBe(
       "Fire.particles.babasset",
     );
@@ -1310,6 +1318,27 @@ describe("content-browser-helpers", () => {
     });
   });
 
+  it("seeds a Particle Graph whose only issue is the missing Material", () => {
+    const graph = buildNewAssetResult({
+      type: "ParticleGraph",
+      name: "Embers",
+      guid: "pg-1",
+      parentClass: null,
+    });
+    expect(graph.type).toBe("ParticleGraph");
+    expect(graph.version).toBe(1);
+    const saved = normalizeParticleGraphDocument(
+      JSON.parse(new TextDecoder().decode(graph.chunks[0]!.data)),
+    );
+    expect(saved.name).toBe("Embers");
+    expect(
+      saved.nodes.filter((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE),
+    ).toHaveLength(1);
+    expect(validateParticleGraphDocument(saved).map((row) => row.code)).toEqual([
+      "particle.missingMaterial",
+    ]);
+  });
+
   it("seeds Skybox Creator New Asset documents", () => {
     const helper = buildNewAssetResult({
       type: "SkyboxCreator",
@@ -1358,6 +1387,7 @@ describe("content-browser-helpers", () => {
       "InputAction",
       "InputAxis",
       "ParticleEmitter",
+      "ParticleGraph",
       "ParticleSystem",
       "Water",
       "SkyboxCreator",
@@ -1376,6 +1406,7 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
     expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Basic Particle Emitter");
+    expect(creatableAssetTypeLabel("ParticleGraph")).toBe("Particle Graph");
     expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
     expect(creatableAssetTypeLabel("SkyboxCreator")).toBe("Skybox Creator");
   });
@@ -1415,6 +1446,7 @@ describe("content-browser-helpers", () => {
       "MaterialFunction",
       "Water",
       "ParticleEmitter",
+      "ParticleGraph",
       "ParticleSystem",
       "SkyboxCreator",
     ]);
@@ -1432,6 +1464,7 @@ describe("content-browser-helpers", () => {
   it("filters creatable types by Title Case label", () => {
     expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
     expect(filterCreatableAssetTypes("basic")).toEqual(["ParticleEmitter"]);
+    expect(filterCreatableAssetTypes("particle graph")).toEqual(["ParticleGraph"]);
     expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
   });
 
@@ -1918,6 +1951,14 @@ describe("content-browser-helpers", () => {
         render: { materialGuid: "mat-p" },
       }),
     ).toEqual(["mat-p"]);
+    expect(
+      assetHeaderDependencies("ParticleGraph", {
+        name: "Embers",
+        materialGuid: "mat-g",
+        nodes: [],
+        edges: [],
+      }),
+    ).toEqual(["mat-g"]);
     expect(
       assetHeaderDependencies("ParticleSystem", {
         emitterGuids: ["em-b", "em-a", "em-b"],

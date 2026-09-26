@@ -12,7 +12,7 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark surfaces with ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not import a preset over those editor-function tokens.
 
-`apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
+`apps/editor/src/shell/design-tokens.test.ts` checks actual palette contrast for main/secondary text and focus indicators, ink `--primary`, semantic type/axis colors, `--pin-particle` separation from the other pins, and Dockview boundaries. Screenshots and interaction review remain necessary to validate composed surfaces, transparency, clipping, and density.
 
 ## Safe-area insets
 
@@ -129,6 +129,7 @@ Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`
 | `--pin-enum` | enumRef (teal, same oklch as Enum tiles `--asset-script-type`) |
 | `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown (gray) |
 | `--pin-delegate` | delegate (red) |
+| `--pin-particle` | particle — the Particle Graph spine (light deep teal `oklch(0.40 0.07 175)`, dark bright mint `oklch(0.90 0.14 170)`); at least 0.12 OKLab from every other pin in both schemes |
 
 Arrays use the element color; maps use the value color. Wildcard pins recolor when a concrete type is wired in: resolving groups adopt that type for display (Array Get `out` turns float-green when `array<float>` lands on `array`), and boxed pins (Print) keep `boxedWildcard` in `__pins` but paint from the connected peer. Disconnecting with no remaining constraint restores `--pin-wildcard`. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
 
@@ -160,7 +161,10 @@ Title-bar fills for Blueprint-like nodes:
 
 ### Particle stage roles
 
-Basic Particle Emitter stage accents (the `ModuleStage` pill and card rule) map onto the node role tokens through `PARTICLE_STAGE_ROLE` / `basicParticleStageRole` in `packages/ui/src/lib/data-types.ts`. Particle Graph node headers will use the same map (`p-particle-graph`), so both editors show one colour sequence.
+Basic Particle Emitter stage accents (the `ModuleStage` pill and card rule) and Particle Graph node headers map onto the node role tokens through `PARTICLE_STAGE_ROLE` in `packages/ui/src/lib/data-types.ts` (`basicParticleStageRole` for Basic stages), so both editors show one colour sequence.
+
+- Particle Graph hydrate stamps each node's catalog role as `data.__particleRole`, and palette entries carry it in `defaultData`. `nodeVisualRole` in `graph-ui` reads it through `PARTICLE_STAGE_ROLE` before any id, title, or category rule, so the Add Node chip and the canvas header always agree. A value that is not a stage falls back to the generic rules.
+- Particle pins are circles in `--pin-particle` with 5px wires (`--graph-edge-exec` width) so Create → Shape → Update → Emitter Output reads as one heavy line; hydrate lists them first, so they share the top pin row. They stay data pins (not diamonds) because a particle input takes one link. Value wires keep their pin colour at 4px; Color pins use `--pin-color`.
 
 | Stage | Role token | Basic Particle Emitter stages | Particle Graph nodes |
 | --- | --- | --- | --- |
@@ -180,7 +184,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
 | `--asset-graph` | Graph (cyan) | Graph |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Material Function, Shader, Particle Emitter, Particle System (green, former Audio) | Material, Particle Emitter (`Wind`), Particle System (`Sparkles`) |
+| `--asset-material` | Material, Material Function, Shader, Particle Emitter, Particle Graph, Particle System (green, former Audio) | Material, Particle Emitter (`Wind`), Particle Graph (`Network`), Particle System (`Sparkles`) |
 | `--asset-model` | Model (orange) | Model |
 | `--asset-audio` | unused by a Content Browser type (lime; kept so asset hues stay ≥25° apart) | — |
 | `--asset-font` | Font (sky) | Font |
@@ -202,7 +206,7 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
 | `--graph-pin-size` | `22px` | Visual pin diamond / circle / list / map |
 | `--graph-pin-default-max-width` | `12rem` | Truncation cap for on-node literal default and type-name fields |
-| `--graph-edge-exec` | `5px` | Exec wire stroke |
+| `--graph-edge-exec` | `5px` | Exec and Particle Graph spine (`particle`) wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
 Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace-nowrap` titles and pin names (`shrink-0`, no `min-w-0` pin columns) plus a `gap-6` gutter between in/out labels. Compact BT nodes use `min-w-56`. Get Variable uses a `w-max` pill (`rounded-full`, `min-h-14`, `px-4`, `gap-4`, no `min-w-80`) outlined in the value pin color. Title bars are `text-base`. Pin rows stay `--touch-target` (44px). Text pin defaults (string, numeric, type name) use `w-fit` and truncate at `--graph-pin-default-max-width`. `graph-editor.css` `[data-pin-default-field]` sets `min-width: min(12rem, max-content)` so truncate does not collapse the field, and unbounded `min-width: fit-content` cannot defeat the 12rem cap. Pin rows are `w-full min-w-max` so every row stretches to the widest pin row and `justify-between` keeps Then on the right. `[data-pin-row]` in `graph-editor.css` matches that (`width: 100%`; `min-width: max-content`). XYFlow wrappers in `.graph-editor-canvas` use `width: max-content` so a previous measured px width does not clip that chrome.

@@ -18,6 +18,7 @@ export const PIN_COLOR_VAR = {
   enum: "var(--pin-enum)",
   wildcard: "var(--pin-wildcard)",
   delegate: "var(--pin-delegate)",
+  particle: "var(--pin-particle)",
 } as const;
 
 export const PIN_KIND_COLOR_VAR: Record<string, string> = {
@@ -43,6 +44,7 @@ export const PIN_KIND_COLOR_VAR: Record<string, string> = {
   resolvingWildcard: PIN_COLOR_VAR.wildcard,
   boxedWildcard: PIN_COLOR_VAR.wildcard,
   delegate: PIN_COLOR_VAR.delegate,
+  particle: PIN_COLOR_VAR.particle,
 };
 
 export const PIN_COLOR_TOKENS = [
@@ -63,6 +65,7 @@ export const PIN_COLOR_TOKENS = [
   "--pin-enum",
   "--pin-wildcard",
   "--pin-delegate",
+  "--pin-particle",
 ] as const;
 
 /** Graph node header roles; `--node-*` values live in `styles/globals.css`. */

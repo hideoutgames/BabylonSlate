@@ -747,7 +747,7 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mix");
   });
 
-  it("includes ParticleComponent → Particle System → Emitters → Material → Texture", () => {
+  it("includes ParticleComponent → Particle System → Emitters and Particle Graphs → Material → Texture", () => {
     const scene: SerializedScene = {
       ...createDefaultScene(),
       actors: [
@@ -767,18 +767,33 @@ describe("collectExportClosure", () => {
       payload.render.materialGuid = materialGuid;
       return payload;
     };
+    // Saved Particle Graph shape: the Material is a top-level field; nodes hold no asset refs.
+    const graphWithMaterial = (materialGuid: string) => ({
+      schemaVersion: 1,
+      name: "Embers",
+      materialGuid,
+      nodes: [
+        { id: "create", type: "particle.create", position: { x: 0, y: 0 }, properties: { "default:lifetime": [1.5] } },
+        { id: "output", type: "particle.output", position: { x: 280, y: 0 }, properties: {} },
+      ],
+      edges: [{ id: "e", sourceNodeId: "create", sourcePinId: "out", targetNodeId: "output", targetPinId: "particle" }],
+    });
+    const particleMaterial = (textureGuid: string) => ({
+      domain: "particle",
+      nodes: [{ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid } }],
+      edges: [],
+    });
     // Loaded documents only: the emitter's Material sits under `render` and the
     // look Texture inside a Material node, so no header dependency lists them.
     const payloads = new Map<string, unknown>([
-      ["ps-1", { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1", "em-2"] }],
+      ["ps-1", { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1", "em-2", "pg-1"] }],
       ["em-1", emitterWithMaterial("mat-1")],
       ["em-2", createDefaultParticleEmitterPayload()],
-      ["mat-1", {
-        domain: "particle",
-        nodes: [{ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-1" } }],
-        edges: [],
-      }],
+      ["pg-1", graphWithMaterial("mat-2")],
+      ["mat-1", particleMaterial("tex-1")],
+      ["mat-2", particleMaterial("tex-2")],
       ["unused-em", emitterWithMaterial("mat-unused")],
+      ["unused-pg", graphWithMaterial("mat-unused")],
     ]);
     const result = collectExportClosure({
       startupSceneGuid: "scene-1",
@@ -787,9 +802,13 @@ describe("collectExportClosure", () => {
         asset({ guid: "ps-1", type: "ParticleSystem", name: "Fire" }),
         asset({ guid: "em-1", type: "ParticleEmitter", name: "Flame" }),
         asset({ guid: "em-2", type: "ParticleEmitter", name: "Smoke" }),
+        asset({ guid: "pg-1", type: "ParticleGraph", name: "Embers" }),
         asset({ guid: "mat-1", type: "Material", name: "ParticleMat" }),
+        asset({ guid: "mat-2", type: "Material", name: "EmberMat" }),
         asset({ guid: "tex-1", type: "Texture", name: "FlameTex" }),
+        asset({ guid: "tex-2", type: "Texture", name: "EmberTex" }),
         asset({ guid: "unused-em", type: "ParticleEmitter", name: "Unused" }),
+        asset({ guid: "unused-pg", type: "ParticleGraph", name: "UnusedGraph" }),
         asset({ guid: "mat-unused", type: "Material", name: "UnusedMat" }),
       ],
       pluginEnabledGuids: new Set(),
@@ -800,7 +819,7 @@ describe("collectExportClosure", () => {
     });
     expect(result).toEqual({
       ok: true,
-      value: ["em-1", "em-2", "mat-1", "ps-1", "scene-1", "tex-1"],
+      value: ["em-1", "em-2", "mat-1", "mat-2", "pg-1", "ps-1", "scene-1", "tex-1", "tex-2"],
     });
   });
 

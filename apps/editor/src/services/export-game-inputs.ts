@@ -15,12 +15,13 @@ import {
   FONT_MSDF_PNG_CHUNK_ID,
   normalizeAudioPayload,
   normalizeModelPayload,
+  PARTICLE_ASSET_TYPES,
   selectTextureChunk,
   type IndexedAsset,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
-const JSON_TYPES = new Set([
+const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis",
   "Scene",
   "Class",
@@ -40,8 +41,8 @@ const JSON_TYPES = new Set([
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
-  "ParticleEmitter",
-  "ParticleSystem",
+  // Basic emitters, Particle Graphs and Particle Systems.
+  ...PARTICLE_ASSET_TYPES,
   "Water",
   "Animation",
   "SceneLayer",

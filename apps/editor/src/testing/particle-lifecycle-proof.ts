@@ -1,6 +1,7 @@
-import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, Scene, Vector3, type DataBuffer, type IParticleSystem, type NodeMaterial } from "@babylonjs/core";
+import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, ParticleSystem, Scene, Vector3, type DataBuffer, type IParticleSystem, type NodeMaterial } from "@babylonjs/core";
 import { particleLibraryFromAssets, type ParticleBurst, type ParticleColorTuple, type ParticleScalarValue, type ParticleVec3Tuple } from "@babylonslate/assets";
 import type { ParticleBlendMode, ParticleLoopMode } from "@babylonslate/core";
+import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import { createDefaultMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { createAppWebGpuEngine, createParticleMaterialResolver, ParticleService, type ParticleLibrary, type ParticleMaterialOwner, type ResourceLease } from "@babylonslate/render";
 
@@ -18,9 +19,11 @@ type EmitterFixture = {
   bursts?: ParticleBurst[];
 };
 
+type FixtureAsset = { guid: string; type: string; payload: unknown };
+
 /** Each System's single slot is the emitter with the same guid; payloads go through the shipped normalizers. */
-function fixtureLibrary(fixtures: Record<string, EmitterFixture>): ParticleLibrary {
-  return particleLibraryFromAssets(Object.entries(fixtures).flatMap(([guid, fixture]) => [
+function fixtureLibrary(fixtures: Record<string, EmitterFixture>, extra: FixtureAsset[] = []): ParticleLibrary {
+  return particleLibraryFromAssets([...Object.entries(fixtures).flatMap(([guid, fixture]): FixtureAsset[] => [
     { guid, type: "ParticleSystem", payload: { emitterGuids: [guid] } },
     { guid, type: "ParticleEmitter", payload: {
       emitter: { loop: fixture.loop ?? "infinite", duration: 0.5, capacity: 64 },
@@ -34,7 +37,15 @@ function fixtureLibrary(fixtures: Record<string, EmitterFixture>): ParticleLibra
       },
       render: { materialGuid: fixture.material, blendMode: fixture.blendMode ?? "additive" },
     } },
-  ]));
+  ]), ...extra]);
+}
+
+/**
+ * The shipped default Particle Graph (Sphere Shape, Apply Velocity, white-to-clear
+ * Gradient over life) drawn with `material`; graphs simulate on the CPU in every run.
+ */
+function graphAsset(guid: string, material: string): FixtureAsset {
+  return { guid, type: "ParticleGraph", payload: { ...createDefaultParticleGraphDocument(), materialGuid: material } };
 }
 
 /** Particle Color × a constant tint, so slot colours also prove `particle_color` reaches each slot's Material. */
@@ -330,11 +341,38 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
         layered.resetSession();
       }
     } finally { layered.dispose(); layerMaterials.dispose(); layer.dispose(); }
+    // One System mixing a Basic slot (blue, GPU when requested) and a Particle Graph slot
+    // (red, always a CPU ParticleSystem) on one actor; both draw, then drain and release.
+    service.setLibrary(fixtureLibrary({ blue: { material: "blue" } }, [
+      graphAsset("graph-red", "red"),
+      { guid: "mixed", type: "ParticleSystem", payload: { emitterGuids: ["blue", "graph-red"] } },
+    ]));
+    service.handleCommand({ type: "assignParticle", actorGuid: "mixed", componentId: "particle", slotId: 1, particleSystemGuid: "mixed" });
+    const mixed = [...scene.particleSystems];
+    const [mixedBasic, mixedGraph] = mixed;
+    if (mixed.length !== 2 || (mixedBasic instanceof GPUParticleSystem) !== gpu) throw new Error("Mixed System did not build its Basic slot");
+    if (!(mixedGraph instanceof ParticleSystem) || mixedGraph instanceof GPUParticleSystem) throw new Error("Particle Graph slot is not a CPU ParticleSystem");
+    for (const native of mixed) { simulationSpeeds.set(native, 0.05); native.updateSpeed = 0; }
+    const mixedStats = service.stats();
+    if (mixedStats.graphSystems !== 1 || mixedStats.gpuSystems !== (gpu ? 1 : 0)) throw new Error(`Mixed System stats: ${JSON.stringify(mixedStats)}`);
+    await ready(mixed); await step(8); await capture("mixed-graph");
+    play("mixed", false); await step(45); await capture("mixed-retired");
+    if (scene.particleSystems.length) throw new Error("Mixed System did not drain its Particle Graph slot");
+    service.resetSession();
     const baseline = { meshes: scene.meshes.length, materials: scene.materials.length, textures: scene.textures.length, geometry: scene.geometries.length,
       gpuTextures: engine.getLoadedTexturesCache().length };
     configure(20, 0.3, "infinite");
     for (let cycle = 0; cycle < 100; cycle += 1) {
       const system = assign("red");
+      await ready([system]); await step(2); service.resetSession();
+    }
+    // Graph slots own a block set and a readiness texture per build; retiring must release both.
+    service.setLibrary(fixtureLibrary({}, [graphAsset("graph-red", "red"),
+      { guid: "graph", type: "ParticleSystem", payload: { emitterGuids: ["graph-red"] } }]));
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      service.handleCommand({ type: "assignParticle", actorGuid: "graph", componentId: "particle", slotId: 1, particleSystemGuid: "graph" });
+      const system = scene.particleSystems[scene.particleSystems.length - 1]!;
+      simulationSpeeds.set(system, 0.05); system.updateSpeed = 0;
       await ready([system]); await step(2); service.resetSession();
     }
     await step(2);
