@@ -1,5 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
-import { normalizeWaterDefinition, normalizeWaterBody, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
+import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
@@ -4946,7 +4946,7 @@ function isPlayRenderable(
   skipButtonMesh: boolean,
 ): boolean {
   if (component.destroyed) return false;
-  if (waterKindForClass(component.classId)) return true;
+  if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
     component.classId === "LandscapeComponent" ||
@@ -5050,6 +5050,7 @@ function playSortingOf(component: ActorComponent): {
 
 function playMeshKindOf(component: ActorComponent): string | null {
   if (waterKindForClass(component.classId)) return "water";
+  if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
   if (component.classId === "LandscapeComponent") return "landscape";
   if (component.classId === "FoliageComponent") return "foliage";
   if (component.classId === "SpriteComponent") return "sprite";
@@ -5100,7 +5101,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
-    components.some((component) => waterKindForClass(component.classId) !== null) ||
+    components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
     components.length > 1 ||
     components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     components.some((component) => !isIdentityComponentTransform(component))
@@ -5182,6 +5183,7 @@ function playMeshPartOf(
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
     scale: [scale.x, scale.y, scale.z],
     ...(waterKindForClass(component.classId) ? { water: normalizeWaterBody(Object.fromEntries(component.variables), waterKindForClass(component.classId)!) } : {}),
+    ...(component.classId === "WaterRemovalVolumeComponent" ? { waterRemoval: normalizeWaterRemoval(Object.fromEntries(component.variables)) } : {}),
     ...(component.classId === "Text3DComponent"
       ? {
           text3d: text3dAssignPayload(component),

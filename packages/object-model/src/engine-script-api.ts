@@ -148,6 +148,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       ...[["Width", "width"], ["Length", "length"], ["Depth", "depth"], ["Wave Scale", "waveScale"], ["Flow Speed", "flowSpeed"], ["Flow Direction", "flowDirection"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),
     ],
   })),
+  { classId: "WaterRemovalVolumeComponent", variables: [
+    { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+    ...[["Width", "width"], ["Height", "height"], ["Length", "length"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),
+  ] },
   { classId: "WaterBuoyancyComponent", variables: [
     { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
     ...[["Volume", "volume"], ["Width", "width"], ["Length", "length"], ["Height", "height"], ["Drag", "drag"], ["Angular Drag", "angularDrag"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),

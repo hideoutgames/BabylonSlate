@@ -81,6 +81,7 @@ import {
   type ViewportShadingMode,
 } from "./viewport-shading-mode";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
+import { createWaterHandles } from "./water-handles";
 import {
   applyGizmoMultiSelectDrag,
   beginGizmoMultiSelectDrag,
@@ -107,9 +108,11 @@ import {
 } from "./editor-clear-color";
 import {
   applySceneToBabylonScene,
+  editorComponentMeshName,
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
+import { waterKindForClass } from "@babylonslate/core";
 import {
   accountedGeometryBytesForScene,
   isEditorModelPlaceholder,
@@ -390,6 +393,8 @@ export interface CreateEngineOptions {
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
+  /** A water shape handle was released; merge `properties` into that component as one change. */
+  onWaterShapeEdit?: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
   /**
    * SceneLayer / overlay-prefab viewports: 2D transform box instead of
    * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
@@ -1685,12 +1690,32 @@ function initializeEngine(
     });
     gizmosRef.host = gizmos;
     onRollback(() => gizmos.dispose());
+    const waterHandles = createWaterHandles(gizmos.layer, scene, {
+      scheduler,
+      onCommit: (edit) => options.onWaterShapeEdit?.(edit),
+    });
+    onRollback(() => waterHandles.dispose());
+    /** Shape handles follow a single selected, unlocked actor's first water component. */
+    const syncWaterHandles = (actorIds: readonly string[]) => {
+      const actor = actorIds.length === 1
+        ? editorSync.serializedScene()?.actors.find((entry) => entry.id === actorIds[0])
+        : undefined;
+      const component = actor && !actor.locked
+        ? actor.components.find((entry) => waterKindForClass(entry.classId) !== null)
+        : undefined;
+      const kind = component ? waterKindForClass(component.classId) : null;
+      waterHandles.attach(actor && component && kind ? {
+        actorId: actor.id, componentId: component.id, kind,
+        meshName: editorComponentMeshName(actor.id, component.id),
+        properties: component.properties,
+      } : null);
+    };
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
       editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
-        gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
+        gizmos.isDragging() || waterHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
       onPointer:
         options.sharedEngine || presentRtt
@@ -1799,6 +1824,7 @@ function initializeEngine(
           attachId ? editorSync.meshForActor(attachId) : null,
           attachId ? editorSync.visualMeshesForActor(attachId) : [],
         );
+        syncWaterHandles(actorIds);
         scheduler.invalidate("selection");
       },
       syncSelectionDebug: (options) => {

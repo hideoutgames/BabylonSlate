@@ -1,4 +1,4 @@
-import { normalizeWaterBody, normalizeWaterBuoyancy, waterKindForClass } from "@babylonslate/core";
+import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
   SerializedScene,
@@ -132,6 +132,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("WaterLakeComponent", "Water Lake", "Bounded water with gentle waves", "Water"),
   engineComponent("WaterRiverComponent", "Water River", "Path-shaped water with a flowing current", "Water"),
   engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
+  engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
   engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   engineComponent(
     "2DAnchorComponent",
@@ -197,6 +198,7 @@ export function defaultPropertiesFor(
   const waterKind = waterKindForClass(classId);
   if (waterKind) return { ...normalizeWaterBody({}, waterKind) };
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
+  if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
     case "MeshComponent":
       return {

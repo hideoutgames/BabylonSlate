@@ -359,6 +359,8 @@ export type CommandMessage =
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
         water?: import("@babylonslate/core").WaterBodyProperties;
+        /** Water Removal Volume shape; Play keeps an invisible mesh that cuts water. */
+        waterRemoval?: import("@babylonslate/core").WaterRemovalProperties;
         landscape?: import("@babylonslate/core").LandscapeProperties;
         foliage?: import("@babylonslate/core").FoliageProperties;
         componentId: string;

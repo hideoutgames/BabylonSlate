@@ -87,6 +87,22 @@ it("edits a river path through typed vector rows and extends from its last point
   count.onChange(3);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
   expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+  const width = rows.find((row) => row.label === "Path Point 2 Width Scale");
+  if (width?.kind !== "number") throw new Error("River width control missing");
+  width.onChange(2.5);
+  expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
+});
+
+it("edits a Water Removal Volume with only the sizes its shape uses", () => {
+  const box = rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: {} });
+  expect(box.rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Width", "Height", "Length"]);
+  const shape = box.rows.find((row) => row.label === "Shape");
+  if (shape?.kind !== "enum") throw new Error("Missing shape control");
+  expect(shape.options.map((option) => option.label)).toEqual(["Box", "Sphere", "Cylinder", "Capsule"]);
+  shape.onChange("capsule");
+  expect(box.update).toHaveBeenLastCalledWith("shape", "capsule");
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "sphere" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter"]);
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "capsule" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter", "Height"]);
 });
 
 describe("componentPropertyRows", () => {
