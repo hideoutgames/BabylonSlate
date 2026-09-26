@@ -116,6 +116,8 @@ Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppres
 
 Reusable by script, shader, animation, behaviour-tree and particle graphs, and the Content Browser read-only References dialog.
 
+Pin connection visuals and input-default visibility share a wired-pin index per immutable React Flow edge array. Updates retaining that array reuse it, so each pin checks membership without scanning edges. Replacing the array builds one new index, including when virtualization creates a filtered edge snapshot during a drag. Weak references let unused snapshots be collected, and separate graph canvases remain independent.
+
 `GraphEditor` waits for its requested focus node to be measured before framing it; programmatic selection remains available in read-only mode without accepting topology or position edits.
 
 Pin display types and styled edges are reused while only node positions, selection, or measurements change. Pin edits and connection changes still refresh the full graph, including external Inspector and undo/redo updates. Edge selection and custom edge properties remain live; connection-assistant previews continue to validate proposed links separately.
