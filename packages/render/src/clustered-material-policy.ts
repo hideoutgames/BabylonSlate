@@ -112,9 +112,17 @@ function unqualifiedNativeFeature(material: Material): string | undefined {
 }
 
 type MaterialConsumers = {
-  material: Material;
+  material: Material | null;
   meshes: { mesh: AbstractMesh; index: number }[];
 };
+
+function firstDrawable(group: MaterialConsumers, before: number) {
+  for (const entry of group.meshes) {
+    if (entry.index >= before) break;
+    if (entry.mesh.getTotalVertices()) return entry;
+  }
+  return undefined;
+}
 
 const consumersByScene = new WeakMap<Scene, SceneMaterialConsumers>();
 
@@ -125,7 +133,6 @@ class SceneMaterialConsumers {
   private readonly groups: MaterialConsumers[] = [];
   private dirty = true;
   private meshCount = -1;
-  private defaultMaterial: Material | undefined;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -150,7 +157,6 @@ class SceneMaterialConsumers {
     this.dirty = true;
     // Release removed/reassigned consumers even if the next request is Forward.
     this.groups.length = 0;
-    this.defaultMaterial = undefined;
     for (const [mesh, observer] of this.watched)
       mesh.onMaterialChangedObservable.remove(observer);
     this.watched.clear();
@@ -166,23 +172,18 @@ class SceneMaterialConsumers {
 
   current(): readonly MaterialConsumers[] {
     const scene = this.scene;
-    if (
-      !this.dirty &&
-      this.meshCount === scene.meshes.length &&
-      (!this.defaultMaterial || this.defaultMaterial === scene.defaultMaterial)
-    )
+    if (!this.dirty && this.meshCount === scene.meshes.length)
       return this.groups;
 
     this.invalidate();
-    const byMaterial = new Map<Material, MaterialConsumers>();
+    const byMaterial = new Map<Material | null, MaterialConsumers>();
     for (let index = 0; index < scene.meshes.length; index++) {
       const mesh = scene.meshes[index]!;
       this.watch(mesh);
       // Instances inherit assignments from their source, even if it is detached
       // from the scene. Their own material observable does not notify on edits.
       if (mesh instanceof InstancedMesh) this.watch(mesh.sourceMesh);
-      const material =
-        mesh.material ?? (this.defaultMaterial ??= scene.defaultMaterial);
+      const material = mesh.material;
       let group = byMaterial.get(material);
       if (!group) {
         group = { material, meshes: [] };
@@ -211,21 +212,24 @@ export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
   let reason: string | undefined;
   for (const group of consumers.current()) {
     if (group.meshes[0]!.index >= firstIndex) break;
-    const material = group.material;
+    // Reading defaultMaterial creates it lazily. Empty unassigned proxies
+    // must not allocate it; a drawable inheritor reads the live default.
+    const inheritor = group.material
+      ? undefined
+      : firstDrawable(group, firstIndex);
+    if (!group.material && !inheritor) continue;
+    const material = group.material ?? scene.defaultMaterial;
     const feature = unqualifiedNativeFeature(material);
     if (!feature && compatible(material)) continue;
-    // Only rejected contracts need a drawable consumer. Geometry can change
+    // Rejected contracts require a drawable consumer. Geometry can change
     // without a material/membership event; check it live and retain the first
     // drawable mesh's reason in scene order, rather than group insertion order.
-    for (const { mesh, index } of group.meshes) {
-      if (index >= firstIndex) break;
-      if (!mesh.getTotalVertices()) continue;
-      firstIndex = index;
-      reason = feature
-        ? `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`
-        : `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
-      break;
-    }
+    const consumer = inheritor ?? firstDrawable(group, firstIndex);
+    if (!consumer) continue;
+    firstIndex = consumer.index;
+    reason = feature
+      ? `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`
+      : `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
   }
   return reason;
 }

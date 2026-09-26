@@ -35,13 +35,14 @@ function fixture() {
 }
 
 describe("clustered material consumers", () => {
-  it("does not revisit meshes in an unchanged compatible scene", () => {
+  it("reuses compatible assignments without allocating a default for empty proxies", () => {
     const { scene, mesh } = fixture();
     const materials = [...scene.materials];
     const meshes = [
       mesh,
       ...Array.from({ length: 31 }, (_, i) => mesh.clone(`copy-${i}`)),
     ];
+    new Mesh("empty proxy", scene);
     expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
     const reads = meshes.flatMap((entry) => [
       vi.spyOn(entry, "material", "get"),
