@@ -59,6 +59,7 @@ describe("SceneLayer schema", () => {
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
+            { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: true } },
             ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent"].map((classId) => ({ id: classId, classId, properties: {} })),
             {
               id: "fill",

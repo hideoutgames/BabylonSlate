@@ -198,13 +198,15 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
   // Keep one candidate body instead of eight copies of the fade calculation.
   // These nearest, non-mipmapped buffers need no implicit texture derivatives.
+  // Round group bounds up for lower-precision style sampling, retaining the
+  // original view-wide cap so rounding neither removes nor adds edge pixels.
   const glslCandidates = groups.map((group, groupIndex) => `if (activeGroups[${groupIndex}] > 0.5) {
     float center = decodeId(texture2DLodEXT(${group}Mask, vUV, 0.0).rgb);
     float best = 1e10;
     float chosen = 1e10;
     vec4 stroke = vec4(0.0);
     for (int radius = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; ++radius) {
-      if (float(radius) > maximumWidth + 0.75) break;
+      if (float(radius) > min(maximumWidth, ceil(maximumWidths[${groupIndex}])) + 0.75) break;
       for (int direction = 0; direction < 8; ++direction) {
         vec2 delta = outlineOffsets[direction] * float(radius);
         vec2 uv = vUV + delta / screenSize;
@@ -245,6 +247,7 @@ varying vec2 vUV;
 uniform vec2 screenSize;
 uniform vec2 tableSize;
 uniform float maximumWidth;
+uniform vec3 maximumWidths;
 uniform float distanceFadeEnabled;
 uniform float reverseDepth;
 uniform vec3 activeGroups;
@@ -263,7 +266,7 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
     var chosen = 1e10;
     var stroke = vec4f(0.0);
     for (var radius: i32 = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; radius = radius + 1) {
-      if (f32(radius) > uniforms.maximumWidth + 0.75) { break; }
+      if (f32(radius) > min(uniforms.maximumWidth, ceil(uniforms.maximumWidths[${groupIndex}])) + 0.75) { break; }
       for (var direction: i32 = 0; direction < 8; direction = direction + 1) {
         let delta = outlineOffsets[direction] * f32(radius);
         let uv = fragmentInputs.vUV + delta / uniforms.screenSize;
@@ -301,6 +304,7 @@ varying vUV: vec2f;
 uniform screenSize: vec2f;
 uniform tableSize: vec2f;
 uniform maximumWidth: f32;
+uniform maximumWidths: vec3f;
 uniform distanceFadeEnabled: f32;
 uniform reverseDepth: f32;
 uniform activeGroups: vec3f;

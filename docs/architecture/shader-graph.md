@@ -438,6 +438,46 @@ line mapping when available. Babylon `CustomBlock` generates the function
 signature. Body and interface edits participate in the plan hash. Custom nodes
 use manual **Render** and retain the last good material on compilation failure.
 
+## GLSL to Material conversion
+
+The bundled Experimental **GLSL to Material** [Engine Extension](editor-extensions.md#bundled-glsl-to-material)
+creates a normal `.material.babasset` containing editable math, vector, constant,
+parameter and input nodes. Enable it in **Project Settings → Project Extensions**,
+then run the command with a name and fragment source. **UV Variable** and **Time
+Variable** explicitly map declared inputs; names alone do not imply a binding.
+
+`convertGlslToMaterial(source, { name?, bindings? })` in
+`@babylonslate/shader-graph` returns either `{ ok: true, document, diagnostics }`
+or `{ ok: false, diagnostics }`. Bindings map source identifiers to `"uv"` or
+`"time"`. Conversion validates and lowers the graph before returning success;
+it does not save the asset or invoke a GPU compiler. The extension saves only a
+successful result, and generated assets remain usable when it is disabled.
+
+| Supported source | Conversion |
+| --- | --- |
+| One `void main()` or `void main(void)` | Fragment shader; assign `gl_FragColor` or one declared `out vec4` output. Optional initial `#version 100` / `#version 300 es` and float precision declarations are accepted. |
+| `float`, `vec2`, `vec3`, `vec4` locals and constants | Explicit numeric constructors, initialized locals or whole-variable assignments; const initializers must be constant expressions. |
+| `+`, `-`, `*`, `/`, unary signs; `=`, `+=`, `-=`, `*=`, `/=` | Operator precedence and previous assigned values are preserved. Scalar/vector arithmetic explicitly splats the scalar to every channel. |
+| Vector constructors and swizzles | Reordered and repeated `xyzw`, `rgba` or `stpq` channels become ordinary Split/Combine nodes. Mixing channel alphabets or reading absent channels is an error. |
+| Numeric uniforms | Zero-default Float parameters; vector uniforms use one parameter per component, such as `tint.x`. Color parameters are avoided because their sRGB conversion would alter numeric uniforms. |
+| Explicit `uv` / `time` bindings | UV requires a declared `vec2`; Time requires `uniform float` and uses the existing elapsed-seconds Time node. Other varyings are unsupported. |
+| Native builtins | `radians`, `degrees`, `sin`, `cos`, `tan`, `asin`, `acos`, one-/two-argument `atan`, `exp`, `exp2`, `log`, `log2`, `sqrt`, `inversesqrt`, `abs`, `sign`, `floor`, `ceil`, `fract`, `min`, `max`, `mod`, `pow`, `clamp`, `mix`, `step`, `smoothstep`, `normalize`, `length`, `dot`, `distance`, `cross`, `reflect`. Argument counts and widths must match supported GLSL overloads. |
+
+The output is an **Unlit**, **Translucent** surface Material with RGB wired to
+Base Color and alpha to Opacity. Its channels use normal Material color
+management; matching a source shader's framebuffer pipeline is not guaranteed.
+The graph contains no Custom GLSL and therefore needs no GLSL-only backend
+fallback. Review the result in the Material editor and change blending or other
+material settings as needed.
+
+Unsupported input fails with a source-line diagnostic and no partial Material:
+control flow, helper functions, textures/samplers, arrays, matrices, booleans,
+integer arithmetic, component assignments, shader globals such as `gl_FragCoord`,
+and preprocessor macros. Integer literals require an explicit `float(...)` or
+vector constructor; octal literals and float overflow are rejected. The parser
+bounds source length to 32768 characters, tokens to 4096, expression nesting to
+64 and generated nodes to 2048.
+
 ## Inline Texture Sample
 
 `texture.sample` and `texture.sampleLod` may store `textureGuid` on the node
