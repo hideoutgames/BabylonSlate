@@ -153,9 +153,9 @@ describe("Water field", () => {
       const [near, opposite, far] = axis === "x"
         ? [[2 / 3, 0], [-2 / 3, 0], [2, 0]] as const
         : [[0, 2 / 3], [0, -2 / 3], [0, 2]] as const;
-      expect(texel(view, ...near).object).toBeLessThan(0.25);
-      expect(texel(view, ...opposite).object).toBeLessThan(0.25);
-      expect(texel(view, ...far).object).toBe(1);
+      expect(texel(view, near[0], near[1]).object).toBeLessThan(0.25);
+      expect(texel(view, opposite[0], opposite[1]).object).toBeLessThan(0.25);
+      expect(texel(view, far[0], far[1]).object).toBe(1);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
