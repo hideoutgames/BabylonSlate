@@ -1,5 +1,5 @@
 import { Animation, AnimationGroup, Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
@@ -27,6 +27,49 @@ function fixture() {
 }
 
 describe("skeletal ragdoll pose handoff", () => {
+  it.each([16, 64])("applies a %i-bone chain with linear hierarchy work and stable bind matrices", (count) => {
+    const { scene, root, controller, capture } = fixture();
+    const skeleton = new Skeleton("chain", "chain", scene);
+    root.skeleton = skeleton;
+    for (let index = 0; index < count; index++) {
+      new Bone(`bone-${index}`, skeleton, skeleton.bones[index - 1] ?? null, Matrix.Translation(0, 1, 0));
+    }
+    // Include an unselected descendant: batched pose application must update its
+    // skinning matrix too, without modifying the inverse bind pose.
+    const tip = new Bone("tip", skeleton, skeleton.bones.at(-1)!, Matrix.Translation(1, 0, 0));
+    const inverseBind = tip.getAbsoluteInverseBindMatrix().clone();
+    const captured = capture("first", skeleton.bones.slice(0, count).map((bone) => bone.name));
+    expect(captured.error).toBeUndefined();
+    const bones = captured.bones!.map((bone) => ({ ...bone, position: { ...bone.position, z: 5 } })).reverse();
+    const apply = () => {
+      controller.setPose({ type: "setRagdollPose", slotId: 1, requestId: "first", bones });
+      root.position.x += 0.1;
+      controller.update();
+    };
+    for (let warm = 0; warm < 20; warm++) apply();
+    const samples: number[] = [];
+    for (let frame = 0; frame < 100; frame++) {
+      const start = performance.now();
+      apply();
+      samples.push(performance.now() - start);
+    }
+    const visits = vi.spyOn(Bone.prototype, "computeAbsoluteMatrices");
+    try {
+      apply();
+      const hierarchyVisits = visits.mock.calls.length;
+      samples.sort((a, b) => a - b);
+      console.info("ragdoll presentation (ms)", { count, p50: samples[50], p95: samples[95], hierarchyVisits });
+      const position = tip.getAbsoluteMatrix().multiply(root.computeWorldMatrix(true)).getTranslation();
+      expect(position.x).toBeCloseTo(1, 4);
+      expect(position.y).toBeCloseTo(count, 4);
+      expect(position.z).toBeCloseTo(5, 4);
+      expect(tip.getAbsoluteInverseBindMatrix().equals(inverseBind)).toBe(true);
+      controller.clear({ type: "clearRagdollPose", slotId: 1, requestId: "first" });
+      expect(tip.getAbsoluteMatrix().getTranslation().asArray()).toEqual([1, count, 0]);
+      expect(hierarchyVisits).toBeLessThanOrEqual(2 * (count + 1));
+    } finally { visits.mockRestore(); }
+  });
+
   it("captures the animated linked pose and preserves world-space physics under a moving actor root", () => {
     const { scene, root, controller, capture } = fixture();
     root.position.x = 10;

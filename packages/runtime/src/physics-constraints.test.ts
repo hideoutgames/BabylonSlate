@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { identityTransform } from "@babylonslate/core";
 import { ClassRegistry, World, type Actor } from "@babylonslate/object-model";
 import { HavokPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
+import { PhysicsConstraintSync } from "./physics-constraint-sync";
+import { actorWorldTransforms } from "./actor-world-transform";
 
 function worldFixture() {
   return new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
@@ -35,6 +37,55 @@ function advance(sync: PhysicsWorldSync, world: World, ticks = 60): void {
 }
 
 describe("authored physics constraints", () => {
+  it("keeps stable joints across steady ticks and responds to in-place anchor and frame edits", async () => {
+    const world = worldFixture();
+    const anchor = body(world, "anchor", 0);
+    const joints = Array.from({ length: 128 }, (_, index) => {
+      const actor = body(world, `bob-${index}`, 0, true);
+      const anchorA = { x: 0, y: 0, z: 0 };
+      const frameA = { x: 0, y: 0, z: 0, w: 1 };
+      return { actor, anchorA, frameA, component: constrain(world, actor, anchor.guid, { anchorA, frameA }) };
+    });
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    const sync = new PhysicsWorldSync(backend);
+    const constraints = new PhysicsConstraintSync(backend);
+    try {
+      sync.syncFromWorld(world);
+      const actors = world.getActors();
+      const options = { actors, actorById: new Map(actors.map((actor) => [actor.guid, actor])), transforms: actorWorldTransforms(actors),
+        bodies: new Map(actors.map((actor) => [actor.guid, `body:${actor.guid}`])),
+        bodyOwners: new Map(actors.map((actor) => [actor.guid, actor])), eligible: () => true };
+      for (let warm = 0; warm < 20; warm++) constraints.sync(options);
+      const samples: number[] = [];
+      for (let tick = 0; tick < 100; tick++) {
+        const start = performance.now();
+        constraints.sync(options);
+        samples.push(performance.now() - start);
+      }
+      samples.sort((a, b) => a - b);
+      console.info("128 constraint reconciliation (ms)", { p50: samples[50], p95: samples[95] });
+      const create = vi.spyOn(backend, "createConstraint");
+      try {
+        constraints.sync(options);
+        expect(create).not.toHaveBeenCalled();
+        // Variable maps and nested objects can be edited without setter hooks.
+        const first = joints[0]!;
+        const authoredAnchor = first.component.variables.get("anchorA") as typeof first.anchorA;
+        authoredAnchor.y = 2;
+        const authoredFrame = first.component.variables.get("frameA") as typeof first.frameA;
+        authoredFrame.z = Math.sin(Math.PI / 8);
+        authoredFrame.w = Math.cos(Math.PI / 8);
+        constraints.sync(options);
+        backend.addImpulse(`body:${first.actor.guid}`, { x: 2, y: 0, z: 0 });
+        for (let tick = 0; tick < 120; tick++) backend.step(1 / 60);
+        const pose = backend.getBodyTransform(`body:${first.actor.guid}`)!;
+        expect(pose.position.y).toBeCloseTo(-Math.SQRT2, 2);
+        expect(pose.position.x).toBeCloseTo(-Math.SQRT2, 2);
+        expect(Math.abs(pose.rotation.z)).toBeCloseTo(Math.sin(Math.PI / 8), 2);
+      } finally { create.mockRestore(); }
+    } finally { constraints.dispose(); sync.dispose(); }
+  });
+
   it("connects late targets and same-ID replacements without leaking joints across duplicate component IDs", async () => {
     const world = worldFixture();
     const first = body(world, "first", 0, true);
