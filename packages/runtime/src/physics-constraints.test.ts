@@ -42,6 +42,8 @@ describe("authored physics constraints", () => {
     const anchor = body(world, "anchor", 0);
     const joints = Array.from({ length: 128 }, (_, index) => {
       const actor = body(world, `bob-${index}`, 0, true);
+      // This fixture isolates joint reconciliation, without overlapping bob contacts.
+      actor.components.find((component) => component.classId === "ColliderComponent")!.setVariable("mask", 0);
       const anchorA = { x: 0, y: 0, z: 0 };
       const frameA = { x: 0, y: 0, z: 0, w: 1 };
       return { actor, anchorA, frameA, component: constrain(world, actor, anchor.guid, { anchorA, frameA }) };
