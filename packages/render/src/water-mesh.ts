@@ -1,10 +1,12 @@
 import { Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, waterRiverCentreline, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
-import { configureWaterMaterial, WaterMaterialPlugin } from "./water-material";
+import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
+import { WaterField } from "./water-field";
 import { WaterReflection } from "./water-reflection";
 
 type Surface = {
-  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null;
+  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null; field: WaterField | null;
+  world: Matrix; inverse: Matrix;
   layout: string; frame: string; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
 };
@@ -24,7 +26,11 @@ export function updateSceneWater(scene: Scene): void {
   if (!clock.runtime) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
   clocks.set(scene, clock);
   reflections.get(scene)?.sync();
-  for (const surface of surfaces.get(scene) ?? []) if (surface.mesh.isEnabled()) updateSurface(surface, clock.time);
+  const now = performance.now();
+  for (const surface of surfaces.get(scene) ?? []) if (surface.mesh.isEnabled()) {
+    updateSurface(surface, clock.time);
+    surface.field?.update(now);
+  }
 }
 
 /** Fixed endpoints, dense world-sized cells near the camera, smoothly graded outer cells. */
@@ -175,6 +181,7 @@ function updateSurface(s: Surface, time: number): void {
   const world = s.mesh.computeWorldMatrix(true);
   if (Math.abs(world.determinant()) < 1e-12) return;
   const inverse = world.clone().invert(), normalMatrix = Matrix.Transpose(inverse), toLocalNormal = Matrix.Transpose(world);
+  s.world.copyFrom(world); s.inverse.copyFrom(inverse);
   updateLayout(s, world, inverse);
   const frame = s.layout + ":" + [world.m[12], world.m[13], world.m[14]].join(",");
   const moved = frame !== s.frame;
@@ -216,6 +223,16 @@ function updateSurface(s: Surface, time: number): void {
   if (s.plugin) s.plugin.time = time;
 }
 
+const scratch = new Vector3();
+/** Rest surface height (no waves) at a world X/Z, or null outside the body's footprint. */
+function waterSurfaceY(s: Surface, x: number, z: number): number | null {
+  Vector3.TransformCoordinatesFromFloatsToRef(x, s.world.m[13]!, z, s.inverse, scratch);
+  const footprint = waterFootprint(s.body, scratch.x, scratch.z);
+  if (!footprint.inside) return null;
+  Vector3.TransformCoordinatesFromFloatsToRef(scratch.x, footprint.height, scratch.z, s.world, scratch);
+  return scratch.y;
+}
+
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
   return surfaceByMesh.get(mesh)?.body ?? null;
@@ -232,6 +249,7 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   surface.version++; surface.layout = ""; surface.frame = "";
   mesh.setEnabled(surface.body.enabled);
   updateSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
+  surface.field?.update(performance.now(), true);
   return true;
 }
 
@@ -247,6 +265,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     const material = new PBRMaterial(`${name}:water`, scene);
     configureWaterMaterial(material, water);
     plugin = new WaterMaterialPlugin(material, water, body);
+    plugin.mesh = mesh;
     let reflection = reflections.get(scene);
     if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
     reflection.add(material);
@@ -254,7 +273,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, layout: "", frame: "", version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
+  const surface: Surface = { mesh, water, body, plugin, field: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
@@ -265,5 +284,15 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   surfaceByMesh.set(mesh, surface);
   mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
+  if (plugin) {
+    const field = new WaterField(scene, {
+      mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
+      amplitude: water.waveHeight * body.waveScale * 1.3 + 0.05,
+      surfaceY: (x, z) => waterSurfaceY(surface, x, z),
+    });
+    surface.field = field; plugin.field = field;
+    field.update(performance.now(), true);
+    mesh.onDisposeObservable.addOnce(() => field.dispose());
+  }
   return mesh;
 }

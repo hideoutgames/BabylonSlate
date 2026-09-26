@@ -44,6 +44,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The preview lights plus a sun must still shade the water, not collapse it to black.
     expect(result.brightness.realistic).toBeGreaterThan(20);
     expect(result.brightness.stylized).toBeGreaterThan(40);
+    // Under the app's large-world rendering, panning the camera must reveal different, world-anchored water.
+    expect(result.pan.realistic).toBeGreaterThan(0.5);
+    expect(result.pan.stylized).toBeGreaterThan(0.5);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

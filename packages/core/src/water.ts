@@ -98,7 +98,7 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
     choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
     foamAmount: stylized ? 1 : 0.35, foamWidth: stylized ? 0.7 : 0.8,
-    crestFoam: stylized ? 0.3 : 0.2, contactFoamWidth: stylized ? 0.6 : 1.2,
+    crestFoam: stylized ? 0.3 : 0.12, contactFoamWidth: stylized ? 0.6 : 1.2,
     colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.7 : 0, density: 1000, materialGuid: null,
   };
 }
