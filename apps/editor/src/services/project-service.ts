@@ -304,6 +304,7 @@ export class ProjectService {
       await this.saveDocument(kind, path, document.payload);
       this.emitRegistryChange();
     };
+    const pendingAssetCreates = new Set<string>();
     this.extensions = new EditorExtensionService(storage, {
       assets: {
         list: async () => (this.assetRegistry?.list() ?? []).map((entry) => ({ path: entry.path, type: entry.header.type, name: entry.header.name, guid: entry.header.guid })),
@@ -313,8 +314,14 @@ export class ProjectService {
         },
         create: async (path, document) => {
           assetPath(path);
-          if (await storage.exists(path)) throw new Error("An asset already exists at this path. Choose another name.");
-          await writeAsset(path, document);
+          if (pendingAssetCreates.has(path)) throw new Error("An asset is already being created at this path. Choose another name.");
+          pendingAssetCreates.add(path);
+          try {
+            if (await storage.exists(path)) throw new Error("An asset already exists at this path. Choose another name.");
+            await writeAsset(path, document);
+          } finally {
+            pendingAssetCreates.delete(path);
+          }
         },
         update: async (path, document) => {
           assetPath(path);
