@@ -47,6 +47,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // Under the app's large-world rendering, panning the camera must reveal different, world-anchored water.
     expect(result.pan.realistic).toBeGreaterThan(0.5);
     expect(result.pan.stylized).toBeGreaterThan(0.5);
+    expect(result.waveTerrain.crestHeight).toBeGreaterThan(1.6);
+    expect(result.waveTerrain.troughHeight).toBeLessThan(-0.4);
+    expect(result.waveTerrain.crestDifference).toBeGreaterThan(10);
+    expect(result.waveTerrain.troughDifference).toBeLessThan(1);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
