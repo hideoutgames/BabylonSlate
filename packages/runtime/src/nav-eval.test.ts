@@ -154,17 +154,20 @@ describe("runtime navmesh import and crowd", () => {
 
   it("bounds actor reads while a populated crowd advances", async () => {
     const scene = patrolScene();
-    scene.actors = Array.from({ length: 100 }, (_, i) => createActor(`agent-${i}`, `Agent ${i}`, {
+    scene.actors = [
+      ...Array.from({ length: 256 }, (_, i) => createActor(`scenery-${i}`, `Scenery ${i}`)),
+      ...Array.from({ length: 32 }, (_, i) => createActor(`agent-${i}`, `Agent ${i}`, {
       transform: { position: [-4.5 + i % 10, 0, -4.5 + Math.floor(i / 10)], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [{ id: "nav", classId: "NavAgentComponent", properties: { radius: 0.2, height: 2, maxSpeed: 3.5 } }],
-    }));
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene });
+      })),
+    ];
+    const runtime = createInProcessRuntime({ seed: 1, maxActors: 512, seedDemoActors: false, playScene: scene });
     try {
       await runtime.loadNavMesh(bytes);
       runtime.start();
       runtime.realizePlayWorld();
       const actors = runtime.getWorld().getActors();
-      const moving = actors.find((actor) => actor.guid === "agent-99")!;
+      const moving = actors.find((actor) => actor.guid === "agent-31")!;
       expect(runtime.setNavAgentTarget(moving.guid, { x: 7, y: 0, z: 7 })).toBe(true);
       const startX = moving.transform.position.x;
       let guidReads = 0;
@@ -193,7 +196,7 @@ describe("runtime navmesh import and crowd", () => {
         name: "Spawn Agent", rootId: "wait", blackboardGuid: null,
         nodes: [{
           id: "wait", kind: "task", classId: "BTTask_Wait", children: [], decorators: [],
-          properties: { duration: 10 },
+          properties: { durationMs: 10000 },
           services: [{ id: "spawn", classId: "SpawnAgentService", intervalMs: 0, randomDeviationMs: 0, properties: {} }],
         }],
       } },
@@ -209,8 +212,9 @@ describe("runtime navmesh import and crowd", () => {
           assetGuid: "spawn-service", classId: "SpawnAgentService", parentClassId: "BTService",
           anchors: [], entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }],
           source: `export function onBtTick(ctx) {
-            if (ctx.getActors().some(actor => actor.classId === "SpawnedAgent")) return;
+            if (ctx.getBlackboard("spawned")) return;
             const agent = ctx.spawnActor("SpawnedAgent", { position: { x: -4, y: 0, z: -4 } });
+            ctx.setBlackboard("spawned", agent);
             ctx.moveTo(agent, { x: 4, y: 0, z: 4 });
           }`,
         },
