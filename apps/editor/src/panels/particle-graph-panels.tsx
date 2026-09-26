@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  AssetPicker,
   EntryListEditor,
   ModuleStack,
   ModuleStage,
@@ -14,6 +13,7 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { GraphEditor, type GraphDiagnostic } from "@babylonslate/graph-ui";
+import { particleLibraryEmitterKey, type ParticleLibrary } from "@babylonslate/assets";
 import {
   PARTICLE_BILLBOARD_MODE_IDS,
   PARTICLE_BLEND_MODE_IDS,
@@ -61,70 +61,26 @@ import {
   useParticleGraphEditing,
   type ParticleGraphBuildDiagnostic,
 } from "../context/particle-graph-editing-context";
-import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   PARTICLE_BILLBOARD_LABELS,
   PARTICLE_BLEND_MODE_LABELS,
 } from "../lib/particle-value-modes";
-import { PREVIEW_SYSTEM_GUID, emitterPreviewLibrary } from "../lib/play-particles";
+import {
+  PREVIEW_EMITTER_GUID,
+  PREVIEW_SYSTEM_GUID,
+  emitterPreviewLibrary,
+} from "../lib/play-particles";
 import { MessageDetails } from "../components/message-details";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
+import { ParticleMaterialPicker } from "./particle-emitter-panels";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 
 /** One undo entry per gesture on a Details field of one node. */
 function particleGraphFieldMergeKey(nodeId: string, field: string): string {
   return `particle-graph-field:${nodeId}:${field}`;
-}
-
-/** Units the catalog names in its pin descriptions, shown verbatim like Basic rows. */
-const PARTICLE_PIN_UNITS: Readonly<Record<string, string>> = {
-  [`${PARTICLE_OUTPUT_NODE_TYPE}:emitRate`]: "/s",
-  "particle.create:lifetime": "s",
-  "particle.create:emitPower": "m/s",
-  "particle.create:angle": "rad",
-  "update.angle:angle": "rad",
-  "force.gravity:acceleration": "m/s²",
-};
-
-/** Particle-domain Materials only; an open Material tab's domain wins over its header. */
-function ParticleGraphMaterialPicker({
-  open,
-  onOpenChange,
-  onPick,
-  testId,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPick: (guid: string | null) => void;
-  testId: string;
-}) {
-  const { assetRegistry, openDocuments } = useDocuments();
-  const assets = (assetRegistry?.list() ?? [])
-    .filter((asset) => isParticleMaterialForPicker(asset, openDocuments ?? []))
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-    }));
-  return (
-    <AssetPicker
-      open={open}
-      onOpenChange={onOpenChange}
-      assets={assets}
-      allowedTypes={["Material"]}
-      title="Pick Particle Material"
-      allowNone
-      onPick={(guid) => {
-        onPick(guid);
-        onOpenChange(false);
-      }}
-      data-testid={testId}
-    />
-  );
 }
 
 function withNode(
@@ -158,7 +114,7 @@ function pinDefaultRows(
     const base = {
       id: entry.pinId,
       label: entry.name,
-      unit: PARTICLE_PIN_UNITS[`${node.type}:${entry.pinId}`],
+      unit: entry.unit,
       description: entry.description,
     };
     switch (entry.type) {
@@ -671,7 +627,7 @@ function ParticleGraphSettingsDetails({
           <PropertyGrid rows={rows} />
         </ModuleStage>
       </ModuleStack>
-      <ParticleGraphMaterialPicker
+      <ParticleMaterialPicker
         open={picking}
         onOpenChange={setPicking}
         onPick={(guid) => onChange({ ...document, materialGuid: guid })}
@@ -723,8 +679,11 @@ export function ParticleGraphPreview({
   previewDocument: ParticleGraphDocument | null;
   errorCount: number;
   onChange: Commit;
-  /** The running build's service diagnostics, whenever they change. */
-  onBuildDiagnostics?: (diagnostics: readonly ParticleGraphBuildDiagnostic[]) => void;
+  /** The running build's service diagnostics and the library that build ran. */
+  onBuildDiagnostics?: (
+    diagnostics: readonly ParticleGraphBuildDiagnostic[],
+    applied: ParticleLibrary,
+  ) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const library = useMemo(
@@ -769,7 +728,7 @@ export function ParticleGraphPreview({
           {`Graph has ${errorCount} ${errorCount === 1 ? "error" : "errors"}. Preview shows the last valid build.`}
         </p>
       ) : null}
-      <ParticleGraphMaterialPicker
+      <ParticleMaterialPicker
         open={picking}
         onOpenChange={setPicking}
         onPick={(materialGuid) => onChange({ ...document, materialGuid })}
@@ -932,13 +891,13 @@ export function ParticleGraphCanvasPanel(_props: IDockviewPanelProps) {
 export function ParticleGraphPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const editing = useParticleGraphEditing();
-  const { previewKey, reportBuildDiagnostics } = editing;
-  // Reports arrive after the build they describe; tag them with the build now shown.
-  const previewKeyRef = useRef(previewKey);
-  previewKeyRef.current = previewKey;
+  const { reportBuildDiagnostics } = editing;
+  // Tag each report with the build that produced it, so a late report from the
+  // previous build never lands on a pending edit.
   const onBuildDiagnostics = useCallback(
-    (diagnostics: readonly ParticleGraphBuildDiagnostic[]) => {
-      if (previewKeyRef.current) reportBuildDiagnostics(previewKeyRef.current, diagnostics);
+    (diagnostics: readonly ParticleGraphBuildDiagnostic[], applied: ParticleLibrary) => {
+      const entry = applied.emitters.get(PREVIEW_EMITTER_GUID);
+      if (entry) reportBuildDiagnostics(particleLibraryEmitterKey(entry), diagnostics);
     },
     [reportBuildDiagnostics],
   );

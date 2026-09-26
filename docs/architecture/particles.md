@@ -244,13 +244,13 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
   - node properties: Value Type, Lock Mode, Test, Epsilon, Hemispheric, Emit From Spawn Point Only, Alignment and constant Values;
   - unconnected pin values, clamped to the pin range.
 - **Gradient stops:** Color stops use `GradientField`, Float stops `CurveField`, and Vector 2 / 3 stops an `EntryListEditor` of Position plus value.
-- Angles show in radians (`rad`), unlike Basic Details, which shows degrees.
+- Pin units come from the catalog pin's `unit` and show verbatim after the label, such as Emit Rate (/s), Lifetime (s) and Acceleration (m/s²). Angles show in radians (`rad`), unlike Basic Details, which shows degrees.
 - **Undo:** continuous edits use `particle-graph-field:<nodeId>:<pin or property>`. Emitter settings anchor to the Emitter Output id (`…:capacity`, `duration`, `prewarm`, `emitRate`). Picks, enums and toggles are separate entries.
 - **Compiler Results:** validation rows plus the Preview build's service diagnostics (such as `particle.compile.*`), in a `WindowedList` with `MessageDetails`. Tapping a row frames its node and selects it in Details. `particle.graph_invalid`, and a `particle.missing_material` that validation already explains, are not repeated.
 - **Preview:** `ParticlePreviewCanvas` runs a one-slot System and only rebuilds when `particleLibraryEmitterKey` changes, so moves and renames never rebuild it.
   - While the graph has errors, it keeps the last valid build this tab rendered, with the current Material, and a strip reads "Graph has N errors. Preview shows the last valid build."
   - Before any valid build it shows **Graph Has Errors** ("Fix the errors in Compiler Results to preview.").
-  - Build reports tagged with an older key are dropped.
+  - Each build report is keyed by the library that build ran, so a late report from an older build is dropped instead of showing against a pending edit.
 
 ## Look
 
@@ -310,7 +310,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
   - A graph with validator errors keeps playing its last valid build in that preview, with its current Material, and the notice reads "Graph has N errors. Preview shows the last valid build." This holds per slot, so other slots' edits still apply.
   - When every emitter with a Material is a graph that never validated in that preview, **Graph Has Errors** shows and no preview scene starts. A `particle.graph_invalid` failure shows the same state.
   - `particle.compile.*` failures point to the graph's Compiler Results.
-- `ParticlePreviewCanvas` `onDiagnostics` reports the running build's service diagnostics (with `nodeId` / `pinId`), and an empty list when the run ends. The Particle Graph Preview feeds them to Compiler Results.
+- `ParticlePreviewCanvas` `onDiagnostics(diagnostics, applied)` reports the running build's service diagnostics (with `nodeId` / `pinId`), and an empty list when the run ends. `applied` is the library that run was built from, which trails `library` while a debounced edit waits. The Particle Graph Preview feeds them to Compiler Results.
 - Edits go through `ParticleService.updateLibrary`, which applies the change tier below (Particle Graph tiers: [Runtime](#runtime)). The preview asks the service first (`libraryChangeTier`): `live` (or `none`) edits apply at once unless a heavier edit is already waiting; `respawn` and `rebuild` wait for a 220 ms trailing debounce and show **Updating**. Only the service knows skipped slots, so a value edit on a skipped slot, which re-prepares the whole bundle, also waits.
 - A different set of Material guids, a skybox change or Retry starts a new preview Scene, because the Material resolver knows only the Material documents collected at boot. The last frame stays up with Updating. Edits inside a Material document reach the preview only after one of those.
 

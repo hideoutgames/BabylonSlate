@@ -182,8 +182,13 @@ export function ParticlePreviewCanvas({
   /**
    * The current run's service diagnostics (skipped slots and node-anchored Particle
    * Graph build errors), reported whenever they change; empty when the run ends.
+   * `applied` is the library that run was built from, which can trail `library`
+   * while a debounced edit waits.
    */
-  onDiagnostics?: (diagnostics: readonly ParticleServiceDiagnostic[]) => void;
+  onDiagnostics?: (
+    diagnostics: readonly ParticleServiceDiagnostic[],
+    applied: ParticleLibrary,
+  ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -242,7 +247,8 @@ export function ParticlePreviewCanvas({
       setFailure(null);
       setNotice(diagnostics[0]?.message ?? null);
     }
-    onDiagnosticsRef.current?.([...diagnostics]);
+    const applied = appliedRef.current;
+    if (applied) onDiagnosticsRef.current?.([...diagnostics], applied);
   }, []);
 
   const assign = useCallback(
@@ -297,12 +303,13 @@ export function ParticlePreviewCanvas({
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
     let frame = 0;
     const disposePreview = () => {
+      const applied = appliedRef.current;
       serviceRef.current?.dispose();
       serviceRef.current = null;
       appliedRef.current = null;
       if (diagnosticsRef.current.length > 0) {
         diagnosticsRef.current = [];
-        onDiagnosticsRef.current?.([]);
+        if (applied) onDiagnosticsRef.current?.([], applied);
       }
       materials?.dispose();
       materials = null;

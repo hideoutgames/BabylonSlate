@@ -49,6 +49,8 @@ export interface ParticlePinDefinition {
   /** Pin typed by the node's `valueType` property (Random, Gradient). */
   followsValueType?: true;
   description?: string;
+  /** Unit shown verbatim after the Details label, such as `s` or `m/s`. */
+  unit?: string;
 }
 
 export interface ParticleNodeDefinition {
@@ -363,6 +365,7 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
         type: FLOAT,
         defaultValue: [30],
         min: 0,
+        unit: "/s",
         description: "Particles per second. Evaluated without a particle, so it cannot read particle attributes.",
       },
     ],
@@ -376,13 +379,13 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
     description:
       "Starts the particle spine. Inputs are read once per new particle, before the Shape sets its position and direction.",
     inputs: [
-      { id: "emitPower", name: "Emit Power", type: FLOAT, defaultValue: [1], description: "Initial speed along the emit direction (m/s)." },
-      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, description: "Seconds." },
+      { id: "emitPower", name: "Emit Power", type: FLOAT, defaultValue: [1], unit: "m/s", description: "Initial speed along the emit direction (m/s)." },
+      { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, unit: "s", description: "Seconds." },
       { id: "color", name: "Color", type: COLOR, defaultValue: [1, 1, 1, 1] },
       { id: "deadColor", name: "Dead Color", type: COLOR, defaultValue: [0, 0, 0, 0] },
       { id: "size", name: "Size", type: FLOAT, defaultValue: [1], min: 0 },
       { id: "scale", name: "Scale", type: VEC2, defaultValue: [1, 1] },
-      { id: "angle", name: "Angle", type: FLOAT, defaultValue: [0], description: "Radians." },
+      { id: "angle", name: "Angle", type: FLOAT, defaultValue: [0], unit: "rad", description: "Radians." },
     ],
     outputs: [PARTICLE_OUT],
   },
@@ -451,6 +454,7 @@ const SHAPE_NODES: ParticleNodeDefinition[] = [
         defaultValue: [Math.PI / 6],
         min: 0.01,
         max: Math.PI,
+        unit: "rad",
         description: "Full opening angle in radians.",
       },
       RADIUS_RANGE,
@@ -480,7 +484,7 @@ const UPDATE_NODES: ParticleNodeDefinition[] = [
   updateNode("update.color", "Update Color", "Update", [{ id: "color", name: "Color", type: COLOR, required: true }], "Sets the color every frame."),
   updateNode("update.size", "Update Size", "Update", [{ id: "size", name: "Size", type: FLOAT, required: true }], "Sets the size every frame."),
   updateNode("update.scale", "Update Scale", "Update", [{ id: "scale", name: "Scale", type: VEC2, required: true }], "Sets the X and Y scale every frame."),
-  updateNode("update.angle", "Update Angle", "Update", [{ id: "angle", name: "Angle", type: FLOAT, required: true, description: "Radians." }], "Sets the rotation (radians) every frame."),
+  updateNode("update.angle", "Update Angle", "Update", [{ id: "angle", name: "Angle", type: FLOAT, required: true, unit: "rad", description: "Radians." }], "Sets the rotation (radians) every frame."),
   updateNode("update.basicPosition", "Apply Velocity", "Update", [], "Moves each particle along its direction every frame."),
   updateNode("update.basicColor", "Fade To Dead Color", "Update", [], "Blends each particle from its Color to its Dead Color over its life."),
   updateNode("update.alignAngle", "Align Angle", "Update", [], "Rotates each particle to face its direction of travel, plus Alignment."),
@@ -488,7 +492,7 @@ const UPDATE_NODES: ParticleNodeDefinition[] = [
     "force.gravity",
     "Gravity",
     "Forces",
-    [{ id: "acceleration", name: "Acceleration", type: VEC3, defaultValue: [0, -9.81, 0], description: "m/s²." }],
+    [{ id: "acceleration", name: "Acceleration", type: VEC3, defaultValue: [0, -9.81, 0], unit: "m/s²", description: "m/s²." }],
     "Adds Acceleration × Delta Time to the direction every frame.",
   ),
   updateNode(

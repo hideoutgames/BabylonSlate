@@ -45,6 +45,7 @@ export interface ParticlePinDefault {
   min?: number;
   max?: number;
   description?: string;
+  unit?: string;
 }
 
 /**
@@ -85,6 +86,7 @@ export function listUnconnectedParticlePinDefaults(
       ...(pin.min !== undefined ? { min: pin.min } : {}),
       ...(pin.max !== undefined ? { max: pin.max } : {}),
       ...(pin.description ? { description: pin.description } : {}),
+      ...(pin.unit ? { unit: pin.unit } : {}),
     });
   }
   return rows;

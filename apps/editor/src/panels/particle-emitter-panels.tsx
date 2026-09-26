@@ -115,8 +115,11 @@ function withValueAt(
   return next;
 }
 
-/** Particle-domain Materials only; an open Material tab's domain wins over its header. */
-function ParticleMaterialPicker({
+/**
+ * Particle-domain Materials only; an open Material tab's domain wins over its header.
+ * Basic emitter and Particle Graph Details and Previews share it.
+ */
+export function ParticleMaterialPicker({
   open,
   onOpenChange,
   onPick,

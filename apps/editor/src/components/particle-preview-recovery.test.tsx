@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   type ParticleEmitterPayload,
+  type ParticleLibrary,
 } from "@babylonslate/assets";
 import type { ParticleServiceDiagnostic } from "@babylonslate/render";
 import { ParticlePreviewCanvas } from "./particle-preview-canvas";
@@ -15,6 +17,8 @@ const harness = vi.hoisted(() => ({
     setPaused: ReturnType<typeof vi.fn>;
     updateLibrary: ReturnType<typeof vi.fn>;
     handleCommand: ReturnType<typeof vi.fn>;
+    /** A diagnostic that arrives after the call that caused it (an async Material failure). */
+    report: (diagnostic: ParticleServiceDiagnostic) => void;
     systems: number;
     state: string | null;
   }>,
@@ -40,7 +44,14 @@ vi.mock("@babylonslate/render", () => {
       this.state = failed ? "failed" : "playing";
     });
     playbackState = () => this.state;
-    stats = () => ({ systems: this.systems, playing: this.systems, gpu: true, gpuSystems: this.systems });
+    report = (diagnostic: ParticleServiceDiagnostic) => this.onDiagnostic?.(diagnostic);
+    stats = () => ({
+      systems: this.systems,
+      playing: this.systems,
+      gpu: true,
+      gpuSystems: this.systems,
+      graphSystems: 0,
+    });
     previewStats = () => ({ active: 12, capacity: 256, backend: "gpu", approximate: true });
     dispose = vi.fn();
     constructor(options: { onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void }) {
@@ -97,17 +108,29 @@ const withRate = (value: number): ParticleEmitterPayload => ({
   spawn: { ...withMaterial.spawn, rate: { mode: "constant", value } },
 });
 
-function preview(emitter: ParticleEmitterPayload = withMaterial) {
+function libraryFor(emitter: ParticleEmitterPayload): ParticleLibrary {
+  return systemPreviewLibrary(
+    { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] },
+    new Map([["emitter", { kind: "basic", payload: emitter }]]),
+  );
+}
+
+function canvas(
+  library: ParticleLibrary,
+  onDiagnostics?: ComponentProps<typeof ParticlePreviewCanvas>["onDiagnostics"],
+) {
   return (
     <ParticlePreviewCanvas
-      library={systemPreviewLibrary(
-        { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] },
-        new Map([["emitter", { kind: "basic", payload: emitter }]]),
-      )}
+      library={library}
       systemGuid="preview-sys"
       testId="particle-canvas"
+      onDiagnostics={onDiagnostics}
     />
   );
+}
+
+function preview(emitter: ParticleEmitterPayload = withMaterial) {
+  return canvas(libraryFor(emitter));
 }
 
 describe("Particle preview recovery", () => {
@@ -156,6 +179,31 @@ describe("Particle preview recovery", () => {
     expect(screen.getByTestId("particle-preview-updating")).toBeTruthy();
     await waitFor(() => expect(service.updateLibrary).toHaveBeenCalledTimes(2));
     expect(harness.services).toHaveLength(1);
+  });
+
+  it("reports a late diagnostic with the library its run was built from", async () => {
+    const onDiagnostics = vi.fn();
+    const running = libraryFor(withMaterial);
+    const view = render(canvas(running, onDiagnostics));
+    await screen.findByTestId("particle-preview-restart");
+    const service = harness.services[0]!;
+    harness.tier = "rebuild";
+    const edited = libraryFor(withRate(61));
+    view.rerender(canvas(edited, onDiagnostics));
+    // An async Material failure of the running build lands while the edit waits.
+    const late: ParticleServiceDiagnostic = {
+      code: "particle.apply_failed",
+      assetGuid: "emitter",
+      message: "Particle Emitter Material failed to build; slot skipped.",
+    };
+    act(() => service.report(late));
+    expect(service.updateLibrary).not.toHaveBeenCalled();
+    expect(onDiagnostics.mock.lastCall![0]).toEqual([late]);
+    expect(onDiagnostics.mock.lastCall![1]).toBe(running);
+    // The rebuild starts a new report for the edited library.
+    await waitFor(() => expect(service.updateLibrary).toHaveBeenCalledTimes(1));
+    expect(onDiagnostics.mock.lastCall![0]).toEqual([]);
+    expect(onDiagnostics.mock.lastCall![1]).toBe(edited);
   });
 
   it("keeps Restart after a finished Once emitter released its systems", async () => {
