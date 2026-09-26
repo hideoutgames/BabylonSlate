@@ -71,6 +71,10 @@ Apple documents [cloud-managed certificate access](https://developer.apple.com/h
 
 To unblock: obtain an Apple-supported archive procedure and establish the API key's provisioning/cloud-signing permissions, then implement and test that procedure. With credentials and a separate explicit distribution request, validate at least two new hosted macOS runners with no prior Apple login, certificates, profiles or restored signing cache. Check certificate lifecycle, immutable identity, private group delivery, signature/entitlements, privacy/encryption and failure cleanup. Only after both runs succeed may the manual path and its three active signing-secret references be removed. Real signing, upload and device acceptance remain pending.
 
+## iOS app lifecycle
+
+The native App target uses the UIKit scene-based lifecycle, matching the Capacitor 8.5 template: `Info.plist` declares `UIApplicationSceneManifest` (single scene, `Main` storyboard, `SceneDelegate`), `SceneDelegate` owns the `CAPBridgeViewController` window and forwards URL/universal-link opens to `SceneDelegateProxy`, and `AppDelegate` returns the scene configuration. SDKs from iOS 26 onward refuse to launch apps that only implement the legacy `UIApplicationDelegate` window path; the deployment target is unchanged.
+
 ## iOS app capabilities
 
 The native App target requests `com.apple.developer.kernel.increased-memory-limit=true` and `com.apple.developer.kernel.extended-virtual-addressing=true` in both Debug and Release. [Increased Memory Limit](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.increased-memory-limit) can raise the native process allowance on supported devices; it guarantees no fixed RAM budget. [Extended Virtual Addressing](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.extended-virtual-addressing) enables a larger virtual address space, which is distinct from additional physical memory.

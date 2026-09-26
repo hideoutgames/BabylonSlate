@@ -45,7 +45,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 | CSS | `overflow: hidden` and `overscroll-behavior: none` on `html`, `body`, `#root`, and app shell roots | All platforms |
 | CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome closable-tab scroller, Homepage horizontal Projects and Templates pages |
 | JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers. Skips `input`, `textarea`, `contenteditable`, and `.selectable-text` so iPad selection handles can drag. | iOS Safari / touch fallback |
-| Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
+| Native | WKWebView `scrollView.bounces = false`, applied by `SceneDelegate` on scene connect and activation | Capacitor iOS app only |
 
 ### Standalone (Add to Home Screen)
 
