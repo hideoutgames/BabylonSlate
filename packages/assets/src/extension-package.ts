@@ -89,6 +89,7 @@ export async function inspectBabextension(bytes: Uint8Array): Promise<InspectedB
 }
 
 export async function exportExtensionZip(storage: ProjectStorage, descriptor: ExtensionDescriptor): Promise<Uint8Array> {
+  if (descriptor.invalid) throw new Error(`The Extension is invalid: ${descriptor.invalid}`);
   const prefix = `${descriptor.folderPath}/`;
   const files = (await readProjectTree(storage, descriptor.folderPath)).map((file) => ({
     path: file.path.slice(prefix.length),
@@ -193,6 +194,7 @@ export async function installEngineExtensionDefaults(projectStorage: ProjectStor
   const folders = existing.map((extension) => extension.folderName);
   const installed: ExtensionDescriptor[] = [];
   for (const extension of await discoverEngineExtensions(engineStorage)) {
+    if (extension.invalid) continue;
     if (guids.has(extension.extensionGuid)) continue;
     const incoming = await inspectBabextension(await exportExtensionZip(engineStorage, extension));
     const folderName = uniqueExtensionFolderName(extension.folderName, folders);

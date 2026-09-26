@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createEmptyProject } from "@babylonslate/core";
 import { createDefaultExtensionSettings, decodeExtensionSettings, exportExtensionZip, writeProjectExtension } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -75,6 +75,38 @@ afterEach(async () => {
 });
 
 describe("ProjectExtensionsSettings", () => {
+  it("keeps healthy commands usable and lets users delete a malformed package", async () => {
+    await storage.mkdir("extensions/Broken", true);
+    await storage.writeText("extensions/Broken/extension.json", "{}");
+    await harness.service!.refresh({ tools: { enabled: true } });
+    harness.overrides = harness.service!.getOverrides();
+    render(<ProjectExtensionsSettings />);
+
+    const invalid = harness.service!.getSnapshot().entries.find((entry) => entry.folderName === "Broken")!;
+    const row = within(screen.getByTestId(`settings-extension-row-${invalid.extensionGuid}`));
+    expect(row.getByText("Unsupported Extension manifest.")).toBeTruthy();
+    for (const [role, name] of [["switch", "Enable Broken"], ["button", "Edit Broken"], ["button", "Export Broken"]]) {
+      expect((row.getByRole(role, { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect((row.getByRole("button", { name: "Delete Broken" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Write Code" }));
+    const dialog = await screen.findByRole("dialog", { name: "Write Code" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Run" }));
+    expect(await screen.findByText("Command Completed")).toBeTruthy();
+    expect(await storage.readText("scripts/output.ts")).toBe("initial");
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Close" })[0]!);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Write Code" })).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Broken" }));
+    const confirmation = await screen.findByRole("alertdialog", { name: "Delete Extension" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Delete Broken" })).toBeNull());
+    expect(await storage.exists("extensions/Broken")).toBe(false);
+    expect(await storage.readText("extensions/tools/index.ts")).toBe(source);
+    expect(screen.getByRole("button", { name: "Write Code" })).toBeTruthy();
+  });
+
   it("requires enable confirmation and preserves command inputs for retry after an error", async () => {
     render(<ProjectExtensionsSettings />);
     fireEvent.click(screen.getByRole("switch", { name: "Enable Tools" }));

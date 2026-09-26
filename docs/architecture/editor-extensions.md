@@ -23,6 +23,9 @@ dependencies and entry point. `project.json` stores enable overrides by GUID.
 Enabling Experimental/Beta code requires maturity confirmation. Missing or
 disabled dependencies and cycles block activation; recorded version differences
 appear as diagnostics.
+Malformed manifests and duplicate IDs remain visible as disabled recovery entries.
+They cannot activate or export; deleting a broken project package leaves healthy
+extensions available.
 
 Import/export uses a separate `.babextension` zip with an Extension manifest;
 `.babplugin` remains the content-plugin format. Project exports can be downloaded
@@ -57,7 +60,9 @@ Extensions execute as trusted editor code; the host is not a security sandbox.
 The project lifetime owns activation and registered commands. Disabling,
 replacing/reloading code or closing the project removes commands and runs cleanup.
 Old API references stop accepting calls after deactivation. Activation, command
-and cleanup failures surface as extension diagnostics.
+and cleanup failures surface as extension diagnostics. The host drains outstanding
+API operations before releasing project storage. Cleanup failures remain visible
+after reload or disable and are also written to the editor diagnostic log.
 
 ## Bundled GLSL to Material
 

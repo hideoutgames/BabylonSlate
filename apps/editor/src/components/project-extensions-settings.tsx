@@ -60,8 +60,8 @@ export function ProjectExtensionsSettings() {
       {error ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription>{error.message}<Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={error.retry}>Retry</Button></AlertDescription></Alert> : null}
       {snapshot.diagnostics.length > 0 ? <Alert><AlertTitle>Extension Diagnostics</AlertTitle><AlertDescription><ul className="list-disc pl-4">{snapshot.diagnostics.map((message, index) => <li key={`${index}:${message}`}>{message}</li>)}</ul></AlertDescription></Alert> : null}
       {snapshot.entries.map((entry) => {
-        const enabled = overrides[entry.extensionGuid]?.enabled ?? entry.settings.enabledByDefault;
-        const commands = snapshot.commands.filter((value) => value.extensionId === entry.extensionGuid);
+        const enabled = !entry.invalid && (overrides[entry.extensionGuid]?.enabled ?? entry.settings.enabledByDefault);
+        const commands = entry.invalid ? [] : snapshot.commands.filter((value) => value.extensionId === entry.extensionGuid);
         const Icon = resolvePluginIcon(entry.settings.iconKey);
         return <Field key={entry.extensionGuid} className="rounded-md border border-border p-3" data-testid={`settings-extension-row-${entry.extensionGuid}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -74,15 +74,16 @@ export function ProjectExtensionsSettings() {
               <span className="text-sm text-muted-foreground">v{entry.settings.version}</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {!entry.readOnly ? <Button variant="outline" size="sm" disabled={Boolean(pending)} aria-label={`Edit ${entry.settings.displayName}`} onClick={() => void run("Opening Extension", () => edit(entry))}>Edit</Button> : null}
-              <Button variant="outline" size="sm" disabled={Boolean(pending)} aria-label={`Export ${entry.settings.displayName}`} onClick={() => setExportTarget(entry)}>Export</Button>
+              {!entry.readOnly ? <Button variant="outline" size="sm" disabled={Boolean(pending || entry.invalid)} aria-label={`Edit ${entry.settings.displayName}`} onClick={() => void run("Opening Extension", () => edit(entry))}>Edit</Button> : null}
+              <Button variant="outline" size="sm" disabled={Boolean(pending || entry.invalid)} aria-label={`Export ${entry.settings.displayName}`} onClick={() => setExportTarget(entry)}>Export</Button>
               {!entry.readOnly ? <Button variant="outline" size="sm" disabled={Boolean(pending)} aria-label={`Delete ${entry.settings.displayName}`} onClick={() => setDeleteTarget(entry)}>Delete</Button> : null}
             </div>
           </div>
+          {entry.invalid ? <Alert variant="destructive"><AlertTitle>Invalid Extension</AlertTitle><AlertDescription>{entry.invalid}</AlertDescription></Alert> : null}
           {entry.settings.description ? <FieldDescription>{entry.settings.description}</FieldDescription> : null}
           {entry.settings.extensionDependencies.length ? <FieldDescription>Dependencies: {entry.settings.extensionDependencies.map((dependency) => `${snapshot.entries.find((value) => value.extensionGuid === dependency.guid)?.settings.displayName ?? dependency.guid} (${dependency.version || "Any Version"})`).join(", ")}</FieldDescription> : null}
           <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor={`extension-enabled-${entry.extensionGuid}`}>Enable {entry.settings.displayName}</FieldLabel></FieldContent>
-            <Switch id={`extension-enabled-${entry.extensionGuid}`} aria-label={`Enable ${entry.settings.displayName}`} checked={enabled} disabled={Boolean(pending)} onCheckedChange={(checked) => {
+            <Switch id={`extension-enabled-${entry.extensionGuid}`} aria-label={`Enable ${entry.settings.displayName}`} checked={enabled} disabled={Boolean(pending || entry.invalid)} onCheckedChange={(checked) => {
               if (checked) setEnableTarget(entry);
               else void run("Disabling Extension", () => setEnabled(entry, false));
             }} />

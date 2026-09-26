@@ -17,7 +17,12 @@ interface Value { node: string; pin: string; width: number; integer?: boolean; c
 interface Variable { width: number; value?: Value; readOnly: boolean }
 
 class ConversionError extends Error {
-  constructor(readonly token: Token, message: string) { super(message); }
+  readonly token: Token;
+
+  constructor(token: Token, message: string) {
+    super(message);
+    this.token = token;
+  }
 }
 
 const WIDTHS: Readonly<Record<string, number>> = { float: 1, vec2: 2, vec3: 3, vec4: 4 };
@@ -75,6 +80,8 @@ function tokenize(source: string): Token[] {
 
 class Converter {
   readonly document: MaterialDocument;
+  private readonly tokens: Token[];
+  private readonly options: GlslToMaterialOptions;
   private readonly variables = new Map<string, Variable>();
   private readonly usedBindings = new Set<string>();
   private index = 0;
@@ -83,7 +90,9 @@ class Converter {
   private outputName = "gl_FragColor";
   private namedOutput = false;
 
-  constructor(private readonly tokens: Token[], private readonly options: GlslToMaterialOptions) {
+  constructor(tokens: Token[], options: GlslToMaterialOptions) {
+    this.tokens = tokens;
+    this.options = options;
     this.document = createDefaultMaterialDocument(options.name?.trim() || "GLSL Material");
     this.document.shadingModel = "unlit";
     // Imported fragment output includes alpha. The user may choose Opaque after reviewing it.

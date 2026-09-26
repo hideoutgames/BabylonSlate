@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ENGINE_VERSION } from "@babylonslate/core";
-import { createExtensionSettings, resolveExtensionGraph, type ExtensionDescriptor } from "./extension-host";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createExtensionSettings, discoverProjectExtensions, resolveExtensionGraph, writeProjectExtension, type ExtensionDescriptor } from "./extension-host";
 
 function extension(guid: string, dependencies: string[] = []): ExtensionDescriptor {
   return {
@@ -52,5 +53,41 @@ describe("Extension enablement", () => {
       expect.objectContaining({ code: "extension.dependency_blocked", extensionGuid: "dependent" }),
       expect.objectContaining({ code: "extension.cycle", extensions: ["cycle-a", "cycle-b"] }),
     ]));
+  });
+
+  it("keeps malformed packages visible for deletion without disabling healthy modules", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("extensions");
+    await writeProjectExtension(storage, "healthy", { ...createExtensionSettings("Healthy", "healthy"), enabledByDefault: true });
+    await storage.mkdir("extensions/broken", true);
+    await storage.writeText("extensions/broken/extension.json", "{invalid json");
+    const discovered = await discoverProjectExtensions(storage);
+    const broken = discovered.find((entry) => entry.folderName === "broken")!;
+    expect(broken).toMatchObject({ folderPath: "extensions/broken", readOnly: false, invalid: expect.any(String), settings: { enabledByDefault: false } });
+    expect((await discoverProjectExtensions(storage)).find((entry) => entry.folderName === "broken")?.extensionGuid).toBe(broken.extensionGuid);
+    const graph = resolveExtensionGraph(discovered, ENGINE_VERSION, { [broken.extensionGuid]: { enabled: true } });
+    expect(graph.order.map((entry) => entry.extensionGuid)).toEqual(["healthy"]);
+    expect(graph.diagnostics).toEqual([expect.objectContaining({ code: "extension.invalid", extensionGuid: broken.extensionGuid })]);
+    await storage.remove(broken.folderPath);
+    expect((await discoverProjectExtensions(storage)).map((entry) => entry.extensionGuid)).toEqual(["healthy"]);
+  });
+
+  it("isolates every duplicate identity and restores the survivor after a conflicting copy is removed", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("extensions");
+    const duplicate = { ...createExtensionSettings("Duplicated", "duplicate"), enabledByDefault: true };
+    await writeProjectExtension(storage, "first", duplicate);
+    await writeProjectExtension(storage, "second", duplicate);
+    await writeProjectExtension(storage, "healthy", { ...createExtensionSettings("Healthy", "healthy"), enabledByDefault: true });
+    const discovered = await discoverProjectExtensions(storage);
+    const invalid = discovered.filter((entry) => entry.invalid);
+    expect(invalid).toHaveLength(2);
+    expect(new Set(invalid.map((entry) => entry.extensionGuid)).size).toBe(2);
+    expect(resolveExtensionGraph(discovered).order.map((entry) => entry.extensionGuid)).toEqual(["healthy"]);
+    expect(resolveExtensionGraph(discovered).diagnostics.filter((entry) => entry.code === "extension.invalid")).toHaveLength(2);
+    await storage.remove("extensions/second");
+    const recovered = await discoverProjectExtensions(storage);
+    expect(recovered.find((entry) => entry.folderName === "first")).toMatchObject({ extensionGuid: "duplicate", settings: { enabledByDefault: true } });
+    expect(resolveExtensionGraph(recovered).order.map((entry) => entry.extensionGuid)).toEqual(["duplicate", "healthy"]);
   });
 });

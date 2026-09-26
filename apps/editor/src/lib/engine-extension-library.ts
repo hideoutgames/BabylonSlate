@@ -1,4 +1,5 @@
 import {
+  createExtensionSettings,
   discoverEngineExtensions,
   encodeExtensionSettings,
   exportExtensionZip,
@@ -6,6 +7,7 @@ import {
   uniqueExtensionFolderName,
   unpackEngineExtensionZip,
   type ExtensionDescriptor,
+  type InspectedBabextension,
 } from "@babylonslate/assets";
 import { newGuid, type ProjectStorage } from "@babylonslate/core";
 import {
@@ -74,7 +76,7 @@ export class EngineExtensionLibrary {
     const archivePaths = new Map<string, string>();
     const folderNames: string[] = [];
     const append = (descriptor: ExtensionDescriptor, bundled: boolean) => {
-      const enabledByDefault =
+      const enabledByDefault = descriptor.invalid ? false :
         defaults[descriptor.extensionGuid] ?? descriptor.settings.enabledByDefault;
       const entry: EngineExtensionEntry = {
         ...descriptor,
@@ -93,8 +95,26 @@ export class EngineExtensionLibrary {
       .filter((file) => !file.isDir && file.name.endsWith(".babextension"))
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const archive of archives) {
-      const bytes = await this.libraryStorage.readBinary(archive.name);
-      const incoming = await inspectBabextension(bytes);
+      let incoming: InspectedBabextension;
+      try {
+        incoming = await inspectBabextension(await this.libraryStorage.readBinary(archive.name));
+      } catch (cause) {
+        const guid = `invalid-library:${encodeURIComponent(archive.name)}`;
+        const folderName = uniqueExtensionFolderName(archive.name, folderNames);
+        const entry = append({
+          extensionGuid: guid,
+          folderName,
+          folderPath: folderName,
+          settingsPath: `${folderName}/extension.json`,
+          contentPath: `${folderName}/assets`,
+          source: "engine",
+          readOnly: true,
+          settings: createExtensionSettings(`Invalid Extension (${archive.name})`, guid),
+          invalid: cause instanceof Error ? cause.message : String(cause),
+        }, false);
+        archivePaths.set(entry.extensionGuid, archive.name);
+        continue;
+      }
       // An engine update may introduce a bundled name/GUID already in the library.
       // The bundled original remains authoritative; never let a user archive replace it.
       if (entries.some((entry) =>
@@ -121,7 +141,7 @@ export class EngineExtensionLibrary {
   private async captureStorage(state: LibraryState): Promise<ProjectStorage> {
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-extension-snapshot");
-    for (const entry of state.entries) {
+    for (const entry of state.entries.filter((value) => !value.invalid)) {
       const bytes = entry.bundled
         ? await exportExtensionZip(this.bundledStorage, entry)
         : await this.libraryStorage.readBinary(state.archivePaths.get(entry.extensionGuid)!);
@@ -148,6 +168,7 @@ export class EngineExtensionLibrary {
       const state = await this.readState();
       const entry = state.entries.find((extension) => extension.extensionGuid === guid);
       if (!entry) throw new Error("The Engine Extension no longer exists.");
+      if (entry.invalid) throw new Error(`The Engine Extension is invalid: ${entry.invalid}`);
       const storage = await this.captureStorage({ ...state, entries: [entry] });
       return exportExtensionZip(storage, entry);
     });
@@ -156,9 +177,11 @@ export class EngineExtensionLibrary {
   setEnabledByDefault(guid: string, enabled: boolean): Promise<void> {
     return this.serialize(async () => {
       const { entries, defaults } = await this.readState();
-      if (!entries.some((entry) => entry.extensionGuid === guid)) {
+      const entry = entries.find((entry) => entry.extensionGuid === guid);
+      if (!entry) {
         throw new Error("The Engine Extension no longer exists.");
       }
+      if (entry.invalid) throw new Error(`The Engine Extension is invalid: ${entry.invalid}`);
       defaults[guid] = enabled;
       await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
     });
@@ -203,17 +226,37 @@ export class EngineExtensionLibrary {
       const archivePath = existing
         ? archivePaths.get(existing.extensionGuid)!
         : `${newGuid()}.babextension`;
+      const previousArchive = existing ? await this.libraryStorage.readBinary(archivePath) : null;
+      const previousDefaults = await this.libraryStorage.exists(DEFAULTS_FILE)
+        ? await this.libraryStorage.readBinary(DEFAULTS_FILE)
+        : null;
       if (existing) {
         delete defaults[existing.extensionGuid];
         defaults[incoming.settings.extensionGuid] = existing.enabledByDefault;
       }
-      await this.libraryStorage.writeBinary(archivePath, bytes);
-      await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
-      const entry = (await this.readState()).entries.find(
-        (extension) => extension.extensionGuid === incoming.settings.extensionGuid,
-      );
-      if (!entry) throw new Error("Export did not produce an Engine Extension.");
-      return { status: "imported", entry };
+      try {
+        await this.libraryStorage.writeBinary(archivePath, bytes);
+        await this.libraryStorage.writeText(DEFAULTS_FILE, JSON.stringify(defaults));
+        const entry = (await this.readState()).entries.find(
+          (extension) => extension.extensionGuid === incoming.settings.extensionGuid,
+        );
+        if (!entry) throw new Error("Export did not produce an Engine Extension.");
+        return { status: "imported", entry };
+      } catch (cause) {
+        const restoreErrors: unknown[] = [];
+        try {
+          if (previousArchive) await this.libraryStorage.writeBinary(archivePath, previousArchive);
+          else if (await this.libraryStorage.exists(archivePath)) await this.libraryStorage.remove(archivePath);
+        } catch (restoreError) { restoreErrors.push(restoreError); }
+        try {
+          if (previousDefaults) await this.libraryStorage.writeBinary(DEFAULTS_FILE, previousDefaults);
+          else if (await this.libraryStorage.exists(DEFAULTS_FILE)) await this.libraryStorage.remove(DEFAULTS_FILE);
+        } catch (restoreError) { restoreErrors.push(restoreError); }
+        if (restoreErrors.length > 0) {
+          throw new AggregateError([cause, ...restoreErrors], "Extension import failed and the previous library state could not be fully restored.");
+        }
+        throw cause;
+      }
     });
   }
 }

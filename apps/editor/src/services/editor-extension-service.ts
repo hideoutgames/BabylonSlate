@@ -28,6 +28,7 @@ export class EditorExtensionService {
   private mutation: Promise<unknown> = Promise.resolve();
   private writeGuard: (path: string) => void = () => {};
   private readonly services: EditorExtensionServices;
+  private cleanupDiagnostics: string[] = [];
 
   constructor(storage: ProjectStorage, services: EditorExtensionServices) {
     this.storage = storage;
@@ -63,6 +64,13 @@ export class EditorExtensionService {
   }
   private async resetHost(): Promise<void> {
     await this.host.dispose();
+    for (const diagnostic of this.host.getDiagnostics().filter((value) => value.phase === "dispose")) {
+      const name = this.state.entries.find((entry) => entry.extensionGuid === diagnostic.extensionId)?.settings.displayName ?? diagnostic.extensionId;
+      const message = `${name}: cleanup failed: ${diagnostic.message}`;
+      this.cleanupDiagnostics.push(message);
+      this.services.log?.(diagnostic.extensionId, message);
+    }
+    this.cleanupDiagnostics = this.cleanupDiagnostics.slice(-50);
     this.host = new EditorExtensionHost(this.services);
   }
   private storageFor(entry: ExtensionDescriptor): ProjectStorage {
@@ -111,12 +119,12 @@ export class EditorExtensionService {
         this.fingerprint = active.size === graph.order.length ? fingerprint : "";
       }
       this.publish({ entries, commands: this.host.listCommands(), diagnostics: [
-        ...diagnostics, ...this.host.getDiagnostics().map((value) => value.message),
+        ...diagnostics, ...this.cleanupDiagnostics, ...this.host.getDiagnostics().map((value) => value.message),
       ] });
     } catch (cause) {
       await this.resetHost();
       this.fingerprint = "";
-      this.publish({ entries: [], commands: [], diagnostics: [String(cause)] });
+      this.publish({ entries: [], commands: [], diagnostics: [...this.cleanupDiagnostics, String(cause)] });
       throw cause;
     }
   }
@@ -127,6 +135,7 @@ export class EditorExtensionService {
       this.fingerprint = "";
       this.overrides = {};
       this.publish({ entries: [], commands: [], diagnostics: [] });
+      this.cleanupDiagnostics = [];
     });
   }
 
@@ -142,12 +151,14 @@ export class EditorExtensionService {
 
   readSource(guid: string): Promise<string> {
     const entry = this.entry(guid);
+    if (entry.invalid) throw new Error(entry.invalid);
     return this.storageFor(entry).readText(`${entry.folderPath}/${entry.settings.entryPoint}`);
   }
 
   save(guid: string, settings: ExtensionSettings, source: string): Promise<void> {
     return this.serialize(async () => {
       const entry = this.entry(guid);
+      if (entry.invalid) throw new Error(entry.invalid);
       if (entry.readOnly) throw new Error("Engine Extensions are read-only. Import a project copy to edit it.");
       if (settings.extensionGuid !== guid || settings.entryPoint !== entry.settings.entryPoint) {
         throw new Error("Extension identity and Entry Point cannot change while editing.");
@@ -198,6 +209,7 @@ export class EditorExtensionService {
   export(guid: string): Promise<Uint8Array> {
     return this.serialize(async () => {
       const entry = this.entry(guid);
+      if (entry.invalid) throw new Error(entry.invalid);
       return exportExtensionZip(this.storageFor(entry), entry);
     });
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createExtensionSettings,
   discoverEngineExtensions,
@@ -6,6 +6,7 @@ import {
   exportExtensionZip,
   inspectBabextension,
   installEngineExtensionDefaults,
+  readProjectTree,
   unpackEngineExtensionZip,
   writeProjectExtension,
 } from "@babylonslate/assets";
@@ -100,5 +101,53 @@ describe("EngineExtensionLibrary", () => {
     expect(await snapshot.readText("user-tool/index.ts")).toContain("api.log('original')");
     await expect(snapshot.writeText("user-tool/index.ts", "changed")).rejects.toThrow(/read-only/i);
     expect((await new EngineExtensionLibrary(bundled, saved).list()).map((entry) => entry.extensionGuid)).toEqual(["bundled-guid"]);
+  });
+
+  it.each([false, true])("restores the complete prior library when defaults persistence fails (replacement: %s)", async (replace) => {
+    const { saved, library: store } = await library();
+    if (replace) {
+      await store.import(await archive("original-guid", "User Tool"));
+      await store.setEnabledByDefault("original-guid", true);
+    }
+    const before = await readProjectTree(saved);
+    const incoming = await archive("incoming-guid", "User Tool", "export function activate(api) { api.log('replacement'); }");
+    const writeText = saved.writeText.bind(saved);
+    let failed = false;
+    const failingWrite = vi.spyOn(saved, "writeText").mockImplementation(async (path, value) => {
+      await writeText(path, value);
+      if (!failed && path === "defaults.json") {
+        failed = true;
+        throw new Error("Defaults write failed");
+      }
+    });
+
+    await expect(store.import(incoming, replace ? { replaceGuid: "original-guid" } : {})).rejects.toThrow("Defaults write failed");
+
+    expect(await readProjectTree(saved)).toEqual(before);
+    expect((await store.list()).some((entry) => entry.extensionGuid === "incoming-guid")).toBe(false);
+    if (replace) {
+      const restored = await inspectBabextension(await store.export("original-guid"));
+      expect(restored.settings.enabledByDefault).toBe(true);
+      expect(new TextDecoder().decode(restored.files.find((file) => file.path === "index.ts")?.data)).toContain("api.log('original')");
+    }
+    failingWrite.mockRestore();
+  });
+
+  it("isolates corrupted library archives as deletable rows while healthy defaults still copy", async () => {
+    const { bundled, saved, library: store } = await library();
+    await saved.writeBinary("broken.babextension", new Uint8Array([1, 2, 3]));
+    await bundled.mkdir("broken-bundle", true);
+    await bundled.writeText("broken-bundle/extension.json", "{invalid");
+    const entries = await store.list();
+    const broken = entries.find((entry) => entry.invalid && !entry.bundled)!;
+    expect(broken).toMatchObject({ bundled: false, enabledByDefault: false });
+    expect((await store.list()).find((entry) => entry.invalid && !entry.bundled)?.extensionGuid).toBe(broken.extensionGuid);
+    await expect(store.export(broken.extensionGuid)).rejects.toThrow(/invalid/);
+    await expect(store.setEnabledByDefault(broken.extensionGuid, true)).rejects.toThrow(/invalid/);
+    const snapshot = await store.createStorageSnapshot();
+    expect((await discoverEngineExtensions(snapshot)).map((entry) => entry.extensionGuid)).toEqual(["bundled-guid"]);
+    await store.remove(broken.extensionGuid);
+    expect(await saved.exists("broken.babextension")).toBe(false);
+    expect((await store.list()).some((entry) => entry.extensionGuid === broken.extensionGuid)).toBe(false);
   });
 });

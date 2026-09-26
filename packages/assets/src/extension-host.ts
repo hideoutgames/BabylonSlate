@@ -24,10 +24,12 @@ export interface ExtensionDescriptor {
   source: "project" | "engine";
   readOnly: boolean;
   settings: ExtensionSettings;
+  /** Invalid packages remain listed for diagnosis/deletion but can never activate. */
+  invalid?: string;
 }
 
 export interface ExtensionDiagnostic {
-  code: `extension.${"cycle" | "unsatisfiable" | "dependency_blocked" | "missing" | "engine_unsatisfiable"}`;
+  code: `extension.${"cycle" | "unsatisfiable" | "dependency_blocked" | "missing" | "engine_unsatisfiable" | "invalid"}`;
   severity: "warning" | "error";
   message: string;
   extensionGuid?: string;
@@ -58,6 +60,17 @@ function describeExtension(folderPath: string, source: "project" | "engine", set
   };
 }
 
+function invalidExtension(folderPath: string, source: "project" | "engine", message: string): ExtensionDescriptor {
+  const folderName = folderPath.slice(folderPath.lastIndexOf("/") + 1);
+  return {
+    ...describeExtension(folderPath, source, createDefaultExtensionSettings({
+      extensionGuid: `invalid-extension:${source}:${encodeURIComponent(folderPath)}`,
+      displayName: folderName,
+    })),
+    invalid: message,
+  };
+}
+
 async function discoverExtensions(storage: ProjectStorage, source: "project" | "engine"): Promise<ExtensionDescriptor[]> {
   const root = source === "project" ? EXTENSIONS_DIR : ".";
   if (!(await storage.exists(root))) return [];
@@ -67,13 +80,20 @@ async function discoverExtensions(storage: ProjectStorage, source: "project" | "
     const folderPath = source === "project" ? `${root}/${entry.name}` : entry.name;
     const manifestPath = `${folderPath}/${EXTENSION_MANIFEST_FILE}`;
     if (!(await storage.exists(manifestPath))) continue;
-    const settings = decodeExtensionSettings(await storage.readBinary(manifestPath));
-    if (extensions.some((extension) => extension.extensionGuid === settings.extensionGuid)) {
-      throw new Error(`Duplicate Extension ID: ${settings.extensionGuid}`);
+    try {
+      const settings = decodeExtensionSettings(await storage.readBinary(manifestPath));
+      extensions.push(describeExtension(folderPath, source, settings));
+    } catch (cause) {
+      extensions.push(invalidExtension(folderPath, source, cause instanceof Error ? cause.message : String(cause)));
     }
-    extensions.push(describeExtension(folderPath, source, settings));
   }
-  return extensions;
+  const counts = new Map<string, number>();
+  for (const extension of extensions) {
+    if (!extension.invalid) counts.set(extension.extensionGuid, (counts.get(extension.extensionGuid) ?? 0) + 1);
+  }
+  return extensions.map((extension) => !extension.invalid && (counts.get(extension.extensionGuid) ?? 0) > 1
+    ? invalidExtension(extension.folderPath, source, `Duplicate Extension ID: ${extension.extensionGuid}`)
+    : extension);
 }
 
 export function discoverProjectExtensions(storage: ProjectStorage): Promise<ExtensionDescriptor[]> {
@@ -148,7 +168,7 @@ export function resolveExtensionGraph(
   engineVersion = ENGINE_VERSION,
   overrides: Readonly<Record<string, ExtensionEnableOverride>> = {},
 ): { order: ExtensionDescriptor[]; diagnostics: ExtensionDiagnostic[] } {
-  const enabled = extensions.filter((extension) => resolveExtensionEnabled(
+  const enabled = extensions.filter((extension) => !extension.invalid && resolveExtensionEnabled(
     extension.settings.enabledByDefault,
     overrides[extension.extensionGuid]?.enabled,
   ));
@@ -156,6 +176,14 @@ export function resolveExtensionGraph(
   const byGuid = new Map(enabled.map((extension) => [extension.extensionGuid, extension]));
   return {
     order: result.order.map((entry) => byGuid.get(entry.pluginGuid)!),
-    diagnostics: result.diagnostics.map(extensionDiagnostic),
+    diagnostics: [
+      ...extensions.flatMap((extension): ExtensionDiagnostic[] => extension.invalid ? [{
+        code: "extension.invalid",
+        severity: "error",
+        extensionGuid: extension.extensionGuid,
+        message: `${extension.folderPath}: ${extension.invalid}`,
+      }] : []),
+      ...result.diagnostics.map(extensionDiagnostic),
+    ],
   };
 }

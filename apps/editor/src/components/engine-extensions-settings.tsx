@@ -136,7 +136,7 @@ export function EngineExtensionsSettings() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={busy || loading}
+                  disabled={busy || loading || Boolean(entry.invalid)}
                   onClick={() =>
                     void run(async () => {
                       const library = await ensureEngineExtensionLibrary();
@@ -161,6 +161,12 @@ export function EngineExtensionsSettings() {
                 ) : null}
               </div>
             </div>
+            {entry.invalid ? (
+              <Alert variant="destructive">
+                <AlertTitle>Invalid Extension</AlertTitle>
+                <AlertDescription>{entry.invalid}</AlertDescription>
+              </Alert>
+            ) : null}
             {entry.settings.description ? (
               <FieldDescription>{entry.settings.description}</FieldDescription>
             ) : null}
@@ -175,8 +181,8 @@ export function EngineExtensionsSettings() {
               <Switch
                 id={`engine-extension-default-${entry.extensionGuid}`}
                 aria-label={`Enable ${entry.settings.displayName} By Default`}
-                checked={entry.enabledByDefault}
-                disabled={busy || loading}
+                checked={!entry.invalid && entry.enabledByDefault}
+                disabled={busy || loading || Boolean(entry.invalid)}
                 onCheckedChange={(enabled) =>
                   void run(async () => {
                     await (

@@ -63,6 +63,24 @@ afterEach(async () => {
 });
 
 describe("EditorExtensionService lifecycle", () => {
+  it("reports cleanup failures when disabling an extension and keeps independent commands usable", async () => {
+    const { project, service, messages } = await fixture();
+    await writeProjectExtension(project, "faulty", enabledSettings("faulty"), `
+      export function activate() { return () => { throw new Error("Listener removal failed"); }; }
+    `);
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await service.refresh();
+
+    await service.refresh({ faulty: { enabled: false } });
+
+    expect(service.getSnapshot().diagnostics).toContain("faulty: cleanup failed: Listener removal failed");
+    expect(messages).toContain("faulty: cleanup failed: Listener removal failed");
+    await service.run("tools", "run", {});
+    expect(messages).toContain("Original Worked");
+    await service.close();
+    expect(service.getSnapshot().diagnostics).toEqual([]);
+  });
+
   it("retries a transient activation failure when the module and settings have not changed", async () => {
     const { project, service, messages } = await fixture();
     await writeProjectExtension(project, "tools", enabledSettings("tools"), `

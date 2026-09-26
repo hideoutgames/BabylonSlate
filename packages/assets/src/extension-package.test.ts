@@ -137,6 +137,19 @@ describe("Extension packages", () => {
     expect(shadowEngineExtensions(projectExtensions, await discoverEngineExtensions(engine))).toEqual(projectExtensions);
   });
 
+  it("skips invalid engine packages during project creation and refuses to export a recovery placeholder", async () => {
+    const { incoming } = await extensionPackage();
+    const engine = await storage();
+    await unpackEngineExtensionZip(engine, encodeProjectZip(incoming.files), "tools");
+    await engine.mkdir("broken", true);
+    await engine.writeText("broken/extension.json", "{broken");
+    const project = await storage();
+    expect((await installEngineExtensionDefaults(project, engine)).map((entry) => entry.extensionGuid)).toEqual(["tools"]);
+    expect(await project.exists("extensions/broken")).toBe(false);
+    const invalid = (await discoverEngineExtensions(engine)).find((entry) => entry.invalid)!;
+    await expect(exportExtensionZip(engine, invalid)).rejects.toThrow(/invalid/);
+  });
+
   it("keeps extension files in project backups but exposes only generated project assets to the registry", async () => {
     const { source } = await extensionPackage();
     const asset = await encodeAssetDocument({ type: "Material", name: "Example", guid: "template", version: 1, payload: {} });
