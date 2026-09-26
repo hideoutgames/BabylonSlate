@@ -128,20 +128,20 @@ describe("chrome document icons", () => {
       const view = render(<Chrome />);
       if (!phone) {
         const tabs = within(screen.getByTestId("document-tab-bar"));
-        expect(typeIcon(tabs.getByRole("button", { name: "First" }))).toBe(
+        expect(typeIcon(tabs.getByRole("button", { name: /^First/ }))).toBe(
           "Actor",
         );
-        expect(typeIcon(tabs.getByRole("button", { name: "Second" }))).toBe(
+        expect(typeIcon(tabs.getByRole("button", { name: /^Second/ }))).toBe(
           "Actor",
         );
         expect(screen.getAllByTestId("document-tab")).toHaveLength(4);
       }
       fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
       expect(
-        typeIcon(screen.getByRole("menuitemradio", { name: "First" })),
+        typeIcon(screen.getByRole("menuitemradio", { name: /^First/ })),
       ).toBe("Actor");
       expect(
-        typeIcon(screen.getByRole("menuitemradio", { name: "Second" })),
+        typeIcon(screen.getByRole("menuitemradio", { name: /^Second/ })),
       ).toBe("Actor");
       expect(list.mock.calls.length).toBeLessThanOrEqual(1);
 
@@ -151,18 +151,18 @@ describe("chrome document icons", () => {
       list.mockClear();
       view.rerender(<Chrome />);
       expect(
-        typeIcon(screen.getByRole("menuitemradio", { name: /First/ })),
+        typeIcon(screen.getByRole("menuitemradio", { name: /^First/ })),
       ).toBe("ActorComponent");
       expect(
-        typeIcon(screen.getByRole("menuitemradio", { name: "Second" })),
+        typeIcon(screen.getByRole("menuitemradio", { name: /^Second/ })),
       ).toBe("ActorComponent");
       expect(screen.getByLabelText("Unsaved Changes")).toBeTruthy();
       if (!phone) {
         const tabs = within(screen.getByTestId("document-tab-bar"));
-        expect(typeIcon(tabs.getByRole("button", { name: "First *" }))).toBe(
+        expect(typeIcon(tabs.getByRole("button", { name: /^First.*\*/ }))).toBe(
           "ActorComponent",
         );
-        expect(typeIcon(tabs.getByRole("button", { name: "Second" }))).toBe(
+        expect(typeIcon(tabs.getByRole("button", { name: /^Second/ }))).toBe(
           "ActorComponent",
         );
       }
@@ -193,17 +193,17 @@ describe("chrome document icons", () => {
     ];
     const list = vi.spyOn(registry, "list");
     const view = render(<Chrome />);
-    expect(typeIcon(screen.getByRole("button", { name: "Sheet" }))).toBe(
+    expect(typeIcon(screen.getByRole("button", { name: /^Sheet/ }))).toBe(
       "Sprite",
     );
-    expect(typeIcon(screen.getByRole("button", { name: "Missing" }))).toBe(
+    expect(typeIcon(screen.getByRole("button", { name: /^Missing/ }))).toBe(
       "Texture",
     );
     expect(list).not.toHaveBeenCalled();
 
     state.registry = null;
     view.rerender(<Chrome />);
-    expect(typeIcon(screen.getByRole("button", { name: "Sheet" }))).toBe(
+    expect(typeIcon(screen.getByRole("button", { name: /^Sheet/ }))).toBe(
       "Texture",
     );
     expect(list).not.toHaveBeenCalled();
