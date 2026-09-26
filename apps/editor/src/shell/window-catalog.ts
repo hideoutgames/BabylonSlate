@@ -32,7 +32,8 @@ export type DockviewDocumentKind =
   | "skeleton"
   | "animation"
   | "skybox-creator"
-  | "trace";
+  | "trace"
+  | "texture";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -65,6 +66,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "animation",
   "skybox-creator",
   "trace",
+  "texture",
 ]);
 
 export function isDockviewDocumentKind(
@@ -121,6 +123,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   animation: "animation-preview",
   "skybox-creator": "skybox-creator-preview",
   trace: "trace-timeline",
+  texture: "texture-preview",
 };
 
 export function primaryDockPanel(
@@ -593,6 +596,20 @@ const SKYBOX_CREATOR_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const TEXTURE_WINDOWS: DockWindowDefinition[] = [
+  { id: "texture-preview", component: "texture-preview", title: "Preview" },
+  {
+    id: "texture-details",
+    component: "texture-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "texture-preview",
+      direction: "right",
+      initialWidth: 300,
+    },
+  },
+];
+
 const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "sprite-animation-preview",
@@ -900,6 +917,7 @@ export function listDockWindows(
     return withOptionalLocks(kind, SKYBOX_CREATOR_WINDOWS, options);
   }
   if (kind === "trace") return withOptionalLocks(kind, TRACE_WINDOWS, options);
+  if (kind === "texture") return withOptionalLocks(kind, TEXTURE_WINDOWS, options);
   if (kind === "sprite-animation") {
     return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
   }

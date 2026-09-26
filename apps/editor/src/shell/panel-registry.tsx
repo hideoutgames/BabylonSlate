@@ -77,6 +77,10 @@ import {
   SkyboxCreatorDetailsPanel,
   SkyboxCreatorPreviewPanel,
 } from "../components/skybox-creator-editor";
+import {
+  TextureDetailsPanel,
+  TexturePreviewPanel,
+} from "../components/texture-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -243,6 +247,12 @@ export const panelComponents = {
   ),
   "skybox-creator-details": (props: IDockviewPanelProps) => (
     <SkyboxCreatorDetailsPanel {...props} />
+  ),
+  "texture-preview": (props: IDockviewPanelProps) => (
+    <TexturePreviewPanel {...props} />
+  ),
+  "texture-details": (props: IDockviewPanelProps) => (
+    <TextureDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

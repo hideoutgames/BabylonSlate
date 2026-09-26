@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -34,24 +34,12 @@ import {
   groupMsdfImportBatch,
   msdfAtlasPickError,
   normalizeFontPayload,
-  shouldCompressTexture,
-  isEnvironmentTexturePayload,
-  currentAreaEmissionChunk,
-  type AreaEmissionProgress,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import { pickImportFiles } from "@babylonslate/vfs";
-import {
-  applyTextureCompressionQualityChange,
-  applyTextureDownsampleChange,
-  patchTextureUsage,
-  textureDownsampleSelectValue,
-  TEXTURE_USAGE_OPTIONS,
-  TEXTURE_DOWNSAMPLE_LABELS,
-} from "../lib/asset-settings";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -85,9 +73,7 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
       .find((asset) => asset.path === doc.ref.path);
     return (
       <AssetSettingsEditor
-        assetType={indexed?.header.type ?? "Texture"}
-        guid={indexed?.header.guid}
-        path={doc.ref.path}
+        assetType={indexed?.header.type ?? "Asset"}
         dependencies={indexed?.header.dependencies ?? []}
         payload={payload}
         onChange={commit}
@@ -446,223 +432,43 @@ function FontEditor({
   );
 }
 
-function TexturePreview({
-  path,
-  payload,
-}: {
-  path: string;
-  payload: Record<string, unknown>;
-}) {
-  const { readAssetChunk } = useDocuments();
-  const [url, setUrl] = useState<string | null>(null);
-  const [naturalSize, setNaturalSize] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    void (async () => {
-      const bytes = await readAssetChunk(path, "pixels");
-      if (!bytes || cancelled || bytes.byteLength === 0) return;
-      objectUrl = URL.createObjectURL(
-        new Blob([bytes], { type: "image/png" }),
-      );
-      if (!cancelled) setUrl(objectUrl);
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [path, readAssetChunk]);
-
-  const payloadWidth =
-    typeof payload.sourceWidth === "number" ? payload.sourceWidth : null;
-  const payloadHeight =
-    typeof payload.sourceHeight === "number" ? payload.sourceHeight : null;
-  const width = naturalSize?.width ?? payloadWidth;
-  const height = naturalSize?.height ?? payloadHeight;
-
-  return (
-    <div className="flex flex-col gap-2" data-testid="texture-preview">
-      <div
-        className="relative aspect-square w-full max-w-64 overflow-hidden rounded-md border border-border"
-        style={{
-          backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
-          backgroundSize: "16px 16px",
-        }}
-      >
-        {url ? (
-          <img
-            src={url}
-            alt=""
-            className="size-full object-contain"
-            onLoad={(event) =>
-              setNaturalSize({
-                width: event.currentTarget.naturalWidth,
-                height: event.currentTarget.naturalHeight,
-              })
-            }
-          />
-        ) : null}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {width && height ? `${width} × ${height}` : "Source size unknown"}
-      </p>
-    </div>
-  );
-}
-
 function AssetSettingsEditor({
   assetType,
-  guid,
-  path,
   dependencies,
   payload,
   onChange,
 }: {
   assetType: string;
-  guid?: string;
-  path: string;
   dependencies: string[];
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding, prepareAreaEmission, assetRegistry } = useDocuments();
-  const emissionJob = useRef<AbortController | null>(null);
-  const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
-  const [emissionError, setEmissionError] = useState("");
-  useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
-  const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
-  const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
-  const prepareEmission = async () => {
-    if (!guid || emissionJob.current) return;
-    const job = new AbortController();
-    emissionJob.current = job;
-    setEmissionError("");
-    try { await prepareAreaEmission(guid, { signal: job.signal, onProgress: setEmissionProgress }); }
-    catch (error) { if (!job.signal.aborted) setEmissionError(error instanceof Error ? error.message : String(error)); }
-    finally { if (emissionJob.current === job) { emissionJob.current = null; setEmissionProgress(null); } }
-  };
   const rows: PropertyRow[] = [];
-  const environment = assetType === "Texture" && isEnvironmentTexturePayload(payload);
-  if (environment) {
-    for (const [id, label, value] of [
-      ["dimension", "Dimension", "Cube"],
-      ["container", "Container", String(payload.container).toUpperCase()],
-      ["encoding", "Encoding", payload.encoding === "rgbd" ? "RGBD" : payload.encoding === "linearFloat16" ? "Linear RGBA16F" : "Linear RGBA32F"],
-      ["size", "Face Size", `${payload.width} × ${payload.height}`],
-      ["mips", "Roughness Mip Levels", String(payload.mipLevels)],
-    ]) rows.push({ id: id!, label: label!, kind: "text", value: value!, disabled: true, onChange: () => undefined });
-  } else if (assetType === "Texture") {
-    const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
-    const compression =
-      typeof payload.compressionState === "string"
-        ? payload.compressionState
-        : "none";
-    const encodeError =
-      typeof payload.encodeError === "string" ? payload.encodeError : "";
-    rows.push(
-      {
-        id: "usage",
-        kind: "enum",
-        label: "Usage",
-        value: usage,
-        options: TEXTURE_USAGE_OPTIONS.map((value) => ({
-          value,
-          label:
-            value === "pixelArt"
-              ? "Pixel Art"
-              : value === "ui"
-                ? "UI"
-                : value.charAt(0).toUpperCase() + value.slice(1),
-        })),
-        onChange: (value) => onChange(patchTextureUsage(payload, value)),
-      },
-      {
-        id: "downsample",
-        kind: "enum",
-        label: "Downsample",
-        value: textureDownsampleSelectValue(payload),
-        options: Object.entries(TEXTURE_DOWNSAMPLE_LABELS).map(([value, label]) => ({
-          value,
-          label,
-        })),
-        onChange: (value) => {
-          const { payload: next, shouldRequeue } =
-            applyTextureDownsampleChange(payload, value);
-          onChange(next);
-          if (!guid || !shouldRequeue) return;
-          void retryTextureEncoding(guid, { force: true });
-        },
-      },
-    );
-    if (shouldCompressTexture(usage)) {
-      const quality =
-        typeof payload.compressionQuality === "number"
-          ? payload.compressionQuality
-          : 2;
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value === "number") {
       rows.push({
-        id: "compressionQuality",
+        id: key,
         kind: "number",
-        label: "Compression Quality",
-        value: quality,
-        onChange: (value) => {
-          const { payload: next, shouldRequeue } =
-            applyTextureCompressionQualityChange(payload, value);
-          onChange(next);
-          if (!guid || !shouldRequeue) return;
-          void retryTextureEncoding(guid, { force: true });
-        },
+        label: key,
+        value,
+        onChange: (next) => onChange({ ...payload, [key]: next }),
       });
-    }
-    rows.push({
-      id: "compression",
-      kind: "text",
-      label: "Compression",
-      value: compression,
-      disabled: true,
-      onChange: () => undefined,
-    });
-    if (encodeError) {
+    } else if (typeof value === "boolean") {
       rows.push({
-        id: "encodeError",
-        kind: "text",
-        label: "Encode Error",
-        value: encodeError,
-        disabled: true,
-        onChange: () => undefined,
+        id: key,
+        kind: "boolean",
+        label: key,
+        value,
+        onChange: (next) => onChange({ ...payload, [key]: next }),
       });
-    }
-  } else {
-    for (const [key, value] of Object.entries(payload)) {
-      if (typeof value === "number") {
-        rows.push({
-          id: key,
-          kind: "number",
-          label: key,
-          value,
-          onChange: (next) => onChange({ ...payload, [key]: next }),
-        });
-      } else if (typeof value === "boolean") {
-        rows.push({
-          id: key,
-          kind: "boolean",
-          label: key,
-          value,
-          onChange: (next) => onChange({ ...payload, [key]: next }),
-        });
-      } else if (typeof value === "string") {
-        rows.push({
-          id: key,
-          kind: "text",
-          label: key,
-          value,
-          onChange: (next) => onChange({ ...payload, [key]: next }),
-        });
-      }
+    } else if (typeof value === "string") {
+      rows.push({
+        id: key,
+        kind: "text",
+        label: key,
+        value,
+        onChange: (next) => onChange({ ...payload, [key]: next }),
+      });
     }
   }
   if (dependencies.length > 0) {
@@ -679,29 +485,8 @@ function AssetSettingsEditor({
   return (
     <PanelFrame className="flex-1" title={assetType}>
       <div className="flex flex-col gap-3" data-testid="asset-settings">
-        {environment ? (
-          <Alert>
-            <AlertTitle>Environment Cube</AlertTitle>
-            <AlertDescription>Assign this texture in Scene Defaults → Environment Texture. The source and authored roughness mips are retained. DDS cubes must be authored as prefiltered; importing does not generate filtering.</AlertDescription>
-          </Alert>
-        ) : assetType === "Texture" ? (
-          <TexturePreview path={path} payload={payload} />
-        ) : null}
         <PropertyGrid rows={rows} />
-        {assetType === "Texture" && !environment && guid ? (
-          <Field>
-            <FieldLabel>Area Light Emission</FieldLabel>
-            <FieldDescription>Prepare this Texture for rectangular lights. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.</FieldDescription>
-            <div className="flex items-center gap-2">
-              <Button size="sm" disabled={emissionProgress !== null} onClick={() => void prepareEmission()}>{emissionReady ? "Check Emission Data" : "Prepare Emission"}</Button>
-              {emissionProgress ? <Button size="sm" variant="outline" onClick={() => emissionJob.current?.abort()}>Cancel</Button> : null}
-              <span role="status" className="text-xs text-muted-foreground">{emissionProgress ? `${emissionProgress.phase === "queued" ? "Queued" : emissionProgress.phase === "decoding" ? "Decoding" : emissionProgress.phase === "filtering" ? "Filtering" : "Saving"} ${Math.round(emissionProgress.progress * 100)}%` : emissionReady ? "Ready" : "Not Prepared"}</span>
-            </div>
-            {emissionError ? <FieldError>{emissionError}</FieldError> : null}
-          </Field>
-        ) : null}
       </div>
     </PanelFrame>
   );
 }
-

@@ -301,6 +301,15 @@ describe("listDockWindows", () => {
       initialWidth: 280,
     });
     expect(primaryDockPanel("skybox-creator")).toBe("skybox-creator-preview");
+    expect(listDockWindows("texture").map((entry) => entry.id)).toEqual([
+      "texture-preview",
+      "texture-details",
+    ]);
+    expect(listDockWindows("texture").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+    ]);
+    expect(primaryDockPanel("texture")).toBe("texture-preview");
     expect(listDockWindows("trace").map((entry) => entry.id)).toEqual([
       "trace-timeline",
       "trace-snapshot",

@@ -81,6 +81,7 @@ describe("app settings", () => {
       animation: ["animation-preview"],
       "skybox-creator": ["skybox-creator-preview"],
       trace: ["trace-timeline"],
+      texture: ["texture-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);

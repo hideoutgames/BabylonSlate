@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createFontPayload, type AreaEmissionProgress } from "@babylonslate/assets";
+import { createFontPayload } from "@babylonslate/assets";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -13,25 +13,13 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
-const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
-const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
-  options.onProgress({ phase: "filtering", progress: 0.5 });
-  await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
-}));
 const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
 );
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    prepareAreaEmission,
     openDocuments: [
-      {
-        id: "asset-settings:assets/environment.babasset",
-        ref: { kind: "asset-settings", path: "assets/environment.babasset", label: "Environment" },
-        content: { usage: "skybox", dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, height: 2, mipLevels: 2, prefiltered: true },
-        layout: null, dirty: false,
-      },
       {
         id: "font:assets/Display.font.babasset",
         ref: {
@@ -59,35 +47,8 @@ vi.mock("../context/document-context", () => ({
         layout: null,
         dirty: false,
       },
-      {
-        id: "asset-settings:assets/albedo.babasset",
-        ref: {
-          kind: "asset-settings",
-          path: "assets/albedo.babasset",
-          label: "albedo",
-        },
-        content: {
-          usage: "albedo",
-          compressionState: "encode_failed",
-          encodeError: "BasisEncoder.encode returned 0",
-        },
-        layout: null,
-        dirty: false,
-      },
-      {
-        id: "asset-settings:assets/sprite.babasset",
-        ref: {
-          kind: "asset-settings",
-          path: "assets/sprite.babasset",
-          label: "sprite",
-        },
-        content: { usage: "pixelArt", compressionState: "none" },
-        layout: null,
-        dirty: false,
-      },
     ],
     applyAssetDocumentChange,
-    retryTextureEncoding,
     projectDocument: {
       settings: {
         fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
@@ -118,24 +79,6 @@ vi.mock("../context/document-context", () => ({
           header: { guid: "s1", name: "Stats", type: "Structure", payload: {} },
           path: "assets/Stats.structure.babasset",
         },
-        {
-          header: {
-            guid: "tex-albedo",
-            name: "albedo",
-            type: "Texture",
-            payload: { usage: "albedo" },
-          },
-          path: "assets/albedo.babasset",
-        },
-        {
-          header: {
-            guid: "tex-sprite",
-            name: "sprite",
-            type: "Texture",
-            payload: { usage: "pixelArt" },
-          },
-          path: "assets/sprite.babasset",
-        },
       ],
       getByGuid: (guid: string) =>
         guid === "font-2"
@@ -157,31 +100,9 @@ vi.mock("../context/document-context", () => ({
 afterEach(() => {
   cleanup();
   applyAssetDocumentChange.mockClear();
-  retryTextureEncoding.mockClear();
-  prepareAreaEmission.mockClear();
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
-  it("shows cancellable emission preparation progress without editing the authored Texture", async () => {
-    render(<AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />);
-    fireEvent.click(screen.getByRole("button", { name: "Prepare Emission" }));
-    expect(await screen.findByText("Filtering 50%")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Prepare Emission" })).toHaveProperty("disabled", true);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(await screen.findByText("Not Prepared")).toBeTruthy();
-    expect(prepareAreaEmission.mock.calls[0]?.[1].signal.aborted).toBe(true);
-    expect(applyAssetDocumentChange).not.toHaveBeenCalled();
-  });
-  it("presents cube metadata without exposing 2D downsampling or compression", () => {
-    render(<AssetDocumentWorkspace documentId="asset-settings:assets/environment.babasset" />);
-    expect(screen.getByText("Environment Cube")).toBeTruthy();
-    expect(screen.getByLabelText("Encoding")).toHaveProperty("value", "Linear RGBA32F");
-    expect(screen.getByLabelText("Roughness Mip Levels")).toHaveProperty("value", "2");
-    expect(screen.queryByLabelText("Usage")).toBeNull();
-    expect(screen.queryByLabelText("Downsample")).toBeNull();
-    expect(screen.queryByTestId("texture-preview")).toBeNull();
-    expect(applyAssetDocumentChange).not.toHaveBeenCalled();
-  });
   it("reports an unavailable font source instead of claiming the preview is ready", async () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
     render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
@@ -240,36 +161,6 @@ describe("AssetDocumentWorkspace authoring", () => {
     expect(screen.getByTestId("font-rep-msdf-json").textContent).toMatch(/Missing/);
     expect(screen.getByTestId("font-rep-msdf-atlas").textContent).toMatch(/Missing/);
     expect(screen.getByTestId("font-import-msdf")).toBeTruthy();
-  });
-
-  it("shows a Texture preview and Max Dimension without extra filter toggles", () => {
-    render(
-      <AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />,
-    );
-    expect(screen.getByTestId("texture-preview")).toBeTruthy();
-    expect(screen.getByTestId("property-downsample")).toBeTruthy();
-    expect(screen.getByTestId("property-usage")).toBeTruthy();
-    expect(screen.queryByTestId("property-mipmap")).toBeNull();
-    expect(screen.queryByTestId("property-nearest")).toBeNull();
-  });
-
-  it("exposes the latest encode error on Texture settings when the payload has one", () => {
-    render(
-      <AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />,
-    );
-    const encodeError = screen.getByTestId(
-      "property-encodeError",
-    ) as HTMLInputElement;
-    expect(encodeError.value).toBe("BasisEncoder.encode returned 0");
-  });
-
-  it("shows a Texture preview for Pixel Art without encode controls beyond Usage", () => {
-    render(
-      <AssetDocumentWorkspace documentId="asset-settings:assets/sprite.babasset" />,
-    );
-    expect(screen.getByTestId("texture-preview")).toBeTruthy();
-    expect(screen.getByTestId("property-downsample")).toBeTruthy();
-    expect(screen.getByTestId("property-usage")).toBeTruthy();
   });
 
 });

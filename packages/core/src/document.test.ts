@@ -184,7 +184,10 @@ describe("Class and settings documents", () => {
         "asset-settings:assets/albedo.babasset",
         () => "Texture",
       ),
-    ).toBe("asset-settings:assets/albedo.babasset");
+    ).toBe("texture:assets/albedo.babasset");
+    expect(
+      migrateRestoredDocumentId("asset-settings:assets/missing.babasset", () => null),
+    ).toBe("asset-settings:assets/missing.babasset");
     expect(
       migrateRestoredDocumentId("model:assets/hero.babasset", () => "Model"),
     ).toBe("model:assets/hero.babasset");
@@ -207,10 +210,16 @@ describe("Class and settings documents", () => {
     ).toBe("Jump Audio");
   });
 
-  it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture"]) {
-      expect(documentKindForAssetType(type)).toBe("asset-settings");
-    }
+  it("opens imported Textures as a DockView document", () => {
+    expect(documentKindForAssetType("Texture")).toBe("texture");
+    expect(assetTypeForDocumentKind("texture")).toBe("Texture");
+    expect(documentKindLabel("texture")).toBe("Texture");
+    expect(
+      createDocumentRef("texture", "assets/grass.babasset", { name: "Grass" }).label,
+    ).toBe("Grass Texture");
+  });
+
+  it("keeps legacy settings tabs parseable", () => {
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");
     expect(documentKindLabel("asset-settings")).toBe("Settings");
     expect(isAssetDocumentKind("asset-settings")).toBe(true);
