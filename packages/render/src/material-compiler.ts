@@ -769,7 +769,9 @@ export function compileMaterialPlan(
 
   const loadObservers: Array<() => void> = [];
   const rebuildWhenReady = (): void => {
-    if (disposed) return;
+    // Particle effects bind every sampler on each draw. A new build id instead makes
+    // Babylon swap in a new effect mid-draw and draw the old one without its textures.
+    if (disposed || material.mode === NodeMaterialModes.Particle) return;
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
     try {

@@ -1,4 +1,4 @@
-import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, ParticleSystem, Scene, Vector3, type DataBuffer, type IParticleSystem, type NodeMaterial } from "@babylonjs/core";
+import { Camera, Color4, Engine, FreeCamera, GPUParticleSystem, MeshBuilder, NullEngine, ParticleSystem, Scene, Texture, Vector3, type DataBuffer, type IParticleSystem, type NodeMaterial } from "@babylonjs/core";
 import { particleLibraryFromAssets, type ParticleBurst, type ParticleColorTuple, type ParticleScalarValue, type ParticleVec3Tuple } from "@babylonslate/assets";
 import type { ParticleBlendMode, ParticleLoopMode } from "@babylonslate/core";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
@@ -63,6 +63,14 @@ function tintedParticleMaterial(name: string, tint: ParticleColorTuple): Materia
   return document;
 }
 
+/** Texture Sample RGBA as the particle colour. */
+function texturedParticleMaterial(textureGuid: string): MaterialDocument {
+  const document = createDefaultMaterialDocument("Textured particle", "particle");
+  document.nodes.push({ id: "sample", type: "texture.sample", position: { x: 150, y: 0 }, properties: { textureGuid } });
+  document.edges = [{ id: "sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
+  return document;
+}
+
 /** Native draws, controlled simulation time, and readback; never substitutes processed GPU slots for visible particles. */
 export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gpu: boolean) {
   const canvas = document.createElement("canvas");
@@ -84,8 +92,23 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
     ["red", tintedParticleMaterial("Red particle", [1, 0, 0, 1])],
     ["blue", tintedParticleMaterial("Blue particle", [0, 0, 1, 1])],
     ["particle-color", createDefaultMaterialDocument("Particle Color", "particle")],
+    ["textured", texturedParticleMaterial("red-texture")],
   ]);
-  const materials = createParticleMaterialResolver({ scene, documents });
+  const redCanvas = document.createElement("canvas");
+  redCanvas.width = redCanvas.height = 4;
+  const redContext = redCanvas.getContext("2d")!;
+  redContext.fillStyle = "#f00"; redContext.fillRect(0, 0, 4, 4);
+  const redUrl = redCanvas.toDataURL("image/png");
+  // Each acquisition decodes a new Texture, so the Material first builds while it is still
+  // loading; like the editor's texture leases, `ready` settles only once it has loaded.
+  const acquireTexture = (guid: string): ResourceLease<Texture> | null => {
+    if (guid !== "red-texture") return null;
+    let loaded!: () => void; let failed!: (error: Error) => void;
+    const ready = new Promise<void>((resolve, reject) => { loaded = resolve; failed = reject; });
+    const texture = new Texture(redUrl, scene, { noMipmap: true, onLoad: () => loaded(), onError: (message) => failed(new Error(message ?? "Texture failed to load")) });
+    return { resource: texture, key: guid, ready, release: () => texture.dispose() };
+  };
+  const materials = createParticleMaterialResolver({ scene, documents, acquireTexture });
   let acquisitions = 0;
   let releases = 0;
   let resets = 0;
@@ -280,6 +303,20 @@ export async function runParticleLifecycleProof(backend: "webgl2" | "webgpu", gp
       blendCases.push({ name, blendMode, centre: luminance(lastFrame, 29, 29), background: luminance(lastFrame, 2, 2) });
       service.resetSession();
     }
+    // A Texture Sample Material draws red in Additive, then darkens the grey under a live
+    // switch into Multiply, which first draws that blend's effect on the same system.
+    const texturedLibrary = (blendMode: ParticleBlendMode) => fixtureLibrary({ textured: { material: "textured", size: 1, blendMode } });
+    service.setLibrary(texturedLibrary("additive"));
+    service.handleCommand({ type: "assignParticle", actorGuid: "textured", componentId: "particle", slotId: 3, particleSystemGuid: "textured" });
+    const textured = scene.particleSystems[scene.particleSystems.length - 1]!;
+    simulationSpeeds.set(textured, 0.05); textured.updateSpeed = 0;
+    await ready([textured]); await step(6);
+    blendCases.push({ name: "texture-additive", blendMode: "additive", centre: luminance(lastFrame, 29, 29), background: luminance(lastFrame, 2, 2) });
+    const { tier } = service.updateLibrary(texturedLibrary("multiply"));
+    if (tier !== "respawn" || !scene.particleSystems.includes(textured)) throw new Error(`Multiply did not respawn the textured system in place (${tier})`);
+    await ready([textured]); await step(6);
+    blendCases.push({ name: "texture-multiply", blendMode: "multiply", centre: luminance(lastFrame, 29, 29), background: luminance(lastFrame, 2, 2) });
+    service.resetSession();
     scene.clearColor = new Color4(0, 0, 0, 1);
     // Bursts only, moving +X from x = -1.6: one burst of 5 at 0.3 s in every 0.5 s cycle.
     // Before it fires, the claimed GPU ring must draw nothing. At 1.55 s the bursts from
