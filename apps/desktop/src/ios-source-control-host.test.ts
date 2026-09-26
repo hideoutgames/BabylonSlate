@@ -41,6 +41,10 @@ describe("iOS source-control host", () => {
     const delegate = readFileSync(join(iosApp, "App/AppDelegate.swift"), "utf8");
     const matches = delegate.match(/func applicationDidBecomeActive\(/g) ?? [];
     expect(matches).toHaveLength(1);
-    expect(delegate).toContain("disableWebViewBounce()");
+    const sceneDelegate = readFileSync(
+      join(iosApp, "App/SceneDelegate.swift"),
+      "utf8",
+    );
+    expect(sceneDelegate).toContain("disableWebViewBounce()");
   });
 });
