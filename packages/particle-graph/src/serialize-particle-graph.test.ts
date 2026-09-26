@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PARTICLE_PALETTE_CATEGORIES, particleNodeDefinition } from "./catalog";
-import { createDefaultParticleGraphDocument } from "./document";
+import { createDefaultParticleGraphDocument, newParticleNodeProperties } from "./document";
 import {
   hydrateParticleGraphForEditor,
   particleConnectionIsAllowed,
@@ -49,6 +49,21 @@ describe("particle graph canvas adapter", () => {
         expect.objectContaining({ id: "out", type: { kind: "vec3" }, typeLabel: "V3" }),
       ]),
     );
+  });
+
+  it("lets an unwired Split take any vector or color on the canvas", () => {
+    const sources = ["const.float", "const.vec2", "const.vec3", "const.color"];
+    const doc = createDefaultParticleGraphDocument();
+    doc.nodes.push(
+      { id: "split", type: "vector.split", position: { x: 0, y: 0 }, properties: {} },
+      ...sources.map((type) => ({ id: type, type, position: { x: 0, y: 0 }, properties: newParticleNodeProperties(type) })),
+    );
+    const nodes = hydrateParticleGraphForEditor(particleGraphToSerialized(doc)).nodes;
+    const pinOf = (nodeId: string, pinId: string) =>
+      (nodes.find((node) => node.id === nodeId)!.data.__pins as ParticleGraphPin[]).find((entry) => entry.id === pinId)!;
+    const value = pinOf("split", "value");
+    for (const type of sources) expect(particlePinsAreCompatible(pinOf(type, "out"), value), type).toBe(true);
+    expect(particlePinsAreCompatible(pinOf("create", "out"), value)).toBe(false);
   });
 
   it("connects Particle only to Particle and follows the value type rules", () => {

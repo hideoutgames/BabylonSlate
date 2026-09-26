@@ -1,4 +1,13 @@
-import { MeshBuilder, type AbstractMesh, type IParticleSystem, type Mesh, type NodeMaterial, type NodeParticleSystemSet, type Scene } from "@babylonjs/core";
+import {
+  MeshBuilder,
+  type AbstractMesh,
+  type IParticleSystem,
+  type Mesh,
+  type NodeMaterial,
+  type NodeParticleSystemSet,
+  type ParticleSystem,
+  type Scene,
+} from "@babylonjs/core";
 import {
   particleEmitterChangeTier,
   particleEmitterMaterialGuid,
@@ -101,6 +110,7 @@ type BasicSlot = SlotBase & {
 type GraphSlot = SlotBase & {
   kind: "graph";
   gpu: false;
+  system: ParticleSystem;
   /** Owns every block; disposing it disposes the system and its readiness texture. */
   set: NodeParticleSystemSet;
   /** Position-free plan hash; a change rebuilds only this slot. */
@@ -269,9 +279,12 @@ export class ParticleService {
     for (const entry of this.live.values()) for (const record of entry.systems) {
       if (paused) record.updateSpeed = record.system.updateSpeed;
       record.system.updateSpeed = paused ? 0 : record.updateSpeed;
+      // Node Update blocks run every frame whatever the speed; Babylon's flag skips the whole update.
+      if (record.kind === "graph") record.system.paused = paused;
     }
     if (paused) return;
-    // Speeds are restored first: CPU prewarm runs inside `start()`, GPU prewarm on the first render.
+    // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
+    // (and skips a paused system), GPU prewarm on the first render.
     for (const entry of [...this.live.values()]) if (entry.state === "playing") this.startSystems(entry);
     this.publishStats();
   }
@@ -517,7 +530,10 @@ export class ParticleService {
       record = created.record;
       const system = record.system;
       const ready = bindParticleMaterial(system, lease.resource);
-      if (this.paused) system.updateSpeed = 0;
+      if (this.paused) {
+        system.updateSpeed = 0;
+        if (record.kind === "graph") record.system.paused = true;
+      }
       applySortingToParticleSystem(system, context.sorting);
       const owned = record;
       const stopped = system.onStoppedObservable.add(() => {
@@ -543,8 +559,8 @@ export class ParticleService {
         });
         record.cancel.push(() => system.onBeforeDrawParticlesObservable.remove(draw));
       }
-      this.waitFor(entry, record, generation, ready);
-      if (lease.ready) this.waitFor(entry, record, generation, lease.ready);
+      this.waitFor(entry, record, generation, ready, lease);
+      if (lease.ready) this.waitFor(entry, record, generation, lease.ready, lease);
       if (created.buildReady) this.waitFor(entry, record, generation, created.buildReady);
       return record;
     } catch (error) {
@@ -590,15 +606,25 @@ export class ParticleService {
     };
   }
 
-  private waitFor(entry: LiveComponent, record: SlotRecord, generation: number, ready: Promise<void>): void {
+  /**
+   * Counts one readiness promise on the slot. `lease` names the Material lease the
+   * promise belongs to: once a rebind replaced that lease, releasing it cancels its
+   * preparation, and that rejection only settles the wait instead of failing the slot.
+   */
+  private waitFor(entry: LiveComponent, record: SlotRecord, generation: number, ready: Promise<void>,
+    lease?: ResourceLease<NodeMaterial>): void {
     record.pending += 1;
-    void ready.then(() => {
+    const settle = () => {
       if (!this.current(entry, generation) || !entry.systems.includes(record)) return;
       record.pending -= 1;
       // A slot rebuilt inside a playing bundle starts on its own.
       if (entry.state === "playing") this.startSystems(entry);
       else this.startIfReady(entry);
-    }, (error: unknown) => this.failSlot(entry, record, generation, error));
+    };
+    void ready.then(settle, (error: unknown) => {
+      if (lease && record.lease !== lease) settle();
+      else this.failSlot(entry, record, generation, error);
+    });
   }
 
   private startIfReady(entry: LiveComponent): void {
@@ -825,8 +851,8 @@ export class ParticleService {
       return;
     }
     void ready.then(() => previous.release(), () => previous.release());
-    this.waitFor(entry, record, generation, ready);
-    if (lease.ready) this.waitFor(entry, record, generation, lease.ready);
+    this.waitFor(entry, record, generation, ready, lease);
+    if (lease.ready) this.waitFor(entry, record, generation, lease.ready, lease);
   }
 
   private disposeSlots(records: SlotRecord[]): void {

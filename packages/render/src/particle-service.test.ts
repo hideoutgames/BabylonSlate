@@ -52,7 +52,8 @@ describe("ParticleService", () => {
   });
 
   function host(options: {
-    ready?: (guid: string) => Promise<void> | undefined;
+    /** `released` settles when that lease is released, as MaterialLibrary cancels a still-preparing Material. */
+    ready?: (guid: string, released: Promise<void>) => Promise<void> | undefined;
     sceneForSlot?: (slotId: number) => Scene | null;
     statsScope?: "global" | "local";
     /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
@@ -71,8 +72,10 @@ describe("ParticleService", () => {
       const resource = particleMaterial(owner.scene);
       resource.createEffectForParticles = () => { bound.push(guid); };
       leases.acquired += 1;
-      return { key: owner.instanceKey, resource, ready: options.ready?.(guid),
-        release: () => { leases.released += 1; resource.dispose(); } };
+      let onRelease!: () => void;
+      const released = new Promise<void>((resolve) => { onRelease = resolve; });
+      return { key: owner.instanceKey, resource, ready: options.ready?.(guid, released),
+        release: () => { leases.released += 1; onRelease(); resource.dispose(); } };
     };
     const service = new ParticleService({
       scene: handle.scene,
@@ -475,5 +478,62 @@ describe("ParticleService", () => {
     expect(system.isStarted()).toBe(true);
     service.dispose();
     expect(leases.released).toBe(2);
+  });
+
+  it("keeps a rebound Particle Graph slot when the replaced Material's preparation is cancelled", async () => {
+    const { scene, service, leases, diagnostics, assign, state } = host({
+      ready: (guid, released) => guid === "mat"
+        ? released.then(() => { throw new Error("Material preparation was cancelled"); })
+        : undefined,
+    });
+    service.updateLibrary(library({ "fx-graph": graph("mat") }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    expect(state()).toBe("preparing");
+    expect(service.updateLibrary(library({ "fx-graph": graph("mat-2") })).tier).toBe("live");
+    await vi.waitFor(() => expect(leases.released).toBe(1));
+    await vi.waitFor(() => expect(started(system)).toBe(true));
+    expect(scene.particleSystems).toEqual([system]);
+    expect(state()).toBe("playing");
+    expect(diagnostics).toEqual([]);
+    service.dispose();
+  });
+
+  it("freezes a paused Particle Graph's per-frame updates and prewarms it on resume", async () => {
+    // Update Angle = Angle + 0.1 changes every simulated frame, whatever the update speed.
+    const spinning = graph("mat", (document) => {
+      document.settings.prewarm = 1;
+      document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+      document.nodes.push(
+        { id: "spin", type: "update.angle", position: { x: 0, y: 0 }, properties: {} },
+        { id: "angle", type: "input.contextual.angle", position: { x: 0, y: 0 }, properties: {} },
+        { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: { "default:b": [0.1] } },
+      );
+      document.edges.push(
+        { id: "a", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "spin", targetPinId: "particle" },
+        { id: "b", sourceNodeId: "spin", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+        { id: "c", sourceNodeId: "angle", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+        { id: "d", sourceNodeId: "add", sourcePinId: "out", targetNodeId: "spin", targetPinId: "angle" },
+      );
+    });
+    const { scene, service, diagnostics, assign, state } = host();
+    service.setLibrary(library({ "fx-graph": spinning }));
+    service.setPaused(true);
+    assign();
+    expect(diagnostics).toEqual([]);
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(state()).toBe("playing"));
+    service.setPaused(false);
+    // Pre Warm ran inside the resumed start.
+    expect(system.particles.length).toBeGreaterThan(0);
+    const angles = () => system.particles.map((particle) => particle.angle);
+    service.setPaused(true);
+    const frozen = angles();
+    for (let step = 0; step < 10; step += 1) system.animate(true);
+    expect(angles()).toEqual(frozen);
+    service.setPaused(false);
+    system.animate(true);
+    expect(angles()).not.toEqual(frozen);
+    service.dispose();
   });
 });

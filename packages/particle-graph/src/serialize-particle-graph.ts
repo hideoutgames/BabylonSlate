@@ -181,9 +181,18 @@ function typeLabel(kind: string): string {
 /**
  * Inject catalog pins, titles and the header role so the canvas can draw and
  * connect nodes. Generic pins show their resolved type once a non-Float input
- * is wired. The Emitter Output is protected from deletion.
+ * is wired; until then they keep their accepted types, even when the group
+ * falls back to a non-Float type (Split lowers as Color). The Emitter Output
+ * is protected from deletion.
  */
 export function hydrateParticleGraphForEditor(graph: SerializedGraph): SerializedGraph {
+  const edges = graph.edges.map((edge) => ({
+    id: edge.id,
+    sourceNodeId: edge.source,
+    sourcePinId: edge.sourceHandle ?? "out",
+    targetNodeId: edge.target,
+    targetPinId: edge.targetHandle ?? "in",
+  }));
   const resolver = createParticleTypeResolver({
     nodes: graph.nodes.map((node) => ({
       id: node.id,
@@ -191,28 +200,38 @@ export function hydrateParticleGraphForEditor(graph: SerializedGraph): Serialize
       position: node.position,
       properties: particleNodePropertiesFromData(node.data),
     })),
-    edges: graph.edges.map((edge) => ({
-      id: edge.id,
-      sourceNodeId: edge.source,
-      sourcePinId: edge.sourceHandle ?? "out",
-      targetNodeId: edge.target,
-      targetPinId: edge.targetHandle ?? "in",
-    })),
+    edges,
   });
+  /** A non-Float numeric type is wired into one of the node's generic inputs. */
+  const resolvedFromWire = (nodeId: string): boolean => {
+    const definition = resolver.definitionOf(nodeId);
+    if (!definition) return false;
+    return edges.some((edge) => {
+      if (edge.targetNodeId !== nodeId) return false;
+      const pin = definition.inputs.find((entry) => entry.id === edge.targetPinId);
+      if (pin?.type.kind !== "generic") return false;
+      const source = resolver.outputType(edge.sourceNodeId, edge.sourcePinId);
+      return source !== null && source !== "float" && isParticleNumericType(source);
+    });
+  };
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
       const properties = particleNodePropertiesFromData(node.data);
       const pins = pinsForParticleNode(node.type, properties);
+      const wired = resolvedFromWire(node.id);
       for (const pin of pins) {
         const resolved =
           pin.direction === "in"
             ? resolver.inputType(node.id, pin.id)
             : resolver.outputType(node.id, pin.id);
-        if (pin.type.kind === "generic" && resolved && resolved !== "float") {
-          pin.type = { kind: resolved };
+        if (pin.type.kind !== "generic") {
+          pin.typeLabel = typeLabel(resolved ?? pin.type.kind);
+          continue;
         }
-        pin.typeLabel = typeLabel(resolved ?? pin.type.kind);
+        if (wired && resolved) pin.type = { kind: resolved };
+        // An unwired group keeps its accepted types; only a Float fallback reads as Float.
+        pin.typeLabel = typeLabel(wired || resolved === "float" ? (resolved ?? "generic") : "generic");
       }
       const definition = resolver.definitionOf(node.id);
       return {
