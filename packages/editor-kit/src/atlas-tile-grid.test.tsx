@@ -113,7 +113,7 @@ describe("AtlasTileGrid", () => {
   it("refreshes cells for selection, tile edits, callbacks, and test IDs", () => {
     let tileset = twoTileSet();
     let selectedId = 1;
-    let selectedIds: readonly number[] | undefined;
+    let selectedIds: readonly number[] | undefined = undefined;
     let onSelect = vi.fn();
     let testId = "atlas";
     const grid = () => (
