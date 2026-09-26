@@ -82,6 +82,7 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
 
   // Prefab presents a depth-backed RTT through the same shared Engine.
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await expect(page.getByTestId("graph-panel")).toBeVisible({ timeout: 15_000 });
   const components = [createMeshComponent("prefab-mesh", "box")];
   expect(await page.evaluate((components) => (window as unknown as {
     __babylonslateTest: { setMainGraphComponents(value: typeof components): Promise<boolean> };
