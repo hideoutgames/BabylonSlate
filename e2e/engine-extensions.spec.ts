@@ -43,7 +43,8 @@ test("authored TypeScript extensions persist code and enablement across a projec
   const write = page.getByRole("dialog", { name: "Write Project Code", exact: true });
   await write.getByRole("button", { name: "Run", exact: true }).click();
   await expect(write.getByText("Command Completed", { exact: true })).toBeVisible();
-  await write.getByRole("button", { name: "Close", exact: true }).click();
+  await write.locator('[data-slot="dialog-close"]').click();
+  await expect(write).toHaveCount(0);
   await settings.locator('[data-slot="dialog-close"]').click();
   await saveAllIfEnabled(page);
   await closeProjectViaSettings(page);
@@ -57,7 +58,8 @@ test("authored TypeScript extensions persist code and enablement across a projec
   const check = page.getByRole("dialog", { name: "Check Project Code", exact: true });
   await check.getByRole("button", { name: "Run", exact: true }).click();
   await expect(check.getByText("Command Completed", { exact: true })).toBeVisible();
-  await check.getByRole("button", { name: "Close", exact: true }).click();
+  await check.locator('[data-slot="dialog-close"]').click();
+  await expect(check).toHaveCount(0);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await expect(settings.getByRole("button", { name: "Check Project Code", exact: true })).toHaveCount(0);
