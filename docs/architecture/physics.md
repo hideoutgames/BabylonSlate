@@ -104,6 +104,17 @@ The renderer retains pose lookup tables and matrix/vector scratch storage per co
 
 Focused performance fixtures live in `ragdoll-sync-performance.test.ts`, `physics-constraints.test.ts`, and `ragdoll-pose.test.ts`. They exercise 2,048 unrelated actors, 128 stable native joints, and 16/64-bone chains, with deterministic bounds on unrelated transform reads and hierarchy work. Their p50/p95 timings are diagnostic desktop measurements, not device frame-rate guarantees or timing thresholds in CI.
 
+Observed on Windows / Node 24 / Babylon 9.20, with the shared single-worker profile, 20 warm-up iterations and 100 measured iterations (milliseconds, before → after):
+
+| Isolated work | p50 | p95 |
+| --- | --- | --- |
+| Ragdoll sync/readback, all disabled | 4.091 → 0.173 | 17.818 → 0.454 |
+| Ragdoll sync/readback, one active two-bone rig | 5.839 → 0.684 | 20.375 → 1.441 |
+| Reconcile 128 unchanged native constraints | 0.602 → 0.314 | 0.970 → 0.489 |
+| Present a 64-bone unlinked chain | 0.609 → 0.081 | 0.744 → 0.202 |
+
+The actor fixtures count unrelated transform reads (409,600 → 0 across 100 ticks). The 64-bone presentation fixture includes an unselected tip: absolute-matrix visits fall from 6,239 to 65 per update. Timings exclude native simulation in the reconciliation fixtures and exclude rendering/GPU work in the NullEngine presentation fixture; they do not establish a mobile frame budget.
+
 | Component | Properties (core) |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |

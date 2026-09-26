@@ -174,6 +174,27 @@ describe("skeletal ragdoll pose handoff", () => {
     expect(controller.isDriven(1)).toBe(false);
   });
 
+  it.each(["duplicate", "nonfinite", "missing"])("rejects a %s pose without applying a partial cached update", (invalid) => {
+    const { scene, root, controller, capture, replies } = fixture();
+    const hip = new TransformNode("Hip", scene);
+    hip.parent = root;
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = hip;
+    hand.position.x = 1;
+    const captured = capture();
+    const bones = captured.bones!.map((bone) => ({ ...bone, position: { ...bone.position, y: 20 } }));
+    if (invalid === "duplicate") bones[1]!.name = bones[0]!.name;
+    if (invalid === "nonfinite") bones[1]!.position.y = Number.NaN;
+    if (invalid === "missing") bones.pop();
+    controller.setPose({ type: "setRagdollPose", slotId: 1, requestId: "first", bones });
+    controller.update();
+    expect(replies.at(-1)?.error).toMatch(/invalid ragdoll bone pose/);
+    expect(hip.getAbsolutePosition().asArray()).toEqual([0, 0, 0]);
+    expect(hand.getAbsolutePosition().asArray()).toEqual([1, 0, 0]);
+    controller.clear({ type: "clearRagdollPose", slotId: 1, requestId: "first" });
+    expect(controller.isDriven(1)).toBe(false);
+  });
+
   it("holds physics poses while animation commands arrive and resumes seeking after disable", () => {
     const { scene, root, binding, controller, capture } = fixture();
     const bone = new TransformNode("Root", scene);

@@ -59,7 +59,14 @@ describe("ragdoll synchronization work", () => {
       for (let tick = 0; tick < 30; tick++) { sync.sync(); backend.step(1 / 60); sync.afterStep(); }
       expect(hero.transform.position.x).toBeCloseTo(-10, 3);
       expect(hero.transform.position.y).toBeLessThan(-0.5);
-      parent.transform.scale.x = 2;
+      const nextParent = world.createActor({ classId: "Actor", guid: "next-parent", transform: identityTransform() });
+      nextParent.transform.position.x = 30;
+      world.spawnActorNow(nextParent);
+      hero.variables.set("parentId", nextParent.guid);
+      sync.sync();
+      sync.afterStep();
+      expect(hero.transform.position.x).toBeCloseTo(-20, 3);
+      nextParent.transform.scale.x = 2;
       sync.sync();
       expect(commands.filter((command) => command.type === "captureRagdollPose")).toHaveLength(2);
       expect(backend.listDebugColliders()).toHaveLength(0);
