@@ -131,6 +131,72 @@ describe("World tick", () => {
     expect(old.destroyed).toBe(true);
     expect(world.getActors()).toEqual([replacement]);
     expect(replacement.destroyed).toBe(false);
+    expect(world.findActor("same")).toBe(replacement);
+  });
+
+  it("makes committed actors discoverable before creation hooks and removes them before destruction hooks", () => {
+    const world = createTestWorld();
+    const visibility: Array<[string, boolean]> = [];
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "actor",
+      hooks: {
+        onCreation: (self) => {
+          visibility.push(["actor-created", world.findActor(self.guid) === self]);
+        },
+        onDestroyed: (self) => {
+          visibility.push(["actor-destroyed", world.findActor(self.guid) !== undefined]);
+        },
+      },
+    });
+    actor.attachComponent(world.createComponent({
+      classId: "ActorComponent",
+      hooks: {
+        onCreation: () => {
+          visibility.push(["component-created", world.findActor("actor") === actor]);
+        },
+        onDestroyed: () => {
+          visibility.push(["component-destroyed", world.findActor("actor") !== undefined]);
+        },
+      },
+    }));
+    world.spawnActor(actor);
+    expect(world.findActor("actor")).toBeUndefined();
+    world.flushPending();
+    expect(world.findActor("actor")).toBe(actor);
+    world.destroyActor("actor");
+    expect(world.findActor("actor")).toBe(actor);
+    world.flushPending();
+    expect(world.findActor("actor")).toBeUndefined();
+    expect(visibility).toEqual([
+      ["actor-created", true],
+      ["component-created", true],
+      ["component-destroyed", false],
+      ["actor-destroyed", false],
+    ]);
+  });
+
+  it("resolves duplicate guids in spawn order after instance and guid destruction", () => {
+    const world = createTestWorld();
+    const first = world.createActor({ classId: "Actor", guid: "shared" });
+    const middle = world.createActor({ classId: "Actor", guid: "shared" });
+    const last = world.createActor({ classId: "Actor", guid: "shared" });
+    for (const actor of [first, middle, last]) world.spawnActorNow(actor);
+    expect(world.findActor("shared")).toBe(first);
+    world.destroyActorInstance(middle);
+    world.flushPending();
+    expect(world.findActor("shared")).toBe(first);
+    expect(first.destroyed).toBe(false);
+    world.destroyActor("shared");
+    world.flushPending();
+    expect(first.destroyed).toBe(true);
+    expect(world.findActor("shared")).toBe(last);
+    expect(world.getActors()).toEqual([last]);
+    expect(last.spawnIndex).toBe(0);
+    world.destroyActor("shared");
+    world.flushPending();
+    expect(last.destroyed).toBe(true);
+    expect(world.findActor("shared")).toBeUndefined();
   });
 
   it("keeps a ready SceneLayer ticking when Game Instance starts loading the world scene", () => {
@@ -193,6 +259,7 @@ describe("World tick", () => {
     expect(world.getActors()).toHaveLength(0);
     expect(actor.destroyed).toBe(true);
     expect(component.owner).toBeNull();
+    expect(world.findActor(actor.guid)).toBeUndefined();
   });
 
   it("defers mid-tick destroy so siblings still tick", () => {
@@ -407,6 +474,7 @@ describe("World tick", () => {
     expect(world.getActors()).toEqual([replacement]);
     expect(replacement?.destroyed).toBe(false);
     expect(replacement?.spawnIndex).toBe(0);
+    expect(world.findActor("shared")).toBe(replacement);
   });
 
   it("keeps a SceneLayer and Actor recreated by departing destruction hooks", () => {
@@ -428,6 +496,7 @@ describe("World tick", () => {
     expect(world.getSceneLayers()).toEqual([replacementLayer]);
     expect(world.getActors()).toEqual([replacementActor]);
     expect(replacementActor?.destroyed).toBe(false);
+    expect(world.findActor("actor")).toBe(replacementActor);
   });
 
   it("produces identical snapshots for the same seed", () => {
