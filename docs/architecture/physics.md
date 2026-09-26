@@ -110,7 +110,7 @@ Observed on Windows / Node 24 / Babylon 9.20, with the shared single-worker prof
 | --- | --- | --- |
 | Ragdoll sync/readback, all disabled | 4.091 → 0.173 | 17.818 → 0.454 |
 | Ragdoll sync/readback, one active two-bone rig | 5.839 → 0.684 | 20.375 → 1.441 |
-| Reconcile 128 unchanged native constraints | 0.602 → 0.314 | 0.970 → 0.489 |
+| Reconcile 128 unchanged native constraints | 0.602 → 0.185 | 0.970 → 0.640 |
 | Present a 64-bone unlinked chain | 0.609 → 0.081 | 0.744 → 0.202 |
 
 The actor fixtures count unrelated transform reads (409,600 → 0 across 100 ticks). The 64-bone presentation fixture includes an unselected tip: absolute-matrix visits fall from 6,239 to 65 per update. Timings exclude native simulation in the reconciliation fixtures and exclude rendering/GPU work in the NullEngine presentation fixture; they do not establish a mobile frame budget.
