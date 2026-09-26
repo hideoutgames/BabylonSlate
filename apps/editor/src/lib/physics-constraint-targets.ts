@@ -8,7 +8,11 @@ export function physicsConstraintTargets(scene: SerializedScene, ownerId: string
     component.classId === "RigidBodyComponent" ||
     component.classId === "BlockingVolumeComponent" ||
     component.classId === "TilemapComponent" ||
-    (scene.settings.physicsWorld === "3d" && component.classId === "MeshComponent" && component.properties.collisionMode !== "none"),
+    (scene.settings.physicsWorld === "3d" && (
+      (component.classId === "MeshComponent" && component.properties.collisionMode !== "none") ||
+      (component.classId === "LandscapeComponent" && component.properties.collisionsEnabled === true) ||
+      component.classId === "WaterBuoyancyComponent"
+    )),
   )).map((actor) => ({
     id: actor.id,
     label: names.get(actor.id)!,

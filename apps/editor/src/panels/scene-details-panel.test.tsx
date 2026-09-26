@@ -176,13 +176,17 @@ describe("constraint target authoring", () => {
     ] });
     const anchor = createActor("anchor", "Ceiling", { components: [createMeshComponent("anchor-mesh", "box")] });
     const decoration = createActor("decoration", "Decoration", { components: [{ ...createMeshComponent("decor-mesh", "box"), properties: { collisionMode: "none" } }] });
-    scene().actors = [owner, anchor, decoration, createActor("empty", "Empty")];
+    const terrain = createActor("terrain", "Terrain", { components: [{ id: "landscape", classId: "LandscapeComponent", properties: { collisionsEnabled: true } }] });
+    const floating = createActor("float", "Float", { components: [{ id: "buoyancy", classId: "WaterBuoyancyComponent", properties: {} }] });
+    scene().actors = [owner, anchor, decoration, terrain, floating, createActor("empty", "Empty")];
     harness.selectedActorIds = [owner.id];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("property-joint-owner-joint-targetActorId"));
     expect(screen.queryByRole("option", { name: /Pendulum/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /Decoration/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /^Empty/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /Terrain/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Float/ })).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText("Search Physics Actors"), { target: { value: "Ceil" } });
     fireEvent.click(screen.getByRole("option", { name: /Ceiling/ }));
     await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalled());
