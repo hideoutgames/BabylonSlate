@@ -352,12 +352,14 @@ test.describe("Particle Graph", () => {
       .toEqual({ systems: 2, playing: 1, graphSystems: 1 });
     // Play draws through the FrameGraph, whose culling gates each particle draw on its emitter.
     // Both slots must show on nearly every frame, not only on the classic frame after a resize.
+    // Without particles the animated scene still adds up to ~130 "white" pixels, never green;
+    // with them a frame adds ~250+ green and ~1700+ white.
     let frames: ParticleFrame[] = [];
     try {
       await expect
         .poll(async () => {
           frames = await particleFrames(page.getByTestId("play-canvas"), 40);
-          return frames.filter((frame) => frame.green >= 4 && frame.white >= 4).length / 40;
+          return frames.filter((frame) => frame.green >= 100 && frame.white >= 500).length / 40;
         }, { timeout: 20_000 })
         .toBeGreaterThanOrEqual(0.9);
     } finally {

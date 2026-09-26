@@ -931,7 +931,6 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
-  if (options.playMode) (globalThis as { __zzPlayProbe?: Set<unknown> }).__zzPlayProbe?.add({ scene, engine, canvas, worldRenderer, presentationStats, registeredView });
   let captureFramePhases = false;
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());

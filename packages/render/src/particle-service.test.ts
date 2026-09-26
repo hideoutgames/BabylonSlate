@@ -123,6 +123,8 @@ describe("ParticleService", () => {
     service.setLibrary(library({ "em-1": basic() }));
     assign();
     const emitter = scene.particleSystems[0]!.emitter as Mesh;
+    // FrameGraph Cull Objects keeps only these meshes, and particles draw only beside their emitter.
+    expect(emitter.isEnabled() && emitter.isVisible && emitter.visibility > 0 && emitter.alwaysSelectAsActiveMesh).toBe(true);
     expect(emitter.getTotalVertices()).toBe(0);
     expect(emitter.subMeshes ?? []).toHaveLength(0);
     expect(emitter.isPickable).toBe(false);
