@@ -75,6 +75,7 @@ import {
   graphNodeTypes,
   resolveNodeType,
 } from "./graph-nodes";
+import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
@@ -108,7 +109,6 @@ import {
   displayPinTypesForGraph,
   pinTypeKey,
   type PinDisplayLookup,
-  type PinDisplayNode,
 } from "./wildcard-display";
 import {
   GRAPH_DEFAULT_ZOOM,
@@ -311,26 +311,6 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
       targetHandle: edge.targetHandle,
       ...(edge.type ? { type: edge.type } : {}),
       ...animTransitionEdgeMarkers(edge.type),
-    };
-  });
-}
-
-function styleFlowEdges(
-  edges: Edge[],
-  nodes: readonly PinDisplayNode[],
-  displayTypes: PinDisplayLookup,
-): Edge[] {
-  return edges.map((edge) => {
-    const source = nodes.find((node) => node.id === edge.source);
-    const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
-    const pin = pins.find((entry) => entry.id === edge.sourceHandle);
-    const display =
-      (edge.sourceHandle
-        ? displayTypes.get(pinTypeKey(edge.source, edge.sourceHandle))
-        : undefined) ?? pin?.type;
-    return {
-      ...edge,
-      style: edgeStyleForPin(display),
     };
   });
 }
