@@ -152,6 +152,82 @@ describe("runtime navmesh import and crowd", () => {
     bytes = await generateNavMesh(groundPrism());
   });
 
+  it("bounds actor reads while a populated crowd advances", async () => {
+    const scene = patrolScene();
+    scene.actors = Array.from({ length: 100 }, (_, i) => createActor(`agent-${i}`, `Agent ${i}`, {
+      transform: { position: [-4.5 + i % 10, 0, -4.5 + Math.floor(i / 10)], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: "nav", classId: "NavAgentComponent", properties: { radius: 0.2, height: 2, maxSpeed: 3.5 } }],
+    }));
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene });
+    try {
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      const actors = runtime.getWorld().getActors();
+      const moving = actors.find((actor) => actor.guid === "agent-99")!;
+      expect(runtime.setNavAgentTarget(moving.guid, { x: 7, y: 0, z: 7 })).toBe(true);
+      const startX = moving.transform.position.x;
+      let guidReads = 0;
+      for (const actor of actors) {
+        const guid = actor.guid;
+        Object.defineProperty(actor, "guid", { get: () => { guidReads++; return guid; } });
+      }
+
+      for (let tick = 0; tick < 10; tick++) runtime.tick();
+
+      expect(moving.transform.position.x).toBeGreaterThan(startX);
+      expect(guidReads).toBeLessThanOrEqual(50 * actors.length * 10);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("moves an agent spawned by a behavior-tree service in the same tick", async () => {
+    const scene = patrolScene();
+    scene.actors = [createActor("owner", "Owner", {
+      components: [{ id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "spawn-tree" } }],
+    })];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, playScene: scene,
+      behaviourTrees: { "spawn-tree": {
+        name: "Spawn Agent", rootId: "wait", blackboardGuid: null,
+        nodes: [{
+          id: "wait", kind: "task", classId: "BTTask_Wait", children: [], decorators: [],
+          properties: { duration: 10 },
+          services: [{ id: "spawn", classId: "SpawnAgentService", intervalMs: 0, randomDeviationMs: 0, properties: {} }],
+        }],
+      } },
+    });
+    try {
+      await runtime.loadScripts([
+        {
+          assetGuid: "spawned-agent", classId: "SpawnedAgent", parentClassId: "Actor",
+          source: "", anchors: [], entryPoints: [],
+          components: [{ id: "nav", classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } }],
+        },
+        {
+          assetGuid: "spawn-service", classId: "SpawnAgentService", parentClassId: "BTService",
+          anchors: [], entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }],
+          source: `export function onBtTick(ctx) {
+            if (ctx.getActors().some(actor => actor.classId === "SpawnedAgent")) return;
+            const agent = ctx.spawnActor("SpawnedAgent", { position: { x: -4, y: 0, z: -4 } });
+            ctx.moveTo(agent, { x: 4, y: 0, z: 4 });
+          }`,
+        },
+      ]);
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      runtime.tick();
+
+      const spawned = runtime.getWorld().getActors().find((actor) => actor.classId === "SpawnedAgent");
+      expect(spawned).toBeDefined();
+      expect(spawned!.transform.position.x).toBeGreaterThan(-4);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("streams active navigation only while requested and clears removed agents", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
