@@ -103,6 +103,7 @@ class Converter {
 
   private get token(): Token { return this.tokens[this.index]!; }
   private take(): Token { return this.tokens[this.index++]!; }
+  private at(text: string): boolean { return this.token.text === text; }
   private accept(text: string): boolean { if (this.token.text !== text) return false; this.take(); return true; }
   private expect(text: string): void {
     if (!this.accept(text)) this.fail(`Expected “${text}”; found “${this.token.text}”.`);
@@ -130,7 +131,7 @@ class Converter {
   }
 
   parse(): MaterialDocument {
-    while (this.token.text !== "void") {
+    while (!this.at("void")) {
       if (this.accept("precision")) {
         if (!PRECISION.has(this.token.text)) this.fail("Expected a precision qualifier.");
         this.take(); this.expect("float"); this.expect(";");
