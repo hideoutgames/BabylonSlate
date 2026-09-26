@@ -134,7 +134,7 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
-  it("finds wave contacts inside coarse faces even when every corner is below the water", () => {
+  it.each(["x", "z"] as const)("finds %s-wave contacts inside coarse faces even when every corner is below the water", (axis) => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;
     try {
@@ -145,14 +145,17 @@ describe("Water field", () => {
       face.computeWorldMatrix(true);
       field = new WaterField(scene, {
         mesh: surface, unbounded: false, amplitude: 2, contactRange: 1,
-        surfaceY: () => 0, contactY: (x) => 2 * Math.cos(Math.PI * x / 2), contactRevision: () => 0,
+        surfaceY: () => 0, contactY: (x, z) => 2 * Math.cos(Math.PI * (axis === "x" ? x : z) / 2), contactRevision: () => 0,
       });
       field.update(0);
       const view = field as unknown as FieldView;
-      // The face at Y=1 meets this wave at X=2/3; its X=+/-4 corners are under Y=2.
-      expect(texel(view, 2 / 3, 0).object).toBeLessThan(0.25);
-      expect(texel(view, -2 / 3, 0).object).toBeLessThan(0.25);
-      expect(texel(view, 2, 0).object).toBe(1);
+      // The face at Y=1 meets this wave at +/-2/3 on either axis; its corners are under Y=2.
+      const [near, opposite, far] = axis === "x"
+        ? [[2 / 3, 0], [-2 / 3, 0], [2, 0]] as const
+        : [[0, 2 / 3], [0, -2 / 3], [0, 2]] as const;
+      expect(texel(view, ...near).object).toBeLessThan(0.25);
+      expect(texel(view, ...opposite).object).toBeLessThan(0.25);
+      expect(texel(view, ...far).object).toBe(1);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
@@ -162,7 +165,7 @@ describe("Water field", () => {
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 8, height: 8 }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "deep floor", { width: 12, depth: 12, subdivisions: 1, heights: [-45, -45, -45, -45] });
+      createLandscapeMesh(scene, "deep floor", { width: 12, depth: 12, subdivisions: 4, heights: Array(25).fill(-45) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 50, contactRange: 1, surfaceY: () => 0 });
       field.update(0);
       expect(texel(field as unknown as FieldView, 0, 0).depth).toBeCloseTo(45, 0);
@@ -190,6 +193,29 @@ describe("Water field", () => {
       post.computeWorldMatrix(true);
       field.update(100);
       expect(texel(view, -Math.sin(0.1), -Math.cos(0.1)).object).toBeLessThan(0.25);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("keeps interior wave contours continuous across a pitched and yawed wall", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      const surface = MeshBuilder.CreateGround("water", { width: 12, height: 12 }, scene);
+      surface.metadata = { slateWater: true };
+      const wall = new Mesh("sloped wall", scene), face = new VertexData();
+      // A steep wall with height Y = 0.2X + 4Z + 1, tilted about both horizontal axes.
+      face.positions = [-4, -3.8, -1, 4, -2.2, -1, 4, 5.8, 1, -4, 4.2, 1];
+      face.indices = [0, 1, 2, 0, 2, 3];
+      face.applyToMesh(wall);
+      field = new WaterField(scene, {
+        mesh: surface, unbounded: false, amplitude: 7, contactRange: 1,
+        surfaceY: () => 0, contactY: (x, z) => 0.2 * x + 4 * z + 2 * Math.cos(Math.PI * z * 2), contactRevision: () => 0,
+      });
+      field.update(0);
+      const view = field as unknown as FieldView;
+      // The crest meets the wall along Z=1/6, including points far from its edges and diagonal.
+      expect(texel(view, -2, 1 / 6).object).toBeLessThan(0.25);
+      expect(texel(view, 2, 1 / 6).object).toBeLessThan(0.25);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 });

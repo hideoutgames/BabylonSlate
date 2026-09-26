@@ -289,8 +289,8 @@ export class WaterField {
     const contactY = this.surface.contactY;
     // Scanline samples share a lattice across every object, so overlapping faces sample the
     // rendered water only once per location. Endpoints and narrow faces also keep their edges.
-    const sampleWidth = width * 2 + 1;
-    if (contactY && this.contactSamples?.length !== sampleWidth * height) this.contactSamples = new Float64Array(sampleWidth * height);
+    const sampleWidth = width * 2 + 1, sampleCount = sampleWidth * (height * 2 + 1);
+    if (contactY && this.contactSamples?.length !== sampleCount) this.contactSamples = new Float64Array(sampleCount);
     const contactSamples = contactY ? this.contactSamples!.fill(NaN) : null;
     const contactHeight = (x: number, z: number, index = -1): number => {
       if (index < 0) return contactY!(x, z) ?? Infinity;
@@ -298,7 +298,7 @@ export class WaterField {
       if (Number.isNaN(value)) { value = contactY!(x, z) ?? Infinity; contactSamples![index] = value; }
       return value;
     };
-    const contactSegment = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, row = -1) => {
+    const contactSegment = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, row = -1, column = -1) => {
       // Clip before sampling: a very large mesh must not trace beyond this field's bounds.
       const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
       let lo = 0, hi = 1;
@@ -330,7 +330,15 @@ export class WaterField {
         const first = Math.max(0, Math.min(width * 2, dx > 0 ? Math.ceil(start) : Math.floor(start)));
         const last = Math.max(0, Math.min(width * 2, dx > 0 ? Math.floor(end) : Math.ceil(end)));
         for (let col = first; dx > 0 ? col <= last : col >= last; col += direction) {
-          sample((r.minX + col * cellX * 0.5 - x0) / dx, row * sampleWidth + col);
+          sample((r.minX + col * cellX * 0.5 - x0) / dx, (row * 2 + 1) * sampleWidth + col);
+        }
+      } else if (column >= 0 && dz !== 0) {
+        const start = (z0 + dz * lo - r.minZ) / (cellZ * 0.5), end = (z0 + dz * hi - r.minZ) / (cellZ * 0.5);
+        const direction = dz > 0 ? 1 : -1;
+        const first = Math.max(0, Math.min(height * 2, dz > 0 ? Math.ceil(start) : Math.floor(start)));
+        const last = Math.max(0, Math.min(height * 2, dz > 0 ? Math.floor(end) : Math.ceil(end)));
+        for (let sampleRow = first; dz > 0 ? sampleRow <= last : sampleRow >= last; sampleRow += direction) {
+          sample((r.minZ + sampleRow * cellZ * 0.5 - z0) / dz, sampleRow * sampleWidth + column * 2 + 1);
         }
       } else {
         const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx) / cellX, Math.abs(dz) / cellZ) * (hi - lo) * 2));
@@ -339,6 +347,9 @@ export class WaterField {
       sample(hi);
     };
     let budget = MAX_SLICE_INDICES;
+    const surfaceBounds = this.surface.mesh.getBoundingInfo().boundingBox;
+    const minContactY = surfaceBounds.minimumWorld.y - this.surface.amplitude;
+    const maxContactY = surfaceBounds.maximumWorld.y + this.surface.amplitude;
     const a = new Vector3(), b = new Vector3(), c = new Vector3();
     for (const mesh of objects) {
       const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
@@ -357,6 +368,7 @@ export class WaterField {
         const i0 = indices[t]! * 3, i1 = indices[t + 1]! * 3, i2 = indices[t + 2]! * 3;
         a.set(world[i0]!, world[i0 + 1]!, world[i0 + 2]!); b.set(world[i1]!, world[i1 + 1]!, world[i1 + 2]!); c.set(world[i2]!, world[i2 + 1]!, world[i2 + 2]!);
         if (contactY) {
+          if (Math.min(a.y, b.y, c.y) > maxContactY || Math.max(a.y, b.y, c.y) < minContactY) continue;
           // A face can contain several contacts even when its original vertices all sit above
           // or below the waves. Trace its interior at field resolution, not only its vertices.
           const firstRow = Math.max(0, Math.ceil((Math.min(a.z, b.z, c.z) - r.minZ) / cellZ - 0.5));
@@ -376,29 +388,24 @@ export class WaterField {
             }
             if (points === 2) contactSegment(x0, y0, z, x1, y1, z, row);
           }
-          // Constant-Z walls and narrow projected faces need the other scan direction;
-          // tracing their perimeter alone would leave gaps between vertical-edge contacts.
-          const spanX = Math.max(a.x, b.x, c.x) - Math.min(a.x, b.x, c.x);
-          const spanZ = Math.max(a.z, b.z, c.z) - Math.min(a.z, b.z, c.z);
-          const projectedArea = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x));
-          if (spanZ < cellZ || (spanX / cellX > spanZ / cellZ && projectedArea <= spanX * cellZ)) {
-            const firstCol = Math.max(0, Math.ceil((Math.min(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
-            const lastCol = Math.min(width - 1, Math.floor((Math.max(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
-            for (let col = firstCol; col <= lastCol; col++) {
-              const x = r.minX + (col + 0.5) * cellX;
-              let points = 0, y0 = 0, z0 = 0, y1 = 0, z1 = 0;
-              for (let edge = 0; edge < 3; edge++) {
-                const p = edge === 0 ? a : edge === 1 ? b : c;
-                const q = edge === 0 ? b : edge === 1 ? c : a;
-                if ((p.x <= x) === (q.x <= x)) continue;
-                const f = (x - p.x) / (q.x - p.x);
-                const y = p.y + (q.y - p.y) * f, z = p.z + (q.z - p.z) * f;
-                if (points === 0) { y0 = y; z0 = z; }
-                else { y1 = y; z1 = z; }
-                points++;
-              }
-              if (points === 2) contactSegment(x, y0, z0, x, y1, z1);
+          // Both directions are required: a contact can run parallel to either set of rows,
+          // even across the interior of a broad face whose corners never meet the wave.
+          const firstCol = Math.max(0, Math.ceil((Math.min(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
+          const lastCol = Math.min(width - 1, Math.floor((Math.max(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
+          for (let col = firstCol; col <= lastCol; col++) {
+            const x = r.minX + (col + 0.5) * cellX;
+            let points = 0, y0 = 0, z0 = 0, y1 = 0, z1 = 0;
+            for (let edge = 0; edge < 3; edge++) {
+              const p = edge === 0 ? a : edge === 1 ? b : c;
+              const q = edge === 0 ? b : edge === 1 ? c : a;
+              if ((p.x <= x) === (q.x <= x)) continue;
+              const f = (x - p.x) / (q.x - p.x);
+              const y = p.y + (q.y - p.y) * f, z = p.z + (q.z - p.z) * f;
+              if (points === 0) { y0 = y; z0 = z; }
+              else { y1 = y; z1 = z; }
+              points++;
             }
+            if (points === 2) contactSegment(x, y0, z0, x, y1, z1, -1, col);
           }
           contactSegment(a.x, a.y, a.z, b.x, b.y, b.z);
           contactSegment(b.x, b.y, b.z, c.x, c.y, c.z);
