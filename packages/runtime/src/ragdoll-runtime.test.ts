@@ -52,6 +52,7 @@ describe("skeletal ragdoll runtime lifecycle", () => {
     const { runtime, commands } = fixture();
     try {
       const actor = await prepare(runtime);
+      runtime.getPhysicsSync()!.syncFromWorld(runtime.getWorld());
       runtime.getPhysicsSync()!.setActorLinearVelocity(actor.guid, { z: 2 });
       const meshAssignments = commands.filter((command) => command.type === "assignMesh").length;
       runtime.invokeScriptEvent("Hero", "Enable", actor);

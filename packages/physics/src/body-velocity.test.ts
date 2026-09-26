@@ -19,8 +19,8 @@ describe.each([
       backend.setBodyLinearVelocity("body", { x: 2, y: 0, z: 0 });
       backend.setBodyAngularVelocity("body", { x: 0, y: 0, z: 1 });
       const velocity = backend.getBodyVelocity("body")!;
-      // Rapier adds its authored unit body mass to the unit-area collider mass.
-      expect(velocity.centerOfMass.y).toBeCloseTo(preferSoftware ? 0 : kind === "2d" ? 0.5 : 1);
+      // Both native engines place the mass center at the offset collider center.
+      expect(velocity.centerOfMass.y).toBeCloseTo(preferSoftware ? 0 : 1);
       velocity.linear.x = 99;
       velocity.angular.z = 99;
       expect(backend.getBodyVelocity("body")!.linear.x).toBeCloseTo(2);

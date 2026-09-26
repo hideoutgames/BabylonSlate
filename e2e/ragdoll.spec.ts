@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { eulerDegreesToQuaternion, lookAtRotation, type SerializedScene } from "../packages/core/src/index";
+import { createActor, createMeshComponent, eulerDegreesToQuaternion, lookAtRotation, type SerializedScene } from "../packages/core/src/index";
 import type { ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
@@ -26,7 +26,13 @@ async function pose(page: Page, playing: boolean): Promise<Pose> {
     const api = playing ? host.__babylonslatePlayTest : host.__babylonslateViewportTest;
     return Object.fromEntries((api?.shadowDiagnostics()?.models ?? [])
       .filter(mesh => parts.includes(mesh.name ?? ""))
-      .map(mesh => [mesh.name!, [...mesh.worldMatrix]]));
+      .map(mesh => {
+        const matrix = mesh.worldMatrix;
+        if (!matrix || matrix.length !== 16 || matrix.some(value => value === null || !Number.isFinite(value))) {
+          throw new Error(`Invalid rendered matrix for ${mesh.name}`);
+        }
+        return [mesh.name!, matrix as number[]];
+      }));
   }, { parts: PARTS, playing });
 }
 
@@ -58,6 +64,12 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   actor.classId = "Actor";
   actor.transform.position = [0, 4, 0];
   actor.transform.rotation = eulerDegreesToQuaternion([0, 0, 25]);
+  const floor = createActor("ragdoll-floor", "Ragdoll Floor", {
+    components: [createMeshComponent("ragdoll-floor-mesh", "box")],
+  });
+  floor.transform.position = [0, -0.5, 0];
+  floor.transform.scale = [20, 1, 20];
+  scene.actors.push(floor);
   const camera = scene.actors.find(entry => entry.id === scene.settings.mainCameraActorId)!;
   camera.transform.position = [6, 5, 9];
   camera.transform.rotation = lookAtRotation([6, 5, 9], [0, 2, 0]);
