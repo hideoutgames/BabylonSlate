@@ -26,6 +26,19 @@ import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
+function normalIdentityDocument() {
+  const document = createDefaultMaterialDocument("Normals Identity", "postProcess");
+  for (const [id, type] of [["normal", "input.sceneNormal"], ["length", "vector.length"], ["multiply", "math.multiply"]])
+    document.nodes.push({ id: id!, type: type!, position: { x: 0, y: 0 }, properties: {} });
+  document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
+  for (const [from, output, to, input] of [
+    ["screenUv", "uv", "normal", "uv"], ["normal", "normal", "length", "value"],
+    ["length", "out", "multiply", "b"], ["sceneColor", "color", "multiply", "a"],
+    ["multiply", "out", "output", "color"],
+  ]) document.edges.push({ id: `${from}-${to}`, sourceNodeId: from!, sourcePinId: output!, targetNodeId: to!, targetPinId: input! });
+  return document;
+}
+
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
@@ -213,6 +226,37 @@ export async function runSpatialEffectsProof(
           kind === "reflections" || kind === "combined";
         effects.volumetricLighting.enabled = kind !== "reflections";
         const on = await draw();
+        const stackDifferences: number[] = [];
+        if (kind === "reflections") {
+          const document = normalIdentityDocument();
+          const attach = () => graph.attachPostProcess({ scene, camera, library,
+            stack: [{ materialGuid: "normal-identity", enabled: true, order: 0 }], documentFor: () => document,
+          }, () => {});
+          let stack = attach();
+          // A normal-consuming authored pass keeps the prepass alive while
+          // spatial requirements change from fog depth to reflection buffers.
+          effects.reflections.enabled = false;
+          effects.volumetricLighting.enabled = true;
+          effects.volumetricLighting.density = 0;
+          await draw();
+          effects.reflections.enabled = true;
+          effects.volumetricLighting.enabled = false;
+          const checkStack = async () => {
+            const pixels = await draw();
+            stackDifferences.push(pixels.reduce((sum, value, i) => sum + Math.abs(value - on[i]!), 0) / on.length);
+            if (path === "classic") {
+              const passes = camera._postProcesses.filter((pass) => pass !== null);
+              if (passes.indexOf(stack.passes[0]!) > passes.findIndex((pass) => pass.name === "Scene Reflections"))
+                throw new Error("Authored color must precede scene reflections");
+            }
+          };
+          await checkStack();
+          stack = attach();
+          await checkStack();
+          stack.dispose();
+          const restored = await draw();
+          stackDifferences.push(restored.reduce((sum, value, i) => sum + Math.abs(value - on[i]!), 0) / on.length);
+        }
         effects.vignette.enabled = true;
         effects.vignette.weight = 0;
         const identityDisplay = await draw();
@@ -284,6 +328,7 @@ export async function runSpatialEffectsProof(
           changed,
           disabled,
           cameraSwitchDifference,
+          stackDifferences,
         });
       } finally {
         graph.dispose();

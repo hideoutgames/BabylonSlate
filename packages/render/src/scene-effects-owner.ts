@@ -141,8 +141,11 @@ export class SceneEffectsOwner {
               stage.bind(effect);
             };
           });
+          const texturesRequired = spatialGeometryTypes(plan);
           spatialPasses[0]!._prePassEffectConfiguration = {
-            name: "Slate Spatial Effects", enabled: false, texturesRequired: spatialGeometryTypes(plan),
+            // Babylon caches configurations by name. A borrowed prepass can
+            // outlive a fog-only generation and later need reflection buffers.
+            name: `Slate Spatial Effects:${texturesRequired.join(",")}`, enabled: false, texturesRequired,
           };
           prepass.markAsDirty();
         } else {

@@ -56,6 +56,8 @@ for (const backend of ["webgl2", "webgpu"] as const)
       expect(errors).toEqual([]);
       expect(result.reservations.reservedBytes).toBe(0);
       for (const capture of result.captures) {
+      for (const difference of capture.stackDifferences)
+        expect(difference, "authored stack replacement preserves reflections").toBeLessThan(1);
         expect(
           capture.cameraSwitchDifference,
           "camera switch uses the new camera matrices",

@@ -1066,6 +1066,9 @@ export class ForwardSceneFrameGraph {
 
   private releasePostProcessOwner(): void {
     try {
+      // Native effects borrow authored prepass buffers and follow the authored
+      // chain. Detach them before replacing either that owner or its buffers.
+      this.effectsOwner.useGraph();
       if (this.postProcessOwner) {
         this.postProcessOwner.dispose();
         this.postProcessRetirement.add(this.postProcessOwner);
