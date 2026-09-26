@@ -85,8 +85,9 @@ describe("ProjectExtensionsSettings", () => {
     const invalid = harness.service!.getSnapshot().entries.find((entry) => entry.folderName === "Broken")!;
     const row = within(screen.getByTestId(`settings-extension-row-${invalid.extensionGuid}`));
     expect(row.getByText("Unsupported Extension manifest.")).toBeTruthy();
-    for (const [role, name] of [["switch", "Enable Broken"], ["button", "Edit Broken"], ["button", "Export Broken"]]) {
-      expect((row.getByRole(role, { name }) as HTMLButtonElement).disabled).toBe(true);
+    expect(row.getByRole("switch", { name: "Enable Broken" }).getAttribute("aria-disabled")).toBe("true");
+    for (const name of ["Edit Broken", "Export Broken"]) {
+      expect((row.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     }
     expect((row.getByRole("button", { name: "Delete Broken" }) as HTMLButtonElement).disabled).toBe(false);
 

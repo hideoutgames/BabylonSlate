@@ -70,7 +70,7 @@ describe("EngineExtensionsSettings", () => {
     render(<EngineExtensionsSettings />);
     const row = within(await screen.findByTestId(`engine-extension-row-${broken.extensionGuid}`));
     expect(row.getByText(broken.invalid!)).toBeTruthy();
-    expect((row.getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+    expect(row.getByRole("switch").getAttribute("aria-disabled")).toBe("true");
     expect((row.getByRole("button", { name: "Export" }) as HTMLButtonElement).disabled).toBe(true);
     expect((row.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
 
