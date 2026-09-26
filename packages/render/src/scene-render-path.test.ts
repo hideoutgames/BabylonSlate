@@ -115,7 +115,7 @@ describe("scene render path selection", () => {
   });
 
   it("owns one container for an explicit request and restores authored lights on Forward and disposal", () => {
-    const { scene, lights } = fixture();
+    const { scene, mesh, lights } = fixture();
     const listener = vi.fn();
     const unsubscribe = subscribeSceneRenderPath(scene, listener);
     setSceneRenderSettings(scene, { renderPath: "clusteredForward" });
@@ -125,7 +125,10 @@ describe("scene render path selection", () => {
     expect(sceneRenderPathStatus(scene).effective.renderPath).toBe(
       "clusteredForward",
     );
-    for (let i = 0; i < 3; i++) syncSceneLighting(scene);
+    const vertices = vi.spyOn(mesh, "getTotalVertices");
+    for (let i = 0; i < 3; i++)
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(vertices).not.toHaveBeenCalled();
     expect(container(scene)).toBe(owner);
     expect(listener).toHaveBeenCalledTimes(2);
     setSceneRenderSettings(scene, { renderPath: "forward" });

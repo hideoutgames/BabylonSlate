@@ -1,5 +1,6 @@
 import {
   DetailMapConfiguration,
+  InstancedMesh,
   LightBlock,
   Material,
   MultiMaterial,
@@ -14,6 +15,8 @@ import {
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
   StandardMaterial,
+  type AbstractMesh,
+  type Observer,
   type Scene,
 } from "@babylonjs/core";
 import { CelMaterial } from "./cel-material";
@@ -108,29 +111,125 @@ function unqualifiedNativeFeature(material: Material): string | undefined {
   return undefined;
 }
 
-// Per-call scratch; the verdict depends only on the material, not the mesh.
-const checkedMaterials = new Set<Material>();
+type MaterialConsumers = {
+  material: Material | null;
+  meshes: { mesh: AbstractMesh; index: number }[];
+};
+
+function firstDrawable(group: MaterialConsumers, before: number) {
+  for (const entry of group.meshes) {
+    if (entry.index >= before) break;
+    if (entry.mesh.getTotalVertices()) return entry;
+  }
+  return undefined;
+}
+
+const consumersByScene = new WeakMap<Scene, SceneMaterialConsumers>();
+
+/** Cache assignments, not verdicts: Babylon exposes mutable material contracts without change events. */
+class SceneMaterialConsumers {
+  private readonly scene: Scene;
+  private readonly watched = new Map<AbstractMesh, Observer<AbstractMesh>>();
+  private readonly groups: MaterialConsumers[] = [];
+  private dirty = true;
+  private meshCount = -1;
+
+  constructor(scene: Scene) {
+    this.scene = scene;
+    const added = scene.onNewMeshAddedObservable.add((mesh) => {
+      // Add notifications are deferred, including those for already-removed
+      // cluster proxy meshes. Counts cover real additions before notification.
+      if (!this.watched.has(mesh) && scene.meshes.includes(mesh))
+        this.invalidate();
+    });
+    const removed = scene.onMeshRemovedObservable.add((mesh) => {
+      if (this.watched.has(mesh)) this.invalidate();
+    });
+    scene.onDisposeObservable.addOnce(() => {
+      scene.onNewMeshAddedObservable.remove(added);
+      scene.onMeshRemovedObservable.remove(removed);
+      this.invalidate();
+      consumersByScene.delete(scene);
+    });
+  }
+
+  private invalidate = (): void => {
+    this.dirty = true;
+    // Release removed/reassigned consumers even if the next request is Forward.
+    this.groups.length = 0;
+    for (const [mesh, observer] of this.watched)
+      mesh.onMaterialChangedObservable.remove(observer);
+    this.watched.clear();
+  };
+
+  private watch(mesh: AbstractMesh): void {
+    if (this.watched.has(mesh)) return;
+    this.watched.set(
+      mesh,
+      mesh.onMaterialChangedObservable.add(this.invalidate),
+    );
+  }
+
+  current(): readonly MaterialConsumers[] {
+    const scene = this.scene;
+    if (!this.dirty && this.meshCount === scene.meshes.length)
+      return this.groups;
+
+    this.invalidate();
+    const byMaterial = new Map<Material | null, MaterialConsumers>();
+    for (let index = 0; index < scene.meshes.length; index++) {
+      const mesh = scene.meshes[index]!;
+      this.watch(mesh);
+      // Instances inherit assignments from their source, even if it is detached
+      // from the scene. Their own material observable does not notify on edits.
+      if (mesh instanceof InstancedMesh) this.watch(mesh.sourceMesh);
+      const material = mesh.material;
+      let group = byMaterial.get(material);
+      if (!group) {
+        group = { material, meshes: [] };
+        byMaterial.set(material, group);
+        this.groups.push(group);
+      }
+      group.meshes.push({ mesh, index });
+    }
+    this.meshCount = scene.meshes.length;
+    this.dirty = false;
+    return this.groups;
+  }
+}
 
 /** Inspect actual scene consumers; unused preview/proxy/post-process materials do not select the path. */
 export function clusteredSceneMaterialReason(scene: Scene): string | undefined {
   if (!scene.lightsEnabled)
     return "This scene does not use lighting; using Forward.";
-  try {
-    for (const mesh of scene.meshes) {
-      // Empty transform/proxy nodes do not submit a material pass.
-      if (!mesh.getTotalVertices()) continue;
-      const material = mesh.material ?? scene.defaultMaterial;
-      if (checkedMaterials.has(material)) continue;
-      checkedMaterials.add(material);
-      const feature = unqualifiedNativeFeature(material);
-      if (feature)
-        return `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`;
-      if (!compatible(material))
-        return `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
-    }
-  } finally {
-    // Never retain scene materials between calls.
-    checkedMaterials.clear();
+  if (scene.isDisposed) return undefined;
+  let consumers = consumersByScene.get(scene);
+  if (!consumers) {
+    consumers = new SceneMaterialConsumers(scene);
+    consumersByScene.set(scene, consumers);
   }
-  return undefined;
+  let firstIndex = Infinity;
+  let reason: string | undefined;
+  for (const group of consumers.current()) {
+    if (group.meshes[0]!.index >= firstIndex) break;
+    // Reading defaultMaterial creates it lazily. Empty unassigned proxies
+    // must not allocate it; a drawable inheritor reads the live default.
+    const inheritor = group.material
+      ? undefined
+      : firstDrawable(group, firstIndex);
+    if (!group.material && !inheritor) continue;
+    const material = group.material ?? scene.defaultMaterial;
+    const feature = unqualifiedNativeFeature(material);
+    if (!feature && compatible(material)) continue;
+    // Rejected contracts require a drawable consumer. Geometry can change
+    // without a material/membership event; check it live and retain the first
+    // drawable mesh's reason in scene order, rather than group insertion order.
+    const consumer = inheritor ?? firstDrawable(group, firstIndex);
+    if (!consumer) continue;
+    firstIndex = consumer.index;
+    reason = feature
+      ? `Material "${material.name}" enables ${feature}, whose combined clustered sampler contract is not qualified; using Forward.`
+      : `Material "${material.name}" has no supported clustered lighting contract; using Forward.`;
+  }
+  return reason;
 }
