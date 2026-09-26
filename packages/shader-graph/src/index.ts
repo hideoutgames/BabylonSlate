@@ -117,3 +117,4 @@ export * from "./vector-mask";
 
 export { buildMaterialParameterCatalog, materialParameterDefaults } from "./material-parameter-catalog";
 export * from "./bake-material";
+export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";

@@ -737,7 +737,7 @@ Two distinct stores, and the split is enforced by where they live:
 
 The rule for agents: if changing a setting should change the exported game, it belongs in Project Settings. If it only changes how the editor feels on this machine, it belongs in Engine Settings.
 
-**UI:** each store is its own fullscreen `CatalogDialog` (`scope="project" | "engine"`). Project Settings lists only project categories (General, Input, 2D, Fonts, Rendering, Textures, Plugins, Export, Source Control, Close). Source Control is hidden on production web. Engine Settings lists only engine categories (Appearance, Undo, Viewport, Graph, Assets, Thumbnails, Focus, Templates). Engine is not a row inside Project Settings.
+**UI:** each store is its own fullscreen `CatalogDialog` (`scope="project" | "engine"`). Project Settings lists only project categories (General, Input, 2D, Fonts, Rendering, Textures, Plugins, Project Extensions, Export, Source Control, Close). Source Control is hidden on production web. Engine Settings lists only engine categories (Appearance, Undo, Viewport, Graph, Assets, Thumbnails, Focus, Templates, Engine Plugins, Engine Extensions). Engine is not a row inside Project Settings. Extension enable overrides are project authoring settings; their code never enters a packed game (§10.7).
 
 ### 7.3 Undo, redo and destructive actions
 
@@ -932,6 +932,38 @@ Plugin *content* is browsable, but under its own root behind a **Show Plugin Con
 ### 10.6 Export interaction
 
 Disabled plugins contribute nothing to a **packed** build. That tree-shake and pack join is **P14** (`collectEnabledPluginAssets`). Enabled plugins' content uses the same pass as project content, with editor-only asset types stripped as usual, and in packed mode plugin assets go into the same packs rather than getting their own, so plugins do not inflate the file count. Export Project in P13 remains a full backup (includes disabled project plugins on disk).
+
+### 10.7 Engine and Project Extensions
+
+Extensions are editor-only TypeScript/JavaScript packages with an `extension.json`
+manifest, a single `.ts`/`.js` entry exporting `activate(api)`, and a separate
+`.babextension` archive format. Plugins retain their authored-content model.
+The existing EditorUtilityObject and EditorFunctionLibrary graph types remain.
+
+- **Engine Settings → Engine Extensions** manages bundled/user library entries,
+  defaults for new projects, download export and confirmed user-entry deletion.
+  New projects copy the library into editable `extensions/` folders; existing
+  projects retain bundled fallback. Project copies shadow Engine IDs; bundled
+  originals cannot be deleted or replaced.
+- **Project Settings → Project Extensions** provides enable/maturity confirmation,
+  dependency diagnostics, commands, New/Import/Export and settings/source editing.
+  Overrides are stored by extension GUID in `project.json`. Imports remain
+  disabled until enabled; executable-code replacements require confirmation.
+- The editor host transpiles trusted single-module code without type checking or
+  module imports. `activate(api)` registers commands with text/multiline fields
+  and may return cleanup. APIs list/read registered assets, create/update supported
+  JSON assets in `assets/`, read/write `.ts`/`.js` files in `code/`, convert GLSL,
+  and log diagnostics. Open asset documents block extension updates. Disable,
+  reload and project close remove commands, invalidate APIs and run cleanup.
+- Extension folders never become runtime asset roots or packed game modules.
+  Generated project assets follow normal runtime dependency/export rules. The
+  first bundle, Experimental **GLSL to Material**, is disabled by default and
+  converts a bounded fragment-GLSL subset into ordinary editable Material nodes.
+  Unsupported source receives line diagnostics before any asset is created;
+  successful Materials carry no Custom GLSL or extension dependency.
+
+Details: [editor extensions](architecture/editor-extensions.md) and
+[GLSL conversion](architecture/shader-graph.md#glsl-to-material-conversion).
 
 ## 11. Input
 
