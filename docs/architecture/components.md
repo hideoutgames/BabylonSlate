@@ -118,6 +118,8 @@ Reusable by script, shader, animation, behaviour-tree and particle graphs, and t
 
 `GraphEditor` waits for its requested focus node to be measured before framing it; programmatic selection remains available in read-only mode without accepting topology or position edits.
 
+Pin display types and styled edges are reused while only node positions, selection, or measurements change. Pin edits and connection changes still refresh the full graph, including external Inspector and undo/redo updates. Edge selection and custom edge properties remain live; connection-assistant previews continue to validate proposed links separately.
+
 Repeated toolbar Add Node insertions stagger when their insertion points coincide, keeping earlier nodes independently selectable without moving them. Pin-drag, right-click, and double-tap additions retain the chosen drop position.
 
 `GraphEditor` node drags preview nearby unused, compatible right-output/left-input pins with grey, 50%-opacity wires. Previews use measured handle centers and a configurable screen radius (48px by default), remain outside graph state, and commit together on release after validation. Occupied pins (including multi-connect exec/output pins), disabled nodes, and links within the dragged selection are excluded. Moving away, Escape, pointer cancellation, focus loss, or external graph replacement clears suggestions. Host graph refreshes discard stale previews without ending assistance: the next movement checks the refreshed pins, even when the drag began out of range. Releasing before a fresh preview appears does not connect. Read-only and fixed-node canvases do not offer them.
