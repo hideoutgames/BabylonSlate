@@ -47,7 +47,7 @@ test("GLSL Engine Extension creates a Material with editable native nodes", asyn
 
   await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
   const scalar = document.nodes.find((node) => node.type === "const.float")!;
-  await graph.locator(`.react-flow__node[data-id="${scalar.id}"]`).getByText("Float", { exact: true }).click();
+  await graph.locator(`.react-flow__node[data-id="${scalar.id}"]`).click();
   const value = page.getByTestId("material-node-details").getByTestId("property-value");
   await expect(value).toBeEditable();
   await expect(value).toHaveValue("0.25");
