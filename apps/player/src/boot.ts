@@ -295,6 +295,8 @@ function initializePlayer(
         severity: "warning",
         code: diagnostic.code,
         assetGuid: diagnostic.assetGuid,
+        // Particle Graph problems name the node to focus in the editor.
+        nodeId: diagnostic.nodeId,
       });
       options.onDiagnostic?.(diagnostics);
     },

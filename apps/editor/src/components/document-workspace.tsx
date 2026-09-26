@@ -15,6 +15,7 @@ import { AudioReverbBakeProvider } from "../context/audio-reverb-bake-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
+import { ParticleGraphEditingProvider } from "../context/particle-graph-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
@@ -321,6 +322,29 @@ export function DocumentWorkspace() {
                     />
                   </DocumentShell>
                 </MaterialEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "particle-graph") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <ParticleGraphEditingProvider documentId={id}>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-particle-graph"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind={doc.ref.kind}
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </ParticleGraphEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

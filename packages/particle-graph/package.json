@@ -1,0 +1,19 @@
+{
+  "name": "@babylonslate/particle-graph",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node ../../scripts/run-tests.mjs unit packages/particle-graph"
+  },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

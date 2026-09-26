@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
+import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
@@ -486,6 +487,37 @@ describe("loadExportDocuments", () => {
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("hero-idle-anim")!))).toEqual(
       payload,
     );
+  });
+
+  it("packs Particle Graph documents as JSON for packed Play", async () => {
+    const document = { ...createDefaultParticleGraphDocument("Embers"), materialGuid: "sparks-mat" };
+    const loadedKinds: string[] = [];
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Embers.particlegraph.babasset",
+          header: {
+            guid: "embers",
+            type: "ParticleGraph",
+            name: "Embers",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: ["sparks-mat"],
+            payload: {},
+            chunks: [],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        loadedKinds.push(kind);
+        return document;
+      },
+      readAssetChunk: async () => null,
+    });
+    expect(loadedKinds).toEqual(["particle-graph"]);
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("embers")!))).toEqual(document);
   });
 
   it("exposes Font facetype-glyphs chunks separately from Font source bytes", async () => {

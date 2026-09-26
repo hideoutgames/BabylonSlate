@@ -14,6 +14,7 @@ import {
   Layers2Icon,
   LightbulbIcon,
   ListTreeIcon,
+  NetworkIcon,
   PersonStandingIcon,
   PuzzleIcon,
   SparklesIcon,
@@ -108,17 +109,25 @@ describe("resolveTypeVisual", () => {
     expect(channel.colorVar).not.toBe(audio.colorVar);
   });
 
-  it("uses Sparkles and Wind glyphs for Particle System and Particle Emitter", () => {
+  it("uses Sparkles, Wind and Network glyphs for Particle System, Particle Emitter and Particle Graph", () => {
     const system = resolveTypeVisual({ assetType: "ParticleSystem" });
     const emitter = resolveTypeVisual({ assetType: "ParticleEmitter" });
+    const graph = resolveTypeVisual({ assetType: "ParticleGraph" });
     const material = resolveTypeVisual({ assetType: "Material" });
     expect(system.family).toBe("material");
     expect(emitter.family).toBe("material");
+    expect(graph.family).toBe("material");
     expect(system.colorVar).toBe(material.colorVar);
     expect(emitter.colorVar).toBe(material.colorVar);
+    expect(graph.colorVar).toBe(material.colorVar);
     expect(system.iconKey).toBe("ParticleSystem");
     expect(emitter.iconKey).toBe("ParticleEmitter");
+    expect(graph.iconKey).toBe("ParticleGraph");
     expect(system.icon).not.toBe(emitter.icon);
+    // System slot lists mix both emitter kinds, so the glyphs must differ.
+    expect(graph.icon).toBe(NetworkIcon);
+    expect(graph.icon).not.toBe(emitter.icon);
+    expect(graph.icon).not.toBe(system.icon);
     const component = resolveTypeVisual({
       classId: "ParticleComponent",
       family: "class",

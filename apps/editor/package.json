@@ -28,6 +28,7 @@
     "@babylonslate/input": "workspace:*",
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
+    "@babylonslate/particle-graph": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",
     "@babylonslate/runtime": "workspace:*",

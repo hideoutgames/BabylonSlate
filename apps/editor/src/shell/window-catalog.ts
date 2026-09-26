@@ -26,6 +26,7 @@ export type DockviewDocumentKind =
   | "audio-channel"
   | "sound-attenuation"
   | "particle-emitter"
+  | "particle-graph"
   | "particle-system"
   | "water"
   | "model"
@@ -59,6 +60,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "audio-channel",
   "sound-attenuation",
   "particle-emitter",
+  "particle-graph",
   "particle-system",
   "water",
   "model",
@@ -116,6 +118,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
+  "particle-graph": "particle-graph-canvas",
   "particle-system": "particle-system-preview",
   water: "water-preview",
   model: "model-preview",
@@ -699,6 +702,44 @@ const MATERIAL_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/** The Material layout: Graph primary, Preview and Details stacked on the left. */
+const PARTICLE_GRAPH_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "particle-graph-canvas",
+    component: "particle-graph-canvas",
+    title: "Graph",
+  },
+  {
+    id: "particle-graph-preview",
+    component: "particle-graph-preview",
+    title: "Preview",
+    defaultPosition: {
+      referencePanelId: "particle-graph-canvas",
+      direction: "left",
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
+    },
+  },
+  {
+    id: "particle-graph-details",
+    component: "particle-graph-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "particle-graph-preview",
+      direction: "below",
+    },
+  },
+  {
+    id: "particle-graph-compiler-results",
+    component: "particle-graph-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "particle-graph-canvas",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
+];
+
 const MATERIAL_FUNCTION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "material-function-graph",
@@ -908,6 +949,9 @@ export function listDockWindows(
   if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
+  }
+  if (kind === "particle-graph") {
+    return withOptionalLocks(kind, PARTICLE_GRAPH_WINDOWS, options);
   }
   if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
   if (kind === "particle-system") {

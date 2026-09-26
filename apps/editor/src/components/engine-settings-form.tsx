@@ -119,6 +119,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Particle Emitter",
   },
   {
+    kind: "particle-graph",
+    keepKey: "particle-graph",
+    label: "Particle Graph",
+  },
+  {
     kind: "particle-system",
     keepKey: "particle-system",
     label: "Particle System",
