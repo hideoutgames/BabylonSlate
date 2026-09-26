@@ -34,6 +34,148 @@ function twoTileSet() {
 }
 
 describe("AtlasTileGrid", () => {
+  it.each(["pan", "pinch", "wheel"] as const)(
+    "does not revisit tile data during %s updates",
+    (gesture) => {
+      const tileset = ensureTilesetTiles(
+        normalizeTilesetPayload({
+          atlasWidth: 256,
+          atlasHeight: 256,
+          tileWidth: 16,
+          tileHeight: 16,
+        }),
+      );
+      let tileReads = 0;
+      for (const tile of tileset.tiles) {
+        const collision = tile.collision;
+        Object.defineProperty(tile, "collision", {
+          get: () => {
+            tileReads++;
+            return collision;
+          },
+        });
+      }
+      render(
+        <AtlasTileGrid
+          tileset={tileset}
+          imageUrl="blob:atlas"
+          selectedId={1}
+          onSelect={() => {}}
+          panZoom
+          data-testid="atlas"
+        />,
+      );
+      const surface = screen.getByTestId("atlas-surface");
+      const image = screen.getByTestId("atlas-cell-1").parentElement!;
+      surface.getBoundingClientRect = image.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 256, height: 256 }) as DOMRect;
+      const originalTransform = image.style.transform;
+      if (gesture !== "wheel") {
+        act(() => {
+          dispatchPointerEvent(surface, "pointerdown", {
+            pointerId: 1,
+            clientX: 80,
+            clientY: 80,
+          });
+          if (gesture === "pinch")
+            dispatchPointerEvent(surface, "pointerdown", {
+              pointerId: 2,
+              clientX: 120,
+              clientY: 80,
+            });
+        });
+      }
+      tileReads = 0;
+
+      for (let frame = 1; frame <= 5; frame++) {
+        if (gesture === "wheel") {
+          fireEvent.wheel(surface, { deltaY: -12, clientX: 100, clientY: 100 });
+        } else {
+          act(() =>
+            dispatchPointerEvent(surface, "pointermove", {
+              pointerId: 1,
+              clientX: 80 - frame * 10,
+              clientY: 80,
+            }),
+          );
+        }
+      }
+
+      expect(image.style.transform).not.toBe(originalTransform);
+      expect(tileReads).toBe(0);
+      expect(screen.getByTestId("atlas-cell-256")).toBeTruthy();
+      expect(
+        screen.getByTestId("atlas-cell-1").getAttribute("aria-pressed"),
+      ).toBe("true");
+    },
+  );
+
+  it("refreshes cells for selection, tile edits, callbacks, and test IDs", () => {
+    let tileset = twoTileSet();
+    let selectedId = 1;
+    let selectedIds: readonly number[] | undefined;
+    let onSelect = vi.fn();
+    let testId = "atlas";
+    const grid = () => (
+      <AtlasTileGrid
+        tileset={tileset}
+        imageUrl="blob:atlas"
+        selectedId={selectedId}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        data-testid={testId}
+      />
+    );
+    const { rerender } = render(grid());
+
+    selectedId = 2;
+    rerender(grid());
+    expect(
+      screen.getByTestId("atlas-cell-1").getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      screen.getByTestId("atlas-cell-2").getAttribute("aria-pressed"),
+    ).toBe("true");
+    selectedIds = [1, 2];
+    rerender(grid());
+    expect(
+      screen.getByTestId("atlas-cell-1").getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    tileset = {
+      ...tileset,
+      tiles: [
+        {
+          ...tileset.tiles[0]!,
+          collision: {
+            kind: "chain",
+            points: [
+              { x: 0, y: 0 },
+              { x: 1, y: 1 },
+            ],
+          },
+        },
+        tileset.tiles[1]!,
+      ],
+    };
+    rerender(grid());
+    const cell = screen.getByTestId("atlas-cell-1");
+    expect(cell.getAttribute("data-collision")).toBe("chain");
+    expect(cell.querySelector("polyline")?.getAttribute("points")).toBe(
+      "0,1 1,0",
+    );
+
+    const previousOnSelect = onSelect;
+    onSelect = vi.fn();
+    rerender(grid());
+    fireEvent.click(screen.getByTestId("atlas-cell-2"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
+    expect(previousOnSelect).not.toHaveBeenCalled();
+    testId = "renamed-atlas";
+    rerender(grid());
+    expect(screen.queryByTestId("atlas-cell-1")).toBeNull();
+    expect(screen.getByTestId("renamed-atlas-cell-1")).toBeTruthy();
+  });
   it.each(["move", "select"] as const)(
     "selects a tile on a captured %s tap",
     (tool) => {
@@ -363,6 +505,9 @@ describe("AtlasTileGrid", () => {
     });
     fireEvent.click(screen.getByTestId("atlas-cell-2"));
     expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId("atlas-cell-2"), { key: "Enter" });
+    fireEvent.click(screen.getByTestId("atlas-cell-2"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
   });
 
   it("contains the atlas image in the preview box", () => {
