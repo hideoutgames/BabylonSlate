@@ -78,6 +78,30 @@ describe("component script API", () => {
       });
     } finally { runtime.stop(); }
   });
+  it("sends Water Removal Volumes to Play rendering and removes their water from queries", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      playScene: sceneOf([
+        createActor("global", "Global Water", { classId: "Hero", components: [{ id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water" } }] }),
+        createActor("hull", "Hull", { classId: "Hero", transform: { position: [20, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [
+          { id: "hole", classId: "WaterRemovalVolumeComponent", properties: { shape: "cylinder", width: 4, height: 2 } },
+        ] }),
+      ]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { ctx.setVariable("inside", ctx.sampleWater({x:21,y:-0.5,z:0}).found); ctx.setVariable("outside", ctx.sampleWater({x:24,y:-0.5,z:0}).found); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().findActor("global")!;
+      runtime.invokeScriptEvent("Hero", "Update", actor);
+      expect(actor.getVariable("inside")).toBe(false);
+      expect(actor.getVariable("outside")).toBe(true);
+      expect(commands.filter((command) => command.type === "assignMesh" && command.parts?.some((part) => part.componentId === "hole")).at(-1)).toMatchObject({
+        parts: [{ componentId: "hole", meshKind: "waterRemoval", waterRemoval: { shape: "cylinder", width: 4, height: 2, enabled: true } }],
+      });
+    } finally { runtime.stop(); }
+  });
   it("changes an actor's authored outline without rebuilding its mesh or changing a sibling", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,

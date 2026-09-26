@@ -193,7 +193,7 @@ Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing 
 
 ### Water asset editor
 
-Water documents use DockView Preview and Details panels with PropertyGrid controls and a Surface Material picker. New Asset offers Realistic and Stylized starting presets. Place Actors has Global Water Volume, Ocean, Lake, River, and Puddle entries; placing a Water asset creates a lake using that asset. Component Details reuse the shared typed property rows, including river path points and buoyancy dimensions. Global Water Volume hides finite Width/Length controls; Ocean exposes its fixed rectangular bounds.
+Water documents use DockView Preview and Details panels with PropertyGrid controls and a Surface Material picker. New Asset offers Realistic and Stylized starting presets. Place Actors has Global Water Volume, Ocean, Lake, River, Puddle, and Water Removal Volume entries; placing a Water asset creates a lake using that asset. Component Details reuse the shared typed property rows, including river Curvature, path points with per-point Width Scale, and buoyancy dimensions. Viewport shape handles (engine-side, on the gizmo utility layer) edit the same properties; see [Water](render.md#water). Global Water Volume hides finite Width/Length controls; Ocean exposes its fixed rectangular bounds. Water Removal Volume Details show Enabled, Shape, and only the dimensions that shape uses (Width becomes Diameter for Sphere, Cylinder and Capsule; Height is hidden for Sphere; Length is Box-only).
 
 ### Input asset editors
 

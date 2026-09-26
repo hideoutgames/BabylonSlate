@@ -42,6 +42,7 @@ import {
   Volume2Icon,
   WindIcon,
   WavesIcon,
+  EraserIcon,
   WorkflowIcon,
 } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -133,6 +134,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   WaterLakeComponent: "ActorComponent",
   WaterRiverComponent: "ActorComponent",
   WaterPuddleComponent: "ActorComponent",
+  WaterRemovalVolumeComponent: "ActorComponent",
   WaterBuoyancyComponent: "ActorComponent",
   RigidBodyComponent: "ActorComponent",
   ColliderComponent: "ActorComponent",
@@ -198,6 +200,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   WaterLakeComponent: WavesIcon,
   WaterRiverComponent: WavesIcon,
   WaterPuddleComponent: WavesIcon,
+  WaterRemovalVolumeComponent: EraserIcon,
   WaterBuoyancyComponent: AnchorIcon,
   RigidBodyComponent: CylinderIcon,
   ColliderComponent: CircleDashedIcon,
@@ -252,7 +255,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "Text3DComponent",
   "AudioComponent",
   "ParticleComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent",
+  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
   "RigidBodyComponent",
   "ColliderComponent",
   "AnimationGraphComponent",
