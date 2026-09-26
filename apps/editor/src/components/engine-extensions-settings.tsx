@@ -169,7 +169,7 @@ export function EngineExtensionsSettings() {
                 <FieldLabel
                   htmlFor={`engine-extension-default-${entry.extensionGuid}`}
                 >
-                  Enabled By Default
+                  Enable {entry.settings.displayName} By Default
                 </FieldLabel>
               </FieldContent>
               <Switch

@@ -87,7 +87,8 @@ describe("Extension packages", () => {
     const { incoming } = await extensionPackage();
     await expect(inspectBabextension(encodeProjectZip(incoming.files.filter((file) => file.path !== "index.ts")))).rejects.toThrow(/Entry Point is missing/);
     const manifest = JSON.stringify({ kind: "extension", formatVersion: 1, ...incoming.settings, entryPoint: "../index.ts" });
-    await expect(inspectBabextension(encodeProjectZip(incoming.files.map((file) => file.path === "extension.json" ? { ...file, data: text(manifest) } : file))))).rejects.toThrow(/relative/);
+    const invalidFiles = incoming.files.map((file) => file.path === "extension.json" ? { ...file, data: text(manifest) } : file);
+    await expect(inspectBabextension(encodeProjectZip(invalidFiles))).rejects.toThrow(/relative/);
   });
 
   it("rejects oversized ZIP entries before decompression and oversized source modules before import", async () => {

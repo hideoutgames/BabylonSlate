@@ -66,8 +66,8 @@ describe("Editor Extensions in a project", () => {
           await api.code.write(values.path, 'export const amount: number = 2;');
         }});
         api.registerCommand({ id: 'update', title: 'Update', execute: async () => {
-          const asset = await api.assets.read('assets/Main.scene.babasset');
-          await api.assets.update('assets/Main.scene.babasset', asset);
+          const asset = await api.assets.read('assets/main.scene.babasset');
+          await api.assets.update('assets/main.scene.babasset', asset);
         }});
       }
     `);

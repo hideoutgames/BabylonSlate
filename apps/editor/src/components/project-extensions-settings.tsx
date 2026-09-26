@@ -81,7 +81,7 @@ export function ProjectExtensionsSettings() {
           </div>
           {entry.settings.description ? <FieldDescription>{entry.settings.description}</FieldDescription> : null}
           {entry.settings.extensionDependencies.length ? <FieldDescription>Dependencies: {entry.settings.extensionDependencies.map((dependency) => `${snapshot.entries.find((value) => value.extensionGuid === dependency.guid)?.settings.displayName ?? dependency.guid} (${dependency.version || "Any Version"})`).join(", ")}</FieldDescription> : null}
-          <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor={`extension-enabled-${entry.extensionGuid}`}>Enabled</FieldLabel></FieldContent>
+          <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor={`extension-enabled-${entry.extensionGuid}`}>Enable {entry.settings.displayName}</FieldLabel></FieldContent>
             <Switch id={`extension-enabled-${entry.extensionGuid}`} aria-label={`Enable ${entry.settings.displayName}`} checked={enabled} disabled={Boolean(pending)} onCheckedChange={(checked) => {
               if (checked) setEnableTarget(entry);
               else void run("Disabling Extension", () => setEnabled(entry, false));

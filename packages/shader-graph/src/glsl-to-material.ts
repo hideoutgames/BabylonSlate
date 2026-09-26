@@ -63,8 +63,9 @@ function tokenize(source: string): Token[] {
       }
       versionSeen = true; advance(directive); continue;
     }
-    const text = /^(?:[A-Za-z_][A-Za-z0-9_]*|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?|[+\-*/]=|[{}();,.=+\-*/])/.exec(rest)?.[0];
+    const text = /^(?:[A-Za-z_][A-Za-z0-9_]*|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?|\+\+|--|[+\-*/]=|[{}();,.=+\-*/])/.exec(rest)?.[0];
     if (!text) throw new ConversionError(token, `Unsupported character “${token.text}”. Only straight-line floating-point expressions are supported.`);
+    if (text === "++" || text === "--") throw new ConversionError(token, "Increment and decrement expressions are unsupported; use a separate whole-variable assignment.");
     tokens.push({ ...token, text }); advance(text);
     if (tokens.length > 4096) throw new ConversionError(token, "Shader exceeds the experimental converter's 4096-token limit.");
   }

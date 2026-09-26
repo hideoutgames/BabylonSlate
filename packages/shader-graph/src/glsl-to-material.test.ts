@@ -115,12 +115,12 @@ describe("experimental GLSL to ordinary Material nodes", () => {
     expect(lowered.plan.operations.some((operation) => operation.nodeType.startsWith("param."))).toBe(false);
   });
 
-  it("accepts constant constructors and ordinary names that overlap JavaScript object properties", () => {
+  it("accepts constant constructors, separated unary signs and names overlapping JavaScript object properties", () => {
     const document = converted(`
       const vec3 color = vec3(1, 0, 1);
       void main() {
-        float constructor = float(1);
-        gl_FragColor = vec4(color.zyx, constructor);
+        float constructor = float(+ +1);
+        gl_FragColor = vec4(- -color.zyx, constructor);
       }
     `);
     expect(rgba(document)).toEqual([1, 0, 1, 1]);
@@ -129,6 +129,10 @@ describe("experimental GLSL to ordinary Material nodes", () => {
   it.each([
     ["control flow", "void main() { if (true) { gl_FragColor = vec4(1.0); } }"],
     ["integer division", "void main() { gl_FragColor = vec4(1 / 2); }"],
+    ["prefix increment", "void main() { float value = 0.0; gl_FragColor = vec4(++value); }"],
+    ["prefix decrement", "void main() { float value = 1.0; gl_FragColor = vec4(--value); }"],
+    ["postfix increment", "void main() { float value = 0.0; float next = value+++1.0; gl_FragColor = vec4(value + next); }"],
+    ["postfix decrement", "void main() { float value = 1.0; float next = value---1.0; gl_FragColor = vec4(value + next); }"],
     ["octal constructor literal", "void main() { gl_FragColor = vec4(010); }"],
     ["float overflow", "void main() { gl_FragColor = vec4(1e100); }"],
     ["width mismatch", "void main() { gl_FragColor = vec4(vec2(1.0) + vec3(1.0), 1.0); }"],
