@@ -4,6 +4,7 @@ import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/
 import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
+import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { distanceTransform, isWaterContactMesh, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE, type WaterField } from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[] };
@@ -61,6 +62,21 @@ describe("Water field", () => {
       expect(sceneWaterRemovals(scene).map((entry) => entry.mesh)).toEqual([hole]);
       hole.dispose();
       expect(sceneWaterRemovals(scene)).toEqual([]);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("realizes a Play removal volume as an invisible cutter with its live transform", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    try {
+      applyAssignMesh(scene, binding, {
+        type: "assignMesh", slotId: 3, meshKind: "waterRemoval", meshAssetGuid: null,
+        parts: [{ componentId: "hole", meshKind: "waterRemoval", meshAssetGuid: null, parentId: null, position: [0, 0, 2], rotation: [0, 0, 0, 1], scale: [1, 1, 1], waterRemoval: { enabled: true, shape: "capsule", width: 2, height: 5, length: 2 } }],
+      });
+      const [entry] = sceneWaterRemovals(scene);
+      expect(entry?.volume).toMatchObject({ shape: "capsule", height: 5 });
+      expect(entry!.mesh.getChildMeshes().filter((child) => child.isVisible && child.getTotalVertices() > 0)).toEqual([]);
+      binding.meshes.get(3)!.position.x = 9;
+      expect(entry!.mesh.computeWorldMatrix(true).getTranslation().asArray()).toEqual([9, 0, 2]);
     } finally { scene.dispose(); engine.dispose(); }
   });
 });

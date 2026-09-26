@@ -93,6 +93,18 @@ it("edits a river path through typed vector rows and extends from its last point
   expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
 });
 
+it("edits a Water Removal Volume with only the sizes its shape uses", () => {
+  const box = rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: {} });
+  expect(box.rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Width", "Height", "Length"]);
+  const shape = box.rows.find((row) => row.label === "Shape");
+  if (shape?.kind !== "enum") throw new Error("Missing shape control");
+  expect(shape.options.map((option) => option.label)).toEqual(["Box", "Sphere", "Cylinder", "Capsule"]);
+  shape.onChange("capsule");
+  expect(box.update).toHaveBeenLastCalledWith("shape", "capsule");
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "sphere" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter"]);
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "capsule" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter", "Height"]);
+});
+
 describe("componentPropertyRows", () => {
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");

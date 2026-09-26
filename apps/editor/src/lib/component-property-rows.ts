@@ -1,4 +1,4 @@
-import { normalizeWaterBody, normalizeWaterBuoyancy, waterKindForClass } from "@babylonslate/core";
+import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
@@ -498,6 +498,18 @@ export function componentPropertyRows(
       ));
     }
     return rows;
+  }
+  if (component.classId === "WaterRemovalVolumeComponent") {
+    const v = normalizeWaterRemoval(component.properties);
+    const size = ([key, label, description]: ["width" | "height" | "length", string, string]): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label, value: v[key], defaultValue: 4, min: 0.01, max: 10000, description, onChange: (value) => update(key, value) });
+    const round = v.shape !== "box";
+    return [
+      { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: v.enabled, onChange: (value) => update("enabled", value) },
+      { kind: "enum", id: rowId(actorId, component.id, "shape"), label: "Shape", value: v.shape, options: WATER_REMOVAL_SHAPES.map((shape) => ({ value: shape, label: humanizePropertyLabel(shape) })), description: "Water inside this shape is removed from every water component, for rendering, queries and buoyancy.", onChange: (value) => update("shape", value) },
+      size(["width", round ? "Diameter" : "Width", round ? "Metres across the round shape." : "Metres along local X."]),
+      ...(v.shape === "sphere" ? [] : [size(["height", "Height", v.shape === "box" ? "Metres along local Y." : "Total metres along local Y, including rounded ends."])]),
+      ...(v.shape === "box" ? [size(["length", "Length", "Metres along local Z."])] : []),
+    ];
   }
   if (component.classId === "WaterBuoyancyComponent") {
     const b = normalizeWaterBuoyancy(component.properties);

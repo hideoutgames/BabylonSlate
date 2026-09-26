@@ -12,14 +12,19 @@ import { useOptionalPlay } from "../context/play-context";
 const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
   ["depthColorDistance", 0.01, 1000], ["waveHeight", 0, 20], ["waveLength", 0.1, 1000],
-  ["waveSpeed", 0, 20], ["waveDirection", -360, 360], ["rippleStrength", 0, 1],
-  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
+  ["waveSpeed", 0, 20], ["waveDirection", -360, 360], ["choppiness", 0, 1], ["waveSpread", 0, 1], ["rippleStrength", 0, 1],
+  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["crestFoam", 0, 1], ["contactFoamWidth", 0, 8],
+  ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
 ] as const;
 const descriptions: Partial<Record<(typeof controls)[number][0], string>> = {
   opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
   depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
   rippleScale: "Higher values make smaller wind ripples.",
-  foamWidth: "Metres of shoreline foam measured from the bank.",
+  choppiness: "0 gives rounded swell; 1 gives sharp crests and flat troughs. Floating objects follow the same shape.",
+  waveSpread: "How far wave headings fan out from Wave Direction: 0 is one swell, 1 is a confused sea.",
+  foamWidth: "Metres of shoreline foam measured from the bank or terrain shoreline.",
+  crestFoam: "Whitecaps on steep, choppy crests.",
+  contactFoamWidth: "Metres of foam around objects and terrain that cross the surface.",
   colorBands: "Stylized depth bands. Zero or one keeps a smooth gradient.",
   sparkles: "Twinkling sun glints on the surface.",
   density: "Kilograms per cubic metre. Fresh water is approximately 1000.",
