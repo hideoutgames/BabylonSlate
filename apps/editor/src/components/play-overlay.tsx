@@ -63,10 +63,10 @@ import type {
   TilemapPayload,
   TilesetPayload,
   ModelPayload,
+  ParticleLibrary,
   RetargetAnimationLoad,
 } from "@babylonslate/assets";
 import type { PlayAudioLibrary } from "../lib/play-audio";
-import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -137,7 +137,7 @@ export interface PlayOverlayProps {
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
-  particleLibrary?: PlayParticleLibrary;
+  particleLibrary?: ParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;

@@ -4,6 +4,7 @@ import {
   AddBlock,
   BonesBlock,
   ClampBlock,
+  ColorSplitterBlock,
   InstancesBlock,
   MorphTargetsBlock,
   Constants,
@@ -14,6 +15,7 @@ import {
   Material,
   Mesh,
   MeshBuilder,
+  ParticleBlendMultiplyBlock,
   ParticleSystem,
   NodeMaterial,
   ShaderLanguage,
@@ -37,7 +39,6 @@ import {
 } from "@babylonjs/core";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
-import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -539,10 +540,6 @@ export function compileMaterialPlan(
     plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
     material.backFaceCulling = false;
   }
-  if (plan.domain === "particle" && !options.particlePreview) {
-    ensureParticleTextureUvs(options.name, created);
-  }
-
   let flatNormal: FlatNormalBlock | undefined;
   const outputPoint = (
     pinId: string,
@@ -568,7 +565,9 @@ export function compileMaterialPlan(
       const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
       const color = outputPoint("color", `${options.name}_color`, true);
-      if (color) color.connectTo(fragment.rgba);
+      if (color && material.mode === NodeMaterialModes.Particle) {
+        connectParticleBlend(options.name, created, color, fragment.rgba);
+      } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else {
       if (outlineMask) {
@@ -1010,25 +1009,27 @@ function bindTexture(
   return true;
 }
 
-/** ParticleTextureBlock requires UV; live systems supply `particle_uv`. */
-function ensureParticleTextureUvs(
+/**
+ * Emitters own blend. Under Babylon's MULTIPLY particle effect a transparent texel must
+ * leave the destination unchanged, so the colour passes through Babylon's
+ * `ParticleBlendMultiplyBlock` (`rgb·a + (1 − a)`); outside BLENDMULTIPLYMODE it is a
+ * pass-through, so the other blend modes are unaffected.
+ */
+function connectParticleBlend(
   name: string,
   created: NodeMaterialBlock[],
+  color: NodeMaterialConnectionPoint,
+  target: NodeMaterialConnectionPoint,
 ): void {
-  const extra: NodeMaterialBlock[] = [];
-  for (const block of created) {
-    if (!(block instanceof ParticleTextureBlock)) continue;
-    if (block.uv.isConnected) continue;
-    const uv = new InputBlock(
-      `${name}_${block.name}_particleUv`.replace(/[^A-Za-z0-9_]/g, "_"),
-      undefined,
-      NodeMaterialBlockConnectionPointTypes.Vector2,
-    );
-    uv.setAsAttribute("particle_uv");
-    uv.output.connectTo(block.uv);
-    extra.push(uv);
-  }
-  created.push(...extra);
+  const blend = new ParticleBlendMultiplyBlock(`${name}_particleBlend`);
+  const alpha = new ColorSplitterBlock(`${name}_particleAlpha`);
+  const one = createConstantBlock(`${name}_particleAlphaColor`, "float", [1]);
+  created.push(blend, alpha, one);
+  color.connectTo(blend.color);
+  color.connectTo(alpha.rgba);
+  alpha.a.connectTo(blend.alphaTexture);
+  one.output.connectTo(blend.alphaColor);
+  blend.blendColor.connectTo(target);
 }
 
 function matrixInput(

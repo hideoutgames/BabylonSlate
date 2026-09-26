@@ -389,21 +389,6 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     inputs: [],
     outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
   },
-  {
-    type: "input.particleTexture",
-    title: "Particle Texture",
-    category: "Input",
-    domains: ["particle"],
-    stages: ["fragment"],
-    cost: 2,
-    samples: 1,
-    inputs: [{ id: "uv", name: "UV", type: VEC2 }],
-    outputs: [
-      { id: "rgba", name: "RGBA", type: VEC4, colorHint: true },
-      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
-      { id: "a", name: "A", type: FLOAT },
-    ],
-  },
 ];
 
 const MATH_NODES: MaterialNodeDefinition[] = [

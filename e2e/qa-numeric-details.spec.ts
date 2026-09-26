@@ -52,15 +52,18 @@ test("M34/L27: particle bounds and lifetime normalization are visible after blur
   await createContentBrowserAsset(page, "ParticleEmitter", "QAClamp");
   await openAssetFromBrowser(page, "assets/QAClamp.emitter.babasset");
   const capacity = page.getByTestId("property-capacity");
-  const prewarm = page.getByTestId("property-preWarmCycles");
-  const minLife = page.getByTestId("property-minLifeTime");
-  const maxLife = page.getByTestId("property-maxLifeTime");
+  const prewarm = page.getByTestId("property-prewarm");
+  // Lifetime defaults to Random Range, so its Min and Max fields are shown.
+  await expect(page.getByTestId("value-mode-lifetime")).toHaveAccessibleName(/Random Range/);
+  const minLife = page.getByTestId("property-lifetime-min");
+  const maxLife = page.getByTestId("property-lifetime-max");
   await capacity.fill("0");
   await capacity.press("Tab");
   await expect(capacity).toHaveValue("16");
+  // Pre Warm is seconds, capped at 10.
   await prewarm.fill("9999");
   await prewarm.press("Tab");
-  await expect(prewarm).toHaveValue("60");
+  await expect(prewarm).toHaveValue("10");
   await minLife.fill("5");
   await minLife.press("Tab");
   expect(Number(await minLife.inputValue())).toBeLessThanOrEqual(Number(await maxLife.inputValue()));
@@ -70,6 +73,6 @@ test("M34/L27: particle bounds and lifetime normalization are visible after blur
   await openTestProject(page);
   await openAssetFromBrowser(page, "assets/QAClamp.emitter.babasset");
   await expect(capacity).toHaveValue("16");
-  await expect(prewarm).toHaveValue("60");
+  await expect(prewarm).toHaveValue("10");
   expect([await minLife.inputValue(), await maxLife.inputValue()]).toEqual(lifetime);
 });

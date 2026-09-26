@@ -26,12 +26,6 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLine } from "../lib/output-log-ring";
-import {
-  emptyPlayParticleLibrary,
-  particleMaterialGuidsFromLibrary,
-  particleTextureGuidsFromLibrary,
-  type PlayParticleLibrary,
-} from "../lib/play-particles";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { PlayOverlay } from "../components/play-overlay";
@@ -105,7 +99,10 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
+  emptyParticleLibrary,
   hydrateSpriteAnimationPixelSizes,
+  particleLibraryMaterialGuids,
+  type ParticleLibrary,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
@@ -321,7 +318,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     () => emptyPlayAudioLibrary(),
   );
   const [playParticleLibrary, setPlayParticleLibrary] =
-    useState<PlayParticleLibrary>(() => emptyPlayParticleLibrary());
+    useState<ParticleLibrary>(() => emptyParticleLibrary());
   const [playMaterialDocuments, setPlayMaterialDocuments] = useState<
     Map<string, MaterialDocument>
   >(() => new Map());
@@ -1073,7 +1070,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             ],
             [
               ...[...waters.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : []),
-              ...particleMaterialGuidsFromLibrary(particles),
+              ...particleLibraryMaterialGuids(particles),
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
               ...overlayGraphMaterials,
             ],
@@ -1085,7 +1082,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesets,
             [
               ...materials.textureGuids,
-              ...particleTextureGuidsFromLibrary(particles),
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
@@ -1099,7 +1095,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesets,
             [
               ...materials.textureGuids,
-              ...particleTextureGuidsFromLibrary(particles),
               ...skyboxTextureGuids,
               ...environmentTextureGuids,
               ...overlayTextureGuidsFromScenes(resourceScenes),
@@ -1116,7 +1111,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayWaters(new Map());
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
-          setPlayParticleLibrary(emptyPlayParticleLibrary());
+          setPlayParticleLibrary(emptyParticleLibrary());
           try {
             textureBytes = await collectPlayTextureBytes(
               sprites,

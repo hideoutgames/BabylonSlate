@@ -90,7 +90,7 @@ Graph canvases use `--graph-canvas`, separately from `--graph-node`, so a shared
 - Homepage actions name the pending operation and prevent repeated submissions. Native project tiles keep Open separate from their context-menu trigger; browser projects explain their storage location.
 - Content Browser keeps names and destinations after failed create, rename, move, or copy operations. Retrying a partial batch omits completed top-level items. Import summaries distinguish successful files from failures; delete failures remain visible and asset references can be opened before confirming deletion.
 - Settings export and plugin actions show pending and failure states. Failed plugin actions offer Retry. Source-control freshness and unlock recovery are described in [Source control](source-control.md).
-- Texture, Font, and Particle previews distinguish loading, missing content, and failed reads or initialization. Retry stays inside the document where possible; unsupported Model preview sources explain the supported formats. A workspace rendering failure offers Retry.
+- Texture, Font, and Particle previews distinguish loading, missing content (Particle: **No Material**, **No Emitters**, **Missing Emitter**), and failed reads or initialization. Retry stays inside the document where possible; unsupported Model preview sources explain the supported formats. A workspace rendering failure offers Retry.
 - Compiler Results, Output Log, and Trace Log keep compact rows and show the selected message in a scrollable, selectable details area with Copy. Log rows reserve 44px for coarse pointers and 28px on desktop.
 - Long Play preparation explains the current wait after ten seconds. Trace charts scale bars to the largest frame or the tick budget and identify the selected frame and duration. Boolean graph defaults show On/Off beside the swatch.
 
@@ -158,6 +158,19 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-bt-decorator` | Attached decorator row tint |
 | `--node-bt-service` | Attached service row tint |
 
+### Particle stage roles
+
+Basic Particle Emitter stage accents (the `ModuleStage` pill and card rule) map onto the node role tokens through `PARTICLE_STAGE_ROLE` / `basicParticleStageRole` in `packages/ui/src/lib/data-types.ts`. Particle Graph node headers will use the same map (`p-particle-graph`), so both editors show one colour sequence.
+
+| Stage | Role token | Basic Particle Emitter stages | Particle Graph nodes |
+| --- | --- | --- | --- |
+| Output | `--node-event` | Emitter, Spawn, Render | Emitter Output |
+| Create | `--node-function` | Initialize | Create Particle |
+| Shape | `--node-latent` | Shape | Shape nodes |
+| Update | `--node-pure` | Over Life, Forces | Update and Force nodes |
+| Input | `--node-variable` | — | Particle Attributes, System Values, Constants |
+| Value | `--node-flow` | — | Math, Vector, Logic, Random, Gradient |
+
 ## Asset type colors
 
 Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent), including the New Asset Parent Class tree. Graph pin/node tokens stay on the same DataTypes maps. `TypeVisualIcon` passes Lucide `size` so the SVG `width`/`height` match the CSS box: **16** (`TYPE_VISUAL_ICON_CHROME_SIZE`) in chrome/lists, **40** (`TYPE_VISUAL_ICON_TILE_SIZE`) on Content Browser tiles. Tile glyphs also set Lucide `absoluteStrokeWidth` with design stroke **2** so the SVG `stroke-width` is `2 × 24 / 40` (1.2 viewBox units, 2 CSS px). Without that, viewBox-relative stroke 1.5–2 at 40px thickens to 2.5–3.3 px and dense icons (Film, Boxes, Grid) blob. AnimationGraph uses `Workflow`, BehaviourTree `ListTree`; clip Animation keeps `Film`.
@@ -167,7 +180,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
 | `--asset-graph` | Graph (cyan) | Graph |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Material Function, Shader (green, former Audio) | Material |
+| `--asset-material` | Material, Material Function, Shader, Particle Emitter, Particle System (green, former Audio) | Material, Particle Emitter (`Wind`), Particle System (`Sparkles`) |
 | `--asset-model` | Model (orange) | Model |
 | `--asset-audio` | unused by a Content Browser type (lime; kept so asset hues stay ≥25° apart) | — |
 | `--asset-font` | Font (sky) | Font |

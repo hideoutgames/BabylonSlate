@@ -1457,7 +1457,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | Project post-processing effects | `color-pipeline.spec.ts` (bloom/effects chain in packed WebGL2 + WebGPU player and editor viewport) |
 | Authored post-process stack | `framegraph-post-process.spec.ts`, `framegraph-post-process-lifetime.spec.ts`, `scene-post-process-coordinator.spec.ts`, `scene-post-process-host.spec.ts`, `post-process-owner-overrides.spec.ts` |
 | SceneLayers | `scene-layer-rendering.spec.ts` (viewport + Play); `runtime-owner-continuity.spec.ts` (moving global layer retained across loading, Play + Preview Build) |
-| Particles | `p17-particles.spec.ts` (authored emitter/system, Play billboards, teardown, save/reopen) |
+| Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, missing-Material diagnostic, save/reopen); `particle-lifecycle.spec.ts` (WebGL2/WebGPU × CPU/GPU emission, ownership, blend cases and overlapping bursts) |
 
 ### Hosts
 

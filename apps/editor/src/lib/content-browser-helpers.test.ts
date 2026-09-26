@@ -1292,11 +1292,9 @@ describe("content-browser-helpers", () => {
     });
     expect(emitter.type).toBe("ParticleEmitter");
     expect(emitter.payload).toMatchObject({
-      textureGuid: null,
-      materialGuid: null,
-      capacity: 256,
-      emitRate: 30,
-      blendMode: "additive",
+      schemaVersion: 2,
+      emitter: { capacity: 256 },
+      render: { materialGuid: null, blendMode: "additive" },
     });
     const system = buildNewAssetResult({
       type: "ParticleSystem",
@@ -1305,10 +1303,10 @@ describe("content-browser-helpers", () => {
       parentClass: null,
     });
     expect(system.type).toBe("ParticleSystem");
-    expect(system.payload).toMatchObject({
+    expect(system.payload).toEqual({
       emitterGuids: [],
       space: "world",
-      looping: true,
+      previewSkybox: true,
     });
   });
 
@@ -1377,7 +1375,7 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
     expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
-    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Particle Emitter");
+    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Basic Particle Emitter");
     expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
     expect(creatableAssetTypeLabel("SkyboxCreator")).toBe("Skybox Creator");
   });
@@ -1433,6 +1431,7 @@ describe("content-browser-helpers", () => {
 
   it("filters creatable types by Title Case label", () => {
     expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
+    expect(filterCreatableAssetTypes("basic")).toEqual(["ParticleEmitter"]);
     expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
   });
 
@@ -1916,9 +1915,9 @@ describe("content-browser-helpers", () => {
     expect(
       assetHeaderDependencies("ParticleEmitter", {
         textureGuid: "tex-p",
-        materialGuid: "mat-p",
+        render: { materialGuid: "mat-p" },
       }),
-    ).toEqual(["mat-p", "tex-p"]);
+    ).toEqual(["mat-p"]);
     expect(
       assetHeaderDependencies("ParticleSystem", {
         emitterGuids: ["em-b", "em-a", "em-b"],

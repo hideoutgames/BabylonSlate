@@ -295,18 +295,27 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
-  ParticleEmitter: "One Babylon particle recipe: texture, shape, lifetime, and color.",
-  ParticleSystem: "Starts several Particle Emitters on one actor.",
+  ParticleEmitter:
+    "A GPU emitter built from a stack of modules for spawn, shape, motion, and color. Its look comes from a particle Material.",
+  ParticleSystem: "Plays up to 8 Basic Particle Emitters together on one actor.",
   Water: "Shared water appearance and waves for oceans, lakes, rivers, and puddles.",
   SkyboxCreator:
     "Editor-only helper tool that slices a texture into six skybox faces.",
 };
 
+/** New Asset rows whose label differs from the split type name. */
+const CREATABLE_ASSET_TYPE_LABELS: Partial<Record<CreatableAssetType, string>> = {
+  ParticleEmitter: "Basic Particle Emitter",
+};
+
 /** Title Case label for a creatable asset type (`User Interface`). */
 export function creatableAssetTypeLabel(type: CreatableAssetType): string {
-  return type
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+  return (
+    CREATABLE_ASSET_TYPE_LABELS[type] ??
+    type
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+  );
 }
 
 export function creatableAssetTypeDescription(

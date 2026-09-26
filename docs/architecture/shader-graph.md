@@ -266,10 +266,17 @@ not author:
   attach. Vertex program may be empty; the terminal is fragment color/alpha
   only. **Particle Color** (`input.particleColor`) is the system's
   `particle_color` attribute (Babylon 9 has no `ParticleColorBlock` class).
-  **Particle Texture** (`input.particleTexture`) is `ParticleTextureBlock`;
-  unwired UV uses `particle_uv`. Live sampling is always
-  `system.particleTexture` — an NME preview texture is ignored. Hide world
-  attributes, WPO, PBR, Normal Map, and post-process buffers.
+  Textures come from **Texture Sample** (optionally with **UV**); unwired UV
+  uses the `particle_uv` attribute. The **Particle Texture** node was removed:
+  emitters have no texture, and the system's `particleTexture` is only a white
+  readiness texture. Old documents that still contain `input.particleTexture`
+  report `material.unknownNode` and do not compile until the node is replaced,
+  so their emitters are skipped. Outside the editor preview the compiler
+  inserts Babylon's `ParticleBlendMultiplyBlock` before the fragment output
+  (color → `color`, alpha → `alphaTexture`, constant 1 → `alphaColor`), so a
+  transparent texel leaves the destination unchanged under the emitter's
+  Multiply blend. Hide world attributes, WPO, PBR, Normal Map, and
+  post-process buffers. See [particles](particles.md#look).
 
 Babylon reports build failures through `onBuildErrorObservable` rather than
 throwing, so the compiler subscribes and turns them into diagnostics. Blocks
@@ -412,7 +419,8 @@ defaults to `[0, 0, 0]` when unwired.
 Details is selection-aware:
 
 - **No node selected:** Domain (Surface / Post Process / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
-  Cutoff when masked) plus the cost line.
+  Cutoff when masked) plus the cost line. Non-surface domains hide Shading Model and Two Sided; the Particle domain
+  also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
 
@@ -619,7 +627,7 @@ variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes.
 
-Particle materials preview on one stationary plane with no particle system. The preview compiler supplies white Particle Color and Particle Texture defaults; the Particle Emitter supplies these values during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.
+Particle materials preview on one stationary plane with no particle system. The preview compiler supplies a white Particle Color default and skips the Multiply blend block; the emitter supplies Particle Color during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.
 
 ## Landscape materials
 

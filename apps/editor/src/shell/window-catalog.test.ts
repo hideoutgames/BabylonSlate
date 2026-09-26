@@ -233,7 +233,7 @@ describe("listDockWindows", () => {
     ).toEqual({
       referencePanelId: "particle-emitter-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: 360,
     });
     expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");

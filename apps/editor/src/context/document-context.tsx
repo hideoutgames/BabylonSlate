@@ -59,6 +59,9 @@ import {
   type ModelPayload,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
+  isParticleAssetType,
+  particleLibraryFromAssets,
+  type ParticleLibrary,
 } from "@babylonslate/assets";
 import { encodeRgbaPng } from "@babylonslate/render";
 import {
@@ -262,9 +265,6 @@ import {
   createPlayAudioSourceLoader,
   playAudioLibraryFromAssets,
 } from "../lib/play-audio";
-import {
-  playParticleLibraryFromAssets,
-} from "../lib/play-particles";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   beginSaveAllProgress,
@@ -590,9 +590,7 @@ interface DocumentContextValue {
     functions: Map<string, MaterialFunctionDocument>;
     textureGuids: string[];
   }>;
-  collectPlayParticles: () => Promise<
-    import("../lib/play-particles").PlayParticleLibrary
-  >;
+  collectPlayParticles: () => Promise<ParticleLibrary>;
   /** Mounted Scene assets (all roots) so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
@@ -3290,7 +3288,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayParticles = useCallback(async () => {
     const assets = projectService.registry?.list() ?? [];
     const particleAssets = assets.filter((asset) =>
-      ["ParticleEmitter", "ParticleSystem"].includes(asset.header.type),
+      isParticleAssetType(asset.header.type),
     );
     const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
     for (const asset of particleAssets) {
@@ -3306,7 +3304,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payload: content,
       });
     }
-    return playParticleLibraryFromAssets({ assets: payloads });
+    return particleLibraryFromAssets(payloads);
   }, [loadPlayAssetContent, projectService]);
 
   const collectPlayMaterialLibrary = useCallback(

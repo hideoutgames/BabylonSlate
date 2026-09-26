@@ -16,10 +16,8 @@ import {
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
 } from "./audio-payload";
-import {
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
-} from "./particle-payload";
+import { normalizeParticleEmitterPayload } from "./particle-basic-emitter";
+import { normalizeParticleSystemPayload } from "./particle-payload";
 import { normalizeSkyboxCreatorPayload } from "./skybox-creator-payload";
 
 export type MigrationFn = (

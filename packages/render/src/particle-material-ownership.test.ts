@@ -1,98 +1,81 @@
-import { NodeMaterial, ParticleSystem, RawTexture, Scene } from "@babylonjs/core";
-import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
+import { NodeMaterial, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultParticleEmitterPayload, createDefaultParticleSystemPayload } from "@babylonslate/assets";
+import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary } from "./material-library";
 import { acquireParticleMaterial } from "./particle-material";
-import { ParticleService } from "./particle-service";
+import { ParticleService, type ParticleMaterialOwner } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
 
+const emitter = { kind: "basic" as const, payload: normalizeParticleEmitterPayload({ render: { materialGuid: "graph" } }) };
+const system = (guid: string) => ({ emitterGuids: [guid], space: "world" as const, previewSkybox: true });
+
 describe("scene and emitter material ownership", () => {
-  it.each([{ reverse: false, splitScene: false }, { reverse: true, splitScene: false }, { reverse: false, splitScene: true }, { reverse: true, splitScene: true }])("isolates one graph's emitter textures ($reverse/$splitScene)", async ({ reverse, splitScene }) => {
+  it.each([{ reverse: false, splitScene: false }, { reverse: true, splitScene: false }, { reverse: false, splitScene: true }, { reverse: true, splitScene: true }])("gives each emitter its own Material instance in its owning scene ($reverse/$splitScene)", async ({ reverse, splitScene }) => {
     const host = createTestEngine();
     const overlay = new Scene(host.engine);
     const blueScene = splitScene ? overlay : host.scene;
     const library = new MaterialLibrary();
     const document = createDefaultMaterialDocument("Shared graph", "particle");
-    document.nodes.push({ id: "texture", type: "input.particleTexture", position: { x: 0, y: 80 }, properties: {} });
-    document.edges = [{ id: "texture-output", sourceNodeId: "texture", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
-    const red = RawTexture.CreateRGBATexture(new Uint8Array([255, 0, 0, 255]), 1, 1, host.scene);
-    const blue = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 255, 255]), 1, 1, blueScene);
-    const materials: ResourceLease<NodeMaterial>[] = [];
-    const expectedTextures = new Map<NodeMaterial, RawTexture>();
-    let requestedTexture = red;
-    let textureOwners = 0;
+    const materials: Array<{ lease: ResourceLease<NodeMaterial>; owner: ParticleMaterialOwner }> = [];
+    let owners = 0;
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
       sceneForSlot: (slot) => slot === 2 ? blueScene : host.scene,
-      acquireTexture: (guid) => {
-        textureOwners += 1;
-        return { key: guid, resource: guid === "red" ? red : blue, release: () => { textureOwners -= 1; } };
-      },
       acquireMaterial: (guid, owner) => {
         const lease = acquireParticleMaterial(library, guid, document, owner)!;
-        materials.push(lease);
-        expectedTextures.set(lease.resource, requestedTexture);
-        return lease;
+        materials.push({ lease, owner });
+        owners += 1;
+        return { ...lease, release: () => { owners -= 1; lease.release(); } };
       },
     });
     cleanups.push(() => { service.dispose(); library.dispose(); overlay.dispose(); host.scene.dispose(); host.engine.dispose(); });
-    service.setLibrary({ emitters: new Map(["red", "blue"].map((guid) => [guid, {
-      ...createDefaultParticleEmitterPayload(), textureGuid: guid, materialGuid: "graph",
-    }])), systems: new Map(["red", "blue"].map((guid) => [guid, { ...createDefaultParticleSystemPayload(), emitterGuids: [guid] }])) });
+    service.setLibrary({ emitters: new Map([["red", emitter], ["blue", emitter]]),
+      systems: new Map(["red", "blue"].map((guid) => [guid, system(guid)])) });
     for (const guid of reverse ? ["blue", "red"] : ["red", "blue"]) {
-      requestedTexture = guid === "red" ? red : blue;
       service.handleCommand({ type: "assignParticle",
         slotId: guid === "red" ? 1 : 2, actorGuid: guid, componentId: "particle", particleSystemGuid: guid });
     }
-    await vi.waitFor(() => {
-      expect(host.scene.particleSystems[0]?.isStarted()).toBe(true);
-      expect(blueScene.particleSystems.find((system) => system.particleTexture === blue)?.isStarted()).toBe(true);
-    });
-    expect(materials[0]!.resource).not.toBe(materials[1]!.resource);
-    for (const lease of materials) {
-      const material = lease.resource;
-      const expected = expectedTextures.get(material)!;
-      expect(material.getScene()).toBe(expected === red ? host.scene : blueScene);
-      const blocks = material.attachedBlocks.filter((block) => block instanceof ParticleTextureBlock);
-      expect(blocks.length).toBeGreaterThan(0);
-      for (const block of blocks) expect((block as ParticleTextureBlock).texture).toBe(expected);
+    const systems = [...new Set([...host.scene.particleSystems, ...blueScene.particleSystems])] as ParticleSystem[];
+    expect(systems).toHaveLength(2);
+    await vi.waitFor(() => { for (const native of systems) expect(native.isStarted()).toBe(true); });
+    expect(materials).toHaveLength(2);
+    expect(materials[0]!.lease.resource).not.toBe(materials[1]!.lease.resource);
+    for (const { lease, owner } of materials) {
+      expect(owner.scene).toBe(owner.instanceKey.includes(":blue:") ? blueScene : host.scene);
+      expect(lease.resource.getScene()).toBe(owner.scene);
     }
-    const survivor = blueScene.particleSystems.find((system) => system.particleTexture === blue)!;
+    const blue = blueScene.particleSystems.find((native) => native.name.includes("blue"))!;
+    const blueMaterial = materials.find(({ owner }) => owner.instanceKey.includes(":blue:"))!.lease;
     service.handleCommand({ type: "despawn", slotId: 1, actorGuid: "red" });
-    expect(textureOwners).toBe(1);
+    expect(owners).toBe(1);
     expect(host.scene.particleSystems).toHaveLength(splitScene ? 0 : 1);
-    expect(blueScene.particleSystems).toEqual([survivor]);
-    expect(survivor.particleTexture).toBe(blue);
-    expect(blueScene.materials).toContain(materials.find((lease) => expectedTextures.get(lease.resource) === blue)!.resource);
+    expect(blueScene.particleSystems).toEqual([blue]);
+    expect(blueScene.materials).toContain(blueMaterial.resource);
     service.dispose();
-    expect(textureOwners).toBe(0);
+    expect(owners).toBe(0);
   });
 
   it("Stop before material completion cancels publication and removes every readiness check", async () => {
     const host = createTestEngine();
     const library = new MaterialLibrary();
     const document = createDefaultMaterialDocument("Delayed graph", "particle");
-    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, host.scene);
     let complete!: () => void;
     const delay = new Promise<void>((resolve) => { complete = resolve; });
     const release = vi.fn();
     const add = vi.spyOn(host.scene, "addIsReadyCheck");
     const remove = vi.spyOn(host.scene, "removeIsReadyCheck");
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
-      resolveTexture: () => texture,
       acquireMaterial: (guid, owner) => {
         const lease = acquireParticleMaterial(library, guid, document, owner)!;
         return { ...lease, ready: Promise.all([lease.ready, delay]).then(() => {}), release: () => { release(); lease.release(); } };
       },
     });
     cleanups.push(() => { service.dispose(); library.dispose(); host.scene.dispose(); host.engine.dispose(); });
-    service.setLibrary({ emitters: new Map([["emitter", { ...createDefaultParticleEmitterPayload(), textureGuid: "texture", materialGuid: "graph" }]]),
-      systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]) });
+    service.setLibrary({ emitters: new Map([["emitter", emitter]]), systems: new Map([["system", system("emitter")]]) });
     service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: "system" });
     const old = host.scene.particleSystems[0] as ParticleSystem;
     const start = vi.spyOn(old, "start");

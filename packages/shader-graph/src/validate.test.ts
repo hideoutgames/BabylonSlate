@@ -56,6 +56,15 @@ describe("material validation", () => {
     expect(codes(doc)).toContain("material.unknownNode");
   });
 
+  it("reports a removed Particle Texture node on its own node and validates the rest", () => {
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    doc.nodes.push({ id: "legacyTexture", type: "input.particleTexture", position: { x: 0, y: 80 }, properties: {} });
+    doc.edges = [{ id: "legacy", sourceNodeId: "legacyTexture", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
+    expect(validateMaterialDocument(doc)).toEqual([
+      expect.objectContaining({ code: "material.unknownNode", severity: "error", nodeId: "legacyTexture" }),
+    ]);
+  });
+
   it("flags an edge that points at a missing node", () => {
     const doc = createDefaultMaterialDocument();
     doc.edges.push({

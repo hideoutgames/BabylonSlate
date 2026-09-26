@@ -121,11 +121,38 @@ export {
 } from "./humanize-property-label";
 export {
   PropertyGrid,
+  type Color4Value,
   PropertySectionTitle,
   type PropertyGridProps,
   type PropertyRow,
+  type RangeValue,
   type Vector3Value,
 } from "./property-grid";
+export {
+  ModuleCard,
+  ModuleStack,
+  ModuleStage,
+  type ModuleCardProps,
+  type ModuleStackProps,
+  type ModuleStageProps,
+} from "./module-stack";
+export {
+  ValueModeField,
+  VALUE_MODE_CONSTANT,
+  VALUE_MODE_CURVE,
+  VALUE_MODE_GRADIENT,
+  VALUE_MODE_RANGE,
+  type ValueModeFieldProps,
+  type ValueModeOption,
+} from "./value-mode-field";
+export { CurveField, type CurveFieldProps } from "./curve-field";
+export { GradientField, type GradientFieldProps } from "./gradient-field";
+export {
+  sampleCurve,
+  sampleGradient,
+  type CurveKey,
+  type GradientStop,
+} from "./curve-keys";
 export {
   TreeView,
   TREE_ROW_HEIGHT,

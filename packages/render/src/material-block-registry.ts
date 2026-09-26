@@ -60,7 +60,6 @@ import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
 import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
-import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import { SimplexPerlin3DBlock } from "@babylonjs/core/Materials/Node/Blocks/simplexPerlin3DBlock";
 import { WorleyNoise3DBlock } from "@babylonjs/core/Materials/Node/Blocks/worleyNoise3DBlock";
 import type {
@@ -603,20 +602,6 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     if (!context.plumbing.particlePreview) return attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
     const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
     return single(block, {}, { color: block.output });
-  },
-  "input.particleTexture": ({ name, plumbing }): BlockRealization => {
-    if (plumbing.particlePreview) {
-      const rgba = new InputBlock(name); rgba.value = new Color4(1, 1, 1, 1);
-      const rgb = new InputBlock(`${name}_rgb`); rgb.value = new Color3(1, 1, 1);
-      const alpha = new InputBlock(`${name}_alpha`); alpha.value = 1;
-      return { blocks: [rgba, rgb, alpha], inputs: {}, outputs: { rgba: rgba.output, rgb: rgb.output, a: alpha.output } };
-    }
-    const block = new ParticleTextureBlock(name);
-    return {
-      blocks: [block],
-      inputs: { uv: block.uv },
-      outputs: { rgba: block.rgba, rgb: block.rgb, a: block.a },
-    };
   },
   "input.time": ({ name, operation }) => {
     const block = new InputBlock(
