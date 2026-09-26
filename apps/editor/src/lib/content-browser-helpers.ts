@@ -46,6 +46,7 @@ import {
   normalizeMaterialFunctionDocument,
   parseMaterialDomain,
 } from "@babylonslate/shader-graph";
+import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
   engineParentOf,
   rangeSelectTreeIds,
@@ -225,6 +226,7 @@ export const CREATABLE_ASSET_TYPES = [
   "InputAction",
   "InputAxis",
   "ParticleEmitter",
+  "ParticleGraph",
   "ParticleSystem",
   "Water",
   "SkyboxCreator",
@@ -260,7 +262,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "Water", "ParticleEmitter", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialFunction", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -297,7 +299,10 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
   ParticleEmitter:
     "A GPU emitter built from a stack of modules for spawn, shape, motion, and color. Its look comes from a particle Material.",
-  ParticleSystem: "Plays up to 8 Basic Particle Emitters together on one actor.",
+  ParticleGraph:
+    "A node-graph emitter for custom particle behavior, simulated on the CPU. Its look comes from a particle Material.",
+  ParticleSystem:
+    "Plays up to 8 Basic Particle Emitters or Particle Graphs together on one actor.",
   Water: "Shared water appearance and waves for oceans, lakes, rivers, and puddles.",
   SkyboxCreator:
     "Editor-only helper tool that slices a texture into six skybox faces.",
@@ -1658,6 +1663,15 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "ParticleGraph") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultParticleGraphDocument(name) as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "ParticleSystem") {
     return documentAsset(
       type,
@@ -1699,6 +1713,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
   ParticleEmitter: ".emitter.babasset",
+  ParticleGraph: ".particlegraph.babasset",
   ParticleSystem: ".particles.babasset",
   Water: ".water.babasset",
   SkyboxCreator: ".skyboxcreator.babasset",

@@ -1,4 +1,5 @@
 import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, type Result } from "@babylonslate/core";
+import { PARTICLE_ASSET_TYPES } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -34,7 +35,7 @@ function clampAudioScale(value: unknown, fallback = 1): number {
   return n;
 }
 
-const JSON_TYPES = new Set([
+const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis",
   "Scene",
   "Class",
@@ -48,8 +49,8 @@ const JSON_TYPES = new Set([
   "SpriteAnimation",
   "Tilemap",
   "Tileset",
-  "ParticleEmitter",
-  "ParticleSystem",
+  // Basic emitters, Particle Graphs and Particle Systems.
+  ...PARTICLE_ASSET_TYPES,
   "Animation",
   "SceneLayer",
 ]);

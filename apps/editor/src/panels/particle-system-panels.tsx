@@ -79,7 +79,10 @@ const idleControls = {
   stats: null,
 };
 
-/** Loads each slot's emitter (open tab first, then its document) and previews them together. */
+/**
+ * Loads each slot's Basic emitter or Particle Graph (open tab first, then its
+ * document) and previews them together.
+ */
 export function ParticleSystemPreview({
   payload,
 }: {
@@ -121,7 +124,7 @@ export function ParticleSystemPreview({
       .catch((error: unknown) => {
         if (!cancelled) {
           setLoadError(
-            error instanceof Error ? error.message : "A Particle Emitter could not be loaded.",
+            error instanceof Error ? error.message : "An emitter could not be loaded.",
           );
         }
       });
@@ -140,7 +143,7 @@ export function ParticleSystemPreview({
         state={{
           status: "empty",
           title: "No Emitters",
-          description: "Add Basic Particle Emitters in Details to preview them together.",
+          description: "Add Basic Particle Emitters or Particle Graphs in Details.",
         }}
       />
     ) : loadError ? (
@@ -148,7 +151,7 @@ export function ParticleSystemPreview({
         {...idleControls}
         state={{
           status: "error",
-          description: `${loadError} Check the linked Particle Emitters in Details.`,
+          description: `${loadError} Check the linked emitters in Details.`,
           onRetry: () => setAttempt((value) => value + 1),
         }}
       />
@@ -170,7 +173,10 @@ export function ParticleSystemPreview({
   );
 }
 
-/** Space, Preview Skybox and up to 8 ordered emitter slots (duplicates allowed). */
+/**
+ * Space, Preview Skybox and up to 8 ordered emitter slots (duplicates allowed), each a
+ * Basic Particle Emitter or a Particle Graph.
+ */
 export function ParticleSystemEditor({
   payload,
   onChange,

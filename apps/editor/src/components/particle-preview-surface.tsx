@@ -53,6 +53,11 @@ export interface ParticlePreviewSurfaceProps {
   onRestart: () => void;
   /** Null hides the backend and count badges (no running systems). */
   stats: ParticlePreviewStats | null;
+  /**
+   * Backend badge tooltip. Defaults to the Basic CPU fallback note on CPU; hosts
+   * previewing Particle Graphs explain that graphs always simulate on the CPU.
+   */
+  backendHint?: string;
   /** The preview `<canvas>`; not mounted while the state is empty. */
   children?: ReactNode;
   "data-testid"?: string;
@@ -88,6 +93,12 @@ const BACKEND_LABEL: Record<Exclude<ParticlePreviewStats["backend"], "none">, st
   mixed: "GPU + CPU",
 };
 
+const DEFAULT_BACKEND_HINT: Partial<Record<ParticlePreviewStats["backend"], string>> = {
+  cpu: "GPU particles are unavailable on this device. Capacity is limited to 512.",
+  // Only Particle Graphs run on the CPU next to GPU emitters.
+  mixed: "Basic Particle Emitters run on the GPU. Particle Graphs simulate on the CPU.",
+};
+
 const count = (value: number) => value.toLocaleString("en-US");
 
 function BadgeHint({ hint, children }: { hint?: string; children: ReactNode }) {
@@ -103,9 +114,9 @@ function BadgeHint({ hint, children }: { hint?: string; children: ReactNode }) {
 }
 
 /**
- * Particle Preview chrome shared by the Basic Particle Emitter and Particle System
- * previews: Restart, Play/Pause, backend and active-count badges, and the standard
- * empty, loading and failure states over the canvas.
+ * Particle Preview chrome shared by the Basic Particle Emitter, Particle Graph and
+ * Particle System previews: Restart, Play/Pause, backend and active-count badges,
+ * and the standard empty, loading and failure states over the canvas.
  */
 export function ParticlePreviewSurface({
   state,
@@ -113,6 +124,7 @@ export function ParticlePreviewSurface({
   onPausedChange,
   onRestart,
   stats,
+  backendHint,
   children,
   "data-testid": testId,
 }: ParticlePreviewSurfaceProps) {
@@ -163,13 +175,7 @@ export function ParticlePreviewSurface({
             {shown ? (
               <>
                 <Separator orientation="vertical" className="mx-0.5 my-1" />
-                <BadgeHint
-                  hint={
-                    shown.backend === "cpu"
-                      ? "GPU particles are unavailable on this device. Capacity is limited to 512."
-                      : undefined
-                  }
-                >
+                <BadgeHint hint={backendHint ?? DEFAULT_BACKEND_HINT[shown.backend]}>
                   <Badge variant="secondary" data-testid="particle-preview-backend">
                     {BACKEND_LABEL[shown.backend]}
                   </Badge>
