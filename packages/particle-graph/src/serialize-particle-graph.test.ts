@@ -79,7 +79,7 @@ describe("particle graph canvas adapter", () => {
     expect(particlePinsAreCompatible(pin("generic"), pin("particle"))).toBe(false);
   });
 
-  it("keeps the spine linear and acyclic at connect time", () => {
+  it("lets linked pins rewire at connect time and refuses only loops", () => {
     const graph = particleGraphToSerialized(createDefaultParticleGraphDocument());
     graph.nodes.push(
       { id: "size", type: "update.size", position: { x: 0, y: 0 }, data: {} },
@@ -89,12 +89,30 @@ describe("particle graph canvas adapter", () => {
     graph.edges.push({ id: "ab", source: "a", target: "b", sourceHandle: "out", targetHandle: "a" });
     const connect = (source: string, sourceHandle: string, target: string, targetHandle: string) =>
       particleConnectionIsAllowed(graph, { source, sourceHandle, target, targetHandle });
-    expect(connect("create", "out", "size", "particle")).toBe(false);
-    expect(connect("updateColor", "out", "size", "particle")).toBe(false);
+    // A linked Particle output moves to a free input.
+    expect(connect("velocity", "out", "size", "particle")).toBe(true);
+    // Skipping Shape replaces create → shape and shape → velocity.
+    expect(connect("create", "out", "velocity", "particle")).toBe(true);
+    // A linked output onto a linked input further down the spine.
+    expect(connect("shape", "out", "updateColor", "particle")).toBe(true);
+    // Shape still reaches Velocity once both replaced wires are gone.
+    expect(connect("velocity", "out", "shape", "particle")).toBe(false);
     expect(connect("b", "out", "a", "b")).toBe(false);
     expect(connect("a", "out", "b", "b")).toBe(true);
-    graph.edges = graph.edges.filter((edge) => edge.id !== "e-color-output");
-    expect(connect("updateColor", "out", "size", "particle")).toBe(true);
+  });
+
+  it("marks only Particle outputs single-link, on hydrated nodes and in Add Node", () => {
+    const hydrated = hydrateParticleGraphForEditor(particleGraphToSerialized(createDefaultParticleGraphDocument()));
+    const pins = [
+      ...hydrated.nodes.flatMap((node) => node.data.__pins as ParticleGraphPin[]),
+      ...particlePaletteNodes().flatMap((entry) => entry.pins),
+    ];
+    expect(pins.filter((entry) => entry.singleLink).length).toBeGreaterThan(0);
+    for (const entry of pins) {
+      expect(entry.singleLink === true, `${entry.direction} ${entry.id} ${entry.type.kind}`).toBe(
+        entry.direction === "out" && entry.type.kind === "particle",
+      );
+    }
   });
 
   it("offers every node but the Emitter Output, grouped by category, with the header role on each chip", () => {

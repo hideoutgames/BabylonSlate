@@ -333,6 +333,37 @@ describe("Particle Graph document panels", () => {
     ).toBeNull();
   });
 
+  it("rewires a linked Particle output with one tap-to-connect that one Undo reverts", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "fade", type: "update.basicColor", position: { x: 1280, y: 300 }, properties: {} });
+    const { container } = renderPanels(doc, "canvas");
+    const handle = (nodeId: string, pinId: string, side: "left" | "right") =>
+      container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"][data-handlepos="${side}"]`);
+    await waitFor(() => expect(handle("fade", "particle", "left")).not.toBeNull());
+    const links = (graph: ParticleGraphDocument) =>
+      graph.edges.map((edge) => `${edge.sourceNodeId}.${edge.sourcePinId} > ${edge.targetNodeId}.${edge.targetPinId}`).sort();
+
+    fireEvent.click(handle("velocity", "out", "right")!);
+    fireEvent.click(handle("fade", "particle", "left")!);
+
+    // Replay each commit on a real undo stack, as the document context does.
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 1_000_000 });
+    let current = doc as unknown as Record<string, unknown>;
+    for (const [, next, mergeKey] of store.applyAssetDocumentChange.mock.calls) {
+      current = stack.apply(current, new SetAssetDocumentCommand(current, next, mergeKey)).doc;
+    }
+    expect(links(normalizeParticleGraphDocument(current))).toEqual([
+      "create.out > shape.particle",
+      "gradient.out > updateColor.color",
+      "normalizedAge.out > gradient.ratio",
+      "shape.out > velocity.particle",
+      "updateColor.out > output.particle",
+      "velocity.out > fade.particle",
+    ]);
+    const undone = stack.undo(current)!.doc;
+    expect(links(normalizeParticleGraphDocument(undone))).toEqual(links(doc));
+  });
+
   it("shows a diagnostic's node in Details when its row is tapped", () => {
     renderPanels(withUnwiredPosition(), "details");
     expect(screen.getByTestId("module-stage-emitter-output")).toBeTruthy();
