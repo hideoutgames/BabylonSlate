@@ -146,7 +146,13 @@ export class RagdollPhysics {
     if (this.disposed) return;
     if (![impulse.x, impulse.y, impulse.z, strength].every(Number.isFinite))
       throw new Error("Ragdoll impulses must be finite");
-    for (const record of this.records) this.backend.addImpulse(record.bodyId, impulse, strength / this.records.length);
+    const share = strength / this.records.length;
+    const distributed = { x: impulse.x * share, y: impulse.y * share, z: impulse.z * share };
+    for (const record of this.records) {
+      const velocity = this.backend.getBodyVelocity(record.bodyId);
+      if (!velocity) throw new Error(`Ragdoll body was removed: ${record.bodyId}`);
+      this.backend.addImpulseAtPoint(record.bodyId, distributed, velocity.centerOfMass);
+    }
   }
 
   dispose(): void {

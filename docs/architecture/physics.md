@@ -94,6 +94,8 @@ Local Anchor and Target Local Anchor are actor-local points, including actor sca
 
 The worker owns all constraints and ragdoll bodies. `PhysicsBackend.createConstraint` validates and prepares replacements before retiring an existing joint; body removal retires attached joints. `RagdollPhysics` prepares and owns its articulated assembly. Reliable bridge capture replies carry current world bone poses to the worker; pose commands carry simulation results back. The renderer applies them after its animation pass and before bone attachments. Software physics explicitly lacks constraint solving; only the temporary pre-native boot phase defers their creation.
 
+`PhysicsBackend.getBodyVelocity` returns an owned snapshot of world-space linear velocity, angular velocity in radians/second, and center of mass. `setBodyAngularVelocity` sets a dynamic body's angular velocity (Z only in 2D). Ragdoll activation uses each collider's mass center to inherit the actor's rigid velocity field, and whole-assembly impulses act at those centers without introducing torque at bone pivots.
+
 | Component | Properties (core) |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |

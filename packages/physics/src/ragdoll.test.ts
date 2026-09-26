@@ -73,6 +73,12 @@ it("transfers translation and rotation using both source and bone collider mass 
     expect(velocity.linear.x).toBeCloseTo(5);
     expect(velocity.linear.y).toBeCloseTo(-2);
     expect(velocity.angular.z).toBeCloseTo(2);
+    ragdoll.addImpulse({ x: 3, y: 0, z: 0 }, 2);
+    const pushed = backend.getBodyVelocity(hit.bodyId!)!;
+    expect(pushed.linear.x).toBeCloseTo(7);
+    expect(pushed.linear.y).toBeCloseTo(-2);
+    // A whole-assembly impulse must not apply accidental torque at bone pivots.
+    expect(pushed.angular.z).toBeCloseTo(2);
     ragdoll.dispose();
   } finally { backend.dispose(); }
 });
