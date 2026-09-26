@@ -20,7 +20,6 @@ import {
 import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER } from "./shared-outline-shaders";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 
-class OutlineCompose extends EffectWrapper { get drawWrapper() { return this._drawWrapper; } }
 type MaskRecord = {
   group: SharedOutlineGroup;
   mask: FrameGraphTextureHandle;
@@ -39,7 +38,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   readonly outputTexture: FrameGraphTextureHandle;
   readonly view: SharedOutlineView;
   private readonly masks: MaskRecord[] = [];
-  private readonly compose: OutlineCompose;
+  private readonly compose: EffectWrapper;
   private readonly inverseProjection = Matrix.Identity();
   private composePass: FrameGraphRenderPass | undefined;
   private lease: ManagedRenderLease | undefined;
@@ -58,7 +57,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     this.view = view;
     this.outputTexture = graph.textureManager.createDanglingHandle();
     registerSharedOutlineShaders();
-    this.compose = new OutlineCompose({
+    this.compose = new EffectWrapper({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,
       uniformNames: ["screenSize", "tableSize", "maximumWidth", "reverseDepth", "activeGroups", "inverseProjection", "depthRange", "distanceFadeEnabled"],

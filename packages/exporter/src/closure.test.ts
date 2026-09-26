@@ -7,6 +7,10 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  createDefaultParticleEmitterPayload,
+  createDefaultParticleSystemPayload,
+} from "@babylonslate/assets";
 import { collectExportClosure, collectExportReachability } from "./closure";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type { ExportIndexedAsset } from "./types";
@@ -743,7 +747,7 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mix");
   });
 
-  it("includes ParticleComponent → Particle System → Emitters → Texture/Material", () => {
+  it("includes ParticleComponent → Particle System → Emitters → Material → Texture", () => {
     const scene: SerializedScene = {
       ...createDefaultScene(),
       actors: [
@@ -758,44 +762,46 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
+    const emitterWithMaterial = (materialGuid: string) => {
+      const payload = createDefaultParticleEmitterPayload();
+      payload.render.materialGuid = materialGuid;
+      return payload;
+    };
+    // Loaded documents only: the emitter's Material sits under `render` and the
+    // look Texture inside a Material node, so no header dependency lists them.
+    const payloads = new Map<string, unknown>([
+      ["ps-1", { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1", "em-2"] }],
+      ["em-1", emitterWithMaterial("mat-1")],
+      ["em-2", createDefaultParticleEmitterPayload()],
+      ["mat-1", {
+        domain: "particle",
+        nodes: [{ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-1" } }],
+        edges: [],
+      }],
+      ["unused-em", emitterWithMaterial("mat-unused")],
+    ]);
     const result = collectExportClosure({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({
-          guid: "ps-1",
-          type: "ParticleSystem",
-          name: "Fire",
-          dependencies: ["em-1", "em-2"],
-        }),
-        asset({
-          guid: "em-1",
-          type: "ParticleEmitter",
-          name: "Flame",
-          dependencies: ["tex-1", "mat-1"],
-        }),
-        asset({
-          guid: "em-2",
-          type: "ParticleEmitter",
-          name: "Smoke",
-          dependencies: ["tex-2"],
-        }),
-        asset({ guid: "tex-1", type: "Texture", name: "FlameTex" }),
-        asset({ guid: "tex-2", type: "Texture", name: "SmokeTex" }),
+        asset({ guid: "ps-1", type: "ParticleSystem", name: "Fire" }),
+        asset({ guid: "em-1", type: "ParticleEmitter", name: "Flame" }),
+        asset({ guid: "em-2", type: "ParticleEmitter", name: "Smoke" }),
         asset({ guid: "mat-1", type: "Material", name: "ParticleMat" }),
+        asset({ guid: "tex-1", type: "Texture", name: "FlameTex" }),
         asset({ guid: "unused-em", type: "ParticleEmitter", name: "Unused" }),
+        asset({ guid: "mat-unused", type: "Material", name: "UnusedMat" }),
       ],
       pluginEnabledGuids: new Set(),
       parentOf: () => null,
       sceneByGuid: () => scene,
       graphByGuid: () => null,
+      payloadByGuid: (guid) => payloads.get(guid) ?? null,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.sort()).toEqual(
-      ["em-1", "em-2", "mat-1", "ps-1", "scene-1", "tex-1", "tex-2"].sort(),
-    );
-    expect(result.value).not.toContain("unused-em");
+    expect(result).toEqual({
+      ok: true,
+      value: ["em-1", "em-2", "mat-1", "ps-1", "scene-1", "tex-1"],
+    });
   });
 
   it("includes a project GameInstance class when the scene field is empty", () => {

@@ -12,7 +12,7 @@ import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { loadModelContainer } from "./model-container";
+import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
 import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@babylonslate/assets";
 import { applyAnimStateToScene,
@@ -27,7 +27,7 @@ import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
-import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -265,7 +265,7 @@ function releaseUnusedSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (!entry.references && cache.current.get(entry.guid) !== entry) retireSource(cache, entry);
 }
 
-function acquireGlbContainer(
+export function acquireGlbContainer(
   scene: Scene,
   guid: string,
   source: Blob,
@@ -430,17 +430,7 @@ export function adoptLoadedHierarchy(
     meshes: readonly AbstractMesh[];
   },
 ): void {
-  const candidates = [
-    ...(container.rootNodes ?? []),
-    ...container.transformNodes,
-    ...container.meshes,
-  ];
-  const seen = new Set<Node>();
-  for (const node of candidates) {
-    if (seen.has(node) || node === placeholder) continue;
-    seen.add(node);
-    if (!node.parent) node.parent = placeholder;
-  }
+  parentContainerRoots(placeholder, container);
   hideModelPlaceholder(placeholder);
 }
 
@@ -457,7 +447,7 @@ function keepSourceName(sourceName: string): string {
 }
 
 /** Prepare only this unpublished instance's actual material/mesh variants. */
-async function prepareInstanceMaterials(
+export async function prepareInstanceMaterials(
   root: Mesh,
   assertCurrent: () => void,
   cancellation: Promise<never>,
@@ -522,6 +512,35 @@ type PreparedModelInstance = {
   groups: NamedSeekableGroup[];
 };
 
+/** One owned material per source in a visual, preserving borrowed texture lifetime. */
+export function createModelMaterialCloner(scene: Scene, bundle: VisualBundle) {
+  const copies = new Map<unknown, unknown>();
+  const textureCopies = new Map<unknown, Set<unknown>>();
+  const cloneMaterial = (source: Material): Material => {
+    const previous = copies.get(source) as Material | undefined;
+    if (previous) return previous;
+    const clone = source instanceof MultiMaterial ? new MultiMaterial(source.name, scene) : source.clone(source.name);
+    if (!clone) throw new Error(`Cannot clone model material ${source.name}`);
+    bundle.ownMaterial(clone);
+    copies.set(source, clone);
+    if (source instanceof MultiMaterial && clone instanceof MultiMaterial) {
+      clone.subMaterials = source.subMaterials.map((material) => material ? cloneMaterial(material) : null);
+    } else {
+      const borrowed = source.getActiveTextures();
+      for (const [index, texture] of clone.getActiveTextures().entries()) {
+        if (!borrowed.includes(texture)) bundle.ownTexture(texture);
+        const original = borrowed[index];
+        if (original) {
+          const variants = textureCopies.get(original) ?? new Set<unknown>();
+          variants.add(texture); textureCopies.set(original, variants);
+        }
+      }
+    }
+    return clone;
+  };
+  return { cloneMaterial, copies, textureCopies };
+}
+
 /** Native clone semantics retained, with explicit materials and wrapper ownership. */
 function prepareModelInstance(
   placeholder: AbstractMesh,
@@ -538,33 +557,7 @@ function prepareModelInstance(
     bundle.ownRenderUser({ dispose: () => { if (!wrapper.isDisposed()) wrapper.dispose(true); } });
     const instance = bundle.ownRenderUser(container.instantiateModelsToScene(keepSourceName, false, { doNotInstantiate: true }));
     for (const node of instance.rootNodes) node.parent = wrapper;
-    const copies = new Map<unknown, unknown>();
-    const textureCopies = new Map<unknown, Set<unknown>>();
-    const cloneMaterial = (source: Material): Material => {
-      const previous = copies.get(source) as Material | undefined;
-      if (previous) return previous;
-      const clone = source instanceof MultiMaterial
-        ? new MultiMaterial(source.name, placeholder.getScene())
-        : source.clone(source.name);
-      if (!clone) throw new Error(`Cannot clone model material ${source.name}`);
-      bundle.ownMaterial(clone);
-      copies.set(source, clone);
-      if (source instanceof MultiMaterial && clone instanceof MultiMaterial) {
-        clone.subMaterials = source.subMaterials.map((material) => material ? cloneMaterial(material) : null);
-      } else {
-        const borrowed = source.getActiveTextures();
-        for (const [index, texture] of clone.getActiveTextures().entries()) {
-          if (!borrowed.includes(texture)) bundle.ownTexture(texture);
-          const original = borrowed[index];
-          if (original) {
-            const variants = textureCopies.get(original) ?? new Set<unknown>();
-            variants.add(texture);
-            textureCopies.set(original, variants);
-          }
-        }
-      }
-      return clone;
-    };
+    const { cloneMaterial, copies, textureCopies } = createModelMaterialCloner(placeholder.getScene(), bundle);
     for (const child of staging.getChildMeshes()) {
       child.renderingGroupId = placeholder.renderingGroupId;
       if (child.material) child.material = cloneMaterial(child.material);

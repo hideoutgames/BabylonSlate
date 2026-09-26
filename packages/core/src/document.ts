@@ -27,11 +27,13 @@ export const ASSET_DOCUMENT_KINDS = [
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "water",
   "model",
   "skeleton",
   "animation",
   "skybox-creator",
   "trace",
+  "texture",
   "asset-settings",
 ] as const;
 
@@ -120,6 +122,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ParticleEmitter";
     case "particle-system":
       return "ParticleSystem";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":
@@ -130,6 +134,7 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SkyboxCreator";
     case "trace":
       return "Trace";
+    case "texture":
     case "asset-settings":
       return "Texture";
   }
@@ -211,6 +216,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-emitter";
     case "ParticleSystem":
       return "particle-system";
+    case "Water":
+      return "water";
     case "SkyboxCreator":
       return "skybox-creator";
     case "Trace":
@@ -222,7 +229,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Animation":
       return "animation";
     case "Texture":
-      return "asset-settings";
+      return "texture";
     default:
       return null;
   }
@@ -284,6 +291,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Particle Emitter";
     case "particle-system":
       return "Particle System";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":
@@ -294,6 +303,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Skybox Creator";
     case "trace":
       return "Trace";
+    case "texture":
+      return "Texture";
     case "asset-settings":
       return "Settings";
   }
@@ -321,7 +332,7 @@ export function parseDocumentId(
 
 /**
  * Reopen a layout.json `asset-settings:…` tab as the current document kind
- * when the registry type has since gained its own DockView (Model).
+ * when the registry type has since gained its own DockView (Model, Texture).
  */
 export function migrateRestoredDocumentId(
   id: string,

@@ -153,7 +153,7 @@ test.describe("P10 tilemaps", () => {
     await page.getByTestId("property-texture-open").click();
     await expect(
       page.locator(
-        '[data-testid="document-tab"][data-document-kind="asset-settings"]',
+        '[data-testid="document-tab"][data-document-kind="texture"]',
       ),
     ).toBeVisible();
     await page

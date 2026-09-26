@@ -9,7 +9,6 @@ export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";
 export * from "./viewport";
-export * from "./texture-bytes";
 export * from "./perf-ceilings";
 export * from "./resource-cache";
 export * from "./render-scheduler";
@@ -84,6 +83,8 @@ export * from "./audio-unlock-hint";
 export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 export * from "./particle-service";
 export * from "./particle-system-factory";
+export * from "./particle-emission-driver";
+export * from "./particle-render-modes";
 export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./node-rig";
@@ -98,9 +99,7 @@ export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibil
 
 export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
-export * from "./baked-irradiance";
-export * from "./baked-irradiance-plugin";
-export * from "./baked-receiver-materials";
-export * from "./baked-scene-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
+export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

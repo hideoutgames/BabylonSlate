@@ -266,10 +266,17 @@ not author:
   attach. Vertex program may be empty; the terminal is fragment color/alpha
   only. **Particle Color** (`input.particleColor`) is the system's
   `particle_color` attribute (Babylon 9 has no `ParticleColorBlock` class).
-  **Particle Texture** (`input.particleTexture`) is `ParticleTextureBlock`;
-  unwired UV uses `particle_uv`. Live sampling is always
-  `system.particleTexture` — an NME preview texture is ignored. Hide world
-  attributes, WPO, PBR, Normal Map, and post-process buffers.
+  Textures come from **Texture Sample** (optionally with **UV**); unwired UV
+  uses the `particle_uv` attribute. The **Particle Texture** node was removed:
+  emitters have no texture, and the system's `particleTexture` is only a white
+  readiness texture. Old documents that still contain `input.particleTexture`
+  report `material.unknownNode` and do not compile until the node is replaced,
+  so their emitters are skipped. Outside the editor preview the compiler
+  inserts Babylon's `ParticleBlendMultiplyBlock` before the fragment output
+  (color → `color`, alpha → `alphaTexture`, constant 1 → `alphaColor`), so a
+  transparent texel leaves the destination unchanged under the emitter's
+  Multiply blend. Hide world attributes, WPO, PBR, Normal Map, and
+  post-process buffers. See [particles](particles.md#look).
 
 Babylon reports build failures through `onBuildErrorObservable` rather than
 throwing, so the compiler subscribes and turns them into diagnostics. Blocks
@@ -311,7 +318,9 @@ numeric masks. Refract uses Vector 3 directions and scalar Eta. Split pads its
 numeric input to V4, so every missing channel returns `1`. World Tangent
 is transformed as a direction by the mesh world matrix.
 
-`MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
+Lowering is memoized per document content, shading variant and
+functions-record identity, so function records are replaced, never mutated in
+place. `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous
@@ -320,8 +329,9 @@ already disposed (removed from `scene.materials` — NodeMaterial has no
 `isDisposed()`). Disposing a Scene releases its entries, pending builds and
 texture leases even without `releaseScene`; `acquire` on a disposed Scene returns
 `material.compile.cancelled`. `invalidate()` drops every cached instance so the next acquire
-compiles onto live GPU state. WebGL restore also calls `releaseGpuTextures()`
-so Texture Parameters bind new InternalTextures instead of a white cube.
+compiles onto live GPU state. On WebGL restore Babylon rebuilds retained GPU
+textures before notifying; the ResourceCache is not flushed, and `invalidate()`
+recompiles materials onto the rebuilt state.
 
 ## Preview and the Render button
 
@@ -409,7 +419,8 @@ defaults to `[0, 0, 0]` when unwired.
 Details is selection-aware:
 
 - **No node selected:** Domain (Surface / Post Process / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
-  Cutoff when masked) plus the cost line.
+  Cutoff when masked) plus the cost line. Non-surface domains hide Shading Model and Two Sided; the Particle domain
+  also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
 
@@ -583,8 +594,8 @@ when an asset changes. Material Output groups Surface,
 Emission, Transparency and Geometry pins. Non-surface Details omit surface-only
 controls. **Bounds Padding (Local)** expands mesh culling bounds for authored
 displacement and restores original bounds on material reassignment; it does not
-alter collision shapes. Particle materials preview on a disposable particle
-system rather than an unrelated static mesh.
+alter collision shapes. Particle materials preview on one stationary plane (see
+[Geometry information and particle previews](#geometry-information-and-particle-previews)).
 
 Imported glTF graphs retain base-color/alpha factors, metallic and roughness
 factors and packed B/G channels, emissive factors/textures, normal maps, alpha
@@ -656,4 +667,8 @@ variables inside the function. Use **Render** to compile Custom GLSL changes.
 
 VertexNormalWS provides a normalized transformed mesh normal, usable for vertex displacement and fragment effects on curved meshes. World Normal remains available for existing graphs. Vertex Position (Local) and Vertex Normal (Local) expose morph-adjusted local geometry; these are Surface-only. Camera Position is available in Surface and Post Processing. Post Processing uses Screen UV, Scene Color, Scene Depth, Scene Normal, and Screen Size; it has no mesh vertex attributes.
 
-Particle materials preview on one stationary plane with no particle system. The preview compiler supplies white Particle Color and Particle Texture defaults; the Particle Emitter supplies these values during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.
+Particle materials preview on one stationary plane with no particle system. The preview compiler supplies a white Particle Color default and skips the Multiply blend block; the emitter supplies Particle Color during Play. Texture Sample and UV masks still run on the plane. Domain changes immediately clear the previous preview effect, including when the next shader fails compilation.
+
+## Landscape materials
+
+The **Landscape** domain uses the surface/PBR output and the usual texture, noise, normal, and math nodes. Landscape Coordinates tiles world X/Z coordinates; Landscape Height reads world Y; Landscape Slope is zero on horizontal ground and one on vertical faces. Landscape Layers exposes the four normalized weights painted by the Landscape brush, and Landscape Blend mixes two colors by a weight. Assign these materials in Landscape Settings. Unassigned landscapes use the engine's tiled-grid default material. Foliage uses surface materials from each Model's slots, with an optional surface Material override for each group entry.

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AnimationEditor, AnimationPreview } from "./animation-editor";
-import { encodeTriangleGlb } from "@babylonslate/render";
+import { encodeTriangleGlb } from "@babylonslate/render/glb-test-fixtures";
 
 vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => null,

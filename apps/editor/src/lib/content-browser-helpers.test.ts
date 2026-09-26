@@ -1292,11 +1292,9 @@ describe("content-browser-helpers", () => {
     });
     expect(emitter.type).toBe("ParticleEmitter");
     expect(emitter.payload).toMatchObject({
-      textureGuid: null,
-      materialGuid: null,
-      capacity: 256,
-      emitRate: 30,
-      blendMode: "additive",
+      schemaVersion: 2,
+      emitter: { capacity: 256 },
+      render: { materialGuid: null, blendMode: "additive" },
     });
     const system = buildNewAssetResult({
       type: "ParticleSystem",
@@ -1305,10 +1303,10 @@ describe("content-browser-helpers", () => {
       parentClass: null,
     });
     expect(system.type).toBe("ParticleSystem");
-    expect(system.payload).toMatchObject({
+    expect(system.payload).toEqual({
       emitterGuids: [],
       space: "world",
-      looping: true,
+      previewSkybox: true,
     });
   });
 
@@ -1361,6 +1359,7 @@ describe("content-browser-helpers", () => {
       "InputAxis",
       "ParticleEmitter",
       "ParticleSystem",
+      "Water",
       "SkyboxCreator",
     ]);
   });
@@ -1376,7 +1375,7 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
     expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
-    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Particle Emitter");
+    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Basic Particle Emitter");
     expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
     expect(creatableAssetTypeLabel("SkyboxCreator")).toBe("Skybox Creator");
   });
@@ -1414,6 +1413,7 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
+      "Water",
       "ParticleEmitter",
       "ParticleSystem",
       "SkyboxCreator",
@@ -1431,6 +1431,7 @@ describe("content-browser-helpers", () => {
 
   it("filters creatable types by Title Case label", () => {
     expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
+    expect(filterCreatableAssetTypes("basic")).toEqual(["ParticleEmitter"]);
     expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
   });
 
@@ -1914,9 +1915,9 @@ describe("content-browser-helpers", () => {
     expect(
       assetHeaderDependencies("ParticleEmitter", {
         textureGuid: "tex-p",
-        materialGuid: "mat-p",
+        render: { materialGuid: "mat-p" },
       }),
-    ).toEqual(["mat-p", "tex-p"]);
+    ).toEqual(["mat-p"]);
     expect(
       assetHeaderDependencies("ParticleSystem", {
         emitterGuids: ["em-b", "em-a", "em-b"],
@@ -2237,5 +2238,15 @@ describe("runWithContentBrowserImportBusy", () => {
     ).rejects.toThrow(/\.bin buffer/i);
     expect(busy).toBe(false);
     expect(progressCleared).toBe(true);
+  });
+});
+
+
+describe("Water asset authoring", () => {
+  it("persists the chosen preset and its custom material dependency", () => {
+    const result = buildNewAssetResult({ type: "Water", name: "Lagoon", guid: "water", parentClass: null, waterStyle: "stylized" });
+    expect(result.payload).toMatchObject({ style: "stylized", colorBands: 4 });
+    expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+    expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
 });

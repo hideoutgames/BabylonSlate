@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial } from "@babylonjs/core";
+import { Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
 import { describe, expect, it, afterEach } from "vitest";
 import {
   createActor,
@@ -13,7 +13,6 @@ import {
   applySceneToBabylonScene,
   actorVisualFingerprint,
   clearSceneMeshes,
-  countSceneMeshes,
   createPrimitiveMesh,
   editorComponentMeshName,
   editorMeshKindOf,
@@ -37,6 +36,10 @@ function sceneWithActors(
   actors: SerializedScene["actors"],
 ): SerializedScene {
   return { ...createDefaultScene(), actors };
+}
+
+function countSceneMeshes(scene: Scene): number {
+  return scene.meshes.filter((mesh) => mesh.name !== "__root__").length;
 }
 
 describe("scene-loader", () => {
@@ -262,7 +265,7 @@ describe("scene-loader", () => {
     ).toBe("navmesh");
   });
 
-  it("represents CameraComponent, AudioComponent, and ParticleComponent actors with billboards", () => {
+  it("uses a solid camera helper and audio and particle billboards", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
@@ -304,10 +307,8 @@ describe("scene-loader", () => {
     expect(scene.getMeshByName(editorMeshName("cam"))!.billboardMode).toBe(
       Mesh.BILLBOARDMODE_NONE,
     );
-    expect(camera!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
-    expect(
-      (camera!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("camera");
+    expect(camera!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(camera!.getBoundingInfo().boundingBox.extendSize.z).toBeGreaterThan(0.1);
     expect(audio!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
       (audio!.metadata as { editorBillboard?: string }).editorBillboard,
@@ -512,7 +513,7 @@ describe("scene-loader", () => {
     expect(actorVisualFingerprint(none)).not.toBe(actorVisualFingerprint(actor));
   });
 
-  it("parents camera, light, and audio billboards under a non-billboard origin", () => {
+  it("parents the camera model under the authored actor origin", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
@@ -537,11 +538,8 @@ describe("scene-loader", () => {
     const icon = scene.getMeshByName(editorComponentMeshName("cam", "camera"));
     expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
     expect(origin!.rotationQuaternion!.y).toBeCloseTo(Math.SQRT1_2, 5);
-    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
     expect(icon!.parent).toBe(origin);
-    expect(
-      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("camera");
   });
 
   it("keeps a MeshComponent visual when the actor also has a LightComponent", () => {

@@ -1,3 +1,5 @@
+import { normalizeWaterBody, normalizeWaterBuoyancy, waterKindForClass } from "@babylonslate/core";
+import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
   assetRowIdentity,
@@ -15,6 +17,9 @@ import {
   parseAreaRectLightProperties,
   parseOutlineProperties,
   OUTLINE_WIDTH_LIMITS,
+  parseSpringArmProperties,
+  SPRING_ARM_LAG_SPEED_LIMITS,
+  SPRING_ARM_LENGTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   resolveText2DRenderer,
@@ -271,15 +276,6 @@ function asRgb(value: unknown): [number, number, number] | null {
   return [r, g, b];
 }
 
-function lightMobilityRow(actorId: string, component: SerializedComponent,
-  update: (property: string, value: unknown) => void): PropertyRow {
-  return { kind: "enum", id: rowId(actorId, component.id, "mobility"), label: "Mobility",
-    value: String(component.properties.mobility ?? "dynamic"), defaultValue: "dynamic",
-    description: "Static bakes direct and indirect light. Stationary bakes indirect light. Realtime lighting remains active until runtime bake application is available.",
-    options: [{ value: "dynamic", label: "Dynamic" }, { value: "stationary", label: "Stationary" }, { value: "static", label: "Static" }],
-    onChange: (value) => update("mobility", value) };
-}
-
 function colliderShapeRows(
   actorId: string,
   component: SerializedComponent,
@@ -475,6 +471,39 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  const waterKind = waterKindForClass(component.classId);
+  if (waterKind) {
+    const body = normalizeWaterBody(component.properties, waterKind);
+    const numeric = ([key, label, min, max]: [keyof typeof body, string, number, number]): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label, value: Number(body[key]), min, max, onChange: (value) => update(key, value) });
+    const rows: PropertyRow[] = [
+      assetRow(actorId, component, "assetGuid", "Water", ["Water"], update, context, "Pick Water"),
+      { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: body.enabled, onChange: (value) => update("enabled", value) },
+      ...(waterKind !== "global" ? [numeric(["width", "Width", 0.1, 10000])] : []),
+      ...(waterKind !== "river" && waterKind !== "global" ? [numeric(["length", "Length", 0.1, 10000])] : []),
+      numeric(["depth", "Depth", 0.01, 10000]), numeric(["waveScale", "Wave Scale", 0, 10]),
+      numeric(["flowSpeed", "Flow Speed", -100, 100]),
+      ...(waterKind !== "river" ? [numeric(["flowDirection", "Flow Direction", -360, 360])] : []),
+      numeric(["resolution", "Surface Resolution", 8, 128]),
+    ];
+    if (waterKind === "river") {
+      rows.push({ kind: "number", id: rowId(actorId, component.id, "pointCount"), label: "Path Point Count", value: body.points.length, min: 2, max: 128, description: "Points run from upstream to downstream in local space. Y sets the water elevation.", onChange: (count) => {
+        const points = body.points.slice(0, Math.round(count));
+        while (points.length < Math.round(count)) { const last = points[points.length - 1]!; points.push([last[0], last[1], last[2] + 5]); }
+        update("points", points);
+      } });
+      body.points.forEach((point, index) => rows.push({ kind: "vector3", id: rowId(actorId, component.id, "point-" + index), label: "Path Point " + (index + 1), value: point, onChange: (value) => update("points", body.points.map((p, i) => i === index ? value.slice(0, 3) : p)) }));
+    }
+    return rows;
+  }
+  if (component.classId === "WaterBuoyancyComponent") {
+    const b = normalizeWaterBuoyancy(component.properties);
+    return [
+      { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: b.enabled, onChange: (value) => update("enabled", value) },
+      { kind: "number", id: rowId(actorId, component.id, "volume"), label: "Volume", value: b.volume, defaultValue: 0, min: 0, max: 100000, sensitivity: 0.0001, precision: 6, description: "Cubic metres, scaled with the component. Zero is automatic. In default water, 0.002 floats 1 kg halfway submerged; larger volumes float higher. Extra loads push it deeper.", onChange: (value) => update("volume", value) },
+      ...(["width", "length", "height", "drag", "angularDrag"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: b[key], min: key === "drag" || key === "angularDrag" ? 0 : 0.01, onChange: (value) => update(key, value) })),
+      { kind: "vector3", id: rowId(actorId, component.id, "offset"), label: "Offset", value: b.offset, onChange: (value) => update("offset", value.slice(0, 3)) },
+    ];
+  }
   switch (component.classId) {
     case "MeshComponent": {
       const assetGuid =
@@ -534,11 +563,6 @@ export function componentPropertyRows(
           "Pick Mesh",
         ),
         materialRow,
-        { kind: "enum", id: rowId(actorId, component.id, "bakeParticipation"), label: "Bake Participation",
-          value: String(component.properties.bakeParticipation ?? "none"), defaultValue: "none",
-          options: [{ value: "none", label: "None" }, { value: "staticReceiver", label: "Static Receiver" }, { value: "staticOccluder", label: "Static Occluder" }],
-          description: "Static Receivers also block and bounce baked light. Static Occluders receive no atlas.",
-          onChange: (value) => update("bakeParticipation", value) },
         ...meshCollisionRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key) => ({
           kind: "boolean" as const,
@@ -553,7 +577,6 @@ export function componentPropertyRows(
           update,
           new Set([
             "meshKind",
-            "bakeParticipation",
             "castShadows",
             "receiveShadows",
             "assetGuid",
@@ -1189,7 +1212,6 @@ export function componentPropertyRows(
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const lightKind = String(component.properties.lightKind ?? "point");
         const rows: PropertyRow[] = [
-          lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1283,7 +1305,6 @@ export function componentPropertyRows(
             "color",
             "intensity",
               "lightKind",
-              "mobility",
             "range",
             "outerAngle",
             "innerAngle",
@@ -1298,7 +1319,6 @@ export function componentPropertyRows(
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const groundColor = asRgb(component.properties.groundColor) ?? [0, 0, 0];
       return [
-        lightMobilityRow(actorId, component, update),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "enabled"),
@@ -1334,7 +1354,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["enabled", "color", "groundColor", "intensity", "mobility"]),
+          new Set(["enabled", "color", "groundColor", "intensity"]),
         ),
       ];
     }
@@ -1349,6 +1369,29 @@ export function componentPropertyRows(
           description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
         { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
+      ];
+    }
+    case "SpringArmComponent": {
+      const properties = parseSpringArmProperties(component.properties);
+      const lagSpeedRow = (key: "locationLagSpeed" | "rotationLagSpeed", label: string, enabled: boolean): PropertyRow => ({
+        kind: "number", id: rowId(actorId, component.id, key), label, value: properties[key],
+        min: SPRING_ARM_LAG_SPEED_LIMITS[0], max: SPRING_ARM_LAG_SPEED_LIMITS[1], sensitivity: 0.1, disabled: !enabled,
+        description: "Higher values catch up faster. The lag is frame-rate independent.", onChange: (next) => update(key, next) });
+      return [
+        { kind: "number", id: rowId(actorId, component.id, "armLength"), label: "Arm Length", value: properties.armLength,
+          min: SPRING_ARM_LENGTH_LIMITS[0], max: SPRING_ARM_LENGTH_LIMITS[1], sensitivity: 0.05,
+          description: "Distance behind the arm's origin, along its local -Z axis, where child components attach.", onChange: (next) => update("armLength", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableLocationLag"), label: "Enable Location Lag", value: properties.enableLocationLag,
+          description: "During Play, the arm trails behind its target position and children move smoothly.", onChange: (next) => update("enableLocationLag", next) },
+        lagSpeedRow("locationLagSpeed", "Location Lag Speed", properties.enableLocationLag),
+        { kind: "number", id: rowId(actorId, component.id, "maxLocationLagDistance"), label: "Max Location Lag Distance", value: properties.maxLocationLagDistance,
+          min: 0, sensitivity: 0.05, disabled: !properties.enableLocationLag,
+          description: "Furthest the arm may trail its target. 0 means unlimited.", onChange: (next) => update("maxLocationLagDistance", next) },
+        { kind: "boolean", id: rowId(actorId, component.id, "enableRotationLag"), label: "Enable Rotation Lag", value: properties.enableRotationLag,
+          description: "During Play, the arm eases toward its target rotation and children swing smoothly.", onChange: (next) => update("enableRotationLag", next) },
+        lagSpeedRow("rotationLagSpeed", "Rotation Lag Speed", properties.enableRotationLag),
+        { kind: "boolean", id: rowId(actorId, component.id, "drawDebugLag"), label: "Draw Debug Lag", value: properties.drawDebugLag,
+          description: "During Play, draw the target arm (yellow), the lagged arm (green), the lag offset (red), and recent socket trails.", onChange: (next) => update("drawDebugLag", next) },
       ];
     }
     case "AreaRectLightComponent": {

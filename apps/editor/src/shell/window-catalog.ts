@@ -1,5 +1,6 @@
 import type { DockWindowDirection } from "@babylonslate/core";
 import type { AnimEditorMode } from "./anim-document-layout";
+import type { SceneMode } from "./scene-document-layout";
 
 export type { AnimEditorMode };
 export type DockviewDocumentKind =
@@ -26,11 +27,13 @@ export type DockviewDocumentKind =
   | "sound-attenuation"
   | "particle-emitter"
   | "particle-system"
+  | "water"
   | "model"
   | "skeleton"
   | "animation"
   | "skybox-creator"
-  | "trace";
+  | "trace"
+  | "texture";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -57,11 +60,13 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "water",
   "model",
   "skeleton",
   "animation",
   "skybox-creator",
   "trace",
+  "texture",
 ]);
 
 export function isDockviewDocumentKind(
@@ -83,6 +88,7 @@ export type DockWindowOptions = {
   sourceControl?: boolean;
   /** Animation Graph State Machine vs Animation Object surface. */
   animEditorMode?: AnimEditorMode;
+  sceneMode?: SceneMode;
 };
 
 export const LOCKS_WINDOW_ID = "locks";
@@ -111,11 +117,13 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
   "particle-system": "particle-system-preview",
+  water: "water-preview",
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
   "skybox-creator": "skybox-creator-preview",
   trace: "trace-timeline",
+  texture: "texture-preview",
 };
 
 export function primaryDockPanel(
@@ -201,6 +209,24 @@ export interface DockWindowDefinition {
   title: string;
   defaultPosition?: DockWindowDefaultPosition;
 }
+
+const LANDSCAPE_WINDOWS: DockWindowDefinition[] = [
+  { id: "viewport", component: "viewport", title: "Viewport" },
+  { id: "landscape-outliner", component: "landscape-outliner", title: "Landscape Outliner",
+    defaultPosition: { referencePanelId: "viewport", direction: "left", initialWidth: 240 } },
+  { id: "landscape-settings", component: "landscape-settings", title: "Landscape Settings",
+    defaultPosition: { referencePanelId: "viewport", direction: "right", initialWidth: 280 } },
+];
+
+const FOLIAGE_WINDOWS: DockWindowDefinition[] = [
+  { id: "viewport", component: "viewport", title: "Viewport" },
+  { id: "foliage-groups", component: "foliage-groups", title: "Foliage Groups",
+    defaultPosition: { referencePanelId: "viewport", direction: "left", initialWidth: 260 } },
+  { id: "foliage-settings", component: "foliage-settings", title: "Foliage Settings",
+    defaultPosition: { referencePanelId: "viewport", direction: "right", initialWidth: 280 } },
+  { id: "foliage-outliner", component: "foliage-outliner", title: "Foliage Outliner",
+    defaultPosition: { referencePanelId: "foliage-groups", direction: "below", initialHeight: 240 } },
+];
 
 const SCENE_WINDOWS: DockWindowDefinition[] = [
   { id: "viewport", component: "viewport", title: "Viewport" },
@@ -515,9 +541,14 @@ const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "particle-emitter-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
     },
   },
+];
+
+const WATER_WINDOWS: DockWindowDefinition[] = [
+  { id: "water-preview", component: "water-preview", title: "Preview" },
+  { id: "water-details", component: "water-details", title: "Details", defaultPosition: { referencePanelId: "water-preview", direction: "right", initialWidth: 300 } },
 ];
 
 const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
@@ -533,7 +564,7 @@ const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "particle-system-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
     },
   },
 ];
@@ -561,6 +592,20 @@ const SKYBOX_CREATOR_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "skybox-creator-preview",
       direction: "right",
       initialWidth: 280,
+    },
+  },
+];
+
+const TEXTURE_WINDOWS: DockWindowDefinition[] = [
+  { id: "texture-preview", component: "texture-preview", title: "Preview" },
+  {
+    id: "texture-details",
+    component: "texture-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "texture-preview",
+      direction: "right",
+      initialWidth: 300,
     },
   },
 ];
@@ -840,6 +885,8 @@ export function listDockWindows(
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
   if (kind === "scene" || kind === "scene-layer") {
+    if (kind === "scene" && options?.sceneMode === "landscape") return withOptionalLocks(kind, LANDSCAPE_WINDOWS, options);
+    if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);
   }
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
@@ -862,6 +909,7 @@ export function listDockWindows(
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }
+  if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }
@@ -869,6 +917,7 @@ export function listDockWindows(
     return withOptionalLocks(kind, SKYBOX_CREATOR_WINDOWS, options);
   }
   if (kind === "trace") return withOptionalLocks(kind, TRACE_WINDOWS, options);
+  if (kind === "texture") return withOptionalLocks(kind, TEXTURE_WINDOWS, options);
   if (kind === "sprite-animation") {
     return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
   }

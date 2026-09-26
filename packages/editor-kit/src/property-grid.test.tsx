@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { PropertyGrid, type PropertyRow } from "./property-grid";
 import { AssetOpenProvider } from "./asset-picker-control";
@@ -810,5 +811,98 @@ describe("PropertyGrid", () => {
     const row = screen.getByTestId("property-row-name");
     expect(row.className).not.toMatch(/px-2/);
     expect(row.className).not.toMatch(/border-b/);
+  });
+
+  it("shows units verbatim after the humanized label, beside the label accessory", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "number",
+            id: "lifetime",
+            label: "lifetime",
+            unit: "s",
+            labelAccessory: <button type="button">Value Mode</button>,
+            value: 1,
+            onChange: () => {},
+          },
+          {
+            kind: "number",
+            id: "duration",
+            label: "Duration",
+            unit: "ms",
+            value: 250,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Lifetime (s)" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Duration (ms)" })).toBeTruthy();
+    expect(screen.queryByText(/\(S\)|\(MS\)/)).toBeNull();
+    expect(
+      within(screen.getByTestId("property-row-lifetime")).getByRole("button", {
+        name: "Value Mode",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps a range ordered when Min passes Max or Max passes Min", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "range",
+            id: "lifetime",
+            label: "Lifetime",
+            value: [1, 2],
+            onChange,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Lifetime Min" }), {
+      target: { value: "5" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([5, 5]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Lifetime Max" }), {
+      target: { value: "0" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([0, 0]);
+  });
+
+  it("edits and resets an RGBA color as one value", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "color4",
+            id: "tint",
+            label: "Tint",
+            value: [0, 1, 0, 0.5],
+            defaultValue: [1, 1, 1, 1],
+            onChange,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Tint Alpha" }), {
+      target: { value: "0.25" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([0, 1, 0, 0.25]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Tint Hex" }), {
+      target: { value: "#ff0000" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith([1, 0, 0, 0.5]);
+
+    onChange.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Tint" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith([1, 1, 1, 1]);
   });
 });

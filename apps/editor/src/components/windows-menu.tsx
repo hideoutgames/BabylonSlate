@@ -26,6 +26,7 @@ export function WindowsMenu() {
     assetRegistry,
     sourceControl,
     animEditorMode,
+    sceneMode,
   } = useDocuments();
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,6 +60,7 @@ export function WindowsMenu() {
           sourceControl: sourceControl.enabled,
           animEditorMode:
             activeKind === "anim-graph" ? animEditorMode : undefined,
+          sceneMode: activeKind === "scene" ? sceneMode : undefined,
         })
       : [];
     return windows.map((entry) => {
@@ -80,6 +82,7 @@ export function WindowsMenu() {
     activeKind,
     actorPrefab,
     animEditorMode,
+    sceneMode,
     sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,

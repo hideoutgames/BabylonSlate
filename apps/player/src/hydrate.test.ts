@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDefaultWaterDefinition,
   createActor,
   createDefaultScene,
   createMeshComponent,
@@ -126,6 +127,9 @@ describe("packedContentFromGame", () => {
           ),
         },
         {
+          guid: "water-1", type: "Water", sceneGuid: "scene-1", bytes: encoder.encode(JSON.stringify({ ...createDefaultWaterDefinition("stylized"), waveHeight: 1.2 })),
+        },
+        {
           guid: "tilemap-1",
           type: "Tilemap",
           sceneGuid: "scene-1",
@@ -190,7 +194,9 @@ describe("packedContentFromGame", () => {
     expect(content.sortingLayers).toEqual(["Default", "Props", "Characters"]);
     expect(content.pixelPerfect).toBe(false);
     expect(content).not.toHaveProperty("userInterfaces");
+    expect(content.waterPayloads.get("water-1")).toMatchObject({ style: "stylized", waveHeight: 1.2 });
     const controls = packedPlayControls(content);
+    expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { style: "stylized", waveHeight: 1.2 } }] });
     expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
@@ -456,6 +462,9 @@ describe("packedContentFromGame", () => {
   });
 
   it("hydrates packed Particle Emitter and Particle System payloads", async () => {
+    const emitter = createDefaultParticleEmitterPayload();
+    emitter.emitter.capacity = 64;
+    emitter.render.materialGuid = "mat-1";
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -472,12 +481,9 @@ describe("packedContentFromGame", () => {
           guid: "em-1",
           type: "ParticleEmitter",
           sceneGuid: "scene-1",
+          // A P17 look field left in an unreleased document.
           bytes: encoder.encode(
-            JSON.stringify({
-              ...createDefaultParticleEmitterPayload(),
-              textureGuid: "tex-1",
-              capacity: 64,
-            }),
+            JSON.stringify({ ...emitter, textureGuid: "tex-1" }),
           ),
         },
         {
@@ -497,10 +503,11 @@ describe("packedContentFromGame", () => {
     if (!packed.ok) return;
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
-    expect(content.particleLibrary.emitters.get("em-1")?.capacity).toBe(64);
-    expect(content.particleLibrary.emitters.get("em-1")?.textureGuid).toBe(
-      "tex-1",
-    );
+    const hydrated = content.particleLibrary.emitters.get("em-1");
+    expect(hydrated?.kind).toBe("basic");
+    expect(hydrated?.payload.emitter.capacity).toBe(64);
+    expect(hydrated?.payload.render.materialGuid).toBe("mat-1");
+    expect(hydrated?.payload).not.toHaveProperty("textureGuid");
     expect(content.particleLibrary.systems.get("sys-1")?.emitterGuids).toEqual([
       "em-1",
     ]);

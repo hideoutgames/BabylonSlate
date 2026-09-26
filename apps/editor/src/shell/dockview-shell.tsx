@@ -15,6 +15,7 @@ import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 import type { AnimEditorMode } from "./anim-document-layout";
+import type { SceneMode } from "./scene-document-layout";
 import {
   enterPhoneDockLayout,
   inlineDetachedDockviewLayout,
@@ -31,6 +32,7 @@ export interface DockviewShellProps {
   actorPrefab?: boolean;
   sourceControl?: boolean;
   animEditorMode?: AnimEditorMode;
+  sceneMode?: SceneMode;
 }
 
 export function DockviewShell({
@@ -40,6 +42,7 @@ export function DockviewShell({
   actorPrefab = true,
   sourceControl = false,
   animEditorMode,
+  sceneMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const [api, setApi] = useState<DockviewApi | null>(null);
@@ -75,6 +78,7 @@ export function DockviewShell({
             actorPrefab,
             sourceControl,
             animEditorMode,
+            sceneMode,
           });
         },
       );
@@ -112,6 +116,7 @@ export function DockviewShell({
       actorPrefab,
       sourceControl,
       animEditorMode,
+      sceneMode,
       platformOptions.disableFloatingGroups,
       platformOptions.singleWindow,
     ],
@@ -151,6 +156,7 @@ export function DockviewShell({
     actorPrefab,
     sourceControl,
     animEditorMode,
+    sceneMode,
   });
   const selectWindow = (id: string) => {
     const dock = apiRef.current;

@@ -1,6 +1,6 @@
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
-import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { PLAY_SCENE_LOAD_STEPS, SceneLoadingDialog } from "./scene-loading-dialog";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -63,10 +63,10 @@ import type {
   TilemapPayload,
   TilesetPayload,
   ModelPayload,
+  ParticleLibrary,
   RetargetAnimationLoad,
 } from "@babylonslate/assets";
 import type { PlayAudioLibrary } from "../lib/play-audio";
-import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -114,6 +114,7 @@ export interface PlayOverlayProps {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
@@ -136,11 +137,9 @@ export interface PlayOverlayProps {
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
-  particleLibrary?: PlayParticleLibrary;
+  particleLibrary?: ParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Reads baked-lighting assets from the project registry. */
-  bakeAssetReader?: import("@babylonslate/assets").BakeRuntimeAssetReader;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -200,6 +199,7 @@ export function PlayOverlay({
   blackboards,
   spritePayloads,
   spriteAnimationPayloads,
+  waterPayloads,
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
@@ -222,7 +222,6 @@ export function PlayOverlay({
   particleLibrary,
   materialDocuments,
   materialFunctions,
-  bakeAssetReader,
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
@@ -309,6 +308,8 @@ export function PlayOverlay({
   spritePayloadsRef.current = spritePayloads;
   const spriteAnimationPayloadsRef = useRef(spriteAnimationPayloads);
   spriteAnimationPayloadsRef.current = spriteAnimationPayloads;
+  const waterPayloadsRef = useRef(waterPayloads);
+  waterPayloadsRef.current = waterPayloads;
   const tilemapPayloadsRef = useRef(tilemapPayloads);
   tilemapPayloadsRef.current = tilemapPayloads;
   const tilesetPayloadsRef = useRef(tilesetPayloads);
@@ -353,8 +354,6 @@ export function PlayOverlay({
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
-  const bakeAssetReaderRef = useRef(bakeAssetReader);
-  bakeAssetReaderRef.current = bakeAssetReader;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -484,6 +483,7 @@ export function PlayOverlay({
       blackboards: blackboardsRef.current,
       spritePayloads: spritePayloadsRef.current,
       spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
+      waterPayloads: waterPayloadsRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
@@ -506,7 +506,6 @@ export function PlayOverlay({
       particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
-      bakeAssetReader: bakeAssetReaderRef.current,
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
       consoleRenderSettings: initialConsoleRenderRef.current,
@@ -699,7 +698,6 @@ export function PlayOverlay({
         renderTasks: () => string[];
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
-        bakedSession: () => ReturnType<PlaySession["handle"]["bakedSessionDiagnostics"]> | null;
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
       };
     };
@@ -713,7 +711,6 @@ export function PlayOverlay({
         return handle ? captureShadowDiagnostics(handle.scene, { host: "play", meshes: handle.scene.meshes }) : null;
       },
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
-      bakedSession: () => sessionRef.current?.handle.bakedSessionDiagnostics() ?? null,
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
@@ -753,7 +750,7 @@ export function PlayOverlay({
       data-assigned-materials={assignedMaterials}
     >
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} steps={PLAY_SCENE_LOAD_STEPS} onStop={() => finishSessionRef.current()} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}

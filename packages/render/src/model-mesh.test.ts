@@ -2,12 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
   createMeshFromModelBytes,
-  encodeAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
   encodeTriangleGlb,
-  encodeUvHierarchyGlb,
   encodeYRotatedTriangleGlb,
-  glbClipNames,
+} from "./glb-test-fixtures";
+import {
   packedGltfBytes,
   gpuModelBytes,
 } from "./model-mesh";
@@ -70,30 +69,6 @@ describe("gpuModelBytes", () => {
         texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
       }).byteLength,
     ).toBe(glb.byteLength);
-  });
-});
-
-describe("glbClipNames", () => {
-  it("uses animation{index} when a clip has no name", () => {
-    const bytes = encodeAnimatedTriangleGlb("");
-    expect(glbClipNames(bytes)).toEqual(["animation0"]);
-  });
-
-  it("lists a named clip from a multi-mesh hierarchy GLB", () => {
-    expect(glbClipNames(encodeUvHierarchyGlb({ clipName: "Walk" }))).toEqual([
-      "Walk",
-    ]);
-    expect(
-      glbClipNames(
-        encodeUvHierarchyGlb({ clipName: "Run", laterMaterialFirst: true }),
-      ),
-    ).toEqual(["Run"]);
-    expect(glbClipNames(encodeUvHierarchyGlb())).toEqual([]);
-  });
-
-  it("returns an empty list for truncated or non-GLB bytes", () => {
-    expect(glbClipNames(new Uint8Array([1, 2, 3]))).toEqual([]);
-    expect(glbClipNames(new Uint8Array(32).fill(0))).toEqual([]);
   });
 });
 

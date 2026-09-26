@@ -86,6 +86,31 @@ describe("ColorField", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("offers alpha only when set and keeps edits within 0–1", () => {
+    const onAlphaChange = vi.fn();
+    const { rerender } = render(
+      <ColorField value={[1, 0, 0]} onChange={() => {}} aria-label="Tint" data-testid="tint" />,
+    );
+    expect(screen.queryByTestId("tint-alpha")).toBeNull();
+
+    rerender(
+      <ColorField
+        value={[1, 0, 0]}
+        onChange={() => {}}
+        alpha={0.5}
+        onAlphaChange={onAlphaChange}
+        aria-label="Tint"
+        data-testid="tint"
+      />,
+    );
+    const alpha = screen.getByRole("textbox", { name: "Tint Alpha" }) as HTMLInputElement;
+    expect(alpha.value).toBe("0.5");
+    fireEvent.change(alpha, { target: { value: "2" } });
+    expect(onAlphaChange).toHaveBeenLastCalledWith(1);
+    fireEvent.change(alpha, { target: { value: "0.2" } });
+    expect(onAlphaChange).toHaveBeenLastCalledWith(0.2);
+  });
+
   it("commits from the native color picker", () => {
     const onChange = vi.fn();
     render(

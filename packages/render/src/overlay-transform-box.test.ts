@@ -304,6 +304,21 @@ describe("createOverlayTransformBox", () => {
       child.name.endsWith("-visual"),
     );
     expect(knobVisual?.scaling.x).toBeCloseTo(0.25);
+    const stem = layer.utilityLayerScene.getMeshByName("overlay-box-rotate-stem")!;
+    const expectStemFromBoxTopToKnob = () => {
+      const knobY = knob.computeWorldMatrix(true).getTranslation().y;
+      stem.computeWorldMatrix(true);
+      const span = stem.getBoundingInfo().boundingBox;
+      expect(span.minimumWorld.y).toBeCloseTo(0.5);
+      expect(span.maximumWorld.y).toBeCloseTo(knobY);
+      return knobY;
+    };
+    const before = expectStemFromBoxTopToKnob();
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue({
+      clientHeight: 200,
+    } as HTMLCanvasElement);
+    box.attachTo(mesh);
+    expect(expectStemFromBoxTopToKnob()).toBeLessThan(before);
     box.dispose();
     layer.dispose();
   });

@@ -12,12 +12,15 @@ import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
+  PropertySectionTitle,
+  ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Toggle } from "@babylonslate/ui/components/toggle";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   createDefaultSpriteAnimationPayload,
   parseSpriteAnimationPayload,
@@ -36,6 +39,10 @@ import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
 import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 import { PauseIcon, PlayIcon, PlusIcon, RepeatIcon, Trash2Icon } from "lucide-react";
+
+const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+const CHECKERBOARD =
+  "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)";
 
 type SpriteAnimationEditingValue = {
   selectedFrameIndex: number;
@@ -212,93 +219,104 @@ export function SpriteAnimationPreview({
     setSelectedFrameIndex(head.index);
   };
 
+  const frameCount = animation.frames.length;
   return (
     <div
-      className="flex min-h-0 flex-col gap-2 p-3"
+      className="flex h-full min-h-0 flex-col overflow-hidden"
       data-testid="sprite-animation-preview"
       data-playing={playing ? "true" : "false"}
       data-frame-index={String(selectedFrameIndex)}
     >
-      <div
-        className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
-        style={{
-          backgroundImage:
-            "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)",
-          backgroundSize: "16px 16px",
-        }}
-      >
-        {url ? (
-          <img src={url} alt="" onError={preview.fail} className="absolute inset-0 size-full object-contain" />
-        ) : (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90">
-            <TexturePreviewStatus preview={preview} />
-          </div>
-        )}
-        <div
-          data-testid="sprite-animation-image-box"
-          className="absolute z-10"
-          style={{
-            left: `${contain.left * 100}%`,
-            top: `${contain.top * 100}%`,
-            width: `${contain.width * 100}%`,
-            height: `${contain.height * 100}%`,
-          }}
-        >
-          <div
-            data-testid="sprite-pivot-marker"
-            className="pointer-events-none absolute z-10"
-            style={{
-              left: `${pivot.x * 100}%`,
-              top: `${pivot.y * 100}%`,
-              transform: "translate(-50%, -50%)",
-            }}
-          >
-            <div className="relative size-4">
-              <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-primary" />
-              <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
-            </div>
-          </div>
-          <SpriteCollisionOverlay
-            collision={collision}
-            onChange={(next) => {
-              if (!onChange) return;
-              const frames = animation.frames.map((entry, index) =>
-                index === selectedFrameIndex
-                  ? { ...entry, collision: next }
-                  : entry,
-              );
-              onChange({ ...animation, frames });
-            }}
-          />
-        </div>
-      </div>
-      <div
-        className="flex min-w-0 items-center gap-1"
-        data-testid="sprite-animation-playback"
-      >
-        <IconActionButton
-          label={playing ? "Pause" : "Play"}
+      <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="sprite-animation-playback">
+        <Button
+          type="button"
+          size="sm"
+          variant={playing ? "secondary" : "default"}
+          className={TOOL_ITEM}
           data-testid={playing ? "sprite-animation-pause" : "sprite-animation-play"}
           onClick={() => setPlaying((current) => !current)}
         >
-          {playing ? (
-            <PauseIcon className="icon-sm" />
-          ) : (
-            <PlayIcon fill="currentColor" />
-          )}
-        </IconActionButton>
+          {playing ? <PauseIcon fill="currentColor" /> : <PlayIcon fill="currentColor" />}
+          {playing ? "Pause" : "Play"}
+        </Button>
         <Toggle
           size="sm"
           variant="outline"
+          className={TOOL_ITEM}
           pressed={loop}
           aria-label="Loop"
           data-testid="sprite-animation-loop"
           onPressedChange={setLoop}
         >
-          <RepeatIcon className="icon-sm" />
+          <RepeatIcon />
+          Loop
         </Toggle>
+        <span
+          className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground"
+          data-testid="sprite-animation-position"
+        >
+          {selectedFrameIndex + 1} / {frameCount} · {Math.round(timeMs)} / {durationMs} ms
+        </span>
+      </ToolbarStrip>
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-sidebar p-3 [container-type:size]">
+        <div
+          className="relative aspect-square w-[min(100cqw,100cqh)] overflow-hidden rounded-md ring-1 ring-border"
+          style={{ backgroundImage: CHECKERBOARD, backgroundSize: "16px 16px" }}
+        >
+          {url ? (
+            <img
+              src={url}
+              alt=""
+              onError={preview.fail}
+              className="absolute inset-0 size-full object-contain [image-rendering:pixelated]"
+            />
+          ) : (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90">
+              <TexturePreviewStatus preview={preview} />
+            </div>
+          )}
+          <div
+            data-testid="sprite-animation-image-box"
+            className="absolute z-10"
+            style={{
+              left: `${contain.left * 100}%`,
+              top: `${contain.top * 100}%`,
+              width: `${contain.width * 100}%`,
+              height: `${contain.height * 100}%`,
+            }}
+          >
+            <div
+              data-testid="sprite-pivot-marker"
+              className="pointer-events-none absolute z-10"
+              style={{
+                left: `${pivot.x * 100}%`,
+                top: `${pivot.y * 100}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <div className="relative size-4">
+                <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-primary" />
+                <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
+              </div>
+            </div>
+            <SpriteCollisionOverlay
+              collision={collision}
+              onChange={(next) => {
+                if (!onChange) return;
+                const frames = animation.frames.map((entry, index) =>
+                  index === selectedFrameIndex
+                    ? { ...entry, collision: next }
+                    : entry,
+                );
+                onChange({ ...animation, frames });
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-panel-header px-2 py-2">
         <Slider
-          className="min-w-0 flex-1"
+          className="min-w-0"
           min={0}
           max={durationMs}
           step={1}
@@ -310,23 +328,69 @@ export function SpriteAnimationPreview({
             if (value !== undefined) seekToTime(value);
           }}
         />
-      </div>
-      <div className="flex flex-wrap gap-1" data-testid="sprite-animation-frame-strip">
-        {animation.frames.map((entry, index) => (
-          <Button
-            key={`${entry.textureGuid}-${index}`}
-            type="button"
-            size="sm"
-            variant={index === selectedFrameIndex ? "default" : "outline"}
-            data-testid={`sprite-animation-frame-${index}`}
-            aria-pressed={index === selectedFrameIndex}
-            onClick={() => seekToFrame(index)}
-          >
-            {index + 1}
-          </Button>
-        ))}
+        <div
+          className="flex gap-1.5 overflow-x-auto pb-0.5"
+          role="group"
+          aria-label="Frames"
+          data-testid="sprite-animation-frame-strip"
+        >
+          {animation.frames.map((entry, index) => (
+            <SpriteAnimationFrameThumb
+              key={`${entry.textureGuid}-${index}`}
+              index={index}
+              textureGuid={entry.textureGuid}
+              durationMs={entry.durationMsOverride ? entry.durationMs : undefined}
+              selected={index === selectedFrameIndex}
+              onSelect={() => seekToFrame(index)}
+            />
+          ))}
+        </div>
       </div>
     </div>
+  );
+}
+
+function SpriteAnimationFrameThumb({
+  index,
+  textureGuid,
+  durationMs,
+  selected,
+  onSelect,
+}: {
+  index: number;
+  textureGuid: string;
+  durationMs?: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { url } = useTexturePreview(textureGuid || null);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      data-testid={`sprite-animation-frame-${index}`}
+      aria-pressed={selected}
+      aria-label={`Frame ${index + 1}`}
+      onClick={onSelect}
+      className={cn(
+        "relative size-12 shrink-0 overflow-hidden rounded-md p-0 ring-1 ring-border hover:ring-foreground/40",
+        selected && "ring-2 ring-(--graph-state-selected) hover:ring-(--graph-state-selected)",
+      )}
+      style={{ backgroundImage: CHECKERBOARD, backgroundSize: "8px 8px" }}
+    >
+      {url ? (
+        <img src={url} alt="" className="absolute inset-0 size-full object-contain p-1 [image-rendering:pixelated]" />
+      ) : null}
+      <span className="absolute bottom-0.5 left-0.5 rounded-sm bg-background/85 px-1 text-[10px] font-medium leading-tight tabular-nums text-foreground">
+        {index + 1}
+      </span>
+      {durationMs !== undefined ? (
+        <span className="absolute right-0.5 top-0.5 rounded-sm bg-background/85 px-1 text-[10px] leading-tight tabular-nums text-muted-foreground">
+          {durationMs}
+        </span>
+      ) : null}
+    </Button>
   );
 }
 
@@ -474,53 +538,72 @@ export function SpriteAnimationDetails({
     },
   );
 
+  const totalMs = spriteAnimationDurationMs(animation);
   return (
-    <div data-testid="sprite-animation-editor" className="flex flex-col gap-2 p-3">
-      <div className="flex gap-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="sprite-animation-add-frame"
-          onClick={() => {
-            const next = {
-              ...createDefaultSpriteAnimationPayload().frames[0]!,
-              durationMs: animation.frameDurationMs,
-            };
-            onChange({ ...animation, frames: [...animation.frames, next] });
-            setSelectedFrameIndex(animation.frames.length);
-          }}
-        >
-          <PlusIcon className="icon-sm" />
-          Add Frame
-        </Button>
-        <IconActionButton
-          label="Remove Frame"
-          disabled={animation.frames.length <= 1}
-          onClick={() => {
-            const frames = animation.frames.filter(
-              (_entry, index) => index !== selectedFrameIndex,
-            );
-            onChange({
-              ...animation,
-              frames:
-                frames.length > 0
-                  ? frames
-                  : [
-                      {
-                        ...createDefaultSpriteAnimationPayload().frames[0]!,
-                        durationMs: animation.frameDurationMs,
-                      },
-                    ],
-            });
-            setSelectedFrameIndex(Math.max(0, selectedFrameIndex - 1));
-          }}
-        >
-          <Trash2Icon className="icon-sm" />
-        </IconActionButton>
-      </div>
-      <PropertyGrid title="Animation" rows={animationRows} />
-      <PropertyGrid title="Selected Frame" rows={frameRows} />
+    <div data-testid="sprite-animation-editor" className="flex flex-col">
+      <PropertySectionTitle
+        aside={
+          <span className="text-xs font-normal tabular-nums text-muted-foreground" data-testid="sprite-animation-summary">
+            {animation.frames.length === 1 ? "1 Frame" : `${animation.frames.length} Frames`} · {totalMs} ms
+          </span>
+        }
+      >
+        Animation
+      </PropertySectionTitle>
+      <PropertyGrid rows={animationRows} />
+      <PropertySectionTitle
+        aside={
+          <span className="flex items-center gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn("h-6 px-2", TOOL_ITEM)}
+              data-testid="sprite-animation-add-frame"
+              onClick={() => {
+                const next = {
+                  ...createDefaultSpriteAnimationPayload().frames[0]!,
+                  durationMs: animation.frameDurationMs,
+                };
+                onChange({ ...animation, frames: [...animation.frames, next] });
+                setSelectedFrameIndex(animation.frames.length);
+              }}
+            >
+              <PlusIcon />
+              Add Frame
+            </Button>
+            <IconActionButton
+              label="Remove Frame"
+              variant="ghost"
+              className={cn("size-6", TOOL_ITEM)}
+              disabled={animation.frames.length <= 1}
+              onClick={() => {
+                const frames = animation.frames.filter(
+                  (_entry, index) => index !== selectedFrameIndex,
+                );
+                onChange({
+                  ...animation,
+                  frames:
+                    frames.length > 0
+                      ? frames
+                      : [
+                          {
+                            ...createDefaultSpriteAnimationPayload().frames[0]!,
+                            durationMs: animation.frameDurationMs,
+                          },
+                        ],
+                });
+                setSelectedFrameIndex(Math.max(0, selectedFrameIndex - 1));
+              }}
+            >
+              <Trash2Icon className="icon-sm" />
+            </IconActionButton>
+          </span>
+        }
+      >
+        <span data-testid="sprite-animation-selected-frame">Frame {selectedFrameIndex + 1}</span>
+      </PropertySectionTitle>
+      <PropertyGrid rows={frameRows} />
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}

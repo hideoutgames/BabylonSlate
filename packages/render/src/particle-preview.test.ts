@@ -1,4 +1,6 @@
+import { ParticleSystem, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { PARTICLE_UPDATE_SPEED } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -35,6 +37,35 @@ describe("createParticlePreviewScene", () => {
     expect(skybox).toBeTruthy();
     expect(skybox!.infiniteDistance).toBe(false);
     expect(skybox!.isPickable).toBe(false);
+    host.dispose();
+  });
+
+  it("simulates particles by wall-clock time between preview renders", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    let clock = 0;
+    const host = createParticlePreviewScene(handle.engine, { now: () => clock });
+    const system = new ParticleSystem("preview-clock", 256, host.scene);
+    system.emitter = Vector3.Zero();
+    system.updateSpeed = PARTICLE_UPDATE_SPEED;
+    system.emitRate = 60;
+    system.minLifeTime = system.maxLifeTime = 10;
+    // NullEngine never uploads the readiness texture; readiness is not under test.
+    system.isReady = () => true;
+    system.start();
+    // The shared Engine loop is idle, so its delta is stale; preview time must follow the clock.
+    for (let frame = 0; frame < 20; frame += 1) {
+      clock += 50;
+      host.scene.render();
+    }
+    // One second of wall time at 60 particles per second.
+    expect(system.getActiveCount()).toBeGreaterThanOrEqual(55);
+    expect(system.getActiveCount()).toBeLessThanOrEqual(65);
+    // A resumed tab advances one capped step, not the whole hidden interval.
+    const before = system.getActiveCount();
+    clock += 60_000;
+    host.scene.render();
+    expect(system.getActiveCount() - before).toBeLessThanOrEqual(7);
     host.dispose();
   });
 

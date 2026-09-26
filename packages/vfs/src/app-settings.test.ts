@@ -51,6 +51,8 @@ describe("app settings", () => {
     expect(settings.appearance.theme).toBe("system");
     expect(settings.focusKeepPanels).toEqual({
       scene: ["viewport"],
+      sceneLandscape: ["viewport"],
+      sceneFoliage: ["viewport"],
       "scene-layer": ["viewport"],
       graph: ["graph"],
       enum: ["enum-members"],
@@ -79,6 +81,7 @@ describe("app settings", () => {
       animation: ["animation-preview"],
       "skybox-creator": ["skybox-creator-preview"],
       trace: ["trace-timeline"],
+      texture: ["texture-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);

@@ -25,7 +25,7 @@ import {
 } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 
-export { encodePngRgba } from "./default-skybox/png";
+export { encodeRgbaPng as encodePngRgba } from "./png-encode";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
 const preparations = new WeakMap<AbstractMesh, Promise<void>>();
@@ -41,30 +41,6 @@ export function skyboxCubeCacheGuid(faces?: SkyboxFaces | null): string {
   if (skyboxFaceGuids(parsed).length === 0) return ENGINE_DEFAULT_SKYBOX_GUID;
   return `skybox:${SKYBOX_FACE_KEYS.map((key) => parsed[key] ?? "default").join(",")}`;
 }
-
-export function skyboxCubeCacheGuidsFromScene(
-  scene:
-    | {
-        actors: ReadonlyArray<{
-          components: ReadonlyArray<{
-            classId: string;
-            properties: Record<string, unknown>;
-          }>;
-        }>;
-      }
-    | null
-    | undefined,
-): string[] {
-  const guids = new Set<string>();
-  for (const actor of scene?.actors ?? []) {
-    for (const component of actor.components) {
-      if (component.classId !== "SkyboxComponent") continue;
-      guids.add(skyboxCubeCacheGuid(parseSkyboxFaces(component.properties.faces)));
-    }
-  }
-  return [...guids];
-}
-
 
 export function isSkyboxMesh(mesh: AbstractMesh): boolean {
   return Boolean((mesh.metadata as { skybox?: boolean } | null)?.skybox);

@@ -1,12 +1,13 @@
 import {
   Color3,
+  CreateBoxVertexData,
   Matrix,
   Mesh,
-  MeshBuilder,
   Quaternion,
   Scene,
   StandardMaterial,
   Vector3,
+  type VertexData,
 } from "@babylonjs/core";
 import { convexHullEdges } from "@babylonslate/assets";
 import type { ColliderShape } from "@babylonslate/physics";
@@ -46,9 +47,24 @@ export function createDashedEdgesMesh(
   root.isPickable = options?.pickable === true;
   root.renderingGroupId = RENDERING_GROUP.world;
   const material = colliderMaterial(scene, color);
+  const dashes: VertexData[] = [];
   for (const [from, to] of edges) {
-    addDashedEdge(root, scene, material, from, to, options?.pickable === true);
+    addDashedEdge(dashes, from, to);
   }
+  const merged = dashes.shift();
+  if (!merged) return root;
+  merged.merge(dashes);
+  // Every dash box shares one mesh and draw call. The `:dash:` name is what
+  // editor collider display toggles.
+  const dash = new Mesh(`${name}:dash:0`, scene);
+  merged.applyToMesh(dash);
+  dash.parent = root;
+  // Mark the actual renderable segments, not an entire subtree: authored
+  // component meshes can also be parented beneath a collider visual root.
+  dash.metadata = { ...dash.metadata, editorColliderVisual: true };
+  dash.material = material;
+  dash.isPickable = options?.pickable === true;
+  dash.renderingGroupId = RENDERING_GROUP.world;
   return root;
 }
 
@@ -59,15 +75,7 @@ export function createColliderVisualMesh(
   color: Color3 = COLLIDER_COLOR,
   options?: { pickable?: boolean },
 ): Mesh {
-  const root = new Mesh(name, scene);
-  root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
-  root.isPickable = options?.pickable === true;
-  root.renderingGroupId = RENDERING_GROUP.world;
-  const material = colliderMaterial(scene, color);
-  for (const [from, to] of shapeEdges(shape)) {
-    addDashedEdge(root, scene, material, from, to, options?.pickable === true);
-  }
-  return root;
+  return createDashedEdgesMesh(scene, name, shapeEdges(shape), color, options);
 }
 
 function colorKey(color: Color3): string {
@@ -96,12 +104,9 @@ function colliderMaterial(scene: Scene, color: Color3): StandardMaterial {
 }
 
 function addDashedEdge(
-  parent: Mesh,
-  scene: Scene,
-  material: StandardMaterial,
+  dashes: VertexData[],
   from: Vector3,
   to: Vector3,
-  pickable = false,
 ): void {
   const delta = to.subtract(from);
   const length = delta.length();
@@ -110,31 +115,20 @@ function addDashedEdge(
   const rotation = quaternionAlignX(unit);
   const period = COLLIDER_DASH_SIZE + COLLIDER_GAP_SIZE;
   let offset = 0;
-  let index = 0;
   while (offset < length - 1e-5) {
     const dashLen = Math.min(COLLIDER_DASH_SIZE, length - offset);
     if (dashLen < COLLIDER_DASH_THICKNESS) break;
     const mid = from.add(unit.scale(offset + dashLen / 2));
-    const dash = MeshBuilder.CreateBox(
-      `${parent.name}:dash:${parent.getChildren().length}:${index}`,
-      {
-        width: dashLen,
-        height: COLLIDER_DASH_THICKNESS,
-        depth: COLLIDER_DASH_THICKNESS,
-      },
-      scene,
-    );
-    dash.parent = parent;
-    // Mark the actual renderable segments, not an entire subtree: authored
-    // component meshes can also be parented beneath a collider visual root.
-    dash.metadata = { ...dash.metadata, editorColliderVisual: true };
-    dash.position.copyFrom(mid);
-    dash.rotationQuaternion = rotation.clone();
-    dash.material = material;
-    dash.isPickable = pickable;
-    dash.renderingGroupId = RENDERING_GROUP.world;
+    // Bake the dash box at its pose so every dash merges into one mesh.
+    const dash = CreateBoxVertexData({
+      width: dashLen,
+      height: COLLIDER_DASH_THICKNESS,
+      depth: COLLIDER_DASH_THICKNESS,
+      sideOrientation: Mesh.FRONTSIDE,
+    });
+    dash.transform(Matrix.Compose(Vector3.One(), rotation, mid));
+    dashes.push(dash);
     offset += period;
-    index += 1;
   }
 }
 

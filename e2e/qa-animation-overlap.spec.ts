@@ -26,7 +26,6 @@ type TestHost = {
   };
   __babylonslatePlayTest: {
     whenModelsReady(): Promise<void>;
-    bakedSession?(): unknown;
     materialDefines?(): Array<{
       mesh: string;
       material: string | null;
@@ -41,7 +40,6 @@ async function playDebugReadout(page: Page) {
   return page.evaluate(() => {
     const host = (globalThis as unknown as TestHost).__babylonslatePlayTest;
     return {
-      bakedSession: host.bakedSession?.() ?? null,
       rendering: host.rendering?.() ?? null,
       defines: host.materialDefines?.() ?? [],
     };

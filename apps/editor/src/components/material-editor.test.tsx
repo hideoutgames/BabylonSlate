@@ -233,6 +233,15 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("material-node-details")).toBeNull();
   });
 
+  it("leaves blending to particle emitters by hiding Blend Mode on particle materials", () => {
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("property-blendMode")).toBeTruthy();
+    harness.content = createDefaultMaterialDocument("Sparks", "particle") as unknown as Record<string, unknown>;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("property-domain")).toBeTruthy();
+    expect(screen.queryByTestId("property-blendMode")).toBeNull();
+  });
+
   it("hides material settings and shows node details when a node is selected", () => {
     harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);

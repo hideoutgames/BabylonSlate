@@ -12,7 +12,7 @@ import { DirectionalLight, StandardMaterial } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createEditorCamera } from "./editor-camera";
-import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
+import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import * as modelContainer from "./model-container";
 import * as modelLoads from "./glb-anim";

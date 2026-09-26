@@ -25,6 +25,7 @@ const {
   dispose,
   handle,
   prefabState,
+  collectPlayWaterContent,
   collectPlayMaterialLibrary,
   collectPlaySpritePayloads,
   collectPlayTilemapContent,
@@ -94,6 +95,7 @@ const {
     createEngineMock,
     commitComponentTransforms: vi.fn(),
     viewportState: { mode: "3d" as "3d" | "2d", tool: "translate" as "translate" | "rotate" | "scale" },
+    collectPlayWaterContent: vi.fn(async () => new Map()),
     collectPlayMaterialLibrary: vi.fn(async () => ({
       documents: new Map(),
       functions: new Map(),
@@ -204,6 +206,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayAudio,
+    collectPlayWaterContent,
     collectPlayMaterialLibrary,
     projectDocument: null,
     openDocuments: prefabDocs.openDocuments,

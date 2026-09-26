@@ -59,3 +59,27 @@ test("checksum disagreement blocks all publication writes", async () => {
   await assert.rejects(publishWindows({ manifest, files: corrupt, appleState: "available" }, fixtureApi.api), /checksum/i);
   assert.equal(fixtureApi.requests.filter(item => item.method).length, 0);
 });
+
+test("normal releases publish patch notes and every updater asset, rejecting incomplete releases", async () => {
+  const releaseManifest = {
+    ...createIdentity({ version: "0.0.2", declaredVersion: "0.0.2", channel: "release", platforms: "windows", sourceSha: manifest.sourceSha, runNumber: 418, runAttempt: 1 }),
+    patchNotes: { version: "0.0.2", title: "Editor Improvements", changes: ["Projects reopen faster."] },
+  };
+  const releaseFiles = new Map([
+    ["BabylonSlate-0.0.2-release-x64.exe", Buffer.from("installer")],
+    ["BabylonSlate-0.0.2-release-x64.exe.blockmap", Buffer.from("blockmap")],
+    ["latest.yml", Buffer.from("version: 0.0.2-release")],
+    ["build-manifest.json", Buffer.from(JSON.stringify(releaseManifest))],
+  ]);
+  releaseFiles.set("SHA256SUMS.txt", Buffer.from([...releaseFiles].map(([name, bytes]) => `${hash(bytes)}  ${name}\n`).join("")));
+  const client = fixture();
+  await publishWindows({ manifest: releaseManifest, files: releaseFiles }, client.api);
+  assert.match(client.current().body, /## Editor Improvements\n\n- Projects reopen faster\./);
+  assert.equal(client.current().prerelease, false);
+  assert.ok(client.current().assets.some(asset => asset.name === "latest.yml"));
+  const missingFeed = new Map(releaseFiles);
+  missingFeed.delete("latest.yml");
+  await assert.rejects(publishWindows({ manifest: releaseManifest, files: missingFeed }, fixture().api), /allowlist/);
+  const noNotes = { ...releaseManifest, patchNotes: undefined };
+  await assert.rejects(publishWindows({ manifest: noNotes, files: releaseFiles }, fixture().api), /Patch notes/);
+});

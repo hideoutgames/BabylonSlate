@@ -4,7 +4,7 @@ import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
-import type { EngineSettings } from "@babylonslate/vfs";
+import { getHostPlatform, type EngineSettings } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -52,7 +52,9 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   label: string;
   options?: DockWindowOptions;
 }> = [
-  { kind: "scene", keepKey: "scene", label: "Scene" },
+  { kind: "scene", keepKey: "scene", label: "Scene — Design" },
+  { kind: "scene", keepKey: "sceneLandscape", label: "Scene — Landscape", options: { sceneMode: "landscape" } },
+  { kind: "scene", keepKey: "sceneFoliage", label: "Scene — Foliage", options: { sceneMode: "foliage" } },
   { kind: "scene-layer", keepKey: "scene-layer", label: "Scene Layer" },
   { kind: "graph", keepKey: "graph", label: "Class" },
   { kind: "enum", keepKey: "enum", label: "Enum" },
@@ -131,6 +133,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Skybox Creator",
   },
   { kind: "trace", keepKey: "trace", label: "Trace" },
+  { kind: "texture", keepKey: "texture", label: "Texture" },
 ];
 
 export type EngineSettingsCategoryId =
@@ -187,6 +190,17 @@ export function EngineSettingsForm({
             </>
           ) : (
             <FieldDescription>Development Build</FieldDescription>
+          )}
+          {getHostPlatform() === "electron" && (
+            <Field orientation="horizontal" className="settings-field">
+              <FieldContent>
+                <FieldLabel htmlFor="setting-automatic-updates">Automatic Updates</FieldLabel>
+                <FieldDescription>
+                  Download new releases from GitHub and install them when you exit BabylonSlate. Applies to desktop release builds.
+                </FieldDescription>
+              </FieldContent>
+              <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
+            </Field>
           )}
         </FieldSet>
       ) : null}

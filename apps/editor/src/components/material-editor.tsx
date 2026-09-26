@@ -636,6 +636,7 @@ function MaterialDocumentDetails() {
       value: document.domain,
       options: [
         { value: "surface", label: "Surface" },
+        { value: "landscape", label: "Landscape" },
         { value: "postProcess", label: "Post Process" },
         { value: "particle", label: "Particle" },
       ],
@@ -695,11 +696,13 @@ function MaterialDocumentDetails() {
       onChange: (value) => commit({ ...document, defaultNormals: value === "flat" ? "flat" : "model" }),
     },
   ];
-  if (document.domain === "surface") rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
-  if (document.domain !== "surface") {
-    for (let i = rows.length - 1; i >= 0; i--) if (["shadingModel", "twoSided", "defaultNormals"].includes(rows[i]!.id)) rows.splice(i, 1);
+  if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
+  if ((document.domain !== "surface" && document.domain !== "landscape")) {
+    // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
+    const hidden = document.domain === "particle" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
+    for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
-  if (document.domain === "surface" && document.blendMode === "masked") {
+  if ((document.domain === "surface" || document.domain === "landscape") && document.blendMode === "masked") {
     rows.push({
       id: "alphaCutoff",
       kind: "slider",

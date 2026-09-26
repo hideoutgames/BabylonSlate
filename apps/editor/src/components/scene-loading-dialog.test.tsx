@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { PLAY_SCENE_LOAD_STEPS, SceneLoadingDialog } from "./scene-loading-dialog";
 
 afterEach(() => {
   cleanup();
@@ -24,6 +24,16 @@ describe("SceneLoadingDialog", () => {
     expect(screen.getByRole("dialog").textContent).toContain("Removing Previous Scene");
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("marks the running Play phase and completes the phases before it", () => {
+    render(<SceneLoadingDialog open progress={60} phase="Loading Textures" steps={PLAY_SCENE_LOAD_STEPS} />);
+    const states = Object.fromEntries(
+      Array.from(screen.getByRole("dialog").querySelectorAll("li")).map((item) => [item.textContent, item.dataset.state]),
+    );
+    expect(states["Removing Previous Scene"]).toBe("done");
+    expect(states["Loading Textures"]).toBe("current");
+    expect(states["Warming Shaders"]).toBe("pending");
   });
 
   it("hides when closed", () => {

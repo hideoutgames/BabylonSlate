@@ -1669,6 +1669,7 @@ export class ProjectService {
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     const storeInHeader =
       (kind === "asset-settings" ||
+        kind === "texture" ||
         kind === "model" ||
         kind === "skeleton" ||
         kind === "animation") &&

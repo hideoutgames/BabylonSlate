@@ -3,6 +3,8 @@ import { DEFAULT_EDITOR_DROP_DISTANCE, normalizeProjectAppearance } from "@babyl
 
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
+  sceneLandscape: ["viewport"],
+  sceneFoliage: ["viewport"],
   "scene-layer": ["viewport"],
   graph: ["graph"],
   enum: ["enum-members"],
@@ -31,6 +33,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   animation: ["animation-preview"],
   "skybox-creator": ["skybox-creator-preview"],
   trace: ["trace-timeline"],
+  texture: ["texture-preview"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -48,6 +51,8 @@ const focusKeepPanelList = (fallback: readonly string[]) =>
   z.array(z.string()).default([...fallback]);
 
 export const engineSettingsSchema = z.object({
+  automaticUpdatesEnabled: z.boolean().default(true),
+  seenReleaseVersions: z.array(z.string()).catch([]).default([]),
   templatesFolder: z.string().nullable().default(null),
   defaultProjectLocation: z.string().nullable().default(null),
   recents: z
@@ -157,6 +162,8 @@ export const engineSettingsSchema = z.object({
   focusKeepPanels: z
     .object({
       scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
+      sceneLandscape: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneLandscape),
+      sceneFoliage: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sceneFoliage),
       "scene-layer": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["scene-layer"]),
       graph: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.graph),
       enum: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.enum),
@@ -209,6 +216,7 @@ export const engineSettingsSchema = z.object({
         DEFAULT_FOCUS_KEEP_PANELS["skybox-creator"],
       ),
       trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
+      texture: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.texture),
     })
     .default(mutableFocusKeepPanels),
 }).transform((settings) => ({

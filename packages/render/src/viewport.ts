@@ -1,4 +1,4 @@
-import { ArcRotateCamera, Color3, Scene, Vector3 } from "@babylonjs/core";
+import { ArcRotateCamera, Scene, Vector3 } from "@babylonjs/core";
 
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 import { installEngineDefaultMaterial } from "./default-material";
@@ -18,8 +18,4 @@ export function setupDefaultViewport(scene: Scene): void {
     scene,
   );
   scene.activeCamera = camera;
-}
-
-export function setHighlightColor(scene: Scene, color: Color3): void {
-  scene.ambientColor = color;
 }

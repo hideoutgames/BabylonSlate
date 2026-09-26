@@ -1,3 +1,4 @@
+import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
@@ -55,9 +56,11 @@ import {
 import {
   ParticleEmitterDetailsPanel,
   ParticleEmitterPreviewPanel,
+} from "../panels/particle-emitter-panels";
+import {
   ParticleSystemDetailsPanel,
   ParticleSystemPreviewPanel,
-} from "../components/particle-editor";
+} from "../panels/particle-system-panels";
 import {
   ModelCollidersPanel,
   ModelDetailsPanel,
@@ -76,6 +79,10 @@ import {
   SkyboxCreatorDetailsPanel,
   SkyboxCreatorPreviewPanel,
 } from "../components/skybox-creator-editor";
+import {
+  TextureDetailsPanel,
+  TexturePreviewPanel,
+} from "../components/texture-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -205,6 +212,8 @@ export const panelComponents = {
   "particle-emitter-details": (props: IDockviewPanelProps) => (
     <ParticleEmitterDetailsPanel {...props} />
   ),
+  "water-preview": (props: IDockviewPanelProps) => <WaterPreviewPanel {...props} />,
+  "water-details": (props: IDockviewPanelProps) => <WaterDetailsPanel {...props} />,
   "particle-system-preview": (props: IDockviewPanelProps) => (
     <ParticleSystemPreviewPanel {...props} />
   ),
@@ -240,6 +249,12 @@ export const panelComponents = {
   ),
   "skybox-creator-details": (props: IDockviewPanelProps) => (
     <SkyboxCreatorDetailsPanel {...props} />
+  ),
+  "texture-preview": (props: IDockviewPanelProps) => (
+    <TexturePreviewPanel {...props} />
+  ),
+  "texture-details": (props: IDockviewPanelProps) => (
+    <TextureDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />
@@ -285,4 +300,10 @@ export const panelComponents = {
   ),
   "trace-log": (props: IDockviewPanelProps) => <TraceLogPanel {...props} />,
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
+  "landscape-outliner": LandscapeOutlinerPanel,
+  "landscape-settings": LandscapeSettingsPanel,
+  "foliage-groups": FoliageGroupsPanel,
+  "foliage-settings": FoliageSettingsPanel,
+  "foliage-outliner": FoliageOutlinerPanel,
 };
+import { LandscapeOutlinerPanel, LandscapeSettingsPanel, FoliageGroupsPanel, FoliageSettingsPanel, FoliageOutlinerPanel } from "../panels/scene-environment-panels";

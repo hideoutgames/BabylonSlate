@@ -233,7 +233,7 @@ describe("listDockWindows", () => {
     ).toEqual({
       referencePanelId: "particle-emitter-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: 360,
     });
     expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
@@ -301,6 +301,15 @@ describe("listDockWindows", () => {
       initialWidth: 280,
     });
     expect(primaryDockPanel("skybox-creator")).toBe("skybox-creator-preview");
+    expect(listDockWindows("texture").map((entry) => entry.id)).toEqual([
+      "texture-preview",
+      "texture-details",
+    ]);
+    expect(listDockWindows("texture").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+    ]);
+    expect(primaryDockPanel("texture")).toBe("texture-preview");
     expect(listDockWindows("trace").map((entry) => entry.id)).toEqual([
       "trace-timeline",
       "trace-snapshot",
@@ -600,5 +609,15 @@ describe("animation graph and behaviour tree dock catalogs", () => {
   it("focuses the graph as the primary panel", () => {
     expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
+  });
+});
+
+
+describe("Water editor docks", () => {
+  it("offers independent Preview and Details windows with Preview as the primary panel", () => {
+    const windows = listDockWindows("water");
+    expect(windows.map((entry) => entry.id)).toEqual(["water-preview", "water-details"]);
+    expect(primaryDockPanel("water")).toBe("water-preview");
+    expect(windows.find((entry) => entry.id === "water-details")?.defaultPosition).toMatchObject({ referencePanelId: "water-preview", direction: "right" });
   });
 });

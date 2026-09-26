@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   parseAnimGraphDocument,
@@ -13,8 +14,8 @@ import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
+  isParticleAssetType,
+  particleLibraryFromAssets,
   normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -24,8 +25,7 @@ import {
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
-  type ParticleEmitterPayload,
-  type ParticleSystemPayload,
+  type ParticleLibrary,
   type RetargetAnimationLoad,
   type SoundAttenuationPayload,
   type SpriteAnimationPayload,
@@ -59,14 +59,10 @@ export type PackedAudioLibrary = {
   attenuations: Map<string, SoundAttenuationPayload>;
 };
 
-export type PackedParticleLibrary = {
-  emitters: Map<string, ParticleEmitterPayload>;
-  systems: Map<string, ParticleSystemPayload>;
-};
-
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
+  waterPayloads: Map<string, WaterDefinition>;
   tilemapPayloads: Map<string, TilemapPayload>;
   tilesetPayloads: Map<string, TilesetPayload>;
   animGraphs: Array<{ guid: string; document: unknown }>;
@@ -84,7 +80,7 @@ export type PackedGameContent = {
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
   audioLibrary: PackedAudioLibrary;
-  particleLibrary: PackedParticleLibrary;
+  particleLibrary: ParticleLibrary;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
   retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
   modelPayloads: Map<string, ModelPayload>;
@@ -145,6 +141,7 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
+  const waterPayloads = new Map<string, WaterDefinition>();
   const tilemapPayloads = new Map<string, TilemapPayload>();
   const tilesetPayloads = new Map<string, TilesetPayload>();
   const animGraphs: Array<{ guid: string; document: unknown }> = [];
@@ -156,8 +153,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const channels = new Map<string, AudioChannelPayload>();
   const audio = new Map<string, AudioPayload>(game.audioPayloads);
   const attenuations = new Map<string, SoundAttenuationPayload>();
-  const emitters = new Map<string, ParticleEmitterPayload>();
-  const systems = new Map<string, ParticleSystemPayload>();
+  const particleAssets: Array<{ guid: string; type: string; name?: string; payload: unknown }> = [];
   const animationPayloads = new Map<string, AnimationPayload>();
   const animationNames = new Map<string, string>();
 
@@ -175,6 +171,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       if (animation) spriteAnimationPayloads.set(entry.guid, animation);
       continue;
     }
+    if (entry.type === "Water" && parsed) waterPayloads.set(entry.guid, normalizeWaterDefinition(parsed));
     if (entry.type === "Tilemap" && parsed) {
       tilemapPayloads.set(entry.guid, normalizeTilemapPayload(parsed));
       continue;
@@ -231,12 +228,13 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       audio.set(entry.guid, normalizeAudioPayload(parsed));
       continue;
     }
-    if (entry.type === "ParticleEmitter" && parsed) {
-      emitters.set(entry.guid, normalizeParticleEmitterPayload(parsed));
-      continue;
-    }
-    if (entry.type === "ParticleSystem" && parsed) {
-      systems.set(entry.guid, normalizeParticleSystemPayload(parsed));
+    if (isParticleAssetType(entry.type) && parsed) {
+      particleAssets.push({
+        guid: entry.guid,
+        type: entry.type,
+        name: entry.name,
+        payload: parsed,
+      });
       continue;
     }
     if (entry.type === "Animation" && parsed) {
@@ -292,6 +290,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   return {
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
+    waterPayloads,
     tilemapPayloads,
     tilesetPayloads,
     animGraphs: resolvedAnimGraphs,
@@ -315,10 +314,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       audio,
       attenuations,
     },
-    particleLibrary: {
-      emitters,
-      systems,
-    },
+    particleLibrary: particleLibraryFromAssets(particleAssets),
     modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),
@@ -356,6 +352,7 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
       blackboards: [...content.blackboards],
     });
   }
+  if (content.waterPayloads.size > 0) controls.push({ type: "loadWater", waters: [...content.waterPayloads].map(([guid, document]) => ({ guid, document })) });
   if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
     controls.push({
       type: "loadTilemaps",
