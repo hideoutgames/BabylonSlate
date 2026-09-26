@@ -352,7 +352,9 @@ Place Actors and Duplicate allocate unused scene names (`Camera`, `Camera 2`; `C
 
 **Scripting is a small catalog in the same slice.** **Possess Camera** (Class graphs): exec in/out, an actor pin; it changes the **global** Play `activeCamera` for the session (same object as Default Camera, not a local viewport). Also get/set field of view, get/set orthographic size, enable/disable light, set light color, set light intensity. Graphs emit commands or mutate component variables; they do not import Babylon. Possess is a camera switch, not a follow rig.
 
-**Out of v1:** area lights, multiple shadow casters, volumetric lights, Cinemachine-style follow or virtual cameras, extra viewports, render-target cameras, camera stacking, post-process as lighting. **Possess Camera is in v1** (global active-camera switch only). The skybox **mesh** is in v1 (`SkyboxComponent`); IBL remains the optional guid.
+**Later spatial effects.** Project post-processing supports optional half-resolution PBR screen-space reflections with environment fallback and bounded, shadow-aware volumetric fog from directional, point and spot lights. Settings persist into Play/export and default off for existing projects. See [render architecture](architecture/render.md) for quality controls, capability limits and ownership.
+
+**Out of v1:** area lights, multiple shadow casters, Cinemachine-style follow or virtual cameras, extra viewports, render-target cameras, camera stacking, post-process as lighting. **Possess Camera is in v1** (global active-camera switch only). The skybox **mesh** is in v1 (`SkyboxComponent`); IBL remains the optional guid.
 
 ### 2.6 Audio, mixing and environmental acoustics
 

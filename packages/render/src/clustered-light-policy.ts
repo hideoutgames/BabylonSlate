@@ -12,8 +12,15 @@ type ClusteredPolicy = {
   ownsContainer(light: Light): boolean;
   allowsLocal(light: Light): boolean;
   clusteredCount(): number;
+  authoredLights?(): readonly Light[];
 };
 const policies = new WeakMap<Scene, ClusteredPolicy>();
+
+/** Borrowed authored registry, including children absent from scene.lights. */
+export function sceneEffectLights(scene: Scene): readonly Light[] {
+  const children = policies.get(scene)?.authoredLights?.() ?? [];
+  return children.length ? [...new Set([...scene.lights, ...children])] : scene.lights;
+}
 
 /** One explicit experimental owner per scene; production path selection is unchanged. */
 export function registerClusteredLightPolicy(
