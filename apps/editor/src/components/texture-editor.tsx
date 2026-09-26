@@ -59,7 +59,7 @@ function useTextureDocument() {
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const path = doc?.ref.path ?? "";
-  const indexed = assetRegistry?.list().find((asset) => asset.path === path);
+  const indexed = assetRegistry?.getByPath(path);
   return {
     path,
     payload: asRecord(doc?.content),
