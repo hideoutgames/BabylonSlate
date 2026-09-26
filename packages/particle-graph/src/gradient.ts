@@ -10,14 +10,17 @@ export interface ParticleGradientStop {
   value: number[];
 }
 
-/** White to transparent for colors (the Basic default); 1 → 0 otherwise. */
+/**
+ * White to transparent black for colors (the Basic default; Additive ignores
+ * alpha, so the fade darkens); 1 → 0 otherwise.
+ */
 export function defaultParticleGradientStops(
   valueType: ParticleNumericType,
 ): ParticleGradientStop[] {
   if (valueType === "color") {
     return [
       { position: 0, value: [1, 1, 1, 1] },
-      { position: 1, value: [1, 1, 1, 0] },
+      { position: 1, value: [0, 0, 0, 0] },
     ];
   }
   return [

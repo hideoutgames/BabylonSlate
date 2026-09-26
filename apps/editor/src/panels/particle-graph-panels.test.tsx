@@ -256,12 +256,12 @@ describe("ParticleGraphDetails", () => {
 
     // Float stops splat into the new width; editing one axis keeps the others.
     await pickOption("property-valueType", "Vector 3");
-    type("property-stop-1-value-y", "2");
+    type("property-stop-0-value-y", "2");
     const stops = nodeOf(history.read(), "gradient").properties.stops as Array<{
       position: number;
       value: number[];
     }>;
-    expect(stops[1]).toEqual({ position: 1, value: [1, 2, 1] });
+    expect(stops[0]).toEqual({ position: 0, value: [1, 2, 1] });
   });
 });
 

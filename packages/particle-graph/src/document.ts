@@ -266,7 +266,7 @@ function withOutput(nodes: ParticleGraphNode[]): ParticleGraphNode[] {
   const ids = new Set(nodes.map((node) => node.id));
   let id = "output";
   for (let suffix = 2; ids.has(id); suffix++) id = `output-${suffix}`;
-  const x = nodes.length > 0 ? Math.max(...nodes.map((node) => node.position.x)) + 280 : 0;
+  const x = nodes.length > 0 ? Math.max(...nodes.map((node) => node.position.x)) + 400 : 0;
   return [
     ...nodes,
     { id, type: PARTICLE_OUTPUT_NODE_TYPE, position: { x, y: 0 }, properties: {} },
@@ -331,12 +331,12 @@ export function createDefaultParticleGraphDocument(
         "default:lifetime": [1.5],
         "default:size": [0.3],
       }),
-      node("shape", "shape.sphere", 280, 0, { "default:radius": [0.5] }),
-      node("velocity", "update.basicPosition", 560, 0),
-      node("normalizedAge", "input.contextual.normalizedAge", 560, 220),
-      node("gradient", "gradient.sample", 800, 220),
-      node("updateColor", "update.color", 1080, 0),
-      node("output", PARTICLE_OUTPUT_NODE_TYPE, 1360, 0),
+      node("shape", "shape.sphere", 450, 0, { "default:radius": [0.5] }),
+      node("velocity", "update.basicPosition", 870, 0),
+      node("normalizedAge", "input.contextual.normalizedAge", 450, 400),
+      node("gradient", "gradient.sample", 850, 400),
+      node("updateColor", "update.color", 1280, 0),
+      node("output", PARTICLE_OUTPUT_NODE_TYPE, 1680, 0),
     ],
     edges: [
       edge("e-create-shape", "create", "out", "shape", "particle"),

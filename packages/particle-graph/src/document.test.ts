@@ -19,7 +19,7 @@ describe("particle graph document", () => {
       nodes: [{ id: "output", type: "const.float", position: { x: 100, y: 0 } }],
     });
     expect(taken.nodes.filter((node) => node.type === "particle.output")).toEqual([
-      { id: "output-2", type: "particle.output", position: { x: 380, y: 0 }, properties: {} },
+      { id: "output-2", type: "particle.output", position: { x: 500, y: 0 }, properties: {} },
     ]);
     const kept = normalizeParticleGraphDocument(createDefaultParticleGraphDocument());
     expect(kept.nodes.filter((node) => node.type === "particle.output")).toHaveLength(1);
@@ -77,7 +77,7 @@ describe("particle graph document", () => {
       valueType: "color",
       stops: [
         { position: 0, value: [1, 1, 1, 1] },
-        { position: 1, value: [1, 1, 1, 0] },
+        { position: 1, value: [0, 0, 0, 0] },
       ],
     });
   });
