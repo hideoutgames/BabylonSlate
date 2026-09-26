@@ -31,6 +31,7 @@ const PIN_TOKENS = [
   "--pin-enum",
   "--pin-wildcard",
   "--pin-delegate",
+  "--pin-particle",
 ] as const;
 
 const ASSET_TOKENS = [
@@ -112,6 +113,18 @@ function oklchChroma(value: string): number {
 function oklchHue(value: string): number {
   const match = value.match(/oklch\(\s*[0-9.]+\s+[0-9.]+\s+([0-9.]+)/i);
   return match ? Number(match[1]) : Number.NaN;
+}
+
+/** Euclidean distance in OKLab, the space OKLCH is the polar form of. */
+function oklabDistance(first: string, second: string): number {
+  const lab = (value: string): [number, number, number] => {
+    const radians = (oklchHue(value) * Math.PI) / 180;
+    const chroma = oklchChroma(value);
+    return [oklchLightness(value), chroma * Math.cos(radians), chroma * Math.sin(radians)];
+  };
+  const [l1, a1, b1] = lab(first);
+  const [l2, a2, b2] = lab(second);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
 function circularHueDistance(a: number, b: number): number {
@@ -207,6 +220,17 @@ describe("Graphite theme tokens", () => {
     for (const name of PIN_TOKENS) {
       expect(tokenValue(dark, name), name).not.toBe("");
       expect(tokenValue(root, name), name).not.toBe("");
+    }
+  });
+
+  it.each([":root", ".dark"])("keeps the Particle Graph spine colour apart from every other pin in %s", (scheme) => {
+    const block = cssBlock(globalsCss, scheme);
+    const particle = tokenValue(block, "--pin-particle");
+    for (const name of PIN_TOKENS) {
+      if (name === "--pin-particle") continue;
+      const distance = oklabDistance(particle, tokenValue(block, name));
+      expect(distance, `--pin-particle vs ${name}`).not.toBeNaN();
+      expect(distance, `--pin-particle vs ${name}`).toBeGreaterThanOrEqual(0.12);
     }
   });
 

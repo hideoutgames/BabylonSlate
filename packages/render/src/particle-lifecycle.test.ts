@@ -1,6 +1,7 @@
 import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeParticleEmitterPayload, type ParticleLibrary } from "@babylonslate/assets";
+import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@babylonslate/assets";
+import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@babylonslate/particle-graph";
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService } from "./particle-service";
 
@@ -14,6 +15,18 @@ function libraryOf(emitters: Record<string, Record<string, unknown>> = { emitter
   return {
     emitters: new Map(Object.entries(emitters).map(([guid, payload]) => [guid, basic(payload)])),
     systems: new Map([["system", { emitterGuids: Object.keys(emitters), space: "world" as const, previewSkybox: true }]]),
+  };
+}
+
+/** The default Particle Graph with a Material, edited by `edit`. */
+function graphLibrary(edit?: (document: ParticleGraphDocument) => void): ParticleLibrary {
+  const document = createDefaultParticleGraphDocument();
+  document.materialGuid = "material";
+  edit?.(document);
+  const emitter: ParticleLibraryEmitter = { kind: "graph", document };
+  return {
+    emitters: new Map([["graph", emitter]]),
+    systems: new Map([["system", { emitterGuids: ["graph"], space: "world" as const, previewSkybox: true }]]),
   };
 }
 
@@ -310,5 +323,61 @@ describe("per-emitter lifecycle", () => {
     expect(f.service.stats()).toMatchObject({ systems: 0, playing: 0 });
     // Released, not failed: the next Play prepares a new run.
     expect(f.state()).toBe("ready-stopped");
+  });
+});
+
+describe("Particle Graph slot lifecycle", () => {
+  it("never starts a graph slot whose Material readies after Stop", async () => {
+    const f = fixture(true);
+    f.service.setLibrary(graphLibrary());
+    f.assign();
+    const native = f.scene.particleSystems[0] as ParticleSystem;
+    const start = vi.spyOn(native, "start");
+    f.play(false);
+    expect(f.scene.particleSystems).toHaveLength(0);
+    await f.complete();
+    expect(start).not.toHaveBeenCalled();
+    expect(f.release).toHaveBeenCalledTimes(1);
+    expect(f.service.stats()).toMatchObject({ systems: 0, graphSystems: 0 });
+  });
+
+  it("returns graph systems, their readiness textures, observers and leases to the baseline over 100 cycles", async () => {
+    const f = fixture();
+    f.service.setLibrary(graphLibrary());
+    const before = { meshes: f.scene.meshes.length, textures: f.scene.textures.length, systems: f.scene.particleSystems.length,
+      before: f.scene.onBeforeRenderObservable.observers.length, after: f.scene.onAfterRenderObservable.observers.length };
+    for (let i = 0; i < 100; i += 1) {
+      f.assign();
+      expect(f.service.stats().graphSystems).toBe(1);
+      f.service.resetSession();
+    }
+    await vi.waitFor(() => expect(f.scene.onBeforeRenderObservable.observers.length).toBe(before.before));
+    expect(f.scene.onAfterRenderObservable.observers.length).toBe(before.after);
+    expect(f.scene.meshes).toHaveLength(before.meshes);
+    expect(f.scene.textures).toHaveLength(before.textures);
+    expect(f.scene.particleSystems).toHaveLength(before.systems);
+    expect(f.acquisitions()).toBe(100);
+    expect(f.release).toHaveBeenCalledTimes(100);
+  });
+
+  it("drains a finished Once graph slot to its last live particle, then releases it", async () => {
+    const f = fixture();
+    f.service.setLibrary(graphLibrary((document) => {
+      document.settings = { ...document.settings, loop: "once", duration: 0.25 };
+      document.nodes = document.nodes.map((entry) => entry.id === "create" ? { ...entry, properties: { ...entry.properties, "default:lifetime": [0.5] } } : entry);
+    }));
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], 20);
+    f.frame();
+    // Stopped natively at 0.25 s, with particles still alive: the bundle is draining.
+    expect(f.state()).toBe("draining");
+    expect(f.scene.particleSystems).toEqual([system]);
+    simulate([system], 40);
+    f.frame();
+    expect(f.scene.particleSystems).toHaveLength(0);
+    expect(f.state()).toBe("ready-stopped");
+    expect(f.release).toHaveBeenCalledTimes(1);
   });
 });

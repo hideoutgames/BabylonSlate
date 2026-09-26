@@ -127,6 +127,10 @@ function NodeRoleMark({ node }: { node: PaletteNode }) {
             pure: node.pure,
             material: node.defaultData?.__material === true,
             latent: node.latent,
+            particleRole:
+              typeof node.defaultData?.__particleRole === "string"
+                ? node.defaultData.__particleRole
+                : undefined,
           }),
         ),
       )}

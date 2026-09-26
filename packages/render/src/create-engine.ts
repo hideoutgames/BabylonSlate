@@ -507,10 +507,13 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
+  /** Particle Graph problems also name the graph node (and pin) to focus. */
   onParticleDiagnostic?: (diagnostic: {
     code: string;
     message: string;
     assetGuid?: string;
+    nodeId?: string;
+    pinId?: string;
   }) => void;
   onMaterialDiagnostic?: (diagnostic: {
     code: string;

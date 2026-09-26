@@ -39,7 +39,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       }
     }
     for (const capture of result.captures) {
-      if (["retired", "fractional-retired", "finite-retired"].includes(capture.name)) {
+      if (["retired", "fractional-retired", "finite-retired", "mixed-retired"].includes(capture.name)) {
         expect(capture.systems, capture.name).toBe(0);
         expect(capture.red + capture.blue, capture.name).toBe(0);
       } else if (capture.name === "fractional-pending") {
