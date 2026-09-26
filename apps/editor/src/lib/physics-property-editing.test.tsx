@@ -6,6 +6,15 @@ import { PropertyGrid } from "@babylonslate/editor-kit";
 import { applyPrefabPropertyDefaults, componentPropertyRows } from "./component-property-rows";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 
+if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 afterEach(cleanup);
 
 function physicsEditor(classId: string, properties: Record<string, unknown>, world: "2d" | "3d" = "3d", prefab?: SerializedComponent) {
