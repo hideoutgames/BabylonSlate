@@ -93,6 +93,8 @@ function eligible(mesh: AbstractMesh): mesh is Mesh {
   if (!(mesh instanceof Mesh) || mesh.isUnIndexed || !mesh.geometry || mesh.hasThinInstances) return false;
   // Babylon selects LODs for glTF instances without the Scene selector.
   if (mesh.instances.length > 0) return false;
+  // CPU skinning rewrites the position buffer that levels share.
+  if (mesh.skeleton && !mesh.computeBonesUsingShaders) return false;
   if (materialsOf(mesh.material).some((material) => material.fillMode !== Material.TriangleFillMode)) return false;
   return mesh.getTotalIndices() / 3 >= AUTO_LOD_MIN_SOURCE_TRIANGLES;
 }
@@ -383,6 +385,10 @@ export function attachModelLods(root: TransformNode, lods: ModelLodSet): number 
       master.addLODLevel(level.coverage, lod);
       binding.levels.push({ mesh: lod, coverage: level.coverage });
     }
+    // Material swaps reach every level before the next readiness probe.
+    master.onMaterialChangedObservable.add(() => {
+      for (const level of binding.levels) level.mesh.material = master.material;
+    });
     master.onDisposeObservable.addOnce(() => {
       state.bindings.delete(binding);
       state.masters.delete(master);

@@ -1,5 +1,5 @@
 import { installAssetBytes } from "@babylonslate/assets";
-import { FreeCamera, Vector3, MeshBuilder, TransformNode } from "@babylonjs/core";
+import { FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import {
   applyAnimStateToScene,
@@ -346,14 +346,14 @@ describe("beginSlotModelAnimLoad", () => {
     const bytes = installAssetBytes(encodeUvSphereGlb());
     const root = createModelActorRoot(scene, "actor-2");
     await beginSlotModelAnimLoad(scene, binding, 2, "model-1", bytes, root);
-    const [part] = visualMeshes(root);
+    const [part] = visualMeshes(root) as Mesh[];
     expect(visualMeshes(root)).toHaveLength(1);
     expect(part!.getLODLevels().length).toBeGreaterThan(0);
     for (const level of part!.getLODLevels()) expect(level.mesh!.isDescendantOf(root)).toBe(true);
 
     binding.modelPayloads = new Map([["model-1", { ...payload, autoLod: false }]]);
     await beginSlotModelAnimLoad(scene, binding, 2, "model-1", bytes, root);
-    const [full] = visualMeshes(root);
+    const [full] = visualMeshes(root) as Mesh[];
     expect(full).not.toBe(part);
     expect(full!.getLODLevels()).toHaveLength(0);
     expect(root.getChildMeshes().some((mesh) => mesh.isBlocked)).toBe(false);
