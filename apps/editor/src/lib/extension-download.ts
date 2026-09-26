@@ -4,7 +4,8 @@ export function downloadExtensionArchive(bytes: Uint8Array, name: string): void 
   try {
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${name.replace(/[\\/:<>"|?*\u0000-\u001f]/g, "_") || "extension"}.babextension`;
+    const filename = [...name].map((character) => character.charCodeAt(0) < 32 ? "_" : character).join("").replace(/[\\/:<>"|?*]/g, "_");
+    anchor.download = `${filename || "extension"}.babextension`;
     anchor.click();
   } finally {
     URL.revokeObjectURL(url);
