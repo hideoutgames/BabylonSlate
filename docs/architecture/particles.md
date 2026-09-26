@@ -51,7 +51,7 @@ Stages render in this order. **Always** modules have no switch. **Toggle** modul
 | Forces | Gravity | Toggle | Acceleration (m/s², default 0, −9.81, 0) | `gravity` (off → 0) |
 | Render | Render | Always | Blend Mode; Billboard | `blendMode`; `billboardMode` ([Look](#look)) |
 
-Defaults give a visible fountain once a Material is picked: Cone (radius 0.1, 30°), Rate 20 /s, Lifetime 0.8–1.2 s, Speed 1–2 m/s, Size 0.2–0.4, Color gradient white → transparent, Additive, Camera Facing, Capacity 256, Infinite 2 s loop, no Pre Warm, every Toggle module off.
+Defaults give a visible fountain once a Material is picked: Cone (radius 0.1, 30°), Rate 20 /s, Lifetime 0.8–1.2 s, Speed 1–2 m/s, Size 0.2–0.4, Color gradient white → transparent black (Additive ignores alpha, so the fade darkens), Additive, Camera Facing, Capacity 256, Infinite 2 s loop, no Pre Warm, every Toggle module off.
 
 ### Value modes
 
