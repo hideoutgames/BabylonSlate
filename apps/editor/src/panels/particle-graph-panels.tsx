@@ -74,7 +74,7 @@ import {
 import { MessageDetails } from "../components/message-details";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
-import { ParticleMaterialPicker } from "./particle-emitter-panels";
+import { ParticleMaterialPicker } from "../components/particle-material-picker";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 

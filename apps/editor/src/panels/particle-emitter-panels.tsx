@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  AssetPicker,
   EntryListEditor,
   ModuleCard,
   ModuleStack,
@@ -53,7 +52,6 @@ import {
 } from "@babylonslate/ui/lib/data-types";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import {
   PARTICLE_BILLBOARD_LABELS,
   PARTICLE_BLEND_MODE_LABELS,
@@ -64,6 +62,7 @@ import {
   type ParticleModuleId,
 } from "../lib/particle-value-modes";
 import { PREVIEW_SYSTEM_GUID, emitterPreviewLibrary } from "../lib/play-particles";
+import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -113,47 +112,6 @@ function withValueAt(
   for (const key of keys.slice(0, -1)) target = target[key] as Record<string, unknown>;
   target[keys[keys.length - 1]!] = value;
   return next;
-}
-
-/**
- * Particle-domain Materials only; an open Material tab's domain wins over its header.
- * Basic emitter and Particle Graph Details and Previews share it.
- */
-export function ParticleMaterialPicker({
-  open,
-  onOpenChange,
-  onPick,
-  testId,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPick: (guid: string | null) => void;
-  testId: string;
-}) {
-  const { assetRegistry, openDocuments } = useDocuments();
-  const assets = (assetRegistry?.list() ?? [])
-    .filter((asset) => isParticleMaterialForPicker(asset, openDocuments ?? []))
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-    }));
-  return (
-    <AssetPicker
-      open={open}
-      onOpenChange={onOpenChange}
-      assets={assets}
-      allowedTypes={["Material"]}
-      title="Pick Particle Material"
-      allowNone
-      onPick={(guid) => {
-        onPick(guid);
-        onOpenChange(false);
-      }}
-      data-testid={testId}
-    />
-  );
 }
 
 function useEmitterDocument() {
