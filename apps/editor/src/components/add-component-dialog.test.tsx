@@ -17,6 +17,16 @@ const projectModel: AddComponentItem = {
 };
 
 describe("AddComponentDialog", () => {
+  it("offers constraints in both physics worlds and restricts skeletal ragdolls to 3D", () => {
+    const onSelect = vi.fn();
+    const view = render(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="2d" />);
+    expect(screen.queryByTestId("add-component-catalog-item-RagdollComponent")).toBeNull();
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-PhysicsConstraintComponent"));
+    expect(onSelect).toHaveBeenLastCalledWith({ classId: "PhysicsConstraintComponent" });
+    view.rerender(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="3d" />);
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-RagdollComponent"));
+    expect(onSelect).toHaveBeenLastCalledWith({ classId: "RagdollComponent" });
+  });
   it("shows the class icon and color when choosing a nested ActorComponent subclass", () => {
     const onSelect = vi.fn();
     const projectItems = projectAddComponentItems([

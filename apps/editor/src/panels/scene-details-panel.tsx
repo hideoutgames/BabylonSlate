@@ -17,6 +17,7 @@ import {
   PanelFrame,
   PropertyGrid,
   SearchInput,
+  SearchDialog,
   SceneComponentPicker,
   TypeVisualIcon,
   assetRowIdentity,
@@ -82,6 +83,7 @@ import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { AddComponentDialog } from "../components/add-component-dialog";
+import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
   prefabComponentLabel,
@@ -111,6 +113,8 @@ import {
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
+import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
+import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 
 function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   return (
@@ -208,6 +212,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   );
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const [constraintTargetPick, setConstraintTargetPick] = useState<{ actorId: string; componentId: string } | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
   const [postProcessPick, setPostProcessPick] = useState<"add" | { id: string } | null>(
@@ -1068,6 +1073,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasMsdfPng,
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
+            actorLabel: (targetId) => sceneActorDisplayNames(scene).get(targetId),
+            onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
         template,
@@ -1101,6 +1108,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ? "Text"
             : component.classId === "2DPanelComponent"
               ? "Nine Slice"
+              : component.classId === "RagdollComponent"
+                ? "Bone Names"
               : "";
       return {
         component,
@@ -1255,6 +1264,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
+                  {showExtras && component.classId === "RagdollComponent" ? (
+                    <RagdollBoneNamesEditor
+                      boneNames={component.properties.boneNames as string[] | undefined}
+                      onChange={(boneNames) => updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.map((candidate) => candidate.id === component.id
+                          ? { ...candidate, properties: { ...candidate.properties, boneNames } }
+                          : candidate),
+                      }))}
+                      data-testid={`ragdoll-bone-names-${component.id}`}
+                    />
+                  ) : null}
                   {showExtras && component.classId === "2DPanelComponent" ? (
                     <NineSlicePreview
                       {...parseOverlayPanelProperties(component.properties)}
@@ -1408,11 +1429,35 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         }}
         data-testid="details-asset-picker"
       />
+      <SearchDialog
+        open={constraintTargetPick?.actorId === actor.id}
+        onOpenChange={(open) => { if (!open) setConstraintTargetPick(null); }}
+        title="Pick Target Actor"
+        description="Choose a physics actor in this scene. Both actors need collision; at least one must be dynamic."
+        placeholder="Search Physics Actors"
+        emptyLabel="No Matching Physics Actors"
+        items={[
+          { id: "", label: "None", description: "Leave the constraint unconnected" },
+          ...physicsConstraintTargets(scene, actor.id),
+        ]}
+        onSelect={(targetActorId) => {
+          if (constraintTargetPick?.actorId !== actor.id) return;
+          updateActor((entry) => ({
+            ...entry,
+            components: entry.components.map((component) => component.id === constraintTargetPick.componentId
+              ? { ...component, properties: { ...component.properties, targetActorId } }
+              : component),
+          }));
+          setConstraintTargetPick(null);
+        }}
+        data-testid="details-constraint-target-picker"
+      />
       <AddComponentDialog
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}
         projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
         overlay={overlay}
+        physicsWorld={scene.settings.physicsWorld}
         onSelect={(selection) =>
           updateActor((entry) => ({
             ...entry,

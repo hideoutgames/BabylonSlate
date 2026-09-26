@@ -136,6 +136,7 @@ import {
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
+import { RagdollWorldSync } from "./ragdoll-sync";
 import {
   formatDumpActors,
   formatInspectActor,
@@ -314,6 +315,7 @@ export interface RuntimeDriver {
   applyRenderPathStatus(
     message: Extract<ControlMessage, { type: "renderPathStatus" }>,
   ): void;
+  applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void;
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
   getScalability(): ScalabilitySnapshot;
@@ -458,6 +460,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
+  private readonly ragdolls: RagdollWorldSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -698,7 +701,10 @@ class InProcessRuntime implements RuntimeDriver {
         y: this.gravity[1],
         z: this.gravity[2],
       }),
-      { actorFilter: (actor) => actor.sceneLayerId == null },
+      {
+        actorFilter: (actor) => actor.sceneLayerId == null,
+        deferUnsupportedConstraints: !this.preferSoftwarePhysics,
+      },
     );
     this.overlayPhysicsSync = new PhysicsWorldSync(
       createSoftwarePhysicsBackend("2d", {
@@ -706,7 +712,10 @@ class InProcessRuntime implements RuntimeDriver {
         y: this.overlayGravity[1],
         z: this.overlayGravity[2],
       }),
-      { actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor) },
+      {
+        actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
+        deferUnsupportedConstraints: !this.preferSoftwarePhysics,
+      },
     );
     if (options.tilemaps || options.tilesets) {
       this.bindPhysicsContent(this.physicsSync);
@@ -750,14 +759,28 @@ class InProcessRuntime implements RuntimeDriver {
         };
       },
       onPhysics: (ctx) => {
+        this.ragdolls.sync();
         if (this.canTickScene()) {
           const time = ctx.tickIndex * ctx.dt;
           this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1]);
           if (this.physicsSync.water.hasBodies) this.emit({ type: "waterTime", seconds: time });
         }
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
+        this.ragdolls.afterStep();
         this.dispatchCollisionEvents();
       },
+    });
+    this.ragdolls = new RagdollWorldSync({
+      world: this.world,
+      physics: () => this.physicsSync,
+      slot: (actor) => {
+        const slot = this.slotByGuid.get(actor.guid);
+        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+      },
+      eligible: (actor) => this.canTickActor(actor),
+      deferNative: !this.preferSoftwarePhysics,
+      emit: (command) => this.emit(command),
+      error: (error) => { this.reportError(error); },
     });
     const resolved = () => this.resolvedInput;
     const connections = this.connectionBox;
@@ -989,6 +1012,7 @@ class InProcessRuntime implements RuntimeDriver {
       addImpulse: (actor, impulse, strength) => {
         const target = actor;
         if (!target) return;
+        if (this.ragdolls.addImpulse(target, impulse, strength)) return;
         this.physicsSync.addImpulse(
           target.guid,
           impulse,
@@ -1002,6 +1026,7 @@ class InProcessRuntime implements RuntimeDriver {
         sync.moveCharacter(target, translation, dt, offset);
       },
       teleportActor: (actor, options) => {
+        this.ragdolls.retire(actor);
         const sync = actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
         sync.teleportActor(actor, this.world, options);
       },
@@ -1053,7 +1078,7 @@ class InProcessRuntime implements RuntimeDriver {
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
           if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
-          else this.emitMeshAssignment(owner, slotId);
+          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
@@ -1073,6 +1098,10 @@ class InProcessRuntime implements RuntimeDriver {
           ? this.overlayPhysicsSync
           : this.physicsSync;
         sync.applyComponent(component);
+        if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
+          this.ragdolls.sync();
+          sync.syncFromWorld(this.world);
+        }
       },
       playSound: (asset, volume, options) => {
         this.emit({
@@ -1215,6 +1244,12 @@ class InProcessRuntime implements RuntimeDriver {
 
   getOverlayPhysicsSync(): PhysicsWorldSync | null {
     return this.overlayPhysicsSync;
+  }
+
+  applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void {
+    if (this.stopped) return;
+    this.ragdolls.accept(message);
+    this.physicsSync.syncFromWorld(this.world);
   }
 
   private setWorldGravity(gravity: { x: number; y: number; z: number }): void {
@@ -1914,6 +1949,7 @@ class InProcessRuntime implements RuntimeDriver {
   private removeOwnedActor(actor: Actor): void {
     if (this.removingActors.has(actor)) return;
     this.removingActors.add(actor);
+    this.ragdolls.retire(actor);
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
@@ -4300,6 +4336,8 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private releaseSlot(actorGuid: string, slotId: number): void {
+    const owner = this.slotOwners.get(slotId);
+    if (owner) this.ragdolls.retire(owner);
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
@@ -4475,6 +4513,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.end();
     this.pendingOwnerActions.clear();
     this.layerLoads.clear();
+    this.ragdolls.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {

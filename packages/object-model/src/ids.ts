@@ -45,6 +45,8 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "WaterBuoyancyComponent",
   "RigidBodyComponent",
   "ColliderComponent",
+  "PhysicsConstraintComponent",
+  "RagdollComponent",
   "AnimationGraphComponent",
   "BehaviourTreeComponent",
   "NavAgentComponent",
@@ -77,6 +79,7 @@ export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "RagdollComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent",
   "WaterLakeComponent",
   "WaterRiverComponent",

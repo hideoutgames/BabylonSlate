@@ -14,6 +14,8 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
+import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
+import { updateBoneAttachments } from "./bone-attachment";
 import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
@@ -412,6 +414,7 @@ export interface CreateEngineOptions {
   frameCap?: number;
   renderSettings?: Partial<RenderProjectSettings>;
   onScalabilityApplied?: (acknowledgement: ScalabilityAcknowledgement) => void;
+  onRagdollPoseCaptured?: (result: RagdollCaptureResult) => void;
   onRuntimeOutputChanged?: (settings: RenderProjectSettings) => void;
   /** Plain scene-owned requested/effective selection, emitted only when it changes. */
   onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
@@ -1053,6 +1056,13 @@ function initializeEngine(
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   onRollback(() => disposeSnapshotBinding(binding));
+  if (options.playMode && options.onRagdollPoseCaptured) {
+    binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
+    scene.onAfterAnimationsObservable.add(() => {
+      binding.ragdoll?.update();
+      updateBoneAttachments(binding);
+    });
+  }
   binding.tilemaps = options.tilemapPayloads;
   binding.waters = options.waterPayloads;
   if (options.playMode) setSceneWaterTime(scene, 0);
@@ -2752,6 +2762,25 @@ function initializeEngine(
       if (command.type === "attachToBone") {
         appliedSnapshotIdentity = null;
         applyAttachToBone(binding, command);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "captureRagdollPose") {
+        binding.ragdoll?.capture(command);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "setRagdollPose") {
+        binding.ragdoll?.setPose(command);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "clearRagdollPose") {
+        binding.ragdoll?.clear(command);
+        const pending = binding.pendingAnimState?.get(command.slotId);
+        if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
+          animationGroups: scene.animationGroups,
+          spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+          spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
+          applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
+        }), pending);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "setMaterialParameter") {

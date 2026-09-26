@@ -4,6 +4,8 @@ import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderShape,
@@ -262,6 +264,7 @@ function miss(): HitResult {
  * Supports both 3d and 2d worlds (2d zeros Z velocity / gravity Z).
  */
 export class SoftwarePhysicsBackend implements PhysicsBackend {
+  readonly supportsConstraints = false;
   readonly kind: PhysicsWorldKind;
   private gravity: Vec3;
   private readonly bodies = new Map<string, BodyState>();
@@ -289,6 +292,13 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         ? { x: gravity.x, y: gravity.y, z: 0 }
         : { ...gravity };
   }
+
+  createConstraint(desc: ConstraintDesc): never {
+    void desc;
+    throw new Error("Constraints require a native physics backend");
+  }
+
+  destroyConstraint(id: string): void { void id; }
 
   createBody(desc: RigidBodyDesc): void {
     this.assertLive();
@@ -337,6 +347,20 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return body ? cloneTransform(body.transform) : null;
   }
 
+  getBodyVelocity(bodyId: string): BodyVelocity | null {
+    const body = this.bodies.get(bodyId);
+    // The approximate software solver treats its body origin as its mass center.
+    return body ? { linear: { ...body.linearVelocity }, angular: { ...body.angularVelocity }, centerOfMass: { ...body.transform.position } } : null;
+  }
+
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void {
+    if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite))
+      throw new Error("Angular velocity must be finite");
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    body.angularVelocity = this.kind === "2d" ? { x: 0, y: 0, z: velocity.z } : { ...velocity };
+  }
+
   setBodyMotionType(bodyId: string, motionType: MotionType): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;
@@ -378,11 +402,6 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       body.angularVelocity.y += (r.z * impulse.x - r.x * impulse.z) / mass;
     }
     body.angularVelocity.z += (r.x * impulse.y - r.y * impulse.x) / mass;
-  }
-
-  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null {
-    const body = this.bodies.get(bodyId);
-    return body ? { linear: { ...body.linearVelocity }, angular: { ...body.angularVelocity } } : null;
   }
 
   getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
@@ -605,18 +624,21 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       } else {
         body.linearVelocity.z = 0;
       }
-      const angularDamp = Math.max(0, 1 - body.desc.angularDamping * dt);
-      const angular = body.angularVelocity;
-      angular.x *= angularDamp; angular.y *= angularDamp; angular.z *= angularDamp;
-      const speed = Math.hypot(angular.x, angular.y, angular.z);
-      if (speed > 1e-8) {
-        const half = speed * dt / 2, factor = Math.sin(half) / speed;
-        body.transform.rotation = multiplyQuat({ x: angular.x * factor, y: angular.y * factor, z: angular.z * factor, w: Math.cos(half) }, body.transform.rotation);
-      }
       const damp = Math.max(0, 1 - body.desc.linearDamping * dt);
       body.linearVelocity.x *= damp;
       body.linearVelocity.y *= damp;
       body.linearVelocity.z *= damp;
+
+      const angularDamp = Math.max(0, 1 - body.desc.angularDamping * dt);
+      body.angularVelocity.x *= angularDamp;
+      body.angularVelocity.y *= angularDamp;
+      body.angularVelocity.z *= angularDamp;
+      const speed = Math.hypot(body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+      if (speed > 0) {
+        const sine = Math.sin(speed * dt / 2) / speed;
+        body.transform.rotation = multiplyQuat({ x: body.angularVelocity.x * sine, y: body.angularVelocity.y * sine,
+          z: body.angularVelocity.z * sine, w: Math.cos(speed * dt / 2) }, body.transform.rotation);
+      }
 
       body.transform.position.x += body.linearVelocity.x * dt;
       body.transform.position.y += body.linearVelocity.y * dt;

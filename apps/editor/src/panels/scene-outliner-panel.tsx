@@ -69,6 +69,7 @@ import { usePhoneLayout } from "../shell/use-platform-layout";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
+  duplicateSceneActors,
   nextActorId,
   prefabComponentsForGuid,
   projectPlaceActors,
@@ -801,18 +802,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     "edit.duplicate",
     () => {
       if (!scene || selectedActorIds.length === 0) return;
-      let next = scene;
-      const copies: string[] = [];
-      for (const id of selectedActorIds) {
-        const source = scene.actors.find((entry) => entry.id === id);
-        if (!source) continue;
-        const copy = duplicateSceneActor(next, source);
-        next = { ...next, actors: [...next.actors, copy] };
-        copies.push(copy.id);
-      }
+      const copies = duplicateSceneActors(scene, selectedActorIds);
       if (copies.length === 0) return;
-      mutate(next);
-      setSelectedActorIds(copies);
+      mutate({ ...scene, actors: [...scene.actors, ...copies] });
+      setSelectedActorIds(copies.map((copy) => copy.id));
     },
     outlinerKeys,
   );

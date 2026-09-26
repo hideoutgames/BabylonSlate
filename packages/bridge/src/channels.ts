@@ -72,6 +72,7 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
       /** Initial session render cap, shared with the renderer for console readback. */
@@ -295,6 +296,9 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
+  | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
+  | { type: "clearRagdollPose"; slotId: number; requestId: string }
   | { type: "waterTime"; seconds: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }

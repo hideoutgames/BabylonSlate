@@ -25,6 +25,7 @@ import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import {
   prefabComponentLabel,
+  physicsWorldFromOpenDocuments,
   projectAddComponentItems,
 } from "./add-component-catalog";
 import { useDocuments } from "../context/document-context";
@@ -209,6 +210,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         onSelect={addComponent}
         projectItems={projectItems}
         overlay={overlay}
+        physicsWorld={physicsWorldFromOpenDocuments(openDocuments)}
         data-testid="prefab-add-component-catalog"
       />
     </PanelFrame>

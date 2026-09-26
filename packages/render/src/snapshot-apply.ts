@@ -125,6 +125,7 @@ export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
+  ragdoll?: import("./ragdoll-pose").RagdollPoseController;
   /** Runtime component records outlive asynchronous mesh realization. */
   outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
@@ -1119,6 +1120,7 @@ export function retirePlaySlot(
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
+  binding.ragdoll?.retire(slotId);
   binding.outlines.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
@@ -1747,6 +1749,7 @@ function snapPlayCameraToPixelGrid(
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
+  binding.ragdoll?.dispose();
   binding.outlines.clear();
   binding.onVisualChanged = undefined;
   const pending = pendingVisualReplacements.get(binding);
