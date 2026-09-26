@@ -34,6 +34,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "animation",
   "skybox-creator",
   "trace",
+  "texture",
   "asset-settings",
 ] as const;
 
@@ -136,6 +137,7 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SkyboxCreator";
     case "trace":
       return "Trace";
+    case "texture":
     case "asset-settings":
       return "Texture";
   }
@@ -232,7 +234,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Animation":
       return "animation";
     case "Texture":
-      return "asset-settings";
+      return "texture";
     default:
       return null;
   }
@@ -308,6 +310,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Skybox Creator";
     case "trace":
       return "Trace";
+    case "texture":
+      return "Texture";
     case "asset-settings":
       return "Settings";
   }
@@ -335,7 +339,7 @@ export function parseDocumentId(
 
 /**
  * Reopen a layout.json `asset-settings:…` tab as the current document kind
- * when the registry type has since gained its own DockView (Model).
+ * when the registry type has since gained its own DockView (Model, Texture).
  */
 export function migrateRestoredDocumentId(
   id: string,

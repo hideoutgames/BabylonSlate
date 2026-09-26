@@ -157,7 +157,7 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     await page.getByTestId("play-overlay-close").click();
     await openAssetFromBrowser(page, "assets/Studio.babasset");
     await expect(
-      page.getByText("Environment Cube", { exact: true }),
+      page.getByTestId("texture-details").getByText("Environment Cube", { exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel("Downsample", { exact: true })).toHaveCount(0);
   }

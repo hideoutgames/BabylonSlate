@@ -514,7 +514,8 @@ export function DocumentWorkspace() {
           doc.ref.kind === "water" ||
           doc.ref.kind === "skeleton" ||
           doc.ref.kind === "animation" ||
-          doc.ref.kind === "skybox-creator"
+          doc.ref.kind === "skybox-creator" ||
+          doc.ref.kind === "texture"
         ) {
           if (!shouldMount) return null;
           return (

@@ -1,5 +1,6 @@
 import type { ResourceLease } from "./resource-cache";
 import {
+  Vector3,
   type AbstractEngine,
   type NodeMaterial,
   type Scene,
@@ -18,6 +19,9 @@ import { acquireParticleMaterial } from "./particle-material";
 import type { ParticleMaterialOwner } from "./particle-service";
 import { installPreviewEnvironment } from "./preview-environment";
 
+/** Longest simulated step per preview render, so a resumed tab does not jump ahead. */
+export const PARTICLE_PREVIEW_MAX_STEP_MS = 100;
+
 /**
  * Disposable particle Preview Scene on the app-lifetime Engine.
  *
@@ -26,15 +30,40 @@ import { installPreviewEnvironment } from "./preview-environment";
  */
 export function createParticlePreviewScene(
   engine: AbstractEngine,
-  options?: { skybox?: boolean },
+  options?: { skybox?: boolean; now?: () => number },
 ): MaterialPreviewScene {
   const host = createMaterialPreviewScene(engine);
   host.mesh.isVisible = false;
   host.mesh.isPickable = false;
+  // Effects rise and spread from the emitter, unlike a material swatch: frame
+  // above the origin and allow pulling back far enough for large effects.
+  host.camera.setTarget(new Vector3(0, 1, 0));
+  host.camera.radius = 7;
+  host.camera.upperRadiusLimit = 40;
   if (options?.skybox) {
     installPreviewEnvironment(host.scene);
   }
+  installPreviewWallClock(host.scene, options?.now ?? (() => performance.now()));
   return host;
+}
+
+/**
+ * Preview Scenes render from their presenter, outside the shared Engine's frame
+ * loop, so `engine.getDeltaTime()` is stale and Babylon clamps it to
+ * `Scene.MinDeltaTime`: particles would simulate about a millisecond per render.
+ * Particle systems and the emission driver read `getAnimationRatio()`, so the
+ * preview times each render by the wall clock since the previous one instead.
+ */
+function installPreviewWallClock(scene: Scene, now: () => number): void {
+  let last: number | null = null;
+  let ratio = 1;
+  scene.onBeforeAnimationsObservable.add(() => {
+    const at = now();
+    const elapsed = last === null ? 1000 / 60 : Math.min(PARTICLE_PREVIEW_MAX_STEP_MS, Math.max(0, at - last));
+    last = at;
+    ratio = (elapsed * 60) / 1000;
+  });
+  scene.getAnimationRatio = () => ratio;
 }
 
 /** Compile particle-domain NodeMaterials for Preview `createEffectForParticles`. */

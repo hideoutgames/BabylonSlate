@@ -6,16 +6,15 @@ import {
   PanelFrame,
   PropertyGrid,
   SelectableText,
+  ToolbarStrip,
   assetRowIdentity,
+  resolveTypeVisual,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { Label } from "@babylonslate/ui/components/label";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
@@ -29,7 +28,7 @@ import {
   type AudioPayload,
   type AudioWaveformPeak,
 } from "@babylonslate/assets";
-import { PlayIcon, RepeatIcon, SquareIcon } from "lucide-react";
+import { AudioLinesIcon, PlayIcon, PlusIcon, RepeatIcon, SquareIcon, Trash2Icon } from "lucide-react";
 import { BabylonAudioPlaybackBackend } from "@babylonslate/render";
 import { pickImportFiles } from "@babylonslate/vfs";
 import { IconActionButton } from "./icon-action-button";
@@ -38,6 +37,9 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { createAudioPreviewSession } from "../lib/audio-preview";
 import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
+
+const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+const AUDIO_VISUAL = resolveTypeVisual({ assetType: "Audio" });
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -215,13 +217,15 @@ export function AudioPreview({
     });
   };
 
+  const clipName = audio.clips[0]?.name ?? "";
   return (
-    <div className="flex flex-col gap-3 p-3" data-testid="audio-preview">
-      <div className="flex min-w-0 items-center gap-1">
-        <IconActionButton
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="audio-preview">
+      <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="audio-preview-toolbar">
+        <Button
           type="button"
-          size="touch-icon"
-          label={playing ? "Stop" : "Play"}
+          size="sm"
+          variant={playing ? "secondary" : "default"}
+          className={TOOL_ITEM}
           data-testid={playing ? "audio-preview-stop" : "audio-preview-play"}
           onClick={() => {
             if (playing) {
@@ -231,33 +235,43 @@ export function AudioPreview({
             playPreview();
           }}
         >
-          {playing ? (
-            <SquareIcon className="icon-sm" />
-          ) : (
-            <PlayIcon fill="currentColor" />
-          )}
-        </IconActionButton>
+          {playing ? <SquareIcon fill="currentColor" /> : <PlayIcon fill="currentColor" />}
+          {playing ? "Stop" : "Play"}
+        </Button>
         <Toggle
-          size="touch"
+          size="sm"
           variant="outline"
+          className={TOOL_ITEM}
           pressed={audio.loop}
           aria-label="Loop"
           data-testid="audio-preview-loop"
           onPressedChange={(loop) => onChange?.({ ...audio, loop })}
         >
-          <RepeatIcon className="icon-sm" />
+          <RepeatIcon />
+          Loop
         </Toggle>
+        <Separator orientation="vertical" className="my-1" />
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <AudioLinesIcon className="icon-sm shrink-0" style={{ color: AUDIO_VISUAL.colorVar }} />
+          <span className="truncate text-foreground" data-testid="audio-preview-clip">{clipName}</span>
+        </span>
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+          {audio.clips.length === 1 ? "1 Clip" : `${audio.clips.length} Clips`}
+        </span>
+      </ToolbarStrip>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+        {previewError ? (
+          <Alert data-testid="audio-preview-error">
+            <AlertTitle>Preview Failed</AlertTitle>
+            <AlertDescription>{previewError}</AlertDescription>
+          </Alert>
+        ) : null}
         <AudioPreviewWaveform
           peaks={waveformPeaks}
           durationSeconds={waveformDuration}
+          color={AUDIO_VISUAL.colorVar}
         />
       </div>
-      {previewError ? (
-        <Alert data-testid="audio-preview-error">
-          <AlertTitle>Preview Failed</AlertTitle>
-          <AlertDescription>{previewError}</AlertDescription>
-        </Alert>
-      ) : null}
     </div>
   );
 }
@@ -296,7 +310,7 @@ export function AudioDetails({
         type: atten.header.type,
       })
     : {};
-  const rows: PropertyRow[] = [
+  const playbackRows: PropertyRow[] = [
     {
       id: "volume",
       kind: "number",
@@ -352,6 +366,8 @@ export function AudioDetails({
             onChange: (pitch: number) => onChange?.({ ...audio, pitch }),
           },
         ]),
+  ];
+  const routingRows: PropertyRow[] = [
     {
       id: "audioChannelGuid",
       kind: "asset",
@@ -380,8 +396,9 @@ export function AudioDetails({
   ];
 
   return (
-    <div className="flex flex-col gap-3 p-3" data-testid="audio-details">
-      <PropertyGrid rows={rows} />
+    <div className="flex flex-col" data-testid="audio-details">
+      <PropertyGrid title="Playback" rows={playbackRows} />
+      <PropertyGrid title="Routing" rows={routingRows} />
       <AssetPicker
         open={pick === "channel"}
         onOpenChange={(open) => {
@@ -464,76 +481,101 @@ export function AudioClips({
     persistFilledClipName(payload, assetName, onChange);
   }, [assetName, onChange, payload]);
 
+  const totalWeight = audio.clips.reduce((sum, clip) => sum + Math.max(0, clip.weight), 0);
   return (
-    <FieldGroup className="gap-2 p-3" data-testid="audio-clips">
-      {clipError ? <Alert variant="destructive"><AlertTitle>Audio Clip Failed</AlertTitle><AlertDescription>{clipError}</AlertDescription></Alert> : null}
-      {audio.clips.map((clip, index) => (
-        <Field
-          key={clip.chunkId}
-          className="gap-1 rounded-md border border-border p-2"
-        >
-          <FieldLabel>Name</FieldLabel>
-          <span
-            className="min-h-[var(--touch-target,44px)] flex items-center"
-            data-testid={`audio-clip-${index}-name`}
-          >
-            <SelectableText>{clip.name}</SelectableText>
-          </span>
-          <FieldLabel htmlFor={`audio-clip-${index}-weight`}>Weight</FieldLabel>
-          <NumericDragField
-            id={`audio-clip-${index}-weight`}
-            disabled={busy}
-            value={clip.weight}
-            min={0}
-            data-testid={`audio-clip-${index}-weight`}
-            onChange={(weight) => {
-              const clips = audio.clips.map((entry, clipIndex) =>
-                clipIndex === index ? { ...entry, weight } : entry,
-              );
-              onChange?.({ ...audio, clips });
-            }}
-          />
-          {clip.chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? null : (
-            <Button
-              type="button"
-              variant="ghost"
-              className="min-h-[var(--touch-target,44px)] w-fit"
-              data-testid={`audio-clip-${index}-remove`}
-              disabled={busy}
-              onClick={() => void run(async () => {
-                const clips = audio.clips.filter(
-                  (entry) => entry.chunkId !== clip.chunkId,
-                );
-                await removeAudioClipChunk(path, clip.chunkId, {
-                  ...audio,
-                  clips,
-                });
-                onChange?.({ ...audio, clips });
-              })}
+    <div className="flex flex-col" data-testid="audio-clips">
+      {clipError ? (
+        <Alert variant="destructive" className="m-2 w-auto">
+          <AlertTitle>Audio Clip Failed</AlertTitle>
+          <AlertDescription>{clipError}</AlertDescription>
+        </Alert>
+      ) : null}
+      <ul className="flex flex-col">
+        {audio.clips.map((clip, index) => {
+          const share = totalWeight > 0 ? Math.round((Math.max(0, clip.weight) / totalWeight) * 100) : 0;
+          return (
+            <li
+              key={clip.chunkId}
+              className="flex min-h-[var(--chrome-row,28px)] items-center gap-2 border-b border-border px-2 py-1 pointer-coarse:min-h-11"
             >
-              Remove
-            </Button>
-          )}
-        </Field>
-      ))}
-      <Button
-        type="button"
-        variant="outline"
-        className="min-h-[var(--touch-target,44px)] w-fit"
-        data-testid="audio-add-clip"
-        disabled={busy || audio.clips.length >= AUDIO_MAX_CLIPS}
-        onClick={() => void run(async () => {
-          const [file] = await pickImportFiles({ multiple: false, accept: ".wav,.mp3,.ogg" });
-          if (!file) return;
-          const chunkId = allocateAudioClipChunkId(audio.clips.map((clip) => clip.chunkId));
-          if (!chunkId) return;
-          const clips = [...audio.clips, { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 }];
-          await writeAudioClipChunk(path, chunkId, file.bytes, mimeForAudioBytes(file.bytes), { ...audio, clips });
-          onChange?.({ ...audio, clips });
+              <AudioLinesIcon className="icon-sm shrink-0" style={{ color: AUDIO_VISUAL.colorVar }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-sm" data-testid={`audio-clip-${index}-name`}>
+                <SelectableText>{clip.name}</SelectableText>
+              </span>
+              {audio.clips.length > 1 ? (
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground" data-testid={`audio-clip-${index}-share`}>
+                  {share}%
+                </span>
+              ) : null}
+              <Label htmlFor={`audio-clip-${index}-weight`} className="shrink-0 text-xs font-normal text-muted-foreground">
+                Weight
+              </Label>
+              <div className="w-20 shrink-0">
+                <NumericDragField
+                  id={`audio-clip-${index}-weight`}
+                  disabled={busy}
+                  value={clip.weight}
+                  min={0}
+                  data-testid={`audio-clip-${index}-weight`}
+                  onChange={(weight) => {
+                    const clips = audio.clips.map((entry, clipIndex) =>
+                      clipIndex === index ? { ...entry, weight } : entry,
+                    );
+                    onChange?.({ ...audio, clips });
+                  }}
+                />
+              </div>
+              {clip.chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? (
+                <span aria-hidden className="size-7 shrink-0 pointer-coarse:size-11" />
+              ) : (
+                <IconActionButton
+                  label={`Remove ${clip.name}`}
+                  className={TOOL_ITEM}
+                  data-testid={`audio-clip-${index}-remove`}
+                  disabled={busy}
+                  onClick={() => void run(async () => {
+                    const clips = audio.clips.filter(
+                      (entry) => entry.chunkId !== clip.chunkId,
+                    );
+                    await removeAudioClipChunk(path, clip.chunkId, {
+                      ...audio,
+                      clips,
+                    });
+                    onChange?.({ ...audio, clips });
+                  })}
+                >
+                  <Trash2Icon className="icon-sm" />
+                </IconActionButton>
+              )}
+            </li>
+          );
         })}
-      >
-        Add Clip
-      </Button>
-    </FieldGroup>
+      </ul>
+      <div className="flex flex-wrap items-center gap-2 px-2 py-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={TOOL_ITEM}
+          data-testid="audio-add-clip"
+          disabled={busy || audio.clips.length >= AUDIO_MAX_CLIPS}
+          onClick={() => void run(async () => {
+            const [file] = await pickImportFiles({ multiple: false, accept: ".wav,.mp3,.ogg" });
+            if (!file) return;
+            const chunkId = allocateAudioClipChunkId(audio.clips.map((clip) => clip.chunkId));
+            if (!chunkId) return;
+            const clips = [...audio.clips, { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 }];
+            await writeAudioClipChunk(path, chunkId, file.bytes, mimeForAudioBytes(file.bytes), { ...audio, clips });
+            onChange?.({ ...audio, clips });
+          })}
+        >
+          <PlusIcon />
+          Add Clip
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Each play picks one clip at random by weight.
+        </span>
+      </div>
+    </div>
   );
 }

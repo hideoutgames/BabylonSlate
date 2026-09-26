@@ -73,12 +73,12 @@ test.describe("Skybox Creator helper", () => {
     ).toBeVisible();
     await expect(page.getByTestId("skybox-creator-preview")).toBeVisible();
     await expect(page.getByTestId("skybox-creator-net")).toBeVisible();
-    await expect(page.getByText("FRONT", { exact: true })).toBeVisible();
-    await expect(page.getByText("BACK", { exact: true })).toBeVisible();
-    await expect(page.getByText("LEFT", { exact: true })).toBeVisible();
-    await expect(page.getByText("RIGHT", { exact: true })).toBeVisible();
-    await expect(page.getByText("UP", { exact: true })).toBeVisible();
-    await expect(page.getByText("DOWN", { exact: true })).toBeVisible();
+    await expect(page.getByText("Front", { exact: true })).toBeVisible();
+    await expect(page.getByText("Back", { exact: true })).toBeVisible();
+    await expect(page.getByText("Left", { exact: true })).toBeVisible();
+    await expect(page.getByText("Right", { exact: true })).toBeVisible();
+    await expect(page.getByText("Up", { exact: true })).toBeVisible();
+    await expect(page.getByText("Down", { exact: true })).toBeVisible();
     await expect(page.getByTestId("skybox-creator-empty")).toBeVisible();
 
     await expect(page.getByTestId("windows-menu")).toBeEnabled();

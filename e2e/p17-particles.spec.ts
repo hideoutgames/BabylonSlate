@@ -166,6 +166,21 @@ test.describe("P17 particles", () => {
     await expect(preview.getByTestId("particle-preview-backend")).toBeVisible({
       timeout: 30_000,
     });
+    // Preview renders outside the Engine loop; particles must still move in real time.
+    const changedPreviewPixels = () =>
+      page.getByTestId("particle-emitter-preview-canvas").evaluate(async (canvas: HTMLCanvasElement) => {
+        const context = canvas.getContext("2d");
+        if (!context) return 0;
+        const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let changed = 0;
+        for (let i = 0; i < Math.min(before.length, after.length); i += 4) {
+          if (Math.abs(before[i]! - after[i]!) > 32) changed += 1;
+        }
+        return changed;
+      });
+    await expect.poll(changedPreviewPixels, { timeout: 15_000 }).toBeGreaterThan(200);
 
     await page.getByTestId("module-card-gravity-enabled").click();
     await expect(page.getByTestId("module-card-gravity-body")).toBeVisible();
