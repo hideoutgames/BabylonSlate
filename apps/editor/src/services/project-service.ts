@@ -204,6 +204,26 @@ function headerMetaForSave(
   return undefined;
 }
 
+/** Texture payload fields owned by the registry's encode queue, not the document. */
+const TEXTURE_ENCODE_STATE_KEYS = ["compressionState", "ktx2ChunkId", "encodeError", "encodeWallMs"] as const;
+
+/**
+ * An open Texture document keeps the payload it opened with, but encodes can
+ * commit meanwhile. Saving takes these fields from the file (absent stays
+ * absent) so `ktx2ChunkId` never points back at a superseded encode.
+ */
+function withSavedTextureEncodeState(
+  content: Record<string, unknown>,
+  saved: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...content };
+  for (const key of TEXTURE_ENCODE_STATE_KEYS) {
+    if (key in saved) next[key] = saved[key];
+    else delete next[key];
+  }
+  return next;
+}
+
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
@@ -430,7 +450,7 @@ export class ProjectService {
 
   async retryTextureEncoding(
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
@@ -1607,6 +1627,9 @@ export class ProjectService {
         kind === "animation") &&
       existing !== null &&
       !existing.hasDocumentChunk;
+    if (storeInHeader && existing && type === "Texture") {
+      content = withSavedTextureEncodeState(content as Record<string, unknown>, existing.payload);
+    }
 
     if (isAssetDocumentPath(path)) {
       const extraChunks = await this.extraChunksFor(path);
@@ -1820,6 +1843,7 @@ export class ProjectService {
     name: string;
     parentClass: string | null;
     hasDocumentChunk: boolean;
+    payload: Record<string, unknown>;
   } | null> {
     if (!(await this.storageForPath(path).exists(path))) return null;
     try {
@@ -1833,6 +1857,7 @@ export class ProjectService {
         hasDocumentChunk: header.chunks.some(
           (chunk) => chunk.id === DOCUMENT_CHUNK_ID,
         ),
+        payload: header.payload,
       };
     } catch {
       return null;

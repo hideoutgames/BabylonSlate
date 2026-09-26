@@ -34,7 +34,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   applyTextureCompressionQualityChange,
   applyTextureDownsampleChange,
-  patchTextureUsage,
+  applyTextureUsageChange,
   textureDownsampleSelectValue,
   TEXTURE_DOWNSAMPLE_LABELS,
   TEXTURE_USAGE_OPTIONS,
@@ -347,7 +347,11 @@ export function TextureDetails({
       label: "Usage",
       value: usage,
       options: TEXTURE_USAGE_OPTIONS.map((value) => ({ value, label: usageLabel(value) })),
-      onChange: (value) => onChange(patchTextureUsage(payload, value)),
+      onChange: (value) => {
+        const { payload: next, shouldRequeue } = applyTextureUsageChange(payload, value);
+        onChange(next);
+        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage: value });
+      },
     },
     {
       id: "downsample",
@@ -358,7 +362,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureDownsampleChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true });
+        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
       },
     },
   ];
@@ -371,7 +375,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true });
+        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
       },
     });
   }
@@ -396,7 +400,7 @@ export function TextureDetails({
       <div className="flex flex-col gap-2 px-2 py-2">
         <p className="text-xs text-muted-foreground">
           {compressed
-            ? "Encoded to GPU formats in the background after import or when settings change."
+            ? `Encoded to GPU formats in the background after import or when settings change.${usage === "particle" ? " Particle Textures encode at a size rounded up to a multiple of 4 for WebGPU." : ""}`
             : `${usageLabel(usage)} Textures stay uncompressed to keep exact pixels.`}
         </p>
         {encodeError ? (
@@ -405,13 +409,13 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
-        {guid && compression === "encode_failed" ? (
+        {guid && compressed && compression === "encode_failed" ? (
           <Button
             size="sm"
             variant="outline"
             className="w-fit"
             data-testid="texture-retry-encode"
-            onClick={() => void retryTextureEncoding(guid, { force: true })}
+            onClick={() => void retryTextureEncoding(guid, { force: true, usage })}
           >
             Retry Encoding
           </Button>

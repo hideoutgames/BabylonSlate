@@ -2,7 +2,7 @@
  * Classic Worker: Basis Universal KTX2 encode (engineplan §3.5).
  * Protocol:
  *   { type: "init" }
- *   { type: "encode", id, source, mime, settings }  // preferred — decode+clamp here
+ *   { type: "encode", id, source, mime, settings }  // preferred — decode+clamp+align here
  *   { type: "encode", id, rgba, width, height, settings }  // Safari fallback
  *   { type: "recycle" }
  * Replies: loaded | encoded | error | decode_unavailable | recycled
@@ -26,7 +26,21 @@ function clampSize(width, height, maxDimension) {
   };
 }
 
-function decodeSourceInWorker(sourceBuffer, maxDimension, mime) {
+// Mirrors textureEncodeSize (packages/assets/src/texture-compression.ts):
+// clamp, then round each edge up to blockAlign (Particle usage; WebGPU needs
+// block-aligned ASTC/BC7). Pinned against the TS helper by
+// apps/editor/src/lib/encode-worker.test.ts.
+function encodeSize(width, height, settings) {
+  const size = clampSize(width, height, settings.maxDimension || 2048);
+  const align = settings.blockAlign;
+  if (!align || align <= 1) return size;
+  return {
+    width: Math.ceil(size.width / align) * align,
+    height: Math.ceil(size.height / align) * align,
+  };
+}
+
+function decodeSourceInWorker(sourceBuffer, settings, mime) {
   if (typeof createImageBitmap !== "function") {
     return Promise.reject(new Error("createImageBitmap unavailable in encode worker"));
   }
@@ -35,7 +49,7 @@ function decodeSourceInWorker(sourceBuffer, maxDimension, mime) {
   }
   const blob = new Blob([sourceBuffer], mime ? { type: mime } : undefined);
   return createImageBitmap(blob).then(function (bitmap) {
-    const size = clampSize(bitmap.width, bitmap.height, maxDimension);
+    const size = encodeSize(bitmap.width, bitmap.height, settings);
     const canvas = new OffscreenCanvas(size.width, size.height);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -151,11 +165,7 @@ self.onmessage = function (event) {
     }
     const settings = msg.settings || {};
     if (msg.source) {
-      decodeSourceInWorker(
-        msg.source,
-        settings.maxDimension || 2048,
-        msg.mime,
-      )
+      decodeSourceInWorker(msg.source, settings, msg.mime)
         .then(function (decoded) {
           encodeRgba(msg.id, decoded.rgba, decoded.width, decoded.height, settings);
         })

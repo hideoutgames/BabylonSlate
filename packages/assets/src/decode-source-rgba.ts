@@ -1,4 +1,4 @@
-import { clampDimension } from "./texture-compression";
+import { textureEncodeSize } from "./texture-compression";
 
 export interface DecodedRgbaImage {
   rgba: Uint8Array;
@@ -21,20 +21,27 @@ type HtmlImageCtor = new () => {
   decode: () => Promise<void>;
 };
 
+export interface DecodeSourceOptions {
+  /** Encode path only: round each clamped edge up to this multiple. */
+  blockAlign?: number;
+}
+
 /**
- * Decode image bytes to RGBA8, clamping longest edge to maxDimension.
+ * Decode image bytes to RGBA8, clamping longest edge to maxDimension (then
+ * block-aligning when requested; the whole image is resampled once).
  * Prefers createImageBitmap; falls back to Image.decode() (Safari / odd MIME).
  */
 export async function decodeSourceToRgba(
   source: Uint8Array,
   maxDimension: number,
   mime?: string,
+  options: DecodeSourceOptions = {},
 ): Promise<DecodedRgbaImage> {
   const copy = source.slice();
   const blob = new Blob([copy], mime ? { type: mime } : undefined);
   const drawable = await decodeToDrawable(blob);
   try {
-    return rasterizeDrawable(drawable, maxDimension);
+    return rasterizeDrawable(drawable, maxDimension, options.blockAlign);
   } finally {
     drawable.close?.();
   }
@@ -92,11 +99,12 @@ async function decodeWithHtmlImage(blob: Blob): Promise<DrawableImage> {
 function rasterizeDrawable(
   drawable: DrawableImage,
   maxDimension: number,
+  blockAlign?: number,
 ): DecodedRgbaImage {
-  const { width, height, clamped } = clampDimension(
+  const { width, height, clamped } = textureEncodeSize(
     drawable.width,
     drawable.height,
-    maxDimension,
+    { maxDimension, blockAlign },
   );
   if (typeof OffscreenCanvas === "undefined") {
     throw new Error("OffscreenCanvas is required for Worker encode path");

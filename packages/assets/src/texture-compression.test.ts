@@ -3,14 +3,19 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { EncodeQueue } from "./encode-queue";
 import {
   clampDimension,
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
   stubEncodeKtx2,
+  textureEncodeBlockAlign,
+  textureEncodeSize,
+  type TextureEncodeSettings,
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { resolveGpuTexture } from "./resolve-gpu-texture";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
 
@@ -23,6 +28,44 @@ describe("texture compression policy", () => {
     expect(shouldCompressTexture("ui")).toBe(false);
     expect(shouldCompressTexture("font")).toBe(false);
     expect(shouldCompressTexture("skybox")).toBe(false);
+    expect(shouldCompressTexture("particle")).toBe(true);
+  });
+
+  it("block-aligns Particle encode sizes after the max-dimension clamp", () => {
+    const particle = (width: number, height: number, maxDimension = 2048) =>
+      textureEncodeSize(width, height, {
+        maxDimension,
+        blockAlign: textureEncodeBlockAlign("particle"),
+      });
+    expect(particle(1, 1)).toEqual({ width: 4, height: 4, clamped: false });
+    expect(particle(1000, 750)).toEqual({ width: 1000, height: 752, clamped: false });
+    expect(particle(512, 384)).toEqual({ width: 512, height: 384, clamped: false });
+    // 3000x1001 clamps to 2048x683, then aligns; the aligned edge may exceed a
+    // tiny clamp (1x1 clamped to 1 still encodes at 4x4).
+    expect(particle(3000, 1001)).toEqual({ width: 2048, height: 684, clamped: true });
+    expect(particle(1000, 750, 250)).toEqual({ width: 252, height: 188, clamped: true });
+    // Every other Usage keeps its unaligned clamp.
+    expect(
+      textureEncodeSize(1000, 750, {
+        maxDimension: 250,
+        blockAlign: textureEncodeBlockAlign("albedo"),
+      }),
+    ).toEqual({ width: 250, height: 188, clamped: true });
+  });
+
+  it("keys block alignment into the KTX2 chunk id only when set", async () => {
+    // Existing chunk ids on disk must not change for unaligned encodes.
+    expect(await encodeSettingsHash(DEFAULT_TEXTURE_ENCODE_SETTINGS)).toBe(
+      "34dad383eac5f9b6",
+    );
+    const unaligned: TextureEncodeSettings = {
+      ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
+      blockAlign: undefined,
+    };
+    expect(await encodeSettingsHash(unaligned)).toBe("34dad383eac5f9b6");
+    expect(
+      await encodeSettingsHash({ ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: 4 }),
+    ).not.toBe("34dad383eac5f9b6");
   });
 
   it("clamps dimensions to the project max", () => {
@@ -229,7 +272,119 @@ describe("stubEncodeKtx2", () => {
   });
 });
 
+/** Minimal KTX2 header: identifier plus pixelWidth / pixelHeight. */
+function ktx2Header(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(32);
+  bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(20, width, true);
+  view.setUint32(24, height, true);
+  return bytes;
+}
+
+/** PNG signature + IHDR size of a 1x1 image (enough for size sniffing). */
+function onePixelPng(): Uint8Array {
+  const png = new Uint8Array(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  png[19] = 1;
+  png[23] = 1;
+  return png;
+}
+
+async function mountSingleTexture(
+  name: string,
+  payload: Record<string, unknown>,
+  extraChunks: { id: string; kind: string; mime: string; data: Uint8Array }[] = [],
+) {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject(`${name}.babproject`);
+  await storage.mkdir("assets", true);
+  const path = `assets/${name}.babasset`;
+  await storage.writeBinary(
+    path,
+    await encodeBabasset({
+      header: {
+        guid: `${name}-tex`,
+        type: "Texture",
+        name,
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload,
+      },
+      chunks: [
+        { id: "pixels", kind: "pixels", mime: "image/png", data: onePixelPng() },
+        ...extraChunks,
+      ],
+    }),
+  );
+  const registry = new AssetRegistry(storage);
+  const settings: TextureEncodeSettings[] = [];
+  const queue = new EncodeQueue({
+    // Stand-in encoder: a KTX2 header at the size the real encoders produce.
+    encode: async (_source, encodeSettings) => {
+      settings.push(encodeSettings);
+      const size = textureEncodeSize(1, 1, encodeSettings);
+      return { ktx2: ktx2Header(size.width, size.height), wallMs: 0 };
+    },
+    onComplete: async (result) => {
+      await registry.commitCompressedTexture(result);
+    },
+  });
+  registry.setEncodePipeline(queue);
+  await registry.mountRoot(projectContentRoot());
+  const readChunk = async (chunkId: string) => {
+    const file = await storage.readBinary(path);
+    const entry = registry.getByGuid(`${name}-tex`)!.header.chunks.find((chunk) => chunk.id === chunkId);
+    return entry ? registry.payloadLoader.loadChunk(file, entry) : null;
+  };
+  return { registry, settings, readChunk, guid: `${name}-tex` };
+}
+
 describe("registry encode pipeline", () => {
+  it("re-encodes an unsaved Usage change to Particle block-aligned, and that encode is bound", async () => {
+    const { registry, settings, readChunk, guid } = await mountSingleTexture(
+      "spark",
+      { usage: "albedo", width: 1, height: 1, compressionState: "compressed", ktx2ChunkId: "ktx2:albedo" },
+      [{ id: "ktx2:albedo", kind: "ktx2", mime: "image/ktx2", data: ktx2Header(1, 1) }],
+    );
+    // Details edits live in the open document, so the saved header still says Albedo.
+    expect(await registry.retryTextureEncoding(guid, { force: true, usage: "particle" })).toBe(true);
+    await vi.waitFor(() => {
+      const payload = registry.getByGuid(guid)!.header.payload;
+      expect(payload.compressionState).toBe("compressed");
+      expect(payload.ktx2ChunkId).not.toBe("ktx2:albedo");
+    });
+    expect(settings.map((entry) => entry.blockAlign)).toEqual([4]);
+
+    const saved = registry.getByGuid(guid)!.header;
+    const resolved = await resolveGpuTexture({
+      header: { ...saved, payload: { ...saved.payload, usage: "particle" } },
+      readChunk,
+      editorLod: { enabled: true, quality: 0.5 },
+    });
+    expect(resolved?.kind).toBe("ktx2");
+    expect(resolved?.chunkId).toBe(saved.payload.ktx2ChunkId);
+    expect(resolved?.missingPreferred).toBe(false);
+    expect(Array.from(resolved!.bytes.subarray(20, 28))).toEqual([4, 0, 0, 0, 4, 0, 0, 0]);
+  });
+
+  it("lets an unsaved Particle Usage encode a Texture saved as uncompressed Pixel Art", async () => {
+    const { registry, settings, guid } = await mountSingleTexture("ember", {
+      usage: "pixelArt",
+      width: 1,
+      height: 1,
+    });
+    expect(await registry.retryTextureEncoding(guid, { force: true })).toBe(false);
+    expect(await registry.retryTextureEncoding(guid, { force: true, usage: "particle" })).toBe(true);
+    await vi.waitFor(() => {
+      expect(registry.getByGuid(guid)!.header.payload.compressionState).toBe("compressed");
+    });
+    expect(settings.map((entry) => entry.blockAlign)).toEqual([4]);
+  });
+
   it("enqueues compressible imports and commits a KTX2 chunk", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("encode.babproject");

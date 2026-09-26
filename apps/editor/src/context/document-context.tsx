@@ -317,7 +317,7 @@ interface DocumentContextValue {
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   sessionDiagnostics: string[];
@@ -1197,7 +1197,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const retryTextureEncoding = useCallback(
     async (
       guid: string,
-      options?: { maxDimension?: number; force?: boolean },
+      options?: { maxDimension?: number; force?: boolean; usage?: string },
     ) => {
       const ok = await projectService.retryTextureEncoding(guid, options);
       bump();
@@ -3577,6 +3577,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           compressionState: string | null;
           encodeError: string | null;
           hasPixels: boolean;
+          /** Committed encode (`payload.ktx2ChunkId`) for reading its KTX2 header. */
+          ktx2ChunkId: string | null;
         } | null;
       };
       __babylonslateSourceControl?: SourceControlService;
@@ -3773,12 +3775,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!asset) return null;
         const state = asset.header.payload.compressionState;
         const encodeError = asset.header.payload.encodeError;
+        const ktx2ChunkId = asset.header.payload.ktx2ChunkId;
         return {
           compressionState: typeof state === "string" ? state : null,
           encodeError: typeof encodeError === "string" ? encodeError : null,
           hasPixels: asset.header.chunks.some(
             (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
           ),
+          ktx2ChunkId: typeof ktx2ChunkId === "string" ? ktx2ChunkId : null,
         };
       },
       projectStartupSceneGuid: () =>

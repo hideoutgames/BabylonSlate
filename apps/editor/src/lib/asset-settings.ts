@@ -20,6 +20,7 @@ export const TEXTURE_USAGE_OPTIONS = [
   "pixelArt",
   "ui",
   "skybox",
+  "particle",
 ] as const;
 
 export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];
@@ -219,6 +220,26 @@ export function patchTextureUsage(
   usage: string,
 ): Record<string, unknown> {
   return { ...payload, usage };
+}
+
+/**
+ * Usage edit. Entering or leaving Particle changes the encode size (block
+ * alignment), so a compressible result re-encodes with the new Usage.
+ */
+export function applyTextureUsageChange(
+  payload: Record<string, unknown>,
+  usage: string,
+): {
+  payload: Record<string, unknown>;
+  shouldRequeue: boolean;
+} {
+  const previous = String(payload.usage ?? "albedo");
+  return {
+    payload: patchTextureUsage(payload, usage),
+    shouldRequeue:
+      shouldCompressTexture(usage) &&
+      (previous === "particle") !== (usage === "particle"),
+  };
 }
 
 export function patchTextureDownsample(

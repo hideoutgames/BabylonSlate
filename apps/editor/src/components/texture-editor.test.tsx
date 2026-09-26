@@ -85,7 +85,31 @@ describe("Texture editor", () => {
     );
     expect(screen.getByTestId("texture-encode-error").textContent).toContain("BasisEncoder.encode returned 0");
     fireEvent.click(screen.getByTestId("texture-retry-encode"));
-    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-albedo", { force: true });
+    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-albedo", { force: true, usage: "albedo" });
+  });
+
+  it("offers no Retry Encoding once the Usage stays uncompressed", () => {
+    render(
+      <TextureDetails
+        guid="tex-albedo"
+        dependencies={[]}
+        payload={{ usage: "pixelArt", compressionState: "encode_failed", encodeError: "BasisEncoder.encode returned 0" }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("texture-retry-encode")).toBeNull();
+  });
+
+  it("re-encodes with the new Usage when a Texture becomes Particle", () => {
+    const onChange = vi.fn();
+    render(<TextureDetails guid="tex-spark" dependencies={[]} payload={{ usage: "albedo", compressionState: "compressed" }} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Usage" }));
+    const particle = screen.getByRole("option", { name: "Particle" });
+    fireEvent.pointerDown(particle);
+    fireEvent.click(particle);
+    expect(onChange).toHaveBeenCalledWith({ usage: "particle", compressionState: "compressed" });
+    // The saved header still has the old Usage until the document saves.
+    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-spark", { force: true, usage: "particle" });
   });
 
   it("keeps Pixel Art Textures free of compression quality", () => {

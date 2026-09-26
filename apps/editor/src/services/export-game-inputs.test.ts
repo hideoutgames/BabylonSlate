@@ -203,6 +203,55 @@ describe("loadExportDocuments", () => {
     expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([7, 7]));
   });
 
+  it("packs source pixels instead of a misaligned Particle KTX2 or a KTX2 on an uncompressed Usage", async () => {
+    const ktx2 = (width: number, height: number) => {
+      const bytes = new Uint8Array(32);
+      bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+      new DataView(bytes.buffer).setUint32(20, width, true);
+      new DataView(bytes.buffer).setUint32(24, height, true);
+      return bytes;
+    };
+    const exported = async (usage: string, width: number, height: number) => {
+      const encoded = ktx2(width, height);
+      const loaded = await loadExportDocuments({
+        assets: [
+          {
+            rootId: "project",
+            path: "assets/Spark.texture.babasset",
+            header: {
+              guid: "tex-1",
+              type: "Texture",
+              name: "Spark",
+              engineVersion: "0.0.0",
+              version: 1,
+              mode: "thin",
+              dependencies: [],
+              payload: { usage, ktx2ChunkId: "ktx2:committed" },
+              chunks: [
+                { id: "pixels", kind: "pixels", mime: "image/png", sha256: "aa", locator: { inline: { offset: 0, length: 1 } } },
+                { id: "ktx2:committed", kind: "ktx2", mime: "image/ktx2", sha256: "bb", locator: { inline: { offset: 1, length: 1 } } },
+              ],
+            },
+          },
+        ],
+        loadDocument: async () => null,
+        readAssetChunk: async (_path, chunkId) =>
+          chunkId === "ktx2:committed" ? encoded : chunkId === "pixels" ? new Uint8Array([1]) : null,
+      });
+      return loaded.bytesByGuid("tex-1") === encoded ? "ktx2" : Array.from(loaded.bytesByGuid("tex-1") ?? []);
+    };
+    // A retained 1x1 encode from before the Usage became Particle.
+    expect(await exported("particle", 1, 1)).toEqual([1]);
+    expect(await exported("particle", 1000, 750)).toEqual([1]);
+    expect(await exported("particle", 4, 4)).toBe("ktx2");
+    expect(await exported("particle", 1000, 752)).toBe("ktx2");
+    // Other compressible Usages keep packing their KTX2 unchanged.
+    expect(await exported("albedo", 1, 1)).toBe("ktx2");
+    // Uncompressed Usages keep exact pixels even when an earlier encode is retained.
+    expect(await exported("pixelArt", 4, 4)).toEqual([1]);
+    expect(await exported("ui", 4, 4)).toEqual([1]);
+  });
+
   it("exposes sprite document payloads for the export closure", async () => {
     const loaded = await loadExportDocuments({
       assets: [

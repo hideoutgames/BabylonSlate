@@ -161,7 +161,7 @@ describe("createWorkerEncodeFn", () => {
     await pending.catch(() => undefined);
   });
 
-  it("falls back to main-thread decode when the worker cannot decode", async () => {
+  it("falls back to main-thread decode, keeping the encode block alignment, when the worker cannot decode", async () => {
     let worker: FakeWorker | null = null;
     vi.stubGlobal(
       "Worker",
@@ -203,6 +203,7 @@ describe("createWorkerEncodeFn", () => {
         quality: 2,
         maxDimension: 64,
         generateMipmaps: true,
+        blockAlign: 4,
       },
       "image/jpeg",
     );
@@ -212,6 +213,7 @@ describe("createWorkerEncodeFn", () => {
           expect.any(Uint8Array),
           64,
           "image/jpeg",
+          { blockAlign: 4 },
         );
         expect(
           worker?.postMessage.mock.calls.some(

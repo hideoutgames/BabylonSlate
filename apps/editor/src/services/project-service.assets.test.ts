@@ -19,6 +19,7 @@ import {
   normalizeSkeletonPayload,
   readAssetDocumentHeader,
   clearDeletedAssetRefs,
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
   writeTraceDocument,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
@@ -593,6 +594,51 @@ describe("project documents as .babasset", () => {
     expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
       false,
     );
+  });
+
+  it("keeps an encode committed while the Texture was open when saving it", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/spark.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "tex-spark",
+          type: "Texture",
+          name: "spark",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: { usage: "albedo", compressionState: "encode_failed", encodeError: "Basis failed" },
+        },
+        chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([9]) }],
+      }),
+    );
+    const registry = service.registry!;
+    expect(await registry.reindexPath(path)).not.toBeNull();
+    const opened = (await service.loadDocument("texture", path)) as Record<string, unknown>;
+    const ktx2 = new Uint8Array([1, 2, 3]);
+    await registry.commitCompressedTexture({
+      assetGuid: "tex-spark",
+      ktx2,
+      wallMs: 5,
+      settings: DEFAULT_TEXTURE_ENCODE_SETTINGS,
+    });
+    const committed = registry.getByGuid("tex-spark")!.header.payload.ktx2ChunkId as string;
+
+    await service.saveDocument("texture", path, { ...opened, usage: "particle" });
+
+    const saved = await decodeBabasset(await storage.readBinary(path));
+    expect(saved.header.payload).toMatchObject({
+      usage: "particle",
+      compressionState: "compressed",
+      ktx2ChunkId: committed,
+      encodeWallMs: 5,
+    });
+    expect(saved.header.payload).not.toHaveProperty("encodeError");
+    expect(saved.chunks.get(committed)).toEqual(ktx2);
   });
 
   it("saves Model slots onto the header without replacing the source GLB", async () => {

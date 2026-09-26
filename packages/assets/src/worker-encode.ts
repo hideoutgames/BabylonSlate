@@ -82,7 +82,9 @@ export function createWorkerEncodeFn(
   };
 
   const fallbackDecode = (id: number, job: PendingEncode) => {
-    void decodeSourceToRgba(job.source, job.settings.maxDimension, job.mime)
+    void decodeSourceToRgba(job.source, job.settings.maxDimension, job.mime, {
+      blockAlign: job.settings.blockAlign,
+    })
       .then((decoded) => {
         if (!pending.has(id) || !worker) return;
         postRgbaEncode(id, decoded, job.settings);

@@ -12,6 +12,7 @@ import {
   patchStructureField,
   patchTextureUsage,
   applyTextureDownsampleChange,
+  applyTextureUsageChange,
   textureDownsampleSelectValue,
   patchTextureDownsample,
   removeEnumMember,
@@ -113,6 +114,22 @@ describe("asset settings payloads", () => {
       compressionState: "compressed",
       usage: "pixelArt",
     });
+  });
+
+  it("re-encodes when Usage enters or leaves Particle, which changes the encode size", () => {
+    const requeues = (from: string, to: string) =>
+      applyTextureUsageChange({ usage: from, compressionState: "compressed" }, to);
+    expect(requeues("albedo", "particle")).toEqual({
+      payload: { usage: "particle", compressionState: "compressed" },
+      shouldRequeue: true,
+    });
+    expect(requeues("pixelArt", "particle").shouldRequeue).toBe(true);
+    expect(requeues("particle", "normal").shouldRequeue).toBe(true);
+    // Leaving to an uncompressed Usage has nothing to encode.
+    expect(requeues("particle", "pixelArt").shouldRequeue).toBe(false);
+    // Other Usage edits keep their current behaviour.
+    expect(requeues("albedo", "normal").shouldRequeue).toBe(false);
+    expect(requeues("particle", "particle").shouldRequeue).toBe(false);
   });
 
   it("patches per-asset texture downsample and requeues compressible usages", () => {

@@ -7,10 +7,12 @@ import {
   resolveTextureTargetEdge,
   textureDownsampleFromPayload,
 } from "./texture-lod";
+import { isKtx2BlockAligned } from "./ktx2-info";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,
   ktx2ChunkId,
+  textureEncodeBlockAlign,
   type TextureEncodeSettings,
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
@@ -105,6 +107,7 @@ export async function resolveGpuTexture(
     };
   }
   const encodeBase = options.encodeSettings ?? DEFAULT_TEXTURE_ENCODE_SETTINGS;
+  const blockAlign = textureEncodeBlockAlign(usage);
   const settings: TextureEncodeSettings = {
     ...encodeBase,
     maxDimension: Math.min(targetEdge, encodeBase.maxDimension),
@@ -112,15 +115,35 @@ export async function resolveGpuTexture(
       typeof header.payload.compressionQuality === "number"
         ? header.payload.compressionQuality
         : encodeBase.quality,
+    ...(blockAlign ? { blockAlign } : {}),
   };
   const preferredChunkId = ktx2ChunkId(await encodeSettingsHash(settings));
   const selected = selectTextureChunk(header, {
     preferredChunkId,
   });
-  const selectedBytes = await readChunk(selected.chunk.id);
+  let selectedChunkId = selected.chunk.id;
+  let selectedBytes = await readChunk(selectedChunkId);
+  if (blockAlign && selected.kind === "ktx2") {
+    // Particle Textures bind only a block-aligned KTX2 (WebGPU rejects others).
+    // A retained encode from an earlier Usage may be selected first; try the
+    // committed encode before falling back to source pixels.
+    const committed = header.payload.ktx2ChunkId;
+    if (
+      !(selectedBytes && isKtx2BlockAligned(selectedBytes, blockAlign)) &&
+      typeof committed === "string" &&
+      committed !== selectedChunkId &&
+      header.chunks.some((chunk) => chunk.id === committed)
+    ) {
+      selectedChunkId = committed;
+      selectedBytes = await readChunk(committed);
+    }
+    if (!(selectedBytes && isKtx2BlockAligned(selectedBytes, blockAlign))) {
+      selectedBytes = null;
+    }
+  }
   const lodOn = lod?.enabled === true && !isTextureLodExemptUsage(usage);
   const ktx2MatchesPreferred =
-    selected.kind === "ktx2" && selected.chunk.id === preferredChunkId;
+    selected.kind === "ktx2" && selectedChunkId === preferredChunkId;
   const useSelectedKtx2 =
     Boolean(selectedBytes && selectedBytes.byteLength > 0) &&
     selected.kind === "ktx2" &&
@@ -129,7 +152,7 @@ export async function resolveGpuTexture(
     return {
       bytes: selectedBytes,
       kind: "ktx2",
-      chunkId: selected.chunk.id,
+      chunkId: selectedChunkId,
       targetEdge,
       sourceEdge,
       preferredChunkId,
