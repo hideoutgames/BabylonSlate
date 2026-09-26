@@ -375,6 +375,23 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [applySceneChange, documentId]);
   const commitGizmoTransformRef = useRef(commitGizmoTransform);
   commitGizmoTransformRef.current = commitGizmoTransform;
+  /** A released water shape handle becomes one undoable component property change. */
+  const commitWaterShape = useCallback((edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => {
+    const current = sceneRef.current;
+    if (!current) return;
+    void applySceneChange(documentId, {
+      ...current,
+      actors: current.actors.map((actor) => actor.id !== edit.actorId ? actor : {
+        ...actor,
+        components: actor.components.map((component) => component.id !== edit.componentId ? component : {
+          ...component,
+          properties: { ...component.properties, ...edit.properties },
+        }),
+      }),
+    });
+  }, [applySceneChange, documentId]);
+  const commitWaterShapeRef = useRef(commitWaterShape);
+  commitWaterShapeRef.current = commitWaterShape;
 
   const dropDisabled = !sceneReady || dropReady?.scene !== scene ||
     dropReady?.handle !== engineRef.current || playing || preparing || !scene?.actors.some(
@@ -455,6 +472,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             dragStartSceneRef.current = sceneRef.current;
           },
           onGizmoDragEnd: () => commitGizmoTransformRef.current(),
+          onWaterShapeEdit: (edit) => commitWaterShapeRef.current(edit),
           editorFlyEnabled: () => !playingRef.current,
           editorFlySpeed: () => flySpeedRef.current,
         });

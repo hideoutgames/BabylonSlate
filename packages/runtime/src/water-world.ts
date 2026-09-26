@@ -1,8 +1,8 @@
 import {
   createDefaultWaterDefinition, emptyWaterSample, normalizeWaterBody,
-  normalizeWaterBuoyancy, normalizeWaterDefinition, quatRotateVector,
-  sampleWaterSurface, waterKindForClass,
-  type Transform, type Vec3, type WaterBodyProperties, type WaterDefinition, type WaterSample,
+  normalizeWaterBuoyancy, normalizeWaterDefinition, normalizeWaterRemoval, parseLandscapeProperties, quatRotateVector,
+  sampleWaterSurface, waterCutAt, waterKindForClass,
+  type LandscapeProperties, type Transform, type Vec3, type WaterBodyProperties, type WaterCutters, type WaterDefinition, type WaterSample,
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
@@ -31,6 +31,9 @@ function componentWorldTransform(component: ActorComponent, actor: Actor, world:
 export class WaterWorld {
   private definitions = new Map<string, WaterDefinition>();
   private bodies: WaterBody[] = [];
+  private cutters: WaterCutters = { removals: [], landscapes: [] };
+  /** Parsed terrain per authored heights array; sculpting replaces the array. */
+  private readonly terrain = new WeakMap<object, { size: string; data: LandscapeProperties }>();
   private transforms = new Map<string, Transform>();
   private time = 0;
   private readonly defaultWater = createDefaultWaterDefinition();
@@ -45,9 +48,30 @@ export class WaterWorld {
     this.time = time;
     let transforms: Map<string, Transform> | undefined;
     this.bodies = [];
+    const removals: Array<WaterCutters["removals"][number]> = [], landscapes: Array<WaterCutters["landscapes"][number]> = [];
     for (const actor of actors) {
       if (actor.destroyed || actor.sceneLayerId) continue;
       for (const component of actor.components) {
+        if (component.destroyed) continue;
+        if (component.classId === "WaterRemovalVolumeComponent" || component.classId === "LandscapeComponent") {
+          transforms ??= actorWorldTransforms(actors);
+          const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
+          if (component.classId === "LandscapeComponent") {
+            const heights = component.getVariable("heights");
+            const key = Array.isArray(heights) ? heights : component;
+            const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
+            let entry = this.terrain.get(key);
+            if (entry?.size !== size) {
+              entry = { size, data: parseLandscapeProperties(Object.fromEntries(component.variables)) };
+              this.terrain.set(key, entry);
+            }
+            landscapes.push({ data: entry.data, transform });
+          } else {
+            const volume = normalizeWaterRemoval(Object.fromEntries(component.variables));
+            if (volume.enabled) removals.push({ volume, transform });
+          }
+          continue;
+        }
         const kind = waterKindForClass(component.classId);
         if (!kind || component.destroyed) continue;
         const body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
@@ -60,6 +84,7 @@ export class WaterWorld {
       }
     }
     this.transforms = transforms ?? new Map();
+    this.cutters = { removals, landscapes };
   }
 
   sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
@@ -67,6 +92,8 @@ export class WaterWorld {
     for (const water of this.bodies) {
       if (actorId && water.actorId !== actorId) continue;
       const sample = sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
+      // Removal volumes and terrain above the surface take the water away, for queries and buoyancy alike.
+      if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
       if (sample.found && (!result.found || sample.height > result.height)) {
         result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
       }

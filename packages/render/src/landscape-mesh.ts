@@ -43,6 +43,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
   const data = parseLandscapeProperties(properties);
   const root = new Mesh(name, scene);
   root.isPickable = false;
+  root.metadata = { ...(root.metadata ?? {}), slateLandscape: true };
   const chunks: Chunk[] = [];
   for (let z = 0; z < data.subdivisions; z += CHUNK_CELLS) for (let x = 0; x < data.subdivisions; x += CHUNK_CELLS) {
     const mesh = new Mesh(`${name}:landscape:${x}:${z}`, scene);
@@ -57,6 +58,11 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
   landscapes.set(root, { data, chunks });
   updateLandscapeMesh(root, data, assets);
   return root;
+}
+
+/** The heightfield a landscape root currently renders, e.g. for water shorelines. */
+export function landscapeMeshData(root: Mesh): LandscapeProperties | null {
+  return landscapes.get(root)?.data ?? null;
 }
 
 export function updateLandscapeMesh(root: Mesh, properties: unknown, assets?: MeshAssetContext): void {

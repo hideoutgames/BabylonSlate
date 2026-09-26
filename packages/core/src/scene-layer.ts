@@ -17,7 +17,7 @@ export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 export const SCENE_LAYER_SCHEMA_VERSION = 1;
 
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent",
+  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
   "SkyboxComponent",
   "CameraComponent",
   "SpringArmComponent",

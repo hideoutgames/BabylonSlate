@@ -44,4 +44,32 @@ describe("Water graph queries", () => {
     water.update([], 1);
     expect(ctx.sampleWater({ x: 0, y: 1, z: 0 }).found).toBe(false);
   });
+  it("removes water inside live removal volumes and under terrain that rises above Global Water Volume", () => {
+    const ocean = new Actor({ guid: "ocean", classId: "Actor" });
+    ocean.attachComponent(new ActorComponent({ classId: "GlobalWaterVolumeComponent", variables: {} }));
+    const island = new Actor({ guid: "island", classId: "Actor" });
+    island.transform.position.x = 40;
+    island.attachComponent(new ActorComponent({ classId: "LandscapeComponent", variables: {
+      width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => i === 12 ? 5 : -3),
+    } }));
+    const boat = new Actor({ guid: "boat", classId: "Actor" });
+    boat.transform.position.x = -20;
+    const hull = new ActorComponent({ classId: "WaterRemovalVolumeComponent", variables: { shape: "box", width: 2, height: 2, length: 6 } });
+    boat.attachComponent(hull);
+    const water = new WaterWorld();
+    water.setContent({ calm: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    ocean.components[0]!.setVariable("assetGuid", "calm");
+    water.update([ocean, island, boat], 0);
+    expect(water.sample({ x: 0, y: -1, z: 0 }).found).toBe(true);
+    expect(water.sample({ x: 40, y: -1, z: 0 }).found).toBe(false);
+    expect(water.sample({ x: 48, y: -1, z: 0 }).found).toBe(true);
+    expect(water.sample({ x: -20, y: -0.5, z: 2.5 }).found).toBe(false);
+    // Moving the boat carries its hole with it.
+    boat.transform.position.x = -60;
+    water.update([ocean, island, boat], 0);
+    expect(water.sample({ x: -20, y: -0.5, z: 2.5 }).found).toBe(true);
+    hull.setVariable("enabled", false);
+    water.update([ocean, island, boat], 0);
+    expect(water.sample({ x: -60, y: -0.5, z: 0 }).found).toBe(true);
+  });
 });

@@ -1,5 +1,6 @@
 import { sceneShadowController } from "./shadow-controller";
 import { createWaterMesh } from "./water-mesh";
+import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -510,7 +511,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.meshKind === "water")) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -1257,6 +1258,7 @@ function createPlayVisual(
         part.landscape,
         part.foliage,
         part.water,
+        part.waterRemoval,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1377,8 +1379,10 @@ export function createPlayMesh(
   landscape?: import("@babylonslate/core").LandscapeProperties,
   foliage?: import("@babylonslate/core").FoliageProperties,
   water?: import("@babylonslate/core").WaterBodyProperties,
+  waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "waterRemoval" && waterRemoval) return createWaterRemovalMesh(scene, name, waterRemoval, { editor: false });
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
     const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;

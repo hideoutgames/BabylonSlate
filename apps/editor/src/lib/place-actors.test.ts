@@ -25,6 +25,12 @@ it("places a Global Water Volume with usable water defaults", () => {
   expect(actor.components).toEqual([expect.objectContaining({ classId: "GlobalWaterVolumeComponent", properties: expect.objectContaining({ kind: "global", enabled: true, waveScale: 1, depth: 1000 }) })]);
 });
 
+it("places a Water Removal Volume that cuts a 4 m box by default", () => {
+  const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-removal")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "cut", ORIGIN);
+  expect(actor.components).toEqual([expect.objectContaining({ classId: "WaterRemovalVolumeComponent", properties: { enabled: true, shape: "box", width: 4, height: 4, length: 4 } })]);
+});
+
 it("places a Water asset as a lake that already references the selected asset", () => {
   const [water] = projectPlaceActors([{ path: "assets/Lagoon.water.babasset", header: { guid: "lagoon", name: "Lagoon", type: "Water" } }]);
   expect(water).toBeDefined();
