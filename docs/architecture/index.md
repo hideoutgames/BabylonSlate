@@ -26,7 +26,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Behaviour tree](behaviour-tree.md) | Tree IR, blackboard, explicit-stack evaluator |
 | [Navigation](navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [Audio](audio.md) | Mixer/channel/attenuation, AudioService, spatial, reverb bake |
-| [Particles](particles.md) | Basic emitters, Particle System, Material-only look |
+| [Particles](particles.md) | Basic / Particle Graph emitters, Particle System, Material-only look |
 | [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Components](components.md) | Reusable Editor UI primitives and composites |
