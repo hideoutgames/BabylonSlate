@@ -44,7 +44,7 @@ The Basic Particle Emitter, the Material-only look and the shared Particle Syste
 Blend Mode and Billboard ids, their Babylon constants, the ONEONE/MULTIPLY effect reuse and the `ParticleBlendMultiplyBlock` insertion are in [particles.md → Look](../architecture/particles.md#look). Decisions:
 
 - Emitters own blend (Render module; graph Emitter Output settings). The Material's own Blend Mode row is hidden in the particle domain.
-- Blend options are Additive (default), Alpha Blend, Alpha Additive, Multiply and Subtract; billboards are Camera Facing (default), Y Axis and Stretched. Both are read from Babylon by name (D7).
+- Blend options are Additive (default), Normal, Alpha Additive, Multiply and Subtract; billboards are Camera Facing (default), Y Axis and Stretched. Both are read from Babylon by name (D7).
 
 ## Basic Particle Emitter
 

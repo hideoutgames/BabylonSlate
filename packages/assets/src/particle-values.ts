@@ -196,9 +196,10 @@ export const PARTICLE_VALUE_SPECS: Readonly<
   ),
 };
 
+// Additive (the default blend) ignores alpha, so the fade ends at transparent black.
 const fadeOut = (): ParticleColorKey[] => [
   { t: 0, color: [1, 1, 1, 1] },
-  { t: 1, color: [1, 1, 1, 0] },
+  { t: 1, color: [0, 0, 0, 0] },
 ];
 
 /** `initialize.color`. */
