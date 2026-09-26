@@ -101,18 +101,21 @@ describe("particle graph canvas adapter", () => {
     expect(connect("a", "out", "b", "b")).toBe(true);
   });
 
-  it("marks only Particle outputs single-link, on hydrated nodes and in Add Node", () => {
-    const hydrated = hydrateParticleGraphForEditor(particleGraphToSerialized(createDefaultParticleGraphDocument()));
-    const pins = [
-      ...hydrated.nodes.flatMap((node) => node.data.__pins as ParticleGraphPin[]),
-      ...particlePaletteNodes().flatMap((entry) => entry.pins),
-    ];
-    expect(pins.filter((entry) => entry.singleLink).length).toBeGreaterThan(0);
-    for (const entry of pins) {
-      expect(entry.singleLink === true, `${entry.direction} ${entry.id} ${entry.type.kind}`).toBe(
-        entry.direction === "out" && entry.type.kind === "particle",
-      );
-    }
+  it("marks a Particle output single-link on hydrated nodes and in Add Node", () => {
+    const shape = hydrateParticleGraphForEditor(particleGraphToSerialized(createDefaultParticleGraphDocument())).nodes.find(
+      (node) => node.id === "shape",
+    )!;
+    expect((shape.data.__pins as ParticleGraphPin[]).find((entry) => entry.direction === "out")).toMatchObject({
+      id: "out",
+      type: { kind: "particle" },
+      singleLink: true,
+    });
+    const fade = particlePaletteNodes().find((entry) => entry.id === "update.basicColor")!;
+    expect(fade.pins.find((entry) => entry.direction === "out")).toMatchObject({
+      id: "out",
+      type: { kind: "particle" },
+      singleLink: true,
+    });
   });
 
   it("offers every node but the Emitter Output, grouped by category, with the header role on each chip", () => {

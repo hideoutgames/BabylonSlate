@@ -320,6 +320,17 @@ describe("Particle Graph document panels", () => {
     );
   }
 
+  /** A canvas pin handle: inputs sit on the left, outputs on the right. */
+  function pinHandle(container: HTMLElement, nodeId: string, pinId: string, side: "left" | "right") {
+    return container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"][data-handlepos="${side}"]`);
+  }
+
+  function links(graph: ParticleGraphDocument) {
+    return graph.edges
+      .map((edge) => `${edge.sourceNodeId}.${edge.sourcePinId} > ${edge.targetNodeId}.${edge.targetPinId}`)
+      .sort();
+  }
+
   it("rings the pin a diagnostic names on the canvas", async () => {
     const { container } = renderPanels(withUnwiredPosition(), "canvas");
     await waitFor(() => {
@@ -337,14 +348,10 @@ describe("Particle Graph document panels", () => {
     const doc = createDefaultParticleGraphDocument("Embers");
     doc.nodes.push({ id: "fade", type: "update.basicColor", position: { x: 1280, y: 300 }, properties: {} });
     const { container } = renderPanels(doc, "canvas");
-    const handle = (nodeId: string, pinId: string, side: "left" | "right") =>
-      container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"][data-handlepos="${side}"]`);
-    await waitFor(() => expect(handle("fade", "particle", "left")).not.toBeNull());
-    const links = (graph: ParticleGraphDocument) =>
-      graph.edges.map((edge) => `${edge.sourceNodeId}.${edge.sourcePinId} > ${edge.targetNodeId}.${edge.targetPinId}`).sort();
+    await waitFor(() => expect(pinHandle(container, "fade", "particle", "left")).not.toBeNull());
 
-    fireEvent.click(handle("velocity", "out", "right")!);
-    fireEvent.click(handle("fade", "particle", "left")!);
+    fireEvent.click(pinHandle(container, "velocity", "out", "right")!);
+    fireEvent.click(pinHandle(container, "fade", "particle", "left")!);
 
     // Replay each commit on a real undo stack, as the document context does.
     const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 1_000_000 });
@@ -362,6 +369,26 @@ describe("Particle Graph document panels", () => {
     ]);
     const undone = stack.undo(current)!.doc;
     expect(links(normalizeParticleGraphDocument(undone))).toEqual(links(doc));
+  });
+
+  it("keeps a linked value output's wire when a tap-to-connect adds another", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "grow", type: "update.size", position: { x: 1280, y: 300 }, properties: {} });
+    const { container } = renderPanels(doc, "canvas");
+    await waitFor(() => expect(pinHandle(container, "grow", "size", "left")).not.toBeNull());
+
+    fireEvent.click(pinHandle(container, "normalizedAge", "out", "right")!);
+    fireEvent.click(pinHandle(container, "grow", "size", "left")!);
+
+    expect(links(normalizeParticleGraphDocument(store.getSnapshot()))).toEqual([
+      "create.out > shape.particle",
+      "gradient.out > updateColor.color",
+      "normalizedAge.out > gradient.ratio",
+      "normalizedAge.out > grow.size",
+      "shape.out > velocity.particle",
+      "updateColor.out > output.particle",
+      "velocity.out > updateColor.particle",
+    ]);
   });
 
   it("shows a diagnostic's node in Details when its row is tapped", () => {
