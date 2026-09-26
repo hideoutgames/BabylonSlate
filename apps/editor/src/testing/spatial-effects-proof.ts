@@ -28,14 +28,37 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 function normalIdentityDocument() {
   const document = createDefaultMaterialDocument("Normals Identity", "postProcess");
-  for (const [id, type] of [["normal", "input.sceneNormal"], ["length", "vector.length"], ["multiply", "math.multiply"]])
-    document.nodes.push({ id: id!, type: type!, position: { x: 0, y: 0 }, properties: {} });
+  // World normals are stored as n * 0.5 + 0.5. Decode before length so a unit
+  // normal keeps scene color while the sample still keeps the prepass alive.
+  for (const [id, type, properties] of [
+    ["normal", "input.sceneNormal", {}],
+    ["two", "const.vec3", { value: [2, 2, 2] }],
+    ["one", "const.vec3", { value: [1, 1, 1] }],
+    ["scaled", "math.multiply", {}],
+    ["decoded", "math.subtract", {}],
+    ["length", "vector.length", {}],
+    ["multiply", "math.multiply", {}],
+  ] as const)
+    document.nodes.push({ id, type, position: { x: 0, y: 0 }, properties: { ...properties } });
   document.edges = document.edges.filter((edge) => edge.id !== "e-scene-output");
   for (const [from, output, to, input] of [
-    ["screenUv", "uv", "normal", "uv"], ["normal", "normal", "length", "value"],
-    ["length", "out", "multiply", "b"], ["sceneColor", "color", "multiply", "a"],
+    ["screenUv", "uv", "normal", "uv"],
+    ["normal", "normal", "scaled", "a"],
+    ["two", "out", "scaled", "b"],
+    ["scaled", "out", "decoded", "a"],
+    ["one", "out", "decoded", "b"],
+    ["decoded", "out", "length", "value"],
+    ["length", "out", "multiply", "b"],
+    ["sceneColor", "color", "multiply", "a"],
     ["multiply", "out", "output", "color"],
-  ]) document.edges.push({ id: `${from}-${to}`, sourceNodeId: from!, sourcePinId: output!, targetNodeId: to!, targetPinId: input! });
+  ])
+    document.edges.push({
+      id: `${from}-${to}`,
+      sourceNodeId: from,
+      sourcePinId: output,
+      targetNodeId: to,
+      targetPinId: input,
+    });
   return document;
 }
 
