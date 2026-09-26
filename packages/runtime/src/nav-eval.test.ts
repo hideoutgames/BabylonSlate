@@ -179,7 +179,8 @@ describe("runtime navmesh import and crowd", () => {
       for (let tick = 0; tick < 10; tick++) runtime.tick();
 
       expect(moving.transform.position.x).toBeGreaterThan(startX);
-      expect(guidReads).toBeLessThanOrEqual(20 * actors.length * 10);
+      // Allow the tick's linear passes; either crowd scan adds over 30 reads per actor.
+      expect(guidReads).toBeLessThanOrEqual(40 * actors.length * 10);
     } finally {
       runtime.stop();
     }
