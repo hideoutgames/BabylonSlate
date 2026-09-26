@@ -163,6 +163,8 @@ multiple input/output lists can share a Details panel without label collisions.
 
 Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
+Document tabs and `DocumentSwitcher` share a visual resolver for each chrome render. It uses indexed asset paths and builds the class-parent lookup at most once, only when Class icons need it. A fresh resolver on the next render observes updates to the mutable registry, keeping inherited icons current without per-tab registry scans.
+
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **TraceCopyButton / TraceEmptyState** | Compact clipboard feedback and catalog Empty states for read-only trace inspection. | Trace Snapshot, Changes, Log and Timeline. |
