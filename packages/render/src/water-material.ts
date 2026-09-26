@@ -26,6 +26,19 @@ float swNoise(vec2 p) {
   t = t * t * (vec2(3.0) - 2.0 * t);
   return mix(mix(swHash(i), swHash(i + vec2(1.0, 0.0)), t.x), mix(swHash(i + vec2(0.0, 1.0)), swHash(i + vec2(1.0, 1.0)), t.x), t.y);
 }
+float swCellDistance(vec2 p, vec2 c) {
+  return length(p - c - vec2(0.5) - (vec2(swHash(c), swHash(c + vec2(19.0, 7.0))) - vec2(0.5)) * 0.8);
+}
+float swCells(vec2 p) {
+  vec2 b = floor(p - vec2(0.5));
+  float d0 = swCellDistance(p, b);
+  float d1 = swCellDistance(p, b + vec2(1.0, 0.0));
+  float d2 = swCellDistance(p, b + vec2(0.0, 1.0));
+  float d3 = swCellDistance(p, b + vec2(1.0, 1.0));
+  float swNear = min(min(d0, d1), min(d2, d3));
+  float swSecond = min(min(max(d0, d1), max(d2, d3)), max(min(d0, d1), min(d2, d3)));
+  return swSecond - swNear;
+}
 `;
 
 const f = (n: number) => n.toFixed(6);
@@ -106,22 +119,28 @@ float swStreakB = swNoise(swFlowed * 0.55 * 1.31 - vec2(swTime * 0.05, -swTime *
 float swStreakW = fwidth(swStreakA - swStreakB) + 0.035;
 float swStreak = (1.0 - smoothstep(0.0, swStreakW, abs(swStreakA - swStreakB))) * (1.0 - smoothstep(0.02, 0.2, fwidth(swFlowed.x * 0.55))) * smoothstep(0.3, 0.65, swMedium);
 
-// Realistic foam: broken lace washing up the bank and a thin contact line.
+// Realistic foam: bubbly cell webs thresholded by a foam density, so dense foam at the waterline
+// breaks into lace, then scattered patches as it thins. Crests, shores and objects feed the density.
 float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
-float swLace = swMedium * 0.55 + swFine * 0.45;
+vec2 swFoamUv = swFlowed * 0.9 + swSlope * 0.4 + vec2(swMedium - 0.5, swFine - 0.5) * 0.9;
+float swFoamFade = smoothstep(0.2, 0.8, fwidth(swFoamUv.x) * 2.7);
+float swWebA = swCells(swFoamUv);
+float swWebB = swCells(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07));
+float swFoamTex = mix((1.0 - smoothstep(0.0, 0.45, swWebA)) * 0.55 + (1.0 - smoothstep(0.0, 0.4, swWebB)) * 0.3 + swFine * 0.15, 0.42, swFoamFade);
 float swWashPhase = swBank / swFoamWidth - swTime * 0.45 + swMedium * 1.4;
-float swWash = exp(-swBank / swFoamWidth * 2.2);
-float swLaceAA = fwidth(swLace) + 0.02;
-float swLines = 1.0 - smoothstep(0.035, 0.035 + swLaceAA * 2.0, abs(swLace + 0.18 * sin(swWashPhase * 6.2831853) - 0.5));
-float swShoreFoam = swWash * mix(swLines, 1.0, smoothstep(0.62, 0.8, swFine) * swWash) * (0.55 + 0.45 * swMedium);
-swShoreFoam = max(swShoreFoam, (1.0 - smoothstep(0.0, 0.12 * swFoamWidth + 0.03, swBank)) * smoothstep(0.35, 0.6, swFine));
-// Contact lace hugs objects crossing the surface, like the shore; crest caps need steep, choppy swell.
+float swWash = exp(-swBank / swFoamWidth) * (0.8 + 0.3 * sin(swWashPhase * 6.2831853));
 float swContactW = max(0.05, U.slateWaterShape.w);
-float swContactAA = fwidth(swObject) + 0.01;
-float swContact = max((1.0 - smoothstep(0.08 * swContactW, 0.08 * swContactW + swContactAA * 2.0, swObject)) * smoothstep(0.3, 0.55, swFine + 0.2),
-  exp(-swObject / swContactW * 1.4) * swLines * (0.45 + 0.55 * swFine));
-float swCap = smoothstep(0.7, 1.05, swCrest + swChopH * 0.8) * smoothstep(0.45, 0.75, swLace + swGust * 0.3) * U.slateWaterShape.z;
-float swRealFoam = clamp(max(swShoreFoam, swContact) + swCap * swLines * 1.5 + swCap * 0.35, 0.0, 1.0);
+float swHug = exp(-swObject / swContactW * 1.7) * (0.7 + 0.3 * swMedium);
+float swCap = smoothstep(0.55, 1.05, swCrest + swChopH * 0.8 + (swGust - 0.5) * 0.3) * U.slateWaterShape.z;
+float swDensity = clamp(max(max(swWash, swHug), swCap), 0.0, 1.0);
+float swFoamSoft = 0.18 + 0.2 * (1.0 - swDensity) + fwidth(swFoamTex);
+// Bubble grain keeps the foam from reading as flat paint; it averages out before it would alias.
+float swGrain = mix(swNoise(swFoamUv * 11.0 + vec2(0.0, swTime * 0.2)), 0.5, swFoamFade);
+float swRealFoam = smoothstep(1.0 - swDensity, 1.0 - swDensity + swFoamSoft, swFoamTex) * (0.25 + 0.6 * swDensity) * (0.55 + 0.45 * swGrain);
+float swWaterline = max(1.0 - smoothstep(0.0, 0.1 * swContactW + 0.04, swObject), 1.0 - smoothstep(0.0, 0.1 * swFoamWidth + 0.04, swBank));
+swRealFoam = max(swRealFoam, swWaterline * smoothstep(0.2, 0.5, swFoamTex) * (0.5 + 0.35 * swGrain));
+// Air churned under the foam lightens the water around it, without a pattern.
+float swAerated = swDensity * (1.0 - swStylized) * U.slateWaterFoam.w;
 
 // Stylized foam: a crisp wobbling outline plus a travelling second ring.
 float swEdgeUnit = swBank / swFoamWidth;
@@ -163,13 +182,14 @@ float swSss = swBehind * clamp(swCrest * 0.5 + 0.5 + swChopH, 0.0, 1.0) * (1.0 -
 swEmissive += U.slateWaterShallow.rgb * swSunLight * swSss * 0.45 * (1.0 - swStylized);
 swEmissive = mix(swEmissive, (U.slateWaterShallow.rgb * 1.2 + vec3(0.1)) * mix(swLight, vec3(1.0), 0.5), swStreak * swStylized * (0.3 - swTone * 0.12));
 vec3 swFoamLight = mix(swLight + swSunLight * max(U.slateWaterSun.y, 0.0), vec3(1.0), swStylized);
+swEmissive += mix(U.slateWaterShallow.rgb, U.slateWaterFoam.rgb, 0.5) * swFoamLight * swAerated * 0.22;
 swEmissive = mix(swEmissive, U.slateWaterFoam.rgb * swFoamLight, swFoam) + vec3(swSpark);
 surfaceAlbedo = vec3(0.0);
 
 float swOpacity = U.slateWaterShallow.a;
 float swRealAlpha = (1.0 - swTransmit) * swOpacity * smoothstep(0.0, 0.2, swBank + 0.02);
 float swToonAlpha = mix(0.4, swOpacity, smoothstep(0.0, 0.6, swTone * 1.6));
-alpha = clamp(max(mix(swRealAlpha, swToonAlpha, swStylized), swFoam), 0.0, 1.0);
+alpha = clamp(max(mix(swRealAlpha + swAerated * 0.3, swToonAlpha, swStylized), swFoam), 0.0, 1.0);
 `;
 }
 
