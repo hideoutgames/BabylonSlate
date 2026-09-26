@@ -52,7 +52,7 @@ Stages render in this order. **Always** modules have no switch. **Toggle** modul
 | Forces | Gravity | Toggle | Acceleration (m/s², default 0, −9.81, 0) | `gravity` (off → 0) |
 | Render | Render | Always | Blend Mode; Billboard | `blendMode`; `billboardMode` ([Look](#look)) |
 
-Defaults give a visible fountain once a Material is picked: Cone (radius 0.1, 30°), Rate 20 /s, Lifetime 0.8–1.2 s, Speed 1–2 m/s, Size 0.2–0.4, Color gradient white → transparent, Additive, Camera Facing, Capacity 256, Infinite 2 s loop, no Pre Warm, every Toggle module off.
+Defaults give a visible fountain once a Material is picked: Cone (radius 0.1, 30°), Rate 20 /s, Lifetime 0.8–1.2 s, Speed 1–2 m/s, Size 0.2–0.4, Color gradient white → transparent black (Additive ignores alpha, so the fade darkens), Additive, Camera Facing, Capacity 256, Infinite 2 s loop, no Pre Warm, every Toggle module off.
 
 ### Value modes
 
@@ -263,7 +263,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 | Blend Mode | Id | Babylon constant | Result |
 | --- | --- | --- | --- |
 | Additive (default) | `additive` | `BLENDMODE_ONEONE` | src + dst |
-| Alpha Blend | `standard` | `BLENDMODE_STANDARD` | src·α + dst·(1−α) |
+| Normal | `standard` | `BLENDMODE_STANDARD` | src·α + dst·(1−α) |
 | Alpha Additive | `add` | `BLENDMODE_ADD` | src·α + dst |
 | Multiply | `multiply` | `BLENDMODE_MULTIPLY` | dst·src |
 | Subtract | `subtract` | `BLENDMODE_SUBTRACT` | dst·(1−src) |
@@ -275,7 +275,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 | Stretched | `stretched` | `BILLBOARDMODE_STRETCHED` | The quad's Y axis follows velocity; Scale Y lengthens it. Babylon's GPU shader does not scale the length with speed. |
 
 - `packages/render/src/particle-render-modes.ts` is the only numeric mapping and reads Babylon's constants by name. Documents store only the ids.
-- `createEffectForParticles` compiles only the ONEONE and MULTIPLY effects. Alpha Blend, Alpha Additive and Subtract reuse the ONEONE effect (the only blend-dependent define is `BLENDMULTIPLYMODE`) under their own engine alpha state.
+- `createEffectForParticles` compiles only the ONEONE and MULTIPLY effects. Normal, Alpha Additive and Subtract reuse the ONEONE effect (the only blend-dependent define is `BLENDMULTIPLYMODE`) under their own engine alpha state.
 - Outside the Material editor preview, particle Materials insert Babylon's `ParticleBlendMultiplyBlock` before the fragment output (color → `color`, alpha → `alphaTexture`, constant 1 → `alphaColor`). Under Multiply a transparent texel then leaves the destination unchanged; other modes pass through.
 
 ## Units
@@ -345,7 +345,7 @@ CPU particles already alive pick up gradient edits at their next key; new partic
 - Each Particle System slot becomes one native system. Its `emitter` is an **enabled** zero-visibility box parented to the actor origin (`isVisible = true`, `visibility = 0`, `alwaysSelectAsActiveMesh`, not pickable). Do not `setEnabled(false)` or set `isVisible = false`: Play uses `performancePriority = Intermediate`, and hidden emitters drop out of the active mesh list, so GPU particles never draw.
 - **Backend per emitter:** a Basic emitter gets `GPUParticleSystem` with `emitRateControl: true` when the owning engine supports compute (WebGPU) or transform feedback (WebGL2); otherwise CPU `ParticleSystem` with `min(capacity, 512)`. The owning engine decides, not the last-created one. A Particle Graph slot is always a CPU `ParticleSystem` built from Node Particle blocks at its authored capacity, so one System can mix GPU and CPU slots.
 - **GPU slot ring:** under `emitRateControl`, Babylon sizes the ring from rate × lifetime and overwrites live particles when bursts overlap. The owned GPU system claims the whole ring (`capacity`) after construction and after `reset()`; never-emitted slots have zero size and draw nothing. A runtime check on the Babylon internals fails the slot with `particle.apply_failed` after an incompatible upgrade. At capacity the GPU recycles the **oldest** particle, while the CPU **drops new** ones.
-- **Apply:** `applyBasicEmitterPlan(system, plan, "create" | "live" | "respawn")` writes the plan before the Material binds, because GPU render defines depend on the gradient textures. `live` and `respawn` never write `updateSpeed`, prewarm or `targetStopDuration`. `bindParticleMaterial` waits for the NodeMaterial build, then calls `createEffectForParticles`.
+- **Apply:** `applyBasicEmitterPlan(system, plan, "create" | "live" | "respawn")` writes the plan before the Material binds, because GPU render defines depend on the gradient textures. `live` and `respawn` never write `updateSpeed`, prewarm or `targetStopDuration`. `respawn` recreates the gradient textures and update program right after `reset()`: WebGL2 keeps its update program across `reset()`, so the next frame would otherwise lay out the particle buffers without the gradient textures and draw garbage until a rebuild. `bindParticleMaterial` waits for the NodeMaterial build, then calls `createEffectForParticles`.
 - **Graph slots:** the service lowers the document (cached per document object) and builds it synchronously inside `prepare` with `realizeParticleGraph` ([Lowering and build](#lowering-and-build)), then binds its Material like Basic.
   - A graph with validator errors is skipped with `particle.graph_invalid`, anchored to the first error's node and pin.
   - A build failure reports `particle.compile.*` with the graph node and skips only that slot.

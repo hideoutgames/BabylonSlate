@@ -4,6 +4,7 @@ import {
 } from "@babylonslate/core";
 import { ColorField, NumberField } from "@babylonslate/editor-kit";
 import { Switch } from "@babylonslate/ui/components/switch";
+import { SpatialEffectsFields } from "./spatial-effects-fields";
 import {
   Field,
   FieldDescription,
@@ -52,6 +53,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false }: Pr
     <FieldSet data-testid="project-render-effects">
       <FieldLegend className={hideTitle ? "sr-only" : undefined}>Post Processing</FieldLegend>
       <FieldGroup className="gap-2">
+        <SpatialEffectsFields value={project} onChange={onChange} />
         <Field className="settings-field">
           <FieldLabel htmlFor="project-effects-pipeline">Color Pipeline</FieldLabel>
           <Select
