@@ -273,7 +273,7 @@ These open their own DockView documents (not compact Settings tabs). **Windows**
 | Structure | Member list with pin colors + Details (Name, Type, then Default) |
 | ScriptInterface | Methods \| read-only function-node Preview (`GraphEditor` `readOnly`) \| pin Details (`PinListEditor` in/out; no Optional or Default) |
 
-Texture stays compact `asset-settings`. Model, Skeleton, and Animation open DockView documents (Preview + Details). Imported Audio opens a DockView document (Preview / Details / Clips). Sprite opens a DockView document (Preview + Details). FunctionLibrary remains a Class parent, not a file type.
+Texture opens a DockView document (Preview + Details). Model, Skeleton, and Animation open DockView documents (Preview + Details). Imported Audio opens a DockView document (Preview / Details / Clips). Sprite opens a DockView document (Preview + Details). FunctionLibrary remains a Class parent, not a file type.
 
 ### `graph-ui` rework
 

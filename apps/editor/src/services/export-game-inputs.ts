@@ -159,6 +159,7 @@ export async function loadExportDocuments(
     if (
       kind &&
       kind !== "asset-settings" &&
+      kind !== "texture" &&
       (JSON_TYPES.has(asset.header.type) ||
         asset.header.type === "Class" ||
         asset.header.type === "Graph" ||

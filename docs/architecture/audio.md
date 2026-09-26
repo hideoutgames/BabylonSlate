@@ -34,7 +34,7 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 | Type | Created by | Suffix | Editor |
 | --- | --- | --- | --- |
-| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | DockView Preview (Play/Stop, Loop, waveform), Details (Volume, Loop, Randomize Pitch, Pitch unless randomize is on, Pitch Min/Max, Channel, Attenuation), Clips (read-only names, editable weights) |
+| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | DockView Preview (toolbar Play/Stop, Loop, clip name, clip count; full-panel waveform with a time ruler), Details (**Playback**: Volume, Loop, Randomize Pitch, Pitch unless randomize is on, Pitch Min/Max; **Routing**: Channel, Attenuation), Clips (compact rows: read-only names, editable weights, share % when there are several clips, Add Clip) |
 | `AudioMixer` | New Asset | `.mixer.babasset` | DockView Details (`audio-mixer`) |
 | `AudioChannel` | New Asset | `.channel.babasset` | DockView Details (`audio-channel`) |
 | `SoundAttenuation` | New Asset | `.atten.babasset` | DockView Details (`sound-attenuation`) with an SVG falloff **plot** (numeric UI, not artwork) |
@@ -151,6 +151,6 @@ Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/re
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture `asset-settings` to DockView. Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Audio Preview may draw a read-only PCM peak plot; that is not waveform editing.
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution. Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Audio Preview may draw a read-only PCM peak plot; that is not waveform editing.
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.

@@ -42,12 +42,12 @@ describe("openOrFocusAssetDocument", () => {
     await openOrFocusAssetDocument({
       guid: "tex-1",
       getByGuid: () => asset("tex-1", "Texture", "assets/grass.babasset"),
-      openDocumentIds: new Set(["asset-settings:assets/grass.babasset"]),
+      openDocumentIds: new Set(["texture:assets/grass.babasset"]),
       setActiveDocument,
       openDocument,
     });
     expect(setActiveDocument).toHaveBeenCalledWith(
-      "asset-settings:assets/grass.babasset",
+      "texture:assets/grass.babasset",
     );
     expect(openDocument).not.toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe("openOrFocusAssetDocument", () => {
       openDocument,
     });
     expect(openDocument).toHaveBeenCalledWith({
-      kind: "asset-settings",
+      kind: "texture",
       path: "assets/grass.babasset",
       label: "Grass",
     });

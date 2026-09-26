@@ -71,7 +71,9 @@ test("a cancelled Preview Build cannot dismiss or fail the next preparation", as
       // Let phase progress render, and hold only pack writes. Asset loading
       // may share in-flight reads between attempts and must stay unblocked.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (!document.querySelector('[data-testid="preparing-preview-progress"]')?.textContent?.includes("Writing Pack")) {
+      // The step list always names later phases. Hold only the running Writing Pack step.
+      const current = document.querySelector('[data-testid="preparing-preview-progress"] [aria-current="step"]');
+      if (!current?.textContent?.includes("Writing Pack")) {
         return digest(...args);
       }
       await new Promise<void>((resolve, reject) => {
