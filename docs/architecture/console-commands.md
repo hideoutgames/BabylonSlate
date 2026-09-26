@@ -27,7 +27,8 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. |
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
-| `quality shadows/resolution/textures/postprocessing [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality shadows/resolution/textures/geometry/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality geometry lod on\|off`, `quality geometry distance <0.25..4>` | yes | **yes** | Switches automatic Model LOD or scales its switch distances for the session. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
 | `framecap` | yes | **yes** | `{ type: "setFrameCap" }` → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
@@ -113,6 +114,7 @@ Seven core setters plus `help`. Optional args print the current value.
 | `quality [low\|medium\|high\|ultra\|reset]` | Apply all groups or reset session overrides. No argument queries actual values. |
 | `quality shadows [tier\|reset\|budget N\|distance N\|enabled on/off]` | Shadow quality and allocation controls; presets preserve distance and budget. |
 | `quality resolution scale N` | Fixed fraction of target width and height, from 0.25 to 1. |
+| `quality geometry [tier\|reset\|lod on/off\|distance N]` | Automatic Model LOD and its distance scale, from 0.25 to 4. |
 | `framecap [fps]` | Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
