@@ -16,6 +16,42 @@ export type PhysicsTransform = {
 /** Teleports preserve both velocities unless the caller explicitly resets them. */
 export type TeleportOptions = { velocity?: "preserve" | "reset" };
 
+/** Constraint anchors and frames are local to their respective rigid bodies. */
+export type ConstraintBase = {
+  id: string;
+  bodyAId: string;
+  bodyBId: string;
+  anchorA: Vec3;
+  anchorB: Vec3;
+  /** Connected bodies do not collide unless explicitly requested. */
+  collideConnected?: boolean;
+};
+
+/** World-space velocity at the body's center of mass, with angular velocity in radians/second. */
+export type BodyVelocity = { linear: Vec3; angular: Vec3; centerOfMass: Vec3 };
+
+export type ConstraintDesc = ConstraintBase & (
+  | { kind: "fixed"; frameA?: Quat; frameB?: Quat }
+  | {
+      kind: "ballSocket";
+      frameA?: Quat;
+      frameB?: Quat;
+      /** Optional 3D angular limits in the joint frames, in radians. */
+      angularLimits?: { min: Vec3; max: Vec3 };
+    }
+  | {
+      kind: "hinge";
+      axisA: Vec3;
+      axisB: Vec3;
+      /** Perpendicular directions defining the zero relative angle. */
+      referenceAxisA?: Vec3;
+      referenceAxisB?: Vec3;
+      /** Signed angles in radians about the hinge axis. */
+      limits?: { min: number; max: number };
+    }
+  | { kind: "distance"; /** Exact anchor separation in metres; 3D only. */ distance: number }
+);
+
 export type ColliderShape3D =
   | { kind: "box"; halfExtents: Vec3 }
   | { kind: "sphere"; radius: number }

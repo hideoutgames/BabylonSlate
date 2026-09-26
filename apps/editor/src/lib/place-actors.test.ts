@@ -8,6 +8,7 @@ import {
 import {
   ENGINE_PLACE_ACTORS,
   duplicateSceneActor,
+  duplicateSceneActors,
   nextActorId,
   placeActorsForHost,
   prefabComponentsForGuid,
@@ -435,6 +436,19 @@ describe("spawnPlacedActor placement", () => {
 });
 
 describe("duplicateSceneActor", () => {
+  it("remaps constraints inside a duplicated selection and preserves external targets", () => {
+    const scene = createDefaultScene();
+    const source = createActor("arm", "Arm", { components: [
+      { id: "shoulder-joint", classId: "PhysicsConstraintComponent", properties: { kind: "hinge", targetActorId: "torso" } },
+      { id: "world-joint", classId: "PhysicsConstraintComponent", properties: { kind: "ballSocket", targetActorId: "anchor" } },
+    ] });
+    scene.actors = [source, createActor("torso", "Torso"), createActor("anchor", "Anchor")];
+    const [arm, torso] = duplicateSceneActors(scene, ["arm", "torso"]);
+    expect(arm!.components.map((component) => component.properties.targetActorId)).toEqual([torso!.id, "anchor"]);
+    expect(arm!.components[0]!.id).not.toBe("shoulder-joint");
+    expect(source.components.map((component) => component.properties.targetActorId)).toEqual(["torso", "anchor"]);
+    expect(duplicateSceneActors(scene, ["arm"])[0]!.components[0]!.properties.targetActorId).toBe("torso");
+  });
   it("clones the actor with a new id and Copy name", () => {
     const scene = createDefaultScene();
     const source = createActor("actor-1", "Cube", {

@@ -72,6 +72,30 @@ Native fixtures exercise the packaged Havok solver in NullEngine, separately fro
 
 ## Components
 
+### Constraints and ragdolls
+
+**Add Component → Physics → Physics Constraint** connects the owner's body to another actor. Choose **Target Actor** from the searchable scene picker; it includes explicit Rigid Bodies and implicit Mesh, Blocking Volume, or Tilemap bodies. Set a target after placing a Class, or use the component's **Set Connected Actor** graph function. An empty/missing target waits for a body to become available. Duplicating a connected selection remaps its internal targets to the copied actors.
+
+| Constraint | 3D Havok | 2D Rapier | Controls |
+| --- | --- | --- | --- |
+| Fixed | Yes | Yes | Local frame rotations define the locked relative orientation. |
+| Ball Socket / Pivot | Yes | Yes | Anchors stay together; relative rotation is free. |
+| Hinge | Yes | Yes | One rotation axis, optional minimum/maximum angles in degrees. 2D rotates around Z. |
+| Distance | Yes | No | Exact world-space separation; not a maximum-length rope. |
+
+Local Anchor and Target Local Anchor are actor-local points, including actor scale. Axes and frame rotations use the corresponding body's local orientation; the component transform does not move the joint. Hinge reference axes establish zero angle and must not be parallel to the hinge axis. **Enabled** creates/releases the joint; **Collide Connected** defaults off. At least one body should be dynamic for visible simulation. Bodies can be assembled into chains or mechanical/character rigs using ordinary actors and constraints.
+
+**Add Component → Physics → Ragdoll** provides skeletal ragdolls for 3D Model actors. Leave **Bone Names** empty for the complete skinned or hierarchy rig, or list a connected subtree using exact bone names. Enable the component in Details or set **Enabled** from a graph. Activation captures the current animated pose; it does not reset the character to a bind pose. **Total Mass**, **Radius**, damping, material/filter settings, and **Angular Limit** tune the automatic bodies. Radius is in world units and is capped for short segments. Each bone uses a capsule toward its first non-coincident child, or a sphere for a leaf, with limited ball joints between bones. This is an automatic general rig; use a smaller Bone Names subtree for detailed models.
+
+- One enabled Ragdoll component per actor, one connected skeleton, up to 128 selected bones. Actor scale must be positive; bone world scale must be uniform and nonzero. Reflected GLB coordinate conversion is supported. Ragdolls are unavailable in 2D and SceneLayers.
+- While active, bone bodies replace the actor's ordinary collision and inherit its linear/angular velocity field. The actor follows the simulated root's translation; physics owns bone rotations. Existing **Add Impulse** affects the full assembly; impulses issued immediately after enabling are retained during pose capture and applied once on activation. Collision queries return the owning actor.
+- Unselected channels hold their captured pose while the selected subtree simulates. Disabling releases the assembly, restores ordinary collision, and resumes animation at its current gameplay time. It does not implement a get-up animation or an animation/physics blend.
+- Activation failures are reported without silently substituting software physics. Model/property changes cancel previous capture generations. Despawn, stop, and backend replacement release owned joints before bodies; late capture replies cannot revive old actors.
+
+The worker owns all constraints and ragdoll bodies. `PhysicsBackend.createConstraint` validates and prepares replacements before retiring an existing joint; body removal retires attached joints. `RagdollPhysics` prepares and owns its articulated assembly. Reliable bridge capture replies carry current world bone poses to the worker; pose commands carry simulation results back. The renderer applies them after its animation pass and before bone attachments. Software physics explicitly lacks constraint solving; only the temporary pre-native boot phase defers their creation.
+
+`PhysicsBackend.getBodyVelocity` returns an owned snapshot of world-space linear velocity, angular velocity in radians/second, and center of mass. `setBodyAngularVelocity` sets a dynamic body's angular velocity (Z only in 2D). Ragdoll activation uses each collider's mass center to inherit the actor's rigid velocity field, and whole-assembly impulses act at those centers without introducing torque at bone pivots.
+
 | Component | Properties (core) |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |
