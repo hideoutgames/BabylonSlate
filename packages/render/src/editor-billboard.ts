@@ -10,6 +10,7 @@ import {
   Texture,
   TransformNode,
   type AbstractEngine,
+  type Light,
 } from "@babylonjs/core";
 import type { SerializedActor } from "@babylonslate/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
@@ -174,28 +175,40 @@ export function applyEditorBillboardFromActor(
   const component = actor.components.find((entry) =>
     entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent");
   const lightName = component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
+  const scene = mesh.getScene();
+  let light: Light | null = null;
   const update = () => {
-    const light = mesh.getScene().getLightByName(lightName);
+    if (!light || light.isDisposed() || light.name !== lightName) {
+      light = scene.getLightByName(lightName);
+    }
     const illuminationLimited = light && isForwardLightExcluded(light);
     const disabled = light ? (!light.isEnabled() && !illuminationLimited) || light.intensity <= 0
       : component?.properties.enabled === false ||
         (typeof component?.properties.intensity === "number" && component.properties.intensity <= 0);
     const shadowsMissing = light && component?.classId === "LightComponent" &&
       component.properties.castShadows === true &&
-      !sceneShadowController(mesh.getScene()).generator(light);
-    material.emissiveColor.copyFrom(disabled ? DISABLED_FILL : illuminationLimited || shadowsMissing ? LIMITED_FILL : DEFAULT_FILL);
-    mesh.metadata.editorBillboardStatus = disabled
+      !sceneShadowController(scene).generator(light);
+    const fill = disabled ? DISABLED_FILL : illuminationLimited || shadowsMissing ? LIMITED_FILL : DEFAULT_FILL;
+    if (!material.emissiveColor.equals(fill)) material.emissiveColor.copyFrom(fill);
+    const status = disabled
       ? "Disabled: This Light Is Disabled Or Does Not Illuminate."
       : illuminationLimited
         ? "Limited: Requested Illumination Exceeds This Device's Forward Light Capacity."
       : shadowsMissing
         ? "Limited: Requested Shadows Are Unavailable."
         : "Active: This Light Is Operating As Configured.";
+    if (mesh.metadata.editorBillboardStatus !== status) mesh.metadata.editorBillboardStatus = status;
   };
   const hasUpdater = billboardUpdaters.has(mesh);
   billboardUpdaters.get(mesh)?.();
-  const observer = mesh.getScene().onBeforeRenderObservable.add(update);
-  billboardUpdaters.set(mesh, () => mesh.getScene().onBeforeRenderObservable.remove(observer));
+  const observer = scene.onBeforeRenderObservable.add(update);
+  const lightRemoved = scene.onLightRemovedObservable.add((removed) => {
+    if (removed === light) light = null;
+  });
+  billboardUpdaters.set(mesh, () => {
+    scene.onBeforeRenderObservable.remove(observer);
+    scene.onLightRemovedObservable.remove(lightRemoved);
+  });
   if (!hasUpdater) mesh.onDisposeObservable.addOnce(() => {
     billboardUpdaters.get(mesh)?.();
     billboardUpdaters.delete(mesh);
