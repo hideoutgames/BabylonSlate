@@ -5,7 +5,7 @@
  * maps them to Babylon constants by name (docs/design/particle-emitters.md D7).
  */
 
-/** Additive = Babylon ONEONE, Alpha Blend = STANDARD, Alpha Additive = ADD. */
+/** Additive = Babylon ONEONE, Normal = STANDARD, Alpha Additive = ADD. */
 export const PARTICLE_BLEND_MODE_IDS = [
   "additive",
   "standard",
