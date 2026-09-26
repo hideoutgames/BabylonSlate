@@ -8,7 +8,6 @@ import {
   CONTENT_BROWSER_ID,
 } from "@babylonslate/core";
 import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts } from "@babylonslate/editor-kit";
-import type { IndexedAsset } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -24,13 +23,18 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { OpenDocument } from "../services/document-service";
-import { documentTypeVisual } from "../lib/document-type-visual";
+import {
+  createDocumentTypeVisualResolver,
+  type DocumentTypeVisualResolver,
+} from "../lib/document-type-visual";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
+
+const defaultVisual = createDocumentTypeVisualResolver(null);
 
 /** The same document list serves compact navigation and overflowing desktop tabs. */
 export function DocumentSwitcher({
   documents,
-  assets = [],
+  resolveVisual = defaultVisual,
   activeDocumentId,
   onSelect,
   onClose,
@@ -38,7 +42,7 @@ export function DocumentSwitcher({
   compact = false,
 }: {
   documents: OpenDocument[];
-  assets?: readonly IndexedAsset[];
+  resolveVisual?: DocumentTypeVisualResolver;
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
@@ -123,7 +127,7 @@ export function DocumentSwitcher({
                   <LayoutGridIcon />
                 ) : (
                   <TypeVisualIcon
-                    visual={documentTypeVisual(doc.ref, assets)}
+                    visual={resolveVisual(doc.ref)}
                   />
                 )}
                 <span className="min-w-0 flex-1 truncate">{doc.ref.label}</span>
