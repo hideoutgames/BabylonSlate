@@ -2,7 +2,10 @@ import { createDefaultInputAssets } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
-import { normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
+import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
+import { EditorExtensionService } from "./editor-extension-service";
+import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
+import { installEngineExtensionDefaults, isExtensionPackagePath, type AssetDocument } from "@babylonslate/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -239,6 +242,8 @@ type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
 
 export class ProjectService {
   private readonly storage: ProjectStorage;
+  readonly extensions: EditorExtensionService;
+  private engineExtensionStorage: ProjectStorage | null = null;
   private projectGuid: string | null = null;
   private migrationPending: MigrationPending[] = [];
   private migrateOnSaveApproved = false;
@@ -280,6 +285,61 @@ export class ProjectService {
     } = {},
   ) {
     this.storage = storage;
+    const assetPath = (path: string) => {
+      if (!isExtensionPackagePath(path) || !path.startsWith("assets/") || !path.endsWith(".babasset")) {
+        throw new Error("Extension asset writes require a project assets/*.babasset path.");
+      }
+    };
+    const codePath = (path: string) => {
+      if (!isExtensionPackagePath(path) || !path.startsWith("code/") || !/\.(?:ts|js)$/.test(path)) {
+        throw new Error("Extension code APIs require a project code/*.ts or code/*.js path.");
+      }
+    };
+    const writeAsset = async (path: string, document: Pick<AssetDocument, "type" | "name" | "payload">) => {
+      assetPath(path);
+      const kind = documentKindForAssetType(document.type);
+      if (!kind || assetTypeForDocumentKind(kind) !== document.type || kind === "trace") {
+        throw new Error(`Extension cannot author this asset type: ${document.type}`);
+      }
+      await this.saveDocument(kind, path, document.payload);
+      this.emitRegistryChange();
+    };
+    this.extensions = new EditorExtensionService(storage, {
+      assets: {
+        list: async () => (this.assetRegistry?.list() ?? []).map((entry) => ({ path: entry.path, type: entry.header.type, name: entry.header.name, guid: entry.header.guid })),
+        read: async (path) => {
+          if (!this.assetRegistry?.getByPath(path)) throw new Error("Asset not found.");
+          return decodeAssetDocument(await this.storageForPath(path).readBinary(path), { blobs: this.blobsForPath(path) });
+        },
+        create: async (path, document) => {
+          assetPath(path);
+          if (await storage.exists(path)) throw new Error("An asset already exists at this path. Choose another name.");
+          await writeAsset(path, document);
+        },
+        update: async (path, document) => {
+          assetPath(path);
+          const entry = this.assetRegistry?.getByPath(path);
+          if (!entry || entry.header.guid !== document.guid || entry.header.type !== document.type) {
+            throw new Error("Asset identity changed. Read the asset again before updating.");
+          }
+          await writeAsset(path, document);
+        },
+      },
+      code: {
+        read: (path) => { codePath(path); return storage.readText(path); },
+        write: async (path, source) => {
+          codePath(path);
+          await storage.mkdir(parentDir(path), true);
+          await storage.writeText(path, source);
+        },
+      },
+      materials: { convertGlsl: convertGlslToMaterial },
+      log: (id, message) => {
+        const line = `[Extension ${id}] ${message}`;
+        this.diagnostics.push(line);
+        for (const listener of this.diagnosticListeners) listener(line);
+      },
+    });
     this.blobs = createVfsBlobStore(storage);
     this.configuredEncode = options.encode;
     this.processAreaEmission = options.processAreaEmission ?? processAreaEmissionInWorker;
@@ -329,6 +389,7 @@ export class ProjectService {
 
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
+    void this.extensions.close();
     this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
     this.encodeQueuePauseUnsubscribe = null;
@@ -524,7 +585,13 @@ export class ProjectService {
     this.enginePluginStorage = storage;
   }
 
+  setEngineExtensionStorage(storage: ProjectStorage): void {
+    this.engineExtensionStorage = storage;
+    this.extensions.setEngineStorage(storage);
+  }
+
   private async installEnginePluginDefaultsIfNeeded(): Promise<void> {
+    if (this.engineExtensionStorage) await installEngineExtensionDefaults(this.storage, this.engineExtensionStorage);
     if (!this.enginePluginStorage) return;
     await installEnginePluginDefaults(this.storage, this.enginePluginStorage);
   }
@@ -557,7 +624,7 @@ export class ProjectService {
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return (await this.storage.listProjects()).filter(
-      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== "__slate_templates__",
+      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT && folder.name !== "__slate_templates__",
     );
   }
 
@@ -737,6 +804,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    await this.extensions.close();
     this.cancelEmissionJobs();
     await this.storage.releaseFolder();
     this.projectGuid = null;

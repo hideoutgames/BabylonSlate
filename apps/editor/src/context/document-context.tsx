@@ -116,6 +116,8 @@ import {
   spillRecordedTraceDocument,
 } from "../lib/play-trace-spill";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
+import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
+import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
 import { loadTemplateCards } from "../services/template-service";
 import {
@@ -288,6 +290,7 @@ interface DocumentContextValue {
   projectDocument: ProjectDocument | null;
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
+  extensionService: ProjectService["extensions"];
   projectGuid: string | null;
   /** Bumps when encode/import mutates registry payloads in place. */
   registryVersion: number;
@@ -1356,6 +1359,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ? await (await ensureEnginePluginLibrary()).createStorageSnapshot()
       : await ensureEnginePluginStorage();
     projectService.setEnginePluginStorage(storage);
+    projectService.setEngineExtensionStorage(forNewProject
+      ? await (await ensureEngineExtensionLibrary()).createStorageSnapshot()
+      : await ensureEngineExtensionStorage());
   }, [projectService]);
 
   useEffect(() => {
@@ -4341,6 +4347,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
+      extensionService: projectService.extensions,
       projectGuid: projectService.guid,
       registryVersion,
       refreshAssetRegistry,

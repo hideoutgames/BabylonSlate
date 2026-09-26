@@ -1,0 +1,17 @@
+{
+  "kind": "extension",
+  "formatVersion": 1,
+  "extensionGuid": "a1e00000-0000-4000-8000-000000000001",
+  "displayName": "GLSL to Material",
+  "version": "0.1.0",
+  "description": "Experimental conversion of fragment GLSL into an editable Material node graph.",
+  "author": "BabylonSlate",
+  "category": "Materials",
+  "iconKey": "Code",
+  "experimental": true,
+  "beta": false,
+  "enabledByDefault": false,
+  "engineVersion": "0.0.1",
+  "extensionDependencies": [],
+  "entryPoint": "index.js"
+}

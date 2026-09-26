@@ -1,5 +1,6 @@
 import { TemplateLibrarySettings } from "./template-library-settings";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
+import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
@@ -149,6 +150,7 @@ export type EngineSettingsCategoryId =
   | "thumbnails"
   | "templates"
   | "plugins"
+  | "extensions"
   | "focus"
   | "keybinds"
   | "graph";
@@ -648,6 +650,7 @@ export function EngineSettingsForm({
       ) : null}
       {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
       {categoryId === "plugins" ? <EnginePluginsSettings /> : null}
+      {categoryId === "extensions" ? <EngineExtensionsSettings /> : null}
     </FieldGroup>
   );
 }
