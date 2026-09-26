@@ -21,8 +21,11 @@ const contains = (bounds: Bounds, x: number, z: number) => x >= bounds.minX && x
 /** Samples the rendered triangles, including their spacing-filtered waves, without resampling analytic waves. */
 export class WaterSurfaceSampler {
   private readonly root: Node;
+  private readonly base: Float32Array;
+  private readonly waterData: Float32Array;
 
-  constructor(private readonly base: Float32Array, private readonly waterData: Float32Array, indices: ArrayLike<number>) {
+  constructor(base: Float32Array, waterData: Float32Array, indices: ArrayLike<number>) {
+    this.base = base; this.waterData = waterData;
     const triangles: Triangle[] = [];
     for (let i = 0; i + 2 < indices.length; i += 3) {
       const a = indices[i]! * 3, b = indices[i + 1]! * 3, c = indices[i + 2]! * 3;
