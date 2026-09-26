@@ -1,6 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
+import {
+  AssetRegistry,
+  createDefaultSpriteAnimationPayload,
+  projectContentRoot,
+} from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   SpriteAnimationDetails,
   SpriteAnimationPreview,
@@ -31,27 +36,36 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 const readAssetChunk = vi.fn(async () => pngIhdr(200, 100));
+let assetRegistry: AssetRegistry;
+
+beforeAll(async () => {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("animation-preview.babproject");
+  assetRegistry = new AssetRegistry(storage);
+  await assetRegistry.mountRoot(projectContentRoot());
+  for (const asset of [
+    { guid: "tex-1", name: "HeroAtlas", type: "Texture" },
+    { guid: "tex-2", name: "HeroRun", type: "Texture" },
+    { guid: "mesh-1", name: "Cube", type: "Mesh" },
+  ]) {
+    await assetRegistry.createAsset(
+      "project",
+      `${asset.name}.${asset.type.toLowerCase()}.babasset`,
+      { ...asset, version: 1, dependencies: [], payload: {}, chunks: [] },
+    );
+  }
+});
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "tex-1", name: "HeroAtlas", type: "Texture" },
-          path: "assets/HeroAtlas.texture.babasset",
-        },
-        {
-          header: { guid: "mesh-1", name: "Cube", type: "Mesh" },
-          path: "assets/Cube.mesh.babasset",
-        },
-      ],
-    },
+    assetRegistry,
     readAssetChunk,
   }),
 }));
 
 afterEach(() => {
   cleanup();
+  readAssetChunk.mockClear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -129,7 +143,9 @@ describe("SpriteAnimation editor", () => {
     );
   });
 
-  it("advances the current frame while playing and stops on pause", () => {
+  it("plays indexed frame textures without scanning the registry and stops on pause", async () => {
+    const listAssets = vi.spyOn(assetRegistry, "list");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:animation-texture");
     let now = 0;
     const raf = new Map<number, FrameRequestCallback>();
     let nextId = 1;
@@ -152,13 +168,13 @@ describe("SpriteAnimation editor", () => {
     const payload = {
       frames: [
         {
-          textureGuid: "a",
+          textureGuid: "tex-1",
           durationMs: 100,
           pivot: { x: 0.5, y: 0.5 },
           collision: { x: 0, y: 0, width: 1, height: 1 },
         },
         {
-          textureGuid: "b",
+          textureGuid: "tex-2",
           durationMs: 100,
           pivot: { x: 0.5, y: 0.5 },
           collision: { x: 0, y: 0, width: 1, height: 1 },
@@ -173,13 +189,27 @@ describe("SpriteAnimation editor", () => {
     const preview = screen.getByTestId("sprite-animation-preview");
     expect(preview.getAttribute("data-playing")).toBe("false");
     expect(preview.getAttribute("data-frame-index")).toBe("0");
+    await waitFor(() => {
+      expect(preview.querySelectorAll("img")).toHaveLength(3);
+    });
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroAtlas.texture.babasset", "pixels");
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.babasset", "pixels");
+    readAssetChunk.mockClear();
 
     fireEvent.click(screen.getByTestId("sprite-animation-play"));
     expect(preview.getAttribute("data-playing")).toBe("true");
     act(() => {
-      flush(150);
+      flush(25);
+    });
+    expect(preview.getAttribute("data-frame-index")).toBe("0");
+    expect(readAssetChunk).not.toHaveBeenCalled();
+    await act(async () => {
+      flush(125);
     });
     expect(preview.getAttribute("data-frame-index")).toBe("1");
+    expect(preview.querySelectorAll("img")).toHaveLength(3);
+    expect(readAssetChunk).toHaveBeenCalledTimes(1);
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/HeroRun.texture.babasset", "pixels");
 
     fireEvent.click(screen.getByTestId("sprite-animation-pause"));
     expect(preview.getAttribute("data-playing")).toBe("false");
@@ -187,6 +217,7 @@ describe("SpriteAnimation editor", () => {
       flush(200);
     });
     expect(preview.getAttribute("data-frame-index")).toBe("1");
+    expect(listAssets).not.toHaveBeenCalled();
   });
 
   it("pauses and seeks when the frame strip is clicked", () => {
