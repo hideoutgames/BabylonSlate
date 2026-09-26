@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
 import {
   edgeStyleForPin,
   nodeRoleClass,
@@ -164,6 +165,29 @@ describe("nodeVisualRole", () => {
   it("maps pure nodes to the pure role and defaults to function", () => {
     expect(nodeVisualRole({ category: "math", pure: true })).toBe("pure");
     expect(nodeVisualRole({ category: "physics" })).toBe("function");
+  });
+
+  it("colours Particle Graph headers like the matching Basic Particle Emitter stage", () => {
+    const graphHeader = (nodeType: string, title: string, category: string, particleRole: string) =>
+      nodeVisualRole({ nodeType, title, category, particleRole });
+    // Generic rules would call every one of these a function node.
+    expect(graphHeader("particle.output", "Emitter Output", "Emitter", "output")).toBe(
+      basicParticleStageRole("emitter"),
+    );
+    expect(graphHeader("create.particle", "Create Particle", "Emitter", "create")).toBe(
+      basicParticleStageRole("initialize"),
+    );
+    expect(graphHeader("shape.sphere", "Sphere Shape", "Shape", "shape")).toBe(
+      basicParticleStageRole("shape"),
+    );
+    expect(graphHeader("update.color", "Update Color", "Update", "update")).toBe(
+      basicParticleStageRole("overLife"),
+    );
+  });
+
+  it("ignores a Particle Graph role that is not a stage", () => {
+    expect(nodeVisualRole({ category: "math", pure: true, particleRole: "toString" })).toBe("pure");
+    expect(nodeVisualRole({ category: "physics", particleRole: "constructor" })).toBe("function");
   });
 });
 

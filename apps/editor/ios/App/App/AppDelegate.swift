@@ -7,23 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        disableWebViewBounce()
+        // Override point for customization after application launch.
         return true
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        disableWebViewBounce()
-    }
-
-    /// WKWebView rubber-band is independent of CSS overflow; disable it for the app shell.
-    private func disableWebViewBounce() {
-        DispatchQueue.main.async {
-            guard let root = self.window?.rootViewController as? CAPBridgeViewController,
-                  let scrollView = root.webView?.scrollView else { return }
-            scrollView.bounces = false
-            scrollView.alwaysBounceVertical = false
-            scrollView.alwaysBounceHorizontal = false
-        }
+        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -55,6 +44,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Feel free to add additional processing here, but if you want the App API to support
         // tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+
+        let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+        config.delegateClass = SceneDelegate.self
+        return config
     }
 
 }

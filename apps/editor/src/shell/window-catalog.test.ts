@@ -3,6 +3,8 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   MATERIAL_SIDE_STACK_WIDTH,
+  findDockWindow,
+  isDockviewDocumentKind,
   listDockWindows,
   primaryDockPanel,
   resolveDockInitialWidth,
@@ -393,6 +395,7 @@ describe("listDockWindows", () => {
       "audio-channel",
       "sound-attenuation",
       "particle-emitter",
+      "particle-graph",
       "particle-system",
       "model",
       "skeleton",
@@ -515,6 +518,48 @@ describe("material dock catalog", () => {
         (entry) => entry.id === "locks",
       )?.defaultPosition?.referencePanelId,
     ).toBe("material-graph");
+  });
+});
+
+describe("particle graph dock catalog", () => {
+  it("lists Graph, Preview, Details and Compiler Results in Title Case", () => {
+    expect(isDockviewDocumentKind("particle-graph")).toBe(true);
+    expect(
+      listDockWindows("particle-graph").map((entry) => [entry.id, entry.title]),
+    ).toEqual([
+      ["particle-graph-canvas", "Graph"],
+      ["particle-graph-preview", "Preview"],
+      ["particle-graph-details", "Details"],
+      ["particle-graph-compiler-results", "Compiler Results"],
+    ]);
+  });
+
+  it("uses the Material layout around the Graph", () => {
+    const position = (id: string) =>
+      findDockWindow("particle-graph", id)?.defaultPosition;
+    expect(primaryDockPanel("particle-graph")).toBe("particle-graph-canvas");
+    expect(position("particle-graph-canvas")).toBeUndefined();
+    expect(position("particle-graph-preview")).toEqual({
+      referencePanelId: "particle-graph-canvas",
+      direction: "left",
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
+    });
+    expect(position("particle-graph-details")).toEqual({
+      referencePanelId: "particle-graph-preview",
+      direction: "below",
+    });
+    expect(position("particle-graph-compiler-results")).toEqual({
+      referencePanelId: "particle-graph-canvas",
+      direction: "below",
+      initialHeight: 160,
+    });
+  });
+
+  it("anchors Locks under the Graph when source control is on", () => {
+    expect(
+      findDockWindow("particle-graph", "locks", { sourceControl: true })
+        ?.defaultPosition?.referencePanelId,
+    ).toBe("particle-graph-canvas");
   });
 });
 

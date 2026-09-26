@@ -44,7 +44,7 @@ export function particleValueDisplay(unit: ParticleValueUnit): ParticleValueDisp
 
 export const PARTICLE_BLEND_MODE_LABELS: Record<ParticleBlendMode, string> = {
   additive: "Additive",
-  standard: "Alpha Blend",
+  standard: "Normal",
   add: "Alpha Additive",
   multiply: "Multiply",
   subtract: "Subtract",

@@ -58,6 +58,12 @@ import {
   ParticleEmitterPreviewPanel,
 } from "../panels/particle-emitter-panels";
 import {
+  ParticleGraphCanvasPanel,
+  ParticleGraphCompilerResultsPanel,
+  ParticleGraphDetailsPanel,
+  ParticleGraphPreviewPanel,
+} from "../panels/particle-graph-panels";
+import {
   ParticleSystemDetailsPanel,
   ParticleSystemPreviewPanel,
 } from "../panels/particle-system-panels";
@@ -211,6 +217,18 @@ export const panelComponents = {
   ),
   "particle-emitter-details": (props: IDockviewPanelProps) => (
     <ParticleEmitterDetailsPanel {...props} />
+  ),
+  "particle-graph-canvas": (props: IDockviewPanelProps) => (
+    <ParticleGraphCanvasPanel {...props} />
+  ),
+  "particle-graph-preview": (props: IDockviewPanelProps) => (
+    <ParticleGraphPreviewPanel {...props} />
+  ),
+  "particle-graph-details": (props: IDockviewPanelProps) => (
+    <ParticleGraphDetailsPanel {...props} />
+  ),
+  "particle-graph-compiler-results": (props: IDockviewPanelProps) => (
+    <ParticleGraphCompilerResultsPanel {...props} />
   ),
   "water-preview": (props: IDockviewPanelProps) => <WaterPreviewPanel {...props} />,
   "water-details": (props: IDockviewPanelProps) => <WaterDetailsPanel {...props} />,

@@ -27,6 +27,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "audio-channel": ["audio-channel-details"],
   "sound-attenuation": ["sound-attenuation-details"],
   "particle-emitter": ["particle-emitter-preview"],
+  "particle-graph": ["particle-graph-canvas"],
   "particle-system": ["particle-system-preview"],
   model: ["model-preview"],
   skeleton: ["skeleton-preview"],
@@ -205,6 +206,9 @@ export const engineSettingsSchema = z.object({
       ),
       "particle-emitter": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["particle-emitter"],
+      ),
+      "particle-graph": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["particle-graph"],
       ),
       "particle-system": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["particle-system"],

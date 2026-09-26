@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
 import { eulerDegreesToQuaternion, quatRotateVector } from "./euler";
-import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves } from "./water";
+import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves, waterRiverCentreline } from "./water";
 
 describe("Water surfaces", () => {
   const flat = { ...createDefaultWaterDefinition(), waveHeight: 0 };
@@ -31,10 +31,26 @@ describe("Water surfaces", () => {
     expect(sampleWaterSurface(flat, { ...body, enabled: false }, { x: 20, y: 2, z: 10 }, 0, transform).found).toBe(false);
   });
   it("follows a river's centreline elevation and directed current without filling its bounding rectangle", () => {
-    const body = normalizeWaterBody({ width: 2, flowSpeed: 3, points: [[0, 4, 0], [0, 2, 10], [10, 0, 10]] }, "river");
+    const body = normalizeWaterBody({ width: 2, flowSpeed: 3, curvature: 0, points: [[0, 4, 0], [0, 2, 10], [10, 0, 10]] }, "river");
     expect(sampleWaterSurface(flat, body, { x: 0, y: 0, z: 5 }, 0)).toMatchObject({ found: true, height: 3, velocity: { x: 0, z: 3 } });
     expect(sampleWaterSurface(flat, body, { x: 5, y: 0, z: 10 }, 0)).toMatchObject({ found: true, height: 1, velocity: { x: 3, z: 0 } });
     expect(sampleWaterSurface(flat, body, { x: 5, y: 0, z: 5 }, 0).found).toBe(false);
+  });
+  it("curves a river through its control points and narrows or widens it at each point", () => {
+    const points: [number, number, number][] = [[0, 0, 0], [0, 0, 10], [10, 0, 10]];
+    const curved = normalizeWaterBody({ width: 2, points, widthScales: [1, 1, 4] }, "river");
+    const line = waterRiverCentreline(curved);
+    // Every control point stays on the path, while the first reach bows away from its straight chord.
+    for (const [x, , z] of points) expect(line.some((p) => Math.hypot(p.x - x, p.z - z) < 1e-9)).toBe(true);
+    const straight = { ...curved, curvature: 0 };
+    expect(sampleWaterSurface(flat, curved, { x: 0.9, y: -1, z: 7 }, 0).found).toBe(false);
+    expect(sampleWaterSurface(flat, curved, { x: -1.5, y: -1, z: 7 }, 0).found).toBe(true);
+    expect(sampleWaterSurface(flat, straight, { x: 0.9, y: -1, z: 7 }, 0).found).toBe(true);
+    expect(sampleWaterSurface(flat, straight, { x: -1.5, y: -1, z: 7 }, 0).found).toBe(false);
+    // The downstream point is four times as wide as Width.
+    expect(sampleWaterSurface(flat, curved, { x: 10, y: -1, z: 13.5 }, 0).found).toBe(true);
+    expect(sampleWaterSurface(flat, curved, { x: 1.5, y: -1, z: 1 }, 0).found).toBe(false);
+    expect(normalizeWaterBody({ points, widthScales: [2, "x"] }, "river").widthScales).toEqual([2, 1, 1]);
   });
   it("reports normals and vertical velocity matching the moving surface", () => {
     const water = createDefaultWaterDefinition();

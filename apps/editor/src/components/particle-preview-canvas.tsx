@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
 import {
+  particleEmitterMaterialGuid,
   particleLibraryCompileKey,
   particleLibraryMaterialGuids,
   type ParticleLibrary,
+  type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
+import {
+  validateParticleGraphDocument,
+  type ParticleGraphDocument,
+} from "@babylonslate/particle-graph";
 import {
   ParticleService,
   acquireMaterialTexture,
@@ -33,12 +39,92 @@ const PREVIEW_ACTOR = "preview";
 const PREVIEW_COMPONENT = "preview";
 
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
+type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
-function particleLibraryLook(
+function graphErrorCount(entry: ParticleLibraryEmitter): number {
+  if (entry.kind !== "graph") return 0;
+  return validateParticleGraphDocument(entry.document).filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
+}
+
+/**
+ * What the preview runs. A Particle Graph with validator errors keeps its last valid
+ * build (with its current Material, which only rebinds) so an edit in progress does
+ * not blank the preview; a graph that never validated stays as-is and is skipped.
+ */
+type PreviewLibrary = {
+  library: ParticleLibrary;
+  look: PreviewLook;
+  /** Graphs shown from their last valid build, and their current error total. */
+  held: { graphs: number; errors: number };
+  lastValid: Map<string, ParticleGraphDocument>;
+};
+
+function resolvePreviewLibrary(
+  incoming: ParticleLibrary,
+  lastValid: ReadonlyMap<string, ParticleGraphDocument>,
+): PreviewLibrary {
+  const emitters = new Map<string, ParticleLibraryEmitter>();
+  const nextValid = new Map<string, ParticleGraphDocument>();
+  const held = { graphs: 0, errors: 0 };
+  let material = false;
+  let playable = false;
+  for (const [guid, entry] of incoming.emitters) {
+    const errors = graphErrorCount(entry);
+    const previous = lastValid.get(guid);
+    let shown = entry;
+    if (entry.kind === "graph" && errors === 0) nextValid.set(guid, entry.document);
+    else if (entry.kind === "graph" && previous) {
+      nextValid.set(guid, previous);
+      shown = {
+        kind: "graph",
+        document: { ...previous, materialGuid: entry.document.materialGuid },
+      };
+      held.graphs += 1;
+      held.errors += errors;
+    }
+    emitters.set(guid, shown);
+    if (!particleEmitterMaterialGuid(shown)) continue;
+    material = true;
+    if (shown !== entry || errors === 0) playable = true;
+  }
+  const look: PreviewLook =
+    emitters.size === 0
+      ? "no-emitters"
+      : playable
+        ? "ok"
+        : material
+          ? "graph-errors"
+          : "no-material";
+  return {
+    library: held.graphs > 0 ? { emitters, systems: incoming.systems } : incoming,
+    look,
+    held,
+    lastValid: nextValid,
+  };
+}
+
+function heldNotice(held: PreviewLibrary["held"]): string | null {
+  if (held.graphs === 0) return null;
+  if (held.graphs > 1) {
+    return `${held.graphs} Particle Graphs have errors. Preview shows their last valid builds.`;
+  }
+  const errors = `${held.errors} ${held.errors === 1 ? "error" : "errors"}`;
+  return `Graph has ${errors}. Preview shows the last valid build.`;
+}
+
+/** Particle Graphs always simulate on the CPU, which is not the Basic fallback's device note. */
+function backendHint(
   library: ParticleLibrary,
-): "no-emitters" | "no-material" | "ok" {
-  if (library.emitters.size === 0) return "no-emitters";
-  return particleLibraryMaterialGuids(library).length > 0 ? "ok" : "no-material";
+  stats: ParticlePreviewStats | null,
+): string | undefined {
+  if (stats?.backend !== "cpu") return undefined;
+  const kinds = new Set([...library.emitters.values()].map((entry) => entry.kind));
+  if (!kinds.has("graph")) return undefined;
+  return kinds.has("basic")
+    ? "GPU particles are unavailable on this device, so Basic Particle Emitters are limited to 512 particles. Particle Graphs always simulate on the CPU."
+    : "Particle Graphs simulate on the CPU.";
 }
 
 /** A slot-level Material problem explains an empty preview better than a later failure. */
@@ -48,12 +134,15 @@ function blockingDiagnostic(
   return (
     diagnostics.find((entry) => entry.code === "particle.missing_material") ??
     diagnostics.find((entry) => entry.code === "particle.unknown_emitter") ??
+    diagnostics.find((entry) => entry.code === "particle.graph_invalid") ??
     diagnostics[0] ?? {
       code: "particle.apply_failed",
       message: "The particle Preview could not start.",
     }
   );
 }
+
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
 function sameStats(
   a: ParticlePreviewStats | null,
@@ -73,14 +162,16 @@ function sameStats(
 /**
  * Particle Preview on the shared Engine. The scene, presenter and service live
  * across edits: `live` changes apply at once, heavier ones after a 220ms pause, and
- * only a different Material set, skybox or Retry starts a new scene.
+ * only a different Material set, skybox or Retry starts a new scene. A Particle
+ * Graph with errors keeps playing its last valid build.
  */
 export function ParticlePreviewCanvas({
-  library,
+  library: incoming,
   systemGuid,
   testId,
   showSkybox = false,
   onPickMaterial,
+  onDiagnostics,
 }: {
   library: ParticleLibrary;
   systemGuid: string;
@@ -88,6 +179,16 @@ export function ParticlePreviewCanvas({
   showSkybox?: boolean;
   /** Offers Pick Material on the No Material state (Basic emitter preview). */
   onPickMaterial?: () => void;
+  /**
+   * The current run's service diagnostics (skipped slots and node-anchored Particle
+   * Graph build errors), reported whenever they change; empty when the run ends.
+   * `applied` is the library that run was built from, which can trail `library`
+   * while a debounced edit waits.
+   */
+  onDiagnostics?: (
+    diagnostics: readonly ParticleServiceDiagnostic[],
+    applied: ParticleLibrary,
+  ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -101,8 +202,19 @@ export function ParticlePreviewCanvas({
   const [updating, setUpdating] = useState(false);
   const [stats, setStats] = useState<ParticlePreviewStats | null>(null);
 
+  // Everything below reads the resolved library, so a held graph never reaches the service.
+  // Stats polling re-renders with the same library, which then skips validation.
+  const lastValidRef = useRef<ReadonlyMap<string, ParticleGraphDocument>>(new Map());
+  const resolved = useMemo(
+    () => resolvePreviewLibrary(incoming, lastValidRef.current),
+    [incoming],
+  );
+  lastValidRef.current = resolved.lastValid;
+  const { library, look } = resolved;
   const libraryRef = useRef(library);
   libraryRef.current = library;
+  const onDiagnosticsRef = useRef(onDiagnostics);
+  onDiagnosticsRef.current = onDiagnostics;
   const pausedRef = useRef(paused);
   const serviceRef = useRef<ParticleService | null>(null);
   const appliedRef = useRef<ParticleLibrary | null>(null);
@@ -115,8 +227,7 @@ export function ParticlePreviewCanvas({
     setEngine(play?.ensureSharedEngine() ?? null);
   }, [play]);
 
-  const look = particleLibraryLook(library);
-  const libraryKey = particleLibraryCompileKey(library);
+  const libraryKey = useMemo(() => particleLibraryCompileKey(library), [library]);
   // A resolver knows only the Material documents collected at boot.
   const materialKey = particleLibraryMaterialGuids(library).sort().join(",");
 
@@ -136,6 +247,8 @@ export function ParticlePreviewCanvas({
       setFailure(null);
       setNotice(diagnostics[0]?.message ?? null);
     }
+    const applied = appliedRef.current;
+    if (applied) onDiagnosticsRef.current?.([...diagnostics], applied);
   }, []);
 
   const assign = useCallback(
@@ -190,9 +303,14 @@ export function ParticlePreviewCanvas({
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
     let frame = 0;
     const disposePreview = () => {
+      const applied = appliedRef.current;
       serviceRef.current?.dispose();
       serviceRef.current = null;
       appliedRef.current = null;
+      if (diagnosticsRef.current.length > 0) {
+        diagnosticsRef.current = [];
+        if (applied) onDiagnosticsRef.current?.([], applied);
+      }
       materials?.dispose();
       materials = null;
       presenter?.dispose();
@@ -335,7 +453,16 @@ export function ParticlePreviewCanvas({
   };
 
   const retry = () => setAttempt((value) => value + 1);
-  const state = previewState({ look, engine, booted, failure, notice, updating, onPickMaterial, retry });
+  const state = previewState({
+    look,
+    engine,
+    booted,
+    failure,
+    notice: heldNotice(resolved.held) ?? notice,
+    updating,
+    onPickMaterial,
+    retry,
+  });
 
   return (
     <ParticlePreviewSurface
@@ -344,6 +471,7 @@ export function ParticlePreviewCanvas({
       onPausedChange={onPausedChange}
       onRestart={onRestart}
       stats={stats}
+      backendHint={backendHint(library, stats)}
     >
       <canvas
         ref={canvasRef}
@@ -354,8 +482,11 @@ export function ParticlePreviewCanvas({
   );
 }
 
+const GRAPH_ERRORS_TITLE = "Graph Has Errors";
+const GRAPH_ERRORS_TEST_ID = "particle-preview-graph-errors";
+
 function previewState(options: {
-  look: ReturnType<typeof particleLibraryLook>;
+  look: PreviewLook;
   engine: AbstractEngine | null;
   booted: boolean;
   failure: PreviewFailure | null;
@@ -383,6 +514,15 @@ function previewState(options: {
       action: pickMaterial,
     };
   }
+  if (look === "graph-errors") {
+    // Only graphs that never validated in this preview land here; others keep their last build.
+    return {
+      status: "empty",
+      title: GRAPH_ERRORS_TITLE,
+      description: "Fix the errors in the Particle Graph's Compiler Results to preview.",
+      testId: GRAPH_ERRORS_TEST_ID,
+    };
+  }
   if (!options.engine || !options.booted) return { status: "loading" };
   if (failure?.code === "particle.missing_material") {
     return {
@@ -401,6 +541,22 @@ function previewState(options: {
       description: failure.message,
       onRetry: retry,
       testId: "particle-preview-empty",
+    };
+  }
+  if (failure?.code === "particle.graph_invalid") {
+    return {
+      status: "error",
+      title: GRAPH_ERRORS_TITLE,
+      description: failure.message,
+      onRetry: retry,
+      testId: GRAPH_ERRORS_TEST_ID,
+    };
+  }
+  if (failure?.code.startsWith("particle.compile.")) {
+    return {
+      status: "error",
+      description: `${sentence(failure.message)} Check the Particle Graph's Compiler Results.`,
+      onRetry: retry,
     };
   }
   if (failure) {

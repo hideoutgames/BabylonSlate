@@ -52,6 +52,8 @@ export interface GizmoHost {
   readonly positionGizmo: PositionGizmo;
   readonly rotationGizmo: RotationGizmo;
   readonly scaleGizmo: ScaleGizmo;
+  /** Shared utility layer, so other editor handles get the same picking and pointer routing. */
+  readonly layer: UtilityLayerRenderer;
   setTool: (tool: GizmoTool) => void;
   setMode: (mode: ViewportMode) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
@@ -518,6 +520,7 @@ export function createGizmoHost(
     positionGizmo: position,
     rotationGizmo: rotation,
     scaleGizmo: scale,
+    layer,
     setTool: (next: GizmoTool) => {
       if (next === tool) return;
       tool = next;

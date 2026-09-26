@@ -167,6 +167,9 @@ importers:
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../../packages/object-model
+      '@babylonslate/particle-graph':
+        specifier: workspace:*
+        version: link:../../packages/particle-graph
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../../packages/physics
@@ -336,6 +339,9 @@ importers:
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../../packages/object-model
+      '@babylonslate/particle-graph':
+        specifier: workspace:*
+        version: link:../../packages/particle-graph
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../../packages/physics
@@ -377,6 +383,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/particle-graph':
+        specifier: workspace:*
+        version: link:../particle-graph
       '@babylonslate/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph
@@ -575,6 +584,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/particle-graph:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/physics:
     dependencies:
       '@babylonjs/core':
@@ -620,6 +639,9 @@ importers:
       '@babylonslate/navigation':
         specifier: workspace:*
         version: link:../navigation
+      '@babylonslate/particle-graph':
+        specifier: workspace:*
+        version: link:../particle-graph
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../physics

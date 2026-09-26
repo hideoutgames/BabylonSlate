@@ -211,10 +211,15 @@ export function applyBasicEmitterPlan(system: IParticleSystem, plan: BasicEmitte
   const inPlace = scope === "live" && editGradientsInPlace(system, plan.gradients);
   if (!inPlace) replaceGradients(system, plan.gradients);
   if (!(system instanceof OwnedGPUParticleSystem) || scope === "create") return;
-  // Gradient adds and removes release Babylon's buffers, and WebGL2 keeps vertex
-  // arrays recorded for the old update program until reset() releases them.
-  if (inPlace) system.refreshGradientTextures();
-  else system.reset();
+  if (inPlace) {
+    system.refreshGradientTextures();
+    return;
+  }
+  // Gradient adds and removes release Babylon's buffers and dispose the gradient textures
+  // their layout depends on. reset() releases WebGL2's vertex arrays but keeps its update
+  // program, so the next render() would lay out buffers before recreating the textures.
+  system.reset();
+  system._recreateUpdateEffect();
 }
 
 function vec3(value: ParticleVec3Tuple): Vector3 {

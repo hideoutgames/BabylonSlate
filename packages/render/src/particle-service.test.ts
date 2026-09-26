@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, Scene } from "@babylonjs/core";
+import { GPUParticleSystem, Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   normalizeParticleEmitterPayload,
@@ -6,6 +6,7 @@ import {
   type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
 import { PARTICLE_CPU_CAPACITY_BUDGET, PARTICLE_UPDATE_SPEED } from "@babylonslate/core";
+import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@babylonslate/particle-graph";
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";
@@ -13,6 +14,14 @@ import type { ResourceLease } from "./resource-cache";
 /** A Basic emitter using the "mat" Material unless the payload names another. */
 function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
   return { kind: "basic", payload: normalizeParticleEmitterPayload({ ...payload, render: { materialGuid: "mat", ...payload.render } }) };
+}
+
+/** The default Particle Graph using the "mat" Material unless another (or none) is given. */
+function graph(materialGuid: string | null = "mat", edit?: (document: ParticleGraphDocument) => void): ParticleLibraryEmitter {
+  const document = createDefaultParticleGraphDocument();
+  document.materialGuid = materialGuid;
+  edit?.(document);
+  return { kind: "graph", document };
 }
 
 function library(emitters: Record<string, ParticleLibraryEmitter>, slots: string[] = Object.keys(emitters)): ParticleLibrary {
@@ -43,7 +52,8 @@ describe("ParticleService", () => {
   });
 
   function host(options: {
-    ready?: (guid: string) => Promise<void> | undefined;
+    /** `released` settles when that lease is released, as MaterialLibrary cancels a still-preparing Material. */
+    ready?: (guid: string, released: Promise<void>) => Promise<void> | undefined;
     sceneForSlot?: (slotId: number) => Scene | null;
     statsScope?: "global" | "local";
     /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
@@ -54,13 +64,18 @@ describe("ParticleService", () => {
     if (options.gpu) vi.spyOn(handle.engine, "getCaps").mockReturnValue({ ...handle.engine.getCaps(), supportTransformFeedbacks: true });
     const emitterMesh = MeshBuilder.CreateBox("emitter", { size: 0.1 }, handle.scene);
     const leases = { acquired: 0, released: 0 };
+    /** Material guids in the order their Materials were bound to a system. */
+    const bound: string[] = [];
     const diagnostics: ParticleServiceDiagnostic[] = [];
     const acquireMaterial = (guid: string, owner: ParticleMaterialOwner): ResourceLease<NodeMaterial> | null => {
       if (!guid.startsWith("mat")) return null;
       const resource = particleMaterial(owner.scene);
+      resource.createEffectForParticles = () => { bound.push(guid); };
       leases.acquired += 1;
-      return { key: owner.instanceKey, resource, ready: options.ready?.(guid),
-        release: () => { leases.released += 1; resource.dispose(); } };
+      let onRelease!: () => void;
+      const released = new Promise<void>((resolve) => { onRelease = resolve; });
+      return { key: owner.instanceKey, resource, ready: options.ready?.(guid, released),
+        release: () => { leases.released += 1; onRelease(); resource.dispose(); } };
     };
     const service = new ParticleService({
       scene: handle.scene,
@@ -79,7 +94,7 @@ describe("ParticleService", () => {
       handle.scene.onAfterRenderObservable.notifyObservers(handle.scene);
     };
     const state = () => service.playbackState("fx", "particle-1");
-    return { ...handle, service, emitterMesh, leases, diagnostics, assign, frame, state };
+    return { ...handle, service, emitterMesh, leases, bound, diagnostics, assign, frame, state };
   }
 
   const started = (system: unknown) => (system as ParticleSystem | undefined)?.isStarted() === true;
@@ -96,7 +111,7 @@ describe("ParticleService", () => {
     expect(system.billboardMode).toBe(ParticleSystem.BILLBOARDMODE_ALL);
     expect(system.blendMode).toBe(ParticleSystem.BLENDMODE_ONEONE);
     await vi.waitFor(() => expect(system.isStarted()).toBe(true));
-    expect(service.stats()).toEqual({ systems: 1, playing: 1, gpu: false, gpuSystems: 0 });
+    expect(service.stats()).toEqual({ systems: 1, playing: 1, gpu: false, gpuSystems: 0, graphSystems: 0 });
     service.dispose();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().systems).toBe(0);
@@ -364,13 +379,161 @@ describe("ParticleService", () => {
   });
 
   it("keeps preview stats out of the Play stats hook", () => {
-    Object.assign(particleStats, { systems: 0, playing: 0, gpu: false, gpuSystems: 0 });
+    Object.assign(particleStats, { systems: 0, playing: 0, gpu: false, gpuSystems: 0, graphSystems: 0 });
     const { service, assign } = host({ statsScope: "local" });
     service.setLibrary(library({ "em-1": basic() }));
     assign();
     expect(service.stats().systems).toBe(1);
     expect(particleStats.systems).toBe(0);
     expect(service.previewStats()).toMatchObject({ capacity: 256, backend: "cpu", approximate: false });
+    service.dispose();
+  });
+  it("plays a GPU Basic slot beside a CPU Particle Graph slot in one System", async () => {
+    const { scene, service, assign } = host({ gpu: true });
+    service.setLibrary(library({ "em-1": basic(), "fx-graph": graph() }));
+    assign();
+    const [basicSystem, graphSystem] = scene.particleSystems;
+    expect(basicSystem).toBeInstanceOf(GPUParticleSystem);
+    expect(graphSystem).toBeInstanceOf(ParticleSystem);
+    expect(graphSystem).not.toBeInstanceOf(GPUParticleSystem);
+    await vi.waitFor(() => expect(started(graphSystem)).toBe(true));
+    expect(service.stats()).toEqual({ systems: 2, playing: 1, gpu: true, gpuSystems: 1, graphSystems: 1 });
+    expect(service.previewStats()).toMatchObject({ backend: "mixed", approximate: true });
+    service.dispose();
+    expect(scene.particleSystems).toHaveLength(0);
+    expect(service.stats()).toMatchObject({ systems: 0, gpuSystems: 0, graphSystems: 0 });
+  });
+
+  it("skips an invalid or Material-less Particle Graph slot and plays the others", async () => {
+    const { scene, service, diagnostics, leases, assign } = host();
+    service.setLibrary(library({
+      broken: graph("mat", (document) => document.nodes.push({ id: "bogus", type: "bogus.node", position: { x: 0, y: 0 }, properties: {} })),
+      bare: graph(null),
+      "em-1": basic(),
+    }));
+    assign();
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "particle.graph_invalid", assetGuid: "broken", nodeId: "bogus", message: expect.stringMatching(/1 error/) }),
+      expect.objectContaining({ code: "particle.missing_material", assetGuid: "bare", message: expect.stringMatching(/Particle Graph has no Material/) }),
+    ]);
+    // Neither skipped graph acquired a Material or built a system.
+    expect(leases.acquired).toBe(1);
+    expect(scene.particleSystems).toHaveLength(1);
+    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    service.dispose();
+  });
+
+  it("rebuilds only the edited Particle Graph slot and keeps the Basic slot running", async () => {
+    const { scene, service, leases, assign } = host();
+    service.updateLibrary(library({ "em-1": basic(), "fx-graph": graph() }));
+    assign();
+    const [basicSystem, graphSystem] = scene.particleSystems as ParticleSystem[];
+    await vi.waitFor(() => expect(started(graphSystem) && started(basicSystem)).toBe(true));
+    const basicStart = vi.spyOn(basicSystem!, "start");
+    const faster = graph("mat", (document) => {
+      document.nodes = document.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [60] } } : entry);
+    });
+    expect(service.updateLibrary(library({ "em-1": basic(), "fx-graph": faster })).tier).toBe("rebuild");
+    expect(scene.particleSystems).toHaveLength(2);
+    expect(scene.particleSystems).toContain(basicSystem);
+    expect(scene.particleSystems).not.toContain(graphSystem);
+    const rebuilt = scene.particleSystems.find((system) => system !== basicSystem) as ParticleSystem;
+    expect(rebuilt.emitRate).toBe(60);
+    await vi.waitFor(() => expect(started(rebuilt)).toBe(true));
+    expect(basicStart).not.toHaveBeenCalled();
+    expect(leases).toEqual({ acquired: 3, released: 1 });
+    service.dispose();
+    expect(leases.released).toBe(leases.acquired);
+  });
+
+  it("ignores Particle Graph node moves and renames", async () => {
+    const { scene, service, assign } = host();
+    service.updateLibrary(library({ "fx-graph": graph() }));
+    assign();
+    const system = scene.particleSystems[0];
+    const moved = graph("mat", (document) => {
+      document.name = "Renamed";
+      document.nodes = document.nodes.map((entry) => ({ ...entry, position: { x: entry.position.x + 40, y: entry.position.y - 25 } }));
+    });
+    expect(service.libraryChangeTier(library({ "fx-graph": moved }))).toBe("none");
+    expect(service.updateLibrary(library({ "fx-graph": moved })).tier).toBe("none");
+    expect(scene.particleSystems).toEqual([system]);
+    service.dispose();
+  });
+
+  it("rebinds a Particle Graph's new Material on the running system", async () => {
+    const { scene, service, leases, bound, assign } = host();
+    service.updateLibrary(library({ "fx-graph": graph("mat") }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(started(system)).toBe(true));
+    const start = vi.spyOn(system, "start");
+    expect(service.updateLibrary(library({ "fx-graph": graph("mat-2") })).tier).toBe("live");
+    expect(scene.particleSystems).toEqual([system]);
+    // The old Material draws until the new one is bound, then its lease is released.
+    await vi.waitFor(() => expect(leases.released).toBe(1));
+    expect(bound).toEqual(["mat", "mat-2"]);
+    expect(leases.acquired).toBe(2);
+    expect(start).not.toHaveBeenCalled();
+    expect(system.isStarted()).toBe(true);
+    service.dispose();
+    expect(leases.released).toBe(2);
+  });
+
+  it("keeps a rebound Particle Graph slot when the replaced Material's preparation is cancelled", async () => {
+    const { scene, service, leases, diagnostics, assign, state } = host({
+      ready: (guid, released) => guid === "mat"
+        ? released.then(() => { throw new Error("Material preparation was cancelled"); })
+        : undefined,
+    });
+    service.updateLibrary(library({ "fx-graph": graph("mat") }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    expect(state()).toBe("preparing");
+    expect(service.updateLibrary(library({ "fx-graph": graph("mat-2") })).tier).toBe("live");
+    await vi.waitFor(() => expect(leases.released).toBe(1));
+    await vi.waitFor(() => expect(started(system)).toBe(true));
+    expect(scene.particleSystems).toEqual([system]);
+    expect(state()).toBe("playing");
+    expect(diagnostics).toEqual([]);
+    service.dispose();
+  });
+
+  it("freezes a paused Particle Graph's per-frame updates and prewarms it on resume", async () => {
+    // Update Angle = Angle + 0.1 changes every simulated frame, whatever the update speed.
+    const spinning = graph("mat", (document) => {
+      document.settings.prewarm = 1;
+      document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+      document.nodes.push(
+        { id: "spin", type: "update.angle", position: { x: 0, y: 0 }, properties: {} },
+        { id: "angle", type: "input.contextual.angle", position: { x: 0, y: 0 }, properties: {} },
+        { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: { "default:b": [0.1] } },
+      );
+      document.edges.push(
+        { id: "a", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "spin", targetPinId: "particle" },
+        { id: "b", sourceNodeId: "spin", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+        { id: "c", sourceNodeId: "angle", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+        { id: "d", sourceNodeId: "add", sourcePinId: "out", targetNodeId: "spin", targetPinId: "angle" },
+      );
+    });
+    const { scene, service, diagnostics, assign, state } = host();
+    service.setLibrary(library({ "fx-graph": spinning }));
+    service.setPaused(true);
+    assign();
+    expect(diagnostics).toEqual([]);
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(state()).toBe("playing"));
+    service.setPaused(false);
+    // Pre Warm ran inside the resumed start.
+    expect(system.particles.length).toBeGreaterThan(0);
+    const angles = () => system.particles.map((particle) => particle.angle);
+    service.setPaused(true);
+    const frozen = angles();
+    for (let step = 0; step < 10; step += 1) system.animate(true);
+    expect(angles()).toEqual(frozen);
+    service.setPaused(false);
+    system.animate(true);
+    expect(angles()).not.toEqual(frozen);
     service.dispose();
   });
 });

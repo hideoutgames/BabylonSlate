@@ -181,6 +181,16 @@ test.describe("P17 particles", () => {
         return changed;
       });
     await expect.poll(changedPreviewPixels, { timeout: 15_000 }).toBeGreaterThan(200);
+    // A Shape class change respawns GPU particles in place. A broken respawn still moves
+    // while old particles die, then freezes, so judge motion after one particle lifetime.
+    await page.getByTestId("property-shape").click();
+    await page.getByRole("option", { name: "Box", exact: true }).click();
+    await expect(page.getByTestId("property-shape")).toContainText("Box");
+    // The new update program may compile for a while before particles draw again.
+    await expect.poll(changedPreviewPixels, { timeout: 15_000 }).toBeGreaterThan(1000);
+    const respawnMotion: number[] = [];
+    for (let sample = 0; sample < 6; sample += 1) respawnMotion.push(await changedPreviewPixels());
+    expect(Math.min(...respawnMotion.slice(3))).toBeGreaterThan(1000);
 
     await page.getByTestId("module-card-gravity-enabled").click();
     await expect(page.getByTestId("module-card-gravity-body")).toBeVisible();

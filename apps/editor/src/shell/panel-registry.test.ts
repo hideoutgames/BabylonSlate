@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { panelComponents } from "./panel-registry";
+import { listDockWindows } from "./window-catalog";
 
 describe("panelComponents", () => {
   it("registers Animation Graph dock panels", () => {
@@ -38,6 +39,15 @@ describe("panelComponents", () => {
     expect(panelComponents["particle-emitter-details"]).toBeTypeOf("function");
     expect(panelComponents["particle-system-preview"]).toBeTypeOf("function");
     expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
+  });
+
+  it("registers every Particle Graph dock window", () => {
+    const registered: Record<string, unknown> = panelComponents;
+    const windows = listDockWindows("particle-graph");
+    expect(windows).toHaveLength(4);
+    for (const entry of windows) {
+      expect(registered[entry.component]).toBeTypeOf("function");
+    }
   });
 
   it("registers Model Preview, Colliders, and Details docks", () => {

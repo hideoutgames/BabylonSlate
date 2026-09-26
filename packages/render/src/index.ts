@@ -82,6 +82,7 @@ export * from "./audio-debug";
 export * from "./audio-unlock-hint";
 export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 export * from "./particle-service";
+export * from "./particle-graph-realize";
 export * from "./particle-system-factory";
 export * from "./particle-emission-driver";
 export * from "./particle-render-modes";
@@ -101,5 +102,8 @@ export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
-export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
+export { WaterField, distanceTransform, isWaterContactMesh } from "./water-field";
+export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

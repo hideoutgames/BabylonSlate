@@ -22,7 +22,8 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     expect(result.requestedBackend).toBe(backend);
     expect(result.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
-    expect(gpuMessages.filter((message) => /GPUValidationError|WebGPU uncaptured|GL_INVALID|Invalid fragment shader|Error while parsing WGSL/.test(message))).toEqual([]);
+    // "not found in the material context": a WebGPU draw of a Texture Sample Material without its texture bound.
+    expect(gpuMessages.filter((message) => /GPUValidationError|WebGPU uncaptured|GL_INVALID|Invalid fragment shader|Error while parsing WGSL|not found in the material context/.test(message))).toEqual([]);
     expect(result.diagnostics).toEqual([]);
     expect(result.resets).toBe(0);
     expect(result.acquisitions).toBe(result.releases);
@@ -39,7 +40,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       }
     }
     for (const capture of result.captures) {
-      if (["retired", "fractional-retired", "finite-retired"].includes(capture.name)) {
+      if (["retired", "fractional-retired", "finite-retired", "mixed-retired"].includes(capture.name)) {
         expect(capture.systems, capture.name).toBe(0);
         expect(capture.red + capture.blue, capture.name).toBe(0);
       } else if (capture.name === "fractional-pending") {
@@ -63,11 +64,11 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       expect(entry, name).toBeDefined();
       return entry!;
     };
-    for (const name of ["additive", "add"]) {
+    for (const name of ["additive", "add", "texture-additive"]) {
       const { centre, background } = blend(name);
       expect(centre, name).toBeGreaterThan(background + 20);
     }
-    for (const name of ["standard", "multiply", "subtract"]) {
+    for (const name of ["standard", "multiply", "subtract", "texture-multiply"]) {
       const { centre, background } = blend(name);
       expect(centre, name).toBeLessThan(background - 20);
     }

@@ -73,6 +73,7 @@ const LIGHTS = ["point", "directional", "spot"] as const;
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
   { id: "water-global", title: "Global Water Volume", category: "Water", kind: { type: "water", classId: "GlobalWaterVolumeComponent" } },
+  { id: "water-removal", title: "Water Removal Volume", category: "Water", kind: { type: "water", classId: "WaterRemovalVolumeComponent" } },
   ...SHAPES.map((meshKind) => ({
     id: `shape-${meshKind}`,
     title: `${meshKind[0]!.toUpperCase()}${meshKind.slice(1)}`,

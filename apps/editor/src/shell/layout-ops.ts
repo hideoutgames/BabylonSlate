@@ -79,6 +79,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "audio-channel": primaryDockPanel("audio-channel"),
   "sound-attenuation": primaryDockPanel("sound-attenuation"),
   "particle-emitter": primaryDockPanel("particle-emitter"),
+  "particle-graph": primaryDockPanel("particle-graph"),
   "particle-system": primaryDockPanel("particle-system"),
   water: primaryDockPanel("water"),
   model: primaryDockPanel("model"),

@@ -5,10 +5,10 @@ import {
   ExtractHighlightsPostProcess,
   FxaaPostProcess,
   ImageProcessingPostProcess,
+  PostProcess,
   Vector2,
   type Camera,
   type Effect,
-  type PostProcess,
   type Scene,
 } from "@babylonjs/core";
 import { PostProcessRetirement } from "./post-process-retirement";
@@ -18,13 +18,22 @@ import {
   type SceneEffectsPlan,
 } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
+import { createSpatialStages, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
+import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
   return sceneRenderingSettings(scene).effectsPlan;
 }
 
-function keyFor(scene: Scene): string {
-  return sceneRenderingSettings(scene).effectsKey;
+function keyFor(scene: Scene, camera: Camera): string {
+  return liveSceneEffectsKey(scene, camera);
+}
+
+class DisplaySpaceImageProcessingPostProcess extends ImageProcessingPostProcess {
+  // Babylon's prepass recognizes the native class name as a request for
+  // linear material output. A display-space vignette must preserve gamma input.
+  override getClassName(): string { return "DisplaySpaceImageProcessingPostProcess"; }
 }
 
 /**
@@ -41,6 +50,8 @@ export class SceneEffectsOwner {
   private native: PostProcess[] | undefined;
   private nativeCamera: Camera | undefined;
   private nativeKey: string | undefined;
+  private spatialLease: ManagedRenderLease | undefined;
+  private ownedPrePass = false;
   private readonly retirement = new PostProcessRetirement();
   private disposed = false;
   private cleanupFailure: unknown;
@@ -68,14 +79,14 @@ export class SceneEffectsOwner {
     return (
       !this.disposed &&
       this.nativeCamera === camera &&
-      this.nativeKey === keyFor(this.scene)
+      this.nativeKey === keyFor(this.scene, camera)
     );
   }
 
   /** Attach (or rebuild) the native chain for the live settings on camera. */
   useNative(camera: Camera): void {
     if (this.disposed || camera.getScene() !== this.scene) return;
-    const key = keyFor(this.scene);
+    const key = keyFor(this.scene, camera);
     if (this.nativeCamera === camera && this.nativeKey === key) return;
     this.detachNative();
     this.nativeCamera = camera;
@@ -85,12 +96,62 @@ export class SceneEffectsOwner {
     if (!plan) return;
     const engine = this.scene.getEngine();
     const passes: PostProcess[] = [];
+    const unattached = new Set<SpatialStage>();
     // Linear HDR keeps float intermediates until the display stage; Legacy
     // Display and CEL keep the established byte pipeline end to end.
     const type = plan.sceneLinear
       ? Constants.TEXTURETYPE_HALF_FLOAT
       : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     try {
+      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(this.scene)) {
+        const size = camera.outputRenderTarget?.getSize();
+        const width = size?.width ?? engine.getRenderWidth(true);
+        const height = size?.height ?? engine.getRenderHeight(true);
+        this.spatialLease = reserveSpatialEffects(this.scene, plan, width, height, true) ?? undefined;
+        if (this.spatialLease) {
+          const spatial = createSpatialStages(this.scene, camera, plan, width, height);
+          for (const stage of spatial) unattached.add(stage);
+          this.ownedPrePass = !this.scene.prePassRenderer;
+          const prepass = this.scene.enablePrePassRenderer();
+          if (!prepass) throw new Error("Spatial effects require a pre-pass renderer.");
+          prepass.useSpecificClearForDepthTexture = true;
+          const spatialPasses: PostProcess[] = [];
+          spatial.forEach((stage, index) => {
+            // Native PP size describes its INPUT. The next pass's input is this
+            // pass's output, so stage N+1 carries stage N's target scale.
+            const pass = new PostProcess(stage.wrapper.name, stage.wrapper.options.fragmentShader, {
+              camera, engine, size: index === 0 ? 1 : spatial[index - 1]!.scale,
+              samplingMode: Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
+              textureType: Constants.TEXTURETYPE_HALF_FLOAT, effectWrapper: stage.wrapper,
+            });
+            spatialPasses.push(pass);
+            passes.push(pass);
+            unattached.delete(stage);
+            pass.onApply = (effect) => {
+              if (stage.geometry) {
+                const target = prepass.getRenderTarget();
+                for (const [sampler, type] of [["depthSampler", Constants.PREPASS_DEPTH_TEXTURE_TYPE],
+                  ["normalSampler", Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE],
+                  ["reflectivitySampler", Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE]] as const) {
+                  const textureIndex = prepass.getIndex(type);
+                  if (textureIndex >= 0) effect.setTexture(sampler, target.textures[textureIndex]!);
+                }
+              }
+              if (stage.mainInput !== undefined) effect.setTextureFromPostProcess("mainSampler", spatialPasses[stage.mainInput]!);
+              stage.bind(effect);
+            };
+          });
+          const texturesRequired = spatialGeometryTypes(plan);
+          spatialPasses[0]!._prePassEffectConfiguration = {
+            // Babylon caches configurations by name. A borrowed prepass can
+            // outlive a fog-only generation and later need reflection buffers.
+            name: `Slate Spatial Effects:${texturesRequired.join(",")}`, enabled: false, texturesRequired,
+          };
+          prepass.markAsDirty();
+        } else {
+          console.warn("Spatial effects disabled: shared Engine render-target budget is exhausted.");
+        }
+      }
       if (plan.bloom) {
         const scale = plan.bloom.scale;
         // Every owned pass compiles at attach: camera.isReady gates first-frame
@@ -148,7 +209,9 @@ export class SceneEffectsOwner {
         );
       }
       if (plan.imageProcessing) {
-        const pass = new ImageProcessingPostProcess(
+        const DisplayPass = plan.imageProcessing.sceneLinear
+          ? ImageProcessingPostProcess : DisplaySpaceImageProcessingPostProcess;
+        const pass = new DisplayPass(
           "Scene Effects Display Color",
           1,
           camera,
@@ -189,6 +252,7 @@ export class SceneEffectsOwner {
         );
       }
     } catch (error) {
+      for (const stage of unattached) this.track(retireOwnedEffect(stage.wrapper.effect, () => stage.wrapper.dispose()));
       for (const pass of passes.splice(0)) {
         try {
           this.retirePass(pass, camera);
@@ -198,6 +262,7 @@ export class SceneEffectsOwner {
       }
       this.nativeCamera = undefined;
       this.nativeKey = undefined;
+      this.releaseSpatialResources();
       throw error;
     }
     this.native = passes;
@@ -241,16 +306,33 @@ export class SceneEffectsOwner {
     this.native = undefined;
     this.nativeCamera = undefined;
     this.nativeKey = undefined;
-    if (!passes) return;
+    if (!passes) { this.releaseSpatialResources(); return; }
     try {
       for (const pass of passes) this.retirePass(pass, camera);
+      this.releaseSpatialResources();
     } catch (error) {
       this.cleanupFailure = error;
       throw error;
     }
   }
 
+  private releaseSpatialResources(): void {
+    if (this.ownedPrePass) { this.scene.disablePrePassRenderer(); this.ownedPrePass = false; }
+    const lease = this.spatialLease;
+    this.spatialLease = undefined;
+    if (lease) {
+      // CPU/native ownership can finish before the next WebGPU frame drain.
+      // Waiting for that drain here would deadlock teardown of the last view.
+      void this.retirement.whenReleased()
+        .then(() => releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), lease))
+        .catch((error: unknown) => { this.cleanupFailure = error; });
+    }
+    this.scene.prePassRenderer?.markAsDirty();
+  }
+
   private retirePass(pass: PostProcess, camera: Camera | undefined): void {
+    camera?.detachPostProcess(pass);
+    this.scene.removePostProcess(pass);
     // Defer the native Effect refcount drop until a pending parallel compile
     // settles, then detach and release the pass. Thin-wrapped passes mark their
     // effect wrapper as externally owned (_useExistingThinPostProcess), so

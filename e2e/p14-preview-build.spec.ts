@@ -37,8 +37,14 @@ async function previewSlotMaterialNames(page: Page): Promise<string[]> {
   });
 }
 
-/** Count slim-stub red and Babylon error-sampler magenta among non-clear pixels. */
-async function previewCanvasPixelStats(page: Page): Promise<
+/**
+ * Count slim-stub red and Babylon error-sampler magenta among non-clear pixels.
+ * With `texel`, only pixels near that sampled color count as albedo.
+ */
+async function previewCanvasPixelStats(
+  page: Page,
+  texel?: readonly [number, number, number],
+): Promise<
   | { ok: false; reason: string; width?: number; height?: number }
   | {
       ok: true;
@@ -53,7 +59,7 @@ async function previewCanvasPixelStats(page: Page): Promise<
   const canvas = page
     .frameLocator('[data-testid="preview-build-iframe"]')
     .getByTestId("player-canvas");
-  return canvas.evaluate((node) => {
+  return canvas.evaluate((node, texel) => {
     if (!(node instanceof HTMLCanvasElement)) {
       return { ok: false as const, reason: "no-canvas" };
     }
@@ -88,6 +94,12 @@ async function previewCanvasPixelStats(page: Page): Promise<
         magenta += 1;
         continue;
       }
+      if (texel) {
+        if (Math.abs(r - texel[0]) < 45 && Math.abs(g - texel[1]) < 45 && Math.abs(b - texel[2]) < 45) {
+          albedo += 1;
+        }
+        continue;
+      }
       // Kenney albedo is tan/cloth (green channel present). Error-sampler
       // checkerboard is red/black/magenta; grey AA must not count as success.
       if (g >= 50 && r >= 40) {
@@ -96,7 +108,7 @@ async function previewCanvasPixelStats(page: Page): Promise<
     }
     const total = albedo + redStub + magenta;
     return { ok: true as const, total, albedo, redStub, magenta, width, height };
-  });
+  }, texel);
 }
 
 test.describe("P14 Preview Build", () => {
@@ -360,7 +372,9 @@ test.describe("P14 Preview Build", () => {
   }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
-    const albedoGuid = await importAlbedoTexture(page);
+    // 1×1 tan: correctly sampled texels must not read as the red stub.
+    const albedoGuid = await importAlbedoTexture(page, "albedo_tan.png");
+    const tanTexel = [210, 170, 110] as const;
     await createContentBrowserAsset(page, "Material", "PreviewAlbedo");
     await openAssetFromBrowser(page, "assets/PreviewAlbedo.material.babasset");
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
@@ -424,7 +438,7 @@ test.describe("P14 Preview Build", () => {
     await expect
       .poll(
         async () => {
-          const stats = await previewCanvasPixelStats(page);
+          const stats = await previewCanvasPixelStats(page, tanTexel);
           if (!stats.ok || stats.total < 50) {
             return `wait:${JSON.stringify(stats)}`;
           }

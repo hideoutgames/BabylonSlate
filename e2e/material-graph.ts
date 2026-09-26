@@ -45,16 +45,21 @@ export async function addMaterialPaletteNode(
   await graph.locator(`.react-flow__node[data-id^="${itemId}-"]`).click();
 }
 
-export async function importAlbedoTexture(page: Page): Promise<string> {
+/** Imports an `e2e/fixtures` albedo PNG; `albedo.png` is a 1×1 pure red. */
+export async function importAlbedoTexture(
+  page: Page,
+  fixture = "albedo.png",
+): Promise<string> {
+  const assetPath = `assets/${path.basename(fixture, ".png")}.babasset`;
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page
     .getByTestId("content-browser-import-input")
-    .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
-  await expect(
-    page.locator('[data-asset-path="assets/albedo.babasset"]'),
-  ).toBeVisible({ timeout: 15_000 });
-  const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
+    .setInputFiles([path.join(process.cwd(), "e2e/fixtures", fixture)]);
+  await expect(page.locator(`[data-asset-path="${assetPath}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+  const albedoGuid = await guidForPath(page, assetPath);
   expect(albedoGuid.length).toBeGreaterThan(0);
   return albedoGuid;
 }

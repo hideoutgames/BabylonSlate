@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
   particleLibraryCompileKey,
   particleLibraryFromAssets,
   particleLibraryMaterialGuids,
 } from "./particle-library";
+import {
+  particleAssetDependencies,
+  remapParticlePayloadGuids,
+} from "./particle-payload";
 
 describe("particle library", () => {
   it("normalizes emitter and system assets and ignores other asset types", () => {
@@ -49,5 +54,62 @@ describe("particle library", () => {
         ]),
       ),
     ).not.toBe(key);
+  });
+});
+
+describe("particle library graph entries", () => {
+  const graph = (edit: (doc: ReturnType<typeof createDefaultParticleGraphDocument>) => void = () => {}) => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.materialGuid = "mat-graph";
+    edit(doc);
+    return { guid: "graph-1", type: "ParticleGraph", payload: doc };
+  };
+  const keyOf = (asset: ReturnType<typeof graph>) =>
+    particleLibraryCompileKey(particleLibraryFromAssets([asset]));
+
+  it("normalizes a Particle Graph next to Basic emitters and collects both Materials", () => {
+    const library = particleLibraryFromAssets([
+      { guid: "em-1", type: "ParticleEmitter", payload: { render: { materialGuid: "mat-basic" } } },
+      { guid: "raw", type: "ParticleGraph", payload: { materialGuid: "mat-graph", nodes: [] } },
+    ]);
+    const entry = library.emitters.get("raw");
+    expect(entry?.kind).toBe("graph");
+    expect(entry?.kind === "graph" && entry.document.nodes.map((node) => node.type)).toEqual([
+      "particle.output",
+    ]);
+    expect(particleLibraryMaterialGuids(library)).toEqual(["mat-basic", "mat-graph"]);
+  });
+
+  it("keeps the library key when a graph node is dragged or the graph renamed", () => {
+    const key = keyOf(graph());
+    expect(
+      keyOf(
+        graph((doc) => {
+          doc.nodes[0]!.position = { x: 900, y: -40 };
+          doc.name = "Sparks";
+        }),
+      ),
+    ).toBe(key);
+  });
+
+  it("changes the library key on a pin default, a setting or a Material swap", () => {
+    const key = keyOf(graph());
+    expect(
+      keyOf(graph((doc) => (doc.nodes[0]!.properties["default:lifetime"] = [3]))),
+    ).not.toBe(key);
+    expect(keyOf(graph((doc) => (doc.settings.capacity = 128)))).not.toBe(key);
+    expect(keyOf(graph((doc) => (doc.materialGuid = "mat-other")))).not.toBe(key);
+  });
+
+  it("indexes and remaps a Particle Graph's Material", () => {
+    const payload = graph().payload as unknown as Record<string, unknown>;
+    expect(particleAssetDependencies("ParticleGraph", payload)).toEqual(["mat-graph"]);
+    const remapped = remapParticlePayloadGuids(
+      "ParticleGraph",
+      payload,
+      new Map([["mat-graph", "mat-new"]]),
+    );
+    expect(remapped.materialGuid).toBe("mat-new");
+    expect(remapped.nodes).toEqual(graph().payload.nodes);
   });
 });

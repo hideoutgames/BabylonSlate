@@ -21,6 +21,8 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
+  reflections: RenderEffectsSettings["reflections"] | null;
+  volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
 }
 
 /**
@@ -44,8 +46,10 @@ export function planSceneEffects(
   const imageProcessing =
     sceneLinear || vignette ? { sceneLinear, vignette } : null;
   const fxaa = effects.fxaa;
-  if (!sceneLinear && !bloom && !imageProcessing && !fxaa) return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa };
+  const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
+  const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting : null;
+  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !reflections && !volumetricLighting) return null;
+  return { sceneLinear, bloom, imageProcessing, fxaa, reflections, volumetricLighting };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
