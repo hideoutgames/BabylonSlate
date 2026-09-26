@@ -370,6 +370,7 @@ export class SharedOutlineView {
     if (height > maxSize) throw new Error("Shared outline style table exceeds texture capacity.");
     const arrays = new Map(SHARED_OUTLINE_GROUPS.map((group) => [group, new Float32Array(width * height * 4)]));
     const priority = { global: 0, component: 1, selection: 2 };
+    let maximumWidth = 0;
     for (const [, entry] of [...this.contributions].sort((a, b) => priority[a[1].kind] - priority[b[1].kind] || a[0].localeCompare(b[0]))) {
       const group: SharedOutlineGroup = entry.kind === "selection" ? "selection" : entry.throughMeshes && entry.kind === "component" ? "through" : "strict";
       for (const target of entry.targets) {
@@ -382,6 +383,7 @@ export class SharedOutlineView {
         arrays.get(group)!.set([...entry.color, entry.width], offset);
         arrays.get(group)!.set(entry.distanceFade ? [1, entry.distanceFade.start, entry.distanceFade.end, 0] : [0, 0, 0, 0], metadataOffset + offset);
       }
+      maximumWidth = Math.max(maximumWidth, entry.width);
     }
     const replacements = new Map<SharedOutlineGroup, StyleRecord>();
     try {
@@ -423,7 +425,7 @@ export class SharedOutlineView {
         }
       }
     }
-    this.maximumWidth = 0;
+    this.maximumWidth = maximumWidth;
     this.distanceFadeEnabled = false;
     const strict = arrays.get("strict")!;
     for (let offset = 0; offset < metadataOffset; offset += 4) {
@@ -440,7 +442,6 @@ export class SharedOutlineView {
       for (let index = 3; index < metadataOffset; index += 4)
         maximumWidth = Math.max(maximumWidth, data[index]!);
       this.maximumWidths.set(group, maximumWidth);
-      this.maximumWidth = Math.max(this.maximumWidth, maximumWidth);
     }
     this.tableWidth = width; this.tableHeight = height; this.preparedRevision = this.revision;
   }

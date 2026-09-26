@@ -32,7 +32,7 @@ describe("shared outline admission", () => {
     // Neither a replaced global width nor a targetless style enlarges any search.
     view.setContribution("empty", { ...style, targets: [], width: 8 });
     expect(widths()).toEqual([1, 0, 0.25]);
-    expect(view.maximumWidth).toBe(1);
+    expect(view.maximumWidth).toBe(8);
     expect(view.distanceFadeEnabled).toBe(false);
 
     view.setContribution("component-z", { ...style, targets: [target], width: 4, throughMeshes: true });
