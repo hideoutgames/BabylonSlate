@@ -23,6 +23,9 @@ export class PhysicsConstraintSync {
   private readonly backend: PhysicsBackend;
   private readonly deferUnsupported: boolean;
   private readonly applied = new Map<string, AppliedConstraint>();
+  private readonly identities = new WeakMap<ActorComponent, { owner: Actor; id: string }>();
+  private readonly propertyScratch: unknown[] = [];
+  private readonly appliedScratch: unknown[] = [];
   private readonly properties = new WeakMap<ActorComponent, {
     descriptor: readonly unknown[];
     value: ConstraintProperties;
@@ -49,7 +52,12 @@ export class PhysicsConstraintSync {
       if (owner.destroyed || options.actorById.get(owner.guid) !== owner || !options.eligible(owner)) continue;
       for (const component of owner.components) {
         if (component.destroyed || component.owner !== owner || component.classId !== "PhysicsConstraintComponent") continue;
-        const id = `constraint:${JSON.stringify([owner.guid, component.guid])}`;
+        let identity = this.identities.get(component);
+        if (identity?.owner !== owner) {
+          identity = { owner, id: `constraint:${JSON.stringify([owner.guid, component.guid])}` };
+          this.identities.set(component, identity);
+        }
+        const { id } = identity;
         if (live.has(id)) continue;
         live.add(id);
         try {
@@ -82,13 +90,22 @@ export class PhysicsConstraintSync {
           }
           const scaleA = options.transforms.get(owner.guid)?.scale ?? owner.transform.scale;
           const scaleB = options.transforms.get(target.guid)?.scale ?? target.transform.scale;
-          const descriptor = [props, bodyAId, bodyBId, scaleA.x, scaleA.y, scaleA.z, scaleB.x, scaleB.y, scaleB.z];
+          const descriptor = this.appliedScratch;
+          descriptor[0] = props;
+          descriptor[1] = bodyAId;
+          descriptor[2] = bodyBId;
+          descriptor[3] = scaleA.x;
+          descriptor[4] = scaleA.y;
+          descriptor[5] = scaleA.z;
+          descriptor[6] = scaleB.x;
+          descriptor[7] = scaleB.y;
+          descriptor[8] = scaleB.z;
           const old = this.applied.get(id);
           if (old?.owner === owner && old.target === target && old.component === component && sameDescriptor(old.descriptor, descriptor)) continue;
           const constraint = describeConstraint(id, bodyAId, bodyBId, props, scaleA, scaleB);
           // Backend upsert prepares the replacement before releasing a usable joint.
           this.backend.createConstraint(constraint);
-          this.applied.set(id, { owner, target, component, descriptor, constraint });
+          this.applied.set(id, { owner, target, component, descriptor: descriptor.slice(), constraint });
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
           throw new Error(`Physics constraint ${component.guid} on actor ${owner.guid}: ${detail}`, { cause: error });
@@ -115,10 +132,10 @@ export class PhysicsConstraintSync {
   }
 
   private readProperties(component: ActorComponent): ConstraintProperties {
-    const values = Object.fromEntries(PROPERTY_NAMES.map((name) => [name, component.getVariable(name)]));
-    const descriptor: unknown[] = [];
+    const descriptor = this.propertyScratch;
+    descriptor.length = 0;
     for (const name of PROPERTY_NAMES) {
-      const value: unknown = values[name];
+      const value = component.getVariable(name);
       descriptor.push(value);
       if (value && typeof value === "object") {
         const vector = value as Record<string, unknown>;
@@ -127,8 +144,12 @@ export class PhysicsConstraintSync {
     }
     const old = this.properties.get(component);
     if (old && sameDescriptor(old.descriptor, descriptor)) return old.value;
+    // Only materialize parsed properties on edits. The scalar descriptor still
+    // observes direct map writes and in-place changes to authored vectors.
+    const values: Record<string, unknown> = {};
+    for (const name of PROPERTY_NAMES) values[name] = component.getVariable(name);
     const value = parseConstraintProperties(values, this.backend.kind);
-    this.properties.set(component, { descriptor, value });
+    this.properties.set(component, { descriptor: descriptor.slice(), value });
     return value;
   }
 }
