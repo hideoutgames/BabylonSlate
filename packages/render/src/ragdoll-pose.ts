@@ -288,7 +288,7 @@ export class RagdollPoseController {
           Matrix.ComposeToRef(target.scale, scratch.rotation, scratch.position, target.world);
         }
         for (const target of session.targets) {
-          let parent: Matrix;
+          let parent: typeof Matrix.IdentityReadOnly;
           if (target.node) {
             const nodeParent = target.node.parent;
             parent = nodeParent ? this.nodeWorld(nodeParent) : Matrix.IdentityReadOnly;
