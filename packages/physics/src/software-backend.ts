@@ -293,11 +293,12 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         : { ...gravity };
   }
 
-  createConstraint(_desc: ConstraintDesc): never {
+  createConstraint(desc: ConstraintDesc): never {
+    void desc;
     throw new Error("Constraints require a native physics backend");
   }
 
-  destroyConstraint(_id: string): void {}
+  destroyConstraint(id: string): void { void id; }
 
   createBody(desc: RigidBodyDesc): void {
     this.assertLive();
