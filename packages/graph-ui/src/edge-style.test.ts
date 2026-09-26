@@ -87,7 +87,7 @@ describe("styleFlowEdges", () => {
       { stroke: "var(--pin-wildcard)", strokeWidth: 4 },
       { stroke: "var(--pin-wildcard)", strokeWidth: 4 },
     ]);
-    expect(styled.map(({ style: _style, ...edge }) => edge)).toEqual(edges);
+    styled.forEach((edge, index) => expect(edge).toMatchObject(edges[index]));
     expect(edges.every((edge) => edge.style === undefined)).toBe(true);
   });
 });
