@@ -298,7 +298,7 @@ export class SharedOutlineView {
   isDisposed = false;
   private preparedRevision = -1;
   private readonly styles = new Map<SharedOutlineGroup, StyleRecord>();
-  private readonly activeGroups = new Set<SharedOutlineGroup>();
+  private readonly maximumWidths = new Map<SharedOutlineGroup, number>();
   private occluders: readonly AbstractMesh[] | null = null;
   private readonly meshLists = new Map<SharedOutlineGroup, { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
   private styleUploads = 0;
@@ -370,7 +370,6 @@ export class SharedOutlineView {
     if (height > maxSize) throw new Error("Shared outline style table exceeds texture capacity.");
     const arrays = new Map(SHARED_OUTLINE_GROUPS.map((group) => [group, new Float32Array(width * height * 4)]));
     const priority = { global: 0, component: 1, selection: 2 };
-    let maximumWidth = 0;
     for (const [, entry] of [...this.contributions].sort((a, b) => priority[a[1].kind] - priority[b[1].kind] || a[0].localeCompare(b[0]))) {
       const group: SharedOutlineGroup = entry.kind === "selection" ? "selection" : entry.throughMeshes && entry.kind === "component" ? "through" : "strict";
       for (const target of entry.targets) {
@@ -383,7 +382,6 @@ export class SharedOutlineView {
         arrays.get(group)!.set([...entry.color, entry.width], offset);
         arrays.get(group)!.set(entry.distanceFade ? [1, entry.distanceFade.start, entry.distanceFade.end, 0] : [0, 0, 0, 0], metadataOffset + offset);
       }
-      maximumWidth = Math.max(maximumWidth, entry.width);
     }
     const replacements = new Map<SharedOutlineGroup, StyleRecord>();
     try {
@@ -425,7 +423,7 @@ export class SharedOutlineView {
         }
       }
     }
-    this.maximumWidth = maximumWidth;
+    this.maximumWidth = 0;
     this.distanceFadeEnabled = false;
     const strict = arrays.get("strict")!;
     for (let offset = 0; offset < metadataOffset; offset += 4) {
@@ -433,18 +431,25 @@ export class SharedOutlineView {
         this.distanceFadeEnabled = true; break;
       }
     }
-    this.activeGroups.clear();
+    this.maximumWidths.clear();
     for (const group of SHARED_OUTLINE_GROUPS) {
       const data = arrays.get(group)!;
-      for (let index = 3; index < data.length; index += 4) if (data[index]! > 0) {
-        this.activeGroups.add(group); break;
-      }
+      // Bound each group's search by its final styles, after component overrides.
+      // Fade metadata occupies the second half and is not a stroke width.
+      let maximumWidth = 0;
+      for (let index = 3; index < metadataOffset; index += 4)
+        maximumWidth = Math.max(maximumWidth, data[index]!);
+      this.maximumWidths.set(group, maximumWidth);
+      this.maximumWidth = Math.max(this.maximumWidth, maximumWidth);
     }
     this.tableWidth = width; this.tableHeight = height; this.preparedRevision = this.revision;
   }
   styleTexture(group: SharedOutlineGroup): RawTexture { this.prepare(); return this.styles.get(group)!.texture; }
   groupActive(group: SharedOutlineGroup): boolean {
-    this.prepare(); return this.activeGroups.has(group);
+    return this.maximumWidthForGroup(group) > 0;
+  }
+  maximumWidthForGroup(group: SharedOutlineGroup): number {
+    this.prepare(); return this.maximumWidths.get(group) ?? 0;
   }
   meshesForGroup(group: SharedOutlineGroup): AbstractMesh[] {
     this.prepare();
@@ -465,7 +470,7 @@ export class SharedOutlineView {
     record.texture.dispose();
     this.owner.trackRelease(releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), record.lease));
   }
-  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.activeGroups.clear(); this.distanceFadeEnabled = false; this.preparedRevision = -1; }
+  private releaseStyles(): void { for (const record of this.styles.values()) this.retireStyle(record); this.styles.clear(); this.maximumWidths.clear(); this.maximumWidth = 0; this.distanceFadeEnabled = false; this.preparedRevision = -1; }
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;

@@ -204,7 +204,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     float chosen = 1e10;
     vec4 stroke = vec4(0.0);
     for (int radius = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; ++radius) {
-      if (float(radius) > maximumWidth + 0.75) break;
+      if (float(radius) > maximumWidths[${groupIndex}] + 0.75) break;
       for (int direction = 0; direction < 8; ++direction) {
         vec2 delta = outlineOffsets[direction] * float(radius);
         vec2 uv = vUV + delta / screenSize;
@@ -244,7 +244,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 varying vec2 vUV;
 uniform vec2 screenSize;
 uniform vec2 tableSize;
-uniform float maximumWidth;
+uniform vec3 maximumWidths;
 uniform float distanceFadeEnabled;
 uniform float reverseDepth;
 uniform vec3 activeGroups;
@@ -263,7 +263,7 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
     var chosen = 1e10;
     var stroke = vec4f(0.0);
     for (var radius: i32 = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; radius = radius + 1) {
-      if (f32(radius) > uniforms.maximumWidth + 0.75) { break; }
+      if (f32(radius) > uniforms.maximumWidths[${groupIndex}] + 0.75) { break; }
       for (var direction: i32 = 0; direction < 8; direction = direction + 1) {
         let delta = outlineOffsets[direction] * f32(radius);
         let uv = fragmentInputs.vUV + delta / uniforms.screenSize;
@@ -300,7 +300,7 @@ void main(void) { vec4 result = vec4(0.0); ${glslCandidates} gl_FragColor = resu
 varying vUV: vec2f;
 uniform screenSize: vec2f;
 uniform tableSize: vec2f;
-uniform maximumWidth: f32;
+uniform maximumWidths: vec3f;
 uniform distanceFadeEnabled: f32;
 uniform reverseDepth: f32;
 uniform activeGroups: vec3f;
