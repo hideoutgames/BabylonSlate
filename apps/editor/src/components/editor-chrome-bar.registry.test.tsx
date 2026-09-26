@@ -78,6 +78,11 @@ function typeIcon(element: HTMLElement) {
     ?.getAttribute("data-type-icon");
 }
 
+function tabIcon(label: string) {
+  const text = within(screen.getByTestId("document-tab-bar")).getByText(label);
+  return typeIcon(text.closest("button")!);
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -127,13 +132,8 @@ describe("chrome document icons", () => {
       const list = vi.spyOn(registry, "list");
       const view = render(<Chrome />);
       if (!phone) {
-        const tabs = within(screen.getByTestId("document-tab-bar"));
-        expect(
-          typeIcon(tabs.getByRole("button", { name: "First Class" })),
-        ).toBe("Actor");
-        expect(
-          typeIcon(tabs.getByRole("button", { name: "Second Class" })),
-        ).toBe("Actor");
+        expect(tabIcon("First Class")).toBe("Actor");
+        expect(tabIcon("Second Class")).toBe("Actor");
         expect(screen.getAllByTestId("document-tab")).toHaveLength(4);
       }
       fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
@@ -158,13 +158,8 @@ describe("chrome document icons", () => {
       ).toBe("ActorComponent");
       expect(screen.getByLabelText("Unsaved Changes")).toBeTruthy();
       if (!phone) {
-        const tabs = within(screen.getByTestId("document-tab-bar"));
-        expect(
-          typeIcon(tabs.getByRole("button", { name: "First Class *" })),
-        ).toBe("ActorComponent");
-        expect(
-          typeIcon(tabs.getByRole("button", { name: "Second Class" })),
-        ).toBe("ActorComponent");
+        expect(tabIcon("First Class *")).toBe("ActorComponent");
+        expect(tabIcon("Second Class")).toBe("ActorComponent");
       }
       expect(list.mock.calls.length).toBeLessThanOrEqual(1);
     },
@@ -193,19 +188,13 @@ describe("chrome document icons", () => {
     ];
     const list = vi.spyOn(registry, "list");
     const view = render(<Chrome />);
-    expect(
-      typeIcon(screen.getByRole("button", { name: "Sheet.texture Texture" })),
-    ).toBe("Sprite");
-    expect(
-      typeIcon(screen.getByRole("button", { name: "Missing.texture Texture" })),
-    ).toBe("Texture");
+    expect(tabIcon("Sheet.texture Texture")).toBe("Sprite");
+    expect(tabIcon("Missing.texture Texture")).toBe("Texture");
     expect(list).not.toHaveBeenCalled();
 
     state.registry = null;
     view.rerender(<Chrome />);
-    expect(
-      typeIcon(screen.getByRole("button", { name: "Sheet.texture Texture" })),
-    ).toBe("Texture");
+    expect(tabIcon("Sheet.texture Texture")).toBe("Texture");
     expect(list).not.toHaveBeenCalled();
   });
 });
