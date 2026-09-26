@@ -84,7 +84,7 @@ float swChopH = 0.0;
 ${detail}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
-float swFieldShore = mix(${f(SHORE[1])}, mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r), swFieldOn);
+float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
 float swKnown = swField.a * swFieldOn;
 float swObject = mix(1.0, swField.b, swFieldOn) * U.slateWaterFieldInfo.y;
 float swBank = min(min(max(0.0, IN.vSlateWater.y), max(0.0, swFieldShore)), ${f(SHORE[1])});
@@ -230,7 +230,19 @@ vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
 vec2 swFieldUv = (swPosW.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw;
 ${sample}
 float swFieldOn = U.slateWaterFieldInfo.x * step(0.0, swFieldUv.x) * step(swFieldUv.x, 1.0) * step(0.0, swFieldUv.y) * step(swFieldUv.y, 1.0);
-float swTerrainDepth = mix(${f(WATER_FIELD_DEPTH_RANGE[0])}, ${f(WATER_FIELD_DEPTH_RANGE[1])}, swField.g);
+// Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline.
+float swTerrainDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g) + IN.vSlateWater.x;
+float swTerrainShore = mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r);
+// Convert wave-relative depth to a local world-space shoreline distance. Compute
+// derivatives before discard; rest-height distance stays exact when waves are off.
+vec2 swDx = dFdx(swPosW.xz);
+vec2 swDy = dFdy(swPosW.xz);
+vec2 swDepthDerivative = vec2(dFdx(swTerrainDepth), dFdy(swTerrainDepth));
+float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
+if (U.slateWaterWaves.x > 0.0 && swField.a > 0.5 && abs(swDet) > 1e-12) {
+  vec2 swDepthGradient = vec2(swDepthDerivative.x * swDy.y - swDepthDerivative.y * swDx.y, swDx.x * swDepthDerivative.y - swDy.x * swDepthDerivative.x) / swDet;
+  swTerrainShore = clamp(swTerrainDepth / max(length(swDepthGradient), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])});
+}
 float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
 if (swCut < 0.0 || (swField.a * swFieldOn > 0.5 && swTerrainDepth <= 0.0)) { discard; }
 `;
@@ -243,7 +255,8 @@ export function toWgsl(source: string): string {
     .replace(/^(\s*)(float|vec2|vec3|vec4) (\w+)\(([^)]*)\) \{/gm, (_, indent: string, ret: string, name: string, args: string) =>
       `${indent}fn ${name}(${args.split(",").map((arg) => arg.trim().split(" ")).map(([t, n]) => `${n}: ${type(t!)}`).join(", ")}) -> ${type(ret)} {`)
     .replace(/^(\s*)(float|vec2|vec3|vec4) (\w+) = /gm, (_, indent: string, t: string, name: string) => `${indent}var ${name}: ${type(t)} = `)
-    .replace(/\bvec([234])\(/g, "vec$1f(");
+    .replace(/\bvec([234])\(/g, "vec$1f(")
+    .replace(/\bdFdx\(/g, "dpdx(").replace(/\bdFdy\(/g, "dpdy(");
 }
 
 export function waterShaderSource(language: ShaderLanguage): { helpers: string; cut: string; main: string } {
@@ -350,7 +363,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
-    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, contactRange(w), 0, 0);
+    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, contactRange(w), ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
     // The nearest enabled removal volumes that can reach this surface.
     const mesh = this.mesh;
     const center = mesh?.getBoundingInfo().boundingSphere;

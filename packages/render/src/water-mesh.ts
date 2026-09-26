@@ -3,12 +3,14 @@ import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinit
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterField } from "./water-field";
 import { WaterReflection } from "./water-reflection";
+import { WaterSurfaceSampler } from "./water-surface-sampler";
 
 type Surface = {
   mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null; field: WaterField | null;
   world: Matrix; inverse: Matrix;
-  layout: string; frame: string; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
+  layout: string; frame: string; time: number | null; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
+  contact: { frame: string; sampler: WaterSurfaceSampler } | null; contactRevision: number;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<Mesh, Surface>();
@@ -101,35 +103,36 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   const m = world.m;
   const sx = Math.hypot(m[0]!, m[1]!, m[2]!), sz = Math.hypot(m[8]!, m[9]!, m[10]!);
   const step = Math.max(0.025, water.waveLength / 12 * 48 / body.resolution);
-  let xs: number[], zs: number[], strip: RiverRow[] | null = null;
-  let key: string;
+  let cx = 0, cz = 0, extent = 0;
+  let key = `${step}`;
   if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     // Read the camera's current position, including a parent, without waiting for Scene.render's camera update.
     const cameraWorld = camera ? (camera.parent ? Vector3.TransformCoordinates(camera.position, camera.parent.getWorldMatrix()) : camera.position) : Vector3.Zero();
     const local = Vector3.TransformCoordinates(cameraWorld, inverse);
-    const extent = Math.max(256, (camera?.maxZ ?? 1000) * 1.2);
-    const cx = Math.round(local.x * sx / step) * step / sx, cz = Math.round(local.z * sz / step) * step / sz;
+    extent = Math.max(256, (camera?.maxZ ?? 1000) * 1.2);
+    cx = Math.round(local.x * sx / step) * step / sx; cz = Math.round(local.z * sz / step) * step / sz;
+    key = `${cx},${cz},${extent}`;
+  }
+  // Finite layouts depend only on the body and the volume's rotation/scale, so the camera never reshapes them.
+  const layout = Array.from(world.m).slice(0, 12).join(",") + ":" + s.version + ":" + key;
+  if (layout === s.layout) return;
+  s.layout = layout;
+  let xs: number[], zs: number[], strip: RiverRow[] | null = null;
+  if (body.kind === "global") {
     const budget = Math.max(32, body.resolution + body.resolution % 2);
     xs = axis(cx - extent / sx, cx + extent / sx, step / sx, cx, budget);
     zs = axis(cz - extent / sz, cz + extent / sz, step / sz, cz, budget);
-    key = `${cx},${cz},${extent}`;
   } else if (body.kind === "river") {
     strip = riverRows(body, sx, sz, step);
     const widest = Math.max(...strip.map((row) => row.halfWidth)) * 2 * Math.max(sx, sz);
     const columns = Math.min(64, Math.max(4, Math.ceil(widest / step / 2) * 2));
     xs = Array.from({ length: columns + 1 }, (_, i) => i / columns * 2 - 1);
     zs = strip.map((_, i) => i);
-    key = `${step}`;
   } else {
     xs = uniformAxis(-body.width / 2, body.width / 2, body.width * sx, step);
     zs = uniformAxis(-body.length / 2, body.length / 2, body.length * sz, step);
-    key = `${step}`;
   }
-  // Finite layouts depend only on the body and the volume's rotation/scale, so the camera never reshapes them.
-  const layout = Array.from(world.m).slice(0, 12).join(",") + ":" + s.version + ":" + key;
-  if (layout === s.layout) return;
-  s.layout = layout;
   const positions: number[] = [], indices: number[] = [], uvs: number[] = [];
   const columns = xs.length - 1, rows = zs.length - 1;
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
@@ -180,12 +183,16 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
 function updateSurface(s: Surface, time: number): void {
   const world = s.mesh.computeWorldMatrix(true);
   if (Math.abs(world.determinant()) < 1e-12) return;
-  const inverse = world.clone().invert(), normalMatrix = Matrix.Transpose(inverse), toLocalNormal = Matrix.Transpose(world);
+  const inverse = world.clone().invert();
   s.world.copyFrom(world); s.inverse.copyFrom(inverse);
   updateLayout(s, world, inverse);
   const frame = s.layout + ":" + [world.m[12], world.m[13], world.m[14]].join(",");
   const moved = frame !== s.frame;
+  if (s.plugin) s.plugin.time = time;
+  // Paused simulation frames keep their GPU buffers, but transforms and horizon changes still resample.
+  if (!moved && s.time === time) return;
   s.frame = frame;
+  const normalMatrix = Matrix.Transpose(inverse), toLocalNormal = Matrix.Transpose(world);
   const up = Vector3.TransformNormal(Vector3.Up(), inverse);
   const depth = s.body.depth * Vector3.TransformNormal(Vector3.Up(), world).length();
   const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vector3(), flow = new Vector3(), edge = new Vector3();
@@ -220,7 +227,17 @@ function updateSurface(s: Surface, time: number): void {
     s.mesh.updateVerticesData("slateWaterFlow", s.flow);
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
   }
-  if (s.plugin) s.plugin.time = time;
+  s.time = time;
+  if (moved || (s.water.waveHeight > 0 && s.body.waveScale > 0 && s.water.waveSpeed > 0)) s.contactRevision++;
+}
+
+function waterContactY(s: Surface, x: number, z: number): number | null {
+  if (!s.contact || s.contact.frame !== s.frame) {
+    const indices = s.mesh.getIndices();
+    if (!indices) return null;
+    s.contact = { frame: s.frame, sampler: new WaterSurfaceSampler(s.worldBase, s.data, indices) };
+  }
+  return s.contact.sampler.heightAt(x, z);
 }
 
 const scratch = new Vector3();
@@ -273,7 +290,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, field: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
+  const surface: Surface = { mesh, water, body, plugin, field: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, contact: null, contactRevision: 0 };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
@@ -285,10 +302,13 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
+    const contactHeight = (x: number, z: number) => waterContactY(surface, x, z);
     const field = new WaterField(scene, {
       mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
-      amplitude: water.waveHeight * body.waveScale * 1.3 + 0.05,
+      get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
+      get contactY() { return water.waveHeight > 0 && body.waveScale > 0 ? contactHeight : undefined; },
+      contactRevision: () => surface.contactRevision,
     });
     surface.field = field; plugin.field = field;
     field.update(performance.now(), true);
