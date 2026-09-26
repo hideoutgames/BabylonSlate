@@ -1,4 +1,4 @@
-import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type TransformNode } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Node, type TransformNode } from "@babylonjs/core";
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
 import type { RagdollBonePose } from "@babylonslate/core";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
@@ -7,12 +7,15 @@ import { MODEL_IMPORT_SCALE_NODE_NAME } from "./glb-anim";
 type Capture = Extract<CommandMessage, { type: "captureRagdollPose" }>;
 export type RagdollCaptureResult = Extract<ControlMessage, { type: "ragdollPoseCaptured" }>;
 type Target = { name: string; parentName: string | null; node?: TransformNode; bone?: Bone; mesh?: AbstractMesh };
-type CapturedTarget = Target & { scale: Vector3; original: Matrix };
+type CapturedTarget = Target & { scale: Vector3; original: Matrix; world: Matrix; pose: RagdollBonePose; poseVersion: number };
+type PoseScratch = { scale: Vector3; rotation: Quaternion; position: Vector3; parent: Matrix; inverse: Matrix; local: Matrix };
 type Session = {
   request: Capture;
   root?: Mesh;
   targets?: CapturedTarget[];
-  pose?: readonly RagdollBonePose[];
+  byName?: Map<string, CapturedTarget>;
+  byBone?: Map<Bone, CapturedTarget>;
+  poseVersion: number;
   failed?: boolean;
   observedLoad?: Promise<void>;
   loadReady?: boolean;
@@ -83,7 +86,6 @@ function targetsFor(root: Mesh, names: readonly string[]): Target[] {
 
 function worldMatrix(target: Target): Matrix {
   if (target.node) return target.node.computeWorldMatrix(true);
-  target.bone!.computeAbsoluteMatrices();
   return target.bone!.getAbsoluteMatrix().multiply(target.mesh!.computeWorldMatrix(true));
 }
 
@@ -93,22 +95,34 @@ function localMatrix(target: Target): Matrix {
   return Matrix.Compose(node.scaling, node.rotationQuaternion ?? Quaternion.FromEulerVector(node.rotation), node.position);
 }
 
-function writeLocal(target: Target, local: Matrix): void {
-  const scale = new Vector3();
-  const rotation = new Quaternion();
-  const position = new Vector3();
+function writeLocal(target: Target, local: Matrix, scratch: PoseScratch, forceParents = true): void {
+  const { scale, rotation, position } = scratch;
   if (!local.decompose(scale, rotation, position)) throw new Error(`Cannot apply ragdoll bone '${target.name}'.`);
   if (target.node) {
-    target.node.unfreezeWorldMatrix();
+    if (target.node.isWorldMatrixFrozen) target.node.unfreezeWorldMatrix();
     target.node.position.copyFrom(position);
     target.node.scaling.copyFrom(scale);
-    target.node.rotationQuaternion = rotation;
-    target.node.computeWorldMatrix(true);
+    const nodeRotation = target.node.rotationQuaternion ?? new Quaternion();
+    nodeRotation.copyFrom(rotation);
+    // The public setter dirties this node without recursively dirtying its rig.
+    target.node.rotationQuaternion = nodeRotation;
+    target.node.computeWorldMatrix(forceParents);
   } else {
     target.bone!.setPosition(position);
     target.bone!.setRotationQuaternion(rotation);
     target.bone!.setScale(scale);
-    target.bone!.computeAbsoluteMatrices();
+  }
+}
+
+function refreshBones(session: Session): void {
+  const target = session.targets?.find((entry) => entry.bone && !entry.node && !entry.mesh?.isDisposed() && entry.mesh?.skeleton === entry.bone.getSkeleton());
+  if (!target) return;
+  const skeleton = target.bone!.getSkeleton();
+  // Refresh descendants after all locals are written, including unselected bones.
+  // The skeleton API refreshes its first root and clears the dirty flag.
+  skeleton.computeAbsoluteMatrices(true);
+  for (const bone of skeleton.bones) {
+    if (!bone.getParent() && bone !== skeleton.bones[0]) bone.computeAbsoluteMatrices();
   }
 }
 
@@ -118,6 +132,9 @@ export class RagdollPoseController {
   private readonly binding: SnapshotSceneBinding;
   private readonly reply: (result: RagdollCaptureResult) => void;
   private readonly invalidate: () => void;
+  private readonly scratch: PoseScratch = { scale: new Vector3(), rotation: new Quaternion(), position: new Vector3(),
+    parent: Matrix.Identity(), inverse: Matrix.Identity(), local: Matrix.Identity() };
+  private readonly nodeWorlds = new Map<Node, Matrix>();
 
   constructor(
     binding: SnapshotSceneBinding,
@@ -133,21 +150,30 @@ export class RagdollPoseController {
 
   capture(request: Capture): void {
     this.retire(request.slotId);
-    this.sessions.set(request.slotId, { request });
+    this.sessions.set(request.slotId, { request, poseVersion: 0 });
   }
 
   setPose(command: Extract<CommandMessage, { type: "setRagdollPose" }>): void {
     const session = this.sessions.get(command.slotId);
     if (session?.request.requestId !== command.requestId || !session.targets || session.failed) return;
-    const names = new Set(session.targets.map((target) => target.name));
-    if (command.bones.length !== names.size || new Set(command.bones.map((bone) => bone.name)).size !== names.size ||
-      command.bones.some((bone) => !names.has(bone.name) ||
-        ![bone.position.x, bone.position.y, bone.position.z, bone.rotation.x, bone.rotation.y, bone.rotation.z, bone.rotation.w].every(Number.isFinite) ||
-        Math.hypot(bone.rotation.x, bone.rotation.y, bone.rotation.z, bone.rotation.w) < 1e-6)) {
+    if (command.bones.length !== session.targets.length) {
       this.fail(session, "Received an invalid ragdoll bone pose.");
       return;
     }
-    session.pose = command.bones;
+    const version = ++session.poseVersion;
+    for (const bone of command.bones) {
+      const target = session.byName!.get(bone.name);
+      const { position: p, rotation: r } = bone;
+      if (!target || target.poseVersion === version ||
+        !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z) ||
+        !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.z) || !Number.isFinite(r.w) ||
+        Math.hypot(r.x, r.y, r.z, r.w) < 1e-6) {
+        this.fail(session, "Received an invalid ragdoll bone pose.");
+        return;
+      }
+      target.poseVersion = version;
+      target.pose = bone;
+    }
   }
 
   clear(command: Extract<CommandMessage, { type: "clearRagdollPose" }>): void {
@@ -160,8 +186,9 @@ export class RagdollPoseController {
     this.sessions.delete(slotId);
     if (session.root && !session.root.isDisposed() && this.binding.meshes.get(slotId) === session.root) {
       for (const target of session.targets ?? []) {
-        if (!target.node?.isDisposed() && !target.mesh?.isDisposed()) writeLocal(target, target.original);
+        if (!target.node?.isDisposed() && !target.mesh?.isDisposed()) writeLocal(target, target.original, this.scratch);
       }
+      refreshBones(session);
     }
   }
 
@@ -230,14 +257,16 @@ export class RagdollPoseController {
             if (Array.from(matrix.m).some((value, index) => Math.abs(value - reconstructed.m[index]!) > 1e-4 * Math.max(1, Math.abs(value)))) {
               throw new Error(`Ragdoll bone '${target.name}' has unsupported world shear.`);
             }
-            bones.push({ name: target.name, parentName: target.parentName,
+            const pose = { name: target.name, parentName: target.parentName,
               position: { x: position.x, y: position.y, z: position.z },
-              rotation: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w } });
-            return { ...target, scale, original: localMatrix(target) };
+              rotation: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w } };
+            bones.push(pose);
+            return { ...target, scale, original: localMatrix(target), world: Matrix.Identity(), pose, poseVersion: session.poseVersion };
           });
           session.root = root;
           session.targets = targets;
-          session.pose = bones;
+          session.byName = new Map(targets.map((target) => [target.name, target]));
+          session.byBone = new Map(targets.filter((target) => target.bone).map((target) => [target.bone!, target]));
           // The preceding animation pass consumed queued weighted seeks. Preserve
           // the evaluated pose of unselected bones instead of resetting to rest.
           for (const group of this.binding.slotAnimationGroups?.get(slotId) ?? []) {
@@ -247,21 +276,49 @@ export class RagdollPoseController {
         }
         // An in-process reply may synchronously disable or destroy this actor.
         if (this.sessions.get(slotId) !== session) continue;
-        if (!session.pose || !session.targets) continue;
-        const poses = new Map(session.pose.map((bone) => [bone.name, bone]));
+        if (!session.targets) continue;
+        const scratch = this.scratch;
+        this.nodeWorlds.clear();
+        // Keep desired parent worlds independent of partially updated skeleton
+        // matrices. Reuse owned matrices/vectors; command payloads stay untouched.
         for (const target of session.targets) {
-          const pose = poses.get(target.name)!;
-          const rotation = new Quaternion(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w).normalize();
-          const world = Matrix.Compose(target.scale, rotation, new Vector3(pose.position.x, pose.position.y, pose.position.z));
-          let parent: Matrix;
-          if (target.node) parent = target.node.parent?.computeWorldMatrix(true) ?? Matrix.Identity();
+          const { position: p, rotation: r } = target.pose;
+          scratch.rotation.set(r.x, r.y, r.z, r.w).normalize();
+          scratch.position.set(p.x, p.y, p.z);
+          Matrix.ComposeToRef(target.scale, scratch.rotation, scratch.position, target.world);
+        }
+        for (const target of session.targets) {
+          let parent: typeof Matrix.IdentityReadOnly;
+          if (target.node) {
+            const nodeParent = target.node.parent;
+            parent = nodeParent ? this.nodeWorld(nodeParent) : Matrix.IdentityReadOnly;
+          }
           else {
             const parentBone = target.bone!.getParent();
-            parent = parentBone ? parentBone.getAbsoluteMatrix().multiply(target.mesh!.computeWorldMatrix(true)) : target.mesh!.computeWorldMatrix(true);
+            const selectedParent = parentBone && session.byBone!.get(parentBone);
+            if (selectedParent && !selectedParent.node) parent = selectedParent.world;
+            else {
+              parent = this.nodeWorld(target.mesh!);
+              if (parentBone) parent = parentBone.getAbsoluteMatrix().multiplyToRef(parent, scratch.parent);
+            }
           }
-          writeLocal(target, world.multiply(Matrix.Invert(parent)));
+          parent.invertToRef(scratch.inverse);
+          target.world.multiplyToRef(scratch.inverse, scratch.local);
+          writeLocal(target, scratch.local, scratch, false);
+          if (target.node) this.nodeWorlds.set(target.node, target.node.getWorldMatrix());
         }
+        refreshBones(session);
       } catch (error) { this.fail(session, error instanceof Error ? error.message : String(error)); }
     }
+    // Do not retain retired models through a controller-owned scratch cache.
+    this.nodeWorlds.clear();
+  }
+
+  private nodeWorld(node: Node): Matrix {
+    const cached = this.nodeWorlds.get(node);
+    if (cached) return cached;
+    const world = node.computeWorldMatrix(true);
+    this.nodeWorlds.set(node, world);
+    return world;
   }
 }

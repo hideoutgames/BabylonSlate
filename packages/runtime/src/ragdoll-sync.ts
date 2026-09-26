@@ -45,23 +45,25 @@ export class RagdollWorldSync {
 
   sync(): void {
     const actors = this.host.world.getActors();
-    const live = new Set(actors);
-    for (const [actor] of this.states) {
-      if (!live.has(actor) || actor.destroyed) this.retire(actor);
-    }
-    const transforms = actorWorldTransforms(actors);
+    const candidates = new Map<Actor, { component: ActorComponent; count: number }>();
     for (const actor of actors) {
-      if (!this.host.eligible(actor)) {
-        this.retire(actor);
-        continue;
+      if (actor.destroyed || !this.host.eligible(actor)) continue;
+      let component: ActorComponent | undefined;
+      let count = 0;
+      for (const entry of actor.components) {
+        if (entry.classId !== "RagdollComponent" || entry.destroyed || entry.owner !== actor || entry.getVariable("enabled") !== true) continue;
+        component ??= entry;
+        count++;
       }
-      const enabledComponents = actor.components.filter((entry) => !entry.destroyed && entry.owner === actor && entry.classId === "RagdollComponent" && entry.getVariable("enabled") === true);
-      const component = enabledComponents[0];
+      if (component) candidates.set(actor, { component, count });
+    }
+    for (const actor of this.states.keys()) if (!candidates.has(actor)) this.retire(actor);
+    // Component membership is mutable, so scan it each tick, but leave unrelated
+    // actor transforms alone. Disabled ragdolls need no hierarchy preparation.
+    if (!candidates.size) return;
+    const transforms = actorWorldTransforms(actors, candidates.keys());
+    for (const [actor, { component, count }] of candidates) {
       const old = this.states.get(actor);
-      if (!component || component.getVariable("enabled") !== true) {
-        this.retire(actor);
-        continue;
-      }
       const slotId = this.host.slot(actor);
       if (slotId === undefined) continue;
       const scale = transforms.get(actor.guid)?.scale ?? actor.transform.scale;
@@ -84,7 +86,7 @@ export class RagdollWorldSync {
       this.states.set(actor, state);
       component.setVariable("status", "pending");
       try {
-        if (enabledComponents.length > 1) throw new Error("An actor can have only one enabled RagdollComponent");
+        if (count > 1) throw new Error("An actor can have only one enabled RagdollComponent");
         state.properties = parseRagdollProperties(Object.fromEntries(component.variables));
         if (actor.sceneLayerId || this.host.physics().getBackend().kind !== "3d") throw new Error("Skeletal ragdolls require a 3D physics world");
         if (!this.host.physics().getBackend().supportsConstraints) {
@@ -123,16 +125,17 @@ export class RagdollWorldSync {
       physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones, state.properties, initialVelocity);
       physics.addImpulse(state.pendingImpulse);
       state.pendingImpulse = { x: 0, y: 0, z: 0 };
-      const root = physics.readPose().find((bone) => bone.name === physics!.rootBoneName);
+      const bones = physics.readPose();
+      const root = bones.find((bone) => bone.name === physics!.rootBoneName);
       if (!root) throw new Error("The ragdoll has no root bone pose");
-      const transform = actorWorldTransforms(this.host.world.getActors()).get(state.actor.guid)!;
+      const transform = actorWorldTransforms(this.host.world.getActors(), [state.actor]).get(state.actor.guid)!;
       state.offset = { x: transform.position.x - root.position.x, y: transform.position.y - root.position.y, z: transform.position.z - root.position.z };
       state.rotation = { ...transform.rotation };
       this.host.physics().suppressActorBody(state.actor, true);
       state.physics = physics;
       state.phase = "active";
       state.component.setVariable("status", "active");
-      this.host.emit({ type: "setRagdollPose", slotId: state.slotId, requestId: state.requestId, bones: physics.readPose() });
+      this.host.emit({ type: "setRagdollPose", slotId: state.slotId, requestId: state.requestId, bones });
     } catch (error) {
       physics?.dispose();
       this.fail(state, error);
@@ -140,9 +143,11 @@ export class RagdollWorldSync {
   }
 
   afterStep(): void {
-    const transforms = actorWorldTransforms(this.host.world.getActors());
-    for (const state of this.states.values()) {
-      if (!state.physics || !this.host.eligible(state.actor)) continue;
+    const active = [...this.states.values()].filter((state) => state.physics && this.host.eligible(state.actor));
+    if (!active.length) return;
+    const transforms = actorWorldTransforms(this.host.world.getActors(), active.map((state) => state.actor));
+    for (const state of active) {
+      if (!state.physics) continue;
       const bones = state.physics.readPose();
       const root = bones.find((bone) => bone.name === state.physics!.rootBoneName);
       if (!root) continue;

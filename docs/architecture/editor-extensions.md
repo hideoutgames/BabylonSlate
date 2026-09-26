@@ -49,9 +49,9 @@ Extensions execute as trusted editor code; the host is not a security sandbox.
 
 | API | Contract |
 | --- | --- |
-| `registerCommand({ id, title, description?, fields?, execute })` | Adds a command to the extension's Project Settings entry and returns an unregister function. Fields are `text` or `multiline` with ID, label, optional default and required flag; `execute(values)` receives strings. |
+| `registerCommand({ id, title, description?, fields?, execute })` | Adds a command to the extension's Project Settings entry and returns an unregister function. Registering or removing commands after activation updates the entry immediately. Fields are `text` or `multiline` with ID, label, optional default and required flag; `execute(values)` receives strings. |
 | `assets.list()` / `assets.read(path)` | List registered asset headers and read an asset document. |
-| `assets.create(path, { type, name, payload })` | Create a supported JSON document asset under `assets/` with a `.babasset` suffix. Existing paths are rejected. |
+| `assets.create(path, { type, name, payload })` | Create a supported JSON document asset under `assets/` with a `.babasset` suffix. Existing paths and concurrent extension creates at the same path are rejected. A failed create releases its path for retry. |
 | `assets.update(path, document)` | Update a supported project JSON asset while preserving its GUID/type. Updates to open documents are blocked; close the tab first. |
 | `code.read(path)` / `code.write(path, source)` | Read/write project `.ts` or `.js` files under `code/`. Writing source does not automatically compile or load it into the game. |
 | `materials.convertGlsl(source, options?)` | Convert a supported fragment shader to a Material document or diagnostics; this call does not save an asset. |
@@ -60,7 +60,9 @@ Extensions execute as trusted editor code; the host is not a security sandbox.
 The project lifetime owns activation and registered commands. Disabling,
 replacing/reloading code or closing the project removes commands and runs cleanup.
 Old API references stop accepting calls after deactivation. Activation, command
-and cleanup failures surface as extension diagnostics. The host drains outstanding
+and cleanup failures surface as extension diagnostics. Command failures appear
+immediately; a successful retry clears the command error while retaining package
+diagnostics. The host drains outstanding
 API operations before releasing project storage. Cleanup failures remain visible
 after reload or disable and are also written to the editor diagnostic log.
 

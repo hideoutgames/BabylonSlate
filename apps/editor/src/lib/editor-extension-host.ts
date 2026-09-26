@@ -124,10 +124,20 @@ export class EditorExtensionHost {
   private readonly services: EditorExtensionServices;
   private readonly states = new Map<string, ExtensionState>();
   private readonly diagnostics: EditorExtensionDiagnostic[] = [];
+  private readonly listeners = new Set<() => void>();
   private disposed = false;
 
   constructor(services: EditorExtensionServices) {
     this.services = services;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private notifyChange(): void {
+    for (const listener of this.listeners) listener();
   }
 
   listCommands(): EditorExtensionCommandDescriptor[] {
@@ -151,7 +161,10 @@ export class EditorExtensionHost {
     const previous = this.states.get(entry.id);
     const state: ExtensionState = { id: entry.id, alive: true, ready: false, commands: new Map(), operations: new Set() };
     this.states.set(entry.id, state);
-    if (previous) await this.disposeState(previous);
+    if (previous) {
+      this.notifyChange();
+      await this.disposeState(previous);
+    }
     if (!this.isCurrent(state)) return false;
     try {
       const activate = await evaluateExtension(entry);
@@ -168,6 +181,7 @@ export class EditorExtensionHost {
       state.ready = true;
       this.clearDiagnostics(state.id, "activate");
       this.clearDiagnostics(state.id, "command");
+      this.notifyChange();
       return true;
     } catch (error) {
       if (this.isCurrent(state)) {
@@ -183,6 +197,7 @@ export class EditorExtensionHost {
     const state = this.states.get(extensionId);
     if (!state) return;
     this.states.delete(extensionId);
+    this.notifyChange();
     await this.disposeState(state);
   }
 
@@ -195,6 +210,7 @@ export class EditorExtensionHost {
       state.alive = false;
       state.commands.clear();
     }
+    if (states.length > 0) this.notifyChange();
     for (const state of states) await this.disposeState(state);
   }
 
@@ -214,7 +230,7 @@ export class EditorExtensionHost {
     try {
       await command.execute(input);
       this.assertCurrent(state);
-      this.clearDiagnostics(state.id, "command");
+      if (this.clearDiagnostics(state.id, "command")) this.notifyChange();
     } catch (error) {
       if (this.isCurrent(state)) {
         this.recordDiagnostic(state, "command", error);
@@ -234,14 +250,17 @@ export class EditorExtensionHost {
   private recordDiagnostic(state: ExtensionState, phase: EditorExtensionDiagnostic["phase"], error: unknown): void {
     this.clearDiagnostics(state.id, phase);
     this.diagnostics.push({ extensionId: state.id, phase, message: error instanceof Error ? error.message : String(error) });
+    this.notifyChange();
   }
 
-  private clearDiagnostics(extensionId: string, phase: EditorExtensionDiagnostic["phase"]): void {
+  private clearDiagnostics(extensionId: string, phase: EditorExtensionDiagnostic["phase"]): boolean {
+    const previousLength = this.diagnostics.length;
     for (let index = this.diagnostics.length - 1; index >= 0; index -= 1) {
       if (this.diagnostics[index].extensionId === extensionId && this.diagnostics[index].phase === phase) {
         this.diagnostics.splice(index, 1);
       }
     }
+    return this.diagnostics.length !== previousLength;
   }
 
   private async disposeState(state: ExtensionState): Promise<void> {
@@ -309,8 +328,12 @@ export class EditorExtensionHost {
         }
         const registered = { ...command, fields, extensionId: state.id };
         state.commands.set(command.id, registered);
+        if (state.ready) this.notifyChange();
         return () => {
-          if (state.commands.get(command.id) === registered) state.commands.delete(command.id);
+          if (state.commands.get(command.id) === registered) {
+            state.commands.delete(command.id);
+            if (state.ready) this.notifyChange();
+          }
         };
       },
     };

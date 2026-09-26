@@ -1,5 +1,5 @@
 import { Animation, AnimationGroup, Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
@@ -27,6 +27,67 @@ function fixture() {
 }
 
 describe("skeletal ragdoll pose handoff", () => {
+  it.each([[16, false], [64, false], [64, true]] as const)("applies a %i-bone chain (linked=%s) with linear hierarchy work and stable bind matrices", (count, linked) => {
+    const { scene, root, controller, capture } = fixture();
+    const skeleton = new Skeleton("chain", "chain", scene);
+    root.skeleton = skeleton;
+    const nodes: TransformNode[] = [];
+    for (let index = 0; index < count; index++) {
+      const bone = new Bone(`bone-${index}`, skeleton, skeleton.bones[index - 1] ?? null, Matrix.Translation(0, 1, 0));
+      if (linked) {
+        const node = new TransformNode(bone.name, scene);
+        node.parent = nodes[index - 1] ?? root;
+        node.position.y = 1;
+        bone.linkTransformNode(node);
+        nodes.push(node);
+      }
+    }
+    // Include an unselected descendant: batched pose application must update its
+    // skinning matrix too, without modifying the inverse bind pose.
+    const tip = new Bone("tip", skeleton, skeleton.bones.at(-1)!, Matrix.Translation(1, 0, 0));
+    const tipNode = linked ? new TransformNode("tip", scene) : undefined;
+    if (tipNode) {
+      tipNode.parent = nodes.at(-1)!;
+      tipNode.position.x = 1;
+      tip.linkTransformNode(tipNode);
+    }
+    const inverseBind = tip.getAbsoluteInverseBindMatrix().clone();
+    const captured = capture("first", skeleton.bones.slice(0, count).map((bone) => bone.name));
+    expect(captured.error).toBeUndefined();
+    const bones = captured.bones!.map((bone) => ({ ...bone, position: { ...bone.position, z: 5 } })).reverse();
+    const apply = () => {
+      controller.setPose({ type: "setRagdollPose", slotId: 1, requestId: "first", bones });
+      root.position.x += 0.1;
+      controller.update();
+    };
+    for (let warm = 0; warm < 20; warm++) apply();
+    const samples: number[] = [];
+    for (let frame = 0; frame < 100; frame++) {
+      const start = performance.now();
+      apply();
+      samples.push(performance.now() - start);
+    }
+    const visits = vi.spyOn(Bone.prototype, "computeAbsoluteMatrices");
+    const nodeVisits = vi.spyOn(TransformNode.prototype, "computeWorldMatrix");
+    try {
+      apply();
+      const hierarchyVisits = visits.mock.calls.length;
+      const nodeHierarchyVisits = nodeVisits.mock.calls.length;
+      samples.sort((a, b) => a - b);
+      console.info("ragdoll presentation (ms)", { count, linked, p50: samples[50], p95: samples[95], hierarchyVisits, nodeHierarchyVisits });
+      const position = tipNode ? tipNode.computeWorldMatrix(true).getTranslation() : tip.getAbsoluteMatrix().multiply(root.computeWorldMatrix(true)).getTranslation();
+      expect(position.x).toBeCloseTo(1, 4);
+      expect(position.y).toBeCloseTo(count, 4);
+      expect(position.z).toBeCloseTo(5, 4);
+      expect(tip.getAbsoluteInverseBindMatrix().equals(inverseBind)).toBe(true);
+      controller.clear({ type: "clearRagdollPose", slotId: 1, requestId: "first" });
+      skeleton.prepare(true);
+      expect(tip.getAbsoluteMatrix().getTranslation().asArray()).toEqual([1, count, 0]);
+      expect(hierarchyVisits).toBeLessThanOrEqual(2 * (count + 1));
+      expect(nodeHierarchyVisits).toBeLessThanOrEqual(3 * (count + 1));
+    } finally { visits.mockRestore(); nodeVisits.mockRestore(); }
+  });
+
   it("captures the animated linked pose and preserves world-space physics under a moving actor root", () => {
     const { scene, root, controller, capture } = fixture();
     root.position.x = 10;
@@ -110,6 +171,27 @@ describe("skeletal ragdoll pose handoff", () => {
     expect(bone.getAbsolutePosition().x).toBe(0);
     expect(controller.isDriven(1)).toBe(true);
     retirePlaySlot(binding, 1);
+    expect(controller.isDriven(1)).toBe(false);
+  });
+
+  it.each(["duplicate", "nonfinite", "missing"])("rejects a %s pose without applying a partial cached update", (invalid) => {
+    const { scene, root, controller, capture, replies } = fixture();
+    const hip = new TransformNode("Hip", scene);
+    hip.parent = root;
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = hip;
+    hand.position.x = 1;
+    const captured = capture();
+    const bones = captured.bones!.map((bone) => ({ ...bone, position: { ...bone.position, y: 20 } }));
+    if (invalid === "duplicate") bones[1]!.name = bones[0]!.name;
+    if (invalid === "nonfinite") bones[1]!.position.y = Number.NaN;
+    if (invalid === "missing") bones.pop();
+    controller.setPose({ type: "setRagdollPose", slotId: 1, requestId: "first", bones });
+    controller.update();
+    expect(replies.at(-1)?.error).toMatch(/invalid ragdoll bone pose/);
+    expect(hip.getAbsolutePosition().asArray()).toEqual([0, 0, 0]);
+    expect(hand.getAbsolutePosition().asArray()).toEqual([1, 0, 0]);
+    controller.clear({ type: "clearRagdollPose", slotId: 1, requestId: "first" });
     expect(controller.isDriven(1)).toBe(false);
   });
 

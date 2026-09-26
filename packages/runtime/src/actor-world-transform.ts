@@ -27,11 +27,13 @@ export function actorWorldTransform(
   return transform;
 }
 
-/** Compose every actor's local hierarchy into world space once per tick. */
+/** Compose selected actors and their ancestors; default to the whole world. */
 export function actorWorldTransforms(
   actors: readonly Actor[],
+  selected: Iterable<Actor> = actors,
 ): Map<string, Transform> {
-  const byGuid = new Map(actors.map((actor) => [actor.guid, actor]));
+  const byGuid = new Map<string, Actor>();
+  for (const actor of actors) byGuid.set(actor.guid, actor);
   const resolved = new Map<string, Transform>();
   const resolving = new Set<string>();
 
@@ -53,7 +55,7 @@ export function actorWorldTransforms(
     return world;
   };
 
-  for (const actor of actors) resolve(actor);
+  for (const actor of selected) resolve(actor);
   return resolved;
 }
 
