@@ -5,8 +5,8 @@ type ConnectionEdges = ReadonlyArray<
   Pick<Edge, "source" | "target" | "sourceHandle" | "targetHandle">
 >;
 
-// React Flow replaces the edges array for edge changes and retains it for
-// position-only updates. Share the index across pins and release old snapshots.
+// React Flow edge snapshots are immutable. Share the index across pins and
+// store updates retaining the same array, without retaining old snapshots.
 const wiredPinsByEdges = new WeakMap<ConnectionEdges, ReadonlySet<string>>();
 
 function pinKey(
