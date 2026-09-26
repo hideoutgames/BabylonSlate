@@ -1,8 +1,7 @@
 import {
-  MeshBuilder,
+  Mesh,
   type AbstractMesh,
   type IParticleSystem,
-  type Mesh,
   type NodeMaterial,
   type NodeParticleSystemSet,
   type ParticleSystem,
@@ -411,9 +410,12 @@ export class ParticleService {
     entry.building = true;
     const generation = entry.generation;
     try {
-      const node = MeshBuilder.CreateBox(`particleEmitter:${entry.key}`, { size: 0.01 }, host);
+      // A particle system draws only while its emitter survives FrameGraph culling, which drops
+      // `visibility = 0` meshes. A geometry-less Mesh stays visible, is always ready and draws nothing;
+      // its bounds are a point, so it bypasses the frustum test that its particles outgrow.
+      const node = new Mesh(`particleEmitter:${entry.key}`, host);
       entry.node = node;
-      node.isVisible = true; node.visibility = 0; node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
+      node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
       const parent = this.slotMeshes.get(entry.command.slotId) ?? this.resolveEmitter?.(entry.command.slotId);
       if (parent?.getScene() === host) node.parent = parent;
       const context = this.slotContext(entry, host, node, payload.space);

@@ -140,6 +140,64 @@ function changedPixels(canvas: Locator): () => Promise<number> {
     });
 }
 
+/** Picks a Value Mode for a Basic emitter Details row (`value-mode-<rowId>`). */
+async function chooseValueMode(page: Page, rowId: string, mode: "constant" | "range" | "curve"): Promise<void> {
+  const menu = page.getByTestId(`value-mode-${rowId}-menu`);
+  await page.getByTestId(`value-mode-${rowId}`).click();
+  await expect(menu).toBeVisible();
+  await page.getByTestId(`value-mode-${rowId}-${mode}`).click();
+  // Radio items keep the menu open unless the host closes on click.
+  if (await menu.isVisible()) await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+}
+
+type ParticleFrame = { green: number; white: number };
+
+/**
+ * Reads `count` consecutive animation frames of the canvas at half resolution. Particles blend
+ * additively and move, so each pixel's minimum over the window is the particle-free background;
+ * a frame's particles are what it adds to that: green (Basic emitter) or white (Particle Graph).
+ */
+async function particleFrames(canvas: Locator, count: number): Promise<ParticleFrame[]> {
+  return canvas.evaluate(async (element: HTMLCanvasElement, count) => {
+    const copy = document.createElement("canvas");
+    const context = copy.getContext("2d", { willReadFrequently: true });
+    if (!context) return [];
+    let frames: Uint8ClampedArray[] = [];
+    for (let attempt = 0; frames.length < count && attempt < count * 10; attempt += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const width = Math.floor(element.width / 2);
+      const height = Math.floor(element.height / 2);
+      if (!width || !height) continue;
+      // An output resize restarts the window, so every frame shares one background.
+      if (copy.width !== width || copy.height !== height) {
+        copy.width = width;
+        copy.height = height;
+        frames = [];
+      }
+      context.drawImage(element, 0, 0, width, height);
+      frames.push(context.getImageData(0, 0, width, height).data);
+    }
+    if (!frames.length) return [];
+    const background = new Uint8ClampedArray(frames[0]!);
+    for (const data of frames) {
+      for (let i = 0; i < data.length; i += 1) if (data[i]! < background[i]!) background[i] = data[i]!;
+    }
+    return frames.map((data) => {
+      let green = 0;
+      let white = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i]! - background[i]!;
+        const g = data[i + 1]! - background[i + 1]!;
+        const b = data[i + 2]! - background[i + 2]!;
+        if (g > 40 && r < 25 && b < 25) green += 1;
+        else if (r > 30 && g > 30 && b > 30) white += 1;
+      }
+      return { green, white };
+    });
+  }, count);
+}
+
 async function particleStats(page: Page): Promise<{
   systems: number;
   playing: number;
@@ -224,10 +282,20 @@ test.describe("Particle Graph", () => {
     await createContentBrowserAsset(page, "ParticleEmitter", "EmberSparks");
     await openAssetFromBrowser(page, "assets/EmberSparks.emitter.babasset");
     await expect(page.getByTestId("document-workspace-particle-emitter")).toBeVisible();
-    await page.getByTestId("particle-emitter-details-panel").getByTestId("property-material").click();
+    const emitterDetails = page.getByTestId("particle-emitter-details-panel");
+    await emitterDetails.getByTestId("property-material").click();
     await pickAsset(page, "particle-emitter-material-picker", materialGuid);
     const basicBackend = page.getByTestId("particle-emitter-preview").getByTestId("particle-preview-backend");
     await expect(basicBackend).toHaveText(/^(GPU|CPU)$/, { timeout: 30_000 });
+    // Constant green, dense and large, so Play can tell this emitter's pixels from the white graph.
+    await chooseValueMode(page, "color", "constant");
+    const hex = emitterDetails.getByTestId("property-color-hex");
+    await hex.fill("#00ff00");
+    await hex.press("Tab");
+    await expect(hex).toHaveValue(/00ff00/i);
+    await setNumberRow(emitterDetails, "rate", "60");
+    await setNumberRow(emitterDetails, "size-max", "0.8");
+    await setNumberRow(emitterDetails, "size-min", "0.6");
     // Each slot keeps its own backend: a GPU Basic emitter next to a graph reads GPU + CPU.
     const systemBackend = (await basicBackend.textContent()) === "GPU" ? "GPU + CPU" : "CPU";
     await saveAllIfEnabled(page);
@@ -282,6 +350,19 @@ test.describe("Particle Graph", () => {
     await expect
       .poll(async () => particleStats(page), { timeout: 15_000 })
       .toEqual({ systems: 2, playing: 1, graphSystems: 1 });
+    // Play draws through the FrameGraph, whose culling gates each particle draw on its emitter.
+    // Both slots must show on nearly every frame, not only on the classic frame after a resize.
+    let frames: ParticleFrame[] = [];
+    try {
+      await expect
+        .poll(async () => {
+          frames = await particleFrames(page.getByTestId("play-canvas"), 40);
+          return frames.filter((frame) => frame.green >= 4 && frame.white >= 4).length / 40;
+        }, { timeout: 20_000 })
+        .toBeGreaterThanOrEqual(0.9);
+    } finally {
+      await testInfo.attach("play-particle-frames.json", { body: JSON.stringify(frames), contentType: "application/json" });
+    }
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);

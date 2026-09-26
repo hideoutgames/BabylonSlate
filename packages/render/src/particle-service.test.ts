@@ -10,6 +10,7 @@ import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";
+import { participatesInShadows } from "./shadow-mesh-policy";
 
 /** A Basic emitter using the "mat" Material unless the payload names another. */
 function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
@@ -117,16 +118,16 @@ describe("ParticleService", () => {
     expect(service.stats().systems).toBe(0);
   });
 
-  it("keeps the Play emitter enabled at zero visibility", () => {
+  it("keeps the visible Play emitter undrawable, unpickable and out of shadows", () => {
     const { scene, service, assign } = host();
     service.setLibrary(library({ "em-1": basic() }));
     assign();
     const emitter = scene.particleSystems[0]!.emitter as Mesh;
-    expect(emitter.isEnabled()).toBe(true);
-    expect(emitter.isVisible).toBe(true);
-    expect(emitter.visibility).toBe(0);
-    expect(emitter.alwaysSelectAsActiveMesh).toBe(true);
+    expect(emitter.getTotalVertices()).toBe(0);
+    expect(emitter.subMeshes ?? []).toHaveLength(0);
     expect(emitter.isPickable).toBe(false);
+    // A visible caster without static geometry would refresh shadow maps every frame.
+    expect(participatesInShadows(emitter)).toBe(false);
     service.dispose();
   });
 

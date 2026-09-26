@@ -22,6 +22,8 @@ const SHADOW_SKIP_NAME_PREFIXES = [
   "debugCamera",
   "navmeshDebug",
   "playConsoleViz:",
+  // Visible geometry-less particle emitters would otherwise refresh shadow maps every frame.
+  "particleEmitter:",
 ] as const;
 function shadowSkipMetadata(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
