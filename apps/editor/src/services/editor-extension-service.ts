@@ -29,6 +29,8 @@ export class EditorExtensionService {
   private writeGuard: (path: string) => void = () => {};
   private readonly services: EditorExtensionServices;
   private cleanupDiagnostics: string[] = [];
+  private packageDiagnostics: string[] = [];
+  private unsubscribeHost: () => void = () => {};
 
   constructor(storage: ProjectStorage, services: EditorExtensionServices) {
     this.storage = storage;
@@ -42,7 +44,7 @@ export class EditorExtensionService {
         },
       },
     };
-    this.host = new EditorExtensionHost(this.services);
+    this.host = this.createHost();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -62,7 +64,18 @@ export class EditorExtensionService {
     this.mutation = next.catch(() => undefined);
     return next;
   }
+  private createHost(): EditorExtensionHost {
+    const host = new EditorExtensionHost(this.services);
+    this.unsubscribeHost = host.subscribe(() => this.publishHostState());
+    return host;
+  }
+  private publishHostState(entries = this.state.entries): void {
+    this.publish({ entries, commands: this.host.listCommands(), diagnostics: [
+      ...this.packageDiagnostics, ...this.cleanupDiagnostics, ...this.host.getDiagnostics().map((value) => value.message),
+    ] });
+  }
   private async resetHost(): Promise<void> {
+    this.unsubscribeHost();
     await this.host.dispose();
     for (const diagnostic of this.host.getDiagnostics().filter((value) => value.phase === "dispose")) {
       const name = this.state.entries.find((entry) => entry.extensionGuid === diagnostic.extensionId)?.settings.displayName ?? diagnostic.extensionId;
@@ -71,7 +84,7 @@ export class EditorExtensionService {
       this.services.log?.(diagnostic.extensionId, message);
     }
     this.cleanupDiagnostics = this.cleanupDiagnostics.slice(-50);
-    this.host = new EditorExtensionHost(this.services);
+    this.host = this.createHost();
   }
   private storageFor(entry: ExtensionDescriptor): ProjectStorage {
     const storage = entry.source === "engine" ? this.engineStorage : this.storage;
@@ -118,13 +131,13 @@ export class EditorExtensionService {
         }
         this.fingerprint = active.size === graph.order.length ? fingerprint : "";
       }
-      this.publish({ entries, commands: this.host.listCommands(), diagnostics: [
-        ...diagnostics, ...this.cleanupDiagnostics, ...this.host.getDiagnostics().map((value) => value.message),
-      ] });
+      this.packageDiagnostics = diagnostics;
+      this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
       this.fingerprint = "";
-      this.publish({ entries: [], commands: [], diagnostics: [...this.cleanupDiagnostics, String(cause)] });
+      this.packageDiagnostics = [String(cause)];
+      this.publishHostState([]);
       throw cause;
     }
   }
@@ -134,8 +147,9 @@ export class EditorExtensionService {
       await this.resetHost();
       this.fingerprint = "";
       this.overrides = {};
-      this.publish({ entries: [], commands: [], diagnostics: [] });
       this.cleanupDiagnostics = [];
+      this.packageDiagnostics = [];
+      this.publishHostState([]);
     });
   }
 

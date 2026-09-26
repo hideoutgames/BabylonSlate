@@ -60,9 +60,62 @@ const originalModule = `
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(activeServices.splice(0).map((service) => service.close()));
+  vi.unstubAllGlobals();
 });
 
 describe("EditorExtensionService lifecycle", () => {
+  it("publishes commands registered and removed by an active extension callback", async () => {
+    const { project, service, messages } = await fixture();
+    let updateCommands!: () => void;
+    vi.stubGlobal("__extensionUpdateCommands", (callback: () => void) => { updateCommands = callback; });
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), `
+      export function activate(api) {
+        const removeOriginal = api.registerCommand({ id: "original", title: "Original", execute() {} });
+        globalThis.__extensionUpdateCommands(() => {
+          removeOriginal();
+          api.registerCommand({ id: "replacement", title: "Replacement", execute() { api.log("Replacement Worked"); } });
+        });
+      }
+    `);
+    await service.refresh();
+    const observed: string[][] = [];
+    const unsubscribe = service.subscribe(() => { observed.push(service.getSnapshot().commands.map((command) => command.id)); });
+
+    updateCommands();
+
+    expect(service.getSnapshot().commands.map((command) => command.id)).toEqual(["replacement"]);
+    expect(observed).toContainEqual(["replacement"]);
+    await expect(service.run("tools", "original", {})).rejects.toThrow(/unavailable/);
+    await service.run("tools", "replacement", {});
+    expect(messages).toContain("Replacement Worked");
+    unsubscribe();
+  });
+
+  it("publishes command failures immediately and clears them on retry without losing package diagnostics", async () => {
+    const { project, service } = await fixture();
+    await project.mkdir("extensions/broken", true);
+    await project.writeText("extensions/broken/extension.json", "{}");
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), `
+      export function activate(api) {
+        api.registerCommand({ id: "write", title: "Write", execute(values) {
+          if (values.source === "bad") throw new Error("Invalid source");
+          return api.code.write("code/output.js", values.source);
+        } });
+      }
+    `);
+    await service.refresh();
+    const packageDiagnostics = service.getSnapshot().diagnostics;
+    expect(packageDiagnostics.length).toBeGreaterThan(0);
+
+    await expect(service.run("tools", "write", { source: "bad" })).rejects.toThrow("Invalid source");
+    expect(service.getSnapshot().diagnostics).toContain("Invalid source");
+    await service.refresh();
+    await service.run("tools", "write", { source: "export const ready = true;" });
+
+    expect(service.getSnapshot().diagnostics).toEqual(packageDiagnostics);
+    expect(await project.readText("code/output.js")).toBe("export const ready = true;");
+  });
+
   it("reports cleanup failures when disabling an extension and keeps independent commands usable", async () => {
     const { project, service, messages } = await fixture();
     await writeProjectExtension(project, "faulty", enabledSettings("faulty"), `

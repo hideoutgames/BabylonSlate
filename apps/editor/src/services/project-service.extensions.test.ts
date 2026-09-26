@@ -21,6 +21,35 @@ async function enable(service: ProjectService, entry: ExtensionDescriptor) {
 }
 
 describe("Editor Extensions in a project", () => {
+  it("rejects overlapping asset creates instead of overwriting the first result and releases failed reservations", async () => {
+    const { service, storage } = await setup();
+    const entry = await writeProjectExtension(storage, "writer", createExtensionSettings("Writer"), `
+      export function activate(api) {
+        api.registerCommand({ id: "write", title: "Write", async execute() {
+          const first = await api.materials.convertGlsl("void main() { gl_FragColor = vec4(0.25); }");
+          const second = await api.materials.convertGlsl("void main() { gl_FragColor = vec4(0.75); }");
+          if (!first.ok || !second.ok) throw new Error("Fixture conversion failed");
+          const document = { type: "Material", name: "Shared", payload: first.document };
+          const results = await Promise.allSettled([
+            api.assets.create("assets/Shared.material.babasset", document),
+            api.assets.create("assets/Shared.material.babasset", { ...document, payload: second.document }),
+          ]);
+          await api.code.write("code/results.js", JSON.stringify(results.map((result) => result.status)));
+          await api.assets.create("assets/Retry.material.babasset", { ...document, type: "Unsupported" }).catch(() => {});
+          await api.assets.create("assets/Retry.material.babasset", document);
+        } });
+      }
+    `);
+    await enable(service, entry);
+    await service.extensions.run(entry.extensionGuid, "write", {});
+
+    expect(JSON.parse(await storage.readText("code/results.js"))).toEqual(["fulfilled", "rejected"]);
+    const material = await service.loadDocument("material", "assets/Shared.material.babasset") as unknown as Parameters<typeof lowerMaterialDocument>[0];
+    expect(material.nodes.find((node) => node.type === "const.float")?.properties.value).toEqual([0.25]);
+    expect(service.registry?.getByPath("assets/Retry.material.babasset")?.header.type).toBe("Material");
+    await service.closeProject();
+  });
+
   it("runs the bundled converter into an indexed, persisted native Material and keeps output after disabling", async () => {
     const { service, storage, bundled } = await setup();
     expect(service.extensions.getSnapshot().commands).toEqual([]);
