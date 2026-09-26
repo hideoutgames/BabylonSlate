@@ -182,14 +182,41 @@ describe("EditorExtensionHost", () => {
     ` });
 
     const run = host.run("slow", "write");
+    const rejected = expect(run).rejects.toThrow(/no longer active/i);
     await started.promise;
-    await host.deactivate("slow");
+    const deactivation = host.deactivate("slow");
     await expect(capturedApi.code.write("Code/game.ts", "late write")).rejects.toThrow(/no longer active/i);
     read.resolve("changed");
 
-    await expect(run).rejects.toThrow(/no longer active/i);
+    await deactivation;
+    await rejected;
     expect(code.get("Code/game.ts")).toBe("export const speed = 1;");
     expect(host.listCommands()).toEqual([]);
+  });
+
+  it("drains detached API writes before disposal allows project storage to close", async () => {
+    const { host, services, code } = fixture();
+    const gate = deferred<void>();
+    const started = deferred<void>();
+    services.code.write = async (path, source) => {
+      started.resolve();
+      await gate.promise;
+      code.set(path, source);
+    };
+    await host.activate({ id: "writer", path: "writer.js", source: `
+      export function activate(api) {
+        void api.code.write('Code/pending.js', 'saved');
+      }
+    ` });
+    await started.promise;
+    let closed = false;
+    const closing = host.dispose().then(() => { closed = true; });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    gate.resolve();
+    await closing;
+    expect(code.get("Code/pending.js")).toBe("saved");
+    expect(closed).toBe(true);
   });
 
   it("cleans up late activation without restoring commands after host disposal", async () => {

@@ -181,6 +181,8 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **SpriteCollisionOverlay** ([`sprite-collision-overlay.tsx`](../../apps/editor/src/components/sprite-collision-overlay.tsx)) | Dashed normalized AABB with 8 resize handles (`Resize Collision East`, …) and interior drag-to-move. Sprite Animation Preview hosts it on the `object-contain` image box so pivot/AABB match non-square textures. | Sprite Preview and Sprite Animation Preview. |
 | **NineSlicePreview** ([`nine-slice-preview.tsx`](../../apps/editor/src/components/nine-slice-preview.tsx)) | Read-only still frame of a 2D Panel Texture (or first Material Texture Sample) on a checkerboard, with dashed `--pin-transform` margin lines and orange intersection dots on the `object-contain` image box. Margins stay on PropertyGrid 0–1 sliders (`0.5` = 50% of the source edge; values above 1 stay legacy pixels). `data-testid="panel-nine-slice-preview"`. | Scene Details and Prefab Inspector `2DPanelComponent`. |
 
+The shared code editor also accepts an `ariaLabel` for extension entry sources and command inputs; existing function-body labels remain the default.
+
 The shared code editor uses a compact desktop dialog with edge-to-edge code,
 line gutters, syntax colors, and Ctrl+Space completion. GLSL suggests numeric
 types, built-ins, local declarations, and authored pins; JavaScript combines

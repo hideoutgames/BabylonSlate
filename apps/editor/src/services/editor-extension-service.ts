@@ -152,9 +152,24 @@ export class EditorExtensionService {
       if (settings.extensionGuid !== guid || settings.entryPoint !== entry.settings.entryPoint) {
         throw new Error("Extension identity and Entry Point cannot change while editing.");
       }
-      const normalized = normalizeExtensionSettings({ ...settings, engineVersion: ENGINE_VERSION });
-      await this.storage.writeText(`${entry.folderPath}/${normalized.entryPoint}`, source);
-      await this.storage.writeBinary(entry.settingsPath, encodeExtensionSettings(normalized));
+      const path = `${entry.folderPath}/${entry.settings.entryPoint}`;
+      const previousSource = await this.storage.readText(path);
+      const previousManifest = await this.storage.readBinary(entry.settingsPath);
+      const authored = source !== previousSource || settings.version !== entry.settings.version;
+      const normalized = normalizeExtensionSettings({ ...settings,
+        engineVersion: authored ? ENGINE_VERSION : entry.settings.engineVersion,
+        extensionDependencies: settings.extensionDependencies.map((dependency) => ({ ...dependency,
+          version: authored ? this.state.entries.find((value) => value.extensionGuid === dependency.guid)?.settings.version ?? dependency.version : dependency.version,
+        })),
+      });
+      try {
+        await this.storage.writeText(path, source);
+        await this.storage.writeBinary(entry.settingsPath, encodeExtensionSettings(normalized));
+      } catch (cause) {
+        await this.storage.writeText(path, previousSource);
+        await this.storage.writeBinary(entry.settingsPath, previousManifest);
+        throw cause;
+      }
       this.fingerprint = "";
       await this.refreshNow(this.overrides);
     });

@@ -136,7 +136,7 @@ class Converter {
             this.fail(`Binding “${name.text}” requires ${binding === "uv" ? "vec2" : "uniform float"}.`, name);
           }
           this.usedBindings.add(name.text);
-          value = this.node(binding === "uv" ? "input.uv" : "input.time", width, {}, binding === "uv" ? "uv" : "time");
+          value = this.node(binding === "uv" ? "input.uv" : "input.time", width, binding === "time" ? { timeMode: "seconds" } : {}, binding === "uv" ? "uv" : "time");
         } else {
           if (qualifier !== "uniform") this.fail(`Input “${name.text}” needs an explicit UV binding; arbitrary vertex varyings are unsupported.`, name);
           value = this.combine(CHANNELS.slice(0, width).map((channel) => this.node("param.float", 1, {

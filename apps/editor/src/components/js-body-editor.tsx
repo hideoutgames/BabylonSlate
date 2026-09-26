@@ -14,6 +14,7 @@ export type JsBodyEditorProps = {
   onChange: (value: string) => void;
   bodyLine?: number;
   names?: readonly string[];
+  ariaLabel?: string;
 };
 
 export function JsBodyEditor(props: JsBodyEditorProps) {
@@ -40,7 +41,7 @@ const ACCESSORY = [
  * Touch-friendly ExecuteJavaScript body editor (CodeMirror 6).
  * Loaded only when the Details panel needs it.
  */
-export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [] }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
+export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -60,7 +61,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         bracketMatching(),
         autocompletion(),
         (language === "glsl" ? glslLanguage : javascript().language).data.of({ autocomplete: (context: import("@codemirror/autocomplete").CompletionContext) => codeCompletions(context, language, namesRef.current) }),
-        EditorView.contentAttributes.of({ "aria-label": language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body" }),
+        EditorView.contentAttributes.of({ "aria-label": ariaLabel ?? (language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body") }),
         keymap.of([{ key: "Escape", run: closeCompletion, stopPropagation: true }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

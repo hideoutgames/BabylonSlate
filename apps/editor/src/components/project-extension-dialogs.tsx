@@ -46,14 +46,14 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   const { busy, error, run } = useExtensionAction();
   const setValue = (id: string, value: string) => { setValues((previous) => ({ ...previous, [id]: value })); setSucceeded(false); };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="sm:max-w-2xl">
+    <DialogContent className="editor-dialog-large flex min-h-0 flex-col overflow-hidden sm:max-w-2xl">
       <DialogHeader><DialogTitle>{command.title}</DialogTitle><DialogDescription>{command.description ?? "Run this editor extension command."}</DialogDescription></DialogHeader>
-      <FieldGroup>
+      <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
         {command.fields.map((field) => <Field key={field.id}>
           <FieldLabel htmlFor={`extension-command-${field.id}`}>{field.label}{field.required ? " *" : ""}</FieldLabel>
           {field.type === "multiline" && command.id === "glsl-to-material" && field.id === "source" ?
             <div className="h-64 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label={field.label}>
-              <CodeBodyEditor language="glsl" value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
+              <CodeBodyEditor language="glsl" ariaLabel={field.label} value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
             </div> : field.type === "multiline" ?
               <Textarea id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} /> :
               <Input id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} />}
@@ -84,9 +84,10 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
   const { busy, error, run } = useExtensionAction();
   const patch = (value: Partial<ExtensionSettings>) => setSettings((previous) => ({ ...previous, ...value }));
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="sm:max-w-3xl">
+    <DialogContent className="editor-dialog-large flex min-h-0 flex-col overflow-hidden sm:max-w-3xl">
       <DialogHeader><DialogTitle>Edit Extension</DialogTitle><DialogDescription>Saving reloads enabled extensions. Code runs in the editor and can modify project assets and code.</DialogDescription></DialogHeader>
-      <FieldGroup>
+      <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
+        <Field><FieldLabel htmlFor="extension-edit-guid">Extension ID</FieldLabel><Input id="extension-edit-guid" value={entry.extensionGuid} readOnly /></Field>
         {([['displayName', 'Display Name'], ['version', 'Version'], ['author', 'Author'], ['category', 'Category']] as const).map(([key, label]) => <Field key={key}>
           <FieldLabel htmlFor={`extension-edit-${key}`}>{label}</FieldLabel>
           <Input id={`extension-edit-${key}`} value={settings[key]} disabled={busy} onChange={(event) => patch({ [key]: event.target.value })} />
@@ -102,8 +103,7 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
           {settings.extensionDependencies.map((dependency) => {
             const name = entries.find((value) => value.extensionGuid === dependency.guid)?.settings.displayName ?? dependency.guid;
             return <Field key={dependency.guid} orientation="horizontal">
-              <FieldContent><FieldLabel htmlFor={`extension-dependency-${dependency.guid}`}>{name}</FieldLabel><FieldDescription>Required Version</FieldDescription></FieldContent>
-              <Input id={`extension-dependency-${dependency.guid}`} value={dependency.version} disabled={busy} onChange={(event) => patch({ extensionDependencies: settings.extensionDependencies.map((value) => value.guid === dependency.guid ? { ...value, version: event.target.value } : value) })} />
+              <FieldContent><FieldLabel>{name}</FieldLabel><FieldDescription>Version {dependency.version || "Any"}</FieldDescription></FieldContent>
               <Button variant="outline" size="sm" disabled={busy} aria-label={`Remove ${name} Dependency`} onClick={() => patch({ extensionDependencies: settings.extensionDependencies.filter((value) => value.guid !== dependency.guid) })}>Remove</Button>
             </Field>;
           })}
@@ -112,7 +112,7 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
           </SearchDropdown>
         </FieldSet>
         <Field><FieldLabel>Entry Source</FieldLabel><FieldDescription>{settings.entryPoint} · Export activate(api). Module imports are not supported.</FieldDescription>
-          <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><CodeBodyEditor language="javascript" value={source} onChange={setSource} /></div>
+          <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><CodeBodyEditor language="javascript" ariaLabel="Extension Source" value={source} onChange={setSource} /></div>
         </Field>
       </FieldGroup>
       <ActionError message={error} />

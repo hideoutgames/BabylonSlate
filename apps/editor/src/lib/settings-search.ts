@@ -128,6 +128,9 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["plugins", "Show Plugin Content", "settings-show-plugin-content"],
   ["plugins", "New Plugin", "settings-plugin-new"],
   ["plugins", "Import Plugin", "settings-plugin-import"],
+  ["extensions", "New Extension", "settings-extension-new"],
+  ["extensions", "Import Extension", "settings-extension-import"],
+  ["extensions", "GLSL to Material"],
   ["export", "Startup Scene", "settings-startup-scene"],
   ["export", "Game Instance", "settings-game-instance"],
   ["export", "Packed", "setting-export-packed"],
@@ -177,6 +180,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["graph", "Shake Nodes To Disconnect", "setting-graph-shake"],
   ["thumbnails", "Generate Thumbnails", "setting-thumbnails"],
   ["templates", "Templates Folder", "setting-templates-folder"],
+  ["extensions", "Engine Extensions"],
   ["focus", "Keep Panels In Focus Mode"],
   ...EDITOR_COMMANDS.map(
     (command) => ["keybinds", command.label, `keybind-${command.id}-record`] as const,
