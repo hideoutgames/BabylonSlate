@@ -1068,7 +1068,7 @@ function initializeEngine(
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   onRollback(() => disposeSnapshotBinding(binding));
   if (options.playMode && options.onRagdollPoseCaptured) {
-    binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured);
+    binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
     scene.onAfterAnimationsObservable.add(() => {
       binding.ragdoll?.update();
       updateBoneAttachments(binding);

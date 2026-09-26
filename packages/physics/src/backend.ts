@@ -1,5 +1,6 @@
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
@@ -35,8 +36,11 @@ export interface PhysicsBackend {
   teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  getBodyVelocity(bodyId: string): BodyVelocity | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
+  /** Set a dynamic body's world angular velocity in radians/second. 2D uses only Z. */
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void;
   setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],

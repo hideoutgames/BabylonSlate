@@ -29,6 +29,7 @@ import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
@@ -57,6 +58,7 @@ import {
 import { attachHavokShape, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
+import { rotateQuatVec } from "./collider-bake";
 import { copyConstraintDesc } from "./constraint-validation";
 import { assertHavokConstraintAttached, disposeHavokConstraint, makeHavokConstraint } from "./havok-constraints";
 
@@ -421,6 +423,34 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const body = record.body;
     if (!body) return;
     this.applyMotionType(record);
+  }
+
+  getBodyVelocity(bodyId: string): BodyVelocity | null {
+    const record = this.bodies.get(bodyId);
+    const transform = this.getBodyTransform(bodyId);
+    if (!record || !transform) return null;
+    const linear = record.body.getLinearVelocity();
+    const angular = record.body.getAngularVelocity();
+    const offset = rotateQuatVec(transform.rotation, record.body.getMassProperties().centerOfMass ?? { x: 0, y: 0, z: 0 });
+    return {
+      linear: { x: linear.x, y: linear.y, z: linear.z },
+      angular: { x: angular.x, y: angular.y, z: angular.z },
+      centerOfMass: { x: transform.position.x + offset.x, y: transform.position.y + offset.y, z: transform.position.z + offset.z },
+    };
+  }
+
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void {
+    if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite))
+      throw new Error("Angular velocity must be finite");
+    if (this.stepping) {
+      const owned = { ...velocity };
+      this.pendingMutations.push(() => this.setBodyAngularVelocity(bodyId, owned));
+      return;
+    }
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    this.assertHealthy(record);
+    record.body.setAngularVelocity(toVector3(velocity));
   }
 
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {

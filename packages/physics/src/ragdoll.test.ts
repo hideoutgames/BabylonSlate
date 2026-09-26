@@ -59,3 +59,20 @@ it("validates the skeleton before mutation and rolls back every native resource 
     retry.dispose();
   } finally { backend.dispose(); }
 });
+
+it("transfers translation and rotation using both source and bone collider mass centers", async () => {
+  const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+  try {
+    const ragdoll = new RagdollPhysics(backend, "actor", "moving", bones, properties(), {
+      linear: { x: 2, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 2 }, centerOfMass: { x: 1, y: 2, z: 3 },
+    });
+    const hit = backend.lineTrace({ x: -2, y: 0.5, z: 0 }, { x: 2, y: 0.5, z: 0 });
+    const velocity = backend.getBodyVelocity(hit.bodyId!)!;
+    expect(velocity.centerOfMass.x).toBeCloseTo(0);
+    expect(velocity.centerOfMass.y).toBeCloseTo(0.5);
+    expect(velocity.linear.x).toBeCloseTo(5);
+    expect(velocity.linear.y).toBeCloseTo(-2);
+    expect(velocity.angular.z).toBeCloseTo(2);
+    ragdoll.dispose();
+  } finally { backend.dispose(); }
+});

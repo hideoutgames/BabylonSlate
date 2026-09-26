@@ -2,7 +2,7 @@ import { parseRagdollProperties, type RagdollBonePose, type RagdollProperties } 
 import type { PhysicsBackend } from "./backend";
 import { multiplyQuat, rotateQuatVec } from "./collider-bake";
 import { normalizedPhysicsPose } from "./collider-validation";
-import type { ColliderDesc, ConstraintDesc, PhysicsTransform, Quat, RigidBodyDesc, Vec3 } from "./types";
+import type { BodyVelocity, ColliderDesc, ConstraintDesc, PhysicsTransform, Quat, RigidBodyDesc, Vec3 } from "./types";
 
 const zero = (): Vec3 => ({ x: 0, y: 0, z: 0 });
 const identity = (): Quat => ({ x: 0, y: 0, z: 0, w: 1 });
@@ -63,10 +63,14 @@ export class RagdollPhysics {
     id: string,
     input: readonly RagdollBonePose[],
     properties: RagdollProperties,
+    initialVelocity?: BodyVelocity,
   ) {
     if (backend.kind !== "3d" || !backend.supportsConstraints)
       throw new Error("Ragdolls require native 3D physics");
     if (!id || !actorId) throw new Error("Ragdolls require nonempty identities");
+    if (initialVelocity && [initialVelocity.linear, initialVelocity.angular, initialVelocity.centerOfMass]
+      .some((value) => !value || ![value.x, value.y, value.z].every(Number.isFinite)))
+      throw new Error("Initial ragdoll velocity and mass center must be finite");
     const tuning = parseRagdollProperties({ ...properties });
     const bones = selectBones(input, tuning.boneNames);
     const selected = new Map(bones.map((bone, index) => [bone.name, { bone, bodyId: `${id}:bone:${index}` }]));
@@ -103,6 +107,18 @@ export class RagdollPhysics {
         backend.createBody(item.body);
         this.records.push({ bone: item.bone, bodyId: item.body.id });
         backend.createCollider(item.collider);
+        if (initialVelocity) {
+          const massCenter = backend.getBodyVelocity(item.body.id)?.centerOfMass;
+          if (!massCenter) throw new Error("Cannot resolve the ragdoll body's mass center");
+          const offset = subtract(massCenter, initialVelocity.centerOfMass);
+          const angular = initialVelocity.angular;
+          backend.setBodyAngularVelocity(item.body.id, angular);
+          backend.setBodyLinearVelocity(item.body.id, {
+            x: initialVelocity.linear.x + angular.y * offset.z - angular.z * offset.y,
+            y: initialVelocity.linear.y + angular.z * offset.x - angular.x * offset.z,
+            z: initialVelocity.linear.z + angular.x * offset.y - angular.y * offset.x,
+          });
+        }
       }
       for (const item of prepared) if (item.joint) {
         backend.createConstraint(item.joint);

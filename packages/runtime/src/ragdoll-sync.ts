@@ -18,6 +18,7 @@ interface RagdollState {
   requestedAt: number;
   phase: "pending" | "active" | "failed";
   physics: RagdollPhysics | null;
+  pendingImpulse: Vec3;
   offset: Vec3;
   rotation: Transform["rotation"];
 }
@@ -72,6 +73,7 @@ export class RagdollWorldSync {
         requestId: `ragdoll:${++this.sequence}:${actor.guid}:${component.guid}`,
         requestedAt: this.host.world.clock.tickIndex,
         properties: null, phase: "pending", physics: null,
+        pendingImpulse: { x: 0, y: 0, z: 0 },
         offset: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
       };
       this.states.set(actor, state);
@@ -111,7 +113,11 @@ export class RagdollWorldSync {
     }
     let physics: RagdollPhysics | null = null;
     try {
-      physics = new RagdollPhysics(this.host.physics().getBackend(), state.actor.guid, state.requestId, message.bones, state.properties);
+      const sync = this.host.physics();
+      const initialVelocity = sync.getActorVelocity(state.actor) ?? undefined;
+      physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones, state.properties, initialVelocity);
+      physics.addImpulse(state.pendingImpulse);
+      state.pendingImpulse = { x: 0, y: 0, z: 0 };
       const root = physics.readPose().find((bone) => bone.name === physics!.rootBoneName);
       if (!root) throw new Error("The ragdoll has no root bone pose");
       const transform = actorWorldTransforms(this.host.world.getActors()).get(state.actor.guid)!;
@@ -145,9 +151,26 @@ export class RagdollWorldSync {
   }
 
   addImpulse(actor: Actor, impulse: Vec3, strength?: number): boolean {
-    const physics = this.states.get(actor)?.physics;
-    if (!physics) return false;
-    physics.addImpulse(impulse, strength);
+    const state = this.states.get(actor);
+    if (!state || state.phase === "failed") return false;
+    if (state.physics) {
+      state.physics.addImpulse(impulse, strength);
+      return true;
+    }
+    const multiplier = strength ?? 1;
+    if (![impulse.x, impulse.y, impulse.z, multiplier].every(Number.isFinite)) {
+      throw new Error("Ragdoll impulses must be finite");
+    }
+    const pending = {
+      x: state.pendingImpulse.x + impulse.x * multiplier,
+      y: state.pendingImpulse.y + impulse.y * multiplier,
+      z: state.pendingImpulse.z + impulse.z * multiplier,
+    };
+    if (![pending.x, pending.y, pending.z].every(Number.isFinite)) {
+      throw new Error("Accumulated ragdoll impulse must remain finite");
+    }
+    // A single vector keeps the pending handoff bounded regardless of script calls.
+    state.pendingImpulse = pending;
     return true;
   }
 
@@ -168,6 +191,7 @@ export class RagdollWorldSync {
   private fail(state: RagdollState, error: unknown): void {
     state.physics?.dispose();
     state.physics = null;
+    state.pendingImpulse = { x: 0, y: 0, z: 0 };
     state.phase = "failed";
     state.component.setVariable("status", "failed");
     this.host.physics().suppressActorBody(state.actor, false);

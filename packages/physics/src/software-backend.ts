@@ -4,6 +4,7 @@ import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
@@ -345,6 +346,20 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return body ? cloneTransform(body.transform) : null;
   }
 
+  getBodyVelocity(bodyId: string): BodyVelocity | null {
+    const body = this.bodies.get(bodyId);
+    // The approximate software solver treats its body origin as its mass center.
+    return body ? { linear: { ...body.linearVelocity }, angular: { ...body.angularVelocity }, centerOfMass: { ...body.transform.position } } : null;
+  }
+
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void {
+    if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite))
+      throw new Error("Angular velocity must be finite");
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    body.angularVelocity = this.kind === "2d" ? { x: 0, y: 0, z: velocity.z } : { ...velocity };
+  }
+
   setBodyMotionType(bodyId: string, motionType: MotionType): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;
@@ -581,6 +596,17 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       body.linearVelocity.x *= damp;
       body.linearVelocity.y *= damp;
       body.linearVelocity.z *= damp;
+
+      const angularDamp = Math.max(0, 1 - body.desc.angularDamping * dt);
+      body.angularVelocity.x *= angularDamp;
+      body.angularVelocity.y *= angularDamp;
+      body.angularVelocity.z *= angularDamp;
+      const speed = Math.hypot(body.angularVelocity.x, body.angularVelocity.y, body.angularVelocity.z);
+      if (speed > 0) {
+        const sine = Math.sin(speed * dt / 2) / speed;
+        body.transform.rotation = multiplyQuat({ x: body.angularVelocity.x * sine, y: body.angularVelocity.y * sine,
+          z: body.angularVelocity.z * sine, w: Math.cos(speed * dt / 2) }, body.transform.rotation);
+      }
 
       body.transform.position.x += body.linearVelocity.x * dt;
       body.transform.position.y += body.linearVelocity.y * dt;

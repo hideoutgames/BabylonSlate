@@ -146,6 +146,13 @@ export class PhysicsWorldSync {
     return this.backend;
   }
 
+  /** Capture native center-of-mass motion before replacing the actor's body. */
+  getActorVelocity(actor: Actor) {
+    if (this.bodyOwnerByActor.get(actor.guid) !== actor) return null;
+    const bodyId = this.bodyByActor.get(actor.guid);
+    return bodyId ? this.backend.getBodyVelocity(bodyId) : null;
+  }
+
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
   suppressActorBody(actor: Actor, suppressed: boolean): void {
     if (suppressed) {

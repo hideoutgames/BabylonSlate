@@ -8,6 +8,7 @@ import type {
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
@@ -124,6 +125,8 @@ type RapierRigidBody = {
   handle: number;
   translation(): { x: number; y: number };
   linvel(): { x: number; y: number };
+  angvel(): number;
+  worldCom(): { x: number; y: number };
   setLinvel(velocity: { x: number; y: number }, wakeUp: boolean): void;
   setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
   rotation(): number;
@@ -409,6 +412,23 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         next[axis] = value;
     }
     record.body.setLinvel(next, true);
+  }
+
+  getBodyVelocity(bodyId: string): BodyVelocity | null {
+    const record = this.bodies.get(bodyId);
+    if (!record) return null;
+    const linear = record.body.linvel();
+    const center = record.body.worldCom();
+    return { linear: { x: linear.x, y: linear.y, z: 0 },
+      angular: { x: 0, y: 0, z: record.body.angvel() }, centerOfMass: { x: center.x, y: center.y, z: 0 } };
+  }
+
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void {
+    if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite))
+      throw new Error("Angular velocity must be finite");
+    const record = this.bodies.get(bodyId);
+    if (!record || record.desc.motionType !== "dynamic") return;
+    record.body.setAngvel(velocity.z, true);
   }
 
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {

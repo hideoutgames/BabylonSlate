@@ -27,6 +27,9 @@ export type ConstraintBase = {
   collideConnected?: boolean;
 };
 
+/** World-space velocity at the body's center of mass, with angular velocity in radians/second. */
+export type BodyVelocity = { linear: Vec3; angular: Vec3; centerOfMass: Vec3 };
+
 export type ConstraintDesc = ConstraintBase & (
   | { kind: "fixed"; frameA?: Quat; frameB?: Quat }
   | {

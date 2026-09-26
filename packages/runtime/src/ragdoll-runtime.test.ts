@@ -52,6 +52,7 @@ describe("skeletal ragdoll runtime lifecycle", () => {
     const { runtime, commands } = fixture();
     try {
       const actor = await prepare(runtime);
+      runtime.getPhysicsSync()!.setActorLinearVelocity(actor.guid, { z: 2 });
       const meshAssignments = commands.filter((command) => command.type === "assignMesh").length;
       runtime.invokeScriptEvent("Hero", "Enable", actor);
       expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(meshAssignments);
@@ -65,6 +66,7 @@ describe("skeletal ragdoll runtime lifecycle", () => {
       runtime.invokeScriptEvent("Hero", "Impulse", actor);
       for (let i = 0; i < 30; i++) runtime.tick();
       expect(actor.transform.position.x).toBeGreaterThan(0.1);
+      expect(actor.transform.position.z).toBeGreaterThan(0.9);
       expect(actor.transform.position.y).toBeLessThan(3.5);
       const lastPose = commands.filter((command) => command.type === "setRagdollPose").at(-1)!;
       const hips = lastPose.bones.find((bone) => bone.name === "hips")!;
@@ -101,6 +103,36 @@ describe("skeletal ragdoll runtime lifecycle", () => {
       const count = commands.length;
       runtime.applyRagdollPoseCaptured({ type: "ragdollPoseCaptured", slotId: third.slotId, requestId: third.requestId, bones: pose });
       expect(commands).toHaveLength(count);
+    } finally { runtime.stop(); }
+  });
+
+  it("keeps impulses issued immediately after enabling without requiring an ordinary body", async () => {
+    const { runtime, commands } = fixture();
+    try {
+      const actor = await prepare(runtime);
+      for (const component of actor.components) {
+        if (component.classId === "RigidBodyComponent" || component.classId === "ColliderComponent") component.destroyed = true;
+      }
+      runtime.getPhysicsSync()!.syncFromWorld(runtime.getWorld());
+      expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:hero")).toBeNull();
+      runtime.invokeScriptEvent("Hero", "Enable", actor);
+      runtime.invokeScriptEvent("Hero", "Impulse", actor);
+      runtime.invokeScriptEvent("Hero", "Impulse", actor);
+      const request = latestCapture(commands);
+      runtime.applyRagdollPoseCaptured({ type: "ragdollPoseCaptured", slotId: request.slotId, requestId: request.requestId, bones: pose });
+      for (let tick = 0; tick < 30; tick++) runtime.tick();
+      expect(actor.transform.position.x).toBeGreaterThan(0.9);
+
+      runtime.invokeScriptEvent("Hero", "Disable", actor);
+      runtime.invokeScriptEvent("Hero", "Enable", actor);
+      runtime.invokeScriptEvent("Hero", "Impulse", actor);
+      runtime.invokeScriptEvent("Hero", "Disable", actor);
+      runtime.invokeScriptEvent("Hero", "Enable", actor);
+      const replacement = latestCapture(commands);
+      runtime.applyRagdollPoseCaptured({ type: "ragdollPoseCaptured", slotId: replacement.slotId, requestId: replacement.requestId, bones: pose });
+      const start = actor.transform.position.x;
+      for (let tick = 0; tick < 30; tick++) runtime.tick();
+      expect(actor.transform.position.x).toBeCloseTo(start, 3);
     } finally { runtime.stop(); }
   });
 

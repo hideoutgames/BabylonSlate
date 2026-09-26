@@ -8,6 +8,7 @@ export type {
   Vec3,
   Quat,
   PhysicsTransform,
+  BodyVelocity,
   TeleportOptions,
   ConstraintBase,
   ConstraintDesc,

@@ -116,7 +116,11 @@ function writeLocal(target: Target, local: Matrix): void {
 export class RagdollPoseController {
   private readonly sessions = new Map<number, Session>();
 
-  constructor(private readonly binding: SnapshotSceneBinding, private readonly reply: (result: RagdollCaptureResult) => void) {}
+  constructor(
+    private readonly binding: SnapshotSceneBinding,
+    private readonly reply: (result: RagdollCaptureResult) => void,
+    private readonly invalidate: () => void = () => {},
+  ) {}
 
   isDriven(slotId: number): boolean { return !!this.sessions.get(slotId)?.targets; }
 
@@ -179,7 +183,10 @@ export class RagdollPoseController {
         // This map retains settled promises for scene readiness/error reporting.
         // Observe each generation once rather than mistaking membership for work.
         void load.then(() => {
-          if (this.sessions.get(slotId) === session && session.observedLoad === load) session.loadReady = true;
+          if (this.sessions.get(slotId) === session && session.observedLoad === load) {
+            session.loadReady = true;
+            this.invalidate();
+          }
         }, (error: unknown) => {
           if (this.sessions.get(slotId) !== session || session.observedLoad !== load || this.binding.slotAnimLoads?.get(slotId) !== load) return;
           this.fail(session, `Ragdoll model failed to load: ${error instanceof Error ? error.message : String(error)}`);
@@ -231,6 +238,8 @@ export class RagdollPoseController {
           }
           this.reply({ type: "ragdollPoseCaptured", slotId, requestId: session.request.requestId, bones });
         }
+        // An in-process reply may synchronously disable or destroy this actor.
+        if (this.sessions.get(slotId) !== session) continue;
         if (!session.pose || !session.targets) continue;
         const poses = new Map(session.pose.map((bone) => [bone.name, bone]));
         for (const target of session.targets) {
