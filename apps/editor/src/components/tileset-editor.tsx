@@ -1,23 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { HandIcon, MousePointerIcon } from "lucide-react";
+import {
+  BrushIcon,
+  HandIcon,
+  MousePointerIcon,
+  SplineIcon,
+  SquareDashedIcon,
+  SquareIcon,
+} from "lucide-react";
 import {
   AssetPicker,
   AtlasTileGrid,
   PanelFrame,
   PropertyGrid,
+  PropertySectionTitle,
+  ToolbarStrip,
   assetRowIdentity,
   type AtlasTileGridTool,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { Button } from "@babylonslate/ui/components/button";
+import { Badge } from "@babylonslate/ui/components/badge";
+import { Separator } from "@babylonslate/ui/components/separator";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import {
   ensureTilesetTiles,
+  tilesetTileRect,
   DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
   normalizeTilesetPayload,
   type TilesetCollision,
@@ -28,6 +40,8 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
 import { useOptionalTilesetEditing } from "../context/tileset-editing-context";
+
+const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -86,6 +100,8 @@ export function TilesetPreview({
   );
   const selectedId = selectedIds[0] ?? 1;
   const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const assets = useAssetOptions();
   const preview = useTexturePreview(tileset.textureGuid);
   const { url } = preview;
   const selected =
@@ -109,11 +125,11 @@ export function TilesetPreview({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" onErrorCapture={preview.fail}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-2">
+      <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="tileset-preview-toolbar">
         <ToggleGroup
           variant="outline"
-          size="touch"
-          spacing={1}
+          size="sm"
+          spacing={0}
           value={[previewTool]}
           onValueChange={(value) => {
             const next = value[0] as AtlasTileGridTool | undefined;
@@ -122,19 +138,21 @@ export function TilesetPreview({
           aria-label="Tileset preview tool"
           data-testid="tileset-preview-tools"
         >
-          <ToggleGroupItem value="move" data-testid="tileset-tool-move">
+          <ToggleGroupItem value="move" className={TOOL_ITEM} data-testid="tileset-tool-move">
             <HandIcon />
             Move
           </ToggleGroupItem>
-          <ToggleGroupItem value="select" data-testid="tileset-tool-select">
+          <ToggleGroupItem value="select" className={TOOL_ITEM} data-testid="tileset-tool-select">
             <MousePointerIcon />
             Select
           </ToggleGroupItem>
         </ToggleGroup>
+        <Separator orientation="vertical" className="my-1" />
+        <span className="text-xs text-muted-foreground">Collision</span>
         <ToggleGroup
           variant="outline"
           size="sm"
-          spacing={1}
+          spacing={0}
           value={[collisionValue]}
           onValueChange={(value) => {
             const next = value[0];
@@ -144,26 +162,36 @@ export function TilesetPreview({
           aria-label="Tile Collision"
           data-testid="tileset-collision-tools"
         >
-          <ToggleGroupItem value="none" data-testid="tileset-collision-none">
+          <ToggleGroupItem value="none" className={TOOL_ITEM} data-testid="tileset-collision-none">
+            <SquareDashedIcon />
             None
           </ToggleGroupItem>
-          <ToggleGroupItem value="full" data-testid="tileset-collision-full">
+          <ToggleGroupItem value="full" className={TOOL_ITEM} data-testid="tileset-collision-full">
+            <SquareIcon />
             Full
           </ToggleGroupItem>
-          <ToggleGroupItem value="chain" data-testid="tileset-collision-chain">
+          <ToggleGroupItem value="chain" className={TOOL_ITEM} data-testid="tileset-collision-chain">
+            <SplineIcon />
             Chain
           </ToggleGroupItem>
         </ToggleGroup>
         <Toggle
           variant="outline"
           size="sm"
+          className={TOOL_ITEM}
           pressed={editing?.paintCollision ?? false}
           onPressedChange={(pressed) => editing?.setPaintCollision(pressed)}
           data-testid="tileset-paint-collision"
         >
+          <BrushIcon />
           Paint Collision
         </Toggle>
-      </div>
+        {url ? (
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums" data-testid="tileset-preview-selection">
+            {selectedIds.length > 1 ? `${selectedIds.length} Tiles Selected` : `Tile ${selectedId}`}
+          </span>
+        ) : null}
+      </ToolbarStrip>
       <AtlasTileGrid
         tileset={tileset}
         imageUrl={url}
@@ -172,6 +200,22 @@ export function TilesetPreview({
         panZoom
         tool={previewTool}
         emptyLabel={preview.status === "failed" ? "" : preview.status === "missing" ? "Missing Texture" : preview.status === "empty" ? "No Texture" : "Loading Texture…"}
+        emptyDescription={preview.status === "empty"
+          ? "Pick a Texture to slice it into tiles."
+          : preview.status === "missing"
+            ? "The assigned Texture is no longer in the project."
+            : undefined}
+        emptyAction={preview.status === "empty" || preview.status === "missing" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="tileset-preview-pick-texture"
+            onClick={() => setPickerOpen(true)}
+          >
+            Pick Texture
+          </Button>
+        ) : undefined}
         data-testid="tileset-preview"
         onSelect={(id) => {
           if (editing) editing.setSelectedTileId(id);
@@ -205,6 +249,17 @@ export function TilesetPreview({
         }}
       />
       {preview.status === "failed" ? <TexturePreviewStatus preview={preview} /> : null}
+      <AssetPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assets={assets}
+        allowedTypes={["Texture"]}
+        onPick={(guid) => {
+          commit({ ...tileset, textureGuid: guid });
+          setPickerOpen(false);
+        }}
+        data-testid="tileset-preview-texture-picker"
+      />
     </div>
   );
 }
@@ -234,13 +289,7 @@ export function TilesetEditor({
     editing?.selectedTileIds ?? [],
   );
   const selectedId = selectedIds[0] ?? 1;
-  const { assetRegistry } = useDocuments();
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const assets = useAssetOptions();
   const textureName = assets.find(
     (asset) => asset.guid === tileset.textureGuid,
   )?.name;
@@ -262,6 +311,10 @@ export function TilesetEditor({
     });
   };
 
+  const preview = useTexturePreview(tileset.textureGuid);
+  const tileSizeDirty =
+    Math.floor(tileSize.width) !== tileset.tileWidth ||
+    Math.floor(tileSize.height) !== tileset.tileHeight;
   const collisionValue = collisionEnum(selected?.collision);
   const atlasRows: PropertyRow[] = [
     {
@@ -275,36 +328,6 @@ export function TilesetEditor({
       ...assetRowIdentity(
         textureName ? { name: textureName, type: "Texture" } : undefined,
       ),
-    },
-    {
-      id: "tileWidth",
-      kind: "number",
-      label: "Tile Width",
-      value: tileSize.width,
-      min: 1,
-      onChange: (width) => setTileSize((current) => ({ ...current, width })),
-    },
-    {
-      id: "tileHeight",
-      kind: "number",
-      label: "Tile Height",
-      value: tileSize.height,
-      min: 1,
-      onChange: (height) => setTileSize((current) => ({ ...current, height })),
-    },
-    {
-      id: "margin",
-      kind: "number",
-      label: "Margin",
-      value: tileset.margin,
-      onChange: (value) => commit({ ...tileset, margin: value }),
-    },
-    {
-      id: "spacing",
-      kind: "number",
-      label: "Spacing",
-      value: tileset.spacing,
-      onChange: (value) => commit({ ...tileset, spacing: value }),
     },
     {
       id: "atlasWidth",
@@ -321,6 +344,40 @@ export function TilesetEditor({
       value: tileset.atlasHeight,
       disabled: true,
       onChange: () => {},
+    },
+  ];
+  const tileSizeRows: PropertyRow[] = [
+    {
+      id: "tileWidth",
+      kind: "number",
+      label: "Tile Width",
+      value: tileSize.width,
+      min: 1,
+      onChange: (width) => setTileSize((current) => ({ ...current, width })),
+    },
+    {
+      id: "tileHeight",
+      kind: "number",
+      label: "Tile Height",
+      value: tileSize.height,
+      min: 1,
+      onChange: (height) => setTileSize((current) => ({ ...current, height })),
+    },
+  ];
+  const layoutRows: PropertyRow[] = [
+    {
+      id: "margin",
+      kind: "number",
+      label: "Margin",
+      value: tileset.margin,
+      onChange: (value) => commit({ ...tileset, margin: value }),
+    },
+    {
+      id: "spacing",
+      kind: "number",
+      label: "Spacing",
+      value: tileset.spacing,
+      onChange: (value) => commit({ ...tileset, spacing: value }),
     },
   ];
   const tileRows: PropertyRow[] = [
@@ -389,14 +446,15 @@ export function TilesetEditor({
   return (
     <div data-testid="tileset-editor">
       <PropertyGrid title="Atlas" rows={atlasRows} />
-      <div className="px-2 py-2">
+      <PropertyGrid title="Grid" rows={tileSizeRows} />
+      <div className="flex items-center justify-end gap-2 px-2 pb-1.5">
+        {tileSizeDirty ? (
+          <span className="mr-auto text-xs text-muted-foreground">Rebuilds the tile grid.</span>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
-          disabled={
-            Math.floor(tileSize.width) === tileset.tileWidth &&
-            Math.floor(tileSize.height) === tileset.tileHeight
-          }
+          disabled={!tileSizeDirty}
           onClick={() =>
             commit({
               ...tileset,
@@ -409,18 +467,29 @@ export function TilesetEditor({
           Confirm Tile Size
         </Button>
       </div>
-      <p
-        className="px-2 pt-2 text-sm font-medium"
-        data-testid="tileset-selected-label"
-      >
-        {selectedIds.length > 1
-          ? `Selected Tiles (${selectedIds.length})`
-          : `Selected Tile ${selected?.id ?? 1}`}
-      </p>
-      <PropertyGrid
-        title={selectedIds.length > 1 ? "Selected Tiles" : "Selected Tile"}
-        rows={tileRows}
-      />
+      <PropertyGrid rows={layoutRows} />
+      <PropertySectionTitle>
+        {selectedIds.length > 1 ? "Selected Tiles" : "Selected Tile"}
+      </PropertySectionTitle>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-2 py-2">
+        <TileSwatch tileset={tileset} tileId={selected?.id ?? 1} imageUrl={preview.url} />
+        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium" data-testid="tileset-selected-label">
+            {selectedIds.length > 1
+              ? `${selectedIds.length} Tiles`
+              : `Tile ${selected?.id ?? 1}`}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">
+            {selectedIds.length > 1
+              ? "Edits apply to every selected tile."
+              : tileGridLabel(tileset, selected?.id ?? 1)}
+          </span>
+        </div>
+        <Badge variant={collisionValue === "none" ? "outline" : "secondary"} className="font-normal">
+          {collisionValue === "full" ? "Full Collision" : collisionValue === "chain" ? "Chain Collision" : "No Collision"}
+        </Badge>
+      </div>
+      <PropertyGrid rows={tileRows} />
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -474,4 +543,60 @@ function parseChainPoints(value: string): Array<{ x: number; y: number }> {
       return { x: Number(x) || 0, y: Number(y) || 0 };
     })
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function useAssetOptions() {
+  const { assetRegistry } = useDocuments();
+  return (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
+}
+
+function TileSwatch({
+  tileset,
+  tileId,
+  imageUrl,
+}: {
+  tileset: TilesetPayload;
+  tileId: number;
+  imageUrl: string | null;
+}) {
+  const rect = tilesetTileRect(tileset, tileId);
+  const size = 40;
+  const scale = rect ? size / Math.max(rect.width, rect.height) : 1;
+  return (
+    <span
+      aria-hidden
+      data-testid="tileset-selected-swatch"
+      className="size-10 shrink-0 overflow-hidden rounded-md ring-1 ring-border"
+      style={{
+        backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
+        backgroundSize: "10px 10px",
+      }}
+    >
+      {imageUrl && rect ? (
+        <span
+          className="block size-full"
+          style={{
+            backgroundImage: `url(${imageUrl})`,
+            backgroundRepeat: "no-repeat",
+            backgroundSize: `${tileset.atlasWidth * scale}px ${tileset.atlasHeight * scale}px`,
+            backgroundPosition: `${-rect.x * scale}px ${-rect.y * scale}px`,
+            imageRendering: "pixelated",
+          }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function tileGridLabel(tileset: TilesetPayload, tileId: number): string {
+  const rect = tilesetTileRect(tileset, tileId);
+  if (!rect) return "Outside the atlas";
+  const column = Math.round((rect.x - tileset.margin) / (tileset.tileWidth + tileset.spacing)) + 1;
+  const row = Math.round((rect.y - tileset.margin) / (tileset.tileHeight + tileset.spacing)) + 1;
+  return `Column ${column}, Row ${row}`;
 }

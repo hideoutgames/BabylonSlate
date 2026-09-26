@@ -1,4 +1,6 @@
 import { sceneShadowController } from "./shadow-controller";
+import { createWaterMesh } from "./water-mesh";
+import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -27,6 +29,7 @@ import {
   DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,
   parseOverlayPanelProperties,
+  parseSpringArmProperties,
   parseText2DProperties,
   parseText3DProperties,
   type SkyboxFaces,
@@ -76,6 +79,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   applyAuthoredLightProperties,
+  composeActorComponentTransformToRef,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -83,10 +87,10 @@ import {
 } from "./scene-illumination";
 import { createSpriteQuad } from "./sprite-quad";
 import {
-  applyTilemapParallaxToMesh,
   createTilemapMeshes,
   isTilemapChunkMesh,
   updateSceneTilemapAnimations,
+  updateSceneTilemapParallax,
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
@@ -96,14 +100,22 @@ import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
+import {
+  attachmentParentFor,
+  createPlaySpringArmRig,
+  setSpringArmCameraAnchor,
+  springArmCameraAnchorOf,
+  springArmRigsOf,
+  SPRING_ARM_MESH_KIND,
+  updateSpringArmRig,
+  type SpringArmLagStore,
+} from "./spring-arm";
 import type { MaterialResolveOptions } from "./material-library";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
-const scratchLocalPos = new Vector3();
-const scratchPartQuat = new Quaternion();
 const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
 const scratchBoneSlot: ActorSlot = {
   slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
@@ -500,9 +512,10 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval")) return true;
   const part = parts[0]!;
   return (
+    Boolean(part.landscape || part.foliage) ||
     part.position[0] !== 0 ||
     part.position[1] !== 0 ||
     part.position[2] !== 0 ||
@@ -696,7 +709,8 @@ export function applyAssignMesh(
     return;
   }
   const existingCamera = binding.cameras.get(command.slotId);
-  if (existingCamera && command.camera) {
+  const hasSpringArm = command.parts?.some((part) => part.meshKind === SPRING_ARM_MESH_KIND);
+  if (existingCamera && command.camera && !hasSpringArm) {
     applyAuthoredCameraProperties(existingCamera, command.camera);
     refreshPlayActiveCamera(scene, binding);
     return;
@@ -732,9 +746,9 @@ export function applyAssignMesh(
   }
   const ownsTexture = (kind: string | null | undefined) =>
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
-  const stagesModels = Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
+  const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
-      part.meshAssetGuid && !["sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+      part.meshAssetGuid && !["water", "sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
@@ -1006,6 +1020,7 @@ export function isPlayHelperMeshKind(
     meshKind === "audio" ||
     meshKind === "particle" ||
     meshKind === "rigidbody" ||
+    meshKind === SPRING_ARM_MESH_KIND ||
     meshKind.startsWith("light:")
   );
 }
@@ -1113,6 +1128,7 @@ export function retirePlaySlot(
   rejectedPreparedAssignments.get(binding)?.delete(slotId);
   cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
+  retireSpringArmLag(binding, slotId);
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
   binding.seenSlots.delete(slotId);
@@ -1241,6 +1257,10 @@ function createPlayVisual(
         deferredModels,
         retainedBitmapBytes,
         targets,
+        part.landscape,
+        part.foliage,
+        part.water,
+        part.waterRemoval,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1253,12 +1273,97 @@ function createPlayVisual(
       const parent = part.parentId ? meshes.get(part.parentId) : undefined;
       child.parent = parent ?? root;
     }
+    attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
   } catch (error) {
     root.dispose();
     throw error;
   }
+}
+
+type SpringArmPlayState = { store: SpringArmLagStore; slots: Set<number>; lastMs: number | null };
+
+const springArmStates = new WeakMap<SnapshotSceneBinding, SpringArmPlayState>();
+
+function springArmStateOf(binding: SnapshotSceneBinding): SpringArmPlayState {
+  let state = springArmStates.get(binding);
+  if (!state) {
+    state = { store: new Map(), slots: new Set(), lastMs: null };
+    springArmStates.set(binding, state);
+  }
+  return state;
+}
+
+/** Rig spring arm parts, attach their children at the socket, and anchor the slot camera. */
+function attachPlaySpringArms(
+  binding: SnapshotSceneBinding,
+  root: Mesh,
+  slotId: number,
+  parts: readonly AssignMeshPart[],
+  meshes: ReadonlyMap<string, Mesh>,
+): void {
+  const partsById = new Map(parts.map((part) => [part.componentId, part]));
+  const depthOf = (part: AssignMeshPart) => {
+    const seen = new Set<string>();
+    let depth = 0;
+    for (let id: string | null | undefined = part.parentId; id && !seen.has(id); id = partsById.get(id)?.parentId) {
+      seen.add(id);
+      depth++;
+    }
+    return depth;
+  };
+  // Parent arms update first so nested arms lag toward an already lagged socket.
+  const arms = parts
+    .filter((part) => part.meshKind === SPRING_ARM_MESH_KIND)
+    .sort((a, b) => depthOf(a) - depthOf(b));
+  if (arms.length === 0) return;
+  for (const part of arms) {
+    const arm = meshes.get(part.componentId);
+    if (!arm) continue;
+    createPlaySpringArmRig(root, arm, `${slotId}|${part.componentId}`, parseSpringArmProperties(part.springArm));
+  }
+  for (const part of parts) {
+    const child = meshes.get(part.componentId);
+    const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+    if (child && parent) child.parent = attachmentParentFor(parent);
+  }
+  const cameraPart = parts.find((part) => part.meshKind === "camera");
+  const anchor = cameraPart ? meshes.get(cameraPart.componentId) : undefined;
+  if (anchor) setSpringArmCameraAnchor(root, anchor);
+  springArmStateOf(binding).slots.add(slotId);
+}
+
+const scratchAnchorScale = new Vector3();
+const scratchAnchorRotation = new Quaternion();
+const scratchAnchorPosition = new Vector3();
+
+/** Step every spring arm lag once per applied snapshot and pose cameras at their sockets. */
+function updatePlaySpringArms(binding: SnapshotSceneBinding, nowMs: number): void {
+  const state = springArmStates.get(binding);
+  if (!state || state.slots.size === 0) return;
+  const dtSeconds = state.lastMs === null ? 0 : Math.max(0, nowMs - state.lastMs) / 1000;
+  state.lastMs = nowMs;
+  for (const slotId of state.slots) {
+    // Staged replacements register their rigs before the slot adopts them.
+    const root = binding.meshes.get(slotId);
+    if (!root) continue;
+    const rigs = springArmRigsOf(root);
+    for (const rig of rigs) updateSpringArmRig(rig, state.store, dtSeconds);
+    const camera = binding.cameras.get(slotId);
+    const anchor = springArmCameraAnchorOf(root);
+    if (!camera || !anchor) continue;
+    anchor.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
+    updateAuthoredCameraTransform(camera, scratchAnchorPosition, scratchAnchorRotation);
+  }
+}
+
+function retireSpringArmLag(binding: SnapshotSceneBinding, slotId: number): void {
+  const state = springArmStates.get(binding);
+  if (!state) return;
+  state.slots.delete(slotId);
+  const prefix = `${slotId}|`;
+  for (const key of [...state.store.keys()]) if (key.startsWith(prefix)) state.store.delete(key);
 }
 
 export function createPlayMesh(
@@ -1273,8 +1378,20 @@ export function createPlayMesh(
   deferredModels?: DeferredModelLoad[],
   retainedBitmapBytes?: number,
   targets?: PlayVisualTargets,
+  landscape?: import("@babylonslate/core").LandscapeProperties,
+  foliage?: import("@babylonslate/core").FoliageProperties,
+  water?: import("@babylonslate/core").WaterBodyProperties,
+  waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "waterRemoval" && waterRemoval) return createWaterRemovalMesh(scene, name, waterRemoval, { editor: false });
+  if (meshKind === "water" && water) {
+    const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
+    const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
+    return createWaterMesh(scene, name, water, definition, material);
+  }
+  if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
+  if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
     const tilesets = binding.tilesets ?? new Map();
@@ -1603,15 +1720,14 @@ export function applySnapshotToScene(
     if (light) updateAuthoredLightTransform(light, composed.position, composed.rotation);
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
+  updatePlaySpringArms(binding, performance.now());
   refreshPlayActiveCamera(scene, binding);
   // Camera-dependent passes wait for every camera pose, including later slots
   // and bone attachments, and for this snapshot's active camera.
   snapPlayCameraToPixelGrid(scene, binding);
-  for (let i = 0; i < count; i++) {
-    const mesh = binding.snapshotMeshes[i];
-    if (mesh?.getScene() !== scene) continue;
-    applyTilemapParallaxToMesh(mesh, scene.activeCamera ?? snapshot.actors[i]!);
-  }
+  // Only the world Scene: overlay slots skip world-camera parallax.
+  const activeCamera = scene.activeCamera;
+  if (activeCamera) updateSceneTilemapParallax(scene, activeCamera.position);
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }
@@ -1645,6 +1761,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   rejectedTextAssignments.delete(binding);
   binding.tilemapAnimationScenes?.clear();
   binding.boneAttachments.clear();
+  springArmStates.delete(binding);
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();
   }
@@ -1699,29 +1816,11 @@ function composeSlotPartTransform(
     scratchComposedPart.rotation.copyFromFloats(actor.rotation.x, actor.rotation.y, actor.rotation.z, actor.rotation.w);
     return scratchComposedPart;
   }
-  scratchQuat.set(
-    actor.rotation.x,
-    actor.rotation.y,
-    actor.rotation.z,
-    actor.rotation.w,
-  );
-  scratchLocalPos.set(
-    part.position[0] * actor.scale.x,
-    part.position[1] * actor.scale.y,
-    part.position[2] * actor.scale.z,
-  );
-  scratchLocalPos.applyRotationQuaternionInPlace(scratchQuat);
-  scratchPartQuat.set(
-    part.rotation[0],
-    part.rotation[1],
-    part.rotation[2],
-    part.rotation[3],
-  );
-  scratchQuat.multiplyToRef(scratchPartQuat, scratchComposedPart.rotation);
-  scratchComposedPart.position.set(
-    actor.position.x + scratchLocalPos.x,
-    actor.position.y + scratchLocalPos.y,
-    actor.position.z + scratchLocalPos.z,
+  composeActorComponentTransformToRef(
+    actor,
+    part,
+    scratchComposedPart.position,
+    scratchComposedPart.rotation,
   );
   return scratchComposedPart;
 }
@@ -1740,19 +1839,22 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     actor.rotation.w,
   );
   // Keep local TRS in sync for gizmos / picking later.
-  if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
   mesh.position.copyFrom(scratchPos);
   mesh.rotationQuaternion = mesh.rotationQuaternion ?? new Quaternion();
   mesh.rotationQuaternion.copyFrom(scratchQuat);
   mesh.scaling.copyFrom(scratchScale);
   // No shared Matrix argument: Babylon caches an independent world matrix for
   // every actor slot. Sharing the scratch matrix collapses all rendered meshes.
+  // It also lifts any freeze and recomputes once from the TRS written above.
   if (shouldFreezeStaticWorldMatrix(mesh)) {
     mesh.freezeWorldMatrix();
   } else {
+    if (mesh.isWorldMatrixFrozen) unfreezeActorWorldMatrix(mesh);
     // Update off-screen casters too: active-mesh evaluation does not necessarily
     // visit them before the shadow hierarchy is queried.
     mesh.computeWorldMatrix();
   }
 }
 import { AreaRectLightGroup } from "./area-rect-light";
+import { createLandscapeMesh } from "./landscape-mesh";
+import { createFoliageMesh } from "./foliage-mesh";

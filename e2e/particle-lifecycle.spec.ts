@@ -22,7 +22,8 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     expect(result.requestedBackend).toBe(backend);
     expect(result.effectiveBackend).toBe(backend);
     expect(errors).toEqual([]);
-    expect(gpuMessages.filter((message) => /GPUValidationError|WebGPU uncaptured|GL_INVALID|Invalid fragment shader|Error while parsing WGSL/.test(message))).toEqual([]);
+    // "not found in the material context": a WebGPU draw of a Texture Sample Material without its texture bound.
+    expect(gpuMessages.filter((message) => /GPUValidationError|WebGPU uncaptured|GL_INVALID|Invalid fragment shader|Error while parsing WGSL|not found in the material context/.test(message))).toEqual([]);
     expect(result.diagnostics).toEqual([]);
     expect(result.resets).toBe(0);
     expect(result.acquisitions).toBe(result.releases);
@@ -39,7 +40,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
       }
     }
     for (const capture of result.captures) {
-      if (["retired", "fractional-retired", "finite-retired"].includes(capture.name)) {
+      if (["retired", "fractional-retired", "finite-retired", "mixed-retired"].includes(capture.name)) {
         expect(capture.systems, capture.name).toBe(0);
         expect(capture.red + capture.blue, capture.name).toBe(0);
       } else if (capture.name === "fractional-pending") {
@@ -57,5 +58,25 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const gpu of [false, t
     const paused = result.captures.find((capture) => capture.name === "paused-drain")!;
     expect(paused.systems).toBe(2);
     if (gpu) expect(paused.processed.every((count) => count > 0)).toBe(true);
+    // Each blend mode over a mid-grey clear; plain Multiply darkening shows the transparent case drew.
+    const blend = (name: string) => {
+      const entry = result.blendCases.find((candidate) => candidate.name === name);
+      expect(entry, name).toBeDefined();
+      return entry!;
+    };
+    for (const name of ["additive", "add", "texture-additive"]) {
+      const { centre, background } = blend(name);
+      expect(centre, name).toBeGreaterThan(background + 20);
+    }
+    for (const name of ["standard", "multiply", "subtract", "texture-multiply"]) {
+      const { centre, background } = blend(name);
+      expect(centre, name).toBeLessThan(background - 20);
+    }
+    const transparent = blend("multiply-transparent");
+    expect(Math.abs(transparent.centre - transparent.background)).toBeLessThanOrEqual(4);
+    // Unused ring slots draw nothing; overlapping bursts keep separate bands (the ring claim).
+    expect(result.bursts.beforeFirstBurst.red + result.bursts.beforeFirstBurst.blue).toBe(0);
+    expect(result.bursts.bands).toBeGreaterThanOrEqual(2);
+    expect(result.bursts.afterBursts.red).toBeGreaterThan(100);
   });
 }

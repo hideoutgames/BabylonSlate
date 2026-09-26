@@ -59,6 +59,17 @@ afterEach(() => {
 
 const noop = async () => {};
 
+it.each(["web", "electron", "ios"])("opens the offline changelog from the %s launcher account menu", async host => {
+  getHostPlatform.mockReturnValue(host);
+  vi.stubGlobal("__BABYLONSLATE_VERSION__", "1.2.3");
+  vi.stubGlobal("__BABYLONSLATE_CHANGELOG__", [{ version: "1.2.3", title: "Release News", changes: ["Projects reopen faster."] }]);
+  renderHomepage();
+  fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Changelog" }));
+  const dialog = await screen.findByRole("dialog", { name: "Changelog" });
+  expect(within(dialog).getByText("Projects reopen faster.")).toBeTruthy();
+});
+
 function renderHomepage(
   overrides: Partial<ComponentProps<typeof Homepage>> = {},
 ) {
@@ -435,37 +446,6 @@ describe("Slate project browser", () => {
     expect(screen.getByTestId("open-listed-project-Tide")).toBeTruthy();
   });
 
-  it("hides the unclean-exit notice when no previous exit was recorded", () => {
-    renderHomepage({ uncleanExit: null });
-    expect(screen.queryByTestId("unclean-exit-notice")).toBeNull();
-  });
-
-  it("shows the unclean-exit notice with the project and repeat sentences", () => {
-    const onDismissUncleanExit = vi.fn();
-    renderHomepage({
-      uncleanExit: {
-        project: { guid: "g1", name: "Orbit" },
-        lastSeenAt: 1,
-        recentCount: 3,
-      },
-      onDismissUncleanExit,
-    });
-    const notice = screen.getByTestId("unclean-exit-notice");
-    expect(notice.textContent).toContain(
-      "BabylonSlate restarted unexpectedly while Orbit was open.",
-    );
-    expect(notice.textContent).toContain(
-      "Reopen it to recover journaled edits; edits that were never journaled are lost.",
-    );
-    expect(notice.textContent).toContain(
-      "This has happened 3 times in the last 10 minutes.",
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Dismiss" }),
-    );
-    expect(onDismissUncleanExit).toHaveBeenCalledOnce();
-  });
-
   it("persists the menu theme in Engine Settings and updates editor chrome", async () => {
     renderHomepage();
     fireEvent.click(screen.getByRole("button", { name: "Dark Mode" }));
@@ -485,27 +465,37 @@ describe("Slate project browser", () => {
     ).toBe("light");
   });
 
-  it("keeps Auto-Update in Application Settings from the profile menu", async () => {
+  it("persists the Application Settings update toggle in shared Engine Settings", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     vi.stubGlobal("PointerEvent", MouseEvent);
+    getHostPlatform.mockReturnValue("electron");
     const openApplicationSettings = async () => {
       fireEvent.click(screen.getByRole("button", { name: "Profile" }));
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "Application Settings" }),
       );
-      return screen.findByRole("switch", { name: "Auto-Update" });
+      return screen.findByRole("switch", { name: "Automatic Updates" });
     };
     const { unmount } = renderHomepage();
     let autoUpdate = await openApplicationSettings();
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-disabled")).not.toBe("true"));
     expect(autoUpdate.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(autoUpdate);
-    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByText("Off")).toBeTruthy();
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
+    expect(JSON.parse(localStorage.getItem("babylonslate:engine-settings")!).automaticUpdatesEnabled).toBe(false);
     unmount();
 
     renderHomepage();
     autoUpdate = await openApplicationSettings();
-    expect(autoUpdate.getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(autoUpdate.getAttribute("aria-checked")).toBe("false"));
     vi.unstubAllEnvs();
+  });
+
+  it.each(["web", "ios"])("does not offer desktop update control on %s", async host => {
+    getHostPlatform.mockReturnValue(host);
+    renderHomepage();
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Application Settings" }));
+    expect((await screen.findByRole("switch", { name: "Automatic Updates" })).getAttribute("aria-disabled")).toBe("true");
   });
 });

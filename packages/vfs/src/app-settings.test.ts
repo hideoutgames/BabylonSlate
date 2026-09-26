@@ -51,6 +51,8 @@ describe("app settings", () => {
     expect(settings.appearance.theme).toBe("system");
     expect(settings.focusKeepPanels).toEqual({
       scene: ["viewport"],
+      sceneLandscape: ["viewport"],
+      sceneFoliage: ["viewport"],
       "scene-layer": ["viewport"],
       graph: ["graph"],
       enum: ["enum-members"],
@@ -73,12 +75,14 @@ describe("app settings", () => {
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
       "particle-emitter": ["particle-emitter-preview"],
+      "particle-graph": ["particle-graph-canvas"],
       "particle-system": ["particle-system-preview"],
       model: ["model-preview"],
       skeleton: ["skeleton-preview"],
       animation: ["animation-preview"],
       "skybox-creator": ["skybox-creator-preview"],
       trace: ["trace-timeline"],
+      texture: ["texture-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
@@ -260,6 +264,9 @@ describe("app settings", () => {
     ]);
     expect(parsed.focusKeepPanels["particle-emitter"]).toEqual([
       "particle-emitter-preview",
+    ]);
+    expect(parsed.focusKeepPanels["particle-graph"]).toEqual([
+      "particle-graph-canvas",
     ]);
     expect(parsed.focusKeepPanels["particle-system"]).toEqual([
       "particle-system-preview",

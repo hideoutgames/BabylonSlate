@@ -115,12 +115,19 @@ function writeLocal(target: Target, local: Matrix): void {
 /** Pose capture and presentation only. All bodies and simulation remain in the worker. */
 export class RagdollPoseController {
   private readonly sessions = new Map<number, Session>();
+  private readonly binding: SnapshotSceneBinding;
+  private readonly reply: (result: RagdollCaptureResult) => void;
+  private readonly invalidate: () => void;
 
   constructor(
-    private readonly binding: SnapshotSceneBinding,
-    private readonly reply: (result: RagdollCaptureResult) => void,
-    private readonly invalidate: () => void = () => {},
-  ) {}
+    binding: SnapshotSceneBinding,
+    reply: (result: RagdollCaptureResult) => void,
+    invalidate: () => void = () => {},
+  ) {
+    this.binding = binding;
+    this.reply = reply;
+    this.invalidate = invalidate;
+  }
 
   isDriven(slotId: number): boolean { return !!this.sessions.get(slotId)?.targets; }
 

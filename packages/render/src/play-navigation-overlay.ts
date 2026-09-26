@@ -1,21 +1,13 @@
 import { Color3, Mesh, MeshBuilder, Vector3, type LinesMesh, type Scene } from "@babylonjs/core";
 import type { CommandMessage, DebugNavAgent } from "@babylonslate/bridge";
 import { createText3DMesh } from "./text3d-mesh";
-import { RENDERING_GROUP } from "./sorting";
+import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 const PREFIX = "playConsoleViz:nav:";
 const PATH_COLOR = new Color3(0.2, 0.85, 1);
 const AGENT_COLOR = new Color3(0.4, 1, 0.45);
 type Point = { x: number; y: number; z: number };
 type Slot = { mesh: Mesh; key: string };
-
-function markOverlay(mesh: Mesh): void {
-  mesh.isPickable = false;
-  mesh.receiveShadows = false;
-  mesh.applyFog = false;
-  mesh.renderingGroupId = RENDERING_GROUP.world;
-  mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
-}
 
 function vector(point: Point): Vector3 {
   return new Vector3(point.x, point.y, point.z);
@@ -47,7 +39,7 @@ export function createPlayNavigationOverlay(scene: Scene): {
     const instance = slots.get(name)?.mesh as LinesMesh | undefined;
     const mesh = MeshBuilder.CreateLineSystem(name, { lines, updatable: true, instance }, scene);
     mesh.color = color;
-    markOverlay(mesh);
+    markPlayDebugOverlay(mesh);
     slots.set(name, { mesh, key });
   };
 
@@ -115,7 +107,7 @@ export function createPlayNavigationOverlay(scene: Scene): {
           text, size: 0.22, alignment: "center", color: [0.75, 1, 0.8],
         });
         mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
-        markOverlay(mesh);
+        markPlayDebugOverlay(mesh);
         mesh.metadata = { ...mesh.metadata, label: text };
         label = { mesh, key: text };
         slots.set(labelName, label);

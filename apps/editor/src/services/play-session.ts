@@ -155,7 +155,6 @@ export function applyPlayActiveScene(options: {
       options?: { sceneAssetGuid?: string },
     ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
-    applyBakedSession: (scene: SerializedScene, sceneAssetGuid?: string) => void;
     resetAudioSession: () => void;
     resetParticleSession: () => void;
   };
@@ -173,10 +172,6 @@ export function applyPlayActiveScene(options: {
   }
   const guid = options.command.sceneAssetGuid;
   if (!options.forceReload && guid === options.currentSceneGuid) {
-    // The already-active scene skips the reload; its baked-lighting session
-    // still has to bind because nothing else applies it on this path.
-    const scene = playSceneByGuid(guid, options.scenes, options.boot);
-    if (scene) options.handle.applyBakedSession(scene, guid);
     return options.currentSceneGuid;
   }
   const scene = playSceneByGuid(guid, options.scenes, options.boot);
@@ -242,6 +237,7 @@ export function playSessionBootControls(options: {
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
+  waters?: Extract<ControlMessage, { type: "loadWater" }> | null;
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
   sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
   models?: Extract<ControlMessage, { type: "loadModels" }> | null;
@@ -272,6 +268,7 @@ export function playSessionBootControls(options: {
       blackboards: [...(options.blackboards ?? [])],
     });
   }
+  if (options.waters) controls.push(options.waters);
   if (options.tilemaps) controls.push(options.tilemaps);
   if (options.sprites) controls.push(options.sprites);
   if (options.models) controls.push(options.models);
@@ -482,6 +479,7 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
@@ -520,7 +518,6 @@ export function startPlaySession(options: {
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   /** Reads bake assets (project registry or packed container). */
-  bakeAssetReader?: import("@babylonslate/assets").BakeRuntimeAssetReader;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -592,6 +589,7 @@ export function startPlaySession(options: {
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
+    waterPayloads: options.waterPayloads,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -615,7 +613,6 @@ export function startPlaySession(options: {
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
-    bakeAssetReader: options.bakeAssetReader,
     postProcessStack: options.scene?.settings.postProcessStack,
     postProcessingEnabled: options.postProcessingEnabled,
     hardwareScalingLevel: options.hardwareScalingLevel,
@@ -681,7 +678,6 @@ export function startPlaySession(options: {
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
-    handle.applyBakedSession(options.scene, options.sceneAssetGuid);
   }
   handle.scheduler.invalidate("play");
   const releaseConsoleCapture = captureConsoleLogs(
@@ -919,6 +915,7 @@ export function startPlaySession(options: {
       animGraphs,
       behaviourTrees: options.behaviourTrees,
       blackboards: options.blackboards,
+      waters: { type: "loadWater", waters: [...(options.waterPayloads ?? [])].map(([guid, document]) => ({ guid, document })) },
       tilemaps: playLoadTilemapsControl(
         options.tilemapPayloads,
         options.tilesetPayloads,
@@ -971,6 +968,7 @@ export function startPlaySession(options: {
       const document = parseBehaviourTreeDocument(entry.document);
       if (document) inProcess.registerBehaviourTree(entry.guid, document);
     }
+    inProcess.registerWaterContent(options.waterPayloads ?? new Map());
     for (const entry of options.blackboards ?? []) {
       const document = parseBlackboardDocument(entry.document);
       if (document) inProcess.registerBlackboard(entry.guid, document);

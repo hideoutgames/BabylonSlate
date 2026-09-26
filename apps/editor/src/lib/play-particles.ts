@@ -1,81 +1,42 @@
+import { documentKindForAssetType, type AssetDocumentKind } from "@babylonslate/core";
 import {
   createDefaultParticleSystemPayload,
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
-  type ParticleEmitterPayload,
+  isParticleAssetType,
+  isParticleEmitterAssetType,
+  particleLibraryEmitter,
+  particleLibraryFromAssets,
+  type ParticleLibrary,
+  type ParticleLibraryEmitter,
   type ParticleSystemPayload,
 } from "@babylonslate/assets";
 
-export type PlayParticleLibrary = {
-  emitters: Map<string, ParticleEmitterPayload>;
-  systems: Map<string, ParticleSystemPayload>;
-};
+export const PREVIEW_EMITTER_GUID = "preview-em";
+export const PREVIEW_SYSTEM_GUID = "preview-sys";
 
-export function emptyPlayParticleLibrary(): PlayParticleLibrary {
+/** Document kinds of the particle asset types (Basic emitter, Particle Graph, Particle System). */
+export type ParticleDocumentKind = Extract<
+  AssetDocumentKind,
+  "particle-emitter" | "particle-graph" | "particle-system"
+>;
+
+/** Each particle asset type loads (and finds its open tab) under its own document kind. */
+function particleDocumentKind(type: string): ParticleDocumentKind | null {
+  const kind = documentKindForAssetType(type);
+  return kind === "particle-emitter" || kind === "particle-graph" || kind === "particle-system"
+    ? kind
+    : null;
+}
+
+/** Wraps one emitter in a synthetic Preview Particle System. */
+export function emitterPreviewLibrary(entry: ParticleLibraryEmitter): ParticleLibrary {
   return {
-    emitters: new Map(),
-    systems: new Map(),
-  };
-}
-
-/** Build a Play particle library from registry/open-document payloads. */
-export function playParticleLibraryFromAssets(options: {
-  assets: ReadonlyArray<{ guid: string; type: string; payload: unknown }>;
-}): PlayParticleLibrary {
-  const library = emptyPlayParticleLibrary();
-  for (const asset of options.assets) {
-    if (asset.type === "ParticleEmitter") {
-      library.emitters.set(
-        asset.guid,
-        normalizeParticleEmitterPayload(asset.payload),
-      );
-    } else if (asset.type === "ParticleSystem") {
-      library.systems.set(
-        asset.guid,
-        normalizeParticleSystemPayload(asset.payload),
-      );
-    }
-  }
-  return library;
-}
-
-export function particleTextureGuidsFromLibrary(
-  library: PlayParticleLibrary,
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const emitter of library.emitters.values()) {
-    if (!emitter.textureGuid || seen.has(emitter.textureGuid)) continue;
-    seen.add(emitter.textureGuid);
-    guids.push(emitter.textureGuid);
-  }
-  return guids;
-}
-
-export function particleMaterialGuidsFromLibrary(
-  library: PlayParticleLibrary,
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const emitter of library.emitters.values()) {
-    if (!emitter.materialGuid || seen.has(emitter.materialGuid)) continue;
-    seen.add(emitter.materialGuid);
-    guids.push(emitter.materialGuid);
-  }
-  return guids;
-}
-
-export function emitterPreviewLibrary(
-  emitter: ParticleEmitterPayload,
-): PlayParticleLibrary {
-  return {
-    emitters: new Map([["preview-em", emitter]]),
+    emitters: new Map([[PREVIEW_EMITTER_GUID, entry]]),
     systems: new Map([
       [
-        "preview-sys",
+        PREVIEW_SYSTEM_GUID,
         {
           ...createDefaultParticleSystemPayload(),
-          emitterGuids: ["preview-em"],
+          emitterGuids: [PREVIEW_EMITTER_GUID],
         },
       ],
     ]),
@@ -84,47 +45,23 @@ export function emitterPreviewLibrary(
 
 export function systemPreviewLibrary(
   system: ParticleSystemPayload,
-  emitters: ReadonlyMap<string, ParticleEmitterPayload>,
-): PlayParticleLibrary {
-  const used = new Map<string, ParticleEmitterPayload>();
+  emitters: ReadonlyMap<string, ParticleLibraryEmitter>,
+): ParticleLibrary {
+  const used = new Map<string, ParticleLibraryEmitter>();
   for (const guid of system.emitterGuids) {
     const emitter = emitters.get(guid);
     if (emitter) used.set(guid, emitter);
   }
   return {
     emitters: used,
-    systems: new Map([["preview-sys", system]]),
+    systems: new Map([[PREVIEW_SYSTEM_GUID, system]]),
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-export function emittersFromRegistry(
-  assets: ReadonlyArray<{
-    header: { guid: string; type: string; payload?: Record<string, unknown> };
-  }>,
-  openPayloads: ReadonlyMap<string, unknown>,
-): Map<string, ParticleEmitterPayload> {
-  const emitters = new Map<string, ParticleEmitterPayload>();
-  for (const asset of assets) {
-    if (asset.header.type !== "ParticleEmitter") continue;
-    const payload =
-      openPayloads.get(asset.header.guid) ?? asset.header.payload ?? {};
-    emitters.set(
-      asset.header.guid,
-      normalizeParticleEmitterPayload(asRecord(payload)),
-    );
-  }
-  return emitters;
 }
 
 /**
  * Resolve Emitters for Particle System Preview from open tabs or document
- * chunks. Registry headers do not store Emitter look (`textureGuid`, shape).
+ * chunks. Registry headers do not store the Emitter look (Material, modules).
+ * Basic emitters and Particle Graphs each load through their own document kind.
  */
 export async function loadEmittersForPreview(options: {
   system: ParticleSystemPayload;
@@ -134,27 +71,54 @@ export async function loadEmittersForPreview(options: {
   }>;
   openPayloads: ReadonlyMap<string, unknown>;
   loadDocument: (
-    kind: "particle-emitter",
+    kind: Exclude<ParticleDocumentKind, "particle-system">,
     path: string,
   ) => Promise<unknown | null>;
-}): Promise<Map<string, ParticleEmitterPayload>> {
+}): Promise<Map<string, ParticleLibraryEmitter>> {
   const byGuid = new Map(
     options.assets
-      .filter((asset) => asset.header.type === "ParticleEmitter")
+      .filter((asset) => isParticleEmitterAssetType(asset.header.type))
       .map((asset) => [asset.header.guid, asset] as const),
   );
-  const emitters = new Map<string, ParticleEmitterPayload>();
+  const emitters = new Map<string, ParticleLibraryEmitter>();
   for (const guid of options.system.emitterGuids) {
-    const open = options.openPayloads.get(guid);
-    if (open != null) {
-      emitters.set(guid, normalizeParticleEmitterPayload(asRecord(open)));
-      continue;
-    }
+    if (emitters.has(guid)) continue;
     const asset = byGuid.get(guid);
-    if (!asset) continue;
-    const loaded = await options.loadDocument("particle-emitter", asset.path);
-    if (loaded == null) continue;
-    emitters.set(guid, normalizeParticleEmitterPayload(asRecord(loaded)));
+    const kind = asset ? particleDocumentKind(asset.header.type) : null;
+    if (!asset || !kind || kind === "particle-system") continue;
+    const payload =
+      options.openPayloads.get(guid) ?? (await options.loadDocument(kind, asset.path));
+    if (payload == null) continue;
+    const entry = particleLibraryEmitter(asset.header.type, payload);
+    if (entry) emitters.set(guid, entry);
   }
   return emitters;
+}
+
+/**
+ * The Play particle library: every Basic emitter, Particle Graph and Particle System
+ * in the project, loaded through its own document kind (so an open tab's unsaved
+ * content wins) and normalized once. A failed load falls back to the header payload.
+ */
+export async function loadPlayParticleLibrary(options: {
+  assets: ReadonlyArray<{
+    header: { guid: string; type: string; name?: string; payload?: unknown };
+    path: string;
+  }>;
+  loadDocument: (kind: ParticleDocumentKind, path: string) => Promise<unknown | null>;
+}): Promise<ParticleLibrary> {
+  const loaded: Array<{ guid: string; type: string; name?: string; payload: unknown }> = [];
+  for (const asset of options.assets) {
+    if (!isParticleAssetType(asset.header.type)) continue;
+    const kind = particleDocumentKind(asset.header.type);
+    if (!kind) continue;
+    const payload = (await options.loadDocument(kind, asset.path)) ?? asset.header.payload;
+    loaded.push({
+      guid: asset.header.guid,
+      type: asset.header.type,
+      name: asset.header.name,
+      payload,
+    });
+  }
+  return particleLibraryFromAssets(loaded);
 }

@@ -53,18 +53,20 @@ function capsuleRotation(offset: Vec3, length: number): Quat {
 /** Owns a connected articulated body assembly in an existing native 3D world. */
 export class RagdollPhysics {
   readonly rootBoneName: string;
+  private readonly backend: PhysicsBackend;
   private readonly records: Array<{ bone: RagdollBonePose; bodyId: string }> = [];
   private readonly jointIds: string[] = [];
   private disposed = false;
 
   constructor(
-    private readonly backend: PhysicsBackend,
+    backend: PhysicsBackend,
     actorId: string,
     id: string,
     input: readonly RagdollBonePose[],
     properties: RagdollProperties,
     initialVelocity?: BodyVelocity,
   ) {
+    this.backend = backend;
     if (backend.kind !== "3d" || !backend.supportsConstraints)
       throw new Error("Ragdolls require native 3D physics");
     if (!id || !actorId) throw new Error("Ragdolls require nonempty identities");

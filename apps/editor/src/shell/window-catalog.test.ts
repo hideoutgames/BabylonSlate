@@ -3,6 +3,8 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   MATERIAL_SIDE_STACK_WIDTH,
+  findDockWindow,
+  isDockviewDocumentKind,
   listDockWindows,
   primaryDockPanel,
   resolveDockInitialWidth,
@@ -233,7 +235,7 @@ describe("listDockWindows", () => {
     ).toEqual({
       referencePanelId: "particle-emitter-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidth: 360,
     });
     expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
@@ -301,6 +303,15 @@ describe("listDockWindows", () => {
       initialWidth: 280,
     });
     expect(primaryDockPanel("skybox-creator")).toBe("skybox-creator-preview");
+    expect(listDockWindows("texture").map((entry) => entry.id)).toEqual([
+      "texture-preview",
+      "texture-details",
+    ]);
+    expect(listDockWindows("texture").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+    ]);
+    expect(primaryDockPanel("texture")).toBe("texture-preview");
     expect(listDockWindows("trace").map((entry) => entry.id)).toEqual([
       "trace-timeline",
       "trace-snapshot",
@@ -384,6 +395,7 @@ describe("listDockWindows", () => {
       "audio-channel",
       "sound-attenuation",
       "particle-emitter",
+      "particle-graph",
       "particle-system",
       "model",
       "skeleton",
@@ -509,6 +521,48 @@ describe("material dock catalog", () => {
   });
 });
 
+describe("particle graph dock catalog", () => {
+  it("lists Graph, Preview, Details and Compiler Results in Title Case", () => {
+    expect(isDockviewDocumentKind("particle-graph")).toBe(true);
+    expect(
+      listDockWindows("particle-graph").map((entry) => [entry.id, entry.title]),
+    ).toEqual([
+      ["particle-graph-canvas", "Graph"],
+      ["particle-graph-preview", "Preview"],
+      ["particle-graph-details", "Details"],
+      ["particle-graph-compiler-results", "Compiler Results"],
+    ]);
+  });
+
+  it("uses the Material layout around the Graph", () => {
+    const position = (id: string) =>
+      findDockWindow("particle-graph", id)?.defaultPosition;
+    expect(primaryDockPanel("particle-graph")).toBe("particle-graph-canvas");
+    expect(position("particle-graph-canvas")).toBeUndefined();
+    expect(position("particle-graph-preview")).toEqual({
+      referencePanelId: "particle-graph-canvas",
+      direction: "left",
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
+    });
+    expect(position("particle-graph-details")).toEqual({
+      referencePanelId: "particle-graph-preview",
+      direction: "below",
+    });
+    expect(position("particle-graph-compiler-results")).toEqual({
+      referencePanelId: "particle-graph-canvas",
+      direction: "below",
+      initialHeight: 160,
+    });
+  });
+
+  it("anchors Locks under the Graph when source control is on", () => {
+    expect(
+      findDockWindow("particle-graph", "locks", { sourceControl: true })
+        ?.defaultPosition?.referencePanelId,
+    ).toBe("particle-graph-canvas");
+  });
+});
+
 describe("animation graph and behaviour tree dock catalogs", () => {
   it("lists Variables, Graph, Details, and Compiler Results for State Machine mode", () => {
     const windows = listDockWindows("anim-graph", {
@@ -600,5 +654,15 @@ describe("animation graph and behaviour tree dock catalogs", () => {
   it("focuses the graph as the primary panel", () => {
     expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
+  });
+});
+
+
+describe("Water editor docks", () => {
+  it("offers independent Preview and Details windows with Preview as the primary panel", () => {
+    const windows = listDockWindows("water");
+    expect(windows.map((entry) => entry.id)).toEqual(["water-preview", "water-details"]);
+    expect(primaryDockPanel("water")).toBe("water-preview");
+    expect(windows.find((entry) => entry.id === "water-details")?.defaultPosition).toMatchObject({ referencePanelId: "water-preview", direction: "right" });
   });
 });

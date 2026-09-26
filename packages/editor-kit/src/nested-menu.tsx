@@ -64,6 +64,7 @@ export type NestedMenuItem =
       id: string;
       label: string;
       checked: boolean;
+      shortcut?: KeyChord;
       onCheckedChange: (next: boolean) => void;
       closeOnClick?: boolean;
       disabled?: boolean;
@@ -134,9 +135,15 @@ function NestedMenuItems({
               closeOnClick={item.closeOnClick}
               className={itemClass}
               data-testid={itemTestId(item)}
+              aria-keyshortcuts={item.shortcut ? ariaKeyShortcuts(item.shortcut) : undefined}
               onCheckedChange={(checked) => item.onCheckedChange(checked)}
             >
               {item.label}
+              {item.shortcut ? (
+                <DropdownMenuShortcut className="pl-4 tracking-normal pointer-coarse:hidden">
+                  <ShortcutKeys chord={item.shortcut} decorative />
+                </DropdownMenuShortcut>
+              ) : null}
             </DropdownMenuCheckboxItem>
           );
         }
@@ -205,7 +212,7 @@ function NestedMenuItems({
             {item.icon}
             {item.label}
             {item.shortcut ? (
-              <DropdownMenuShortcut className="pl-4 tracking-normal">
+              <DropdownMenuShortcut className="pl-4 tracking-normal pointer-coarse:hidden">
                 <ShortcutKeys chord={item.shortcut} decorative />
               </DropdownMenuShortcut>
             ) : null}
@@ -293,6 +300,7 @@ function OverlayMenuItems({
               type="button"
               role="menuitemcheckbox"
               aria-checked={item.checked}
+              aria-keyshortcuts={item.shortcut ? ariaKeyShortcuts(item.shortcut) : undefined}
               disabled={item.disabled}
               className="context-menu-item"
               data-testid={itemTestId(item)}
@@ -307,6 +315,7 @@ function OverlayMenuItems({
                 showLeading={showLeading}
                 leading={item.checked ? <CheckIcon /> : null}
                 label={item.label}
+                shortcut={item.shortcut}
               />
             </button>
           );

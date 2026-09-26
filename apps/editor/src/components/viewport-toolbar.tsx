@@ -117,6 +117,9 @@ export function ViewportToolbar({
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const bindings = useKeybindings();
+  const snapChord = bindings.get("viewport.toggleSnap")?.[0];
+  const dragSelectChord = bindings.get("viewport.toggleDragSelect")?.[0];
+  const modeChord = bindings.get("viewport.toggleMode")?.[0];
   const gizmoKeys = { enabled: showGizmoTools, scopeRef: toolbarRef };
   useKeybindCommand("viewport.translate", () => setGizmoTool("translate"), gizmoKeys);
   useKeybindCommand("viewport.rotate", () => setGizmoTool("rotate"), gizmoKeys);
@@ -186,6 +189,22 @@ export function ViewportToolbar({
     }
   };
 
+  const viewportKeys = { scopeRef: toolbarRef };
+  useKeybindCommand("viewport.toggleSnap", () => toggleSnap(!snapEnabled), viewportKeys);
+  useKeybindCommand("viewport.toggleGrid", () => toggleGrid(!gridVisible), viewportKeys);
+  useKeybindCommand("viewport.toggleCollisions", () => setCollisionsVisible(!collisionsVisible), viewportKeys);
+  useKeybindCommand("viewport.toggleNavmesh", () => toggleNavmesh(!navmeshVisible), viewportKeys);
+  useKeybindCommand("viewport.toggleGameCamera", () => setPreviewGameCamera(!previewGameCamera), viewportKeys);
+  useKeybindCommand("viewport.toggleDragSelect", () => setDragSelectActive(!dragSelectActive), {
+    ...viewportKeys, enabled: showDragSelect,
+  });
+  useKeybindCommand("viewport.toggleMode", () => setMode(viewportMode === "3d" ? "2d" : "3d"), {
+    ...viewportKeys, enabled: showViewportModeToggle,
+  });
+  useKeybindCommand("viewport.drop", () => onDrop?.(), {
+    ...viewportKeys, enabled: Boolean(onDrop) && !dropDisabled,
+  });
+
   const settingsItems: NestedMenuItem[] = [
     {
       type: "submenu",
@@ -227,6 +246,7 @@ export function ViewportToolbar({
       type: "checkbox",
       id: "show-grid",
       label: "Show Grid",
+      shortcut: bindings.get("viewport.toggleGrid")?.[0],
       checked: gridVisible,
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-show-grid-toggle`,
@@ -236,6 +256,7 @@ export function ViewportToolbar({
       type: "checkbox",
       id: "show-navmesh",
       label: "Show Navmesh",
+      shortcut: bindings.get("viewport.toggleNavmesh")?.[0],
       checked: navmeshVisible,
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-show-navmesh-toggle`,
@@ -245,6 +266,7 @@ export function ViewportToolbar({
       type: "checkbox",
       id: "show-collisions",
       label: "Show Collisions",
+      shortcut: bindings.get("viewport.toggleCollisions")?.[0],
       checked: collisionsVisible,
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-show-collisions-toggle`,
@@ -272,6 +294,7 @@ export function ViewportToolbar({
       type: "checkbox",
       id: "game-camera",
       label: "Game Camera",
+      shortcut: bindings.get("viewport.toggleGameCamera")?.[0],
       checked: previewGameCamera,
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-game-camera-toggle`,
@@ -351,6 +374,7 @@ export function ViewportToolbar({
               variant="outline"
               size="sm"
               aria-label="Snap Grid"
+              aria-keyshortcuts={snapChord ? ariaKeyShortcuts(snapChord) : undefined}
               {...snapMenu}
               aria-haspopup="dialog"
               pressed={snapEnabled}
@@ -365,6 +389,7 @@ export function ViewportToolbar({
         <TooltipContent>
           Snap {TOOLS.find((tool) => tool.id === gizmoTool)?.label} To{" "}
           {snapIncrement}. Hold Or Right-Click For Grid Settings.
+          <ShortcutKeys chord={snapChord} decorative />
         </TooltipContent>
       </Tooltip>
       {showDragSelect ? (
@@ -375,6 +400,7 @@ export function ViewportToolbar({
                 variant="outline"
                 size="sm"
                 aria-label="Drag Select"
+                aria-keyshortcuts={dragSelectChord ? ariaKeyShortcuts(dragSelectChord) : undefined}
                 pressed={dragSelectActive}
                 onPressedChange={(pressed) => setDragSelectActive(pressed)}
                 data-testid={`${testIdPrefix}viewport-drag-select`}
@@ -383,7 +409,7 @@ export function ViewportToolbar({
               </Toggle>
             }
           />
-          <TooltipContent>Drag Select</TooltipContent>
+          <TooltipContent>Drag Select <ShortcutKeys chord={dragSelectChord} decorative /></TooltipContent>
         </Tooltip>
       ) : null}
       {onDrop ? (
@@ -391,6 +417,7 @@ export function ViewportToolbar({
           type="button"
           size="sm"
           label="Drop"
+          shortcut={bindings.get("viewport.drop")?.[0]}
           disabled={dropDisabled}
           onClick={onDrop}
           data-testid={`${testIdPrefix}viewport-drop`}
@@ -418,16 +445,26 @@ export function ViewportToolbar({
         <Settings2Icon />
       </NestedMenu>
       {showViewportModeToggle ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
-          aria-label={`${viewportMode.toUpperCase()} Viewport; Switch To ${viewportMode === "3d" ? "2D" : "3D"}`}
-          data-testid={`${testIdPrefix}viewport-mode-toggle`}
-        >
-          {viewportMode.toUpperCase()}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
+                aria-label={`${viewportMode.toUpperCase()} Viewport; Switch To ${viewportMode === "3d" ? "2D" : "3D"}`}
+                aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
+                data-testid={`${testIdPrefix}viewport-mode-toggle`}
+              >
+                {viewportMode.toUpperCase()}
+              </Button>
+            }
+          />
+          <TooltipContent>
+            Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />
+          </TooltipContent>
+        </Tooltip>
       ) : null}
       {viewportShadingMode === "wireframe" ||
       (viewportShadingMode === "unlit" && showViewportModeToggle) ? (

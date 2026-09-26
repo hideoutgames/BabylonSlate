@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition } from "@babylonslate/core";
 /**
  * Game worker entry. Hosts create a Worker from this module URL and post
  * control / input messages. In-process Play uses `createInProcessRuntime`.
@@ -116,6 +117,10 @@ function handleControl(msg: ControlMessage): void {
         const document = parseBlackboardDocument(entry.document);
         if (document) rt.registerBlackboard(entry.guid, document);
       }
+      return;
+    }
+    case "loadWater": {
+      ensureRuntime().registerWaterContent(new Map(msg.waters.map((entry) => [entry.guid, normalizeWaterDefinition(entry.document)])));
       return;
     }
     case "loadTilemaps": {

@@ -388,6 +388,37 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.linearVelocity.z += this.kind === "2d" ? 0 : impulse.z * s;
   }
 
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return;
+    if (![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
+    this.addImpulse(bodyId, impulse);
+    // The software fallback uses unit diagonal inertia; native backends use collider inertia.
+    const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
+    const mass = Math.max(body.desc.mass, 1e-6);
+    if (this.kind === "3d") {
+      body.angularVelocity.x += (r.y * impulse.z - r.z * impulse.y) / mass;
+      body.angularVelocity.y += (r.z * impulse.x - r.x * impulse.z) / mass;
+    }
+    body.angularVelocity.z += (r.x * impulse.y - r.y * impulse.x) / mass;
+  }
+
+  getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
+    const body = this.bodies.get(bodyId);
+    if (!body || body.desc.motionType !== "dynamic") return null;
+    const mass = Math.max(body.desc.mass, 1e-6);
+    const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
+    return {
+      linear: { x: impulse.x / mass, y: impulse.y / mass, z: this.kind === "3d" ? impulse.z / mass : 0 },
+      angular: {
+        x: this.kind === "3d" ? (r.y * impulse.z - r.z * impulse.y) / mass : 0,
+        y: this.kind === "3d" ? (r.z * impulse.x - r.x * impulse.z) / mass : 0,
+        z: (r.x * impulse.y - r.y * impulse.x) / mass,
+      },
+      centerOfMass: { ...body.transform.position },
+    };
+  }
+
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const body = this.bodies.get(bodyId);
     if (!body) return;

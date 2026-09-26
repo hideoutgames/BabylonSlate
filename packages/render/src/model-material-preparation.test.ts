@@ -4,7 +4,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import { MaterialLibrary } from "./material-library";
-import { encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
 

@@ -6,7 +6,7 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { GRID_MESH_NAME } from "./editor-grid";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
@@ -151,6 +151,8 @@ describe("authored scene outline host", () => {
     const loaded = MeshBuilder.CreateBox("loaded-part", {}, scene);
     host.setActor("a", [loaded], bindings);
     expect(host.selection.selected()).toEqual([loaded]);
+    expect(host.view.contributions.get("component:a:ink")?.targets[0]?.meshes).toEqual([loaded]);
+    expect(host.view.meshesForGroup("strict")).toEqual([loaded, b]);
     expect(host.view.contributions.get("component:b:ink")?.targets[0]?.meshes).toEqual([b]);
     host.removeActor("a");
     expect(host.selection.selected()).toEqual([]);

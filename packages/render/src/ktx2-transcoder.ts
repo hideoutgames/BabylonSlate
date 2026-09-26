@@ -115,25 +115,11 @@ export function shouldForceKtx2Rgba(
 
 /**
  * Preview Build always packs PNG/pixels so a cold iframe matches overlay Play.
- * Hardware GPUs still pack KTX2 for itch Export Game via {@link shouldPackKtx2Textures}.
+ * Itch Export Game still packs KTX2 when the player files contain the
+ * transcoder ({@link playerFilesHaveKtx2Transcoder}).
  */
 export function shouldPackKtx2ForPreviewBuild(): boolean {
   return false;
-}
-
-/**
- * Whether packed Texture bytes should be KTX2.
- * Preview Build always uses PNG/pixels. Export Game uses KTX2 when the player
- * has the transcoder and the editor GPU is not software GL.
- */
-export function shouldPackKtx2Textures(
-  playerFiles: ReadonlyMap<string, Uint8Array>,
-  renderer?: string,
-): boolean {
-  return (
-    playerFilesHaveKtx2Transcoder(playerFiles) &&
-    !isSoftwareGlRenderer(renderer ?? "")
-  );
 }
 
 /**

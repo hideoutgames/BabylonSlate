@@ -589,6 +589,7 @@ function GraphEditorCanvas({
     position: { x: number; y: number };
   } | null>(null);
   const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [paletteModal, setPaletteModal] = useState(false);
   const connectDragRef = useRef<{
     pointerId: number;
     pointer: { x: number; y: number };
@@ -1494,6 +1495,7 @@ function GraphEditorCanvas({
         const position = screenToFlowPosition(point);
         setPendingConnect({ pin, nodeId: fromNode.id, position });
         setPaletteAnchor(point);
+        setPaletteModal(false);
         setPaletteOpenState(true);
         finishGesture();
         return;
@@ -1857,6 +1859,7 @@ function GraphEditorCanvas({
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);
+        setPaletteModal(false);
         setPaletteOpenState(true);
       }
       lastPaneTapRef.current = now;
@@ -1897,6 +1900,7 @@ function GraphEditorCanvas({
         const point = { x: event.clientX, y: event.clientY };
         setPendingConnect({ position: screenToFlowPosition(point) });
         setPaletteAnchor(point);
+        setPaletteModal(false);
         setPaletteOpenState(true);
       }
     },
@@ -2231,10 +2235,10 @@ function GraphEditorCanvas({
               size="icon-sm"
               aria-label="Add Node"
               title="Add Node"
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
+              onClick={() => {
                 setPendingConnect(null);
-                setPaletteAnchor({ x: rect.left, y: rect.bottom + 4 });
+                setPaletteAnchor(null);
+                setPaletteModal(true);
                 setPaletteOpenState(true);
               }}
               data-testid="graph-add-node"
@@ -2426,6 +2430,7 @@ function GraphEditorCanvas({
           sourcePins={paletteSourcePins}
           onAddNode={handleAddPaletteNode}
           anchor={paletteAnchor}
+          presentation={paletteModal ? "modal" : "popup"}
         />
         )}
         <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />

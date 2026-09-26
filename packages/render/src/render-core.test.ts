@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { accountedTextureBytes, BYTES_PER_TEXEL } from "./texture-bytes";
 import { ResourceCache } from "./resource-cache";
 import { RenderScheduler } from "./render-scheduler";
 import { SnapshotInterpolator, writeSampledAudioPoses } from "./snapshot-sync";
@@ -8,18 +7,6 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
 } from "@babylonslate/bridge";
-
-describe("texture byte accounting", () => {
-  it("computes RGBA8 and ASTC with mipmap overhead", () => {
-    expect(BYTES_PER_TEXEL.rgba8).toBe(4);
-    expect(BYTES_PER_TEXEL.astc4x4).toBe(1);
-    // 64x64 RGBA8 base = 16384; +1/3 mips ≈ 21845
-    expect(accountedTextureBytes(64, 64, "rgba8", true)).toBe(
-      Math.ceil(64 * 64 * 4 * (4 / 3)),
-    );
-    expect(accountedTextureBytes(64, 64, "astc4x4", false)).toBe(64 * 64 * 1);
-  });
-});
 
 describe("resource cache", () => {
   it("reuses stable blob URLs per asset guid", () => {
@@ -30,7 +17,7 @@ describe("resource cache", () => {
     const bLease = cache.acquireBlobUrl("guid-1", bytes);
     const b = bLease.resource;
     expect(a).toBe(b);
-    cache.account("guid-1", accountedTextureBytes(64, 64, "rgba8", true));
+    cache.account("guid-1", Math.ceil(64 * 64 * 4 * (4 / 3)));
     aLease.release();
     bLease.release();
     cache.flushUnreferenced();

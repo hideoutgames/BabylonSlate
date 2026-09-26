@@ -14,6 +14,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [design/perf-budget.md](design/perf-budget.md) | A16 iPad performance budget and render rules |
 | [design/renderer-qualification.md](design/renderer-qualification.md) | Renderer coverage matrix and the sustained qualification route |
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
+| [design/particle-emitters.md](design/particle-emitters.md) | Particle emitter redesign: Basic and Particle Graph kinds, Material-only look, staging |
 | [architecture/](architecture/) | Package and subsystem notes |
 | [architecture/overview.md](architecture/overview.md) | Package and subsystem overview |
 | [architecture/containers.md](architecture/containers.md) | `.babasset` / project folder / `.babplugin` wire formats |
@@ -40,7 +41,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |
 | [architecture/navigation.md](architecture/navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [architecture/audio.md](architecture/audio.md) | Audio mixer/channel/attenuation, AudioService, spatial, reverb bake |
-| [architecture/particles.md](architecture/particles.md) | Particle Emitter / System, GPUParticleSystem wrap, particle-domain materials |
+| [architecture/particles.md](architecture/particles.md) | Basic / Particle Graph emitters, Particle System, Material-only look |
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |

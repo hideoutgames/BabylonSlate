@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createActor,
+  createDefaultWaterDefinition,
   createDefaultSceneLayer,
   createDefaultSceneSettings,
   createMeshComponent,
@@ -36,6 +37,71 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 }
 
 describe("component script API", () => {
+  it.each(["WaterLakeComponent", "WaterOceanComponent"])("updates %s dimensions through normal component variables and queries the changed footprint", async (classId) => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      playScene: sceneOf([createActor("lake", "Lake", { classId: "Hero", components: [
+        { id: "surface", classId, properties: { assetGuid: "water", width: 20 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "surface"); ctx.setVariable("before", ctx.sampleWater({x:5,y:0,z:0}).found); ctx.setVariableOn(c, "width", 2); ctx.setVariable("after", ctx.sampleWater({x:5,y:0,z:0}).found); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().findActor("lake")!;
+      runtime.invokeScriptEvent("Hero", "Update", actor);
+      expect(actor.getVariable("before")).toBe(true);
+      expect(actor.getVariable("after")).toBe(false);
+      expect(commands.filter((command) => command.type === "assignMesh").at(-1)).toMatchObject({
+        parts: [{ componentId: "surface", meshKind: "water", water: { width: 2, assetGuid: "water" } }],
+      });
+    } finally { runtime.stop(); }
+  });
+  it("realizes Global Water Volume in Play and queries distant water through the script API", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      playScene: sceneOf([createActor("global", "Global Water", { classId: "Hero", components: [
+        { id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water", depth: 42 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { ctx.setVariable("found", ctx.sampleWater({x:10000,y:-1,z:-10000}).found); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().findActor("global")!;
+      runtime.invokeScriptEvent("Hero", "Update", actor);
+      expect(actor.getVariable("found")).toBe(true);
+      expect(commands.filter((command) => command.type === "assignMesh").at(-1)).toMatchObject({
+        parts: [{ componentId: "surface", meshKind: "water", water: { kind: "global", depth: 42 } }],
+      });
+    } finally { runtime.stop(); }
+  });
+  it("sends Water Removal Volumes to Play rendering and removes their water from queries", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0 } },
+      playScene: sceneOf([
+        createActor("global", "Global Water", { classId: "Hero", components: [{ id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water" } }] }),
+        createActor("hull", "Hull", { classId: "Hero", transform: { position: [20, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [
+          { id: "hole", classId: "WaterRemovalVolumeComponent", properties: { shape: "cylinder", width: 4, height: 2 } },
+        ] }),
+      ]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { ctx.setVariable("inside", ctx.sampleWater({x:21,y:-0.5,z:0}).found); ctx.setVariable("outside", ctx.sampleWater({x:24,y:-0.5,z:0}).found); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().findActor("global")!;
+      runtime.invokeScriptEvent("Hero", "Update", actor);
+      expect(actor.getVariable("inside")).toBe(false);
+      expect(actor.getVariable("outside")).toBe(true);
+      expect(commands.filter((command) => command.type === "assignMesh" && command.parts?.some((part) => part.componentId === "hole")).at(-1)).toMatchObject({
+        parts: [{ componentId: "hole", meshKind: "waterRemoval", waterRemoval: { shape: "cylinder", width: 4, height: 2, enabled: true } }],
+      });
+    } finally { runtime.stop(); }
+  });
   it("changes an actor's authored outline without rebuilding its mesh or changing a sibling", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
@@ -55,6 +121,33 @@ describe("component script API", () => {
       expect(commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "a").at(-1))
         .toMatchObject({ outlines: [{ actorId: "a", id: "a-ink", color: [1, 0.25, 0], width: 3, throughMeshes: true }] });
       expect(commands.filter((command) => command.type === "setActorOutlines" && command.actorId === "b").at(-1)).toBe(sibling);
+    } finally { runtime.stop(); }
+  });
+  it("emits a spring arm with its attached camera beside a mesh and re-emits script lag writes", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneOf([createActor("hero", "Hero", { classId: "Hero", components: [
+        createMeshComponent("body"),
+        { id: "arm", classId: "SpringArmComponent", properties: { armLength: 3, enableRotationLag: true } },
+        { id: "cam", classId: "CameraComponent", parentId: "arm", properties: { nearClip: 0.2 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "arm"); ctx.setVariableOn(c, "armLength", 6); ctx.setVariableOn(c, "rotationLagSpeed", 4); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const assigns = () => commands.filter((command): command is Extract<CommandMessage, { type: "assignMesh" }> =>
+        command.type === "assignMesh" && Boolean(command.parts?.some((part) => part.meshKind === "springarm")));
+      expect(assigns().at(-1)).toMatchObject({
+        camera: { nearClip: 0.2 },
+        parts: [
+          { componentId: "body", meshKind: "box" },
+          { componentId: "arm", meshKind: "springarm", parentId: null, springArm: { armLength: 3, enableRotationLag: true } },
+          { componentId: "cam", meshKind: "camera", parentId: "arm" },
+        ],
+      });
+      runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("hero")!);
+      expect(assigns().at(-1)?.parts?.[1]?.springArm).toMatchObject({ armLength: 6, rotationLagSpeed: 4 });
     } finally { runtime.stop(); }
   });
   it("updates a rectangular emitter alongside a render mesh through native component variables", async () => {

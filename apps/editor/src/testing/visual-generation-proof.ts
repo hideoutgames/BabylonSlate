@@ -5,8 +5,9 @@ import { parseText2DProperties } from "@babylonslate/core";
 import {
   applyAssignMesh, beginSlotModelAnimLoad, bindResourceCacheToHandle,
   createAppWebGpuEngine, createModelActorRoot, createSnapshotSceneBinding, createText2DMesh,
-  encodePngRgba, encodeTriangleGlb, installTextureBytes, ResourceCache,
+  encodePngRgba, installTextureBytes, ResourceCache,
 } from "@babylonslate/render";
+import { encodeTriangleGlb } from "@babylonslate/render/glb-test-fixtures";
 
 export async function runVisualGenerationProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");

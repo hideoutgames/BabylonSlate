@@ -76,6 +76,7 @@ describe("Add Component catalog", () => {
       "Camera",
       "Audio",
       "Particles",
+      "Water",
       "Overlay",
       "Physics",
     ]);
@@ -96,7 +97,7 @@ describe("Add Component catalog", () => {
       "BehaviourTreeComponent",
       "NavAgentComponent",
     ]);
-    expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
+    expect(byCategory.get("Camera")).toEqual(["CameraComponent", "SpringArmComponent"]);
     expect(byCategory.get("Audio")).toEqual(["AudioComponent"]);
     expect(byCategory.get("Particles")).toEqual(["ParticleComponent"]);
     expect(byCategory.get("Physics")).toEqual([

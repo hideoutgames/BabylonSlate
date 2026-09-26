@@ -26,12 +26,15 @@ export const ASSET_DOCUMENT_KINDS = [
   "audio-channel",
   "sound-attenuation",
   "particle-emitter",
+  "particle-graph",
   "particle-system",
+  "water",
   "model",
   "skeleton",
   "animation",
   "skybox-creator",
   "trace",
+  "texture",
   "asset-settings",
 ] as const;
 
@@ -118,8 +121,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SoundAttenuation";
     case "particle-emitter":
       return "ParticleEmitter";
+    case "particle-graph":
+      return "ParticleGraph";
     case "particle-system":
       return "ParticleSystem";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":
@@ -130,6 +137,7 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SkyboxCreator";
     case "trace":
       return "Trace";
+    case "texture":
     case "asset-settings":
       return "Texture";
   }
@@ -209,8 +217,12 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sound-attenuation";
     case "ParticleEmitter":
       return "particle-emitter";
+    case "ParticleGraph":
+      return "particle-graph";
     case "ParticleSystem":
       return "particle-system";
+    case "Water":
+      return "water";
     case "SkyboxCreator":
       return "skybox-creator";
     case "Trace":
@@ -222,7 +234,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Animation":
       return "animation";
     case "Texture":
-      return "asset-settings";
+      return "texture";
     default:
       return null;
   }
@@ -282,8 +294,12 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sound Attenuation";
     case "particle-emitter":
       return "Particle Emitter";
+    case "particle-graph":
+      return "Particle Graph";
     case "particle-system":
       return "Particle System";
+    case "water":
+      return "Water";
     case "model":
       return "Model";
     case "skeleton":
@@ -294,6 +310,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Skybox Creator";
     case "trace":
       return "Trace";
+    case "texture":
+      return "Texture";
     case "asset-settings":
       return "Settings";
   }
@@ -321,7 +339,7 @@ export function parseDocumentId(
 
 /**
  * Reopen a layout.json `asset-settings:…` tab as the current document kind
- * when the registry type has since gained its own DockView (Model).
+ * when the registry type has since gained its own DockView (Model, Texture).
  */
 export function migrateRestoredDocumentId(
   id: string,
@@ -389,7 +407,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

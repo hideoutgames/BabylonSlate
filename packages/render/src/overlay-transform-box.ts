@@ -251,6 +251,7 @@ const scratchRotation = new Quaternion();
 const scratchPosition = new Vector3();
 const scratchLocal = new Vector3();
 const scratchWorld = new Vector3();
+const scratchEuler = new Vector3();
 const scratchInv = Matrix.Identity();
 
 function skipOverlayBoxVisual(mesh: AbstractMesh): boolean {
@@ -495,9 +496,10 @@ export function createOverlayTransformBox(
     handles.set(id, handle);
   }
 
-  let stem: LinesMesh = CreateLines(
+  // A unit segment; layout scales it to the zoom-dependent stem length.
+  const stem: LinesMesh = CreateLines(
     "overlay-box-rotate-stem",
-    { points: stemPoints(1), updatable: true },
+    { points: stemPoints(1) },
     util,
   );
   stem.color = color;
@@ -555,19 +557,23 @@ export function createOverlayTransformBox(
       scratchWorld,
     );
     root.position.set(scratchWorld.x, scratchWorld.y, scratchWorld.z);
-    root.rotationQuaternion = Quaternion.FromEulerAngles(
-      0,
-      0,
-      scratchRotation.toEulerAngles().z,
-    );
+    root.rotationQuaternion ??= new Quaternion();
+    scratchRotation.toEulerAnglesToRef(scratchEuler);
+    Quaternion.FromEulerAnglesToRef(0, 0, scratchEuler.z, root.rotationQuaternion);
 
-    const worldWidth = Vector3.TransformNormal(
-      new Vector3(bounds.maxX - bounds.minX, 0, 0),
+    const worldWidth = Vector3.TransformNormalFromFloatsToRef(
+      bounds.maxX - bounds.minX,
+      0,
+      0,
       attached.getWorldMatrix(),
+      scratchWorld,
     ).length();
-    const worldHeight = Vector3.TransformNormal(
-      new Vector3(0, bounds.maxY - bounds.minY, 0),
+    const worldHeight = Vector3.TransformNormalFromFloatsToRef(
+      0,
+      bounds.maxY - bounds.minY,
+      0,
       attached.getWorldMatrix(),
+      scratchWorld,
     ).length();
     const halfW = Math.max(worldWidth / 2, 1e-4);
     const halfH = Math.max(worldHeight / 2, 1e-4);
@@ -585,11 +591,7 @@ export function createOverlayTransformBox(
       handle.scaling.set(handleSize, handleSize, handleSize);
     }
     stem.position.set(0, halfH, -visualSize * 0.5);
-    stem = CreateLines(
-      "overlay-box-rotate-stem",
-      { points: stemPoints(stemLen), instance: stem },
-      util,
-    );
+    stem.scaling.set(1, stemLen, 1);
     knob.position.set(0, halfH + stemLen, -visualSize * 1.5);
     knob.scaling.set(handleSize, handleSize, handleSize);
   };

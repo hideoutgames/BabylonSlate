@@ -774,7 +774,14 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   const outlinerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const outlinerKeys = { enabled: Boolean(scene), focusWithinRef: outlinerRef };
+  useKeybindCommand("edit.find", () => {
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, outlinerKeys);
+  useKeybindCommand("edit.newFolder", addFolder, outlinerKeys);
+  useKeybindCommand("scene.placeActor", () => setPlaceOpen(true), outlinerKeys);
   useKeybindCommand(
     "edit.delete",
     () => {
@@ -828,6 +835,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       <div ref={outlinerRef} className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
+            ref={searchRef}
             className={cn(
               "min-h-[var(--chrome-row,28px)]",
               phone && "min-h-11",
@@ -840,6 +848,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           />
           <IconActionButton
             label="New Folder"
+            shortcut={keybinds.get("edit.newFolder")?.[0]}
             size={actionSize}
             onClick={addFolder}
             disabled={!scene}
@@ -849,6 +858,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           </IconActionButton>
           <IconActionButton
             label="Add actor"
+            shortcut={keybinds.get("scene.placeActor")?.[0]}
             size={actionSize}
             onClick={() => setPlaceOpen(true)}
             disabled={!scene}

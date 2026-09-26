@@ -100,6 +100,8 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Exposure", "project-effects-exposure"],
   ["rendering", "Contrast", "project-effects-contrast"],
   ["rendering", "Bloom", "project-effects-bloom"],
+  ["rendering", "Real-Time Reflections Screen Space SSR", "project-effects-reflections"],
+  ["rendering", "Volumetric Lighting Light Beams Fog Density", "project-effects-volumetric"],
   ["rendering", "Bloom Threshold", "project-effects-bloom-threshold"],
   ["rendering", "Bloom Weight", "project-effects-bloom-weight"],
   ["rendering", "Bloom Kernel", "project-effects-bloom-kernel"],
@@ -150,6 +152,7 @@ export const PROJECT_SETTING_FIELDS = fields([
 
 export const ENGINE_SETTING_FIELDS = fields([
   ["about", "Version And Build"],
+  ["about", "Automatic Updates", "setting-automatic-updates"],
   ["appearance", "Theme", "setting-theme"],
   ["appearance", "Pointer Target Scale", "setting-pointer-scale"],
   ["undo", "Undo History Length", "setting-undo-length"],

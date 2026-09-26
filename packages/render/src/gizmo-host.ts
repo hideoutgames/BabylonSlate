@@ -13,7 +13,6 @@ import type { ViewportMode } from "@babylonslate/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";
-export { SELECTION_COLOR } from "./selection-style";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
@@ -53,6 +52,8 @@ export interface GizmoHost {
   readonly positionGizmo: PositionGizmo;
   readonly rotationGizmo: RotationGizmo;
   readonly scaleGizmo: ScaleGizmo;
+  /** Shared utility layer, so other editor handles get the same picking and pointer routing. */
+  readonly layer: UtilityLayerRenderer;
   setTool: (tool: GizmoTool) => void;
   setMode: (mode: ViewportMode) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
@@ -519,6 +520,7 @@ export function createGizmoHost(
     positionGizmo: position,
     rotationGizmo: rotation,
     scaleGizmo: scale,
+    layer,
     setTool: (next: GizmoTool) => {
       if (next === tool) return;
       tool = next;
@@ -554,9 +556,7 @@ export function createGizmoHost(
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       scene.pointerX = mapped.x;
       scene.pointerY = mapped.y;
-      const pick =
-        layer.utilityLayerScene.pick(mapped.x, mapped.y) ??
-        scene.pick(mapped.x, mapped.y);
+      const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
       const pointerEventInit = {
         pointerId: canvasSize?.pointerId ?? 1,
         button: 0,
@@ -586,5 +586,3 @@ export function createGizmoHost(
     },
   };
 }
-
-/** Selection outline colour, shared by the outline pass and the 2D bounds. */

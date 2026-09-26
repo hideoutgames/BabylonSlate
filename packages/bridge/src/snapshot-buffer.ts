@@ -127,23 +127,31 @@ export function writeActorSlot(
 }
 
 export function readActorSlot(buf: Float32Array, slotIndex: number): ActorSlot {
+  return readActorSlotInto(buf, slotIndex, {
+    slotId: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 0 },
+    scale: { x: 0, y: 0, z: 0 },
+    flags: 0,
+  });
+}
+
+/** Decode one actor slot into caller-owned scratch without allocating. */
+export function readActorSlotInto(buf: Float32Array, slotIndex: number, out: ActorSlot): ActorSlot {
   const o = actorSlotOffset(slotIndex);
-  return {
-    slotId: buf[o]!,
-    position: {
-      x: (buf[o + 1]! + buf[o + 12]!) + (buf[9]! + buf[12]!),
-      y: (buf[o + 2]! + buf[o + 13]!) + (buf[10]! + buf[13]!),
-      z: (buf[o + 3]! + buf[o + 14]!) + (buf[11]! + buf[14]!),
-    },
-    rotation: {
-      x: buf[o + 4]!,
-      y: buf[o + 5]!,
-      z: buf[o + 6]!,
-      w: buf[o + 7]!,
-    },
-    scale: { x: buf[o + 8]!, y: buf[o + 9]!, z: buf[o + 10]! },
-    flags: buf[o + 11]!,
-  };
+  out.slotId = buf[o]!;
+  out.position.x = (buf[o + 1]! + buf[o + 12]!) + (buf[9]! + buf[12]!);
+  out.position.y = (buf[o + 2]! + buf[o + 13]!) + (buf[10]! + buf[13]!);
+  out.position.z = (buf[o + 3]! + buf[o + 14]!) + (buf[11]! + buf[14]!);
+  out.rotation.x = buf[o + 4]!;
+  out.rotation.y = buf[o + 5]!;
+  out.rotation.z = buf[o + 6]!;
+  out.rotation.w = buf[o + 7]!;
+  out.scale.x = buf[o + 8]!;
+  out.scale.y = buf[o + 9]!;
+  out.scale.z = buf[o + 10]!;
+  out.flags = buf[o + 11]!;
+  return out;
 }
 
 export function clearSnapshot(buf: Float32Array): void {

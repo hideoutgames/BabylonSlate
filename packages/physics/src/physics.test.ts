@@ -17,6 +17,35 @@ function identity() {
   };
 }
 
+it.each(["software", "rapier"] as const)("%s applies an off-centre impulse as translation and rotation", async (kind) => {
+  const gravity = { x: 0, y: 0, z: 0 };
+  const backend = kind === "software"
+    ? createSoftwarePhysicsBackend("3d", gravity)
+    : await createPhysicsBackend({ kind: "2d", gravity, allowSoftwareFallback: false });
+  try {
+    backend.createBody({
+      id: "body", actorId: "actor", motionType: "dynamic", mass: 2,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0, transform: identity(),
+    });
+    backend.createCollider({
+      id: "shape", bodyId: "body",
+      shape: backend.kind === "2d"
+        ? { kind: "box2d", halfExtents: { x: 1, y: 0.5 } }
+        : { kind: "box", halfExtents: { x: 1, y: 0.5, z: 1 } },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+    });
+    backend.step(1 / 60);
+    backend.addImpulseAtPoint("body", { x: 0, y: 2, z: 0 }, { x: 1, y: 5, z: 0 });
+    expect(backend.getBodyVelocity("body")!.linear.y).toBeGreaterThan(0);
+    expect(backend.getBodyVelocity("body")!.angular.z).toBeGreaterThan(0);
+    backend.step(1 / 60);
+    expect(backend.getBodyTransform("body")!.position.y).toBeGreaterThan(5);
+    expect(backend.getBodyTransform("body")!.rotation.z).toBeGreaterThan(0);
+    backend.destroyBody("body");
+    expect(backend.getBodyVelocity("body")).toBeNull();
+  } finally { backend.dispose(); }
+});
+
 it("keeps Rapier teleport/target rotation consistent in direct and batched readback", async () => {
   const backend = await createPhysicsBackend({
     kind: "2d",

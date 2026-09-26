@@ -234,6 +234,31 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("keeps a triangle mesh collider across ticks until one of its vertices changes", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    // Each debugColliders tick delivers fresh primitive objects.
+    const triangle = (apexY: number, x = 0) => ({
+      id: "triangle",
+      shape: "mesh" as const,
+      position: { x, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      points: [{ x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, { x: 0, y: apexY, z: 0 }],
+      indices: [0, 1, 2],
+    });
+    overlay.sync([triangle(3)]);
+    const first = scene.getMeshByName("playConsoleViz:triangle");
+    overlay.sync([triangle(3, 5)]);
+    expect(scene.getMeshByName("playConsoleViz:triangle")?.uniqueId).toBe(first?.uniqueId);
+    overlay.sync([triangle(4, 5)]);
+    const rebuilt = scene.getMeshByName("playConsoleViz:triangle");
+    expect(rebuilt?.uniqueId).not.toBe(first?.uniqueId);
+    expect(rebuilt?.getVerticesData(VertexBuffer.PositionKind)).toEqual([0, 0, 0, 2, 0, 0, 0, 4, 0]);
+    expect(rebuilt?.position.x).toBe(5);
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("applies viz commands including nav toggle", () => {
     const { engine, scene } = createTestEngine();
     const mesh = MeshBuilder.CreateBox("actor-1", { size: 1 }, scene);

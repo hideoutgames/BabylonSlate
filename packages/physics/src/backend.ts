@@ -46,6 +46,12 @@ export interface PhysicsBackend {
     motionType: RigidBodyDesc["motionType"],
   ): void;
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
+  /** World-space impulse at a point, preserving collision-driven linear and angular motion. */
+  addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void;
+  /** Read-only velocity change from a world impulse, including collider inertia. */
+  getBodyImpulseResponse?(bodyId: string, impulse: Vec3, point: Vec3): {
+    linear: Vec3; angular: Vec3; centerOfMass: Vec3;
+  } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
 
   /** Atomically creates/replaces one constraint, retaining the old one on failure. */

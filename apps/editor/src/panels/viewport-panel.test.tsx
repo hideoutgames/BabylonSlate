@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { SceneToolsProvider } from "../context/scene-tools-context";
 import { syncEditorPlayState } from "@babylonslate/render";
 import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry, type AreaEmissionPixels } from "@babylonslate/assets";
@@ -80,6 +81,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         ref: { kind: string; path: string; label: string };
         content: unknown;
       }>,
+      collectPlayWaterContent: vi.fn(async () => new Map()),
       collectPlaySpritePayloads: vi.fn(async () => []),
       collectPlayTilemapContent: vi.fn(async () => ({
         tilesets: [],
@@ -142,6 +144,7 @@ vi.mock("../context/document-context", () => ({
     applySceneChange: documents.applySceneChange,
     projectDocument: documents.projectDocument,
     collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
+    collectPlayWaterContent: documents.collectPlayWaterContent,
     collectPlayTilemapContent: documents.collectPlayTilemapContent,
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
     collectPlayTexturePixelSizes: documents.collectPlayTexturePixelSizes,
@@ -215,6 +218,7 @@ function renderViewport() {
     <DocumentWorkspaceProvider documentId="scene:S">
       <ViewportPanel {...({} as IDockviewPanelProps)} />
     </DocumentWorkspaceProvider>,
+    { wrapper: SceneToolsProvider },
   );
 }
 

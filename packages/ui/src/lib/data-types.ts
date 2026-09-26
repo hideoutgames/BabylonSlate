@@ -18,6 +18,7 @@ export const PIN_COLOR_VAR = {
   enum: "var(--pin-enum)",
   wildcard: "var(--pin-wildcard)",
   delegate: "var(--pin-delegate)",
+  particle: "var(--pin-particle)",
 } as const;
 
 export const PIN_KIND_COLOR_VAR: Record<string, string> = {
@@ -43,6 +44,7 @@ export const PIN_KIND_COLOR_VAR: Record<string, string> = {
   resolvingWildcard: PIN_COLOR_VAR.wildcard,
   boxedWildcard: PIN_COLOR_VAR.wildcard,
   delegate: PIN_COLOR_VAR.delegate,
+  particle: PIN_COLOR_VAR.particle,
 };
 
 export const PIN_COLOR_TOKENS = [
@@ -63,7 +65,75 @@ export const PIN_COLOR_TOKENS = [
   "--pin-enum",
   "--pin-wildcard",
   "--pin-delegate",
+  "--pin-particle",
 ] as const;
+
+/** Graph node header roles; `--node-*` values live in `styles/globals.css`. */
+export const NODE_ROLE_COLOR_VAR = {
+  event: "var(--node-event)",
+  "call-parent": "var(--node-call-parent)",
+  function: "var(--node-function)",
+  pure: "var(--node-pure)",
+  flow: "var(--node-flow)",
+  variable: "var(--node-variable)",
+  "variable-set": "var(--node-variable-set)",
+  latent: "var(--node-latent)",
+  debug: "var(--node-debug)",
+  "bt-root": "var(--node-bt-root)",
+  "bt-composite": "var(--node-bt-composite)",
+  "bt-task": "var(--node-bt-task)",
+} as const;
+
+export type NodeRole = keyof typeof NODE_ROLE_COLOR_VAR;
+
+export function nodeRoleColorVar(role: NodeRole): string {
+  return NODE_ROLE_COLOR_VAR[role];
+}
+
+/**
+ * Particle stages shared by Basic Particle Emitter stage accents and Particle
+ * Graph node headers, so both editors show the same colour sequence.
+ */
+export type ParticleStage =
+  | "output"
+  | "create"
+  | "shape"
+  | "update"
+  | "input"
+  | "value";
+
+export const PARTICLE_STAGE_ROLE: Record<ParticleStage, NodeRole> = {
+  output: "event",
+  create: "function",
+  shape: "latent",
+  update: "pure",
+  input: "variable",
+  value: "flow",
+};
+
+/** Basic Particle Emitter module-stack stages, in their fixed display order. */
+export type BasicParticleStage =
+  | "emitter"
+  | "spawn"
+  | "shape"
+  | "initialize"
+  | "overLife"
+  | "forces"
+  | "render";
+
+export const BASIC_PARTICLE_STAGE: Record<BasicParticleStage, ParticleStage> = {
+  emitter: "output",
+  spawn: "output",
+  shape: "shape",
+  initialize: "create",
+  overLife: "update",
+  forces: "update",
+  render: "output",
+};
+
+export function basicParticleStageRole(stage: BasicParticleStage): NodeRole {
+  return PARTICLE_STAGE_ROLE[BASIC_PARTICLE_STAGE[stage]];
+}
 
 export type AssetColorFamily =
   | "scene"

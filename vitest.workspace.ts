@@ -33,6 +33,7 @@ export default defineConfig({
             "packages/behaviour-tree/**/*.test.ts",
             "packages/navigation/**/*.test.ts",
             "packages/shader-graph/**/*.test.ts",
+            "packages/particle-graph/**/*.test.ts",
             "packages/input/**/*.test.ts",
             "packages/ui/**/*.test.ts",
             "packages/scripting/**/*.test.ts",
@@ -206,6 +207,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/shader-graph/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/particle-graph/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

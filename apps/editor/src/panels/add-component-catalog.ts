@@ -1,3 +1,4 @@
+import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
   SerializedScene,
@@ -11,6 +12,7 @@ import {
   parseAreaRectLightProperties,
   parseOutlineProperties,
   parseRagdollProperties,
+  parseSpringArmProperties,
   createRichText2DComponent,
   createText2DComponent,
 } from "@babylonslate/core";
@@ -110,6 +112,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
   engineComponent(
+    "SpringArmComponent",
+    "Spring Arm",
+    "Holds child components at the end of an arm with optional location and rotation lag",
+    "Camera",
+  ),
+  engineComponent(
     "AudioComponent",
     "Audio",
     "Plays an Audio asset",
@@ -121,6 +129,13 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Plays a Particle System",
     "Particles",
   ),
+  engineComponent("GlobalWaterVolumeComponent", "Global Water Volume", "Horizon-wide water with camera-adaptive detail", "Water"),
+  engineComponent("WaterOceanComponent", "Water Ocean", "Resizable rectangular water with broad waves", "Water"),
+  engineComponent("WaterLakeComponent", "Water Lake", "Bounded water with gentle waves", "Water"),
+  engineComponent("WaterRiverComponent", "Water River", "Path-shaped water with a flowing current", "Water"),
+  engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
+  engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
+  engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   engineComponent(
     "2DAnchorComponent",
     "2D Anchor",
@@ -194,6 +209,10 @@ export function defaultPropertiesFor(
   physicsWorld: PhysicsWorldKind = "3d",
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
+  const waterKind = waterKindForClass(classId);
+  if (waterKind) return { ...normalizeWaterBody({}, waterKind) };
+  if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
+  if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
     case "MeshComponent":
       return {
@@ -243,6 +262,8 @@ export function defaultPropertiesFor(
       return { ...parseAreaRectLightProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
+    case "SpringArmComponent":
+      return { ...parseSpringArmProperties({}) };
     case "HemisphericFillLightComponent":
       return {
         intensity: 0.9,
@@ -325,6 +346,7 @@ const PROJECT_ASSET_BINDINGS: Record<
   Mesh: { classId: "MeshComponent", property: "assetGuid" },
   Audio: { classId: "AudioComponent", property: "audioAssetGuid" },
   ParticleSystem: { classId: "ParticleComponent", property: "particleSystemGuid" },
+  Water: { classId: "WaterLakeComponent", property: "assetGuid" },
   Sprite: { classId: "SpriteComponent", property: "assetGuid" },
   Tilemap: { classId: "TilemapComponent", property: "assetGuid" },
   AnimationGraph: { classId: "AnimationGraphComponent", property: "graphGuid" },

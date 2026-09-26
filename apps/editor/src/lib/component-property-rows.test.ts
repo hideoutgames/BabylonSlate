@@ -67,6 +67,44 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits Global Water Volume settings without exposing finite bounds", () => {
+  const { rows, update } = rowsFor({ id: "global", classId: "GlobalWaterVolumeComponent", properties: {} });
+  expect(rows.some((row) => row.label === "Width" || row.label === "Length")).toBe(false);
+  const depth = rows.find((row) => row.label === "Depth");
+  if (depth?.kind !== "number") throw new Error("Missing global water controls");
+  depth.onChange(42);
+  expect(update).toHaveBeenLastCalledWith("depth", 42);
+});
+
+it("edits a river path through typed vector rows and extends from its last point", () => {
+  const properties = { points: [[0, 3, 0], [4, 2, 8]] };
+  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties });
+  const point = rows.find((row) => row.label === "Path Point 2");
+  const count = rows.find((row) => row.label === "Path Point Count");
+  if (point?.kind !== "vector3" || count?.kind !== "number") throw new Error("River path controls missing");
+  point.onChange([4, 1, 9]);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 1, 9]]);
+  count.onChange(3);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
+  expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+  const width = rows.find((row) => row.label === "Path Point 2 Width Scale");
+  if (width?.kind !== "number") throw new Error("River width control missing");
+  width.onChange(2.5);
+  expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
+});
+
+it("edits a Water Removal Volume with only the sizes its shape uses", () => {
+  const box = rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: {} });
+  expect(box.rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Width", "Height", "Length"]);
+  const shape = box.rows.find((row) => row.label === "Shape");
+  if (shape?.kind !== "enum") throw new Error("Missing shape control");
+  expect(shape.options.map((option) => option.label)).toEqual(["Box", "Sphere", "Cylinder", "Capsule"]);
+  shape.onChange("capsule");
+  expect(box.update).toHaveBeenLastCalledWith("shape", "capsule");
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "sphere" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter"]);
+  expect(rowsFor({ id: "cut", classId: "WaterRemovalVolumeComponent", properties: { shape: "capsule" } }).rows.map((row) => row.label)).toEqual(["Enabled", "Shape", "Diameter", "Height"]);
+});
+
 describe("componentPropertyRows", () => {
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
@@ -87,6 +125,30 @@ describe("componentPropertyRows", () => {
     expect(update.mock.calls).toEqual([["width", 2.375], ["color", [0.1, 0.2, 0.3]], ["throughMeshes", true], ["enabled", false]]);
     expect(properties).toEqual(defaultPropertiesFor("OutlineComponent"));
   });
+  it("authors spring arm length and gates each lag speed on its lag toggle", () => {
+    const properties = { ...defaultPropertiesFor("SpringArmComponent"), enableRotationLag: true };
+    const { rows, update } = rowsFor({ id: "arm", classId: "SpringArmComponent", properties });
+    expect(rows.map((row) => row.label)).toEqual([
+      "Arm Length",
+      "Enable Location Lag",
+      "Location Lag Speed",
+      "Max Location Lag Distance",
+      "Enable Rotation Lag",
+      "Rotation Lag Speed",
+      "Draw Debug Lag",
+    ]);
+    const row = (label: string) => rows.find((entry) => entry.label === label)!;
+    expect(row("Location Lag Speed").disabled).toBe(true);
+    expect(row("Max Location Lag Distance").disabled).toBe(true);
+    expect(row("Rotation Lag Speed").disabled).toBe(false);
+    const length = row("Arm Length");
+    const debug = row("Draw Debug Lag");
+    if (length.kind !== "number" || debug.kind !== "boolean") throw new Error("Missing Spring Arm controls");
+    expect(length).toMatchObject({ value: 4, min: 0 });
+    length.onChange(7.5);
+    debug.onChange(true);
+    expect(update.mock.calls).toEqual([["armLength", 7.5], ["drawDebugLag", true]]);
+  });
   it("authors rectangular emission from one component and explains its unshadowed behavior", () => {
     const { rows, update, onPickAsset } = rowsFor({ id: "area", classId: "AreaRectLightComponent", properties: defaultPropertiesFor("AreaRectLightComponent") });
     expect(rows.find((row) => row.label === "Enabled")?.description).toContain("through walls");
@@ -99,25 +161,6 @@ describe("componentPropertyRows", () => {
     if (texture?.kind !== "asset") throw new Error("Missing Emission Texture");
     texture.onPick?.();
     expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "textureGuid", allowedTypes: ["Texture"] }));
-  });
-  it.each(["LightComponent", "HemisphericFillLightComponent"])("exposes authored mobility for %s without changing Enabled", (classId) => {
-    const component = { id: "light", classId, properties: { enabled: true } };
-    const { rows, update } = rowsFor(component);
-    const row = rows.find((entry) => entry.id.endsWith("-mobility"));
-    expect(row).toMatchObject({ kind: "enum", value: "dynamic", defaultValue: "dynamic" });
-    if (row?.kind !== "enum") throw new Error("Missing Mobility control");
-    row.onChange("static");
-    expect(update).toHaveBeenCalledExactlyOnceWith("mobility", "static");
-    expect(component.properties.enabled).toBe(true);
-  });
-  it("keeps mesh bake participation separate from shadow receiver flags", () => {
-    const { rows, update } = rowsFor({ id: "mesh", classId: "MeshComponent", properties: { receiveShadows: false } });
-    const row = rows.find((entry) => entry.id.endsWith("-bakeParticipation"));
-    expect(row).toMatchObject({ kind: "enum", value: "none", defaultValue: "none" });
-    if (row?.kind !== "enum") throw new Error("Missing Bake Participation control");
-    row.onChange("staticReceiver");
-    expect(update).toHaveBeenCalledExactlyOnceWith("bakeParticipation", "staticReceiver");
-    expect(rows.find((entry) => entry.id.endsWith("-receiveShadows"))).toMatchObject({ value: false });
   });
   it("shows the imported model material and persists None and model-default reset independently", () => {
     let component: SerializedComponent = {

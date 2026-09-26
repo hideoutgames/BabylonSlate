@@ -40,6 +40,8 @@ export function focusKeepPanelIds(
   options?: DockWindowOptions,
 ): readonly string[] | undefined {
   const panels = settings.focusKeepPanels;
+  if (kind === "scene" && options?.sceneMode === "landscape") return panels.sceneLandscape;
+  if (kind === "scene" && options?.sceneMode === "foliage") return panels.sceneFoliage;
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return panels.animGraphObject;
   }
@@ -77,12 +79,15 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "audio-channel": primaryDockPanel("audio-channel"),
   "sound-attenuation": primaryDockPanel("sound-attenuation"),
   "particle-emitter": primaryDockPanel("particle-emitter"),
+  "particle-graph": primaryDockPanel("particle-graph"),
   "particle-system": primaryDockPanel("particle-system"),
+  water: primaryDockPanel("water"),
   model: primaryDockPanel("model"),
   skeleton: primaryDockPanel("skeleton"),
   animation: primaryDockPanel("animation"),
   "skybox-creator": primaryDockPanel("skybox-creator"),
   trace: primaryDockPanel("trace"),
+  texture: primaryDockPanel("texture"),
 };
 
 /**

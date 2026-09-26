@@ -192,6 +192,8 @@ function softwareGlyphSize(style: RichTextStyle) {
   return {
     width: ASCII_BITMAP_COLS * scale + (style.bold ? scale : 0) + outlinePx * 2 + 2,
     height: ASCII_BITMAP_ROWS * scale + outlinePx * 2 + 2,
+    scale,
+    outlinePx,
   };
 }
 
@@ -207,20 +209,47 @@ function canvasGlyphSize(ctx: CanvasRenderingContext2D, ch: string, style: RichT
   };
 }
 
+/**
+ * One 2D canvas shared by every measure and raster of a single text build.
+ * Created lazily from the current `document`; a null context stays skipped.
+ */
+export type BitmapCanvasScratch = {
+  canvas?: HTMLCanvasElement;
+  ctx?: CanvasRenderingContext2D | null;
+};
+
+function glyphCanvas(scratch?: BitmapCanvasScratch): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return null;
+  }
+  if (scratch?.canvas && scratch.ctx !== undefined) {
+    return scratch.ctx ? { canvas: scratch.canvas, ctx: scratch.ctx } : null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d");
+  if (scratch) {
+    scratch.canvas = canvas;
+    scratch.ctx = ctx;
+  }
+  return ctx ? { canvas, ctx } : null;
+}
+
 /** Measure both native text and fallback bounds without painting either. */
-export function measureBitmapGlyph(ch: string, style: RichTextStyle, stack = DEFAULT_TEXT2D_FONT_STACK): BitmapGlyphMeasurement {
+export function measureBitmapGlyph(
+  ch: string,
+  style: RichTextStyle,
+  stack = DEFAULT_TEXT2D_FONT_STACK,
+  scratch?: BitmapCanvasScratch,
+): BitmapGlyphMeasurement {
   const software = softwareGlyphSize(style);
-  let layout = software;
-  if (typeof document !== "undefined" && typeof document.createElement === "function") {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.font = cssFontForText2D(style, stack);
-      ctx.textBaseline = "top";
-      ctx.textAlign = "left";
-      layout = canvasGlyphSize(ctx, ch, style);
-    }
+  let layout: { width: number; height: number } = software;
+  const ctx = glyphCanvas(scratch)?.ctx;
+  if (ctx) {
+    ctx.font = cssFontForText2D(style, stack);
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    layout = canvasGlyphSize(ctx, ch, style);
   }
   return {
     key: bitmapGlyphKey(ch, style, stack),
@@ -236,12 +265,8 @@ function rasterizeSoftwareBitmapGlyph(
   style: RichTextStyle,
   key: string,
 ): BitmapGlyphCell {
-  const scale = Math.max(1, Math.round(style.size / ASCII_BITMAP_ROWS));
-  const outlinePx = Math.max(0, Math.round(style.outline));
-  const boldExtra = style.bold ? scale : 0;
-  const width =
-    ASCII_BITMAP_COLS * scale + boldExtra + outlinePx * 2 + 2;
-  const height = ASCII_BITMAP_ROWS * scale + outlinePx * 2 + 2;
+  // The allocation preflight reserved this cell size; paint with the same numbers.
+  const { width, height, scale, outlinePx } = softwareGlyphSize(style);
   const pixels = new Uint8ClampedArray(width * height * 4);
   const rows = asciiBitmapRows(ch);
   const paint = (
@@ -299,14 +324,11 @@ function tryCanvasRasterize(
   key: string,
   limits: BitmapAllocationLimits,
   expected: BitmapGlyphMeasurement,
+  scratch?: BitmapCanvasScratch,
 ): BitmapGlyphCell | null {
-  if (typeof document === "undefined" || typeof document.createElement !== "function") {
-    return null;
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 1;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
+  const target = glyphCanvas(scratch);
+  if (!target) return null;
+  const { canvas, ctx } = target;
   const font = cssFontForText2D(style, stack);
   ctx.font = font;
   ctx.textBaseline = "top";
@@ -345,12 +367,13 @@ export function rasterizeBitmapGlyph(
   stack = DEFAULT_TEXT2D_FONT_STACK,
   limits: BitmapAllocationLimits = defaultLimits,
   measurement?: BitmapGlyphMeasurement,
+  scratch?: BitmapCanvasScratch,
 ): BitmapGlyphCell {
-  const measured = measurement ?? measureBitmapGlyph(ch, style, stack);
+  const measured = measurement ?? measureBitmapGlyph(ch, style, stack, scratch);
   planBitmapGlyphAtlas([measured], limits);
   const key = bitmapGlyphKey(ch, style, stack);
   return (
-    tryCanvasRasterize(ch, style, stack, key, limits, measured) ??
+    tryCanvasRasterize(ch, style, stack, key, limits, measured, scratch) ??
     rasterizeSoftwareBitmapGlyph(ch, style, key)
   );
 }

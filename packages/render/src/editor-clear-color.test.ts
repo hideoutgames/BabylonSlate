@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Color4 } from "@babylonjs/core";
 import {
-  applyEditorClearColor,
   documentEditorColorScheme,
   editorClearColor,
   EDITOR_CANVAS_COLOR_SCHEME,
@@ -23,14 +21,6 @@ describe("editorClearColor", () => {
     expect(color.g).toBeCloseTo(36 / 255);
     expect(color.b).toBeCloseTo(36 / 255);
     expect(color.a).toBe(1);
-  });
-
-  it("assigns the scheme onto an existing scene clearColor", () => {
-    const scene = { clearColor: new Color4(0, 0, 0, 1) };
-    applyEditorClearColor(scene, "light");
-    expect(scene.clearColor.r).toBe(1);
-    applyEditorClearColor(scene, "dark");
-    expect(scene.clearColor.r).toBeCloseTo(36 / 255);
   });
 
   it("defaults to dark when no document is present", () => {

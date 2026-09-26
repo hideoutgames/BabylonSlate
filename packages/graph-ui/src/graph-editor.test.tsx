@@ -16,6 +16,8 @@ import type { PinCompatibilityRule } from "./graph-connect";
 import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
 import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
+import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
+import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
 
 afterEach(() => {
   cleanup();
@@ -2777,6 +2779,10 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
     fireEvent.click(getByTestId("graph-add-node"));
     expect(getByTestId("node-palette-body")).toBeTruthy();
+    const palette = getByTestId("node-palette");
+    expect(palette.classList.contains("editor-dialog-large")).toBe(true);
+    expect([palette.style.left, palette.style.top]).toEqual(["", ""]);
+    expect(getByRole("button", { name: "Close" })).toBeTruthy();
   });
 
   it("notifies the host when Add Node opens and closes", () => {
@@ -2796,7 +2802,7 @@ describe("GraphEditor", () => {
 
   it("opens Add Node at an empty-pane right click and places the node there", () => {
     const onChange = vi.fn();
-    const { container, getByTestId } = render(
+    const { container, getByTestId, queryByRole } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
@@ -2808,6 +2814,8 @@ describe("GraphEditor", () => {
     fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
     const palette = getByTestId("node-palette");
     expect([palette.style.left, palette.style.top]).toEqual(["200px", "150px"]);
+    expect(palette.classList.contains("editor-dialog-large")).toBe(false);
+    expect(queryByRole("button", { name: "Close" })).toBeNull();
     const expected = flowPositionFromScreen(container, { x: 200, y: 150 });
     fireEvent.click(getByTestId("node-palette-item-debug.log"));
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
@@ -4420,6 +4428,111 @@ describe("GraphEditor", () => {
       await waitFor(() => {
         expect(onEdgeSelectionChange).toHaveBeenCalledWith([]);
       });
+    } finally {
+      restoreLayout();
+    }
+  });
+});
+
+describe("Particle Graph canvas", () => {
+  const particlePin = (direction: "in" | "out") => ({
+    id: "particle",
+    name: "Particle",
+    kind: "data" as const,
+    direction,
+    type: { kind: "particle" },
+  });
+  const colorPin = (id: string, direction: "in" | "out") => ({
+    id,
+    name: "Color",
+    kind: "data" as const,
+    direction,
+    type: { kind: "color" },
+  });
+  const updateColorPins = [particlePin("in"), colorPin("color", "in"), particlePin("out")];
+
+  it("matches palette chips to stage headers and draws a heavy particle spine", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "create",
+                type: "create.particle",
+                position: { x: 0, y: 0 },
+                data: {
+                  __nodeType: "create.particle",
+                  __category: "Emitter",
+                  __particleRole: "create",
+                  title: "Create Particle",
+                  __pins: [particlePin("out")],
+                },
+              },
+              {
+                id: "tint",
+                type: "input.color",
+                position: { x: 0, y: 240 },
+                data: {
+                  __nodeType: "input.color",
+                  __category: "Constants",
+                  __particleRole: "input",
+                  title: "Color",
+                  __pins: [colorPin("value", "out")],
+                },
+              },
+              {
+                id: "update",
+                type: "update.color",
+                position: { x: 320, y: 0 },
+                data: {
+                  __nodeType: "update.color",
+                  __category: "Update",
+                  __particleRole: "update",
+                  title: "Update Color",
+                  __pins: updateColorPins,
+                },
+              },
+            ],
+            edges: [
+              { id: "spine", source: "create", target: "update", sourceHandle: "particle", targetHandle: "particle" },
+              { id: "tint-wire", source: "tint", target: "update", sourceHandle: "value", targetHandle: "color" },
+            ],
+          }}
+          paletteNodes={[
+            {
+              id: "update.color",
+              title: "Update Color",
+              category: "Update",
+              pins: updateColorPins,
+              defaultData: { __particleRole: "update" },
+            },
+          ]}
+        />,
+      );
+      const wire = (id: string) =>
+        container.querySelector<SVGPathElement>(`[data-testid="rf__edge-${id}"] .react-flow__edge-path`);
+      await waitFor(() => {
+        expect(wire("spine")).not.toBeNull();
+        expect(wire("tint-wire")).not.toBeNull();
+      });
+      expect(wire("spine")!.style.stroke).toBe("var(--pin-particle)");
+      expect(wire("spine")!.style.strokeWidth).toBe("5");
+      expect(wire("tint-wire")!.style.stroke).toBe("var(--pin-color)");
+      expect(wire("tint-wire")!.style.strokeWidth).toBe("4");
+
+      const update = container.querySelector('.react-flow__node[data-id="update"]')!;
+      const spinePin = update.querySelector('[data-pin-type="particle"] [data-pin-shape]') as HTMLElement;
+      expect(spinePin.getAttribute("data-pin-shape")).toBe("circle");
+      expect(spinePin.style.background).toBe("var(--pin-particle)");
+
+      // Generic rules would draw the Update header in the function colour.
+      const headerRole = update.querySelector("[data-node-role]")!.getAttribute("data-node-role");
+      expect(headerRole).toBe(basicParticleStageRole("overLife"));
+      fireEvent.click(getByTestId("graph-add-node"));
+      const chip = getByTestId("node-palette-item-update.color").querySelector('[class*="bg-node-"]');
+      expect(chip?.className).toContain(nodeRoleClass(headerRole as NodeVisualRole));
     } finally {
       restoreLayout();
     }

@@ -43,6 +43,9 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.atten\.babasset$/i, "")
     .replace(/\.plugin\.babasset$/i, "")
     .replace(/\.skyboxcreator\.babasset$/i, "")
+    .replace(/\.emitter\.babasset$/i, "")
+    .replace(/\.particlegraph\.babasset$/i, "")
+    .replace(/\.particles\.babasset$/i, "")
     .replace(/\.babasset$/i, "");
 }
 
@@ -69,5 +72,10 @@ export function assetFileSuffix(fileName: string): string {
   if (/\.skyboxcreator\.babasset$/i.test(fileName)) {
     return ".skyboxcreator.babasset";
   }
+  if (/\.emitter\.babasset$/i.test(fileName)) return ".emitter.babasset";
+  if (/\.particlegraph\.babasset$/i.test(fileName)) {
+    return ".particlegraph.babasset";
+  }
+  if (/\.particles\.babasset$/i.test(fileName)) return ".particles.babasset";
   return ".babasset";
 }

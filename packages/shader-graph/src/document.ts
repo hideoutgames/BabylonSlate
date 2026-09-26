@@ -351,7 +351,7 @@ export function setMaterialDomain(
     const definition = materialNodeDefinition(node.type);
     if (!definition) return true;
     if (definition.terminal) return false;
-    return definition.domains ? definition.domains.includes(domain) : true;
+    return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
   });
   const keptIds = new Set(kept.map((node) => node.id));
   return normalizeMaterialDocument({

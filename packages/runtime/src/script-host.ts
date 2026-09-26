@@ -1,3 +1,4 @@
+import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
 import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
 import {
   combineRotators,
@@ -115,6 +116,7 @@ export interface ScriptHostServices {
    * actors must return undefined so query nodes never surface string ids.
    */
   findActor?(actorId: string): Actor | undefined;
+  sampleWater?(position: Vec3, actorId: string | null): WaterSample & { actorId: string | null };
   lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
   projectCursorToScene?(
     channel?: string,
@@ -408,6 +410,7 @@ export interface ScriptContext {
     gamepadIndex: number;
     connected: boolean;
   }>;
+  sampleWater(position: Vec3, waterActor?: Actor | null): WaterSample & { actor: Actor | null };
   lineTrace(
     start: Vec3,
     end: Vec3,
@@ -1326,6 +1329,11 @@ export class ScriptHost {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       },
       gamepadConnections: tick?.gamepadConnections ?? [],
+      sampleWater: (position, waterActor) => {
+        if (waterActor?.destroyed) return { ...emptyWaterSample(), actor: null };
+        const sample = services.sampleWater?.(position, waterActor?.guid ?? null);
+        return sample ? { ...sample, actor: resolveLiveActor(services, sample.actorId) } : { ...emptyWaterSample(), actor: null };
+      },
       lineTrace: (start, end, _channel, options) => {
         const ignoreActorIds = [
           ...new Set(

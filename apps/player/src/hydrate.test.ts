@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDefaultWaterDefinition,
   createActor,
   createDefaultScene,
   createMeshComponent,
@@ -14,6 +15,10 @@ import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
+import {
+  PARTICLE_GRAPH_LIMITS,
+  createDefaultParticleGraphDocument,
+} from "@babylonslate/particle-graph";
 import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
@@ -126,6 +131,9 @@ describe("packedContentFromGame", () => {
           ),
         },
         {
+          guid: "water-1", type: "Water", sceneGuid: "scene-1", bytes: encoder.encode(JSON.stringify({ ...createDefaultWaterDefinition("stylized"), waveHeight: 1.2 })),
+        },
+        {
           guid: "tilemap-1",
           type: "Tilemap",
           sceneGuid: "scene-1",
@@ -190,7 +198,9 @@ describe("packedContentFromGame", () => {
     expect(content.sortingLayers).toEqual(["Default", "Props", "Characters"]);
     expect(content.pixelPerfect).toBe(false);
     expect(content).not.toHaveProperty("userInterfaces");
+    expect(content.waterPayloads.get("water-1")).toMatchObject({ style: "stylized", waveHeight: 1.2 });
     const controls = packedPlayControls(content);
+    expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { style: "stylized", waveHeight: 1.2 } }] });
     expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
@@ -455,7 +465,11 @@ describe("packedContentFromGame", () => {
     ]);
   });
 
-  it("hydrates packed Particle Emitter and Particle System payloads", async () => {
+  it("hydrates packed Basic emitter, Particle Graph and Particle System payloads", async () => {
+    const emitter = createDefaultParticleEmitterPayload();
+    emitter.emitter.capacity = 64;
+    emitter.render.materialGuid = "mat-1";
+    const graph = { ...createDefaultParticleGraphDocument("Embers"), materialGuid: "mat-2" };
     const packed = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -472,12 +486,18 @@ describe("packedContentFromGame", () => {
           guid: "em-1",
           type: "ParticleEmitter",
           sceneGuid: "scene-1",
+          // A P17 look field left in an unreleased document.
           bytes: encoder.encode(
-            JSON.stringify({
-              ...createDefaultParticleEmitterPayload(),
-              textureGuid: "tex-1",
-              capacity: 64,
-            }),
+            JSON.stringify({ ...emitter, textureGuid: "tex-1" }),
+          ),
+        },
+        {
+          guid: "pg-1",
+          type: "ParticleGraph",
+          sceneGuid: "scene-1",
+          // Out-of-range settings from a hand-edited document.
+          bytes: encoder.encode(
+            JSON.stringify({ ...graph, settings: { ...graph.settings, capacity: 99999 } }),
           ),
         },
         {
@@ -487,7 +507,7 @@ describe("packedContentFromGame", () => {
           bytes: encoder.encode(
             JSON.stringify({
               ...createDefaultParticleSystemPayload(),
-              emitterGuids: ["em-1"],
+              emitterGuids: ["em-1", "pg-1"],
             }),
           ),
         },
@@ -495,14 +515,27 @@ describe("packedContentFromGame", () => {
     });
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
+    expect(
+      packed.value.manifest.assets.find((entry) => entry.guid === "pg-1")?.encoding,
+    ).toBe("json");
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
-    expect(content.particleLibrary.emitters.get("em-1")?.capacity).toBe(64);
-    expect(content.particleLibrary.emitters.get("em-1")?.textureGuid).toBe(
-      "tex-1",
+    const hydrated = content.particleLibrary.emitters.get("em-1");
+    if (hydrated?.kind !== "basic") throw new Error("Expected a Basic emitter");
+    expect(hydrated.payload.emitter.capacity).toBe(64);
+    expect(hydrated.payload.render.materialGuid).toBe("mat-1");
+    expect(hydrated.payload).not.toHaveProperty("textureGuid");
+    // The exported player reads graphs through the same normalizer as editor Play.
+    const hydratedGraph = content.particleLibrary.emitters.get("pg-1");
+    if (hydratedGraph?.kind !== "graph") throw new Error("Expected a Particle Graph");
+    expect(hydratedGraph.document.materialGuid).toBe("mat-2");
+    expect(hydratedGraph.document.settings.capacity).toBe(PARTICLE_GRAPH_LIMITS.capacity.max);
+    expect(hydratedGraph.document.nodes.map((node) => node.id)).toEqual(
+      graph.nodes.map((node) => node.id),
     );
     expect(content.particleLibrary.systems.get("sys-1")?.emitterGuids).toEqual([
       "em-1",
+      "pg-1",
     ]);
   });
 

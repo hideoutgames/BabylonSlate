@@ -93,9 +93,6 @@ export type PlayerBootHandle = {
   shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   meshMaterialNames: () => string[];
-  bakedSession: () => ReturnType<
-    EngineHandle["bakedSessionDiagnostics"]
-  > | null;
   /** Active owned post-process/effect passes, or null once halted. */
   postProcessPassCount: () => number | null;
   /** Prepared FrameGraph task names, or null once halted. */
@@ -111,7 +108,7 @@ export type PlayerBootHandle = {
 
 /** Browser qualification surface installed only in test-mode player builds. */
 export type PlayerTestHandle = Pick<PlayerBootHandle,
-  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" | "bakedSession" |
+  "visuals" | "meshMaterialNames" | "rendering" | "shadowDiagnostics" |
   "postProcessPassCount" | "renderTasks" | "setRenderSettings" | "executeConsoleCommand" | "scalability" | "stop"
 >;
 
@@ -218,6 +215,7 @@ function initializePlayer(
     renderSettings: manifest.render,
     spritePayloads: content.spritePayloads,
     spriteAnimations: content.spriteAnimationPayloads,
+    waterPayloads: content.waterPayloads,
     tilemapPayloads: content.tilemapPayloads,
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
@@ -249,11 +247,6 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
-    // Baked lighting/geometry pack as self-contained babasset containers.
-    bakeAssetReader: async (guid) => {
-      const bytes = game.payloads.get(guid);
-      return bytes ? { bytes } : undefined;
-    },
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
@@ -302,6 +295,8 @@ function initializePlayer(
         severity: "warning",
         code: diagnostic.code,
         assetGuid: diagnostic.assetGuid,
+        // Particle Graph problems name the node to focus in the editor.
+        nodeId: diagnostic.nodeId,
       });
       options.onDiagnostic?.(diagnostics);
     },
@@ -638,6 +633,7 @@ function initializePlayer(
       const document = parseBlackboardDocument(entry.document);
       if (document) inProcess.registerBlackboard(entry.guid, document);
     }
+    inProcess.registerWaterContent(content.waterPayloads);
     if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
       inProcess.registerTileContent({
         tilemaps: content.tilemapPayloads,
@@ -764,8 +760,6 @@ function initializePlayer(
       shadowDiagnostics: () => halted ? null : captureShadowDiagnostics(handle.scene, { host: "player", meshes: handle.scene.meshes }),
       visuals: () => handle.playVisualStates(),
       meshMaterialNames: () => handle.playMeshMaterialNames(),
-      bakedSession: () =>
-        halted ? null : handle.bakedSessionDiagnostics(),
       postProcessPassCount: () =>
         halted ? null : handle.postProcessPassCount(),
       renderTasks: () => (halted ? null : handle.renderTaskNames()),

@@ -1,3 +1,5 @@
+import { WaterWorld } from "./water-world";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy } from "@babylonslate/core";
 import type {
   ColliderDesc,
   LineTraceOptions,
@@ -48,9 +50,10 @@ import {
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent, MeshComponent collision, tilemap
- * collision, or a Blocking Volume.
+ * collision, enabled Landscapes, or a Blocking Volume.
  */
 export class PhysicsWorldSync {
+  readonly water = new WaterWorld();
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly constraints: PhysicsConstraintSync;
@@ -82,6 +85,10 @@ export class PhysicsWorldSync {
       collisions: ReturnType<typeof resolveMeshCollisions>;
     }
   >();
+  private readonly landscapeSources = new WeakMap<ActorComponent, {
+    descriptor: readonly unknown[];
+    shape: ReturnType<typeof landscapeCollisionMesh>;
+  }>();
   private readonly rigidProperties = new WeakMap<
     ActorComponent,
     {
@@ -324,12 +331,7 @@ export class PhysicsWorldSync {
     for (const actor of this.actors) {
       if (actor.destroyed || this.actorById.get(actor.guid) !== actor) continue;
       if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
-      const rigid = actor.components.find(
-        (c) =>
-          c.classId === "RigidBodyComponent" &&
-          !c.destroyed &&
-          c.owner === actor,
-      );
+      const rigid = this.rigidComponent(actor);
       const tilemap = actor.components.find(
         (c) =>
           c.classId === "TilemapComponent" && !c.destroyed && c.owner === actor,
@@ -341,7 +343,7 @@ export class PhysicsWorldSync {
           c.owner === actor,
       );
       const meshPhysics = this.meshPhysicsComponents(actor).length > 0;
-      if (!rigid && !tilemap && !blocking && !meshPhysics) continue;
+      if (!rigid && !tilemap && !blocking && !meshPhysics && !this.landscapePhysicsComponents(actor).length) continue;
       live.add(actor.guid);
       if (
         this.bodyOwnerByActor.has(actor.guid) &&
@@ -445,8 +447,17 @@ export class PhysicsWorldSync {
     this.tilemapCollidersByActor.delete(actorId);
   }
 
-  step(dt: number, world: World): void {
+  step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81): void {
     this.syncFromWorld(world);
+    if (this.backend.kind === "3d") {
+      this.water.update(this.actors, time);
+      if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
+        const actor = this.actorById.get(actorId);
+        const tuning = this.appliedBodyProperties.get(actorId)?.value;
+        if (actor && tuning?.motionType === "dynamic")
+          this.water.applyBuoyancy(actor, bodyId, this.backend, tuning.mass, gravity, dt);
+      }
+    }
     this.backend.step(dt);
     const bodyPoses = new Map<string, PhysicsTransform>();
     for (const [actorId, bodyId] of this.bodyByActor) {
@@ -553,6 +564,7 @@ export class PhysicsWorldSync {
     if (
       [
         "MeshComponent",
+        "LandscapeComponent",
         "ColliderComponent",
         "SpriteComponent",
         "TilemapComponent",
@@ -613,12 +625,15 @@ export class PhysicsWorldSync {
     actor.transform.rotation.w = localTransform.rotation.w;
   }
 
+  private rigidComponent(actor: Actor): ActorComponent | undefined {
+    const live = (c: ActorComponent) => !c.destroyed && c.owner === actor;
+    return actor.components.find((c) => c.classId === "RigidBodyComponent" && live(c))
+      ?? (this.backend.kind === "3d" ? actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && live(c)) : undefined);
+  }
+
   private createForActor(actor: Actor): void {
     if (this.suppressedActors.has(actor)) return;
-    const rigid = actor.components.find(
-      (c) =>
-        c.classId === "RigidBodyComponent" && !c.destroyed && c.owner === actor,
-    );
+    const rigid = this.rigidComponent(actor);
     const tilemap = actor.components.find(
       (c) =>
         c.classId === "TilemapComponent" && !c.destroyed && c.owner === actor,
@@ -633,7 +648,8 @@ export class PhysicsWorldSync {
       !rigid &&
       !tilemap &&
       !blocking &&
-      this.meshPhysicsComponents(actor).length === 0
+      this.meshPhysicsComponents(actor).length === 0 &&
+      this.landscapePhysicsComponents(actor).length === 0
     )
       return;
     const bodyId = `body:${actor.guid}`;
@@ -744,6 +760,19 @@ export class PhysicsWorldSync {
     }
     this.collectSpriteColliders(actor, bodyId, colliders);
     this.collectMeshColliders(actor, bodyId, colliders);
+    this.collectLandscapeColliders(actor, bodyId, colliders);
+    // Adding buoyancy alone is enough for a physical float. Authored collision wins.
+    const buoyancy = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.owner === actor);
+    if (this.backend.kind === "3d" && colliders.size === 0 && buoyancy) {
+      const props = normalizeWaterBuoyancy(Object.fromEntries(buoyancy.variables));
+      const collider = parseColliderProperties({}, "3d");
+      const transform = { ...buoyancy.transform, position: { ...buoyancy.transform.position } };
+      const offset = rotateVector(transform.rotation, { x: props.offset[0] * transform.scale.x, y: props.offset[1] * transform.scale.y, z: props.offset[2] * transform.scale.z });
+      transform.position.x += offset.x; transform.position.y += offset.y; transform.position.z += offset.z;
+      const baked = this.geometry(buoyancy, "water").prepare({ kind: "box", halfExtents: { x: props.width / 2, y: props.height / 2, z: props.length / 2 } }, transform, worldScale(actor, this.worldTransforms));
+      const id = componentColliderPhysicsId(actor.guid, buoyancy.guid);
+      colliders.set(id, { ...collider, ...baked, id, bodyId });
+    }
 
     const previous =
       prepared?.actor === actor
@@ -842,9 +871,11 @@ export class PhysicsWorldSync {
         ![
           "ColliderComponent",
           "MeshComponent",
+          "LandscapeComponent",
           "SpriteComponent",
           "TilemapComponent",
           "BlockingVolumeComponent",
+          "WaterBuoyancyComponent",
         ].includes(component.classId)
       )
         continue;
@@ -867,8 +898,13 @@ export class PhysicsWorldSync {
         "collisionMode",
         "meshKind",
         "assetGuid",
+        "width", "length", "height", "offset",
       ])
         descriptor.push(component.getVariable(name));
+      if (component.classId === "LandscapeComponent") {
+        descriptor.push(component.getVariable("collisionsEnabled"), component.getVariable("depth"),
+          component.getVariable("subdivisions"), component.getVariable("heights"));
+      }
       if (component.classId === "MeshComponent") {
         const guid = meshAssetGuid(component);
         descriptor.push(
@@ -902,6 +938,29 @@ export class PhysicsWorldSync {
       }
     }
     return descriptor;
+  }
+
+  private landscapePhysicsComponents(actor: Actor): Actor["components"] {
+    if (this.backend.kind !== "3d") return [];
+    return actor.components.filter((component) => component.classId === "LandscapeComponent" &&
+      !component.destroyed && component.owner === actor && component.getVariable("collisionsEnabled") === true);
+  }
+
+  private collectLandscapeColliders(actor: Actor, bodyId: string, colliders: Map<string, ColliderDesc>): void {
+    for (const component of this.landscapePhysicsComponents(actor)) {
+      const names = ["width", "depth", "subdivisions", "heights", "collisionsEnabled"];
+      const descriptor = names.map((name) => component.getVariable(name));
+      let source = this.landscapeSources.get(component);
+      if (!source || !sameDescriptor(source.descriptor, descriptor)) {
+        source = { descriptor, shape: landscapeCollisionMesh(Object.fromEntries(names.map((name, index) => [name, descriptor[index]]))) };
+        this.landscapeSources.set(component, source);
+      }
+      if (!source.shape) continue;
+      const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, worldScale(actor, this.worldTransforms));
+      const id = componentColliderPhysicsId(actor.guid, component.guid);
+      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false,
+        layer: parseMeshCollisionLayer(component.getVariable("layer")), mask: parseMeshCollisionMask(component.getVariable("mask")) });
+    }
   }
 
   private meshPhysicsComponents(actor: Actor): Actor["components"] {

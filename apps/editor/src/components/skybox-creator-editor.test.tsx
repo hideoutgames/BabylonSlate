@@ -96,7 +96,7 @@ describe("SkyboxCreatorEditor", () => {
     );
   });
 
-  it("shows an alert when Create runs without a source Texture", async () => {
+  it("keeps Create unavailable until a source Texture is picked", () => {
     render(
       <SkyboxCreatorEditor
         payload={createDefaultSkyboxCreatorPayload() as unknown as Record<string, unknown>}
@@ -104,10 +104,8 @@ describe("SkyboxCreatorEditor", () => {
         onChange={vi.fn()}
       />,
     );
+    expect(screen.getByTestId("skybox-creator-create")).toHaveProperty("disabled", true);
     fireEvent.click(screen.getByTestId("skybox-creator-create"));
-    await waitFor(() => {
-      expect(screen.getByTestId("skybox-creator-alert")).toBeTruthy();
-    });
     expect(createAsset).not.toHaveBeenCalled();
   });
 
@@ -253,15 +251,31 @@ describe("SkyboxCreatorPreview", () => {
     );
     expect(screen.getByTestId("skybox-creator-preview")).toBeTruthy();
     expect(screen.getByTestId("skybox-creator-net")).toBeTruthy();
-    expect(screen.getByText("FRONT")).toBeTruthy();
-    expect(screen.getByText("BACK")).toBeTruthy();
-    expect(screen.getByText("LEFT")).toBeTruthy();
-    expect(screen.getByText("RIGHT")).toBeTruthy();
-    expect(screen.getByText("UP")).toBeTruthy();
-    expect(screen.getByText("DOWN")).toBeTruthy();
+    expect(screen.getByText("Front")).toBeTruthy();
+    expect(screen.getByText("Back")).toBeTruthy();
+    expect(screen.getByText("Left")).toBeTruthy();
+    expect(screen.getByText("Right")).toBeTruthy();
+    expect(screen.getByText("Up")).toBeTruthy();
+    expect(screen.getByText("Down")).toBeTruthy();
     expect(screen.getByTestId("skybox-creator-empty")).toBeTruthy();
     expect(screen.getByTestId("skybox-creator-create")).toBeTruthy();
     expect(screen.queryByTestId("skybox-creator-preview-canvas")).toBeNull();
+  });
+
+  it("picks the source Texture from the empty Preview", async () => {
+    const onChange = vi.fn();
+    render(
+      <SkyboxCreatorPreview
+        payload={createDefaultSkyboxCreatorPayload() as unknown as Record<string, unknown>}
+        onCreate={() => {}}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("skybox-creator-pick-texture"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-1"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceTextureGuid: "tex-1", sourcePlacement: null }),
+    );
   });
 
   it("letterboxes the net to 4 by 3 with square cells in a wide host", () => {

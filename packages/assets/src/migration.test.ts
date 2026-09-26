@@ -74,6 +74,7 @@ describe("Audio schema versions", () => {
     expect(registry.currentVersion("AudioChannel")).toBe(1);
     expect(registry.currentVersion("SoundAttenuation")).toBe(1);
     expect(registry.currentVersion("ParticleEmitter")).toBe(1);
+    expect(registry.currentVersion("ParticleGraph")).toBe(1);
     expect(registry.currentVersion("ParticleSystem")).toBe(1);
     expect(registry.currentVersion("SceneLayer")).toBe(1);
   });
@@ -89,5 +90,40 @@ describe("Audio schema versions", () => {
     expect(loaded.pending).toBeNull();
     expect(loaded.version).toBe(1);
     expect(loaded.payload.globalVolume).toBe(0.5);
+  });
+});
+
+describe("ParticleGraph schema version", () => {
+  it("loads a v1 Particle Graph without a save prompt", () => {
+    const registry = createDefaultMigrationRegistry();
+    const loaded = loadPayloadWithMigration(registry, {
+      type: "ParticleGraph",
+      version: 1,
+      payload: {
+        schemaVersion: 1,
+        name: "Embers",
+        materialGuid: "mat-1",
+        nodes: [{ id: "create", type: "particle.create", position: { x: 4, y: 8 }, properties: {} }],
+        edges: [],
+      },
+      path: "assets/Embers.particlegraph.babasset",
+    });
+    expect(loaded.pending).toBeNull();
+    expect(loaded.version).toBe(1);
+  });
+
+  it("normalizes an unversioned payload into a graph with its Emitter Output", () => {
+    const registry = createDefaultMigrationRegistry();
+    const loaded = loadPayloadWithMigration(registry, {
+      type: "ParticleGraph",
+      version: 0,
+      payload: {},
+      path: "assets/Embers.particlegraph.babasset",
+    });
+    expect(loaded.version).toBe(1);
+    expect(loaded.pending).not.toBeNull();
+    expect(loaded.payload.nodes).toEqual([
+      expect.objectContaining({ type: "particle.output" }),
+    ]);
   });
 });

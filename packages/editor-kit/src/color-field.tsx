@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { FieldError } from "@babylonslate/ui/components/field";
+import { NumericDragField } from "./numeric-drag-field";
 import { SelectAllInput } from "./select-all-input";
 
 export type ColorValue = [number, number, number];
@@ -37,16 +38,21 @@ export interface ColorFieldProps {
   "aria-label"?: string;
   value: ColorValue | null;
   onChange: (value: ColorValue) => void;
+  /** 0–1 opacity; when set, a trailing A field edits it. */
+  alpha?: number;
+  onAlphaChange?: (alpha: number) => void;
   disabled?: boolean;
   "data-testid"?: string;
 }
 
-/** Native color swatch plus a pasteable `#rrggbb` field. */
+/** Native color swatch plus a pasteable `#rrggbb` field and optional alpha. */
 export function ColorField({
   id,
   "aria-label": ariaLabel,
   value,
   onChange,
+  alpha,
+  onAlphaChange,
   disabled,
   "data-testid": testId,
 }: ColorFieldProps) {
@@ -99,6 +105,23 @@ export function ColorField({
             setDraft(null);
           }}
         />
+        {alpha !== undefined ? (
+          // The phone layout widens the scrub handle to 44px; keep room to type.
+          <div className="w-16 shrink-0 max-md:w-28">
+            <NumericDragField
+              label="A"
+              id={id ? `${id}-alpha` : undefined}
+              aria-label={ariaLabel ? `${ariaLabel} Alpha` : "Alpha"}
+              value={alpha}
+              min={0}
+              max={1}
+              sensitivity={0.01}
+              disabled={disabled}
+              onChange={(next) => onAlphaChange?.(next)}
+              data-testid={testId ? `${testId}-alpha` : undefined}
+            />
+          </div>
+        ) : null}
       </div>
       {error && (
         <FieldError id={errorId}>

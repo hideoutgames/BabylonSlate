@@ -2,17 +2,24 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { IDockviewPanelProps } from "dockview-react";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
+  BrushIcon,
+  ChevronDownIcon,
   EraserIcon,
   EyeIcon,
   EyeOffIcon,
+  Grid2x2Icon,
   HandIcon,
+  LayersIcon,
   PaintBucketIcon,
   PencilIcon,
   PipetteIcon,
+  PlusIcon,
   SquareIcon,
   StampIcon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +40,7 @@ import {
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import {
@@ -40,8 +48,12 @@ import {
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
+  PropertySectionTitle,
   SearchDropdown,
   SearchInput,
+  ToolbarStrip,
+  TypeVisualIcon,
+  resolveTypeVisual,
   assetRowIdentity,
   selectedPickerIdentity,
   type PropertyRow,
@@ -99,6 +111,8 @@ const TOOLS: Array<{
 ];
 
 const EMPTY_TILESETS_COPY = "Add a Tileset to start painting.";
+const TILESET_VISUAL = resolveTypeVisual({ assetType: "Tileset" });
+const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 
 export function TilemapPaintPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -239,7 +253,7 @@ export function TilemapDetails({
     commit(next);
   };
 
-  const rows: PropertyRow[] = [
+  const mapRows: PropertyRow[] = [
     {
       id: "mapWidth",
       kind: "number",
@@ -278,8 +292,9 @@ export function TilemapDetails({
       onChange: (value) => commit({ ...tilemap, chunkSize: value }),
     },
   ];
+  const layerRows: PropertyRow[] = [];
   if (layer) {
-    rows.push(
+    layerRows.push(
       {
         id: "layer-name",
         kind: "text",
@@ -328,9 +343,17 @@ export function TilemapDetails({
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-2" data-testid="tilemap-details">
+    <div className="flex min-h-0 flex-col" data-testid="tilemap-details">
+      <PropertySectionTitle
+        aside={tilemap.tilesets.length ? <SectionCount value={tilemap.tilesets.length} /> : null}
+      >
+        Tilesets
+      </PropertySectionTitle>
+      {tilemap.tilesets.length === 0 ? (
+        <p className="px-2 pt-2 text-xs text-muted-foreground">{EMPTY_TILESETS_COPY}</p>
+      ) : null}
+      <div className="py-1">
       <NamedListEditor
-        title="Tilesets"
         data-testid="tilemap-tilesets"
         values={tilemap.tilesets.map((entry) => entry.guid)}
         addLabel="Add Tileset"
@@ -355,20 +378,19 @@ export function TilemapDetails({
         renderItem={({ value }) => {
           const asset = assets.find((entry) => entry.guid === value);
           return (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-auto min-h-[var(--touch-target,44px)] w-full justify-start"
+            <div
+              className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-2 rounded-md px-1.5 text-sm pointer-coarse:min-h-11"
               data-testid={`tilemap-tileset-${value}`}
             >
-              {selectedPickerIdentity(
-                assetRowIdentity(
-                  asset ? { name: asset.name, type: asset.type } : undefined,
-                ),
-                "Tileset",
-              )}
-            </Button>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    asset ? { name: asset.name, type: asset.type } : undefined,
+                  ),
+                  "Tileset",
+                )}
+              </span>
+            </div>
           );
         }}
       />
@@ -405,12 +427,13 @@ export function TilemapDetails({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {tilemap.tilesets.length === 0 ? (
-        <p className="px-1 text-sm text-muted-foreground">{EMPTY_TILESETS_COPY}</p>
-      ) : null}
-      <PropertyGrid rows={rows} />
+      </div>
+      <PropertyGrid title="Map" rows={mapRows} />
+      <PropertySectionTitle aside={<SectionCount value={tilemap.layers.length} />}>
+        Layers
+      </PropertySectionTitle>
+      <div className="py-1">
       <NamedListEditor
-        title="Layers"
         data-testid="tilemap-layers"
         values={tilemap.layers.map((entry) => entry.id)}
         addLabel="Add Layer"
@@ -435,19 +458,25 @@ export function TilemapDetails({
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <Button
                 type="button"
-                variant={value === selectedLayerId ? "default" : "outline"}
+                variant="ghost"
                 size="sm"
-                className="min-w-0 flex-1 justify-start"
+                aria-pressed={value === layer?.id}
+                className={cn(
+                  "min-w-0 flex-1 justify-start pointer-coarse:min-h-11",
+                  value === layer?.id && "bg-accent font-medium text-accent-foreground",
+                  !entry.visible && "text-muted-foreground",
+                )}
                 data-testid={`tilemap-layer-${value}`}
                 onClick={() => setSelectedLayerId(value)}
               >
+                <LayersIcon className="text-muted-foreground" />
                 <span className="truncate">{entry.name}</span>
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
-                className="shrink-0 pointer-coarse:size-11"
+                className="shrink-0 text-muted-foreground pointer-coarse:size-11"
                 aria-label={visibilityLabel}
                 title={visibilityLabel}
                 data-testid={`tilemap-layer-visibility-${value}`}
@@ -464,6 +493,8 @@ export function TilemapDetails({
           );
         }}
       />
+      </div>
+      {layer ? <PropertyGrid title="Selected Layer" rows={layerRows} /> : null}
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -527,7 +558,10 @@ export function TilemapPalette({
       <div className="flex h-full min-h-0 flex-col" data-testid="tilemap-palette">
         <Empty data-testid="tilemap-palette-empty">
           <EmptyHeader>
-            <EmptyTitle>Palette</EmptyTitle>
+            <EmptyMedia variant="icon">
+              <Grid2x2Icon />
+            </EmptyMedia>
+            <EmptyTitle>No Tiles</EmptyTitle>
             <EmptyDescription>{EMPTY_TILESETS_COPY}</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -538,6 +572,7 @@ export function TilemapPalette({
               data-testid="tilemap-palette-add-tileset"
               onClick={() => setPickerOpen(true)}
             >
+              <PlusIcon />
               Add Tileset
             </Button>
           </EmptyContent>
@@ -560,8 +595,8 @@ export function TilemapPalette({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 p-2" data-testid="tilemap-palette">
-      <div className="flex shrink-0">
+    <div className="flex h-full min-h-0 flex-col" data-testid="tilemap-palette">
+      <div className="flex shrink-0 border-b border-border p-2">
         <SearchInput
           value={query}
           onChange={setQuery}
@@ -589,9 +624,13 @@ export function TilemapPalette({
           });
           if (visible.length === 0) return null;
           return (
-            <div key={ref.guid} className="mb-3" data-testid={`tilemap-palette-group-${ref.guid}`}>
-              <p className="mb-1 px-1 text-sm font-medium">{name}</p>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(44px,1fr))] gap-1">
+            <section key={ref.guid} className="flex flex-col" data-testid={`tilemap-palette-group-${ref.guid}`}>
+              <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-2 py-1.5 text-xs font-semibold">
+                <TypeVisualIcon visual={TILESET_VISUAL} />
+                <span className="min-w-0 flex-1 truncate">{name}</span>
+                <SectionCount value={visible.length} />
+              </h3>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1 px-2 pb-3 pointer-coarse:grid-cols-[repeat(auto-fill,minmax(var(--touch-target,44px),1fr))]">
                 {visible.map((tile) => {
                   const gid = encodeTileGid(ref.firstGid, tile.id);
                   return (
@@ -608,7 +647,7 @@ export function TilemapPalette({
                   );
                 })}
               </div>
-            </div>
+            </section>
           );
         })}
       </div>
@@ -832,7 +871,10 @@ export function TilemapPaint({
       <div className="flex h-full min-h-0 flex-1 flex-col" data-testid="tilemap-editor">
         <Empty data-testid="tilemap-paint-empty">
           <EmptyHeader>
-            <EmptyTitle>Paint</EmptyTitle>
+            <EmptyMedia variant="icon">
+              <BrushIcon />
+            </EmptyMedia>
+            <EmptyTitle>No Tilesets</EmptyTitle>
             <EmptyDescription>{EMPTY_TILESETS_COPY}</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -843,6 +885,7 @@ export function TilemapPaint({
               data-testid="tilemap-paint-add-tileset"
               onClick={() => setPickerOpen(true)}
             >
+              <PlusIcon />
               Add Tileset
             </Button>
           </EmptyContent>
@@ -866,11 +909,11 @@ export function TilemapPaint({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-testid="tilemap-editor">
-      <div className="flex flex-wrap items-center gap-2 px-2 py-2">
+      <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="tilemap-paint-toolbar">
         <ToggleGroup
           variant="outline"
-          size="touch"
-          spacing={1}
+          size="sm"
+          spacing={0}
           value={[tool]}
           onValueChange={(value) => {
             const next = value[0] as TilemapPaintTool | undefined;
@@ -886,6 +929,7 @@ export function TilemapPaint({
               <TooltipTrigger render={<ToggleGroupItem
                 value={entry.id}
                 aria-label={entry.label}
+                className={TOOL_ITEM}
                 data-testid={`tilemap-tool-${entry.id}`}
               >
                 <Icon />
@@ -896,6 +940,7 @@ export function TilemapPaint({
             );
           })}
         </ToggleGroup>
+        <Separator orientation="vertical" className="my-1" />
         <SearchDropdown
           open={layerOpen}
           onOpenChange={setLayerOpen}
@@ -913,36 +958,44 @@ export function TilemapPaint({
             type="button"
             variant="outline"
             size="sm"
+            aria-label={`Paint Layer: ${layer?.name ?? "Layer"}`}
+            className="max-w-48 pointer-coarse:min-h-11"
             data-testid="tilemap-paint-layer"
           >
-            {layer?.name ?? "Layer"}
+            <LayersIcon />
+            <span className="truncate">{layer?.name ?? "Layer"}</span>
+            <ChevronDownIcon className="text-muted-foreground" />
           </Button>
         </SearchDropdown>
-        <TileThumb
-          gid={selectedGid}
-          localId={localTileId}
-          tileset={decoded?.tileset}
-          atlas={decoded ? atlases.get(decoded.guid) ?? null : null}
-          selected
-          onSelect={() => {}}
-          testId="tilemap-selected-tile"
-        />
-        <span
-          className="truncate text-sm text-muted-foreground"
-          data-testid="tilemap-selected-label"
-        >
-          {decoded
-            ? `${
-                assets.find((asset) => asset.guid === decoded.guid)?.name ??
-                "Tileset"
-              } · Tile ${localTileId}`
-            : `GID ${selectedGid}`}
-        </span>
-      </div>
+        <Separator orientation="vertical" className="my-1" />
+        <div className="flex min-w-0 items-center gap-2">
+          <TileThumb
+            gid={selectedGid}
+            localId={localTileId}
+            tileset={decoded?.tileset}
+            atlas={decoded ? atlases.get(decoded.guid) ?? null : null}
+            selected={false}
+            onSelect={() => {}}
+            className="size-7 pointer-coarse:size-11"
+            testId="tilemap-selected-tile"
+          />
+          <span
+            className="truncate text-xs text-muted-foreground"
+            data-testid="tilemap-selected-label"
+          >
+            {decoded
+              ? `${
+                  assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                  "Tileset"
+                } · Tile ${localTileId}`
+              : `GID ${selectedGid}`}
+          </span>
+        </div>
+      </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 size-full touch-none rounded-md border border-border bg-background"
+          className="absolute inset-0 size-full touch-none bg-background"
           data-testid="tilemap-paint-canvas"
           data-tool={tool}
           data-tile={String(localTileId)}
@@ -1129,6 +1182,7 @@ function TileThumb({
   selected,
   onSelect,
   testId,
+  className,
 }: {
   gid: number;
   localId: number;
@@ -1137,6 +1191,7 @@ function TileThumb({
   selected: boolean;
   onSelect: (gid: number) => void;
   testId: string;
+  className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -1169,7 +1224,10 @@ function TileThumb({
   return (
     <button
       type="button"
-      className="size-11 shrink-0 overflow-hidden rounded-md border border-border data-[selected=true]:ring-2 data-[selected=true]:ring-primary"
+      className={cn(
+        "aspect-square w-full min-w-0 overflow-hidden rounded-sm ring-1 ring-border outline-none hover:ring-foreground/40 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:ring-2 data-[selected=true]:ring-(--graph-state-selected) data-[selected=true]:ring-offset-1 data-[selected=true]:ring-offset-sidebar",
+        className,
+      )}
       data-testid={testId}
       data-gid={String(gid)}
       data-tile={String(localId)}
@@ -1396,4 +1454,12 @@ function newStrokeId(): string {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function SectionCount({ value }: { value: number }) {
+  return (
+    <span className="rounded-md bg-muted px-1.5 text-[0.7rem] font-normal text-muted-foreground tabular-nums">
+      {value}
+    </span>
+  );
 }

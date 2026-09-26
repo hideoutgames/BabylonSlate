@@ -1,3 +1,4 @@
+import { waterNodes } from "./water";
 import { NodeRegistry, type NodeDefinition } from "@babylonslate/scripting";
 import { flowNodes } from "./flow";
 import { mathNodes } from "./math";
@@ -50,6 +51,7 @@ export * from "./actor";
 export * from "./component";
 export * from "./transform";
 export * from "./physics";
+export * from "./water";
 export * from "./input";
 export * from "./audio";
 export * from "./particles";
@@ -133,6 +135,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...componentNodes,
     ...transformNodes,
     ...physicsNodes,
+    ...waterNodes,
     ...inputNodes,
     ...audioNodes,
     ...particleNodes,

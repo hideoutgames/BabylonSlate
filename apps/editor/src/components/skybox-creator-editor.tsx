@@ -4,6 +4,7 @@ import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
+  PropertySectionTitle,
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
@@ -16,6 +17,7 @@ import {
   newAssetGuid,
   normalizeSkyboxCreatorPayload,
   SKYBOX_CREATOR_COMPASS_FACES,
+  SKYBOX_CREATOR_COMPASS_TO_BABYLON,
   SKYBOX_CREATOR_NET_CELLS,
   SKYBOX_CREATOR_NET_COLS,
   SKYBOX_CREATOR_NET_ROWS,
@@ -32,10 +34,13 @@ import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
+import { BoxIcon, ImageIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -114,22 +119,28 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
 }
 
 const COMPASS_LABEL: Record<SkyboxCreatorCompassFace, string> = {
-  up: "UP",
-  left: "LEFT",
-  front: "FRONT",
-  right: "RIGHT",
-  back: "BACK",
-  down: "DOWN",
+  up: "Up",
+  left: "Left",
+  front: "Front",
+  right: "Right",
+  back: "Back",
+  down: "Down",
 };
 
-const SKYBOX_FACE_LABELS: Record<SkyboxFaceKey, string> = {
-  px: "Positive X",
-  py: "Positive Y",
-  pz: "Positive Z",
-  nx: "Negative X",
-  ny: "Negative Y",
-  nz: "Negative Z",
+const SKYBOX_FACE_AXIS: Record<SkyboxFaceKey, string> = {
+  px: "+X",
+  py: "+Y",
+  pz: "+Z",
+  nx: "−X",
+  ny: "−Y",
+  nz: "−Z",
 };
+
+const COMPASS_FOR_FACE = Object.fromEntries(
+  Object.entries(SKYBOX_CREATOR_COMPASS_TO_BABYLON).map(([compass, key]) => [key, compass]),
+) as Record<SkyboxFaceKey, SkyboxCreatorCompassFace>;
+
+const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 
 type IndexedAsset = {
   header: { guid: string; name: string; type: string };
@@ -192,22 +203,32 @@ function placementFromKey(key: string): SkyboxCreatorSourcePlacement | null {
 function CreateSkyboxButton({
   onClick,
   disabled,
+  className,
+  variant = "default",
 }: {
   onClick: () => void;
   disabled?: boolean;
+  className?: string;
+  variant?: "default" | "outline";
 }) {
   return (
     <Button
       type="button"
-      variant="outline"
-      size="touch"
+      size="sm"
+      variant={variant}
       disabled={disabled}
+      className={className ? `${TOOL_ITEM} ${className}` : TOOL_ITEM}
       data-testid="skybox-creator-create"
       onClick={onClick}
     >
+      <BoxIcon />
       Create Skybox Textures
     </Button>
   );
+}
+
+function createdFaceCount(helper: SkyboxCreatorPayload): number {
+  return SKYBOX_FACE_KEYS.filter((key) => helper.generatedFaces[key]).length;
 }
 
 function SkyboxCreatorAlert({ message }: { message: string }) {
@@ -388,6 +409,9 @@ export function SkyboxCreatorPreview({
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
   const { decoded, url } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
+  const { assetRegistry } = useDocuments();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const created = createdFaceCount(helper);
   const hostRef = useRef<HTMLDivElement>(null);
   const netRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -442,10 +466,22 @@ export function SkyboxCreatorPreview({
       className="flex h-full min-h-0 flex-col"
       data-testid="skybox-creator-preview"
     >
-      <ToolbarStrip>
-        <CreateSkyboxButton disabled={creating} onClick={onCreate} />
+      <ToolbarStrip className="shrink-0 gap-2 py-1">
+        <CreateSkyboxButton disabled={creating || !helper.sourceTextureGuid} onClick={onCreate} />
+        <span className="min-w-0 truncate text-xs text-muted-foreground" data-testid="skybox-creator-status">
+          {creating
+            ? "Creating Faces…"
+            : created > 0
+              ? `${created} of 6 Faces Created`
+              : "No Faces Created"}
+        </span>
+        {helper.sourceTextureGuid ? (
+          <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
+            Drag the Texture to line up the faces.
+          </span>
+        ) : null}
       </ToolbarStrip>
-      <div className="flex min-h-0 flex-1 flex-col p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 bg-sidebar p-3">
         {error ? <SkyboxCreatorAlert message={error} /> : null}
         <div
           ref={hostRef}
@@ -454,7 +490,7 @@ export function SkyboxCreatorPreview({
         >
           <div
             ref={netRef}
-            className="relative overflow-hidden rounded-md border border-border bg-muted/30"
+            className="relative overflow-hidden rounded-md bg-background ring-1 ring-border"
             style={{ width: box.width, height: box.height }}
             data-testid="skybox-creator-net"
           >
@@ -483,13 +519,16 @@ export function SkyboxCreatorPreview({
                   }
                   className={
                     cell.compass
-                      ? "relative flex items-start justify-center border border-border/80 bg-background/20 p-1"
-                      : "border border-dashed border-border/50 bg-muted/40"
+                      ? "relative p-1 shadow-[inset_0_0_0_1px_var(--color-border)]"
+                      : "bg-background/70"
                   }
                 >
                   {cell.compass ? (
-                    <span className="rounded bg-background/80 px-1 text-[10px] font-medium tracking-wide text-foreground">
-                      {COMPASS_LABEL[cell.compass]}
+                    <span className="inline-flex items-center gap-1 rounded-sm bg-background/85 px-1 text-[10px] font-medium leading-4 text-foreground shadow-xs">
+                      <span>{COMPASS_LABEL[cell.compass]}</span>
+                      <span className="text-muted-foreground">
+                        {SKYBOX_FACE_AXIS[SKYBOX_CREATOR_COMPASS_TO_BABYLON[cell.compass]]}
+                      </span>
                     </span>
                   ) : null}
                 </div>
@@ -497,21 +536,50 @@ export function SkyboxCreatorPreview({
             </div>
             {helper.sourceTextureGuid ? null : (
               <Empty
-                className="pointer-events-none absolute inset-0 z-30 justify-center"
+                className="absolute inset-0 z-30 rounded-none border-0 bg-background"
                 data-testid="skybox-creator-empty"
               >
                 <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ImageIcon />
+                  </EmptyMedia>
                   <EmptyTitle>No Texture</EmptyTitle>
                   <EmptyDescription>
-                    Pick a Texture in Details. Place it on this 4×3 net of
-                    square cells, then Create writes six skybox faces.
+                    Pick a cross-layout Texture, then line it up on the 4×3 net
+                    to create six skybox faces.
                   </EmptyDescription>
                 </EmptyHeader>
+                {onChange ? (
+                  <EmptyContent>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={TOOL_ITEM}
+                      data-testid="skybox-creator-pick-texture"
+                      onClick={() => setPickerOpen(true)}
+                    >
+                      Pick Texture
+                    </Button>
+                  </EmptyContent>
+                ) : null}
               </Empty>
             )}
           </div>
         </div>
       </div>
+      <AssetPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assets={pickerAssets((assetRegistry?.list() ?? []) as IndexedAsset[])}
+        allowedTypes={["Texture"]}
+        title="Pick Texture"
+        onPick={(sourceTextureGuid) => {
+          onChange?.({ ...helper, sourceTextureGuid, sourcePlacement: null });
+          setPickerOpen(false);
+        }}
+        data-testid="skybox-creator-preview-texture-picker"
+      />
     </div>
   );
 }
@@ -551,10 +619,24 @@ export function SkyboxCreatorCubemap({
 
   return (
     <div
-      className="h-full min-h-0 overflow-hidden"
+      className="flex h-full min-h-0 overflow-hidden bg-sidebar"
       data-testid="skybox-creator-cubemap"
     >
-      {facePngs ? <SkyboxCreatorPreviewCanvas facePngs={facePngs} /> : null}
+      {facePngs ? (
+        <SkyboxCreatorPreviewCanvas facePngs={facePngs} />
+      ) : (
+        <Empty className="m-auto border-0" data-testid="skybox-creator-cubemap-empty">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BoxIcon />
+            </EmptyMedia>
+            <EmptyTitle>No Cubemap</EmptyTitle>
+            <EmptyDescription>
+              {helper.sourceTextureGuid ? "Decoding the Texture…" : "Pick a Texture to look around the skybox here."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      )}
     </div>
   );
 }
@@ -581,7 +663,7 @@ export function SkyboxCreatorEditor({
     onChange(normalizeSkyboxCreatorPayload(next) as unknown as Record<string, unknown>);
   };
 
-  const rows: PropertyRow[] = [
+  const sourceRows: PropertyRow[] = [
     {
       id: "source",
       kind: "asset",
@@ -593,24 +675,52 @@ export function SkyboxCreatorEditor({
         commit({ ...helper, sourceTextureGuid, sourcePlacement: null }),
       ...identityFor(assets, helper.sourceTextureGuid),
     },
-    ...SKYBOX_FACE_KEYS.map((key) => ({
-      id: `face-${key}`,
-      kind: "asset" as const,
-      label: SKYBOX_FACE_LABELS[key],
-      value: helper.generatedFaces[key],
-      placeholder: "None",
-      disabled: true,
-      onPick: () => {},
-      onChange: () => {},
-      ...identityFor(assets, helper.generatedFaces[key]),
-    })),
   ];
+  const faceRows: PropertyRow[] = SKYBOX_FACE_KEYS.map((key) => ({
+    id: `face-${key}`,
+    kind: "asset" as const,
+    label: `${COMPASS_LABEL[COMPASS_FOR_FACE[key]]} (${SKYBOX_FACE_AXIS[key]})`,
+    value: helper.generatedFaces[key],
+    placeholder: "Not Created",
+    disabled: true,
+    onPick: () => {},
+    onChange: () => {},
+    ...identityFor(assets, helper.generatedFaces[key]),
+  }));
+  const created = createdFaceCount(helper);
 
   return (
-    <div className="flex flex-col gap-3 p-2" data-testid="skybox-creator-editor">
-      {error ? <SkyboxCreatorAlert message={error} /> : null}
-      <PropertyGrid rows={rows} />
-      <CreateSkyboxButton disabled={busy} onClick={() => void create()} />
+    <div className="flex flex-col" data-testid="skybox-creator-editor">
+      {error ? (
+        <div className="p-2">
+          <SkyboxCreatorAlert message={error} />
+        </div>
+      ) : null}
+      <PropertyGrid title="Source" rows={sourceRows} />
+      <div className="flex px-2 pb-2">
+        <CreateSkyboxButton
+          className="flex-1"
+          variant="outline"
+          disabled={busy || !helper.sourceTextureGuid}
+          onClick={() => void create()}
+        />
+      </div>
+      <PropertySectionTitle
+        aside={
+          <span className="text-xs font-normal tabular-nums text-muted-foreground" data-testid="skybox-creator-face-count">
+            {created} / 6
+          </span>
+        }
+      >
+        Generated Faces
+      </PropertySectionTitle>
+      {created > 0 ? (
+        <PropertyGrid rows={faceRows} />
+      ) : (
+        <p className="px-2 py-2 text-xs text-muted-foreground" data-testid="skybox-creator-faces-empty">
+          Create writes six Textures next to this asset and fills them in here.
+        </p>
+      )}
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}

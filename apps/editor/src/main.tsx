@@ -7,13 +7,13 @@ import {
   initializeCapacitorLifecycle,
 } from "@babylonslate/vfs";
 import App from "./App";
-import { initSessionLiveness } from "./lib/session-liveness";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
-initSessionLiveness();
 
-if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("visualGenerationProof")) {
+if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {
+  void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("visualGenerationProof")) {
   void import("./testing/visual-generation-proof").then(({ runVisualGenerationProof }) => Object.assign(window, { __visualGenerationProof: runVisualGenerationProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textureLeaseProof")) {
   void import("./testing/texture-lease-proof").then(({ runTextureLeaseProof }) => Object.assign(window, { __textureLeaseProof: runTextureLeaseProof }));
@@ -157,6 +157,13 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("waterRenderingProof")
+) {
+  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof }) => {
+    Object.assign(window, { __babylonslateWaterRenderingProof: runWaterRenderingProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("celRenderModeProof")
 ) {
   void import("./testing/cel-render-mode-proof").then(
@@ -175,53 +182,6 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
       Object.assign(window, {
         __babylonslateEnvironmentWebGpuProof:
           runEnvironmentIrradianceWebGpuProof,
-      });
-    },
-  );
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("bake-provider-proof")
-) {
-  void import("@babylonslate/render/bake-provider-prototype").then((provider) => {
-    Object.assign(globalThis, { __bakePrototype: provider });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("bakedRuntimeProof")
-) {
-  void import("./testing/baked-runtime-proof").then(({ runBakedRuntimeProof }) => {
-    Object.assign(window, { __bakedRuntimeProof: runBakedRuntimeProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("bakedParityProof")
-) {
-  void import("./testing/baked-parity-proof").then(({ runBakedParityProof }) => {
-    Object.assign(window, { __bakedParityProof: runBakedParityProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("bakedPlayerFixture")
-) {
-  void import("./testing/baked-player-fixture").then(({ runBakedPlayerFixture }) => {
-    Object.assign(window, { __bakedPlayerFixture: runBakedPlayerFixture });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("sceneBakeProof")
-) {
-  void import("./testing/scene-bake-proof").then(({ runSceneBakeProof }) => {
-    Object.assign(window, { __sceneBakeProof: runSceneBakeProof });
-  });
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("bakeUvProof")
-) {
-  void import("./testing/bake-uv-proof").then(
-    ({ runBakeUvProof, runBakeUvProviderProof }) => {
-      Object.assign(globalThis, {
-        __bakeUvProof: runBakeUvProof,
-        __bakeUvProviderProof: runBakeUvProviderProof,
       });
     },
   );

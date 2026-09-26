@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
 import { NodePalette } from "./node-palette";
+import { nodeRoleClass } from "./node-theme";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 
 afterEach(() => {
@@ -150,6 +152,38 @@ describe("NodePalette", () => {
     fireEvent.change(input, { target: { value: "begin" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onAddNode).toHaveBeenCalledWith(begin);
+  });
+
+  it("marks Particle Graph entries with their stage colour", () => {
+    const particle = (direction: "in" | "out"): SerializedPin => ({
+      id: "particle",
+      name: "Particle",
+      kind: "data",
+      direction,
+      type: { kind: "particle" },
+    });
+    const updateColor: PaletteNode = {
+      id: "update.color",
+      title: "Update Color",
+      category: "Update",
+      pins: [particle("in"), particle("out")],
+      defaultData: { __particleRole: "update" },
+    };
+    const sphere: PaletteNode = {
+      id: "shape.sphere",
+      title: "Sphere Shape",
+      category: "Shape",
+      pins: [particle("in"), particle("out")],
+      defaultData: { radius: 1, __particleRole: "shape" },
+    };
+    const { getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[updateColor, sphere]} onAddNode={() => {}} />,
+    );
+    const mark = (id: string) =>
+      getByTestId(`node-palette-item-${id}`).querySelector('[class*="bg-node-"]')?.className ?? "";
+    // Without the stage both would fall back to the function colour.
+    expect(mark("update.color")).toContain(nodeRoleClass(basicParticleStageRole("overLife")));
+    expect(mark("shape.sphere")).toContain(nodeRoleClass(basicParticleStageRole("shape")));
   });
 
   it("opens at the anchor and stays inside the viewport near its edge", () => {

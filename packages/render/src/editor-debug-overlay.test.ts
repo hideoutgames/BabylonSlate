@@ -33,6 +33,7 @@ import {
 } from "./editor-debug-overlay";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
+import { createEditorCameraModel } from "./editor-camera-model";
 
 function sceneWith(
   actors: SerializedScene["actors"],
@@ -132,6 +133,8 @@ describe("EditorDebugOverlay", () => {
 
   it("creates frustum lines and a 1Hz preview RTT when a camera actor is selected", () => {
     const { scene } = createHandle();
+    const helper = createEditorCameraModel(scene, "other-camera-helper");
+    const world = MeshBuilder.CreateBox("world", {}, scene);
     let now = 0;
     const overlay = new EditorDebugOverlay(scene, { now: () => now });
     const sceneData = sceneWith([
@@ -148,6 +151,8 @@ describe("EditorDebugOverlay", () => {
     overlay.sync({ sceneData, selectedActorIds: ["cam"] });
     expect(overlay.frustumMesh).not.toBeNull();
     expect(overlay.previewTexture).not.toBeNull();
+    expect(overlay.previewTexture!.renderList).not.toContain(helper);
+    expect(overlay.previewTexture!.renderList).toContain(world);
     expect(overlay.previewRenderCount).toBe(1);
 
     now = 500;
@@ -328,6 +333,13 @@ describe("EditorDebugOverlay", () => {
     origin.position.x = 20;
     overlay.followLivePose();
     expect(root.position.asArray()).toEqual([122, 0, 0]);
+    // A rebuilt emitter replaces the one the overlay was following.
+    visual.dispose();
+    const rebuilt = MeshBuilder.CreateBox(editorComponentMeshName(actor.id, "audio"), {}, scene);
+    rebuilt.parent = origin;
+    rebuilt.position.x = 3;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.position.asArray()).toEqual([126, 0, 0]);
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [], audioLibrary });
     expect(root.isDisposed()).toBe(true);
     expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);

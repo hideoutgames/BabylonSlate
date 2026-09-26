@@ -392,6 +392,11 @@
 }
 
 @media (pointer: coarse) {
+  .scene-environment-panel [data-slot="button"] {
+    min-width: var(--touch-target, 44px);
+    min-height: var(--touch-target, 44px);
+  }
+
   .content-browser-panes > [data-slot="resizable-handle"] {
     width: var(--touch-target, 44px);
     margin-inline: calc((var(--touch-target, 44px) - 4px) / -2);

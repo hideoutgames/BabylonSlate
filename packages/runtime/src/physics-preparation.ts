@@ -169,10 +169,14 @@ export function physicsWorldTransforms(
         (component) =>
           !component.destroyed &&
           component.owner === actor &&
+          (component.classId !== "LandscapeComponent" ||
+            (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
           [
             "RigidBodyComponent",
+            "WaterBuoyancyComponent",
             "ColliderComponent",
             "MeshComponent",
+            "LandscapeComponent",
             "BlockingVolumeComponent",
             "TilemapComponent",
           ].includes(component.classId),

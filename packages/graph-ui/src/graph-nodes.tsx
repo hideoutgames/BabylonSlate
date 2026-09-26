@@ -58,6 +58,8 @@ function visualFromData(
       pure: data.__pure === true,
       material: data.__material === true,
       latent: data.__latent === true,
+      particleRole:
+        typeof data.__particleRole === "string" ? data.__particleRole : undefined,
     }),
   };
 }

@@ -77,7 +77,7 @@ describe("documentOpenForTarget", () => {
         guid: "tex-1",
         assetType: "Texture",
       }),
-    ).toEqual({ kind: "asset-settings", path: "assets/hero.babasset" });
+    ).toEqual({ kind: "texture", path: "assets/hero.babasset" });
     expect(
       documentOpenForTarget({
         kind: "asset",

@@ -69,8 +69,6 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   fogStart: "independent",
   fogEnd: "independent",
   environmentTextureGuid: "independent",
-  bakedLightingAssetGuid: "independent",
-  bakeSettings: "non-rendering",
   environmentLighting: "independent",
   mainCameraActorId: "independent",
   mainCameraComponentId: "independent",
@@ -84,6 +82,7 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   grid: "non-rendering",
   editorJoystickEnabled: "non-rendering",
   showNavmesh: "non-rendering",
+  foliageGroups: "non-rendering",
 } as const satisfies Record<
   keyof SceneSettings,
   QualityGroup | "independent" | "non-rendering"

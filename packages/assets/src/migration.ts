@@ -1,3 +1,4 @@
+import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
@@ -5,6 +6,7 @@ import {
   normalizeSceneLayer,
   normalizeShadowOverrides,
 } from "@babylonslate/core";
+import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
@@ -15,10 +17,8 @@ import {
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
 } from "./audio-payload";
-import {
-  normalizeParticleEmitterPayload,
-  normalizeParticleSystemPayload,
-} from "./particle-payload";
+import { normalizeParticleEmitterPayload } from "./particle-basic-emitter";
+import { normalizeParticleSystemPayload } from "./particle-payload";
 import { normalizeSkyboxCreatorPayload } from "./skybox-creator-payload";
 
 export type MigrationFn = (
@@ -241,10 +241,20 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     ],
   });
   registry.register({
+    type: "ParticleGraph",
+    migrations: [
+      (payload) => asRecord(normalizeParticleGraphDocument(payload)),
+    ],
+  });
+  registry.register({
     type: "ParticleSystem",
     migrations: [
       (payload) => asRecord(normalizeParticleSystemPayload(payload)),
     ],
+  });
+  registry.register({
+    type: "Water",
+    migrations: [(payload) => asRecord(normalizeWaterDefinition(payload))],
   });
   registry.register({
     type: "SkyboxCreator",

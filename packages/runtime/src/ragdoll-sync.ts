@@ -8,6 +8,16 @@ import { sameDescriptor } from "./physics-preparation";
 
 type CapturedPose = Extract<ControlMessage, { type: "ragdollPoseCaptured" }>;
 
+interface RagdollHost {
+  world: World;
+  physics: () => PhysicsWorldSync;
+  slot: (actor: Actor) => number | undefined;
+  eligible: (actor: Actor) => boolean;
+  deferNative: boolean;
+  emit: (command: CommandMessage) => void;
+  error: (error: Error) => void;
+}
+
 interface RagdollState {
   actor: Actor;
   component: ActorComponent;
@@ -27,16 +37,11 @@ interface RagdollState {
 export class RagdollWorldSync {
   private readonly states = new Map<Actor, RagdollState>();
   private sequence = 0;
+  private readonly host: RagdollHost;
 
-  constructor(private readonly host: {
-    world: World;
-    physics: () => PhysicsWorldSync;
-    slot: (actor: Actor) => number | undefined;
-    eligible: (actor: Actor) => boolean;
-    deferNative: boolean;
-    emit: (command: CommandMessage) => void;
-    error: (error: Error) => void;
-  }) {}
+  constructor(host: RagdollHost) {
+    this.host = host;
+  }
 
   sync(): void {
     const actors = this.host.world.getActors();

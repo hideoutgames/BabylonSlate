@@ -115,9 +115,3 @@ export function orthoPanFromCanvasDelta(
     deltaY: dyPx * (worldHeight / canvas.height),
   };
 }
-
-/** Snap a world coordinate to the nearest multiple of `step`. */
-export function snapToGrid(value: number, step: number): number {
-  if (step <= 0) return value;
-  return Math.round(value / step) * step;
-}

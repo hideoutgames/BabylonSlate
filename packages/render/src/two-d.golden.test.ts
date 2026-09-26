@@ -12,7 +12,6 @@ import {
   meshNamesInCanvasRect,
   orthoPanFromCanvasDelta,
   projectToCanvas,
-  snapToGrid,
 } from "./two-d";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -109,15 +108,6 @@ describe("2D projection golden", () => {
 
     expect(hits).toContain("right");
     expect(hits).not.toContain("left");
-  });
-});
-
-describe("snapToGrid", () => {
-  it("rounds to the nearest step and passes through a non-positive step", () => {
-    expect(snapToGrid(1.2, 1)).toBe(1);
-    expect(snapToGrid(1.6, 1)).toBe(2);
-    expect(snapToGrid(0.3, 0.25)).toBeCloseTo(0.25, 6);
-    expect(snapToGrid(1.234, 0)).toBe(1.234);
   });
 });
 

@@ -23,6 +23,19 @@ The initial numeric version is `0.0.1`, declared in `release/version.json`. Wind
 
 Published Windows releases are immutable. A conflicting tag or a draft targeting anything other than the exact selected source fails before packaging. Test packages cannot become release packages by changing GitHub classification. Apple retains a single bundle identifier and app record; the channels do not install side by side.
 
+## Patch Notes And Changelog
+
+- Add a version entry to `release/changelog.json` alongside each `release/version.json` bump: numeric `version`, nonempty `title`, and a nonempty `changes` array of plain-text notes. Keep older entries for the in-app history. Notes are public release content.
+- Vite validates and bundles the current and older entries for web, Electron and iOS, including offline launches. Missing, empty, duplicate or mismatched notes fail the build. Native release preflight reads notes from the exact selected source commit; release manifests and GitHub Release bodies carry those notes.
+- The launcher displays **What's New** until that version's first dismissal, then remembers it in local Engine Settings. **Account → Changelog** reopens the bundled history. Clearing app settings resets dismissals; devices/browser profiles keep separate histories. Development servers and explicit QA `?test` sessions omit automatic news, while the deployed web preview still shows it.
+
+## Desktop Automatic Updates
+
+- Installed Windows release builds check the public `hideoutgames/BabylonSlate` GitHub Releases feed at startup and every six hours. Downloads run in the background and install on a normal exit; the editor never forces a restart. Test builds and unpackaged development hosts do not check for updates, and release clients reject prereleases and downgrades.
+- **Engine Settings → About → Automatic Updates** defaults on. **Account → Application Settings** exposes the same saved preference on desktop; that control is disabled on web and mobile. Turning it off immediately stops scheduled checks, cancels active downloads and disables installation on exit, including already downloaded updates. Windows session end also defers installation to a later normal exit.
+- Release packaging supplies `latest.yml` and the installer `.blockmap` in addition to the installer, `SHA256SUMS.txt` and `build-manifest.json`. Feed version, file size and SHA-512 must match the installer before staging; publication verifies the exact asset allowlist and SHA-256 checksums. Test releases retain the original three assets and cannot enter the release update feed.
+- Existing installations without the updater need one manual installation of an updater-enabled release. A two-version installed-app update remains a distribution acceptance check; implementation tests do not certify installation or publication.
+
 ## Rollout status
 
 The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload.
@@ -57,6 +70,10 @@ Permissions are a separate unresolved gate. For the retained upload/finalization
 Apple documents [cloud-managed certificate access](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/) for users, including delegated access for non-admin users. That user permission does not establish that an App Manager team API key can cloud-sign in Xcode 26.6. The minimum runtime API role for the complete proposed route remains unverified. Do not silently provision an Admin key or claim that upload permission proves cloud-signing permission. If only an unacceptable role or an additional signing key makes the route work, retain the manual path and report that blocker.
 
 To unblock: obtain an Apple-supported archive procedure and establish the API key's provisioning/cloud-signing permissions, then implement and test that procedure. With credentials and a separate explicit distribution request, validate at least two new hosted macOS runners with no prior Apple login, certificates, profiles or restored signing cache. Check certificate lifecycle, immutable identity, private group delivery, signature/entitlements, privacy/encryption and failure cleanup. Only after both runs succeed may the manual path and its three active signing-secret references be removed. Real signing, upload and device acceptance remain pending.
+
+## iOS app lifecycle
+
+The native App target uses the UIKit scene-based lifecycle, matching the Capacitor 8.5 template: `Info.plist` declares `UIApplicationSceneManifest` (single scene, `Main` storyboard, `SceneDelegate`), `SceneDelegate` owns the `CAPBridgeViewController` window and forwards URL/universal-link opens to `SceneDelegateProxy`, and `AppDelegate` returns the scene configuration. SDKs from iOS 26 onward refuse to launch apps that only implement the legacy `UIApplicationDelegate` window path; the deployment target is unchanged.
 
 ## iOS app capabilities
 
@@ -151,7 +168,7 @@ gh workflow run distribute.yml --ref main -f operation=finalize-testflight -f ch
 
 A finalization-only dispatch never creates a Windows release. For a combined operation, once Apple is ready, rerun the original failed jobs to retain the original Windows manifest/artifact rather than generating a different package. Artifacts are retained for one day; if they expire before recovery, do not substitute an unverified package. Preserve any draft and its identity for maintainer inspection and make a fresh authorized request as appropriate. A Windows prerelease may be published with an Apple failure, but the overall result remains partial; a normal combined release requires Apple availability or a reported pending beta review.
 
-All logs, summaries, caches and GitHub artifacts must be treated as public. Only the Windows installer, `SHA256SUMS.txt` and `build-manifest.json` are uploaded. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands write private temporary diagnostics and cleanup runs on failure as well as success. Secret masking alone is insufficient; this cannot protect against malicious trusted code, compromised dependencies or compromised credential holders.
+All logs, summaries, caches and GitHub artifacts must be treated as public. Only the Windows installer, `SHA256SUMS.txt`, `build-manifest.json`, and (for release builds) `latest.yml` plus the installer `.blockmap` are uploaded. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands write private temporary diagnostics and cleanup runs on failure as well as success. Secret masking alone is insufficient; this cannot protect against malicious trusted code, compromised dependencies or compromised credential holders.
 
 ## Acceptance record
 

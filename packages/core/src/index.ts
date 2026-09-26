@@ -31,6 +31,7 @@ export * from "./input-keys";
 export * from "./default-input-assets";
 
 export * from "./sorting";
+export * from "./particle-settings";
 
 export * from "./render-quality";
 export * from "./scalability";
@@ -40,9 +41,11 @@ export * from "./environment-lighting";
 export * from "./render-effects";
 
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
-export * from "./baked-lighting";
-export * from "./baked-geometry";
-export * from "./baking";
 export * from "./area-rect-light";
 export * from "./outline-component";
 export * from "./ragdoll";
+export * from "./water";
+export * from "./water-removal";
+export * from "./landscape";
+export * from "./foliage";
+export * from "./spring-arm-component";

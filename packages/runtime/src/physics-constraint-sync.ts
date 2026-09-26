@@ -20,6 +20,8 @@ interface AppliedConstraint {
 
 /** Reconcile joints only after both actors' current bodies have been published. */
 export class PhysicsConstraintSync {
+  private readonly backend: PhysicsBackend;
+  private readonly deferUnsupported: boolean;
   private readonly applied = new Map<string, AppliedConstraint>();
   private readonly properties = new WeakMap<ActorComponent, {
     descriptor: readonly unknown[];
@@ -27,9 +29,12 @@ export class PhysicsConstraintSync {
   }>();
 
   constructor(
-    private readonly backend: PhysicsBackend,
-    private readonly deferUnsupported = false,
-  ) {}
+    backend: PhysicsBackend,
+    deferUnsupported = false,
+  ) {
+    this.backend = backend;
+    this.deferUnsupported = deferUnsupported;
+  }
 
   sync(options: {
     actors: readonly Actor[];

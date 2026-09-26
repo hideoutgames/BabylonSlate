@@ -1,4 +1,8 @@
-import { pinColorVar } from "@babylonslate/ui/lib/data-types";
+import {
+  PARTICLE_STAGE_ROLE,
+  pinColorVar,
+  type ParticleStage,
+} from "@babylonslate/ui/lib/data-types";
 
 export type PinTypeRef = {
   kind: string;
@@ -62,6 +66,10 @@ function isPinTypeRef(value: unknown): value is PinTypeRef {
   );
 }
 
+function isParticleStage(value: string): value is ParticleStage {
+  return Object.hasOwn(PARTICLE_STAGE_ROLE, value);
+}
+
 export function nodeVisualRole(input: {
   nodeType?: string;
   title?: string;
@@ -69,7 +77,15 @@ export function nodeVisualRole(input: {
   pure?: boolean;
   latent?: boolean;
   material?: boolean;
+  /**
+   * Particle Graph stage (`__particleRole`). Headers share the Basic Particle
+   * Emitter stage colours; values that are not a stage fall through.
+   */
+  particleRole?: string;
 }): NodeVisualRole {
+  if (input.particleRole !== undefined && isParticleStage(input.particleRole)) {
+    return PARTICLE_STAGE_ROLE[input.particleRole];
+  }
   const nodeType = input.nodeType ?? "";
   const title = input.title ?? "";
   const category = (input.category ?? "").toLowerCase();
@@ -123,8 +139,9 @@ export function nodeRoleClass(role: NodeVisualRole): string {
   return ROLE_CLASS[role];
 }
 
+/** Exec wires and the Particle Graph spine use the heavy exec width. */
 export function edgeStrokeWidth(kind: string): number {
-  return kind === "exec" ? 5 : 4;
+  return kind === "exec" || kind === "particle" ? 5 : 4;
 }
 
 export function edgeStyleForPin(type: PinTypeRef | undefined): {

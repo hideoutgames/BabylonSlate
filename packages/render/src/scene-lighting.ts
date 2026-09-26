@@ -9,7 +9,7 @@ import {
   syncClusteredLightPolicy,
 } from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import {
   LightBlock,
   Material,

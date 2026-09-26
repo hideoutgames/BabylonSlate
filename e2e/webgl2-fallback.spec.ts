@@ -8,7 +8,12 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 // by the injected adapter outcome, not by a host without the API.
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-type Baseline = { backend: string; engineCount: number; frameCount: number } | null;
+type Baseline = {
+  backend: string;
+  engineCount: number;
+  frameCount: number;
+  render: { pipeline: { limits: string[] } };
+} | null;
 
 const scenarios: Array<{ name: string; inject: () => void; reason: RegExp; babylonFailureLogs: number }> = [
   {
@@ -80,12 +85,15 @@ for (const scenario of scenarios) {
     expect(await renderedColors(page)).toBeGreaterThan(1);
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath("fallback-webgl2.png") });
 
-    // The reason is explicit in Project Settings; the authored request stays WebGPU.
+    // Renderer diagnostics retain the fallback reason; Project Settings retains
+    // the authored request even though its Active Scene status section is gone.
+    await expect.poll(async () =>
+      (await baseline(page))?.render.pipeline.limits.join(" ") ?? "",
+    ).toMatch(scenario.reason);
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-rendering").click();
     await expect(page.getByTestId("project-gpu-backend")).toContainText("WebGPU");
-    await expect(page.getByTestId("project-render-pipeline")).toContainText(scenario.reason);
     await page.getByRole("button", { name: "Done", exact: true }).click();
 
     await clickPlayAndWaitForOverlay(page);
@@ -113,7 +121,7 @@ async function selectBackend(page: Page, backend: string): Promise<void> {
 
 function baseline(page: Page): Promise<Baseline> {
   return page.evaluate(() => (window as unknown as {
-    __babylonslateViewportTest?: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number } | null };
+    __babylonslateViewportTest?: { renderingBaseline(): Baseline };
   }).__babylonslateViewportTest?.renderingBaseline() ?? null);
 }
 

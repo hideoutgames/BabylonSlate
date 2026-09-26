@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { encodeTriangleGlb } from "@babylonslate/render";
+import { encodeTriangleGlb } from "@babylonslate/render/glb-test-fixtures";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { ModelColliders, ModelEditor, ModelPreview } from "./model-editor";
 
