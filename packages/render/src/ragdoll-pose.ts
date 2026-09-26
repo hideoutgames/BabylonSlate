@@ -1,4 +1,4 @@
-import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type TransformNode } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Node, type TransformNode } from "@babylonjs/core";
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
 import type { RagdollBonePose } from "@babylonslate/core";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
@@ -95,16 +95,18 @@ function localMatrix(target: Target): Matrix {
   return Matrix.Compose(node.scaling, node.rotationQuaternion ?? Quaternion.FromEulerVector(node.rotation), node.position);
 }
 
-function writeLocal(target: Target, local: Matrix, scratch: PoseScratch): void {
+function writeLocal(target: Target, local: Matrix, scratch: PoseScratch, forceParents = true): void {
   const { scale, rotation, position } = scratch;
   if (!local.decompose(scale, rotation, position)) throw new Error(`Cannot apply ragdoll bone '${target.name}'.`);
   if (target.node) {
-    target.node.unfreezeWorldMatrix();
+    if (target.node.isWorldMatrixFrozen) target.node.unfreezeWorldMatrix();
     target.node.position.copyFrom(position);
     target.node.scaling.copyFrom(scale);
-    if (target.node.rotationQuaternion) target.node.rotationQuaternion.copyFrom(rotation);
-    else target.node.rotationQuaternion = rotation.clone();
-    target.node.computeWorldMatrix(true);
+    const nodeRotation = target.node.rotationQuaternion ?? new Quaternion();
+    nodeRotation.copyFrom(rotation);
+    // The public setter dirties this node without recursively dirtying its rig.
+    target.node.rotationQuaternion = nodeRotation;
+    target.node.computeWorldMatrix(forceParents);
   } else {
     target.bone!.setPosition(position);
     target.bone!.setRotationQuaternion(rotation);
@@ -132,6 +134,7 @@ export class RagdollPoseController {
   private readonly invalidate: () => void;
   private readonly scratch: PoseScratch = { scale: new Vector3(), rotation: new Quaternion(), position: new Vector3(),
     parent: Matrix.Identity(), inverse: Matrix.Identity(), local: Matrix.Identity() };
+  private readonly nodeWorlds = new Map<Node, Matrix>();
 
   constructor(
     binding: SnapshotSceneBinding,
@@ -275,6 +278,7 @@ export class RagdollPoseController {
         if (this.sessions.get(slotId) !== session) continue;
         if (!session.targets) continue;
         const scratch = this.scratch;
+        this.nodeWorlds.clear();
         // Keep desired parent worlds independent of partially updated skeleton
         // matrices. Reuse owned matrices/vectors; command payloads stay untouched.
         for (const target of session.targets) {
@@ -285,22 +289,36 @@ export class RagdollPoseController {
         }
         for (const target of session.targets) {
           let parent: Matrix;
-          if (target.node) parent = target.node.parent?.computeWorldMatrix(true) ?? Matrix.IdentityReadOnly;
+          if (target.node) {
+            const nodeParent = target.node.parent;
+            parent = nodeParent ? this.nodeWorld(nodeParent) : Matrix.IdentityReadOnly;
+          }
           else {
             const parentBone = target.bone!.getParent();
             const selectedParent = parentBone && session.byBone!.get(parentBone);
             if (selectedParent && !selectedParent.node) parent = selectedParent.world;
             else {
-              parent = target.mesh!.computeWorldMatrix(true);
+              parent = this.nodeWorld(target.mesh!);
               if (parentBone) parent = parentBone.getAbsoluteMatrix().multiplyToRef(parent, scratch.parent);
             }
           }
           parent.invertToRef(scratch.inverse);
           target.world.multiplyToRef(scratch.inverse, scratch.local);
-          writeLocal(target, scratch.local, scratch);
+          writeLocal(target, scratch.local, scratch, false);
+          if (target.node) this.nodeWorlds.set(target.node, target.node.getWorldMatrix());
         }
         refreshBones(session);
       } catch (error) { this.fail(session, error instanceof Error ? error.message : String(error)); }
     }
+    // Do not retain retired models through a controller-owned scratch cache.
+    this.nodeWorlds.clear();
+  }
+
+  private nodeWorld(node: Node): Matrix {
+    const cached = this.nodeWorlds.get(node);
+    if (cached) return cached;
+    const world = node.computeWorldMatrix(true);
+    this.nodeWorlds.set(node, world);
+    return world;
   }
 }

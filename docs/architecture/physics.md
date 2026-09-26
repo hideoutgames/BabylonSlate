@@ -96,6 +96,14 @@ The worker owns all constraints and ragdoll bodies. `PhysicsBackend.createConstr
 
 `PhysicsBackend.getBodyVelocity` returns an owned snapshot of world-space linear velocity, angular velocity in radians/second, and center of mass. `setBodyAngularVelocity` sets a dynamic body's angular velocity (Z only in 2D). Ragdoll activation uses each collider's mass center to inherit the actor's rigid velocity field, and whole-assembly impulses act at those centers without introducing torque at bone pivots.
 
+Constraint reconciliation reuses identity and scalar descriptor storage on unchanged ticks. It still detects direct variable-map writes and in-place edits to anchors or frames; native joints are rebuilt only when their authored settings, body owners, or effective scales change. Invalid edits preserve the last usable joint.
+
+Ragdoll synchronization scans current component membership but resolves transforms only for enabled ragdolls and their ancestors. With no active assembly, post-step ragdoll readback returns before traversing the actor list. No persistent transform cache hides script movement, reparenting, scale edits, or same-ID replacements.
+
+The renderer retains pose lookup tables and matrix/vector scratch storage per controller/session. Unlinked bone locals are written before refreshing the skeleton, so descendant matrices are updated in a batch, including unselected descendants. Linked bones reuse already updated parent worlds during the pose pass. Inverse bind matrices, animation handoff, native collision settings, and solver stepping remain unchanged. Prefer a connected **Bone Names** subtree when a detailed character does not need every bone simulated; the existing 128-bone limit remains in force.
+
+Focused performance fixtures live in `ragdoll-sync-performance.test.ts`, `physics-constraints.test.ts`, and `ragdoll-pose.test.ts`. They exercise 2,048 unrelated actors, 128 stable native joints, and 16/64-bone chains, with deterministic bounds on unrelated transform reads and hierarchy work. Their p50/p95 timings are diagnostic desktop measurements, not device frame-rate guarantees or timing thresholds in CI.
+
 | Component | Properties (core) |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |

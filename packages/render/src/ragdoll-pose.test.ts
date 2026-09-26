@@ -27,16 +27,30 @@ function fixture() {
 }
 
 describe("skeletal ragdoll pose handoff", () => {
-  it.each([16, 64])("applies a %i-bone chain with linear hierarchy work and stable bind matrices", (count) => {
+  it.each([[16, false], [64, false], [64, true]] as const)("applies a %i-bone chain (linked=%s) with linear hierarchy work and stable bind matrices", (count, linked) => {
     const { scene, root, controller, capture } = fixture();
     const skeleton = new Skeleton("chain", "chain", scene);
     root.skeleton = skeleton;
+    const nodes: TransformNode[] = [];
     for (let index = 0; index < count; index++) {
-      new Bone(`bone-${index}`, skeleton, skeleton.bones[index - 1] ?? null, Matrix.Translation(0, 1, 0));
+      const bone = new Bone(`bone-${index}`, skeleton, skeleton.bones[index - 1] ?? null, Matrix.Translation(0, 1, 0));
+      if (linked) {
+        const node = new TransformNode(bone.name, scene);
+        node.parent = nodes[index - 1] ?? root;
+        node.position.y = 1;
+        bone.linkTransformNode(node);
+        nodes.push(node);
+      }
     }
     // Include an unselected descendant: batched pose application must update its
     // skinning matrix too, without modifying the inverse bind pose.
     const tip = new Bone("tip", skeleton, skeleton.bones.at(-1)!, Matrix.Translation(1, 0, 0));
+    const tipNode = linked ? new TransformNode("tip", scene) : undefined;
+    if (tipNode) {
+      tipNode.parent = nodes.at(-1)!;
+      tipNode.position.x = 1;
+      tip.linkTransformNode(tipNode);
+    }
     const inverseBind = tip.getAbsoluteInverseBindMatrix().clone();
     const captured = capture("first", skeleton.bones.slice(0, count).map((bone) => bone.name));
     expect(captured.error).toBeUndefined();
@@ -54,20 +68,24 @@ describe("skeletal ragdoll pose handoff", () => {
       samples.push(performance.now() - start);
     }
     const visits = vi.spyOn(Bone.prototype, "computeAbsoluteMatrices");
+    const nodeVisits = vi.spyOn(TransformNode.prototype, "computeWorldMatrix");
     try {
       apply();
       const hierarchyVisits = visits.mock.calls.length;
+      const nodeHierarchyVisits = nodeVisits.mock.calls.length;
       samples.sort((a, b) => a - b);
-      console.info("ragdoll presentation (ms)", { count, p50: samples[50], p95: samples[95], hierarchyVisits });
-      const position = tip.getAbsoluteMatrix().multiply(root.computeWorldMatrix(true)).getTranslation();
+      console.info("ragdoll presentation (ms)", { count, linked, p50: samples[50], p95: samples[95], hierarchyVisits, nodeHierarchyVisits });
+      const position = tipNode ? tipNode.computeWorldMatrix(true).getTranslation() : tip.getAbsoluteMatrix().multiply(root.computeWorldMatrix(true)).getTranslation();
       expect(position.x).toBeCloseTo(1, 4);
       expect(position.y).toBeCloseTo(count, 4);
       expect(position.z).toBeCloseTo(5, 4);
       expect(tip.getAbsoluteInverseBindMatrix().equals(inverseBind)).toBe(true);
       controller.clear({ type: "clearRagdollPose", slotId: 1, requestId: "first" });
+      skeleton.prepare(true);
       expect(tip.getAbsoluteMatrix().getTranslation().asArray()).toEqual([1, count, 0]);
       expect(hierarchyVisits).toBeLessThanOrEqual(2 * (count + 1));
-    } finally { visits.mockRestore(); }
+      expect(nodeHierarchyVisits).toBeLessThanOrEqual(3 * (count + 1));
+    } finally { visits.mockRestore(); nodeVisits.mockRestore(); }
   });
 
   it("captures the animated linked pose and preserves world-space physics under a moving actor root", () => {
