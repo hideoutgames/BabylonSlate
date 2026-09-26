@@ -95,6 +95,8 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 ## Asset document docks
 
+`DocumentWorkspace` skips unmounted tabs before resolving scene/class metadata. Mounted scene, graph, and scene-layer tabs share one lazily built class-ancestry lookup per render and use the registry's path index for individual assets. The lookup is rebuilt on the next render so in-place registry changes remain visible.
+
 New editor tabs for assets are per-document **DockView** layouts (`DockviewShell`), not a full-page `AssetDocumentWorkspace` and not shadcn `Tabs` as the document shell. That keeps panels resizable, dockable beside each other, and able to host extra dock tabs. Animation Graph uses a stacked-surface pattern with a chrome **State Machine | Animation Object** bar (`animEditorMode`; surfaces `stateMachine` / `animationObject`). Mode switches keep only the active DockView mounted. Inactive document tabs idle-unmount (`p18-inactive-documents`). Exception: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md).
 
 Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), `documentKindForAssetType`, and `FOCUS_PRIMARY_PANEL`. Default layouts add `primaryDockPanel(kind)` first so side docks can split from it. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md).
