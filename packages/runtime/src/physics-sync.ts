@@ -36,6 +36,7 @@ import {
   physicsWorldTransforms,
 } from "./physics-preparation";
 import { componentColliderPhysicsId } from "./physics-collider-id";
+import { PhysicsConstraintSync } from "./physics-constraint-sync";
 import {
   actorParentGuid,
   inverseQuaternion,
@@ -52,6 +53,8 @@ import {
 export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
+  private readonly constraints: PhysicsConstraintSync;
+  private readonly suppressedActors = new WeakSet<Actor>();
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private readonly actorById = new Map<string, Actor>();
@@ -128,14 +131,27 @@ export class PhysicsWorldSync {
 
   constructor(
     backend: PhysicsBackend,
-    options?: { actorFilter?: (actor: Actor) => boolean },
+    options?: {
+      actorFilter?: (actor: Actor) => boolean;
+      /** Runtime boot only: authored constraints wait for the native replacement. */
+      deferUnsupportedConstraints?: boolean;
+    },
   ) {
     this.backend = backend;
     this.actorFilter = options?.actorFilter ?? (() => true);
+    this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
   }
 
   getBackend(): PhysicsBackend {
     return this.backend;
+  }
+
+  /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
+  suppressActorBody(actor: Actor, suppressed: boolean): void {
+    if (suppressed) {
+      this.suppressedActors.add(actor);
+      if (this.bodyOwnerByActor.get(actor.guid) === actor) this.retireActor(actor.guid);
+    } else this.suppressedActors.delete(actor);
   }
 
   setTileContent(options: {
@@ -265,6 +281,7 @@ export class PhysicsWorldSync {
   }
 
   dispose(): void {
+    this.constraints.dispose();
     this.backend.dispose();
     this.bodyByActor.clear();
     this.characterByActor.clear();
@@ -299,7 +316,7 @@ export class PhysicsWorldSync {
     const live = new Set<string>();
     for (const actor of this.actors) {
       if (actor.destroyed || this.actorById.get(actor.guid) !== actor) continue;
-      if (!this.actorFilter(actor)) continue;
+      if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
       const rigid = actor.components.find(
         (c) =>
           c.classId === "RigidBodyComponent" &&
@@ -354,6 +371,18 @@ export class PhysicsWorldSync {
     for (const actorId of this.bodyByActor.keys()) {
       if (!live.has(actorId)) this.retireActor(actorId);
     }
+    this.syncConstraints();
+  }
+
+  private syncConstraints(): void {
+    this.constraints.sync({
+      actors: this.actors,
+      actorById: this.actorById,
+      transforms: this.worldTransforms,
+      bodies: this.bodyByActor,
+      bodyOwners: this.bodyOwnerByActor,
+      eligible: this.actorFilter,
+    });
   }
 
   private applyBodyPolicy(
@@ -394,7 +423,10 @@ export class PhysicsWorldSync {
 
   private retireActor(actorId: string): void {
     const bodyId = this.bodyByActor.get(actorId);
-    if (bodyId) this.backend.destroyBody(bodyId);
+    if (bodyId) {
+      this.constraints.retireBody(bodyId);
+      this.backend.destroyBody(bodyId);
+    }
     this.bodyByActor.delete(actorId);
     const owner = this.bodyOwnerByActor.get(actorId);
     this.bodyOwnerByActor.delete(actorId);
@@ -498,6 +530,12 @@ export class PhysicsWorldSync {
     )
       return;
     if (!this.actorFilter(owner)) return;
+    if (component.classId === "PhysicsConstraintComponent") {
+      this.indexActors();
+      this.worldTransforms = physicsWorldTransforms(this.actors, this.actorById, this.backend.kind, this.actorFilter);
+      this.syncConstraints();
+      return;
+    }
     const bodyId = this.bodyByActor.get(owner.guid);
     if (!bodyId) return;
     if (component.classId === "RigidBodyComponent") {
@@ -569,6 +607,7 @@ export class PhysicsWorldSync {
   }
 
   private createForActor(actor: Actor): void {
+    if (this.suppressedActors.has(actor)) return;
     const rigid = actor.components.find(
       (c) =>
         c.classId === "RigidBodyComponent" && !c.destroyed && c.owner === actor,

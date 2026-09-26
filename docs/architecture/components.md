@@ -127,6 +127,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 ## App wrappers
 
+`RagdollBoneNamesEditor` composes `NamedListEditor` with validation feedback for Scene Details and Class/Prefab Inspector. Empty uses the complete model skeleton; exact names select a connected subtree. Invalid or duplicate drafts stay editable without changing persisted component properties. Physics Constraint Details reuse PropertyGrid and SearchDialog for a searchable scene actor target, local anchors, frame rotations, and degree-based hinge limits.
+
 `SceneLoadingDialog` composes Dialog, Progress and compact Retry / Close buttons for document reads, viewport loading or rendering updates, and Play scene transitions. Play opens this blocker when its overlay mounts, including the interval before the Worker sends its first scene token, and keeps an explicit Stop action available through teardown, asset/shader readiness, and first-frame presentation. Loading is blocking; failed document reads preserve the previous workspace, while failed viewport realization remains unready until retry.
 
 Scene Defaults **Baked Lighting** uses the initially closed `DisclosureSection` pattern. Its **Bake Lighting** dialog composes compact Field/NumberField controls, Alert feedback and Progress with Cancel; it reports current supported inputs before starting. Mesh Bake Participation and light Mobility reuse PropertyGrid enums. Job settings persist independently of runtime scalability, and changing them never starts work automatically.

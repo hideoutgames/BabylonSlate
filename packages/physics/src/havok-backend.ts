@@ -7,6 +7,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
 import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
+import type { Physics6DoFConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint";
 import { PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
 import {
   PhysicsEventType,
@@ -28,6 +29,7 @@ import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderShape,
@@ -55,6 +57,8 @@ import {
 import { attachHavokShape, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
+import { copyConstraintDesc } from "./constraint-validation";
+import { assertHavokConstraintAttached, disposeHavokConstraint, makeHavokConstraint } from "./havok-constraints";
 
 type BodyRecord = {
   desc: RigidBodyDesc;
@@ -126,12 +130,14 @@ function isShape3D(shape: ColliderShape): boolean {
  */
 export class HavokPhysicsBackend implements PhysicsBackend {
   readonly kind = "3d" as const;
+  readonly supportsConstraints = true;
   readonly plugin: HavokPlugin;
   readonly scene: Scene;
   private readonly engine: NullEngine;
   private readonly bodies = new Map<string, BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
+  private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
   private readonly tmpFrom = new Vector3();
   private readonly tmpTo = new Vector3();
@@ -194,6 +200,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       character.shape.dispose();
     }
     this.characters.clear();
+    for (const record of this.constraints.values()) disposeHavokConstraint(this.plugin, record.constraint);
+    this.constraints.clear();
     this.colliders.clear();
     for (const record of this.bodies.values()) {
       this.disposeBodyRecord(record);
@@ -259,6 +267,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     const record = this.bodies.get(bodyId);
     if (!record) return;
+    for (const [id, constraint] of this.constraints) {
+      if (constraint.desc.bodyAId === bodyId || constraint.desc.bodyBId === bodyId) this.destroyConstraint(id);
+    }
     this.retireTriggerPairs(record.desc.actorId);
     for (const [id, collider] of [...this.colliders]) {
       if (collider.desc.bodyId === bodyId) this.colliders.delete(id);
@@ -272,6 +283,39 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.disposeBodyRecord(record);
     this.bodies.delete(bodyId);
+  }
+
+  createConstraint(input: ConstraintDesc): void {
+    this.assertLive();
+    if (this.stepping) throw new Error("Cannot create a constraint during native stepping");
+    const desc = copyConstraintDesc(input, this.kind);
+    const a = this.bodies.get(desc.bodyAId);
+    const b = this.bodies.get(desc.bodyBId);
+    if (!a || !b) throw new Error("Constraint bodies must exist in the same physics world");
+    this.assertHealthy(a);
+    this.assertHealthy(b);
+    const constraint = makeHavokConstraint(desc, this.scene);
+    try {
+      a.body.addConstraint(b.body, constraint);
+      assertHavokConstraintAttached(this.plugin, constraint, a.body, b.body);
+      const previous = this.constraints.get(desc.id);
+      if (previous) disposeHavokConstraint(this.plugin, previous.constraint);
+      this.constraints.set(desc.id, { desc, constraint });
+    } catch (error) {
+      disposeHavokConstraint(this.plugin, constraint);
+      throw error;
+    }
+  }
+
+  destroyConstraint(id: string): void {
+    if (this.stepping) {
+      this.pendingMutations.push(() => this.destroyConstraint(id));
+      return;
+    }
+    const record = this.constraints.get(id);
+    if (!record) return;
+    disposeHavokConstraint(this.plugin, record.constraint);
+    this.constraints.delete(id);
   }
 
   teleportBody(

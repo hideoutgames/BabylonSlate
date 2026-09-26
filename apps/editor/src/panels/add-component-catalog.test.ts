@@ -102,6 +102,8 @@ describe("Add Component catalog", () => {
     expect(byCategory.get("Physics")).toEqual([
       "RigidBodyComponent",
       "ColliderComponent",
+      "PhysicsConstraintComponent",
+      "RagdollComponent",
     ]);
   });
 

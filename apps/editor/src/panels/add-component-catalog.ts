@@ -10,11 +10,13 @@ import {
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseOutlineProperties,
+  parseRagdollProperties,
   createRichText2DComponent,
   createText2DComponent,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
+  parseConstraintProperties,
   parseRigidBodyProperties,
 } from "@babylonslate/physics";
 import {
@@ -173,6 +175,18 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Physics collider",
     "Physics",
   ),
+  engineComponent(
+    "PhysicsConstraintComponent",
+    "Physics Constraint",
+    "Connect two physics actors with a fixed, ball socket, hinge, or distance joint",
+    "Physics",
+  ),
+  engineComponent(
+    "RagdollComponent",
+    "Ragdoll",
+    "Simulate a Model skeleton from its current animation pose (3D)",
+    "Physics",
+  ),
 ];
 
 export function defaultPropertiesFor(
@@ -281,6 +295,10 @@ export function defaultPropertiesFor(
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent":
       return { ...parseColliderProperties({}, physicsWorld) };
+    case "PhysicsConstraintComponent":
+      return { ...parseConstraintProperties({}, physicsWorld) };
+    case "RagdollComponent":
+      return { ...parseRagdollProperties({}) };
     default:
       return {};
   }
@@ -288,8 +306,10 @@ export function defaultPropertiesFor(
 
 export function addableComponentsForHost(options: {
   overlay: boolean;
+  physicsWorld?: PhysicsWorldKind;
 }): AddComponentItem[] {
   return ADDABLE_COMPONENT_CLASSES.filter((entry) => {
+    if ((options.overlay || options.physicsWorld === "2d") && entry.classId === "RagdollComponent") return false;
     if (options.overlay) {
       return isSceneLayerAllowedComponent(entry.classId);
     }

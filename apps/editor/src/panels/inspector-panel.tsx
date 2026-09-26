@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
+import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -882,6 +883,13 @@ function PrefabComponentDetails({
         {component.classId === "2DPanelComponent" ? (
           <NineSlicePreview
             {...parseOverlayPanelProperties(component.properties)}
+          />
+        ) : null}
+        {component.classId === "RagdollComponent" ? (
+          <RagdollBoneNamesEditor
+            boneNames={component.properties.boneNames as string[] | undefined}
+            onChange={(boneNames) => onUpdate("boneNames", boneNames)}
+            data-testid={`ragdoll-bone-names-${component.id}`}
           />
         ) : null}
       </div>

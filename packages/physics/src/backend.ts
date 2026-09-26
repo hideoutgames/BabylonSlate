@@ -1,5 +1,6 @@
 import type {
   CharacterControllerDesc,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderTuning,
@@ -23,6 +24,7 @@ import type { DebugColliderPrimitive } from "./debug-colliders";
  */
 export interface PhysicsBackend {
   readonly kind: PhysicsWorldKind;
+  readonly supportsConstraints: boolean;
 
   dispose(): void;
 
@@ -41,6 +43,10 @@ export interface PhysicsBackend {
   ): void;
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
+
+  /** Atomically creates/replaces one constraint, retaining the old one on failure. */
+  createConstraint(desc: ConstraintDesc): void;
+  destroyConstraint(id: string): void;
 
   createCollider(desc: ColliderDesc): void;
   applyColliderChanges(bodyId: string, changes: ColliderChanges): void;

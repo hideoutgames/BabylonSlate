@@ -168,6 +168,31 @@ function scene() {
   return harness.scene;
 }
 
+describe("constraint target authoring", () => {
+  it("selects a physical actor by name and persists the target through the scene change path", async () => {
+    const owner = createActor("joint-owner", "Pendulum", { components: [
+      { id: "body", classId: "RigidBodyComponent", properties: {} },
+      { id: "joint", classId: "PhysicsConstraintComponent", properties: { kind: "hinge", targetActorId: "" } },
+    ] });
+    const anchor = createActor("anchor", "Ceiling", { components: [createMeshComponent("anchor-mesh", "box")] });
+    const decoration = createActor("decoration", "Decoration", { components: [{ ...createMeshComponent("decor-mesh", "box"), properties: { collisionMode: "none" } }] });
+    scene().actors = [owner, anchor, decoration, createActor("empty", "Empty")];
+    harness.selectedActorIds = [owner.id];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("property-joint-owner-joint-targetActorId"));
+    expect(screen.queryByRole("option", { name: /Pendulum/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Decoration/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Empty/ })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search Physics Actors"), { target: { value: "Ceil" } });
+    fireEvent.click(screen.getByRole("option", { name: /Ceiling/ }));
+    await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalled());
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    const saved = normalizeScene(JSON.parse(JSON.stringify(next)));
+    expect(saved.actors[0]!.components.find((component) => component.id === "joint")!.properties).toMatchObject({ kind: "hinge", targetActorId: "anchor" });
+    expect(saved.actors[1]).toEqual(anchor);
+  });
+});
+
 describe("shared actor Details", () => {
   beforeEach(() => {
     scene().actors = [

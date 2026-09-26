@@ -9,6 +9,8 @@ export type {
   Quat,
   PhysicsTransform,
   TeleportOptions,
+  ConstraintBase,
+  ConstraintDesc,
   ColliderShape,
   ColliderShape3D,
   ColliderShape2D,
@@ -46,6 +48,8 @@ export { Rapier2DPhysicsBackend } from "./rapier-backend";
 export {
   parseRigidBodyProperties,
   parseColliderProperties,
+  parseConstraintProperties,
+  type ConstraintProperties,
   type RigidBodyProperties,
   type ColliderProperties,
 } from "./component-props";
@@ -68,3 +72,4 @@ export {
 } from "./pairing";
 
 export { prepareColliderShape } from "./collider-validation";
+export { RagdollPhysics } from "./ragdoll";

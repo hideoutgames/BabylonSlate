@@ -1,5 +1,67 @@
 import { validateColliderShape } from "./collider-validation";
-import type { ColliderShape, MotionType } from "./types";
+import type { ColliderShape, ConstraintDesc, MotionType, Quat, Vec3 } from "./types";
+
+export type ConstraintProperties = {
+  kind: ConstraintDesc["kind"];
+  targetActorId: string;
+  enabled: boolean;
+  collideConnected: boolean;
+  anchorA: Vec3;
+  anchorB: Vec3;
+  axisA: Vec3;
+  axisB: Vec3;
+  referenceAxisA: Vec3;
+  referenceAxisB: Vec3;
+  frameA: Quat;
+  frameB: Quat;
+  limitsEnabled: boolean;
+  /** Authoring uses degrees; the runtime converts to backend radians. */
+  minAngle: number;
+  maxAngle: number;
+  distance: number;
+};
+
+export function parseConstraintProperties(
+  properties: Record<string, unknown> | undefined,
+  worldKind: "3d" | "2d",
+): ConstraintProperties {
+  const source = properties ?? {};
+  const kind = source.kind ?? "ballSocket";
+  if (kind !== "fixed" && kind !== "ballSocket" && kind !== "hinge" && kind !== "distance")
+    throw new Error("Unsupported constraint kind");
+  const vector = (value: unknown, fallback: Vec3): Vec3 => {
+    if (value !== undefined && (value === null || typeof value !== "object" || Array.isArray(value)))
+      throw new Error("Constraint vectors must be objects with finite coordinates");
+    const v = (value ?? {}) as Partial<Vec3>;
+    return { x: constraintNumber(v.x, fallback.x), y: constraintNumber(v.y, fallback.y), z: constraintNumber(v.z, fallback.z) };
+  };
+  const frame = (value: unknown): Quat => {
+    if (value !== undefined && (value === null || typeof value !== "object" || Array.isArray(value)))
+      throw new Error("Constraint frames must be quaternion objects");
+    const q = (value ?? {}) as Partial<Quat>;
+    return { ...vector(q, { x: 0, y: 0, z: 0 }), w: constraintNumber(q.w, 1) };
+  };
+  const axis = worldKind === "2d" ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
+  return {
+    kind, targetActorId: typeof source.targetActorId === "string" ? source.targetActorId : "",
+    enabled: source.enabled !== false, collideConnected: source.collideConnected === true,
+    anchorA: vector(source.anchorA, { x: 0, y: 0, z: 0 }), anchorB: vector(source.anchorB, { x: 0, y: 0, z: 0 }),
+    axisA: vector(source.axisA, axis), axisB: vector(source.axisB, axis),
+    referenceAxisA: vector(source.referenceAxisA, { x: 1, y: 0, z: 0 }),
+    referenceAxisB: vector(source.referenceAxisB, { x: 1, y: 0, z: 0 }),
+    frameA: frame(source.frameA), frameB: frame(source.frameB),
+    limitsEnabled: source.limitsEnabled === true,
+    minAngle: constraintNumber(source.minAngle, -45), maxAngle: constraintNumber(source.maxAngle, 45),
+    distance: constraintNumber(source.distance, 1),
+  };
+}
+
+function constraintNumber(value: unknown, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error("Constraint values must be finite numbers");
+  return value;
+}
 
 export type RigidBodyProperties = {
   motionType: MotionType;

@@ -4,6 +4,7 @@ import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderShape,
@@ -262,6 +263,7 @@ function miss(): HitResult {
  * Supports both 3d and 2d worlds (2d zeros Z velocity / gravity Z).
  */
 export class SoftwarePhysicsBackend implements PhysicsBackend {
+  readonly supportsConstraints = false;
   readonly kind: PhysicsWorldKind;
   private gravity: Vec3;
   private readonly bodies = new Map<string, BodyState>();
@@ -289,6 +291,12 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         ? { x: gravity.x, y: gravity.y, z: 0 }
         : { ...gravity };
   }
+
+  createConstraint(_desc: ConstraintDesc): never {
+    throw new Error("Constraints require a native physics backend");
+  }
+
+  destroyConstraint(_id: string): void {}
 
   createBody(desc: RigidBodyDesc): void {
     this.assertLive();

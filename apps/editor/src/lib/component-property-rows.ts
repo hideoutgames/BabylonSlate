@@ -7,6 +7,7 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  quaternionToEulerDegrees,
   isEditorGraphClass,
   parseSkyboxFaces,
   parseSkyboxSize,
@@ -14,6 +15,7 @@ import {
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseOutlineProperties,
+  parseRagdollProperties,
   OUTLINE_WIDTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
@@ -51,6 +53,7 @@ import {
 } from "@babylonslate/object-model";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
+import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -76,6 +79,8 @@ export type ComponentPropertyContext = {
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
+  actorLabel?: (actorId: string) => string | undefined;
+  onPickActor?: (componentId: string) => void;
 };
 
 function rowId(actorId: string, componentId: string, key: string): string {
@@ -476,6 +481,43 @@ export function componentPropertyRows(
   context: ComponentPropertyContext,
 ): PropertyRow[] {
   switch (component.classId) {
+    case "PhysicsConstraintComponent":
+      return physicsConstraintPropertyRows(actorId, component, update, context);
+    case "RagdollComponent": {
+      const parsed = parseRagdollProperties(component.properties);
+      const defaults = parseRagdollProperties({});
+      const number = (
+        property: "totalMass" | "radius" | "angularLimit" | "linearDamping" | "angularDamping" | "friction" | "restitution",
+        label: string,
+        min: number,
+        description?: string,
+        max?: number,
+      ): PropertyRow => ({
+        kind: "number", id: rowId(actorId, component.id, property), label,
+        value: parsed[property], defaultValue: defaults[property], min, max, description,
+        onChange: (value) => update(property, Math.min(max ?? Infinity, Math.max(min, value))),
+      });
+      return [
+        {
+          kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+          value: parsed.enabled, defaultValue: false,
+          disabled: context.physicsWorld !== "3d",
+          description: context.physicsWorld === "3d"
+            ? "Requires a Model with a skeleton. Enabling captures its current animation pose for physics; disabling resumes animation."
+            : "Ragdoll requires a 3D physics scene.",
+          onChange: (value) => update("enabled", value),
+        },
+        number("totalMass", "Total Mass", 0.001, "Mass shared across the selected bones, in kilograms."),
+        number("radius", "Bone Radius", 0.001, "Collision radius of each bone, in scene units."),
+        number("angularLimit", "Angular Limit", 0, "Maximum rotation from the captured pose, in degrees.", 180),
+        number("linearDamping", "Linear Damping", 0),
+        number("angularDamping", "Angular Damping", 0),
+        number("friction", "Friction", 0),
+        number("restitution", "Restitution", 0, undefined, 1),
+        collisionLayerRow(actorId, component, update, context.collisionLayers),
+        collidesWithRow(actorId, component, update, context.collisionLayers),
+      ];
+    }
     case "MeshComponent": {
       const assetGuid =
         typeof component.properties.assetGuid === "string"
@@ -1922,6 +1964,17 @@ export function applyPrefabPropertyDefaults(
   return rows.map((row) => {
     for (const key of Object.keys(prefab.properties)) {
       if (!row.id.endsWith(`-${key}`)) continue;
+      if (prefab.classId === "PhysicsConstraintComponent" && row.kind === "vector3") {
+        const value = prefab.properties[key] as { x: number; y: number; z: number; w?: number };
+        if (key === "frameA" || key === "frameB") {
+          const angles = quaternionToEulerDegrees([value.x, value.y, value.z, value.w ?? 1]);
+          return { ...row, defaultValue: (row.axes?.length === 1 ? [angles[2], 0, 0] : angles) as [number, number, number] };
+        }
+        return { ...row, defaultValue: [value.x, value.y, value.z] as [number, number, number] };
+      }
+      if (prefab.classId === "PhysicsConstraintComponent" && row.kind === "asset" && key === "targetActorId") {
+        return { ...row, defaultValue: String(prefab.properties[key] ?? "") || null };
+      }
       if (
         key === "materialGuid" && prefab.classId === "MeshComponent" &&
         prefab.properties.assetGuid && !guidValue(prefab.properties.materialGuid) &&

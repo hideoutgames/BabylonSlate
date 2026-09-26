@@ -670,6 +670,10 @@ export function startPlaySession(options: {
     },
     onRenderPathChanged: publishRenderPathStatus,
     onScalabilityApplied: publishScalabilityStatus,
+    onRagdollPoseCaptured: (result) => {
+      if (worker) worker.postControl(result);
+      else runtime?.applyRagdollPoseCaptured(result);
+    },
     onRuntimeOutputChanged: (settings) => {
       if (options.onRenderOutputChanged) options.onRenderOutputChanged(settings);
       else options.onSetRenderResolution?.(settings.width, settings.height);

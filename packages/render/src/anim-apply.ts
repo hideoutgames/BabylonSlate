@@ -145,6 +145,7 @@ export interface MissingAnimClip {
 }
 
 export interface SceneAnimHost {
+  isPhysicsDriven?(slotId: number): boolean;
   animationGroups: NamedSeekableGroup[];
   getAnimationGroups?(slotId: number): readonly NamedSeekableGroup[];
   getAnimationGroup?(
@@ -254,6 +255,7 @@ export function applyAnimStateToScene(
   scene: SceneAnimHost,
   command: AnimStateCommand,
 ): void {
+  if (scene.isPhysicsDriven?.(command.slotId)) return;
   const layers = animStateLayers(command);
   const spriteLayers = layers.filter((layer) => layer.clipKind === "sprite");
   const animationLayers = layers.filter((layer) => layer.clipKind !== "sprite");
@@ -310,6 +312,7 @@ export function sceneAnimHostFromBinding(
   },
 ): SceneAnimHost {
   return {
+    isPhysicsDriven: (slotId) => binding.ragdoll?.isDriven(slotId) ?? false,
     animationGroups: options.animationGroups,
     getAnimationGroups: (slotId) => binding.slotAnimationGroups?.get(slotId) ?? [],
     getAnimationGroup: (slotId, clipName, clipAssetGuid) => {

@@ -1658,6 +1658,14 @@ export class ScriptHost {
       );
       return {};
     }
+    if (name === "setConstraintTarget" && component.classId === "PhysicsConstraintComponent") {
+      const actor = asActor(args.actor);
+      if (args.actor != null && (!actor || actor.destroyed)) return {};
+      const targetActorId = actor?.guid ?? "";
+      component.setVariable("targetActorId", targetActorId);
+      this.applyComponentVariable(component, "targetActorId", targetActorId);
+      return {};
+    }
     if (name === "moveTo" && component.owner) {
       this.services.moveTo?.(component.owner, vec3Arg(args.destination));
       return {};

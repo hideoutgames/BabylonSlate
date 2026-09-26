@@ -59,6 +59,7 @@ describe("SceneLayer schema", () => {
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
+            { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: true } },
             {
               id: "fill",
               classId: "HemisphericFillLightComponent",
@@ -87,6 +88,7 @@ describe("SceneLayer schema", () => {
       "AreaRectLightComponent",
       "OutlineComponent",
       "HemisphericFillLightComponent",
+      "RagdollComponent",
     ]);
   });
 

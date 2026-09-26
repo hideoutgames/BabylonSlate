@@ -1,10 +1,14 @@
 import type {
   InteractionGroups,
+  ImpulseJoint,
+  JointData,
+  RevoluteImpulseJoint,
   QueryFilterFlags,
 } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderTuning,
@@ -22,6 +26,7 @@ import type {
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
 import { copyColliderDesc, normalizedPhysicsPose } from "./collider-validation";
+import { copyConstraintDesc } from "./constraint-validation";
 
 type RapierEventQueue = {
   drainCollisionEvents(
@@ -44,6 +49,8 @@ type RapierApi = {
     free(): void;
     createRigidBody(desc: unknown): RapierRigidBody;
     removeRigidBody(body: RapierRigidBody): void;
+    createImpulseJoint(desc: JointData, bodyA: RapierRigidBody, bodyB: RapierRigidBody, wakeUp: boolean): ImpulseJoint;
+    removeImpulseJoint(joint: ImpulseJoint, wakeUp: boolean): void;
     createCollider(desc: unknown, body: RapierRigidBody): RapierCollider;
     removeCollider(collider: RapierCollider, wakeUp: boolean): void;
     createCharacterController(offset: number): RapierCharacterController;
@@ -74,6 +81,7 @@ type RapierApi = {
     kinematicPositionBased(): RapierBodyDesc;
     dynamic(): RapierBodyDesc;
   };
+  JointData: typeof JointData;
   RigidBodyType: {
     Fixed: number;
     KinematicPositionBased: number;
@@ -184,11 +192,13 @@ function identityRotation(): PhysicsTransform["rotation"] {
  */
 export class Rapier2DPhysicsBackend implements PhysicsBackend {
   readonly kind = "2d" as const;
+  readonly supportsConstraints = true;
   private readonly RAPIER: RapierApi;
   private readonly world: InstanceType<RapierApi["World"]>;
   private readonly bodies = new Map<string, BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
+  private readonly constraints = new Map<string, { desc: ConstraintDesc; joint: ImpulseJoint }>();
   private readonly bodyIdByHandle = new Map<number, string>();
   private readonly colliderIdByHandle = new Map<number, string>();
   private readonly eventQueue: RapierEventQueue;
@@ -217,6 +227,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (this.disposed) return;
     this.disposed = true;
     this.characters.clear();
+    this.constraints.clear();
     this.colliders.clear();
     this.bodies.clear();
     this.colliderIdByHandle.clear();
@@ -261,6 +272,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   destroyBody(bodyId: string): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
+    for (const [id, constraint] of this.constraints) {
+      if (constraint.desc.bodyAId === bodyId || constraint.desc.bodyBId === bodyId) this.destroyConstraint(id);
+    }
     for (const [id, collider] of [...this.colliders]) {
       if (collider.desc.bodyId === bodyId) this.destroyCollider(id);
     }
@@ -271,6 +285,47 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world.removeRigidBody(record.body);
     this.bodies.delete(bodyId);
     this.queriesDirty = true;
+  }
+
+  createConstraint(input: ConstraintDesc): void {
+    if (this.disposed) throw new Error("Physics backend is disposed");
+    const desc = copyConstraintDesc(input, this.kind);
+    const a = this.bodies.get(desc.bodyAId);
+    const b = this.bodies.get(desc.bodyBId);
+    if (!a || !b) throw new Error("Constraint bodies must exist in the same physics world");
+    const joints = this.RAPIER.JointData;
+    const params = desc.kind === "fixed"
+      ? joints.fixed(desc.anchorA, quatToPlanarAngle(desc.frameA!), desc.anchorB, quatToPlanarAngle(desc.frameB!))
+      : joints.revolute(desc.anchorA, desc.anchorB);
+    let limits: [number, number] | undefined;
+    if (desc.kind === "hinge" && desc.limits) {
+      const refA = desc.referenceAxisA!;
+      const refB = desc.referenceAxisB!;
+      const offset = Math.atan2(refB.y, refB.x) - Math.atan2(refA.y, refA.x);
+      limits = desc.axisA.z > 0
+        ? [desc.limits.min - offset, desc.limits.max - offset]
+        : [-desc.limits.max - offset, -desc.limits.min - offset];
+    }
+    let joint: ImpulseJoint | undefined;
+    try {
+      joint = this.world.createImpulseJoint(params, a.body, b.body, true);
+      // Rapier 0.14's revolute descriptor ignores limits; set them on the native joint.
+      if (limits) (joint as RevoluteImpulseJoint).setLimits(limits[0], limits[1]);
+      joint.setContactsEnabled(desc.collideConnected ?? false);
+      const previous = this.constraints.get(desc.id);
+      if (previous) this.world.removeImpulseJoint(previous.joint, true);
+      this.constraints.set(desc.id, { desc, joint });
+    } catch (error) {
+      if (joint?.isValid()) this.world.removeImpulseJoint(joint, true);
+      throw error;
+    }
+  }
+
+  destroyConstraint(id: string): void {
+    const record = this.constraints.get(id);
+    if (!record) return;
+    this.world.removeImpulseJoint(record.joint, true);
+    this.constraints.delete(id);
   }
 
   teleportBody(
