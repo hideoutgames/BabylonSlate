@@ -1,11 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import {
-  addMaterialPaletteNode,
-  compileMaterialPreview,
-  connectMaterialPins,
-  guidForPath,
-} from "./material-graph";
+import { guidForPath } from "./material-graph";
 import {
   createContentBrowserAsset,
   openAssetFromBrowser,
@@ -40,28 +35,14 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   await expect(content).toHaveCount(0);
 }
 
-/** Particle Domain Material; with `particleColor` it draws each particle's own color. */
-async function createParticleMaterial(
-  page: Page,
-  name: string,
-  options: { particleColor?: boolean } = {},
-): Promise<string> {
+/** New Material switched to the Particle Domain, which draws each particle's own color. */
+async function createParticleMaterial(page: Page, name: string): Promise<string> {
   await createContentBrowserAsset(page, "Material", name);
   await openAssetFromBrowser(page, `assets/${name}.material.babasset`);
   await expect(page.getByTestId("document-workspace-material")).toBeVisible();
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Particle", exact: true }).click();
   await expect(page.getByTestId("property-domain")).toContainText("Particle");
-  if (options.particleColor) {
-    await addMaterialPaletteNode(page, "Particle Color", "input.particleColor");
-    await connectMaterialPins(page, "input.particleColor-", "color", '[data-id="output"]', "color");
-    await expect(
-      page
-        .getByTestId("material-graph-editor")
-        .locator('.react-flow__edge[data-id*=":color:output:color"]'),
-    ).toHaveCount(1);
-    await compileMaterialPreview(page);
-  }
   const guid = await guidForPath(page, `assets/${name}.material.babasset`);
   expect(guid.length).toBeGreaterThan(0);
   return guid;
@@ -140,6 +121,25 @@ function changedPixels(canvas: Locator): () => Promise<number> {
     });
 }
 
+/** Pixels drawn over the corner background colour, and how many of them are blue. */
+async function bluePixels(canvas: Locator): Promise<{ drawn: number; blue: number }> {
+  return canvas.evaluate((element: HTMLCanvasElement) => {
+    const context = element.getContext("2d");
+    if (!context) return { drawn: 0, blue: 0 };
+    const data = context.getImageData(0, 0, element.width, element.height).data;
+    const background = [data[0]!, data[1]!, data[2]!];
+    let drawn = 0;
+    let blue = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const [r, g, b] = [data[i]!, data[i + 1]!, data[i + 2]!];
+      if (Math.max(r - background[0]!, g - background[1]!, b - background[2]!) <= 40) continue;
+      drawn += 1;
+      if (b - Math.max(r, g) > 40) blue += 1;
+    }
+    return { drawn, blue };
+  });
+}
+
 async function particleStats(page: Page): Promise<{
   systems: number;
   playing: number;
@@ -171,7 +171,7 @@ test.describe("Particle Graph", () => {
       if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
     });
     await openTestProject(page);
-    const materialGuid = await createParticleMaterial(page, "EmberMat", { particleColor: true });
+    const materialGuid = await createParticleMaterial(page, "EmberMat");
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleGraph", "Embers");
@@ -219,6 +219,20 @@ test.describe("Particle Graph", () => {
     await expect(preview.getByTestId("particle-preview-backend")).toHaveText("CPU");
     await expect(results).toContainText("No Issues");
     await expect(results.locator('[data-testid^="particle-graph-diagnostic-"]')).toHaveCount(0);
+
+    // Neither the Particle Domain Material nor the default graph replaces Create Particle's Color.
+    await particleGraphEditor(page)
+      .locator('.react-flow__node[data-id="create"]')
+      .click({ position: { x: 12, y: 6 } });
+    const createColor = details.getByTestId("property-color-hex");
+    await createColor.fill("#0000ff");
+    await createColor.press("Tab");
+    await expect(createColor).toHaveValue("#0000ff");
+    await expect(async () => {
+      const { drawn, blue } = await bluePixels(previewCanvas);
+      expect(drawn).toBeGreaterThan(200);
+      expect(blue / drawn, `${blue} of ${drawn} drawn pixels are blue`).toBeGreaterThan(0.9);
+    }).toPass({ timeout: 15_000 });
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleEmitter", "EmberSparks");

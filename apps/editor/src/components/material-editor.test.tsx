@@ -252,10 +252,19 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("property-baseColor")).toBeNull();
   });
 
-  it("switches the material domain", () => {
+  it("switches to Particle with Particle Color wired into the Particle Output", async () => {
     render(<MaterialDetailsPanel {...panelProps} />);
-    const select = screen.getByTestId("property-domain");
-    expect(select).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-domain"));
+    const option = await screen.findByRole("option", { name: "Particle" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    const committed = lastCommit();
+    expect(committed.domain).toBe("particle");
+    const color = committed.nodes.find((node) => node.type === "input.particleColor");
+    const output = committed.nodes.find((node) => node.type === "output.particle");
+    expect(committed.edges).toEqual([
+      expect.objectContaining({ sourceNodeId: color?.id, sourcePinId: "color", targetNodeId: output?.id, targetPinId: "color" }),
+    ]);
   });
 
   it("offers Surface, Post Process, and Particle without Interface", async () => {

@@ -41,8 +41,9 @@ function fixtureLibrary(fixtures: Record<string, EmitterFixture>, extra: Fixture
 }
 
 /**
- * The shipped default Particle Graph (Sphere Shape, Apply Velocity, white-to-clear
- * Gradient over life) drawn with `material`; graphs simulate on the CPU in every run.
+ * The shipped default Particle Graph (Sphere Shape, Apply Velocity, white Initial Color
+ * times a white-to-transparent-black Gradient over life) drawn with `material`; graphs
+ * simulate on the CPU in every run.
  */
 function graphAsset(guid: string, material: string): FixtureAsset {
   return { guid, type: "ParticleGraph", payload: { ...createDefaultParticleGraphDocument(), materialGuid: material } };
