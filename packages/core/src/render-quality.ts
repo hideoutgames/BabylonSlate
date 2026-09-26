@@ -11,11 +11,17 @@ export const QUALITY_LEVELS = ["low", "medium", "high", "ultra"] as const;
 export type QualityLevel = (typeof QUALITY_LEVELS)[number];
 export type QualityPreset = QualityLevel | "custom";
 export type QualityGroup =
-  "shadows" | "resolution" | "textures" | "postprocessing" | "lighting";
+  | "shadows"
+  | "resolution"
+  | "textures"
+  | "geometry"
+  | "postprocessing"
+  | "lighting";
 export const QUALITY_GROUPS: readonly QualityGroup[] = [
   "shadows",
   "resolution",
   "textures",
+  "geometry",
   "postprocessing",
   "lighting",
 ];
@@ -35,6 +41,14 @@ export interface TextureQuality extends QualitySelection {
   anisotropy: number;
   byteBudget: number;
 }
+/** Automatic Model LOD selection; generated levels are chosen by screen coverage. */
+export interface GeometryQuality extends QualitySelection {
+  autoLod: boolean;
+  /** Multiplies the distance at which each generated level takes over. */
+  lodDistanceScale: number;
+}
+export const LOD_DISTANCE_SCALE_MIN = 0.25;
+export const LOD_DISTANCE_SCALE_MAX = 4;
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
 }
@@ -45,6 +59,7 @@ export interface LightingQuality extends QualitySelection {
 export interface RenderingQuality {
   resolution: ResolutionQuality;
   textures: TextureQuality;
+  geometry: GeometryQuality;
   postprocessing: PostProcessingQuality;
   lighting: LightingQuality;
 }
@@ -73,24 +88,28 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 4 },
     resolution: { scale: 0.75, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 1, anisotropy: 2, byteBudget: 256 * MIB },
+    geometry: { autoLod: true, lodDistanceScale: 0.5 },
     postprocessing: { resolutionScale: 0.5 },
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 16 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 512 * MIB },
+    geometry: { autoLod: true, lodDistanceScale: 1 },
     postprocessing: { resolutionScale: 0.75 },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 1024 * MIB },
+    geometry: { autoLod: true, lodDistanceScale: 1.5 },
     postprocessing: { resolutionScale: 1 },
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
     resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 16, byteBudget: 2048 * MIB },
+    geometry: { autoLod: true, lodDistanceScale: 2 },
     postprocessing: { resolutionScale: 1 },
   },
 };
@@ -118,6 +137,15 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
       ? (value as Partial<RenderingQuality>)
       : {};
   const defaults = RENDER_QUALITY_PROFILES.medium;
+  // Projects saved before Geometry existed follow their other groups' shared tier.
+  const savedProfiles = [source.resolution, source.textures, source.postprocessing, source.lighting]
+    .map((group) => group?.profile)
+    .filter(isQualityLevel);
+  const inheritedGeometry = !source.geometry && savedProfiles.length > 0 &&
+    savedProfiles.every((profile) => profile === savedProfiles[0])
+    ? { ...RENDER_QUALITY_PROFILES[savedProfiles[0]!].geometry, profile: savedProfiles[0] }
+    : undefined;
+  const geometry: Partial<GeometryQuality> | undefined = source.geometry ?? inheritedGeometry;
   const finite = (n: unknown, fallback: number, min: number, max: number) =>
     typeof n === "number" && Number.isFinite(n)
       ? Math.min(max, Math.max(min, n))
@@ -158,6 +186,19 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         Number.MAX_SAFE_INTEGER,
       ),
     },
+    geometry: {
+      ...selection(geometry),
+      autoLod:
+        typeof geometry?.autoLod === "boolean"
+          ? geometry.autoLod
+          : defaults.geometry.autoLod,
+      lodDistanceScale: finite(
+        geometry?.lodDistanceScale,
+        defaults.geometry.lodDistanceScale,
+        LOD_DISTANCE_SCALE_MIN,
+        LOD_DISTANCE_SCALE_MAX,
+      ),
+    },
     postprocessing: {
       ...selection(source.postprocessing),
       resolutionScale: finite(
@@ -179,6 +220,7 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
   for (const group of [
     "resolution",
     "textures",
+    "geometry",
     "postprocessing",
     "lighting",
   ] as const) {
@@ -224,6 +266,7 @@ export function resolveRenderingQuality(
     ...normalizeRenderingQuality({
       resolution: mergeQualityValues(base.resolution, session.resolution),
       textures: mergeQualityValues(base.textures, session.textures),
+      geometry: mergeQualityValues(base.geometry, session.geometry),
       postprocessing: mergeQualityValues(
         base.postprocessing,
         session.postprocessing,
@@ -249,6 +292,7 @@ export function qualityPresetPatch(
   const values = {
     resolution: { ...profile.resolution, profile: level, preset: level },
     textures: { ...profile.textures, profile: level, preset: level },
+    geometry: { ...profile.geometry, profile: level, preset: level },
     postprocessing: {
       ...profile.postprocessing,
       profile: level,
@@ -424,6 +468,26 @@ export class RenderingQualitySession {
         this.overrides = {
           ...this.overrides,
           shadows: { ...this.overrides.shadows, enabled: value === "on" },
+        };
+      else if (
+        group === "geometry" &&
+        choice === "lod" &&
+        (value === "on" || value === "off")
+      )
+        this.overrides = {
+          ...this.overrides,
+          geometry: { ...this.overrides.geometry, autoLod: value === "on" },
+        };
+      else if (
+        group === "geometry" &&
+        choice === "distance" &&
+        Number.isFinite(numeric) &&
+        numeric >= LOD_DISTANCE_SCALE_MIN &&
+        numeric <= LOD_DISTANCE_SCALE_MAX
+      )
+        this.overrides = {
+          ...this.overrides,
+          geometry: { ...this.overrides.geometry, lodDistanceScale: numeric },
         };
       else if (
         group === "resolution" &&

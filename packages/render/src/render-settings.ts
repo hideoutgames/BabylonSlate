@@ -39,6 +39,9 @@ type SceneRendering = {
   lightsDebug: boolean;
   textureLodBias: number;
   textureAnisotropy: number;
+  /** Automatic Model LOD selection; false keeps every model on full detail. */
+  autoLod: boolean;
+  lodDistanceScale: number;
   localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
@@ -79,6 +82,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightsDebug: false,
       textureLodBias: 0,
       textureAnisotropy: 4,
+      autoLod: true,
+      lodDistanceScale: 1,
       localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
@@ -121,6 +126,8 @@ export function updateSceneRenderingSettings(
   state.shadows = quality.shadows;
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
+  state.autoLod = quality.geometry.autoLod;
+  state.lodDistanceScale = quality.geometry.lodDistanceScale;
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";

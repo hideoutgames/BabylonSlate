@@ -20,6 +20,7 @@ import {
 } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
+import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 
 const engines: NullEngine[] = [];
@@ -299,6 +300,22 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
     expect(sunDraw).toHaveBeenCalledTimes(5);
     expect(controller.generator(light)).toBe(generator);
+  });
+
+  it("keeps caching automatic LOD casters and refreshes once when the drawn level changes", async () => {
+    const { scene, camera, material, render } = await fixture();
+    const source = MeshBuilder.CreateSphere("lod source", { segments: 32 }, scene);
+    source.setEnabled(false);
+    const actor = new TransformNode("actor", scene);
+    const part = source.clone("lod caster", actor);
+    part.setEnabled(true);
+    part.material = material;
+    expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    camera.position.z -= 500;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
   });
 
   it("refreshes local maps when the actual floating render origin moves", async () => {

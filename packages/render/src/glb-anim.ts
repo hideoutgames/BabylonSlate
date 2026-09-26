@@ -28,6 +28,7 @@ import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -71,6 +72,9 @@ type CachedGlb = {
   accounted: number;
   container?: AssetContainer;
   load: Promise<AssetContainer>;
+  /** Automatic LOD levels, generated once when an Auto LOD actor first needs them. */
+  lods?: Promise<ModelLodSet | null>;
+  lodSet?: ModelLodSet;
 };
 
 type SceneGlbCache = {
@@ -257,8 +261,30 @@ function retireSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (cache.entries.get(entry.key) === entry) cache.entries.delete(entry.key);
   cache.accountedBytes = Math.max(0, cache.accountedBytes - entry.accounted);
   entry.accounted = 0;
+  entry.lodSet?.dispose();
+  entry.lodSet = undefined;
   entry.container?.dispose();
   entry.container = undefined;
+}
+
+/** Shared generation; a failure leaves this model at full detail. */
+function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet | null> {
+  entry.lods ??= entry.load.then(async (container) => {
+    const current = () => {
+      if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
+    };
+    const lods = await generateModelLods(container, current);
+    current();
+    entry.lodSet = lods;
+    entry.accounted += lods.indexBytes;
+    cache.accountedBytes += lods.indexBytes;
+    return lods;
+  }).catch((error: unknown) => {
+    if (!cache.disposed && !entry.retired)
+      console.warn(`[render] Model ${entry.guid} keeps full detail; automatic LOD failed: ${String(error)}`);
+    return null;
+  });
+  return entry.lods;
 }
 
 function releaseUnusedSource(cache: SceneGlbCache, entry: CachedGlb): void {
@@ -271,7 +297,7 @@ export function acquireGlbContainer(
   source: Blob,
   payload?: unknown,
   packed?: PackedTextureSlimProof | null,
-): { key: string; load: Promise<AssetContainer>; release(): void } {
+): { key: string; load: Promise<AssetContainer>; lods(): Promise<ModelLodSet | null>; release(): void } {
   const cache = cacheFor(scene);
   if (cache.disposed || scene.isDisposed) throw new Error("Model scene is disposed");
   const key = modelSourceKey(guid, source, payload, packed);
@@ -312,6 +338,7 @@ export function acquireGlbContainer(
   return {
     key,
     load: held.load,
+    lods: () => modelLods(cache, held),
     release() {
       if (released) return;
       released = true;
@@ -601,6 +628,7 @@ export function beginSlotModelAnimLoad(
   const importScale = normalizeModelImportScale(
     binding.modelPayloads?.get(clipAssetGuid)?.importScale,
   );
+  const autoLod = binding.modelPayloads?.get(clipAssetGuid)?.autoLod !== false;
   const packed = packedSlimProof(binding);
   const animations = JSON.stringify({
     clips: [...(binding.modelClipAnimationGuids?.get(clipAssetGuid) ?? [])],
@@ -609,7 +637,7 @@ export function beginSlotModelAnimLoad(
       return [row, source ? installedAssetIdentity(source) : null];
     }),
   });
-  const key = `${modelSourceKey(clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed)}:scale=${importScale}:${animations}`;
+  const key = `${modelSourceKey(clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed)}:scale=${importScale}:lod=${autoLod}:${animations}`;
   const meta = asPlaceholderMeta(placeholder);
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
     return Promise.resolve();
@@ -655,6 +683,8 @@ export function beginSlotModelAnimLoad(
     let published = false;
     try {
       const container = await wait(lease.load);
+      if (!request.isCurrent()) return;
+      const lods = autoLod ? await wait(lease.lods()) : null;
       if (!request.isCurrent()) return;
       prepared = prepareModelInstance(placeholder, container, importScale);
       prepared.bundle.releaseWith(() => lease.release());
@@ -702,6 +732,9 @@ export function beginSlotModelAnimLoad(
       }
       await wait(Promise.resolve(prepareInstance?.(prepared.staging)));
       if (!request.isCurrent()) return;
+      // After slot materials, so levels start with the actor's materials and
+      // the preparation below warms their variants too.
+      if (lods) attachModelLods(prepared.staging, lods);
       await wait(prepareInstanceMaterials(prepared.staging, () => {
         if (!request.isCurrent()) throw new Error("Model preparation was cancelled");
       }, cancellation));

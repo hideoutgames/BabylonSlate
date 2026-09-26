@@ -209,9 +209,19 @@ export function ModelEditor({
     onChange: () => {},
   }));
 
+  const lodRows: PropertyRow[] = [{
+    id: "auto-lod",
+    kind: "boolean",
+    label: "Auto LOD",
+    value: model.autoLod,
+    description: "Generate simplified meshes for distant views when the model loads.",
+    onChange: (autoLod) => commit({ ...model, autoLod: Boolean(autoLod) }),
+  }];
+
   return (
     <div data-testid="model-editor">
       <PropertyGrid rows={slotRows} />
+      <PropertyGrid title="Level of Detail" rows={lodRows} />
       {clipRows.length > 0 ? (
         <PropertyGrid title="Clips" rows={clipRows} />
       ) : null}

@@ -28,7 +28,8 @@ function hasGeometry(mesh: AbstractMesh): boolean {
 export function visualMeshes(root: AbstractMesh, excludedRoots?: ReadonlySet<AbstractMesh>): AbstractMesh[] {
   const children = root.getChildMeshes().filter(
     (mesh) => {
-      if (!hasGeometry(mesh) || isColliderVisualTree(mesh as Mesh)) return false;
+      // Automatic LOD levels draw in place of their master, never as parts.
+      if (mesh.isBlocked || !hasGeometry(mesh) || isColliderVisualTree(mesh as Mesh)) return false;
       // Exclude foreign actor subtrees before deciding whether this root is a
       // model placeholder. A hidden primitive must not lose its own identity
       // merely because another actor is temporarily attached beneath it.

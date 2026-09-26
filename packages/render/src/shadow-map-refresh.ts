@@ -9,6 +9,7 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
+import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
 class Snapshot {
@@ -168,6 +169,10 @@ export class ShadowMapRefresh {
       state.value(material.metadata?.boundsPadding);
       const safeMaterial = canCacheShadowMaterial(material, mesh);
       state.value(safeMaterial);
+      // Automatic LOD levels are immutable index buffers that mirror this
+      // mesh's material; a map re-renders once when the drawn level changes.
+      const autoLod = isAutoLodMaster(mesh);
+      state.value(autoLod ? peekAutoLodLevel(mesh, scene.activeCamera) : undefined);
       // Babylon 9.20 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
@@ -182,7 +187,7 @@ export class ShadowMapRefresh {
         !dynamicGeometry &&
         !mesh.infiniteDistance &&
         mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
-        !mesh.getLODLevels().length &&
+        (autoLod || !mesh.getLODLevels().length) &&
         !mesh.onBeforeRenderObservable.hasObservers() &&
         !mesh.onBeforeDrawObservable.hasObservers() &&
         geometryWatch?.notify === geometry?.onGeometryUpdated;

@@ -70,6 +70,7 @@ describe("modelSlotFingerprint", () => {
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
+      autoLod: true,
     };
     const empty = modelSlotFingerprint(new Map([["model-1", { ...base, simpleColliders: [] }]]));
     const withHull = modelSlotFingerprint(

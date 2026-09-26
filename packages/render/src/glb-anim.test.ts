@@ -21,6 +21,7 @@ import {
   encodeParentedAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
   encodeTriangleGlb,
+  encodeUvSphereGlb,
 } from "./glb-test-fixtures";
 import { accountedGeometryBytes } from "./perf-ceilings";
 import {
@@ -312,6 +313,7 @@ describe("beginSlotModelAnimLoad", () => {
           skeletonGuid: null,
           importScale: 10,
           simpleColliders: [],
+          autoLod: true,
         },
       ],
     ]);
@@ -332,6 +334,29 @@ describe("beginSlotModelAnimLoad", () => {
     const scale = world.getRow(0);
     expect(scale).toBeTruthy();
     expect(Math.hypot(scale!.x, scale!.y, scale!.z)).toBeCloseTo(20, 5);
+  });
+
+  it("attaches automatic LOD levels only to Auto LOD models and re-realizes when the setting changes", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true };
+    binding.modelPayloads = new Map([["model-1", payload]]);
+    const bytes = installAssetBytes(encodeUvSphereGlb());
+    const root = createModelActorRoot(scene, "actor-2");
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", bytes, root);
+    const [part] = visualMeshes(root);
+    expect(visualMeshes(root)).toHaveLength(1);
+    expect(part!.getLODLevels().length).toBeGreaterThan(0);
+    for (const level of part!.getLODLevels()) expect(level.mesh!.isDescendantOf(root)).toBe(true);
+
+    binding.modelPayloads = new Map([["model-1", { ...payload, autoLod: false }]]);
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", bytes, root);
+    const [full] = visualMeshes(root);
+    expect(full).not.toBe(part);
+    expect(full!.getLODLevels()).toHaveLength(0);
+    expect(root.getChildMeshes().some((mesh) => mesh.isBlocked)).toBe(false);
   });
 
   it("logs a loader failure and leaves the empty named root", async () => {
