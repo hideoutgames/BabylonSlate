@@ -12,6 +12,8 @@ import * as normalMaterial from "./render-target-normal-material";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";
+import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";
+import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -194,6 +196,39 @@ it("Scene Color particle selection follows emitter actor ownership", () => {
   captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["selected"] }, () => root);
   captures.request("capture"); captures.render();
   expect(particleDraws[1]).toEqual([included]);
+});
+
+it("keeps pending streamed meshes, imports and particles out of parent captures", () => {
+  const { scene, captures, draws, particleDraws } = host();
+  const parent = MeshBuilder.CreateBox("Parent", {}, scene);
+  const parentParticles = new ParticleSystem("Parent Particles", 8, scene);
+  const binding = createSnapshotSceneBinding();
+  binding.meshes.set(1, parent);
+  const admission = createSceneStreamAdmission(scene, binding);
+  const identity = { actorGuid: "stream", streamLoadId: 1 };
+  admission.receive({ type: "sceneStreamLoading", ...identity });
+  admission.receive({ type: "spawn", slotId: 2, actorGuid: "child", classId: "Actor", sceneStreamActorGuid: "stream", streamLoadId: 1 });
+  const child = MeshBuilder.CreateBox("Child", {}, scene);
+  const pendingImport = MeshBuilder.CreateBox("Unbound Import", {}, scene);
+  vi.spyOn(pendingImport, "isReady").mockReturnValue(false);
+  binding.meshes.set(2, child);
+  const childParticles = new ParticleSystem("Child Particles", 8, scene);
+  registerSceneStreamParticle(childParticles, 2);
+  admission.sync();
+  captures.request("capture"); captures.render();
+  expect(draws[0]).toEqual([parent]);
+  expect(particleDraws[0]).toEqual([parentParticles]);
+  admission.publish([2], identity);
+  captures.request("capture"); captures.render();
+  expect(draws[1]).toEqual([parent, child]);
+  expect(particleDraws[1]).toEqual([parentParticles, childParticles]);
+  retirePlaySlot(binding, 2);
+  childParticles.dispose(); pendingImport.dispose();
+  admission.sync();
+  captures.request("capture"); captures.render();
+  expect(draws[2]).toEqual([parent]);
+  expect(particleDraws[2]).toEqual([parentParticles]);
+  admission.clear();
 });
 
 it("excludes particles sampling the capture attachment and admits a replacement material", async () => {

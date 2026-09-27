@@ -13,7 +13,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -32,6 +32,9 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneStreamIdentity } from "./scene-streaming-readiness";
+import { prepareSceneStream } from "./scene-stream-preparation";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -261,6 +264,8 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
+  setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
   setRegisterViewEnabled: (enabled: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
@@ -357,6 +362,8 @@ export interface EngineHandle {
   whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
   whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
+  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -838,6 +845,7 @@ function initializeEngine(
   const worldRenderer = new SceneRenderCoordinator(scene);
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
+  let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
@@ -982,6 +990,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
@@ -1071,6 +1080,8 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
+  onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
   if (options.playMode && options.onRagdollPoseCaptured) {
     binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
@@ -1502,7 +1513,7 @@ function initializeEngine(
       runtimeFogActorBySlot.delete(slotId);
     }
     if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
-    upsertFogVolumes(scene, authored.actorId, root, authored.bindings);
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
   const refreshRuntimeOutline = (slotId: number) => {
@@ -2257,6 +2268,7 @@ function initializeEngine(
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
+    streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
     if (!shouldRenderFrame(frameStart, loadingFrame)) {
@@ -2526,6 +2538,16 @@ function initializeEngine(
     void fontRegistry.registerAll(options.fontFaceEntries);
   }
 
+  let callerPaused = false;
+  let sceneStreamingPaused = false;
+  const applyPause = () => {
+    const paused = callerPaused || sceneStreamingPaused;
+    binding.paused = paused;
+    scheduler.setPaused(paused);
+    audioService?.setPaused(paused);
+    particleService?.setPaused(paused);
+  };
+
   return {
     engine,
     scene,
@@ -2536,6 +2558,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
       unsubscribeRenderPathSession();
@@ -2664,6 +2687,7 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
@@ -2772,7 +2796,7 @@ function initializeEngine(
       if (command.type === "configureRenderTargetCapture") {
         const transform = command.transform;
         renderTargetCaptures.configure(command.actorGuid, command.settings,
-          () => binding.meshes.get(command.slotId) ?? null, transform ? {
+          () => isSceneStreamSlotPending(scene, command.slotId) ? null : binding.meshes.get(command.slotId) ?? null, transform ? {
             position: [transform.position.x, transform.position.y, transform.position.z],
             rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
             scale: [transform.scale.x, transform.scale.y, transform.scale.z],
@@ -2975,12 +2999,15 @@ function initializeEngine(
         );
         scheduler.invalidate("snapshot");
       }
+      streamAdmission?.sync();
     },
     setPaused: (paused: boolean) => {
-      binding.paused = paused;
-      scheduler.setPaused(paused);
-      audioService?.setPaused(paused);
-      particleService?.setPaused(paused);
+      callerPaused = paused;
+      applyPause();
+    },
+    setSceneStreamingPaused: (paused: boolean) => {
+      sceneStreamingPaused = paused;
+      applyPause();
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
@@ -3237,6 +3264,43 @@ function initializeEngine(
         .map(([, pending]) => pending);
       await Promise.all(playLoads);
       scope.assert();
+    },
+    prepareSceneStream: async (slotIds, signal, onProgress, owner) => {
+      if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
+      const generation = loadGeneration;
+      await prepareSceneStream(scene, binding, slotIds, {
+        signal, onProgress,
+        assertCurrent: () => assertCurrent(generation),
+        pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+      });
+      signal.throwIfAborted();
+      assertCurrent(generation);
+      if (streamAdmission?.publish(slotIds, owner) === false)
+        throw new Error("Scene streaming publication was superseded.");
+      if (slotIds.some((slot) => {
+        const fog = binding.fogVolumes.get(slot);
+        return fog && hasFogVolumes(scene, fog.actorId);
+      })) {
+        // Fog can introduce the shared effects pipeline. Its graph and actor
+        // geometry must be ready before the runtime acknowledges Loaded.
+        // Preparation belongs to the renderer, so one canceled stream cannot
+        // reject a sibling waiting for the same graph generation.
+        let cancel!: () => void;
+        const cancelled = new Promise<never>((_, reject) => {
+          cancel = () => reject(signal.reason);
+          signal.addEventListener("abort", cancel, { once: true });
+        });
+        try {
+          await Promise.race([worldRenderer.prepare(() => assertCurrent(generation)), cancelled]);
+        } finally {
+          signal.removeEventListener("abort", cancel);
+        }
+        signal.throwIfAborted();
+        assertCurrent(generation);
+      }
+      particleService?.startPreparedSlots(slotIds);
+      appliedSnapshotIdentity = null;
+      scheduler.invalidate("snapshot");
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +

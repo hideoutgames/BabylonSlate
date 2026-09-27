@@ -15,6 +15,7 @@ import {
   fogVolumeBindings,
   outlineBindings,
   createDefaultScene,
+  createDefaultRenderTargetCaptureProperties,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
@@ -34,6 +35,7 @@ import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
@@ -284,6 +286,21 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it("keeps manual Pause and blocking streaming pauses independent", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.setSceneStreamingPaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setPaused(true);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(true);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+  });
 
   function renderViews(engine: NullEngine) {
     if (!engine.getRenderingCanvas())
@@ -3729,6 +3746,101 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
     expect(hasFogVolumes(handle.scene)).toBe(false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("waits for shared fog rendering preparation without letting one canceled stream fail its sibling", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    for (const [slotId, actorGuid] of [[4, "left"], [5, "right"]] as const) {
+      handle.applyCommand({ type: "sceneStreamLoading", actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `${actorGuid}-fog`, classId: "Actor",
+        sceneStreamActorGuid: actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid: `${actorGuid}-fog`, meshAssetGuid: null, meshKind: null });
+      handle.applyCommand({ type: "setFogVolumes", slotId, actorId: `${actorGuid}-fog`, volumes });
+    }
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reached!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => { reached = resolve; });
+    const prepare = SceneRenderCoordinator.prototype.prepare;
+    let shared: ReturnType<typeof prepare> | undefined;
+    let waiters = 0;
+    // Hold the renderer-owned asynchronous boundary, then use the real graph.
+    // Its first caller must not lend a per-stream cancellation to shared work.
+    const preparing = vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockImplementation(function (this: SceneRenderCoordinator, assertCurrent = () => {}) {
+      shared ??= gate.then(() => prepare.call(this, assertCurrent));
+      if (++waiters === 2) reached();
+      return shared.then((result) => { assertCurrent(); return result; });
+    });
+    const leftAbort = new AbortController();
+    const left = handle.prepareSceneStream([4], leftAbort.signal, undefined, { actorGuid: "left", streamLoadId: 1 });
+    const leftRejected = expect(left).rejects.toThrow("cancel left");
+    let rightReady = false;
+    const right = handle.prepareSceneStream([5], new AbortController().signal, undefined, { actorGuid: "right", streamLoadId: 1 })
+      .then(() => { rightReady = true; });
+    try {
+      await bothWaiting;
+      expect(rightReady).toBe(false);
+      leftAbort.abort(new Error("cancel left"));
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "left-fog" });
+      await leftRejected;
+      expect(hasFogVolumes(handle.scene, "left-fog")).toBe(false);
+      expect(hasFogVolumes(handle.scene, "right-fog")).toBe(true);
+      expect(rightReady).toBe(false);
+      release();
+      await right;
+      expect(rightReady).toBe(true);
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "right", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "right-fog" });
+      expect(hasFogVolumes(handle.scene)).toBe(false);
+      expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+    } finally {
+      leftAbort.abort(new Error("cancel left"));
+      release();
+      preparing.mockRestore();
+      await Promise.allSettled([left, leftRejected, right]);
+    }
+  });
+
+  it("admits streamed capture producers only when ready and restores the loaded sibling on unload", async () => {
+    const engine = sharedEngine();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+      const target = allocate(size, options);
+      target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    const { handle } = playHandle(engine);
+    handle.setMeshAssets({ renderTargets: new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]) });
+    const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" };
+    handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    for (const [slotId, actorGuid] of [[4, "pending"], [5, "loaded"]] as const) {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "RenderTargetCapture",
+        ...(slotId === 4 ? { sceneStreamActorGuid: "stream", streamLoadId: 1 } : {}) });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "renderTargetCapture" });
+      handle.applyCommand({ type: "configureRenderTargetCapture", slotId, actorGuid, settings });
+    }
+    const captures = sceneRenderTargetCaptures(handle.scene);
+    const owners: string[] = [];
+    const ready = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const draw = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+      owners.push(this.activeCamera!.name);
+    });
+    try {
+      captures.render();
+      expect(owners).toEqual(["renderTargetCapture:loaded"]);
+      await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:pending");
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "pending" });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:loaded");
+    } finally { ready.mockRestore(); draw.mockRestore(); }
   });
 
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {

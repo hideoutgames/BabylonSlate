@@ -19,6 +19,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -166,18 +167,27 @@ function describeShaderStall(stalled: string | null, completed: number): string 
 }
 
 export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => void): Promise<void> {
+  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent);
+}
+
+/** Warm only an additive instance's consumers, without waiting on sibling loads. */
+export async function prewarmMeshMaterials(
+  scene: Scene,
+  meshes: Iterable<AbstractMesh>,
+  assertCurrent?: (mesh?: AbstractMesh) => void,
+): Promise<void> {
   let finished = false;
-  const check = () => {
+  const check = (mesh?: AbstractMesh) => {
     if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
-    assertCurrent?.();
+    assertCurrent?.(mesh);
   };
   check();
   syncSceneLighting(scene);
   const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS);
   try {
     await deadline.race((async () => {
-      for (const mesh of scene.meshes) {
-        check();
+      for (const mesh of meshes) {
+        check(mesh);
         if (!(mesh instanceof Mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
         // The same material can have different effects for skinned, morphed,
@@ -186,14 +196,15 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
           ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
           : new Set([material]);
         for (const entry of materials) {
-          check();
+          check(mesh);
           deadline.advance(`"${entry.name}" for "${mesh.name}"`);
           if (entry instanceof NodeMaterial) await prewarmMaterial(entry, mesh);
           else await entry.forceCompilationAsync(mesh);
-          check();
+          check(mesh);
           if (mesh.hasThinInstances || mesh.instances.length > 0) {
             deadline.advance(`"${entry.name}" for instances of "${mesh.name}"`);
             await entry.forceCompilationAsync(mesh, { useInstances: true });
+            check(mesh);
           }
         }
       }
@@ -286,12 +297,21 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
-    let ready = scene.getWaitingItemsCount() === 0 && isEnvironmentLightingReady(scene) && isSceneTextureWorkReady(scene);
+    const admitted = admittedSceneMeshes(scene);
+    const meshes = admitted ?? scene.meshes;
+    let ready = (admitted !== undefined || scene.getWaitingItemsCount() === 0) && isEnvironmentLightingReady(scene);
+    const textures = admittedSceneTextures(scene, meshes);
+    if (textures) {
+      for (const texture of textures) {
+        if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`);
+        if (!texture.isRenderTarget && !texture.isReady()) ready = false;
+      }
+    } else if (!isSceneTextureWorkReady(scene)) ready = false;
     scene.prePassRenderer?.update();
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);
     const materials = new Set<Material>();
-    for (const mesh of scene.meshes) {
+    for (const mesh of meshes) {
       if (!mesh.subMeshes?.length) continue;
       // Start all consumers' compilation even when an earlier one is unready.
       if (!isMeshFrameReady(mesh)) { ready = false; continue; }
@@ -314,13 +334,14 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
         if (textures) for (let index = 0; index < textures.length; index += 1) renderTargets.add(textures.data[index]!);
       }
     }
-    for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = false;
+    for (const geometry of admitted ? new Set(meshes.flatMap((mesh) => mesh instanceof Mesh && mesh.geometry ? [mesh.geometry] : [])) : scene.geometries)
+      if (geometry.delayLoadState === 2) ready = false;
     const cameras = scene.activeCameras?.length ? scene.activeCameras : scene.activeCamera ? [scene.activeCamera] : [];
     for (const camera of cameras) {
       if (!camera.isReady(true)) ready = false;
       if (camera.outputRenderTarget) renderTargets.add(camera.outputRenderTarget);
     }
-    for (const particle of scene.particleSystems) if (!particle.isReady()) ready = false;
+    for (const particle of admittedSceneParticles(scene) ?? scene.particleSystems) if (!particle.isReady()) ready = false;
     if (scene.proceduralTexturesEnabled) {
       for (const texture of scene.proceduralTextures ?? []) if (!texture.isReady()) ready = false;
     }
@@ -330,6 +351,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
       if (!check.isReady()) ready = false;
     }
     for (const light of scene.lights) {
+      if (admitted && !light.isEnabled()) continue;
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
         if (map) renderTargets.add(map);

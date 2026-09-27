@@ -355,9 +355,26 @@ Normal Play includes compiled prefab components in resource discovery, so an unp
 
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` when handling explicit bridge spawn requests; loading their scripts never creates Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 
+### Scene streaming nodes
+
+All streaming nodes require a **Target** reference typed as `SceneStreamingActor`. The actor is a live object reference distinct from a Scene asset or the current world Scene.
+
+| Node | Result |
+| --- | --- |
+| Get Target Scene Name | Target Scene name as a String |
+| Load Scene Async / Unload Scene Async | Start the operation and continue the graph and gameplay |
+| Load Scene Blocking / Unload Scene Blocking | Pause gameplay simulation until the operation completes, then continue the graph |
+| Is Scene Loaded | Boolean; true only after the complete actor batch and its render resources are ready |
+| Get Scene Load Progress | Float from 0 to 1; 0 when unloaded, 1 only when fully loaded |
+| Get Scene State | Engine `SceneStreamingState` enum: Unloaded, Loading, Loaded, Unloading |
+
+Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
+
+The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
+
 ### Actor component graph APIs
 
-Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
+Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, scene-wide fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
 
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
@@ -370,6 +387,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `SpringArmComponent` | Arm Length, Enable Location Lag, Location Lag Speed, Max Location Lag Distance, Enable Rotation Lag, Rotation Lag Speed, Draw Debug Lag | — | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
 | `HemisphericFillLightComponent` | Enabled, Color, Ground Color, Intensity | — | — |
+| `FogVolumeComponent` | Enabled (`bool`), Shape (`string`: `box` / `sphere`), Size (`vec3`), Density (`float`), Edge Falloff (`float`) | — | — |
 | `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |
 | `2DTextComponent` / `2DRichTextComponent` | shared text + Hit Test, Renderer, Outline, Outline Color, Alignment, Vertical Alignment, Bold, Italic, Underline, Wrap Width, Wrap Height | Set Text | On Text Changed |
 | `AudioComponent` | Audio, Volume, Loop | Play, Stop | On Audio Finished |

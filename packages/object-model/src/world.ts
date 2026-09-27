@@ -13,6 +13,7 @@ import {
   GameInstance,
   Scene,
   SceneLayer,
+  SceneStreamingActor,
   type GameInstanceHooks,
   type LifecycleHooks,
   type TickContext,
@@ -396,7 +397,10 @@ export class World {
     sceneLayerId?: Guid | null;
   }): Actor {
     const defaults = this.classDefaults(options.classId, options);
-    return new Actor({
+    const ActorClass = this.classRegistry.isA(options.classId, "SceneStreamingActor")
+      ? SceneStreamingActor
+      : Actor;
+    return new ActorClass({
       ...options,
       variables: defaults.variables,
       implementedInterfaces: defaults.implementedInterfaces,
