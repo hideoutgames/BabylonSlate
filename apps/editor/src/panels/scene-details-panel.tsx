@@ -48,6 +48,7 @@ import {
   normalizeSceneFogSettings,
   normalizeScenePostProcessStack,
   newGuid,
+  waterKindForClass,
 } from "@babylonslate/core";
 import {
   ChevronDownIcon,
@@ -158,7 +159,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, projectDocument, assetRegistry } =
     useDocuments();
-  const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
+  const { selectedActorIds, setSelectedActorIds, shapeEditTarget, setShapeEditTarget } = useSceneEditing();
   const navBake = useOptionalNavBake();
   const [propertyQuery, setPropertyQuery] = useState("");
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(() => new Set());
@@ -1039,6 +1040,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         entry !== undefined && entry !== null,
     );
   const multiSelection = selectedActors.length > 1;
+  const shapeComponents = actor.components.filter((component) =>
+    component.classId === "SplineComponent" || waterKindForClass(component.classId) !== null,
+  );
+  const activeShapeComponent = !multiSelection && !actor.locked
+    ? shapeComponents.find((component) => shapeEditTarget?.actorId === actor.id && shapeEditTarget.componentId === component.id) ?? shapeComponents[0]
+    : undefined;
   const updateSelectedActors = (
     update: (entry: SerializedActor) => SerializedActor,
   ) => {
@@ -1335,6 +1342,22 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   </IconActionButton>
                 </div>
               </div>
+              {shapeComponents.includes(component) ? (
+                <div className="flex px-2 py-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="pointer-coarse:min-h-11"
+                    aria-label={`Edit ${title} In Viewport`}
+                    aria-pressed={activeShapeComponent?.id === component.id}
+                    disabled={actor.locked || multiSelection}
+                    onClick={() => setShapeEditTarget({ actorId: actor.id, componentId: component.id })}
+                    data-testid={`component-shape-edit-${component.id}`}
+                  >
+                    {activeShapeComponent?.id === component.id ? "Editing In Viewport" : "Edit In Viewport"}
+                  </Button>
+                </div>
+              ) : null}
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
                   {rows.length ? <PropertyGrid rows={rows} /> : null}

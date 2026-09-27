@@ -108,4 +108,7 @@ export { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBo
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { WaterField, distanceTransform, isWaterContactMesh } from "./water-field";
 export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";
+export { createSplineMesh, splineMeshBody, updateSplineMeshBody } from "./spline-mesh";
+export { createSplineHandles, dragSplineHandle, insertSplinePoint, removeSplinePoint, splineHandles, type SplineHandle } from "./spline-handles";
+export type { ComponentShapeEdit, ShapeHandlesOptions, ShapeHandleTarget } from "./shape-handles";
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";

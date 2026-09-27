@@ -4,6 +4,7 @@ import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } fro
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
+import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
 import { normalizeSceneStreamingProperties } from "./scene-streaming";
 
 
@@ -338,6 +339,7 @@ function normalizeComponent(
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
       source.classId === "CableComponent" ? { ...parseCableProperties(source.properties) } :
+      source.classId === SPLINE_COMPONENT_CLASS_ID ? { ...parseSplineProperties(source.properties) } :
       source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :

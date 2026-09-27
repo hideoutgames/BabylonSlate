@@ -54,4 +54,5 @@ export * from "./foliage";
 export * from "./spring-arm-component";
 export * from "./cable-component";
 export * from "./cable-simulation";
+export * from "./spline-component";
 export * from "./render-target";

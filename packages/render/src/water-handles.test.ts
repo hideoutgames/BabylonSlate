@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3 } from "@babylonjs/core";
 import { normalizeWaterBody } from "@babylonslate/core";
-import { createWaterMesh } from "./water-mesh";
+import { createWaterMesh, updateWaterMeshBody } from "./water-mesh";
 import { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles } from "./water-handles";
 
 describe("Water shape handles", () => {
@@ -53,7 +53,15 @@ describe("Water shape handles", () => {
       expect(commits).toEqual([]);
       drag.onDragEndObservable.notifyObservers(event(27) as never);
       expect(commits).toEqual([{ actorId: "actor", componentId: "lake", properties: { width: 14, length: 6, assetGuid: "water" } }]);
+      updateWaterMeshBody(mesh, { ...body, width: 18 });
+      layer.utilityLayerScene.render();
+      expect(pick.position.x).toBeCloseTo(29);
+      drag.onDragStartObservable.notifyObservers(event(27) as never);
+      drag.onDragObservable.notifyObservers(event(30) as never);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(10);
       handles.attach(null);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(9);
+      expect(commits).toHaveLength(1);
       expect(handles.handleIds()).toEqual([]);
       handles.dispose();
     } finally { vi.restoreAllMocks(); layer.dispose(); scene.dispose(); engine.dispose(); }

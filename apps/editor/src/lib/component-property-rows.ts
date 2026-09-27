@@ -22,6 +22,7 @@ import {
   parseRagdollProperties,
   OUTLINE_WIDTH_LIMITS,
   parseSpringArmProperties,
+  parseSplineProperties,
   SPRING_ARM_LAG_SPEED_LIMITS,
   SPRING_ARM_LENGTH_LIMITS,
   DEFAULT_TEXT2D_WRAP_HEIGHT,
@@ -62,6 +63,7 @@ import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { cablePropertyRows } from "./cable-property-rows";
+import { pathPropertyRows } from "./path-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -480,6 +482,29 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  if (component.classId === "SplineComponent") {
+    const spline = parseSplineProperties(component.properties);
+    return [
+      {
+        kind: "boolean",
+        id: rowId(actorId, component.id, "closed"),
+        label: "Closed Loop",
+        value: spline.closed,
+        disabled: spline.points.length < 3,
+        description: "Connects the last point to the first. Requires at least three points.",
+        onChange: (value) => update("closed", value),
+      },
+      ...pathPropertyRows({
+        idPrefix: `${actorId}-${component.id}`,
+        points: spline.points,
+        curvature: spline.curvature,
+        minPoints: spline.closed ? 3 : 2,
+        curvatureDescription: "0 joins points with straight segments; 1 bends the spline smoothly through every point in 3D.",
+        pointsDescription: "Points use local X, Y and Z coordinates. In the viewport, drag points, drag a midpoint to add a point, and double-click a point to remove it.",
+        update,
+      }),
+    ];
+  }
   const waterKind = waterKindForClass(component.classId);
   if (waterKind) {
     const body = normalizeWaterBody(component.properties, waterKind);
@@ -495,16 +520,17 @@ export function componentPropertyRows(
       numeric(["resolution", "Surface Resolution", 8, 128]),
     ];
     if (waterKind === "river") {
-      rows.push({ kind: "number", id: rowId(actorId, component.id, "curvature"), label: "Curvature", value: body.curvature, defaultValue: 1, min: 0, max: 1, description: "0 joins points with straight reaches; 1 bends the river smoothly through every point.", onChange: (value) => update("curvature", value) });
-      rows.push({ kind: "number", id: rowId(actorId, component.id, "pointCount"), label: "Path Point Count", value: body.points.length, min: 2, max: 128, description: "Points run from upstream to downstream in local space. Y sets the water elevation. In the viewport, drag points, drag orange handles to change width, drag a midpoint to add a point, and double-click a point to remove it.", onChange: (count) => {
-        const points = body.points.slice(0, Math.round(count));
-        while (points.length < Math.round(count)) { const last = points[points.length - 1]!; points.push([last[0], last[1], last[2] + 5]); }
-        update("points", points);
-      } });
-      body.points.forEach((point, index) => rows.push(
-        { kind: "vector3", id: rowId(actorId, component.id, "point-" + index), label: "Path Point " + (index + 1), value: point, onChange: (value) => update("points", body.points.map((p, i) => i === index ? value.slice(0, 3) : p)) },
-        { kind: "number", id: rowId(actorId, component.id, "point-width-" + index), label: "Path Point " + (index + 1) + " Width Scale", value: body.widthScales[index]!, defaultValue: 1, min: 0.05, max: 20, description: "Multiplies Width at this point.", onChange: (value) => update("widthScales", body.widthScales.map((scale, i) => i === index ? value : scale)) },
-      ));
+      rows.push(...pathPropertyRows({
+        idPrefix: `${actorId}-${component.id}`,
+        points: body.points,
+        curvature: body.curvature,
+        curvatureDescription: "0 joins points with straight reaches; 1 bends the river smoothly through every point.",
+        pointsDescription: "Points run from upstream to downstream in local space. Y sets the water elevation. In the viewport, drag points, drag orange handles to change width, drag a midpoint to add a point, and double-click a point to remove it.",
+        extraPointRows: (index) => [
+          { kind: "number", id: rowId(actorId, component.id, "point-width-" + index), label: "Path Point " + (index + 1) + " Width Scale", value: body.widthScales[index]!, defaultValue: 1, min: 0.05, max: 20, description: "Multiplies Width at this point.", onChange: (value) => update("widthScales", body.widthScales.map((scale, i) => i === index ? value : scale)) },
+        ],
+        update,
+      }));
     }
     return rows;
   }
