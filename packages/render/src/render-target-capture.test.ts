@@ -312,7 +312,7 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
     expect(FloatingOriginCurrentScene.getScene()).toBe(scene);
     expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(true);
     expect(scene.activeCamera).not.toBe(camera);
-    expect(scene.floatingOriginOffset.asArray()).toEqual([0, 0, 0]);
+    expect(scene.floatingOriginOffset.equals(Vector3.ZeroReadOnly)).toBe(true);
     engine.bindFramebuffer(interrupted);
     engine.setDepthBuffer(false); engine.setDepthWrite(false);
     engine.setAlphaMode(Constants.ALPHA_ADD);
