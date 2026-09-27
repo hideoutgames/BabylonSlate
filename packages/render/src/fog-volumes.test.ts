@@ -82,11 +82,17 @@ it("admits the nearest eight visible volumes and rejects disabled, invalid and d
   expect(selectFogVolumes(scene, camera, 20)).toHaveLength(0);
 });
 
-it("keeps camera-containing and orthographic edge volumes in the selection", () => {
+it.each([false, true])("keeps camera-containing and orthographic edge volumes without out-of-range crowding (right handed: %s)", (rightHanded) => {
   const { scene, camera, root } = fixture();
+  scene.useRightHandedSystem = rightHanded;
+  camera.setTarget(Vector3.Forward());
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([
     component("inside", [0, 0, 0], { size: [4, 4, 4], shape: "sphere" }),
     component("edge", [50, 0, 5], { shape: "sphere" }),
+    // A sliver lies within minZ + Maximum Distance, despite its center being
+    // farther away. These off-center rays must survive the eight-volume limit.
+    component("range-edge", [50, 0, 10.5]),
+    ...Array.from({ length: 8 }, (_, index) => component(`too-deep-${index}`, [0, 0, 20 + index])),
   ]));
   expect(selectFogVolumes(scene, camera, 10).map((entry) => entry.id)).toEqual(["inside"]);
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
@@ -94,7 +100,7 @@ it("keeps camera-containing and orthographic edge volumes in the selection", () 
   camera.orthoRight = 60;
   camera.orthoBottom = -10;
   camera.orthoTop = 10;
-  expect(selectFogVolumes(scene, camera, 10).map((entry) => entry.id)).toEqual(["inside", "edge"]);
+  expect(selectFogVolumes(scene, camera, 10).map((entry) => entry.id)).toEqual(["inside", "edge", "range-edge"]);
 });
 
 it("retains registry ownership across root replacement and releases fog demand on hide/removal/disposal", () => {

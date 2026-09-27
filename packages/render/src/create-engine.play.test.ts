@@ -27,7 +27,7 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, createDefaultSpritePayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine, TextureUploadRefusedError } from "./resource-cache";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
@@ -3631,6 +3631,65 @@ describe("Play createEngine view", () => {
     handle.loadScene({ ...data, actors: [] });
     expect(hasFogVolumes(handle.scene)).toBe(false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("retains editor passes while tuning fog and still reconciles guides, demand and other scene edits", async () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), editor: true,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+    });
+    handles.push(handle);
+    let data = createDefaultScene();
+    data.settings.postProcessStack = [{ materialGuid: "pp", enabled: true }];
+    data.actors = [createActor("fog-bank", "Fog Bank", { components: [{
+      id: "fog", classId: "FogVolumeComponent", properties: { density: 0.1, edgeFalloff: 0.2 },
+    }] })];
+    handle.loadScene(data);
+    await handle.prewarmSceneMaterials();
+    const camera = handle.scene.activeCamera!;
+    const passes = camera._postProcesses.filter((pass) => pass != null);
+    expect(passes).toHaveLength(1);
+    const guideName = editorComponentMeshName("fog-bank", "fog");
+    const guide = handle.scene.getMeshByName(guideName)!;
+    const probe = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
+    probe.setTarget(Vector3.Zero());
+    for (const properties of [{ density: 0.3 }, { edgeFalloff: 0.6 }]) {
+      data = structuredClone(data);
+      Object.assign(data.actors[0]!.components[0]!.properties, properties);
+      handle.loadScene(data);
+      expect(handle.scene.getMeshByName(guideName)).toBe(guide);
+      const currentPasses = camera._postProcesses.filter((pass) => pass != null);
+      expect(currentPasses).toHaveLength(1);
+      expect(currentPasses[0]).toBe(passes[0]);
+      expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject(properties);
+    }
+    data = structuredClone(data);
+    Object.assign(data.actors[0]!.components[0]!.properties, { shape: "sphere", size: [4, 6, 8] });
+    handle.loadScene(data);
+    const reshaped = handle.scene.getMeshByName(guideName)!;
+    expect(reshaped).not.toBe(guide);
+    expect(guide.isDisposed()).toBe(true);
+    expect(reshaped.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(3);
+    expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
+    data = structuredClone(data);
+    data.actors[0]!.components[0]!.properties.enabled = false;
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting ?? null).toBeNull();
+    expect(handle.scene.getMeshByName(guideName)).toBe(reshaped);
+    data = structuredClone(data);
+    Object.assign(data.actors[0]!.components[0]!.properties, { enabled: true, density: 0 });
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting ?? null).toBeNull();
+    // The incremental classifier must not swallow simultaneous stack changes.
+    data = structuredClone(data);
+    data.actors[0]!.components[0]!.properties.density = 0.3;
+    data.settings.postProcessStack = [];
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    expect(handle.postProcessPassCount()).toBe(0);
+    expect(camera._postProcesses.filter((pass) => pass != null)).toHaveLength(0);
   });
 
   it("retains Play fog volumes across visual replacement and releases their pass on removal", () => {

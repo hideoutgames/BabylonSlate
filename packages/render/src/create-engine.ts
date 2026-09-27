@@ -13,6 +13,7 @@ import { configureCutoutSorting, configureEditorRenderingGroups } from "./sortin
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
@@ -1608,7 +1609,8 @@ function initializeEngine(
   ) => {
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
-      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+        isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
     }

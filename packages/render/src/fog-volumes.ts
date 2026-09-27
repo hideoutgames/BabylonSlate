@@ -208,10 +208,17 @@ export function selectFogVolumes(
   if (!registry) return [];
   const selected = registry.selected;
   selected.length = 0;
-  camera.getViewMatrix();
+  const view = camera.getViewMatrix().m;
   camera.getProjectionMatrix();
   Frustum.GetPlanesToRef(camera.getTransformationMatrix(), registry.planes);
   const eye = camera.globalPosition;
+  const orthographic = camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
+  const handedness = scene.useRightHandedSystem ? -1 : 1;
+  const cameraWorld = camera.getWorldMatrix().m;
+  // The shader starts orthographic rays at minZ, then normalizes inverseView's
+  // forward axis. Account for that normalization if a camera parent is scaled.
+  const orthographicFar = orthographic ? camera.minZ + maxDistance /
+    Math.hypot(cameraWorld[8]!, cameraWorld[9]!, cameraWorld[10]!) : 0;
   for (const owner of registry.owners.values()) {
     if (!owner.prepare()) continue;
     for (const volume of owner.volumes) {
@@ -219,13 +226,22 @@ export function selectFogVolumes(
       // underestimate bounds under sheared parent/component transforms.
       const box = volume.bounds.boundingBox;
       if (!volume.valid || !box.isInFrustum(registry.planes)) continue;
+      if (orthographic) {
+        let nearest = Infinity, farthest = -Infinity;
+        for (const corner of box.vectorsWorld) {
+          const depth = handedness * (corner.x * view[2]! + corner.y * view[6]! + corner.z * view[10]! + view[14]!);
+          nearest = Math.min(nearest, depth);
+          farthest = Math.max(farthest, depth);
+        }
+        if (farthest <= camera.minZ || nearest >= orthographicFar) continue;
+      }
       const min = box.minimumWorld, max = box.maximumWorld;
       const x = Math.max(min.x - eye.x, 0, eye.x - max.x);
       const y = Math.max(min.y - eye.y, 0, eye.y - max.y);
       const z = Math.max(min.z - eye.z, 0, eye.z - max.z);
       volume.distance = x * x + y * y + z * z;
       // Orthographic rays start across a plane, not at the camera position.
-      if (camera.mode !== Camera.ORTHOGRAPHIC_CAMERA && volume.distance > maxDistance * maxDistance) continue;
+      if (!orthographic && volume.distance > maxDistance * maxDistance) continue;
       let index = 0;
       while (index < selected.length) {
         const other = selected[index]!;
@@ -235,8 +251,9 @@ export function selectFogVolumes(
         index++;
       }
       if (index < MAX_FOG_VOLUMES) {
-        selected.splice(index, 0, volume);
-        if (selected.length > MAX_FOG_VOLUMES) selected.pop();
+        const last = Math.min(selected.length, MAX_FOG_VOLUMES - 1);
+        for (let shift = last; shift > index; shift--) selected[shift] = selected[shift - 1]!;
+        selected[index] = volume;
       }
     }
   }

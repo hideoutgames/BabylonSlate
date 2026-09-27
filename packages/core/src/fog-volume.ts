@@ -40,8 +40,10 @@ export type FogVolumeBinding = {
 
 /** Preserve attachments through non-rendering components without applying actor world twice. */
 export function fogVolumeBindings(components: readonly SerializedComponent[]): FogVolumeBinding[] {
+  const volumes = components.filter((component) => component.classId === FOG_VOLUME_CLASS_ID);
+  if (!volumes.length) return [];
   const byId = new Map(components.map((component) => [component.id, component]));
-  return components.filter((component) => component.classId === FOG_VOLUME_CLASS_ID).map((component) => {
+  return volumes.map((component) => {
     const binding: FogVolumeBinding = {
       id: component.id,
       properties: parseFogVolumeProperties(component.properties),
