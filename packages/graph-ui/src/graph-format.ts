@@ -142,14 +142,6 @@ function collectChain(startId: string, graph: GraphIndex): string[] {
   return order;
 }
 
-export function collectThenChain(
-  startId: string,
-  nodes: readonly FormatNode[],
-  edges: readonly FormatEdge[],
-): string[] {
-  return collectChain(startId, indexGraph(nodes, edges));
-}
-
 type LayoutTree = {
   roots: string[];
   order: string[];

@@ -195,7 +195,7 @@ P4 adds multi-transport comparison: the same scenario must agree **in-process**,
 
 ## Property tests
 
-`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, and graph serialization round-tripping.
+`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, `.babasset` chunk round-tripping, edit command apply-then-invert, and navigation coordinate remapping.
 
 ## Test cost policy
 
