@@ -297,7 +297,7 @@ test.describe("P14 Preview Build", () => {
     await openTestProject(page);
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-export").click();
+    await page.getByTestId("settings-modal-category-game").click();
     await page.getByTestId("settings-startup-scene").click();
     await page.getByTestId("search-item-__none__").click();
     await page

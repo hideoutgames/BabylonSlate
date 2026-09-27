@@ -141,7 +141,9 @@ function NodeRoleMark({ node }: { node: PaletteNode }) {
 
 /**
  * Unreal-style Add Node menu: a pointer-anchored popup with search, a
- * collapsible category tree, and Context Sensitive filtering for pin drags.
+ * collapsible category tree, and Context Sensitive filtering. With a dragged
+ * pin the list is pin-compatible rows; without one it hides `outOfContext`
+ * rows (members reached only through a Target on another object).
  */
 export function NodePalette({
   open,
@@ -175,10 +177,13 @@ export function NodePalette({
 
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
-    return pinFiltered
-      ? filterPaletteForPin(nodes, filterPin!, pinCompatibility, sourcePins)
+    if (pinFiltered) {
+      return filterPaletteForPin(nodes, filterPin!, pinCompatibility, sourcePins);
+    }
+    return contextSensitive
+      ? nodes.filter((node) => node.outOfContext !== true)
       : nodes;
-  }, [filterPin, paletteNodes, pinCompatibility, pinFiltered, sourcePins]);
+  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility, pinFiltered, sourcePins]);
 
   const filtered = useMemo(() => filterNodes(allNodes, search), [allNodes, search]);
 
