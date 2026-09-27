@@ -1270,4 +1270,3 @@ export function startPlaySession(options: {
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;
-export const PREVIEW_FIXTURE_ASSET_GUID = FIXTURE_ASSET;

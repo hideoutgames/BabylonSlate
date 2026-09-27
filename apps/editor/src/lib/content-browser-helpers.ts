@@ -2011,16 +2011,6 @@ function documentAsset(
   };
 }
 
-export function folderRelativePath(
-  selectedFolderPath: string,
-  assetsRoot: string,
-): string {
-  if (selectedFolderPath === assetsRoot) return "";
-  return selectedFolderPath.startsWith(`${assetsRoot}/`)
-    ? selectedFolderPath.slice(assetsRoot.length + 1)
-    : "";
-}
-
 export function joinAssetFolderPath(folderPath: string, fileName: string): string {
   const folder = folderPath.replace(/\/+$/, "");
   return folder ? `${folder}/${fileName}` : fileName;
