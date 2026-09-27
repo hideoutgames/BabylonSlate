@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import { MessageDetails } from "./message-details";
+import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { GlslCodePreview } from "./glsl-code-preview";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -20,7 +21,6 @@ import {
   type PinListRow,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
@@ -71,10 +71,7 @@ import {
 } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useMaterialEditing,
-  type MaterialEditingValue,
-} from "../context/material-editing-context";
+import { useMaterialEditing } from "../context/material-editing-context";
 
 const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   cube: "Cube",
@@ -247,7 +244,7 @@ function useTextureExists(): (guid: string) => boolean {
   return useCallback(
     (guid: string) => {
       const header = assetRegistry?.getByGuid(guid)?.header;
-      return header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload);
+      return header?.type === "RenderTargetTexture" || (header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload));
     },
     [assetRegistry],
   );
@@ -782,7 +779,7 @@ function MaterialNodeDetails({
     void registryVersion; // Registry contents mutate without replacing its instance.
     if (!pickOpen || !isTextureNode) return [];
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
+      .filter((asset) => asset.header.type === "RenderTargetTexture" || (asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload)))
       .map((asset) => ({
         guid: asset.header.guid,
         name: asset.header.name,
@@ -937,7 +934,7 @@ function MaterialNodeDetails({
             open={pickOpen}
             onOpenChange={setPickOpen}
             assets={textureAssets}
-            allowedTypes={["Texture"]}
+            allowedTypes={["Texture", "RenderTargetTexture"]}
             title="Pick Texture"
             allowNone
             onPick={(guid) => {
@@ -1198,23 +1195,15 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
             {(index) => {
               const row = rows[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);
                   }}
-                  data-testid={`material-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {row.severity}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`material-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>
@@ -1224,5 +1213,3 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
     </PanelFrame>
   );
 }
-
-export type { MaterialEditingValue };

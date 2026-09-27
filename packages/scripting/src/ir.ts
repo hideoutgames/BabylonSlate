@@ -30,7 +30,7 @@ export type GraphEdge = {
   targetPinId: string;
 };
 
-export type LogicGraphKind = "event" | "function" | "macro";
+export type LogicGraphKind = "event" | "function";
 
 export type LogicGraph = {
   id: string;

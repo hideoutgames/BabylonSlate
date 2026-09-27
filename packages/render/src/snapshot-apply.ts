@@ -1,4 +1,5 @@
 import { sceneShadowController } from "./shadow-controller";
+import { setFogVolumesVisible } from "./fog-volumes";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh, sampleCableFrame } from "./cable-mesh";
@@ -129,6 +130,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   ragdoll?: import("./ragdoll-pose").RagdollPoseController;
   /** Runtime component records outlive asynchronous mesh realization. */
   outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
+  fogVolumes: Map<number, { actorId: string; bindings: import("@babylonslate/core").FogVolumeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
   meshes: Map<number, Mesh>;
@@ -225,6 +227,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
     outlines: new Map(),
+    fogVolumes: new Map(),
     meshes: new Map(),
     boneAttachments: new Map(),
     lights: new Map(),
@@ -978,6 +981,8 @@ function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
   };
   apply(mesh);
   for (const child of mesh.getChildMeshes()) {
+    // LOD levels draw in place of their master and are never pick targets.
+    if (child.isBlocked) continue;
     if ((child.metadata as { text2dGlyph?: boolean } | null)?.text2dGlyph) {
       child.isPickable = false;
       continue;
@@ -1022,6 +1027,7 @@ export function isPlayHelperMeshKind(
     meshKind === "particle" ||
     meshKind === "rigidbody" ||
     meshKind === SPRING_ARM_MESH_KIND ||
+    meshKind === "renderTargetCapture" ||
     meshKind.startsWith("light:")
   );
 }
@@ -1123,6 +1129,7 @@ export function retirePlaySlot(
 ): void {
   binding.ragdoll?.retire(slotId);
   binding.outlines.delete(slotId);
+  binding.fogVolumes.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
   rejectedTextAssignments.get(binding)?.delete(slotId);
@@ -1177,6 +1184,7 @@ export function retirePlaySlot(
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
     ...binding.outlines.keys(),
+    ...binding.fogVolumes.keys(),
     ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
@@ -1686,6 +1694,9 @@ export function applySnapshotToScene(
     const mesh = binding.snapshotMeshes[i];
     if (!mesh) continue;
     writeActorTransform(mesh, actor);
+    const fogVolumes = binding.fogVolumes.get(actor.slotId);
+    if (fogVolumes) setFogVolumesVisible(scene, fogVolumes.actorId,
+      (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
       binding,
@@ -1760,6 +1771,7 @@ function snapPlayCameraToPixelGrid(
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.ragdoll?.dispose();
   binding.outlines.clear();
+  binding.fogVolumes.clear();
   binding.onVisualChanged = undefined;
   const pending = pendingVisualReplacements.get(binding);
   for (const candidate of pending?.values() ?? []) candidate.dispose();

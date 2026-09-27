@@ -35,6 +35,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "skybox-creator",
   "trace",
   "texture",
+  "render-target",
+  "render-target-texture",
   "asset-settings",
 ] as const;
 
@@ -140,6 +142,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
     case "texture":
     case "asset-settings":
       return "Texture";
+    case "render-target":
+      return "RenderTarget";
+    case "render-target-texture":
+      return "RenderTargetTexture";
   }
 }
 
@@ -235,13 +241,13 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "animation";
     case "Texture":
       return "texture";
+    case "RenderTarget":
+      return "render-target";
+    case "RenderTargetTexture":
+      return "render-target-texture";
     default:
       return null;
   }
-}
-
-export function isLogicGraphAssetType(type: string): boolean {
-  return type === "Class" || type === "Graph";
 }
 
 export function documentKindLabel(kind: AssetDocumentKind): string {
@@ -312,6 +318,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Trace";
     case "texture":
       return "Texture";
+    case "render-target":
+      return "Render Target";
+    case "render-target-texture":
+      return "Render Target Texture";
     case "asset-settings":
       return "Settings";
   }
@@ -356,10 +366,6 @@ export function migrateRestoredDocumentId(
 
 export function isContentBrowserId(id: string): boolean {
   return id === CONTENT_BROWSER_ID;
-}
-
-export function isClosableDocumentKind(kind: DocumentKind): boolean {
-  return kind !== "content-browser";
 }
 
 export type DockWindowDirection = "left" | "right" | "above" | "below" | "within";
@@ -407,7 +413,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

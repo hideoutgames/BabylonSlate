@@ -204,14 +204,15 @@ export function assetPickerAllowedTypes(
   pinAssetType: string,
   typeClassIds: unknown,
 ): string[] {
+  const compatibleTypes = (types: string[]) => types.includes("Texture") ? [...new Set([...types, "RenderTargetTexture"])] : types;
   if (!Array.isArray(typeClassIds) || typeClassIds.length === 0) {
-    return [pinAssetType];
+    return compatibleTypes([pinAssetType]);
   }
   const ids = typeClassIds
     .filter((id): id is string => typeof id === "string")
     .map((id) => id.trim())
     .filter(Boolean);
-  return ids.length > 0 ? ids : [pinAssetType];
+  return compatibleTypes(ids.length > 0 ? ids : [pinAssetType]);
 }
 
 /** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */
@@ -812,17 +813,6 @@ export function pinTypeFromParameterType(type: ParameterValueType): PinType {
   }
 }
 
-export function parameterRowsFromPinList(
-  rows: ReadonlyArray<{ name: string; type?: unknown }>,
-  prefix: string,
-): ParameterRow[] {
-  return rows.map((row, index) => ({
-    id: `${prefix}-${index}-${row.name}`,
-    name: row.name,
-    type: parameterTypeFromPin(row.type),
-  }));
-}
-
 export function javaScriptPinRows(
   rows: ReadonlyArray<{ id?: string; name: string; type?: unknown }>,
   prefix: string,
@@ -840,15 +830,6 @@ export function javaScriptPinsFromRows(rows: readonly PinListRow[]) {
     id: row.id,
     name: row.name,
     type: pinTypeForVariable({ ...row, typeId: row.type }),
-  }));
-}
-
-export function pinListFromParameterRows(
-  rows: readonly ParameterRow[],
-): Array<{ name: string; type: PinType }> {
-  return rows.map((row) => ({
-    name: row.name,
-    type: pinTypeFromParameterType(row.type),
   }));
 }
 

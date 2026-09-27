@@ -4,11 +4,7 @@ import {
   normalizeInputAssetPayload,
   type InputKey,
 } from "@babylonslate/core";
-import type {
-  InputTypeValue,
-  InputBindingValue,
-  InputControlValue,
-} from "@babylonslate/core";
+import type { InputTypeValue, InputBindingValue } from "@babylonslate/core";
 import { bindingCodeLabel } from "./binding-catalog";
 import {
   normalizeInputMappings,
@@ -17,17 +13,6 @@ import {
   type InputDevice,
   type InputMappings,
 } from "./mappings";
-import type { RawInputEvent } from "./ring-buffer";
-
-export interface InputBindingInfo {
-  device: InputDevice;
-  code: string;
-  label: string;
-  shift: boolean;
-  ctrl: boolean;
-  alt: boolean;
-  meta: boolean;
-}
 
 export interface InputBindingControls {
   addInputActionBinding?(
@@ -45,32 +30,7 @@ export interface InputBindingControls {
   setInputAxisBinding?(binding: InputBindingValue, key: InputKey): boolean;
   removeInputAxisBinding?(input: InputTypeValue, key: InputKey): boolean;
   getInputBindings?(input: InputTypeValue): InputBindingValue[];
-  setInputControl?(
-    binding: InputBindingValue,
-    control: InputControlValue,
-  ): boolean;
-  beginInputRebind?(binding: InputBindingValue): boolean;
   resetInputBindings?(input: InputTypeValue): boolean;
-
-  getBinding(
-    kind: string,
-    mapping: string,
-    index: number,
-  ): InputBindingInfo | null;
-  setBinding(
-    kind: string,
-    mapping: string,
-    index: number,
-    device: string,
-    code: string,
-    shift?: boolean,
-    ctrl?: boolean,
-    alt?: boolean,
-    meta?: boolean,
-  ): boolean;
-  beginRebind(kind: string, mapping: string, index: number): boolean;
-  getRebindStatus(): "idle" | "listening" | "completed" | "cancelled";
-  cancelRebind(): void;
   resetBindings(kind?: string, mapping?: string): boolean;
   exportBindings(): string;
   importBindings(data: string): boolean;
@@ -109,16 +69,6 @@ const devices: readonly string[] = [
   "touch",
 ];
 const modifiers = ["shift", "ctrl", "alt", "meta"] as const;
-const modifierKeys = new Set([
-  "ShiftLeft",
-  "ShiftRight",
-  "ControlLeft",
-  "ControlRight",
-  "AltLeft",
-  "AltRight",
-  "MetaLeft",
-  "MetaRight",
-]);
 const overrideKey = (kind: string, mapping: string, index: number) =>
   JSON.stringify([kind, mapping, index]);
 
@@ -172,64 +122,37 @@ function validControl(device: unknown, code: unknown): device is InputDevice {
   return true;
 }
 
-function describeBinding(binding: ActionBinding): InputBindingInfo {
-  const flags = {
-    shift: binding.modifiers?.shift === true,
-    ctrl: binding.modifiers?.ctrl === true,
-    alt: binding.modifiers?.alt === true,
-    meta: binding.modifiers?.meta === true,
-  };
+function bindingLabel(binding: ActionBinding): string {
   const prefix = [
-    flags.ctrl && "Ctrl",
-    flags.shift && "Shift",
-    flags.alt && "Alt",
-    flags.meta && "Meta",
+    binding.modifiers?.ctrl === true && "Ctrl",
+    binding.modifiers?.shift === true && "Shift",
+    binding.modifiers?.alt === true && "Alt",
+    binding.modifiers?.meta === true && "Meta",
   ].filter(Boolean);
-  return {
-    device: binding.device,
-    code: binding.code,
-    label: [...prefix, bindingCodeLabel(binding.device, binding.code)].join(
-      " + ",
-    ),
-    ...flags,
-  };
+  return [...prefix, bindingCodeLabel(binding.device, binding.code)].join(
+    " + ",
+  );
 }
 
-/** Session overrides over authored defaults; browser-independent keyboard capture. */
+/**
+ * Session edits over authored defaults. Imported version 1 profiles may still
+ * carry per-slot `overrides` from older player saves.
+ */
 export class InputBindingProfile implements InputBindingControls {
-  private defaults: InputMappings;
+  private readonly defaults: InputMappings;
   private current: InputMappings;
   private overrides = new Map<string, BindingOverride>();
   private edits = new Map<string, BindingEdit>();
   private nextBindingId = 0;
-  private heldKeys = new Set<string>();
-  private blockedKeys = new Set<string>();
-  private target: { kind: string; mapping: string; index: number } | null =
-    null;
-  private status: ReturnType<InputBindingControls["getRebindStatus"]> = "idle";
-  private modifierCandidate: string | null = null;
   private readonly onChange: (mappings: InputMappings) => void;
-  private readonly onCaptureStart: () => void;
 
   constructor(
     mappings: InputMappings,
     onChange: (mappings: InputMappings) => void,
-    onCaptureStart: () => void,
   ) {
     this.onChange = onChange;
-    this.onCaptureStart = onCaptureStart;
     this.defaults = normalizeInputMappings(mappings);
     this.current = structuredClone(this.defaults);
-  }
-
-  setDefaults(mappings: InputMappings): void {
-    this.defaults = normalizeInputMappings(mappings);
-    this.overrides.clear();
-    this.edits.clear();
-    this.target = null;
-    this.modifierCandidate = null;
-    this.status = "idle";
-    this.apply();
   }
 
   getInputBindings(input: InputTypeValue): InputBindingValue[] {
@@ -243,7 +166,7 @@ export class InputBindingProfile implements InputBindingControls {
             {
               Input: { Name: row.name, Asset: row.id! },
               Id: binding.id,
-              Label: describeBinding(binding).label,
+              Label: bindingLabel(binding),
               Key: inputKeyFromControl(binding.device, binding.code) ?? "None",
               Shift: !!binding.modifiers?.shift,
               Ctrl: !!binding.modifiers?.ctrl,
@@ -255,14 +178,6 @@ export class InputBindingProfile implements InputBindingControls {
               Invert: (binding as AxisBinding).invert ?? false,
               Sensitivity: (binding as AxisBinding).sensitivity ?? 1,
               DigitalValue: (binding as AxisBinding).digitalValue ?? 1,
-              Control: {
-                Device: binding.device,
-                Code: binding.code,
-                Shift: !!binding.modifiers?.shift,
-                Ctrl: !!binding.modifiers?.ctrl,
-                Alt: !!binding.modifiers?.alt,
-                Meta: !!binding.modifiers?.meta,
-              },
             },
           ]
         : [],
@@ -422,143 +337,11 @@ export class InputBindingProfile implements InputBindingControls {
     return true;
   }
 
-  private typedSlot(binding: InputBindingValue) {
-    for (const kind of ["action", "axis"] as const) {
-      const row = (
-        kind === "action" ? this.current.actions : this.current.axes
-      ).find((entry) => entry.id === binding?.Input?.Asset);
-      const index =
-        row?.bindings.findIndex((entry) => entry.id === binding?.Id) ?? -1;
-      if (row && index >= 0) return { kind, mapping: row.id!, index };
-    }
-    return null;
-  }
-
-  setInputControl(
-    binding: InputBindingValue,
-    control: InputControlValue,
-  ): boolean {
-    const target = this.typedSlot(binding);
-    return (
-      !!target &&
-      !!control &&
-      this.setBinding(
-        target.kind,
-        target.mapping,
-        target.index,
-        control.Device,
-        control.Code,
-        control.Shift,
-        control.Ctrl,
-        control.Alt,
-        control.Meta,
-      )
-    );
-  }
-
-  beginInputRebind(binding: InputBindingValue): boolean {
-    const target = this.typedSlot(binding);
-    return (
-      !!target && this.beginRebind(target.kind, target.mapping, target.index)
-    );
-  }
-
   resetInputBindings(input: InputTypeValue): boolean {
     const kind = this.current.actions.some((row) => row.id === input?.Asset)
       ? "action"
       : "axis";
     return this.resetBindings(kind, input?.Asset);
-  }
-
-  getBinding(
-    kind: string,
-    mapping: string,
-    index: number,
-  ): InputBindingInfo | null {
-    const binding = slot(this.current, kind, mapping, index);
-    if (!binding) return null;
-    return describeBinding(binding);
-  }
-
-  setBinding(
-    kind: string,
-    mapping: string,
-    index: number,
-    device: string,
-    code: string,
-    shift = false,
-    ctrl = false,
-    alt = false,
-    meta = false,
-  ): boolean {
-    const mappingRow = matchingMappings(
-      kind === "action" ? this.defaults.actions : this.defaults.axes,
-      mapping,
-    )[0];
-    mapping = mappingRow?.id ?? mapping;
-    const original = slot(this.defaults, kind, mapping, index);
-    if (
-      !original ||
-      (kind !== "action" && kind !== "axis") ||
-      !validControl(device, code)
-    )
-      return false;
-    const override: BindingOverride = {
-      kind,
-      mapping,
-      index,
-      ...(original.id ? { bindingId: original.id } : {}),
-      defaultBinding: structuredClone(original),
-      device,
-      code,
-    };
-    const flags = { shift, ctrl, alt, meta };
-    for (const name of modifiers)
-      if (flags[name] === true) override[name] = true;
-    const key = overrideKey(kind, mapping, index);
-    if (
-      device === original.device &&
-      code === original.code &&
-      modifiers.every(
-        (name) =>
-          (override[name] === true) === (original.modifiers?.[name] === true),
-      )
-    ) {
-      this.overrides.delete(key);
-    } else {
-      this.overrides.set(key, override);
-    }
-    this.apply();
-    return true;
-  }
-
-  beginRebind(kind: string, mapping: string, index: number): boolean {
-    if (!slot(this.current, kind, mapping, index)) return false;
-    this.target = { kind, mapping, index };
-    this.modifierCandidate = null;
-    this.status = "listening";
-    for (const key of this.heldKeys) this.blockedKeys.add(key);
-    this.onCaptureStart();
-    return true;
-  }
-
-  getRebindStatus(): ReturnType<InputBindingControls["getRebindStatus"]> {
-    return this.status;
-  }
-
-  cancelRebind(): void {
-    if (!this.target) return;
-    this.target = null;
-    this.modifierCandidate = null;
-    this.status = "cancelled";
-  }
-
-  clearInputState(): void {
-    this.heldKeys.clear();
-    this.blockedKeys.clear();
-    this.target = null;
-    this.modifierCandidate = null;
-    this.status = "idle";
   }
 
   resetBindings(kind?: string, mapping?: string): boolean {
@@ -581,8 +364,6 @@ export class InputBindingProfile implements InputBindingControls {
       if (resetAll || (edit.kind === kind && edit.mapping === mapping))
         this.edits.delete(key);
     }
-    this.cancelRebind();
-    this.status = "idle";
     this.apply();
     return true;
   }
@@ -746,66 +527,8 @@ export class InputBindingProfile implements InputBindingControls {
     }
     this.overrides = next;
     this.edits = edits;
-    this.cancelRebind();
-    this.status = "idle";
     this.apply();
     return true;
-  }
-
-  /** Observe physical keys even while suppressing their gameplay events. */
-  accepts(event: RawInputEvent): boolean {
-    if (event.kind !== "key") return true;
-    const wasHeld = this.heldKeys.has(event.code);
-    if (event.phase === "down") this.heldKeys.add(event.code);
-    else this.heldKeys.delete(event.code);
-    if (
-      this.target &&
-      event.phase === "up" &&
-      event.code === this.modifierCandidate
-    ) {
-      this.blockedKeys.delete(event.code);
-      this.completeCapture(event.code);
-      return false;
-    }
-    if (this.blockedKeys.has(event.code)) {
-      if (event.phase === "up") this.blockedKeys.delete(event.code);
-      return false;
-    }
-    if (!this.target) return true;
-    if (event.phase === "down") this.blockedKeys.add(event.code);
-    if (event.phase !== "down" || wasHeld) return false;
-    if (modifierKeys.has(event.code)) {
-      this.modifierCandidate = event.code;
-      return false;
-    }
-    if (event.code === "Escape") {
-      this.cancelRebind();
-      return false;
-    }
-    this.completeCapture(event.code);
-    return false;
-  }
-
-  private completeCapture(code: string): void {
-    const target = this.target!;
-    const held = (name: string) =>
-      code !== `${name}Left` &&
-      code !== `${name}Right` &&
-      (this.heldKeys.has(`${name}Left`) || this.heldKeys.has(`${name}Right`));
-    this.setBinding(
-      target.kind,
-      target.mapping,
-      target.index,
-      "key",
-      code,
-      held("Shift"),
-      held("Control"),
-      held("Alt"),
-      held("Meta"),
-    );
-    this.target = null;
-    this.modifierCandidate = null;
-    this.status = "completed";
   }
 
   private apply(): void {

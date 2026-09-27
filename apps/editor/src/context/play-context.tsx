@@ -129,7 +129,6 @@ import {
 import { createProjectEngineController } from "../lib/project-engine";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
-import { ProjectRenderingContext } from "./project-rendering-context";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -163,7 +162,6 @@ interface PlayContextValue {
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
-  stopPlay: () => void;
   registerSharedEngine: (engine: AbstractEngine | null) => void;
   ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
@@ -180,8 +178,6 @@ const LiveBtStateContext = createContext<LiveBtState | null>(null);
 const PlayDiagnosticsActionsContext = createContext<Pick<
   PlayContextValue, "appendLog" | "reportBtState"
 > | null>(null);
-/** Isolated from PlayContext so DocumentWorkspace does not rerender on logs. */
-const OverlayPlayingContext = createContext(false);
 
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
@@ -301,6 +297,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
+  const [playRenderTargets, setPlayRenderTargets] = useState<{ renderTargets: Map<string, import("@babylonslate/core").RenderTargetPayload>; renderTargetTextures: Map<string, import("@babylonslate/core").RenderTargetTexturePayload> }>({ renderTargets: new Map(), renderTargetTextures: new Map() });
   const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
@@ -382,6 +379,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     collectPlaySpritePayloads,
     collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -1086,6 +1084,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
 
         try {
+          setPlayRenderTargets(await collectPlayRenderTargets());
           const waters = await collectPlayWaterContent();
           setPlayWaters(waters);
           const particles = await collectPlayParticles();
@@ -1137,6 +1136,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayWaters(new Map());
+          setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyParticleLibrary());
@@ -1291,6 +1291,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -1405,14 +1406,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
-      stopPlay: () => {
-        if (previewOpen) {
-          closePreview();
-          return;
-        }
-        setPlaying(false);
-        setSessionPlayScene(null);
-      },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
       sharedEngineGeneration,
@@ -1450,21 +1443,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       appendLog,
       reportBtState,
-      closePreview,
-      previewOpen,
     ],
   );
 
   return (
     <PlayContext.Provider value={value}>
-      <ProjectRenderingContext.Provider value={{
-        phase: projectEngineState.phase,
-        requestedBackend,
-        effectiveBackend: projectEngineState.session?.effectiveBackend ?? null,
-        fallbackReason: projectEngineState.session?.fallbackReason,
-        deferredUntilStop: (playing || previewOpen) && projectEngineState.session?.requestedBackend !== requestedBackend,
-      }}>
-      <OverlayPlayingContext.Provider value={playing && !previewOpen}>
         {children}
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
           (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
@@ -1555,6 +1538,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             spritePayloads={playSpritePayloads}
             spriteAnimationPayloads={playSpriteAnimationPayloads}
             waterPayloads={playWaters}
+            renderTargets={playRenderTargets.renderTargets}
+            renderTargetTextures={playRenderTargets.renderTargetTextures}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
@@ -1667,8 +1652,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             {lastRuntimeMode}
           </span>
         ) : null}
-      </OverlayPlayingContext.Provider>
-      </ProjectRenderingContext.Provider>
     </PlayContext.Provider>
   );
 }
@@ -1683,11 +1666,6 @@ export function usePlay(): PlayContextValue {
 
 export function useOptionalPlay(): PlayContextValue | null {
   return useContext(PlayContext);
-}
-
-/** Overlay Play (not Preview Build). Stable while the session runs. */
-export function useOverlayPlaying(): boolean {
-  return useContext(OverlayPlayingContext);
 }
 
 export function useOutputLog(): { lines: string[] } {

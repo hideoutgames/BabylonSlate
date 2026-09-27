@@ -422,3 +422,23 @@ diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.p
                          particleSystem.setCustomEffect(effect, blendMode);
                          this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
                          return;
+diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
+--- a/Misc/khronosTextureContainer2.js
++++ b/Misc/khronosTextureContainer2.js
+@@ -227,6 +227,16 @@
+      * @internal
+      */
+     async _uploadAsync(data, internalTexture, options) {
++        // WebGPU rejects a block-compressed texture whose base size is not whole 4x4 blocks,
++        // while WebGL2 uploads it. Decode such a Basis Universal KTX2 (vkFormat 0) to RGBA instead.
++        // Decided from the bytes, so it also holds when a lost device rebuilds the texture.
++        if (this._engine.isWebGPU && data.byteLength >= 28) {
++            const header = new DataView(data.buffer, data.byteOffset, data.byteLength);
++            if (header.getUint32(12, true) === 0 && ((header.getUint32(20, true) | header.getUint32(24, true)) & 3) !== 0) {
++                options = options ?? {};
++                options.forceRGBA = true;
++            }
++        }
+         const decodedData = await this._decodeAsync(data, options);
+         this._createTexture(decodedData, internalTexture, options);
+     }

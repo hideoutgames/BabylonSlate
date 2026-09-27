@@ -1,18 +1,12 @@
-import { PIN_PICKER_TYPES } from "@babylonslate/editor-kit";
 import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@babylonslate/assets";
 import type {
   EnumAsset,
   EnumMember,
   InterfaceMethod,
-  InterfaceMethodPin,
   ScriptInterfaceAsset,
   StructField,
   StructureAsset,
 } from "@babylonslate/scripting";
-
-export const STRUCTURE_FIELD_TYPES = PIN_PICKER_TYPES;
-
-export type StructureFieldType = (typeof STRUCTURE_FIELD_TYPES)[number];
 
 export const TEXTURE_USAGE_OPTIONS = [
   "albedo",
@@ -20,9 +14,8 @@ export const TEXTURE_USAGE_OPTIONS = [
   "pixelArt",
   "ui",
   "skybox",
+  "particle",
 ] as const;
-
-export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];
 
 export const TEXTURE_DOWNSAMPLE_LABELS: Record<string, string> = {
   "1": "Full",
@@ -136,14 +129,6 @@ export function removeScriptInterfaceMethod(
   };
 }
 
-export function moveScriptInterfaceMethod(
-  asset: ScriptInterfaceAsset,
-  index: number,
-  delta: number,
-): ScriptInterfaceAsset {
-  return { ...asset, methods: moveIndex(asset.methods, index, delta) };
-}
-
 export function patchScriptInterfaceMethod(
   asset: ScriptInterfaceAsset,
   index: number,
@@ -157,68 +142,31 @@ export function patchScriptInterfaceMethod(
   };
 }
 
-export function addScriptInterfacePin(
-  asset: ScriptInterfaceAsset,
-  methodIndex: number,
-  direction: "in" | "out",
-): ScriptInterfaceAsset {
-  const method = asset.methods[methodIndex];
-  if (!method) return asset;
-  const pin: InterfaceMethodPin = {
-    name: direction === "out" ? "NewOutput" : "NewInput",
-    typeId: "float",
-    direction,
-  };
-  return patchScriptInterfaceMethod(asset, methodIndex, {
-    pins: [...method.pins, pin],
-  });
-}
-
-export function removeScriptInterfacePin(
-  asset: ScriptInterfaceAsset,
-  methodIndex: number,
-  pinIndex: number,
-): ScriptInterfaceAsset {
-  const method = asset.methods[methodIndex];
-  if (!method) return asset;
-  return patchScriptInterfaceMethod(asset, methodIndex, {
-    pins: method.pins.filter((_, i) => i !== pinIndex),
-  });
-}
-
-export function moveScriptInterfacePin(
-  asset: ScriptInterfaceAsset,
-  methodIndex: number,
-  pinIndex: number,
-  delta: number,
-): ScriptInterfaceAsset {
-  const method = asset.methods[methodIndex];
-  if (!method) return asset;
-  return patchScriptInterfaceMethod(asset, methodIndex, {
-    pins: moveIndex(method.pins, pinIndex, delta),
-  });
-}
-
-export function patchScriptInterfacePin(
-  asset: ScriptInterfaceAsset,
-  methodIndex: number,
-  pinIndex: number,
-  patch: Partial<InterfaceMethodPin>,
-): ScriptInterfaceAsset {
-  const method = asset.methods[methodIndex];
-  if (!method) return asset;
-  return patchScriptInterfaceMethod(asset, methodIndex, {
-    pins: method.pins.map((pin, i) =>
-      i === pinIndex ? { ...pin, ...patch } : pin,
-    ),
-  });
-}
-
 export function patchTextureUsage(
   payload: Record<string, unknown>,
   usage: string,
 ): Record<string, unknown> {
   return { ...payload, usage };
+}
+
+/**
+ * Usage edit. Entering or leaving Particle changes the encode size (block
+ * alignment), so a compressible result re-encodes with the new Usage.
+ */
+export function applyTextureUsageChange(
+  payload: Record<string, unknown>,
+  usage: string,
+): {
+  payload: Record<string, unknown>;
+  shouldRequeue: boolean;
+} {
+  const previous = String(payload.usage ?? "albedo");
+  return {
+    payload: patchTextureUsage(payload, usage),
+    shouldRequeue:
+      shouldCompressTexture(usage) &&
+      (previous === "particle") !== (usage === "particle"),
+  };
 }
 
 export function patchTextureDownsample(

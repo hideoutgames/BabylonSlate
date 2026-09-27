@@ -5,7 +5,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { ALL_NODE_CATEGORIES, createDefaultNodeRegistry, particleNodes } from "./index";
+import { createDefaultNodeRegistry, particleNodes } from "./index";
 
 function node(
   registry: NodeRegistry,
@@ -26,7 +26,6 @@ function node(
 
 describe("particle nodes", () => {
   it("exposes Play Particles and Stop Particles on the particles palette", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("particles");
     expect(particleNodes.map((entry) => entry.id)).toEqual([
       "particles.play",
       "particles.stop",

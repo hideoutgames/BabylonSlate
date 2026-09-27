@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
@@ -114,25 +115,35 @@ describe("ktx2 transcoder config", () => {
       renderer: "WebKit WebGL",
     });
     expect(mock.DefaultNumWorkers).toBe(0);
-    expect(decoderOptions.forceRGBA).toBe(false);
+    expect(decoderOptions.forceRGBA).toBeUndefined();
   });
 
-  it("keeps GPU compressed transcode when ASTC is available", () => {
-    const decoderOptions = {
-      forceRGBA: true,
-      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+  describe("Babylon decoder defaults", () => {
+    const defaults = KhronosTextureContainer2.DefaultDecoderOptions;
+    const saved = {
+      workers: KhronosTextureContainer2.DefaultNumWorkers,
+      forceRGBA: defaults.forceRGBA,
+      useRGBA: defaults.useRGBAIfASTCBC7NotAvailableWhenUASTC,
     };
-    const mock = {
-      DefaultNumWorkers: 4,
-      DefaultDecoderOptions: decoderOptions,
-    };
-    configureKtx2DecoderRuntime(mock, {
-      caps: { astc: {}, bptc: null },
-      renderer: "Apple A16 GPU",
+    afterEach(() => {
+      KhronosTextureContainer2.DefaultNumWorkers = saved.workers;
+      defaults.forceRGBA = saved.forceRGBA;
+      defaults.useRGBAIfASTCBC7NotAvailableWhenUASTC = saved.useRGBA;
     });
-    expect(mock.DefaultNumWorkers).toBe(4);
-    expect(decoderOptions.forceRGBA).toBe(false);
-    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
+
+    it("keeps GPU compressed transcode when ASTC is available, without overriding a per-texture RGBA decode", () => {
+      configureKtx2DecoderRuntime(KhronosTextureContainer2, { caps: { astc: null, bptc: null } });
+      expect(defaults._getKTX2DecoderOptions()).toMatchObject({ forceRGBA: true });
+      configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+        caps: { astc: {}, bptc: null },
+        renderer: "Apple A16 GPU",
+      });
+      // The decoder spreads its defaults over each texture's options, so any
+      // `forceRGBA` key here would replace the one a texture asks for.
+      const options = defaults._getKTX2DecoderOptions();
+      expect(options).not.toHaveProperty("forceRGBA");
+      expect(options).toMatchObject({ useRGBAIfASTCBC7NotAvailableWhenUASTC: true });
+    });
   });
 
   it("requires every transcoder wasm in a player file map", () => {

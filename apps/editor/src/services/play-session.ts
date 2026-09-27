@@ -51,6 +51,7 @@ import {
 import {
   createEngine,
   createSceneLoadReadiness,
+  createSceneStreamingReadiness,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -324,8 +325,6 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Latest sim tick (in-process World clock, else last published snapshot). */
   lastTickIndex: () => number;
-  /** Push a touch joystick sample into the Play input ring. */
-  pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
@@ -479,6 +478,8 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -498,7 +499,6 @@ export function startPlaySession(options: {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
@@ -590,6 +590,8 @@ export function startPlaySession(options: {
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
     waterPayloads: options.waterPayloads,
+    renderTargets: options.renderTargets,
+    renderTargetTextures: options.renderTargetTextures,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -605,7 +607,6 @@ export function startPlaySession(options: {
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
     retargetAnimationLoads: options.retargetAnimationLoads,
-    audioBytes: options.audioBytes,
     loadAudioSourceBytes: options.loadAudioSourceBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
@@ -754,6 +755,22 @@ export function startPlaySession(options: {
       finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
+  const streamReadiness = createSceneStreamingReadiness({
+    handle,
+    onProgress: ({ actorGuid, streamLoadId }, progress) => {
+      worker?.postControl({ type: "sceneStreamProgress", actorGuid, streamLoadId, progress });
+      runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
+    },
+    onReady: ({ actorGuid, streamLoadId }) => {
+      worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
+      runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
+    },
+    onFailed: ({ actorGuid, streamLoadId }, error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
+      runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
+    },
+  });
   const consoleWaiters: Array<
     (result: { success: boolean; output: string }) => void
   > = [];
@@ -784,6 +801,7 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
+    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {
@@ -795,11 +813,12 @@ export function startPlaySession(options: {
     ) {
       handle.applyCommand(command);
     }
-    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }
     sceneReadiness.receive(command);
+    streamReadiness.receive(command);
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
@@ -845,9 +864,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "setRenderResolution") {
-      options.onSetRenderResolution?.(command.width, command.height);
-    }
     if (command.type === "btState") {
       options.onBtState?.({
         slotId: command.slotId,
@@ -897,8 +913,10 @@ export function startPlaySession(options: {
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,
+    renderTargets: Object.fromEntries(options.renderTargets ?? []),
+    renderTargetTextures: Object.fromEntries(options.renderTargetTextures ?? []),
   });
 
   try {
@@ -1131,9 +1149,6 @@ export function startPlaySession(options: {
         runtime?.getWorld().clock.tickIndex,
         lastWorkerTickIndex,
       ),
-    pushTouchAxis: (controlId: string, value: number) => {
-      input?.pushTouchAxis(controlId, value);
-    },
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },
@@ -1194,6 +1209,7 @@ export function startPlaySession(options: {
       resetBoot();
       pauseGate?.reset();
       sceneReadiness.dispose();
+      streamReadiness.dispose();
       stopped = true;
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);
@@ -1256,4 +1272,3 @@ export function startPlaySession(options: {
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;
-export const PREVIEW_FIXTURE_ASSET_GUID = FIXTURE_ASSET;

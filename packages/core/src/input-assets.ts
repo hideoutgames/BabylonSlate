@@ -46,20 +46,10 @@ export interface InputTypeValue {
   Name: string;
   Asset: string;
 }
-export interface InputControlValue {
-  Device: InputDevice;
-  Code: string;
-  Shift: boolean;
-  Ctrl: boolean;
-  Alt: boolean;
-  Meta: boolean;
-}
 export interface InputBindingValue {
   Label: string;
   Input: InputTypeValue;
   Id: string;
-  /** Low-level control metadata; native graph structs use Key. */
-  Control?: InputControlValue;
   Key: InputKey;
   Shift: boolean;
   Ctrl: boolean;

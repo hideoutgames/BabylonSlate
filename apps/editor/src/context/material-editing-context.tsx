@@ -41,7 +41,6 @@ import {
 } from "@babylonslate/shader-graph";
 import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
-import { registerMaterialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import { useMaterialRenderControl } from "./material-render-control-context";
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
@@ -244,9 +243,6 @@ export function MaterialEditingProvider({
     }
     hostRef.current = host;
     presenterRef.current = presenter;
-    registerMaterialPreviewCameraRadius(
-      () => hostRef.current?.camera.radius ?? null,
-    );
     setPreviewSceneEpoch((current) => current + 1);
     return () => {
       gestures?.dispose();
@@ -255,7 +251,6 @@ export function MaterialEditingProvider({
       host?.dispose();
       hostRef.current = null;
       presenterRef.current = null;
-      registerMaterialPreviewCameraRadius(null);
       dispatch({ type: "dispose" });
     };
     // Mesh choice is applied in the effect below; freeze is pushed separately.
@@ -348,7 +343,7 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || !readAssetChunk) continue;
+        if (!asset || asset.header.type === "RenderTargetTexture" || !readAssetChunk) continue;
         const pixels = await readAssetChunk(asset.path, "pixels");
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);

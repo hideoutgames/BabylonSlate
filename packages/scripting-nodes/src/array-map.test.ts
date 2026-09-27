@@ -11,7 +11,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import {
-  ALL_NODE_CATEGORIES,
   arrayMapNodes,
   createDefaultNodeRegistry,
 } from "./index";
@@ -66,7 +65,6 @@ describe("array-map nodes", () => {
   });
 
   it("registers the complete Array catalog with stable ids", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("array");
     expect(arrayMapNodes.map((entry) => entry.id)).toEqual(
       expect.arrayContaining([
         "array.make",

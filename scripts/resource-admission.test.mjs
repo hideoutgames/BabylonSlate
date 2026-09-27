@@ -14,7 +14,6 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   acquireResources,
-  inheritedLease,
   publish,
   workloadFor,
   claimInheritedLease,
@@ -541,17 +540,20 @@ test("nested commands reuse only a live lease with a matching token and sufficie
   const options = await fixture(t);
   const lease = await acquireResources(small, options);
   const value = JSON.stringify({ ticket: lease.ticket, token: lease.token });
-  assert.equal(await inheritedLease(value, small), true);
-  assert.equal(
-    await inheritedLease(
+  await (await claimInheritedLease(value, small)).release();
+  await assert.rejects(
+    claimInheritedLease(
       JSON.stringify({ ticket: lease.ticket, token: "wrong" }),
       small,
     ),
-    false,
+    /stale or invalid/,
   );
-  assert.equal(await inheritedLease(value, { ...small, browsers: 1 }), false);
+  await assert.rejects(
+    claimInheritedLease(value, { ...small, browsers: 1 }),
+    /exceeds/,
+  );
   await lease.release();
-  assert.equal(await inheritedLease(value, small), false);
+  await assert.rejects(claimInheritedLease(value, small), /stale or invalid/);
 });
 
 test("nested stages reject parallel siblings and resource upgrades without waiting", async (t) => {

@@ -21,7 +21,7 @@ packages/source-control/ Git LFS locking client behind LockProvider (P15)
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
-packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
+packages/bridge/      SAB + transferable transports, snapshot layout, typed channel messages
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/debugger/    Command registry, parser, BDebugCommand helpers, stats budget, trace recorder (P8)
 packages/anim-graph/  AnimationGraph evaluator in the game worker (P9)
@@ -99,7 +99,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 New editor tabs for assets are per-document **DockView** layouts (`DockviewShell`), not a full-page `AssetDocumentWorkspace` and not shadcn `Tabs` as the document shell. That keeps panels resizable, dockable beside each other, and able to host extra dock tabs. Animation Graph uses a stacked-surface pattern with a chrome **State Machine | Animation Object** bar (`animEditorMode`; surfaces `stateMachine` / `animationObject`). Mode switches keep only the active DockView mounted. Inactive document tabs idle-unmount (`p18-inactive-documents`). Exception: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md).
 
-Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), `documentKindForAssetType`, and `FOCUS_PRIMARY_PANEL`. Default layouts add `primaryDockPanel(kind)` first so side docks can split from it. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md).
+Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), and `documentKindForAssetType`. The kind's primary panel lives in `DOCK_PRIMARY_PANEL`; default layouts add `primaryDockPanel(kind)` first so side docks can split from it, and Focus falls back to it. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.agents/rules/dockview-editor-tabs.md`](../../.agents/rules/dockview-editor-tabs.md).
 
 Pinned Content Browser is an exception — do not add new types to the compact `asset-settings` path. Texture, Model, Skeleton, Animation, and Audio open Sprite-style DockView documents (**Preview** + **Details**; Audio also has **Clips**). Skybox Creator is a DockView helper (not a Skybox document) with **Preview**, **Cubemap**, and **Details**.
 

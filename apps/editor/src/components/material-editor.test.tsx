@@ -89,6 +89,7 @@ beforeEach(async () => {
   for (const asset of [
     { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } },
     { guid: "tex-1", name: "Bark", type: "Texture", payload: {} },
+    { guid: "rtt-1", name: "Capture Output", type: "RenderTargetTexture", payload: { renderTargetGuid: "target" } },
     { guid: "model-1", name: "Statue", type: "Model", payload: {} },
     { guid: "function-1", name: "Blend", type: "MaterialFunction", payload: {} },
   ]) {
@@ -256,10 +257,19 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("property-baseColor")).toBeNull();
   });
 
-  it("switches the material domain", () => {
+  it("switches to Particle with Particle Color wired into the Particle Output", async () => {
     render(<MaterialDetailsPanel {...panelProps} />);
-    const select = screen.getByTestId("property-domain");
-    expect(select).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-domain"));
+    const option = await screen.findByRole("option", { name: "Particle" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    const committed = lastCommit();
+    expect(committed.domain).toBe("particle");
+    const color = committed.nodes.find((node) => node.type === "input.particleColor");
+    const output = committed.nodes.find((node) => node.type === "output.particle");
+    expect(committed.edges).toEqual([
+      expect.objectContaining({ sourceNodeId: color?.id, sourcePinId: "color", targetNodeId: output?.id, targetPinId: "color" }),
+    ]);
   });
 
   it("offers Surface, Post Process, and Particle without Interface", async () => {
@@ -340,6 +350,7 @@ describe("Material details panel", () => {
     );
     fireEvent.click(screen.getByTestId("material-node-texture"));
     expect(await screen.findByRole("option", { name: /Bark/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /Capture Output/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Studio Cube/ })).toBeNull();
     assetRegistry.getByGuid("tex-1")!.header.payload = { dimension: "cube", container: "env" };
     assetRegistry.getByGuid("env-1")!.header.payload = {};
@@ -347,6 +358,8 @@ describe("Material details panel", () => {
     rerender(<MaterialDetailsPanel {...panelProps} />);
     expect(await screen.findByRole("option", { name: /Studio Cube/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Bark/ })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: /Capture Output/ }));
+    expect(lastCommit()).toMatchObject({ nodes: expect.arrayContaining([expect.objectContaining({ id: "sample", properties: expect.objectContaining({ textureGuid: "rtt-1" }) })]) });
   });
 
   it.each([

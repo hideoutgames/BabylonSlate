@@ -17,6 +17,7 @@
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
     "./scene-render-coordinator": "./src/scene-render-coordinator.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
+    "./fog-volumes": "./src/fog-volumes.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
   "scripts": {
@@ -25,7 +26,6 @@
   },
   "dependencies": {
     "@babylonjs/core": "9.20.0",
-    "@babylonjs/ktx2decoder": "9.20.0",
     "@babylonjs/loaders": "9.20.0",
     "@babylonjs/serializers": "9.20.0",
     "@babylonslate/assets": "workspace:*",
@@ -36,11 +36,11 @@
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "assimpjs": "0.0.10",
+    "meshoptimizer": "1.1.1",
     "earcut": "^3.2.3"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
-    "@babylonslate/vfs": "workspace:*",
     "typescript": "~5.8.2"
   }
 }

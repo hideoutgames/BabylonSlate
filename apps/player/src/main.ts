@@ -25,7 +25,6 @@ import {
   PREVIEW_ERROR_MESSAGE,
   PREVIEW_READY_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
-  PREVIEW_STATS_MESSAGE,
   PREVIEW_STOP_MESSAGE,
 } from "./preview-protocol";
 
@@ -172,17 +171,6 @@ async function launchLoaded(
         ticks: stats.ticks,
         startupScene: game.manifest.startupSceneGuid,
       });
-      if (window.parent !== window) {
-        window.parent.postMessage(
-          {
-            type: PREVIEW_STATS_MESSAGE,
-            ticks: stats.ticks,
-            scriptMs: stats.scriptMs,
-            physicsMs: stats.physicsMs,
-          },
-          previewHostOrigin,
-        );
-      }
     },
     onDiagnostic: (diagnostics) => {
       if (window.parent === window) return;

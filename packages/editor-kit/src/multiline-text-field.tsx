@@ -21,7 +21,6 @@ export type MultilineTextFieldProps = {
   markup?: boolean;
   id?: string;
   className?: string;
-  editorClassName?: string;
   code?: boolean;
   renderPreview?: (value: string) => ReactNode;
   renderEditor?: (value: string, onChange: (value: string) => void) => ReactNode;
@@ -38,7 +37,6 @@ export function MultilineTextField({
   markup,
   id,
   className,
-  editorClassName,
   code,
   renderPreview,
   renderEditor,
@@ -101,10 +99,7 @@ export function MultilineTextField({
                 value={draft}
                 onChange={setDraft}
                 disabled={disabled}
-                className={cn(
-                  "min-h-0 flex-1 font-mono text-sm",
-                  editorClassName,
-                )}
+                className="min-h-0 flex-1 font-mono text-sm"
                 data-testid={editorTestId}
               />
             ) : (
@@ -112,7 +107,7 @@ export function MultilineTextField({
                 id={id ? `${id}-editor` : undefined}
                 value={draft}
                 disabled={disabled}
-                className={cn("min-h-0 flex-1", editorClassName)}
+                className="min-h-0 flex-1"
                 onChange={(event) => setDraft(event.target.value)}
                 data-testid={editorTestId}
               />

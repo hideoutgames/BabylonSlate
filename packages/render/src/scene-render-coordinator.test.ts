@@ -2,9 +2,12 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RenderTargetTexture, Scene, Vector3, VertexBuffer } from "@babylonjs/core";
-import { normalizeRenderingQuality } from "@babylonslate/core";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
+import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { fogVolumeBindings, normalizeRenderingQuality } from "@babylonslate/core";
+import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
+import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -73,6 +76,166 @@ it("coalesces cable uploads at render admission and preserves held frames during
   expect(renderer.render().rendered).toBe(true);
   expect(upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind)).toHaveLength(1);
   renderer.dispose();
+});
+
+it("keeps parent graph frames rendering while streamed resources and fog wait for publication", async () => {
+  const { scene, camera, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  const parent = MeshBuilder.CreateBox("parent", {}, scene);
+  binding.meshes.set(1, parent);
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  const identity = { actorGuid: "stream", streamLoadId: 1 };
+  admission.receive({ type: "sceneStreamLoading", ...identity });
+  admission.receive({ type: "spawn", actorGuid: "child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: identity.actorGuid, streamLoadId: identity.streamLoadId });
+  const child = MeshBuilder.CreateBox("child", {}, scene);
+  const childMaterial = new StandardMaterial("stream-material", scene);
+  child.material = childMaterial;
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  childMaterial.diffuseTexture = texture;
+  const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
+  binding.meshes.set(2, child);
+  const fog = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+  binding.onVisualChanged = (slot) => {
+    if (slot === 2) upsertFogVolumes(scene, "child", child, fog, !isSceneStreamSlotPending(scene, slot));
+  };
+  binding.onVisualChanged(2);
+  admission.sync();
+  expect(child.isEnabled()).toBe(false);
+  expect(hasFogVolumes(scene)).toBe(false);
+  expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
+  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(0);
+  expect(renderer.render().rendered).toBe(true);
+  // A normal parent-world spawn remains admitted while the stream is pending.
+  const ordinary = MeshBuilder.CreateBox("normal-spawn", {}, scene);
+  binding.meshes.set(3, ordinary);
+  admission.sync();
+  expect(ordinary.isEnabled()).toBe(true);
+  expect(renderer.render().rendered).toBe(true);
+  textureReady.mockReturnValue(true);
+  admission.publish([2], identity);
+  expect(child.isEnabled()).toBe(true);
+  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(1);
+  await renderer.prepare();
+  expect(renderer.render().rendered).toBe(true);
+  retirePlaySlot(binding, 2);
+  expect(hasFogVolumes(scene)).toBe(false);
+  expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
+  admission.clear(); renderer.dispose();
+});
+
+it("retains parent readiness failures and separates sibling publication including empty streams", async () => {
+  const { scene, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  const parent = MeshBuilder.CreateBox("parent", {}, scene);
+  const parentMaterial = new StandardMaterial("parent-material", scene);
+  parent.material = parentMaterial;
+  binding.meshes.set(1, parent);
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 1 });
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "right", streamLoadId: 2 });
+  admission.receive({ type: "spawn", actorGuid: "child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: "right", streamLoadId: 2 });
+  const right = MeshBuilder.CreateBox("right", {}, scene);
+  binding.meshes.set(2, right);
+  admission.sync();
+  admission.publish([], { actorGuid: "left", streamLoadId: 1 });
+  expect(right.isEnabled()).toBe(false);
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
+  parentMaterial.diffuseTexture = texture;
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(false);
+  textureReady.mockReturnValue(true);
+  expect(renderer.render().rendered).toBe(true);
+  admission.publish([2], { actorGuid: "right", streamLoadId: 1 });
+  expect(right.isEnabled()).toBe(false);
+  admission.publish([2], { actorGuid: "right", streamLoadId: 2 });
+  expect(right.isEnabled()).toBe(true);
+  admission.clear(); renderer.dispose();
+});
+
+it("keeps the parent drawing after cancel while native import and detached texture work retire", async () => {
+  const { scene, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  const parent = MeshBuilder.CreateBox("parent", {}, scene);
+  const parentMaterial = new StandardMaterial("parent", scene);
+  parent.material = parentMaterial;
+  binding.meshes.set(1, parent);
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "cancelled", streamLoadId: 1 });
+  // Native GLB loading owns Scene pending data independently of the slot's
+  // abortable promise. Texture GPU work can outlive that pending-data record.
+  const nativeImport = {};
+  scene.addPendingData(nativeImport);
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  vi.spyOn(texture, "isReady").mockReturnValue(false);
+  admission.receive({ type: "sceneStreamRemoved", actorGuid: "cancelled", streamLoadId: 1 });
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  scene.removePendingData(nativeImport);
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  // Sharing that same pending resource with a live parent must still block it.
+  parentMaterial.diffuseTexture = texture;
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(false);
+  parentMaterial.diffuseTexture = null;
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(true);
+  texture.dispose();
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  admission.clear(); renderer.dispose();
+});
+
+it("keeps canceled roots staged between Removed and Despawn and rejects obsolete publication after slot reuse", async () => {
+  const { scene, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  binding.meshes.set(1, MeshBuilder.CreateBox("parent", {}, scene));
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+  admission.receive({ type: "spawn", actorGuid: "old-child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: "stream", streamLoadId: 1 });
+  const child = MeshBuilder.CreateBox("canceled-child", {}, scene);
+  const childMaterial = new StandardMaterial("child-material", scene);
+  child.material = childMaterial;
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  childMaterial.diffuseTexture = texture;
+  const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
+  binding.meshes.set(2, child);
+  admission.sync();
+  admission.receive({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+  admission.sync();
+  expect(child.isEnabled()).toBe(false);
+  expect(renderer.render().rendered).toBe(true);
+  admission.receive({ type: "despawn", actorGuid: "old-child", slotId: 2 });
+  retirePlaySlot(binding, 2);
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 2 });
+  admission.receive({ type: "spawn", actorGuid: "new-child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: "stream", streamLoadId: 2 });
+  const replacement = MeshBuilder.CreateBox("replacement", {}, scene);
+  const replacementMaterial = new StandardMaterial("replacement-material", scene);
+  replacement.material = replacementMaterial;
+  replacementMaterial.diffuseTexture = texture;
+  binding.meshes.set(2, replacement);
+  admission.sync();
+  admission.receive({ type: "despawn", actorGuid: "old-child", slotId: 2 });
+  admission.publish([2], { actorGuid: "stream", streamLoadId: 1 });
+  admission.sync();
+  expect(replacement.isEnabled()).toBe(false);
+  expect(renderer.render().rendered).toBe(true);
+  textureReady.mockReturnValue(true);
+  admission.publish([2], { actorGuid: "stream", streamLoadId: 2 });
+  expect(replacement.isEnabled()).toBe(true);
+  admission.clear(); renderer.dispose();
 });
 
 it("draws editor gizmos once after native and graph frames, never during preparation or skipped frames", async () => {

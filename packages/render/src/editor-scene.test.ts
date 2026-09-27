@@ -32,17 +32,14 @@ import {
 import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-anim";
-import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvHierarchyGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,
   CAMERA_BOUNDS_MESH_NAME,
-  cameraBoundsBorderCoverage,
-  cameraBoundsWorldBorderCoverage,
   createEditorGrid,
   GRID_MESH_NAME,
   gridCoverageWorld,
-  gridEdgeFadeAlpha,
   gridEdgeFadeRange,
   gridViewFade,
   snapGridOrigin,
@@ -55,6 +52,7 @@ import {
   DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
+  GIZMO_ROTATION_COLLIDER_THICKNESS,
   GIZMO_ROTATION_THICKNESS,
   GIZMO_SCALE_SENSITIVITY,
   GIZMO_SHAFT_THICKNESS,
@@ -1416,6 +1414,7 @@ describe("EditorSceneSync", () => {
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
+            autoLod: true,
             materialSlots: [
               { index: 0, name: "Hero Mat", materialGuid: "mat-slot" },
             ],
@@ -1451,6 +1450,41 @@ describe("EditorSceneSync", () => {
     expect(visible.every((child) => child.material === slotMat)).toBe(true);
   });
 
+  it("keeps automatic LOD levels on their master's material through overrides and restores", async () => {
+    const { scene } = createHandle();
+    const override = new StandardMaterial("override", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "sphere-model";
+    mesh.properties.materialGuid = "mat-override";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-override" ? override : null),
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["sphere-model", encodeUvSphereGlb()]]),
+      modelPayloads: new Map([
+        [
+          "sphere-model",
+          { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true, materialSlots: [] },
+        ],
+      ]),
+    });
+    const apply = () => sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    apply();
+    let part: Mesh | undefined;
+    await vi.waitFor(() => {
+      part = visualMeshes(sync.meshForActor("a")!)[0] as Mesh | undefined;
+      expect(part?.getLODLevels().length).toBeGreaterThan(0);
+    });
+    // A material publication rebinds the override while the levels exist.
+    sync.refreshMaterials();
+    const levels = part!.getLODLevels().map((level) => level.mesh!);
+    for (const lod of levels) expect(lod.material).toBe(override);
+    mesh.properties.materialGuid = null;
+    apply();
+    expect(part!.material).not.toBe(override);
+    for (const lod of levels) expect(lod.material).toBe(part!.material);
+  });
+
   it("adopts every UV'd glTF part and applies slot 0 to all of them", async () => {
     const { scene } = createHandle();
     const override = new StandardMaterial("slot-0", scene);
@@ -1469,6 +1503,7 @@ describe("EditorSceneSync", () => {
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
+            autoLod: true,
             materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
           },
         ],
@@ -1511,6 +1546,7 @@ describe("EditorSceneSync", () => {
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
+            autoLod: true,
             materialSlots: [
               { index: 0, name: "MatA", materialGuid: "mat-a" },
               { index: 1, name: "MatB", materialGuid: "mat-b" },
@@ -1548,6 +1584,7 @@ describe("EditorSceneSync", () => {
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
+            autoLod: true,
             materialSlots: [
               { index: 0, name: "texture-d", materialGuid: "mat-1" },
             ],
@@ -1606,19 +1643,6 @@ describe("editor grid", () => {
     ).toBe(80);
   });
 
-  it("keeps the grid center opaque when 2D zoom shrinks coverage below camera Z", () => {
-    const coverage = gridCoverageWorld("2d", {
-      radius: 8,
-      orthoTop: 0.5,
-      orthoRight: 0.8,
-    });
-    const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
-    expect(fadeEnd).toBeLessThan(8);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, 0)).toBe(1);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeStart)).toBe(1);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeEnd)).toBe(0);
-  });
-
   it("fades the grid out when the view shows too many major cells", () => {
     const default2d = { radius: 8, orthoTop: 4, orthoRight: 7 };
     const default3d = { radius: 8, orthoTop: null, orthoRight: null };
@@ -1646,9 +1670,8 @@ describe("editor grid", () => {
 
   it("writes planar edge fade and view fade uniforms on sync", () => {
     const { scene } = createHandle();
-    const twoD = createEditorCamera(scene, { mode: "2d" });
+    const twoD = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 0.25 });
     twoD.camera.getViewMatrix();
-    twoD.setOrthoHalfHeight(0.25);
     const closeGrid = createEditorGrid(scene, {
       mode: "2d",
       camera: twoD.camera,
@@ -1850,85 +1873,6 @@ describe("editor grid", () => {
     expect(box.maximumWorld.x).toBeCloseTo(16);
     expect(box.maximumWorld.y).toBeCloseTo(9);
     grid.dispose();
-  });
-
-  it("keeps a 2px camera-bounds stroke equal on horizontal and vertical edges", () => {
-    const widthPx = 160;
-    const heightPx = 90;
-    const fwidthU = 1 / widthPx;
-    const fwidthV = 1 / heightPx;
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 1 * fwidthU, y: 0.5 },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 0.5, y: 1 * fwidthV },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 3 * fwidthU, y: 0.5 },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 0.5, y: 3 * fwidthV },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-
-    const half = { x: 8, y: 4.5 };
-    const fwidthX = 16 / widthPx;
-    const fwidthY = 9 / heightPx;
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: -half.x + 1 * fwidthX, y: 0 },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: 0, y: -half.y + 1 * fwidthY },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: -half.x + 3 * fwidthX, y: 0 },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: 0, y: -half.y + 3 * fwidthY },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
   });
 
   it("hides camera bounds in 3D without disposing the freeze-stable mesh", () => {
@@ -2248,39 +2192,44 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("builds rotation rings thicker than translate shafts, with aligned colliders", () => {
-    expect(GIZMO_ROTATION_THICKNESS).toBe(8);
+  it("draws thin rotation rings inside fat pick tori on the same center line", () => {
     expect(GIZMO_ROTATION_THICKNESS).toBeGreaterThan(GIZMO_SHAFT_THICKNESS);
+    expect(GIZMO_ROTATION_COLLIDER_THICKNESS).toBeGreaterThan(
+      GIZMO_ROTATION_THICKNESS,
+    );
 
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    const children = host.rotationGizmo.xGizmo._rootMesh.getChildMeshes();
-    const visual = children.find(
-      (mesh) =>
-        mesh.visibility > 0 &&
-        mesh.name !== "rotationDisplay" &&
-        mesh.getChildMeshes().length === 0,
-    );
-    const collider = children.find((mesh) => mesh.name === "ignore");
-    expect(visual).toBeDefined();
-    expect(collider).toBeDefined();
-    expect(visual!.scaling.x).toBeCloseTo(1);
-    expect(collider!.scaling.x).toBeCloseTo(1);
-
-    visual!.computeWorldMatrix(true);
-    visual!.refreshBoundingInfo(false, false);
-    collider!.computeWorldMatrix(true);
-    collider!.refreshBoundingInfo(false, false);
-    const visualBox = visual!.getBoundingInfo().boundingBox;
-    const colliderBox = collider!.getBoundingInfo().boundingBox;
-    const minExtent = (v: Vector3) => Math.min(v.x, v.y, v.z);
-    const maxExtent = (v: Vector3) => Math.max(v.x, v.y, v.z);
-    // Hairline at shaft thickness 0.45 is ~0.001; thickness 8 is ~0.02.
-    expect(minExtent(visualBox.extendSize)).toBeGreaterThan(0.01);
-    expect(
-      maxExtent(colliderBox.extendSizeWorld) /
-        maxExtent(visualBox.extendSizeWorld),
-    ).toBeLessThan(2);
+    // A torus in local space: max extent is ring radius + tube radius, min extent is the tube radius.
+    const tube = (extend: Vector3) => 2 * Math.min(extend.x, extend.y, extend.z);
+    const ringRadius = (extend: Vector3) =>
+      Math.max(extend.x, extend.y, extend.z) - Math.min(extend.x, extend.y, extend.z);
+    for (const axis of [
+      host.rotationGizmo.xGizmo,
+      host.rotationGizmo.yGizmo,
+      host.rotationGizmo.zGizmo,
+    ]) {
+      const children = axis._rootMesh.getChildMeshes();
+      const visual = children.find(
+        (mesh) =>
+          mesh.visibility > 0 &&
+          mesh.name !== "rotationDisplay" &&
+          mesh.getChildMeshes().length === 0,
+      );
+      const collider = children.find((mesh) => mesh.name === "ignore");
+      expect(visual).toBeDefined();
+      expect(collider).toBeDefined();
+      expect(visual!.scaling.x).toBeCloseTo(1);
+      expect(collider!.scaling.x).toBeCloseTo(1);
+      const visualExtend = visual!.getBoundingInfo().boundingBox.extendSize;
+      const colliderExtend = collider!.getBoundingInfo().boundingBox.extendSize;
+      // The pick torus stays under the drawn line instead of growing off it.
+      expect(ringRadius(visualExtend)).toBeCloseTo(ringRadius(colliderExtend), 5);
+      // Babylon's thickness-8 pick tube (0.24) is the touch target; the drawn ring is a line.
+      expect(tube(colliderExtend)).toBeGreaterThan(0.2);
+      expect(tube(visualExtend)).toBeLessThan(0.01);
+      expect(tube(colliderExtend) / tube(visualExtend)).toBeGreaterThan(10);
+    }
     host.dispose();
   });
 });

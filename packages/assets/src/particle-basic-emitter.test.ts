@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  basicEmitterSlotNeed,
   createDefaultParticleEmitterPayload,
   normalizeParticleEmitterPayload,
   particleEmitterChangeTier,
@@ -225,40 +224,6 @@ describe("Basic emitter plan", () => {
     expect(counts("compute")).toEqual([1024, 300]);
     expect(counts("cpu")).toEqual([512, 300]);
     expect(payload.spawn.bursts.entries[0]!.count).toBe(2000);
-  });
-});
-
-describe("Basic emitter slot need", () => {
-  it("counts rate × lifetime", () => {
-    const payload = emitter((p) => {
-      p.spawn.rate = { mode: "constant", value: 30 };
-      p.initialize.lifetime = { mode: "constant", value: 1.2 };
-    });
-    expect(basicEmitterSlotNeed(payload)).toBe(36);
-  });
-
-  it("counts bursts that overlap across loop wraps", () => {
-    const payload = emitter((p) => {
-      p.emitter.duration = 1;
-      p.spawn.rate = { mode: "constant", value: 0 };
-      p.initialize.lifetime = { mode: "constant", value: 2 };
-      p.spawn.bursts = {
-        enabled: true,
-        entries: [{ time: 0, count: 50, cycles: 1, interval: 0.5 }],
-      };
-    });
-    expect(basicEmitterSlotNeed(payload)).toBeGreaterThanOrEqual(100);
-  });
-
-  it("reports an unbounded need when bursts fire too often to count", () => {
-    const payload = emitter((p) => {
-      p.emitter.duration = 600;
-      p.spawn.bursts = {
-        enabled: true,
-        entries: [{ time: 0, count: 1, cycles: 0, interval: 0.01 }],
-      };
-    });
-    expect(basicEmitterSlotNeed(payload)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

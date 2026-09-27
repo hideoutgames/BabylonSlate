@@ -1,4 +1,5 @@
 import type { VolumeShadow } from "./volumetric-lights";
+import { MAX_FOG_VOLUMES } from "./fog-volumes";
 
 /** One bounded single-scattering shader, emitted for both native shader languages. */
 export function volumetricShader(
@@ -7,6 +8,7 @@ export function volumetricShader(
   steps: number,
   halfZ: boolean,
   reverseZ: boolean,
+  localVolumes = false,
 ): string {
   const v2 = wgsl ? "vec2f" : "vec2",
     v3 = wgsl ? "vec3f" : "vec3",
@@ -49,6 +51,97 @@ ${field(v3, "volumeShadowOffset")}
 `;
   let functions = "",
     lighting = "";
+  const integer = wgsl ? "i32" : "int";
+  const loop = (name: string, end: string) =>
+    `for (${wgsl ? `var ${name}: i32` : `int ${name}`} = 0; ${name} < ${end}; ${name}++)`;
+  const localArray = (type: string, name: string) => wgsl
+    ? `var ${name}: array<${type}, ${MAX_FOG_VOLUMES}>;`
+    : `${type} ${name}[${MAX_FOG_VOLUMES}];`;
+  let localSetup = "", localSample = "";
+  if (localVolumes) {
+    header += field(integer, "fogVolumeCount") +
+      array(m4, "fogVolumeInverse", MAX_FOG_VOLUMES) +
+      array(v4, "fogVolumeParameters", MAX_FOG_VOLUMES);
+    functions += fn("fogRayInterval", [[v3, "o"], [v3, "d"], [f, "shape"], [f, "limit"]], v2, `
+${decl(f, "entry", "0.0")}${decl(f, "exit", "limit")}
+if (shape > 0.5) {
+  ${decl(f, "a", "dot(d,d)")}${decl(f, "b", "dot(o,d)")}
+  ${decl(f, "discriminant", "b*b-a*(dot(o,o)-1.0)")}
+  if (a <= 0.0 || discriminant < 0.0) { return ${v2}(0.0); }
+  ${decl(f, "root", "sqrt(discriminant)")}
+  entry = max(entry, (-b-root)/a); exit = min(exit, (-b+root)/a);
+} else {
+  ${loop("axis", "3")} {
+    if (abs(d[axis]) < 0.000000000001) {
+      if (abs(o[axis]) > 1.0) { return ${v2}(0.0); }
+    } else {
+      ${decl(f, "a", "(-1.0-o[axis])/d[axis]")}
+      ${decl(f, "b", "(1.0-o[axis])/d[axis]")}
+      entry = max(entry, min(a,b)); exit = min(exit, max(a,b));
+    }
+  }
+}
+return ${v2}(entry, max(entry, exit));`);
+    localSetup = `
+${localArray(v3, "fogOrigins")}${localArray(v3, "fogDirections")}
+${localArray(v2, "fogRanges")}${localArray(v2, "occupiedRanges")}
+${decl(integer, "occupiedCount", "0")}
+${decl(integer, "occupiedIndex", "0")}${decl(f, "occupiedOffset", "0.0")}
+${loop("volume", u("fogVolumeCount"))} {
+  fogOrigins[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(origin,1.0)).xyz;
+  fogDirections[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(worldDirection,0.0)).xyz;
+  fogRanges[volume] = fogRayInterval(fogOrigins[volume], fogDirections[volume], ${u("fogVolumeParameters")}[volume].z, distanceLimit);
+}
+if (${u("volumeSettings")}.x <= 0.0) {
+  // Sort and merge at most eight occupied intervals once per pixel. Marching
+  // across their combined length does not waste the sample budget in gaps.
+  ${loop("volume", u("fogVolumeCount"))} {
+    ${decl(v2, "range", "fogRanges[volume]")}
+    if (range.y <= range.x) { continue; }
+    ${decl(integer, "position", "occupiedCount")}
+    for (${wgsl ? "var previous: i32" : "int previous"} = occupiedCount-1; previous >= 0; previous--) {
+      if (occupiedRanges[previous].x <= range.x) { break; }
+      occupiedRanges[previous+1] = occupiedRanges[previous]; position = previous;
+    }
+    occupiedRanges[position] = range; occupiedCount++;
+  }
+  ${decl(integer, "mergedCount", "0")}
+  ${loop("volume", "occupiedCount")} {
+    ${decl(v2, "range", "occupiedRanges[volume]")}
+    if (mergedCount > 0) {
+      if (range.x <= occupiedRanges[mergedCount-1].y) {
+        occupiedRanges[mergedCount-1].y = max(occupiedRanges[mergedCount-1].y, range.y);
+        continue;
+      }
+    }
+    occupiedRanges[mergedCount] = range; mergedCount++;
+  }
+  occupiedCount = mergedCount; distanceSpan = 0.0;
+  ${loop("volume", "occupiedCount")} { distanceSpan += occupiedRanges[volume].y - occupiedRanges[volume].x; }
+}
+`;
+    localSample = `
+if (${u("volumeSettings")}.x <= 0.0) {
+  ${loop("skip", String(MAX_FOG_VOLUMES))} {
+    ${decl(f, "length", "occupiedRanges[occupiedIndex].y - occupiedRanges[occupiedIndex].x")}
+    if (occupiedIndex+1 >= occupiedCount || rayDistance <= occupiedOffset+length) { break; }
+    occupiedOffset += length; occupiedIndex++;
+  }
+  rayDistance = occupiedRanges[occupiedIndex].x + rayDistance - occupiedOffset;
+}
+${loop("volume", u("fogVolumeCount"))} {
+  if (rayDistance < fogRanges[volume].x || rayDistance > fogRanges[volume].y) { continue; }
+  ${decl(v3, "local", "fogOrigins[volume] + fogDirections[volume] * rayDistance")}
+  ${decl(f, "boundary", "max(max(abs(local.x),abs(local.y)),abs(local.z))")}
+  if (${u("fogVolumeParameters")}[volume].z > 0.5) { boundary = length(local); }
+  if (boundary > 1.0) { continue; }
+  ${decl(f, "falloff", `${u("fogVolumeParameters")}[volume].y`)}
+  ${decl(f, "weight", "1.0")}
+  if (falloff > 0.0) { weight = smoothstep(0.0, falloff, 1.0-boundary); }
+  density += ${u("fogVolumeParameters")}[volume].x * weight;
+}
+`;
+  }
   shadows.forEach((shadow, i) => {
     for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
       header += field(v4, `${name}${i}`);
@@ -135,12 +228,20 @@ if (${u("volumeCamera")}.w > 0.5) {
 ${decl(v3, "origin", `(${u("inverseView")} * ${v4}(viewOrigin, 1.0)).xyz`)}
 ${decl(v3, "worldDirection", `normalize((${u("inverseView")} * ${v4}(viewDirection, 0.0)).xyz)`)}
 ${decl(f, "distanceLimit", `min(${u("volumeSettings")}.z, max(0.0, depth - abs(viewOrigin.z)) / max(abs(viewDirection.z), 0.0001))`)}
-${decl(f, "segment", `distanceLimit / ${f}(${steps})`)}
-${decl(f, "extinction", `exp(-${u("volumeSettings")}.x * segment)`)}
+${decl(f, "distanceSpan", "distanceLimit")}
+${localSetup}
+${decl(f, "segment", `distanceSpan / ${f}(${steps})`)}
+${localVolumes ? "" : decl(f, "extinction", `exp(-${u("volumeSettings")}.x * segment)`)}
 ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
 for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
-  ${decl(v3, "p", `origin + worldDirection * ((${f}(step) + 0.5) * segment)`)}
+  if (distanceSpan <= 0.0 || transmittance < 0.001) { break; }
+  ${decl(f, "rayDistance", `(${f}(step) + 0.5) * segment`)}
+  ${decl(f, "density", `${u("volumeSettings")}.x`)}
+  ${localSample}
+  if (density <= 0.0) { continue; }
+  ${localVolumes ? decl(f, "extinction", "exp(-density * segment)") : ""}
+  ${decl(v3, "p", "origin + worldDirection * rayDistance")}
   ${decl(v3, "illumination", `${v3}(0.0)`)}
   ${lighting}
   scattering += transmittance * (1.0 - extinction) * illumination * ${u("volumeSettings")}.y;

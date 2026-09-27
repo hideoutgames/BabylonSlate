@@ -8,18 +8,22 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
+  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   createActor,
   areaRectLightBindings,
+  fogVolumeBindings,
   outlineBindings,
   createDefaultScene,
+  createDefaultRenderTargetCaptureProperties,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
   engineCommandBus,
   requestEditorDrop,
   parseCableProperties,
+  type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
@@ -27,18 +31,21 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
 import { SnapshotInterpolator } from "./snapshot-sync";
+import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
+import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -164,6 +171,14 @@ function pointerAt(
     button: 0,
     pointerType: "touch",
     ...extras,
+  };
+}
+
+/** A live session render change, as the runtime's ScalabilitySession emits it. */
+function scalabilityCommand(overrides: RenderSettingsPatch): CommandMessage {
+  return {
+    type: "setScalability",
+    transaction: { revision: 1, settings: { render: normalizeRenderProjectSettings({}), frameCap: 60 }, overrides },
   };
 }
 
@@ -296,6 +311,21 @@ describe("Play createEngine view", () => {
     expect(mesh.isDisposed()).toBe(true);
     expect(() => handle.applyCommand({ type: "cableFrame", frameId: 2, data: new Float32Array([11, 3, -1, -1, 0, 0, 0, 0, 0, 0, 20, 50, 0, 30, 50, 0, 40, 50, 0]) })).not.toThrow();
     expect(handle.scene.getMeshByName("actor-7|rope")).toBeNull();
+  });
+
+  it("keeps manual Pause and blocking streaming pauses independent", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.setSceneStreamingPaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setPaused(true);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(true);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
   });
 
   function renderViews(engine: NullEngine) {
@@ -919,7 +949,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
+    const shared = resourceCacheForEngine(engine).acquireTexture("shared", engine, new Uint8Array([1, 2, 3, 4]));
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
@@ -927,9 +957,10 @@ describe("Play createEngine view", () => {
     first.dispose();
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(release).not.toHaveBeenCalled();
+    expect(shared.resource.getInternalTexture()).not.toBeNull();
     expect(live.scene.isDisposed).toBe(false);
     expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    shared.release();
     unsubscribe();
   });
 
@@ -980,7 +1011,7 @@ describe("Play createEngine view", () => {
     ).toHaveLength(0);
   });
 
-  it("still applies environment from play-mode loadScene", () => {
+  it("applies authored exponential fog and environment from play-mode loadScene", () => {
     const { handle } = playHandle(sharedEngine());
     const scene = createDefaultScene();
     handle.loadScene({
@@ -989,7 +1020,9 @@ describe("Play createEngine view", () => {
         ...scene.settings,
         environmentColor: [0.1, 0.2, 0.3],
         fogEnabled: true,
+        fogMode: "exponentialSquared",
         fogColor: [0.4, 0.5, 0.6],
+        fogDensity: 0.03,
         fogStart: 2,
         fogEnd: 40,
       },
@@ -998,6 +1031,8 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.g).toBeCloseTo(0.2);
     expect(handle.scene.clearColor.b).toBeCloseTo(0.3);
     expect(handle.scene.fogEnabled).toBe(true);
+    expect(handle.scene.fogMode).toBe(Scene.FOGMODE_EXP2);
+    expect(handle.scene.fogDensity).toBe(0.03);
     expect(handle.scene.fogStart).toBe(2);
     expect(handle.scene.fogEnd).toBe(40);
   });
@@ -1194,8 +1229,8 @@ describe("Play createEngine view", () => {
       now += 4;
     });
     for (const [second, cap] of [30, 60, 15, 30].entries()) {
-      // The first second must use the configured cap before any console setter.
-      if (second > 0) handle.applyCommand({ type: "setFrameCap", fps: cap });
+      // The first second must use the configured cap before any live change.
+      if (second > 0) handle.scheduler.setFrameCap(cap);
       const before = renders;
       for (let frame = 0; frame < 60; frame += 1) {
         now = second * 1000 + frame * (1000 / 60);
@@ -1829,7 +1864,7 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.dropTier();
+    handle.scaling.setLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
@@ -3229,11 +3264,19 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("applies setRenderingQuality on Play views only, not the editor viewport", () => {
-    const play = playHandle(sharedEngine());
-    const editor = editorHandle(sharedEngine());
-    play.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
-    editor.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
+  it("applies setScalability quality on Play views only, not the editor viewport", () => {
+    const playEngine = sharedEngine();
+    const playLoop = vi.spyOn(playEngine, "runRenderLoop");
+    const play = playHandle(playEngine);
+    const editorEngine = sharedEngine();
+    const editorLoop = vi.spyOn(editorEngine, "runRenderLoop");
+    const editor = editorHandle(editorEngine);
+    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    play.handle.applyCommand(command);
+    editor.handle.applyCommand(command);
+    // Transactions apply at the next frame boundary of the owning view.
+    playLoop.mock.calls[0]![0]();
+    editorLoop.mock.calls[0]![0]();
     expect(play.handle.scaling.getLevel()).toBe(2);
     expect(editor.handle.scaling.getLevel()).toBe(1);
   });
@@ -3540,6 +3583,216 @@ describe("Play createEngine view", () => {
     expect(handle.scene.pointerX).toBeCloseTo(400);
     expect(handle.scene.pointerY).toBeCloseTo(200);
     expect(down).toHaveBeenCalled();
+  });
+
+  it("keeps editor fog volumes in sync through hide, undo, and scene replacement", () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), editor: true });
+    handles.push(handle);
+    const actor = createActor("fog-bank", "Fog Bank", { components: [{ id: "fog", classId: "FogVolumeComponent", properties: {} }] });
+    const data = { ...createDefaultScene(), actors: [actor] };
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
+    handle.loadScene({ ...data, actors: [{ ...actor, visible: false }] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    handle.loadScene({ ...data, actors: [] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("retains editor passes while tuning fog and still reconciles guides, demand and other scene edits", async () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), editor: true,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+    });
+    handles.push(handle);
+    let data = createDefaultScene();
+    data.settings.postProcessStack = [{ materialGuid: "pp", enabled: true }];
+    data.actors = [createActor("fog-bank", "Fog Bank", { components: [{
+      id: "fog", classId: "FogVolumeComponent", properties: { density: 0.1, edgeFalloff: 0.2 },
+    }] })];
+    handle.loadScene(data);
+    await handle.prewarmSceneMaterials();
+    const camera = handle.scene.activeCamera!;
+    const passes = camera._postProcesses.filter((pass) => pass != null);
+    expect(passes).toHaveLength(1);
+    const guideName = editorComponentMeshName("fog-bank", "fog");
+    const guide = handle.scene.getMeshByName(guideName)!;
+    const probe = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
+    probe.setTarget(Vector3.Zero());
+    for (const properties of [{ density: 0.3 }, { edgeFalloff: 0.6 }]) {
+      data = structuredClone(data);
+      Object.assign(data.actors[0]!.components[0]!.properties, properties);
+      handle.loadScene(data);
+      expect(handle.scene.getMeshByName(guideName)).toBe(guide);
+      const currentPasses = camera._postProcesses.filter((pass) => pass != null);
+      expect(currentPasses).toHaveLength(1);
+      expect(currentPasses[0]).toBe(passes[0]);
+      expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject(properties);
+    }
+    data = structuredClone(data);
+    Object.assign(data.actors[0]!.components[0]!.properties, { shape: "sphere", size: [4, 6, 8] });
+    handle.loadScene(data);
+    const reshaped = handle.scene.getMeshByName(guideName)!;
+    expect(reshaped).not.toBe(guide);
+    expect(guide.isDisposed()).toBe(true);
+    expect(reshaped.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(3);
+    expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
+    data = structuredClone(data);
+    data.actors[0]!.components[0]!.properties.enabled = false;
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting ?? null).toBeNull();
+    expect(handle.scene.getMeshByName(guideName)).toBe(reshaped);
+    data = structuredClone(data);
+    Object.assign(data.actors[0]!.components[0]!.properties, { enabled: true, density: 0 });
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting ?? null).toBeNull();
+    // The incremental classifier must not swallow simultaneous stack changes.
+    data = structuredClone(data);
+    data.actors[0]!.components[0]!.properties.density = 0.3;
+    data.settings.postProcessStack = [];
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    expect(handle.postProcessPassCount()).toBe(0);
+    expect(camera._postProcesses.filter((pass) => pass != null)).toHaveLength(0);
+  });
+
+  it("retains Play fog volumes across visual replacement and releases their pass on removal", () => {
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const camera = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
+    camera.setTarget(Vector3.Zero());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "mist", meshAssetGuid: null, meshKind: null };
+    handle.applyCommand(assign);
+    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
+    handle.applyCommand({ ...assign, meshKind: "box" });
+    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    setSceneEffectsEnabled(handle.scene, false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+    setSceneEffectsEnabled(handle.scene, true);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting).not.toBeNull();
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes: [] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    const hidden = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(hidden, { frameId: 1, tickIndex: 1, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    writeActorSlot(hidden, 0, { slotId: 4, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 }, flags: 0 });
+    handle.pushSnapshot(hidden);
+    loop.mock.calls[0]![0]!();
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes: [] });
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    loop.mock.calls[0]![0]!();
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("waits for shared fog rendering preparation without letting one canceled stream fail its sibling", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    for (const [slotId, actorGuid] of [[4, "left"], [5, "right"]] as const) {
+      handle.applyCommand({ type: "sceneStreamLoading", actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `${actorGuid}-fog`, classId: "Actor",
+        sceneStreamActorGuid: actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid: `${actorGuid}-fog`, meshAssetGuid: null, meshKind: null });
+      handle.applyCommand({ type: "setFogVolumes", slotId, actorId: `${actorGuid}-fog`, volumes });
+    }
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reached!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => { reached = resolve; });
+    const prepare = SceneRenderCoordinator.prototype.prepare;
+    let shared: ReturnType<typeof prepare> | undefined;
+    let waiters = 0;
+    // Hold the renderer-owned asynchronous boundary, then use the real graph.
+    // Its first caller must not lend a per-stream cancellation to shared work.
+    const preparing = vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockImplementation(function (this: SceneRenderCoordinator, assertCurrent = () => {}) {
+      shared ??= gate.then(() => prepare.call(this, assertCurrent));
+      if (++waiters === 2) reached();
+      return shared.then((result) => { assertCurrent(); return result; });
+    });
+    const leftAbort = new AbortController();
+    const left = handle.prepareSceneStream([4], leftAbort.signal, undefined, { actorGuid: "left", streamLoadId: 1 });
+    const leftRejected = expect(left).rejects.toThrow("cancel left");
+    let rightReady = false;
+    const right = handle.prepareSceneStream([5], new AbortController().signal, undefined, { actorGuid: "right", streamLoadId: 1 })
+      .then(() => { rightReady = true; });
+    try {
+      await bothWaiting;
+      expect(rightReady).toBe(false);
+      leftAbort.abort(new Error("cancel left"));
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "left-fog" });
+      await leftRejected;
+      expect(hasFogVolumes(handle.scene, "left-fog")).toBe(false);
+      expect(hasFogVolumes(handle.scene, "right-fog")).toBe(true);
+      expect(rightReady).toBe(false);
+      release();
+      await right;
+      expect(rightReady).toBe(true);
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "right", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "right-fog" });
+      expect(hasFogVolumes(handle.scene)).toBe(false);
+      expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+    } finally {
+      leftAbort.abort(new Error("cancel left"));
+      release();
+      preparing.mockRestore();
+      await Promise.allSettled([left, leftRejected, right]);
+    }
+  });
+
+  it("admits streamed capture producers only when ready and restores the loaded sibling on unload", async () => {
+    const engine = sharedEngine();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+      const target = allocate(size, options);
+      target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    const { handle } = playHandle(engine);
+    handle.setMeshAssets({ renderTargets: new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]) });
+    const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" };
+    handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    for (const [slotId, actorGuid] of [[4, "pending"], [5, "loaded"]] as const) {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "RenderTargetCapture",
+        ...(slotId === 4 ? { sceneStreamActorGuid: "stream", streamLoadId: 1 } : {}) });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "renderTargetCapture" });
+      handle.applyCommand({ type: "configureRenderTargetCapture", slotId, actorGuid, settings });
+    }
+    const captures = sceneRenderTargetCaptures(handle.scene);
+    const owners: string[] = [];
+    const ready = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const draw = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+      owners.push(this.activeCamera!.name);
+    });
+    try {
+      captures.render();
+      expect(owners).toEqual(["renderTargetCapture:loaded"]);
+      await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:pending");
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "pending" });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:loaded");
+    } finally { ready.mockRestore(); draw.mockRestore(); }
   });
 
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
@@ -3949,9 +4202,8 @@ describe("Play createEngine view", () => {
     expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
   });
 
-  it("applies a setRenderPath command game-wide and reports the session status", () => {
+  it("applies a setScalability render path game-wide and reports the session status", () => {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
     const { handle: sibling } = playHandle(engine);
     const statuses: string[] = [];
     const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -3960,8 +4212,12 @@ describe("Play createEngine view", () => {
       onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
     });
     handles.push(withStatus);
+    // The newest Play view owns the shared framebuffer and applies the transaction.
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loops.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(sibling.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(statuses).toContain("clusteredForward");
@@ -3970,10 +4226,12 @@ describe("Play createEngine view", () => {
     expect(statuses.at(-1)).toBe("forward");
   });
 
-  it("ignores setRenderPath on non-Play handles", () => {
+  it("ignores setScalability on non-Play handles", () => {
     const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = editorHandle(engine);
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loop.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
     // The Engine-level API still applies to shared scenes on the same Engine.
     handle.setRenderPath("clusteredForward");

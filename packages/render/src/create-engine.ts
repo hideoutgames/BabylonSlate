@@ -1,4 +1,5 @@
 import { PostProcessRetirement } from "./post-process-retirement";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
@@ -12,11 +13,13 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
+import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -29,6 +32,9 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneStreamIdentity } from "./scene-streaming-readiness";
+import { prepareSceneStream } from "./scene-stream-preparation";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -49,6 +55,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
+import { followAutoLodSettings, liveMeshCount } from "./model-lod";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
@@ -141,7 +148,6 @@ import {
   type TextureResources,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
-import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -255,6 +261,8 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
+  setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
   setRegisterViewEnabled: (enabled: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
@@ -314,8 +322,6 @@ export interface EngineHandle {
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
-  /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
-  postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Explicit local quality preferences; runtime commands take precedence. */
@@ -351,6 +357,8 @@ export interface EngineHandle {
   whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
   whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
+  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -394,7 +402,6 @@ export interface CreateEngineOptions {
   onDragSelectEnd?: () => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
-  onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
   /** A water shape handle was released; merge `properties` into that component as one change. */
   onWaterShapeEdit?: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
@@ -434,6 +441,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  renderTargets?: MeshAssetContext["renderTargets"];
+  renderTargetTextures?: MeshAssetContext["renderTargetTextures"];
   areaEmissions?: MeshAssetContext["areaEmissions"];
   /** Authored Texture source pixels for overlay 2DTexture world size. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
@@ -823,6 +832,7 @@ function initializeEngine(
   const worldRenderer = new SceneRenderCoordinator(scene);
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
+  let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
@@ -967,6 +977,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
@@ -1056,6 +1067,8 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
+  onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
   if (options.playMode && options.onRagdollPoseCaptured) {
     binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
@@ -1074,6 +1087,11 @@ function initializeEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
+  binding.renderTargets = options.renderTargets;
+  binding.renderTargetTextures = options.renderTargetTextures;
+  const renderTargetCaptures = sceneRenderTargetCaptures(scene);
+  renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
+  const captureActorSlots = new Map<number, string>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
@@ -1140,7 +1158,10 @@ function initializeEngine(
   const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
-    acquireTexture: (guid) => {
+    acquireTexture: (guid, consumerScene) => {
+      if (binding.renderTargetTextures?.has(guid)) {
+        return renderTargetCaptures.acquireTexture(guid, consumerScene);
+      }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
       return acquireMaterialTexture(resourceCache, guid, engine, bytes);
@@ -1232,7 +1253,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     const camera = scene.activeCamera;
@@ -1243,7 +1263,6 @@ function initializeEngine(
     retireAttachedStack();
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
-    lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled || !camera) return;
     attachedStack = worldRenderer.attachPostProcess({
       scene,
@@ -1252,10 +1271,7 @@ function initializeEngine(
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      onDiagnostic: (diagnostic) => {
-        lastPostProcessDiagnostics.push(diagnostic);
-        options.onPostProcessDiagnostic?.(diagnostic);
-      },
+      onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
 
@@ -1317,10 +1333,8 @@ function initializeEngine(
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            onDiagnostic: (diagnostic) => {
-              lastPostProcessDiagnostics.push(diagnostic);
-              options.onPostProcessDiagnostic?.(diagnostic);
-            },
+            onDiagnostic: (diagnostic) =>
+              options.onPostProcessDiagnostic?.(diagnostic),
           });
         },
       })
@@ -1418,7 +1432,7 @@ function initializeEngine(
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
-        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); },
+        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
   onRollback(() => editorSync?.dispose());
@@ -1430,6 +1444,37 @@ function initializeEngine(
     outlineHost.refreshSettings();
   };
   const outlineActorBySlot = new Map<number, string>();
+  const editorFogActors = new Set<string>();
+  const syncEditorFogVolumes = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    const retained = new Set<string>();
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      const volumes = actor.visible ? fogVolumeBindings(actor.components) : [];
+      if (root && volumes.length) {
+        upsertFogVolumes(scene, actor.id, root, volumes);
+        retained.add(actor.id);
+      }
+    }
+    for (const id of editorFogActors) if (!retained.has(id)) removeFogVolumes(scene, id);
+    editorFogActors.clear();
+    for (const id of retained) editorFogActors.add(id);
+  };
+  const runtimeFogActorBySlot = new Map<number, string>();
+  const refreshRuntimeFogVolumes = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = binding.fogVolumes.get(slotId);
+    const previous = runtimeFogActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      removeFogVolumes(scene, previous);
+      runtimeFogActorBySlot.delete(slotId);
+    }
+    if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
+    runtimeFogActorBySlot.set(slotId, authored.actorId);
+  };
   const refreshRuntimeOutline = (slotId: number) => {
     if (options.editor) return;
     const root = binding.meshes.get(slotId);
@@ -1447,13 +1492,19 @@ function initializeEngine(
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);
   };
-  binding.onVisualChanged = refreshRuntimeOutline;
+  binding.onVisualChanged = (slotId) => {
+    refreshRuntimeOutline(slotId);
+    refreshRuntimeFogVolumes(slotId);
+  };
 
   let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
+      binding.renderTargets = assets.renderTargets;
+      binding.renderTargetTextures = assets.renderTargetTextures;
+      renderTargetCaptures.setAssets(assets.renderTargets, assets.renderTargetTextures);
       binding.areaEmissions = assets.areaEmissions;
       let emissionChanged = false;
       for (const group of binding.areaLights.values())
@@ -1542,7 +1593,8 @@ function initializeEngine(
   ) => {
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
-      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+        isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
     }
@@ -1685,7 +1737,6 @@ function initializeEngine(
           );
         }
         debugOverlayInstance.followLivePose();
-        options.onGizmoDrag?.();
       },
       onDragEnd: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
@@ -2175,6 +2226,7 @@ function initializeEngine(
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
+    streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
     if (!shouldRenderFrame(frameStart, loadingFrame)) {
@@ -2444,6 +2496,16 @@ function initializeEngine(
     void fontRegistry.registerAll(options.fontFaceEntries);
   }
 
+  let callerPaused = false;
+  let sceneStreamingPaused = false;
+  const applyPause = () => {
+    const paused = callerPaused || sceneStreamingPaused;
+    binding.paused = paused;
+    scheduler.setPaused(paused);
+    audioService?.setPaused(paused);
+    particleService?.setPaused(paused);
+  };
+
   return {
     engine,
     scene,
@@ -2454,6 +2516,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
       unsubscribeRenderPathSession();
@@ -2582,14 +2645,12 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
         return;
-      }
-      if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scheduler }, command);
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
@@ -2598,6 +2659,8 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "spawn") {
+        captureActorSlots.set(command.slotId, command.actorGuid);
+        renderTargetCaptures.registerActor(command.actorGuid, () => binding.meshes.get(command.slotId) ?? null);
         appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
         if (command.sceneLayerId) {
@@ -2623,6 +2686,9 @@ function initializeEngine(
         }
       }
       if (command.type === "despawn") {
+        const actorGuid = captureActorSlots.get(command.slotId);
+        if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
+        captureActorSlots.delete(command.slotId);
         appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
@@ -2633,6 +2699,8 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        renderTargetCaptures.clear();
+        captureActorSlots.clear();
         particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
@@ -2651,7 +2719,9 @@ function initializeEngine(
         }
       }
       if (command.type === "sceneLayerCreate") {
-        sceneLayerCompositor?.create(command);
+        const layer = sceneLayerCompositor?.create(command);
+        // Layer models follow the world view's Geometry quality.
+        if (layer) followAutoLodSettings(layer.scene, scene);
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
@@ -2678,6 +2748,20 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
+      if (command.type === "configureRenderTargetCapture") {
+        const transform = command.transform;
+        renderTargetCaptures.configure(command.actorGuid, command.settings,
+          () => isSceneStreamSlotPending(scene, command.slotId) ? null : binding.meshes.get(command.slotId) ?? null, transform ? {
+            position: [transform.position.x, transform.position.y, transform.position.z],
+            rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
+            scale: [transform.scale.x, transform.scale.y, transform.scale.z],
+          } : undefined);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "captureRenderTarget") {
+        renderTargetCaptures.request(command.actorGuid);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setActorOutlines") {
         const previous = binding.outlines.get(command.slotId);
         binding.outlines.set(command.slotId, { actorId: command.actorId, bindings: command.outlines });
@@ -2687,6 +2771,12 @@ function initializeEngine(
           else binding.outlines.delete(command.slotId);
           throw error;
         }
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setFogVolumes") {
+        appliedSnapshotIdentity = null;
+        binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
+        refreshRuntimeFogVolumes(command.slotId);
         scheduler.invalidate("asset");
       }
       if (command.type === "setAreaLights") {
@@ -2813,18 +2903,6 @@ function initializeEngine(
         scheduler.invalidate("camera");
       }
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
-      if (command.type === "setRenderingQuality" && options.playMode) {
-        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
-        setSceneRenderSettings(scene);
-        applyRenderingQuality();
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setRenderPath" && options.playMode) {
-        requestRenderPath(
-          engine,
-          command.renderPath ? { renderPath: command.renderPath } : {},
-        );
-      }
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
@@ -2868,18 +2946,21 @@ function initializeEngine(
         );
         scheduler.invalidate("snapshot");
       }
+      streamAdmission?.sync();
     },
     setPaused: (paused: boolean) => {
-      binding.paused = paused;
-      scheduler.setPaused(paused);
-      audioService?.setPaused(paused);
-      particleService?.setPaused(paused);
+      callerPaused = paused;
+      applyPause();
+    },
+    setSceneStreamingPaused: (paused: boolean) => {
+      sceneStreamingPaused = paused;
+      applyPause();
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
     },
     liveObjectCounts: () => ({
-      meshes: scene.meshes.length,
+      meshes: liveMeshCount(scene),
       textures: engine.getLoadedTexturesCache().length,
     }),
     drawCalls: () => lastDrawCalls,
@@ -3015,7 +3096,6 @@ function initializeEngine(
         zOrder: layer.zOrder,
       })),
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
-    postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       setSceneEffectsEnabled(scene, enabled);
@@ -3130,6 +3210,43 @@ function initializeEngine(
         .map(([, pending]) => pending);
       await Promise.all(playLoads);
       scope.assert();
+    },
+    prepareSceneStream: async (slotIds, signal, onProgress, owner) => {
+      if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
+      const generation = loadGeneration;
+      await prepareSceneStream(scene, binding, slotIds, {
+        signal, onProgress,
+        assertCurrent: () => assertCurrent(generation),
+        pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+      });
+      signal.throwIfAborted();
+      assertCurrent(generation);
+      if (streamAdmission?.publish(slotIds, owner) === false)
+        throw new Error("Scene streaming publication was superseded.");
+      if (slotIds.some((slot) => {
+        const fog = binding.fogVolumes.get(slot);
+        return fog && hasFogVolumes(scene, fog.actorId);
+      })) {
+        // Fog can introduce the shared effects pipeline. Its graph and actor
+        // geometry must be ready before the runtime acknowledges Loaded.
+        // Preparation belongs to the renderer, so one canceled stream cannot
+        // reject a sibling waiting for the same graph generation.
+        let cancel!: () => void;
+        const cancelled = new Promise<never>((_, reject) => {
+          cancel = () => reject(signal.reason);
+          signal.addEventListener("abort", cancel, { once: true });
+        });
+        try {
+          await Promise.race([worldRenderer.prepare(() => assertCurrent(generation)), cancelled]);
+        } finally {
+          signal.removeEventListener("abort", cancel);
+        }
+        signal.throwIfAborted();
+        assertCurrent(generation);
+      }
+      particleService?.startPreparedSlots(slotIds);
+      appliedSnapshotIdentity = null;
+      scheduler.invalidate("snapshot");
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +

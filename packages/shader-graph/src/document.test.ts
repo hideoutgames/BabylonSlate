@@ -302,8 +302,31 @@ describe("switching material domain", () => {
     expect(normalizeMaterialDocument(doc).domain).toBe("landscape");
     const surface = setMaterialDomain(doc, "surface");
     expect(surface.nodes.some((node) => node.id === "height")).toBe(false);
-    expect(surface.edges.some((edge) => edge.id === "height-edge")).toBe(false);
-    expect(surface.nodes.some((node) => node.type === "output.surface")).toBe(true);
+    // Only the dropped node's wire goes; Base Color stays wired into the same output.
+    expect(surface.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
+    expect(surface.nodes.filter((node) => node.type === "output.surface")).toEqual([
+      expect.objectContaining({ id: "output", position: { x: 300, y: 0 } }),
+    ]);
+  });
+
+  it("keeps the Material Output with its position, pin defaults and wires across a Surface and Landscape round trip", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes = doc.nodes.map((node) =>
+      node.id === "output"
+        ? { ...node, position: { x: 640, y: 120 }, properties: { "default:metallic": [1] } }
+        : node,
+    );
+    doc.nodes.push({ id: "rough", type: "const.float", position: { x: 0, y: 200 }, properties: { value: 0.2 } });
+    doc.edges.push({ id: "rough-edge", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+
+    const landscape = setMaterialDomain(doc, "landscape");
+    expect(landscape.domain).toBe("landscape");
+    expect(landscape.nodes).toEqual(doc.nodes);
+    expect(landscape.edges).toEqual(doc.edges);
+
+    const surface = setMaterialDomain(landscape, "surface");
+    expect(surface.nodes).toEqual(doc.nodes);
+    expect(surface.edges).toEqual(doc.edges);
   });
 
   it("replaces the surface terminal with the post-process terminal", () => {
@@ -353,14 +376,67 @@ describe("switching material domain", () => {
     );
   });
 
-  it("switches a surface material to the particle terminal", () => {
+  it("switches a surface material to a Particle Output fed by Particle Color", () => {
     const doc = setMaterialDomain(
       createDefaultMaterialDocument("Rock"),
       "particle",
     );
     expect(doc.domain).toBe("particle");
-    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(false);
-    expect(doc.nodes.some((node) => node.type === "output.particle")).toBe(true);
+    // The untouched Base Color seed goes with the surface terminal it fed.
+    expect(doc.nodes.map((node) => node.type).sort()).toEqual([
+      "input.particleColor",
+      "output.particle",
+    ]);
+    const color = doc.nodes.find((node) => node.type === "input.particleColor")!;
+    const output = doc.nodes.find((node) => node.type === "output.particle")!;
+    expect(doc.edges).toEqual([
+      expect.objectContaining({
+        sourceNodeId: color.id,
+        sourcePinId: "color",
+        targetNodeId: output.id,
+        targetPinId: "color",
+      }),
+    ]);
+  });
+
+  it("keeps the Surface Shading Model and Blend Mode across a Particle round trip", () => {
+    const doc = { ...createDefaultMaterialDocument("Rock"), blendMode: "masked" as const };
+    const surface = setMaterialDomain(setMaterialDomain(doc, "particle"), "surface");
+    expect(surface.shadingModel).toBe("pbr");
+    expect(surface.blendMode).toBe("masked");
+  });
+
+  it("keeps an edited Base Color constant when switching to Particle", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes = doc.nodes.map((node) =>
+      node.id === "baseColor" ? { ...node, properties: { value: [1, 0, 0] } } : node,
+    );
+    const particle = setMaterialDomain(doc, "particle");
+    const baseColor = particle.nodes.find((node) => node.id === "baseColor");
+    expect(baseColor?.properties).toEqual({ value: [1, 0, 0] });
+    // The added Particle Color (at least 320 wide) keeps an 80 gap from it.
+    const color = particle.nodes.find((node) => node.type === "input.particleColor")!;
+    expect(color.position.x + 320 + 80).toBeLessThanOrEqual(baseColor!.position.x);
+  });
+
+  it("wires one Particle Color however often the domain goes back and forth", () => {
+    let doc = createDefaultMaterialDocument("Rock");
+    for (const domain of ["particle", "surface", "particle"] as const) {
+      doc = setMaterialDomain(doc, domain);
+    }
+    const colors = doc.nodes.filter((node) => node.type === "input.particleColor");
+    expect(colors).toHaveLength(1);
+    expect(doc.edges).toEqual([
+      expect.objectContaining({ sourceNodeId: colors[0]!.id, targetPinId: "color" }),
+    ]);
+
+    // A Particle Color that survives the switch is wired rather than doubled
+    // (copy it in a Particle Material, switch to Surface, paste, switch back).
+    const stray = createDefaultMaterialDocument("Rock");
+    stray.nodes.push({ id: "spare", type: "input.particleColor", position: { x: 0, y: 200 }, properties: {} });
+    const wired = setMaterialDomain(stray, "particle");
+    expect(wired.nodes.filter((node) => node.type === "input.particleColor").map((node) => node.id)).toEqual(["spare"]);
+    expect(wired.edges).toEqual([expect.objectContaining({ sourceNodeId: "spare", targetPinId: "color" })]);
   });
 
   it("keeps nodes that are legal in both domains", () => {

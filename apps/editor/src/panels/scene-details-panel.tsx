@@ -3,6 +3,8 @@ import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
+import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -38,10 +40,12 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   patchComponentProperties,
+  setSceneStreamingTarget,
   type SerializedActor,
   type SerializedScene,
   isSceneWorkspaceKind,
   normalizeCelShadingSettings,
+  normalizeSceneFogSettings,
   normalizeScenePostProcessStack,
   newGuid,
 } from "@babylonslate/core";
@@ -437,6 +441,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         kind: "boolean",
         id: "scene-fog",
         label: "Fog",
+        description: "Distance fog. For light scattering, use Volumetric Fog in Project Settings > Rendering > Post Processing.",
         value: scene.settings.fogEnabled,
         defaultValue: defaults.fogEnabled,
         onChange: (fogEnabled) =>
@@ -444,6 +449,27 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       },
       ...(scene.settings.fogEnabled
         ? [
+            {
+              kind: "enum" as const,
+              id: "scene-fog-mode",
+              label: "Fog Mode",
+              description: "Linear fades between Start and End. Exponential modes use Density; Exponential Squared builds more gradually nearby.",
+              value: scene.settings.fogMode,
+              defaultValue: defaults.fogMode,
+              options: [
+                { value: "linear", label: "Linear" },
+                { value: "exponential", label: "Exponential" },
+                { value: "exponentialSquared", label: "Exponential Squared" },
+              ],
+              onChange: (fogMode: string) =>
+                mutate({
+                  ...scene,
+                  settings: {
+                    ...scene.settings,
+                    ...normalizeSceneFogSettings({ ...scene.settings, fogMode }),
+                  },
+                }),
+            },
             {
               kind: "color" as const,
               id: "scene-fog-color",
@@ -456,30 +482,67 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   settings: { ...scene.settings, fogColor },
                 }),
             },
-            {
-              kind: "number" as const,
-              id: "scene-fog-start",
-              label: "Fog Start",
-              value: scene.settings.fogStart,
-              defaultValue: defaults.fogStart,
-              onChange: (fogStart: number) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, fogStart },
-                }),
-            },
-            {
-              kind: "number" as const,
-              id: "scene-fog-end",
-              label: "Fog End",
-              value: scene.settings.fogEnd,
-              defaultValue: defaults.fogEnd,
-              onChange: (fogEnd: number) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, fogEnd },
-                }),
-            },
+            ...(scene.settings.fogMode === "linear"
+              ? [
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-start",
+                    label: "Fog Start",
+                    description: "Distance from the camera where fog begins. Moving beyond End also moves End.",
+                    unit: "scene units",
+                    value: scene.settings.fogStart,
+                    defaultValue: defaults.fogStart,
+                    min: 0,
+                    onChange: (fogStart: number) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          ...normalizeSceneFogSettings({ ...scene.settings, fogStart }),
+                        },
+                      }),
+                  },
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-end",
+                    label: "Fog End",
+                    description: "Distance where fog reaches full color. Moving before Start also moves Start.",
+                    unit: "scene units",
+                    value: scene.settings.fogEnd,
+                    defaultValue: defaults.fogEnd,
+                    min: 0.01,
+                    onChange: (fogEnd: number) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          ...normalizeSceneFogSettings({
+                            ...scene.settings,
+                            fogStart: Math.min(scene.settings.fogStart, fogEnd - 0.01),
+                            fogEnd,
+                          }),
+                        },
+                      }),
+                  },
+                ]
+              : [
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-density",
+                    label: "Fog Density",
+                    description: "Higher values obscure nearby objects. Zero leaves distance fog invisible.",
+                    value: scene.settings.fogDensity,
+                    defaultValue: defaults.fogDensity,
+                    min: 0,
+                    precision: 6,
+                    sensitivity: 0.0001,
+                    onChange: (fogDensity: number) =>
+                      mutate({
+                        ...scene,
+                        settings: { ...scene.settings, fogDensity },
+                      }),
+                  },
+                ]),
           ]
         : []),
       {
@@ -1045,7 +1108,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         componentPropertyRows(
           actor.id,
           component,
-          (property, value) =>
+          (property, value) => {
+            if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
+              const guid = typeof value === "string" ? value : null;
+              updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
+              return;
+            }
             updateActor((entry) => ({
               ...entry,
               components: entry.components.map((candidate) =>
@@ -1060,7 +1128,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     }
                   : candidate,
               ),
-            })),
+            }));
+          },
           {
             sortingLayers,
             collisionLayers,
@@ -1083,7 +1152,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         template,
       );
       const colliderRows =
-        component.classId === "ColliderComponent"
+        component.classId === "ColliderComponent" || component.classId === "SceneStreamingComponent"
           ? spatialTransformPropertyRows(
               `${actor.id}-${component.id}`,
               scene.viewportMode,
@@ -1111,9 +1180,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ? "Text"
             : component.classId === "2DPanelComponent"
               ? "Nine Slice"
-              : component.classId === "RagdollComponent"
-                ? "Bone Names"
-              : "";
+              : component.classId === "RenderTargetCaptureComponent"
+                ? "Capture Actors"
+                : component.classId === "RagdollComponent"
+                  ? "Bone Names"
+                  : "";
       return {
         component,
         index,
@@ -1267,6 +1338,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
+                  {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
+                    <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
+                      onChange={(actorIds) => updateActor((entry) => ({ ...entry, components: entry.components.map((candidate) => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, actorIds } } : candidate) }))} />
+                  ) : null}
                   {showExtras && component.classId === "RagdollComponent" ? (
                     <RagdollBoneNamesEditor
                       boneNames={component.properties.boneNames as string[] | undefined}
@@ -1293,6 +1368,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                         <MultilineTextField
                           id={`text3d-text-${component.id}`}
                           title="Text"
+                          disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
                           value={
                             parseText3DProperties(component.properties).text
                           }
@@ -1361,7 +1437,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     <PropertyGrid
                       title="Transform"
                       rows={colliderRows}
-                      data-testid={`collider-transform-grid-${component.id}`}
+                      data-testid={`${component.classId === "ColliderComponent" ? "collider" : "component"}-transform-grid-${component.id}`}
                     />
                   ) : null}
                   {showExtras && component.classId === "NavMeshComponent" ? (
@@ -1400,6 +1476,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onPick={(guid) => {
           if (!assetPick) return;
           const { componentId, property } = assetPick;
+          if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
+            updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));
+            setAssetPick(null);
+            return;
+          }
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((candidate) => {

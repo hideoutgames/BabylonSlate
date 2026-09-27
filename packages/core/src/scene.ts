@@ -4,6 +4,7 @@ import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } fro
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
+import { normalizeSceneStreamingProperties } from "./scene-streaming";
 
 
 /**
@@ -23,10 +24,13 @@ import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverride
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
  * component ids). v4 distinguishes automatic shadow capacity from a saved
- * manual local-light limit.
+ * manual local-light limit. Fog mode/density are additive on v4; missing mode
+ * preserves linear fog in existing scenes.
  */
 
 export type ViewportMode = "3d" | "2d";
+
+export type SceneFogMode = "linear" | "exponential" | "exponentialSquared";
 
 /** Which physics backend a scene uses — never both (engineplan §13.4). */
 export type PhysicsWorldKind = "3d" | "2d";
@@ -113,8 +117,13 @@ export interface SceneSettings {
   /** Clear colour as [r, g, b] in 0..1. */
   environmentColor: [number, number, number];
   fogEnabled: boolean;
-  /** Linear fog colour as [r, g, b] in 0..1. */
+  /** Babylon distance-fog falloff; older scenes retain linear fog. */
+  fogMode: SceneFogMode;
+  /** Fog colour as [r, g, b] in 0..1. */
   fogColor: [number, number, number];
+  /** Nonnegative density for exponential and exponential-squared fog. */
+  fogDensity: number;
+  /** Linear fog distances in world units; end must be greater than start. */
   fogStart: number;
   fogEnd: number;
   /** Optional IBL cube texture asset guid. */
@@ -203,7 +212,9 @@ export function createDefaultSceneSettings(
     shadowOverrides: {},
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
+    fogMode: "linear",
     fogColor: [0.5, 0.5, 0.5],
+    fogDensity: 0.01,
     fogStart: 0,
     fogEnd: 100,
     environmentTextureGuid: null,
@@ -327,8 +338,10 @@ function normalizeComponent(
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
       source.classId === "CableComponent" ? { ...parseCableProperties(source.properties) } :
+      source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
+      source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
@@ -456,6 +469,35 @@ function normalizeMainCamera(
   return { mainCameraActorId, mainCameraComponentId };
 }
 
+/** Keep authored fog safe for both document loading and live viewport edits. */
+export function normalizeSceneFogSettings(
+  value: unknown,
+): Pick<SceneSettings, "fogMode" | "fogDensity" | "fogStart" | "fogEnd"> {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const defaults = createDefaultSceneSettings();
+  const finite = (value: unknown, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  let fogStart = finite(source.fogStart, defaults.fogStart);
+  let fogEnd = finite(source.fogEnd, defaults.fogEnd);
+  if (fogEnd <= fogStart) {
+    // The relative increment stays representable for large authored distances.
+    fogEnd = fogStart + Math.max(0.01, Math.abs(fogStart) * Number.EPSILON);
+    if (!Number.isFinite(fogEnd)) {
+      fogStart = defaults.fogStart;
+      fogEnd = defaults.fogEnd;
+    }
+  }
+  return {
+    fogMode:
+      source.fogMode === "exponential" || source.fogMode === "exponentialSquared"
+        ? source.fogMode
+        : "linear",
+    fogDensity: Math.max(0, finite(source.fogDensity, defaults.fogDensity)),
+    fogStart,
+    fogEnd,
+  };
+}
+
 export function normalizeSceneSettings(
   value: unknown,
   viewportMode: ViewportMode = "3d",
@@ -477,9 +519,7 @@ export function normalizeSceneSettings(
     ),
     fogEnabled: source.fogEnabled === true,
     fogColor: asNumberTuple3(source.fogColor, defaults.fogColor),
-    fogStart:
-      typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
-    fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
+    ...normalizeSceneFogSettings(source),
     environmentTextureGuid: asNullableString(source.environmentTextureGuid),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(
@@ -626,13 +666,6 @@ export function findActor(
   return scene.actors.find((actor) => actor.id === actorId);
 }
 
-export function actorChildren(
-  scene: SerializedScene,
-  parentId: string | null,
-): SerializedActor[] {
-  return scene.actors.filter((actor) => actor.parentId === parentId);
-}
-
 /** Actor plus every descendant, in scene order. */
 export function actorSubtree(
   scene: SerializedScene,
@@ -660,15 +693,6 @@ export function findFolder(
   return scene.folders.find((folder) => folder.id === folderId);
 }
 
-export function folderChildren(
-  scene: SerializedScene,
-  parentFolderId: string | null,
-): SerializedOutlinerFolder[] {
-  return scene.folders.filter(
-    (folder) => folder.parentFolderId === parentFolderId,
-  );
-}
-
 /** Folder plus every descendant folder, in scene order. */
 export function folderSubtree(
   scene: SerializedScene,
@@ -690,14 +714,6 @@ export function folderSubtree(
     }
   }
   return scene.folders.filter((folder) => ids.has(folder.id));
-}
-
-/** Actors listed directly in a folder, or at the scene root when null. */
-export function actorsInFolder(
-  scene: SerializedScene,
-  folderId: string | null,
-): SerializedActor[] {
-  return scene.actors.filter((actor) => actor.folderId === folderId);
 }
 
 /** True when moving `folderId` under `parentFolderId` would create a cycle. */
@@ -754,6 +770,7 @@ export function wouldCreateComponentCycle(
   return false;
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
+import { parseFogVolumeProperties } from "./fog-volume";
 import { parseOutlineProperties } from "./outline-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";
 import { parseCableProperties } from "./cable-component";

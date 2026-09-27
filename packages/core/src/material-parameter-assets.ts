@@ -1,5 +1,6 @@
 import { parseMapDefaultEntries } from "./map-default";
 import type { GraphClassMember, SerializedGraph } from "./project";
+import { isMaterialTextureAssetType } from "./render-target";
 
 /** Texture references in typed variable defaults, including function locals. */
 function textureVariableGuidsFromMembers(
@@ -12,11 +13,11 @@ function textureVariableGuidsFromMembers(
   for (const member of members) {
     if (member.kind !== "variable") continue;
     const valueIsTexture =
-      member.typeId === "asset" && member.typeClassId === "Texture";
+      member.typeId === "asset" && isMaterialTextureAssetType(member.typeClassId ?? "");
     const value = member.defaultValue;
     if (member.container === "map") {
       const keyIsTexture =
-        member.keyTypeId === "asset" && member.keyTypeClassId === "Texture";
+        member.keyTypeId === "asset" && isMaterialTextureAssetType(member.keyTypeClassId ?? "");
       for (const entry of parseMapDefaultEntries(value)) {
         if (keyIsTexture) add(entry.key);
         if (valueIsTexture) add(entry.value);

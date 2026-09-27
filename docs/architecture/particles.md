@@ -102,7 +102,6 @@ A scalar is **Constant** `{value}`, **Random Range** `{min, max}` or **Curve** `
 - Infinite emitters repeat their bursts every loop; Once emitters fire them once. Rate 0 gives a bursts-only emitter.
 - Babylon has no burst schedule. The emission driver (`packages/render/src/particle-emission-driver.ts`) counts the particles due in each frame's window of the cycle (`burstParticlesInWindow`) and writes `manualEmitCount` after the frame renders. Bursts therefore fire **one frame late** by design. Bursts are **not simulated during prewarm**: GPU prewarm runs inside the first ready render and would emit a queued burst, so a GPU emitter with Pre Warm advances its driver only after its first draw.
 - Babylon leaves `manualEmitCount = 0` after consuming it, which would mute rate emission forever, so the driver restores `-1` on the next frame. A manual frame also skips that frame's rate emission; the driver adds `round(rate × dt)` back only when nothing was pending (count `-1` or `0`).
-- `basicEmitterSlotNeed` estimates the live particles an emitter needs (rate × longest lifetime plus the peak burst particles in any lifetime-long window across loop wraps). Details does not show it yet.
 
 ## Particle Graph
 
@@ -125,11 +124,11 @@ A node-graph emitter for custom per-particle logic. Package `packages/particle-g
 - No Space (the Particle System owns it) and no backend: graphs always simulate on the CPU, and a document never records it.
 - An unconnected pin's value is the node property `default:<pinId>`; without one the catalog default applies, and a pin with neither stays unconnected in Babylon.
 - `normalizeParticleGraphDocument` keeps unknown node types (validation reports them), drops edges without endpoints, sanitizes node properties and injects a missing Emitter Output (id `output`).
-- **Default graph** (New Asset): Create Particle (Lifetime 1.5 s, Size 0.3) → Sphere Shape (Radius 0.5) → Apply Velocity → Update Color, fed by a white-to-transparent Gradient over Normalized Age → Emitter Output (Emit Rate 30 /s). It validates with only the `missingMaterial` warning.
+- **Default graph** (New Asset): Create Particle (Lifetime 1.5 s, Size 0.3) → Sphere Shape (Radius 0.5) → Apply Velocity → Update Color → Emitter Output (Emit Rate 30 /s). Update Color's Color is Initial Color × a Gradient over Normalized Age from white to transparent black, so Create Particle's Color shows and fades out. It validates with only the `missingMaterial` warning. Saved graphs keep their own wiring; nothing is migrated.
 
 ### Catalog
 
-Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`) that picks its header colour ([theming → Particle stage roles](theming.md#particle-stage-roles)). Palette categories in order:
+Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`) that picks its header colour ([theming → Particle stage roles](theming.md#particle-stage-roles)). Palette categories:
 
 | Category | Nodes (Babylon blocks) |
 | --- | --- |
@@ -155,8 +154,10 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 
 - Value types: Float, Vector 2, Vector 3, Color (RGBA) and Particle. There is no Int; Babylon's Int ports (Emit Rate) are Float here.
 - A Float splats into a vector or color (Babylon's `adapt` rule). Other width changes use Split and Combine. A generic node resolves from the non-Float types wired into it; two different ones report `genericConflict`. Until then its canvas pins keep their accepted types, so an unwired Split (which lowers as Color) still takes a Vector 2 or Vector 3.
-- **Spine:** Particle pins carry the system from Create Particle through Shapes and Updates to Emitter Output, which is Babylon's update order. They are circles in the first pin row and take one link. A Particle output also feeds one input: `particleConnectionIsAllowed` refuses a second one and any loop.
+- **Spine:** Particle pins carry the system from Create Particle through Shapes and Updates to Emitter Output, which is Babylon's update order. They are circles in the first pin row and take one link. A Particle output also feeds one input (its canvas pin is `singleLink`).
+- **Rewiring:** a new wire from a linked Particle output, or onto any linked input, replaces the old wire instead of being refused, whether it is dropped, tapped or auto-wired from Add Node. One Undo restores the old wire. Skipping a node (Create Particle straight into Apply Velocity) replaces both of its wires and leaves it unlinked. Value outputs still feed any number of inputs. `particleConnectionIsAllowed` refuses only a loop; the wires a connection replaces never change that answer.
 - **Evaluation:** Create Particle inputs are read once per new particle, before the Shape sets position and direction. Update inputs are read every frame for each particle. Emit Rate is read without a particle, so particle reads there give no value. Attractor inputs are also read without a particle, so particle reads there are stale.
+- **Colour:** Create Particle's Color sets both Particle Color and Initial Color at birth. Every Update Color replaces Particle Color each frame, so one whose input reads neither Initial Color nor Particle Color discards Create Particle's Color until a later one reads Initial Color (`colorOverridden`). Multiply Initial Color into Update Color to tint over life.
 - **Random Lock Mode:** **Per Particle** rolls once per particle evaluation, so it is fixed in Create Particle inputs but re-rolled every frame in Update inputs. **Every Read** rolls on every read.
 - **Time** restarts at each Play and includes Pre Warm. Delta Time is the seconds simulated this frame.
 
@@ -184,6 +185,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | `attractorParticleInput` | Warning | The Attractor is the first update on the spine and a particle-dependent input reads the previous particle |
 | `shapeDirectionPair` | Warning | Only one of Direction 1 / Direction 2 is set on Sphere, Cone or Cylinder |
 | `multipleShapes` | Warning | An earlier Shape on the spine is overridden |
+| `colorOverridden` | Warning | Anchored on Create Particle's Color: an Update Color on the spine reads neither Initial Color nor Particle Color, and no later one reads Initial Color, so Create Particle's Color never shows |
 | `noMotion` | Warning | The spine starts at Create Particle but has neither Apply Velocity nor Update Position |
 | `unreachable` | Warning | A Create, Shape or Update node is not on the spine |
 
@@ -191,7 +193,7 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
 
 ### Lowering and build
 
-- `lowerParticleGraphDocument(doc)` validates, then walks back from Emitter Output over inputs in catalog pin order. The `ParticleBuildPlan` holds `settings`, topological `operations`, `spine`, `materialGuid`, `dependencies`, `cost` and `hash`. The order never depends on the node array, and unreachable nodes never enter it.
+- `lowerParticleGraphDocument(doc)` validates, then walks back from Emitter Output over inputs in catalog pin order. The `ParticleBuildPlan` holds `settings`, topological `operations` and `hash`; render takes the Material from the document or emitter. The order never depends on the node array, and unreachable nodes never enter it.
 - Each operation id is its node id, the anchor for build diagnostics. Inputs reference earlier operations (with a Float splat marked) or carry constants already sized to the pin type and clamped to its range. Gradient stops arrive sorted, with a stop at 0 prepended when missing, because Babylon returns 0 below its first stop.
 - **Compile key:** `particleGraphCompileKey` is an FNV-1a hash of the settings and operations. Positions, the name, `materialGuid`, unreachable nodes and defaults on wired pins never change it. A graph with errors gets a stable `invalid:<hash>` of its settings, nodes (without positions) and edges.
 - **Build:** `realizeParticleGraph(plan, { scene, name, emitter, space })` (`packages/render/src/particle-graph-realize.ts`) runs synchronously inside `ParticleService.prepare`, using the block table in `particle-graph-blocks.ts`:
@@ -210,7 +212,7 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
   - A failure returns `particle.compile.*` diagnostics anchored to the graph node (and pin when known). Babylon's string throws are attributed to the block that was building. The set and any partial system are disposed, and no texture is created.
 - The Material binds after the build through the Basic path (`bindParticleMaterial`).
 - Retiring a slot stops the system, then calls `set.dispose()`, which disposes the blocks, the system and its readiness texture. `ParticleSystemSet.emitterNode` is never used, because its dispose would destroy the actor's emitter mesh.
-- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.20 has no GPU node path), at the authored capacity up to 4096. `plan.cost` counts operations and the value operations evaluated per particle per frame. Device cost on the A16 iPad is unmeasured.
+- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.20 has no GPU node path), at the authored capacity up to 4096. Device cost on the A16 iPad is unmeasured.
 
 ### Local Space
 
@@ -230,7 +232,8 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 | Compiler Results | `particle-graph-compiler-results` | Below Graph, 160px |
 
 - **Graph:** `GraphEditor` configured like the Material graph:
-  - `pinCompatibility` is `particlePinsAreCompatible`, and the `canConnect` veto is `particleConnectionIsAllowed` on the current graph.
+  - `pinCompatibility` is `particlePinsAreCompatible`, and the `canConnect` veto is `particleConnectionIsAllowed` (loops only) on the current graph.
+  - Hydrate and Add Node pins mark Particle outputs `singleLink`, so rewiring one replaces its old wire ([Rewiring](#types-and-the-spine)).
   - `commitPositionsOnDragEnd` is on, so one drag is one undo entry (`particle-graph-node-move:<transactionId>`).
   - Emitter Output is protected from deletion (`__protected`).
   - Canvas diagnostics keep `pinId`, so the offending pin shows an error ring.
@@ -246,7 +249,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 - **Gradient stops:** Color stops use `GradientField`, Float stops `CurveField`, and Vector 2 / 3 stops an `EntryListEditor` of Position plus value.
 - Pin units come from the catalog pin's `unit` and show verbatim after the label, such as Emit Rate (/s), Lifetime (s) and Acceleration (m/s²). Angles show in radians (`rad`), unlike Basic Details, which shows degrees.
 - **Undo:** continuous edits use `particle-graph-field:<nodeId>:<pin or property>`. Emitter settings anchor to the Emitter Output id (`…:capacity`, `duration`, `prewarm`, `emitRate`). Picks, enums and toggles are separate entries.
-- **Compiler Results:** validation rows plus the Preview build's service diagnostics (such as `particle.compile.*`), in a `WindowedList` with `MessageDetails`. Tapping a row frames its node and selects it in Details. `particle.graph_invalid`, and a `particle.missing_material` that validation already explains, are not repeated.
+- **Compiler Results:** validation rows plus the Preview build's service diagnostics (such as `particle.compile.*`), in a `WindowedList` of `DiagnosticResultRow`s with `MessageDetails`. Tapping a row frames its node and selects it in Details. `particle.graph_invalid`, and a `particle.missing_material` that validation already explains, are not repeated.
 - **Preview:** `ParticlePreviewCanvas` runs a one-slot System and only rebuilds when `particleLibraryEmitterKey` changes, so moves and renames never rebuild it.
   - While the graph has errors, it keeps the last valid build this tab rendered, with the current Material, and a strip reads "Graph has N errors. Preview shows the last valid build."
   - Before any valid build it shows **Graph Has Errors** ("Fix the errors in Compiler Results to preview.").
@@ -255,6 +258,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 ## Look
 
 - The look is a **particle-domain Material** (`domain: "particle"`, `NodeMaterialModes.Particle`), bound with `createEffectForParticles`. Emitters have no Texture field: sample textures inside the Material with **Texture Sample**, whose unwired UV (or a **UV** node) reads `particle_uv` in Particle mode. **Particle Color** is the per-particle color from the emitter's Color. See [shader graph](shader-graph.md).
+- Set a particle texture's **Usage** to **Particle** (Texture Details) to keep it block-compressed on WebGPU. Particle encodes KTX2 at base dimensions rounded up to a multiple of 4, since WebGPU rejects ASTC/BC7 textures that are not block-aligned. Particle usage binds (and exports) only a block-aligned KTX2, else source pixels. See [asset registry](asset-registry.md). A compressed texture of another Usage off the 4×4 grid (a 1×1 Albedo, for example) decodes to RGBA on WebGPU and draws at four bytes per texel ([render](render.md#project-lifetime-engine)).
 - Babylon's `isReady()` requires a ready `particleTexture`, so each native system owns a 1×1 white `RawTexture` (`slate:particleReadiness`) that no shader samples. The system's default `dispose()` releases it.
 - An emitter without a usable Material does not render: the slot is skipped with `particle.missing_material` and the editor shows **No Material**. No default Material or Texture ships.
 - Materials that still contain the removed **Particle Texture** node fail validation (`material.unknownNode`), so their emitters are skipped until the node is replaced (for example with Texture Sample).
@@ -313,6 +317,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 - `ParticlePreviewCanvas` `onDiagnostics(diagnostics, applied)` reports the running build's service diagnostics (with `nodeId` / `pinId`), and an empty list when the run ends. `applied` is the library that run was built from, which trails `library` while a debounced edit waits. The Particle Graph Preview feeds them to Compiler Results.
 - Edits go through `ParticleService.updateLibrary`, which applies the change tier below (Particle Graph tiers: [Runtime](#runtime)). The preview asks the service first (`libraryChangeTier`): `live` (or `none`) edits apply at once unless a heavier edit is already waiting; `respawn` and `rebuild` wait for a 220 ms trailing debounce and show **Updating**. Only the service knows skipped slots, so a value edit on a skipped slot, which re-prepares the whole bundle, also waits.
 - A different set of Material guids, a skybox change or Retry starts a new preview Scene, because the Material resolver knows only the Material documents collected at boot. The last frame stays up with Updating. Edits inside a Material document reach the preview only after one of those.
+- A saved change to a Texture the running Scene uploaded also starts a new Scene, because the Scene keeps the bytes it collected at boot. The preview compares those Textures' saved headers (payload and chunks, ignoring encode progress) on each registry change, so a saved Usage change or a finished re-encode rebinds the new KTX2 without Retry.
 
 | Tier | Edits | Effect |
 | --- | --- | --- |
@@ -342,7 +347,8 @@ CPU particles already alive pick up gradient edits at their next key; new partic
 
 `ParticleService` in `@babylonslate/render` is the main-thread owner shared by overlay Play, the packed player and previews. The worker never imports Babylon, and script graphs emit commands only.
 
-- Each Particle System slot becomes one native system. Its `emitter` is an **enabled** zero-visibility box parented to the actor origin (`isVisible = true`, `visibility = 0`, `alwaysSelectAsActiveMesh`, not pickable). Do not `setEnabled(false)` or set `isVisible = false`: Play uses `performancePriority = Intermediate`, and hidden emitters drop out of the active mesh list, so GPU particles never draw.
+- Each Particle System slot becomes one native system. Its `emitter` is an **enabled**, geometry-less `Mesh` (`particleEmitter:<key>`) parented to the actor origin: default visibility, `alwaysSelectAsActiveMesh`, not pickable, and skipped by `participatesInShadows`. With no sub-meshes it is always ready and never draws.
+  - Babylon draws a system only when its emitter is in the pass's object list. The FrameGraph Cull Objects task drops disabled, `isVisible = false` and `visibility = 0` meshes before it considers `alwaysSelectAsActiveMesh`. A hidden emitter therefore hides its particles on every FrameGraph frame in Play and the player; only the classic frame after a resize draws them, which shows as a one-frame flicker. A GPU system emits and simulates inside its draw, so it stalls too.
 - **Backend per emitter:** a Basic emitter gets `GPUParticleSystem` with `emitRateControl: true` when the owning engine supports compute (WebGPU) or transform feedback (WebGL2); otherwise CPU `ParticleSystem` with `min(capacity, 512)`. The owning engine decides, not the last-created one. A Particle Graph slot is always a CPU `ParticleSystem` built from Node Particle blocks at its authored capacity, so one System can mix GPU and CPU slots.
 - **GPU slot ring:** under `emitRateControl`, Babylon sizes the ring from rate × lifetime and overwrites live particles when bursts overlap. The owned GPU system claims the whole ring (`capacity`) after construction and after `reset()`; never-emitted slots have zero size and draw nothing. A runtime check on the Babylon internals fails the slot with `particle.apply_failed` after an incompatible upgrade. At capacity the GPU recycles the **oldest** particle, while the CPU **drops new** ones.
 - **Apply:** `applyBasicEmitterPlan(system, plan, "create" | "live" | "respawn")` writes the plan before the Material binds, because GPU render defines depend on the gradient textures. `live` and `respawn` never write `updateSpeed`, prewarm or `targetStopDuration`. `respawn` recreates the gradient textures and update program right after `reset()`: WebGL2 keeps its update program across `reset()`, so the next frame would otherwise lay out the particle buffers without the gradient textures and draw garbage until a rebuild. `bindParticleMaterial` waits for the NodeMaterial build, then calls `createEffectForParticles`. Particle-mode Materials are not rebuilt when a sampled texture (Texture Sample or Texture Parameter) finishes loading, because their effects bind textures on every draw. A rebuild would make Babylon replace each blend effect during its first draw and draw the old one without its textures; on WebGPU that logs "not found in the material context" and drops the draw.
@@ -417,6 +423,7 @@ That version boundary also prepares native update/gradient resources before crea
 - Render, Particle Graph:
   - `particle-graph-realize.test.ts`:
     - the default graph builds a CPU system at 1/60 that owns exactly one readiness texture, released with the set;
+    - the default graph fades from Create Particle's Color, not white;
     - settings map to Babylon's named constants;
     - a shared value node builds once;
     - a failed build is node-anchored and leaves nothing behind;
@@ -431,9 +438,10 @@ That version boundary also prepares native update/gradient resources before crea
     - a Once graph drains;
     - 100 cycles return systems, textures, observers and leases to baseline.
 - Shader graph: `validate.test.ts` (an old Particle Texture node reports `material.unknownNode`).
-- Editor: `particle-emitter-panels.test.tsx`, `particle-system-panels.test.tsx` (both kinds in the slot picker, Graph Has Errors, last-valid hold), `particle-preview-recovery.test.tsx`, `particle-value-modes.test.ts`, `play-particles.test.ts` (graph kinds in preview and Play loading), `particle-graph-panels.test.tsx`, `particle-graph-editing-context.test.tsx` (position-only edits never rebuild, stale build reports are ignored), plus the window-catalog, panel-registry, layout-ops, content-browser-helpers and type-visuals cases. Player: `hydrate.test.ts` (Basic and graph payloads). Exporter: `closure.test.ts` (Component → System → Emitter or Graph → Material → Texture).
+- Particle Texture usage: `texture-compression.test.ts` (aligned sizes, hash, unsaved Usage requeue), `resolve-gpu-texture.test.ts` (misaligned KTX2 never bound), editor `encode-worker.test.ts`, `export-game-inputs.test.ts`. Browser: `e2e/particle-texture-webgpu.spec.ts` sets `albedo.png` to Particle Usage and requires a WebGPU Emitter Preview to draw it from a 4×4 compressed texture with no validation errors; a second case requires a running Basic emitter Preview to draw the 1×1 Albedo Texture (no **No Material**, nothing block-compressed off the grid), then, after Texture Details switches it to Particle Usage and Save All, to rebind the 4×4 KTX2 without Retry and keep drawing, with no GPU validation error at any point ([testing](testing.md)). `e2e/texture-webgpu-fallback.spec.ts` requires the Emitter Preview to draw a 1×1 Albedo KTX2 in its own colour.
+- Editor: `particle-emitter-panels.test.tsx`, `particle-system-panels.test.tsx` (both kinds in the slot picker, Graph Has Errors, last-valid hold), `particle-preview-recovery.test.tsx` (including a new Scene that binds a sampled Texture's committed re-encode, not on encode progress or other saves), `particle-value-modes.test.ts`, `play-particles.test.ts` (graph kinds in preview and Play loading), `particle-graph-panels.test.tsx` (a tap rewire of a linked Particle output is one undo entry; a second wire from a linked value output keeps the first), `particle-graph-editing-context.test.tsx` (position-only edits never rebuild, stale build reports are ignored), plus the window-catalog, panel-registry, layout-ops, content-browser-helpers and type-visuals cases. Player: `hydrate.test.ts` (Basic and graph payloads). Exporter: `closure.test.ts` (Component → System → Emitter or Graph → Material → Texture).
 - NullEngine tests do not prove GPU output. The readiness texture never reports ready on NullEngine, so CPU behaviour tests step `animate` directly.
-- The browser lifecycle proof (`apps/editor/src/testing/particle-lifecycle-proof.ts`, `e2e/particle-lifecycle.spec.ts`; WebGL2/WebGPU × CPU/GPU in CI) draws red and blue emitters through two Particle Color × tint Materials, balances Material lease acquisitions and releases, runs 100 lifecycle cycles, and captures blend cases over mid-grey and overlapping bursts that need the ring claim. A Texture Sample Material whose texture loads after the first build must draw in Additive and, after a live switch into Multiply, darken the grey, with no "not found in the material context" message. Its graph cases draw a mixed System (blue Basic plus the red default Particle Graph, `mixed-graph`) that must drain to nothing (`mixed-retired`), and run 20 graph build-and-retire cycles inside the leak baseline. With `e2e/particle-graph.spec.ts` they are the browser proof of Node Particle blocks in the bundled editor and of NodeMaterial binding on graph-built CPU systems; the lifecycle proof covers both WebGL2 and WebGPU. `e2e/p17-particles.spec.ts` covers Basic authoring through Play, and `e2e/particle-graph.spec.ts` covers Particle Graph authoring, the CPU preview, a mixed Basic + Graph System in Play and save/reopen ([testing](testing.md)).
+- The browser lifecycle proof (`apps/editor/src/testing/particle-lifecycle-proof.ts`, `e2e/particle-lifecycle.spec.ts`; WebGL2/WebGPU × CPU/GPU in CI) draws red and blue emitters through two Particle Color × tint Materials, balances Material lease acquisitions and releases, runs 100 lifecycle cycles, and captures blend cases over mid-grey and overlapping bursts that need the ring claim. A Texture Sample Material whose texture loads after the first build must draw in Additive and, after a live switch into Multiply, darken the grey, with no "not found in the material context" message. Its graph cases draw a mixed System (blue Basic plus the red default Particle Graph, `mixed-graph`) that must drain to nothing (`mixed-retired`), and run 20 graph build-and-retire cycles inside the leak baseline. With `e2e/particle-graph.spec.ts` they are the browser proof of Node Particle blocks in the bundled editor and of NodeMaterial binding on graph-built CPU systems; the lifecycle proof covers both WebGL2 and WebGPU. `e2e/p17-particles.spec.ts` covers Basic authoring through Play, and `e2e/particle-graph.spec.ts` covers Particle Graph authoring, the CPU preview (Create Particle's Color reaching the pixels through a Domain-switched Material), a mixed Basic + Graph System in Play, save/reopen and rewiring a linked Particle output ([testing](testing.md)).
 - The P17 follow-up cases recorded as unexecuted in [renderer qualification](../design/renderer-qualification.md) row F were not run. This slice rewrote those fixtures and does not convert that status into a pass.
 
 ## Out of scope

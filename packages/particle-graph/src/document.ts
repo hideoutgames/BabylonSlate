@@ -314,9 +314,10 @@ function edge(
 }
 
 /**
- * Create Particle → Sphere Shape → Apply Velocity → Update Color (Gradient over
- * Normalized Age) → Emitter Output. It validates with only the Missing
- * Material warning.
+ * Create Particle → Sphere Shape → Apply Velocity → Update Color → Emitter
+ * Output. Update Color multiplies Initial Color (Create Particle's Color) by a
+ * Gradient over Normalized Age, so Create Particle's Color still shows. It
+ * validates with only the Missing Material warning.
  */
 export function createDefaultParticleGraphDocument(
   name = "Particle Graph",
@@ -333,17 +334,21 @@ export function createDefaultParticleGraphDocument(
       }),
       node("shape", "shape.sphere", 450, 0, { "default:radius": [0.5] }),
       node("velocity", "update.basicPosition", 870, 0),
-      node("normalizedAge", "input.contextual.normalizedAge", 450, 400),
-      node("gradient", "gradient.sample", 850, 400),
+      node("initialColor", "input.contextual.initialColor", 450, 400),
+      node("normalizedAge", "input.contextual.normalizedAge", 0, 580),
+      node("gradient", "gradient.sample", 450, 580),
+      node("multiply", "math.multiply", 870, 400),
       node("updateColor", "update.color", 1280, 0),
-      node("output", PARTICLE_OUTPUT_NODE_TYPE, 1680, 0),
+      node("output", PARTICLE_OUTPUT_NODE_TYPE, 1700, 0),
     ],
     edges: [
       edge("e-create-shape", "create", "out", "shape", "particle"),
       edge("e-shape-velocity", "shape", "out", "velocity", "particle"),
       edge("e-velocity-color", "velocity", "out", "updateColor", "particle"),
       edge("e-age-gradient", "normalizedAge", "out", "gradient", "ratio"),
-      edge("e-gradient-color", "gradient", "out", "updateColor", "color"),
+      edge("e-initial-multiply", "initialColor", "out", "multiply", "a"),
+      edge("e-gradient-multiply", "gradient", "out", "multiply", "b"),
+      edge("e-multiply-color", "multiply", "out", "updateColor", "color"),
       edge("e-color-output", "updateColor", "out", "output", "particle"),
     ],
   };

@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  STRUCTURE_FIELD_TYPES,
   addEnumMember,
   addScriptInterfaceMethod,
-  addScriptInterfacePin,
   addStructureField,
   moveEnumMember,
-  moveScriptInterfaceMethod,
   patchEnumMember,
-  patchScriptInterfacePin,
+  patchScriptInterfaceMethod,
   patchStructureField,
   patchTextureUsage,
   applyTextureDownsampleChange,
+  applyTextureUsageChange,
   textureDownsampleSelectValue,
   patchTextureDownsample,
   removeEnumMember,
@@ -38,12 +36,6 @@ describe("asset settings payloads", () => {
     expect(asset.members).toEqual([{ name: "Red", value: 1 }]);
   });
 
-  it("lists Structure field types used by the pin picker", () => {
-    expect(STRUCTURE_FIELD_TYPES).toContain("float");
-    expect(STRUCTURE_FIELD_TYPES).toContain("vec3");
-    expect(STRUCTURE_FIELD_TYPES).toContain("struct");
-  });
-
   it("appends, patches, and removes structure fields including defaults", () => {
     let asset = addStructureField({
       kind: "structure",
@@ -66,7 +58,7 @@ describe("asset settings payloads", () => {
     expect(asset.fields).toEqual([]);
   });
 
-  it("appends ScriptInterface methods and pins with direction", () => {
+  it("appends, patches pin rows on, and removes ScriptInterface methods", () => {
     let asset = addScriptInterfaceMethod({
       kind: "scriptInterface",
       guid: "i1",
@@ -76,32 +68,22 @@ describe("asset settings payloads", () => {
     expect(asset.methods).toHaveLength(1);
     expect(asset.methods[0]?.name).toBe("NewMethod");
     expect(asset.methods[0]?.pins).toEqual([]);
-    asset = addScriptInterfacePin(asset, 0, "out");
-    expect(asset.methods[0]?.pins).toEqual([
-      { name: "NewOutput", typeId: "float", direction: "out" },
-    ]);
-    asset = patchScriptInterfacePin(asset, 0, 0, {
+    const hit = {
       name: "hit",
       typeId: "object",
       typeClassId: "Actor",
+      direction: "out" as const,
+    };
+    asset = patchScriptInterfaceMethod(addScriptInterfaceMethod(asset), 1, {
+      name: "Interact",
+      pins: [hit],
     });
-    expect(asset.methods[0]?.pins[0]).toEqual({
-      name: "hit",
-      typeId: "object",
-      typeClassId: "Actor",
-      direction: "out",
-    });
-    asset = moveScriptInterfaceMethod(
-      addScriptInterfaceMethod(asset),
-      1,
-      -1,
-    );
-    expect(asset.methods.map((method) => method.name)).toEqual([
-      "NewMethod",
-      "NewMethod",
+    expect(asset.methods).toEqual([
+      { name: "NewMethod", pins: [] },
+      { name: "Interact", pins: [hit] },
     ]);
     asset = removeScriptInterfaceMethod(asset, 0);
-    expect(asset.methods).toHaveLength(1);
+    expect(asset.methods).toEqual([{ name: "Interact", pins: [hit] }]);
   });
 
   it("patches texture usage without dropping compression state", () => {
@@ -113,6 +95,22 @@ describe("asset settings payloads", () => {
       compressionState: "compressed",
       usage: "pixelArt",
     });
+  });
+
+  it("re-encodes when Usage enters or leaves Particle, which changes the encode size", () => {
+    const requeues = (from: string, to: string) =>
+      applyTextureUsageChange({ usage: from, compressionState: "compressed" }, to);
+    expect(requeues("albedo", "particle")).toEqual({
+      payload: { usage: "particle", compressionState: "compressed" },
+      shouldRequeue: true,
+    });
+    expect(requeues("pixelArt", "particle").shouldRequeue).toBe(true);
+    expect(requeues("particle", "normal").shouldRequeue).toBe(true);
+    // Leaving to an uncompressed Usage has nothing to encode.
+    expect(requeues("particle", "pixelArt").shouldRequeue).toBe(false);
+    // Other Usage edits keep their current behaviour.
+    expect(requeues("albedo", "normal").shouldRequeue).toBe(false);
+    expect(requeues("particle", "particle").shouldRequeue).toBe(false);
   });
 
   it("patches per-asset texture downsample and requeues compressible usages", () => {

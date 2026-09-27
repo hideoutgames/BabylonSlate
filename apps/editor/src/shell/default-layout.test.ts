@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  CLASS_PANEL_INITIAL_HEIGHT,
-  CLASS_PANEL_TITLE,
-  createDefaultLayoutForKind,
-} from "./default-layout";
+import { createDefaultLayoutForKind } from "./default-layout";
+import { CLASS_PANEL_INITIAL_HEIGHT, CLASS_PANEL_TITLE } from "./window-catalog";
 
 describe("graph default layout", () => {
   it("titles the class panel Class at about half the left stack", () => {

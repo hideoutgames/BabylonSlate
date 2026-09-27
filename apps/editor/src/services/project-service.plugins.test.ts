@@ -10,7 +10,7 @@ import {
   inspectBabplugin,
   writeProjectPlugin,
   buildStarterContentFiles,
-  packEnginePluginFiles,
+  encodeProjectZip,
   unpackEnginePluginZip,
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_FOLDER,
@@ -369,11 +369,11 @@ describe("ProjectService plugin roots", () => {
     const { service } = await scaffolded();
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
-    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    await unpackEnginePluginZip(
+      engine,
+      encodeProjectZip(await buildStarterContentFiles()),
+      STARTER_CONTENT_FOLDER,
+    );
     service.setEnginePluginStorage(engine);
     await service.applyPluginOverrides({
       [STARTER_CONTENT_PLUGIN_GUID]: { enabled: true },
@@ -413,11 +413,11 @@ describe("ProjectService plugin roots", () => {
   async function engineStarterStorage() {
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
-    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    await unpackEnginePluginZip(
+      engine,
+      encodeProjectZip(await buildStarterContentFiles()),
+      STARTER_CONTENT_FOLDER,
+    );
     return engine;
   }
 

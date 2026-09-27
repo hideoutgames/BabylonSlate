@@ -15,7 +15,6 @@ export { facingYawFromVelocity } from "./facing";
 export {
   NAVMESH_CHUNK_ID,
   extraChunksWithNavmesh,
-  navmeshBytesFromChunks,
   navmeshChunk,
   type ExtraChunkLike,
   type NavmeshChunk,
@@ -41,7 +40,6 @@ export {
   staticBlockerBakeParts,
   xyBoundsFromActors,
   type NavBakeBounds,
-  type NavBlockerArea,
   type SolidBlockerInput,
   type XyBounds,
   type XyChain,

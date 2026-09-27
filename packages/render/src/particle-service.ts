@@ -1,8 +1,8 @@
+import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
-  MeshBuilder,
+  Mesh,
   type AbstractMesh,
   type IParticleSystem,
-  type Mesh,
   type NodeMaterial,
   type NodeParticleSystemSet,
   type ParticleSystem,
@@ -150,6 +150,8 @@ type LiveComponent = {
   building: boolean;
   timer?: ReturnType<typeof setTimeout>;
   preparationCheck?: () => void;
+  /** Native/resource failure, distinct from a bundle whose authored slots were skipped. */
+  preparationFailed?: boolean;
 };
 /** An edit's tier, and whether it needs the whole bundle prepared again. */
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
@@ -172,7 +174,7 @@ export class ParticleService {
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
   private sceneForSlot?: (slotId: number) => Scene | null;
-  private onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+  private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
   private readonly slotMeshes = new Map<number, AbstractMesh | null>();
@@ -209,7 +211,6 @@ export class ParticleService {
     this.publishStats();
   }
 
-  setOnDiagnostic(handler: ((diagnostic: ParticleServiceDiagnostic) => void) | undefined): void { this.onDiagnostic = handler; }
   /** Play: replaces the library for later preparations and leaves running bundles alone. */
   setLibrary(library: ParticleLibrary): void { this.library = library; }
   setSceneForSlot(resolver: ((slotId: number) => Scene | null) | undefined): void {
@@ -256,6 +257,24 @@ export class ParticleService {
   playbackState(actorGuid: string, componentId: string): ParticlePlaybackState | null {
     const state = this.live.get(liveKey(actorGuid, componentId))?.state;
     return state && state !== "retired" ? state : null;
+  }
+
+  /** Instance-scoped loading readiness; other streams cannot hold this batch. */
+  pendingSlotPreparation(slots: ReadonlySet<number>): string[] {
+    const pending: string[] = [];
+    for (const entry of this.live.values()) {
+      if (!slots.has(entry.command.slotId)) continue;
+      if (entry.preparationFailed)
+        throw new Error(`Streamed particle component ${entry.key} failed to load.`);
+      if (entry.state === "preparing" || entry.systems.some((record) => !record.system.isReady()))
+        pending.push(`particle ${entry.key}`);
+    }
+    return pending;
+  }
+
+  startPreparedSlots(slots: readonly number[]): void {
+    const ready = new Set(slots);
+    for (const entry of this.live.values()) if (ready.has(entry.command.slotId) && entry.state === "playing") this.startSystems(entry);
   }
 
   bindSlot(slotId: number, mesh: AbstractMesh | null): void {
@@ -401,19 +420,23 @@ export class ParticleService {
   private prepare(entry: LiveComponent): void {
     const host = this.hostFor(entry);
     entry.state = "preparing";
+    entry.preparationFailed = false;
     if (!host || host.isDisposed) return;
     const payload = this.library.systems.get(entry.command.particleSystemGuid!) ?? null;
     const source: BundleSource = { system: payload, emitters: new Map(), skipped: new Set() };
     entry.source = source;
-    if (!payload) { entry.state = "failed"; return; }
+    if (!payload) { entry.preparationFailed = true; entry.state = "failed"; return; }
     entry.scene = host;
     entry.generation = ++this.generation;
     entry.building = true;
     const generation = entry.generation;
     try {
-      const node = MeshBuilder.CreateBox(`particleEmitter:${entry.key}`, { size: 0.01 }, host);
+      // A particle system draws only while its emitter survives FrameGraph culling, which drops
+      // `visibility = 0` meshes. A geometry-less Mesh stays visible, is always ready and draws nothing;
+      // `alwaysSelectAsActiveMesh` keeps it past the frustum test while only its particles are on screen.
+      const node = new Mesh(`particleEmitter:${entry.key}`, host);
       entry.node = node;
-      node.isVisible = true; node.visibility = 0; node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
+      node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
       const parent = this.slotMeshes.get(entry.command.slotId) ?? this.resolveEmitter?.(entry.command.slotId);
       if (parent?.getScene() === host) node.parent = parent;
       const context = this.slotContext(entry, host, node, payload.space);
@@ -454,7 +477,7 @@ export class ParticleService {
       entry.cancel.push(() => host.onDisposeObservable.remove(disposing), () => host.onBeforeRenderObservable.remove(before), () => host.onAfterRenderObservable.remove(after));
       entry.building = false;
       if (entry.systems.some((record) => record.pending)) {
-        const readiness = { isReady: () => false };
+        const readiness = { isReady: () => isSceneStreamSlotPending(host, entry.command.slotId) };
         host.addIsReadyCheck(readiness);
         markSceneReadinessDirty(host);
         entry.preparationCheck = () => {
@@ -529,6 +552,7 @@ export class ParticleService {
       }
       record = created.record;
       const system = record.system;
+      registerSceneStreamParticle(system, entry.command.slotId);
       const ready = bindParticleMaterial(system, lease.resource);
       if (this.paused) {
         system.updateSpeed = 0;
@@ -564,6 +588,7 @@ export class ParticleService {
       if (created.buildReady) this.waitFor(entry, record, generation, created.buildReady);
       return record;
     } catch (error) {
+      entry.preparationFailed = true;
       if (record) this.disposeSlots([record]);
       lease.release();
       this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: guid, message: describeParticleThrow(error) });
@@ -642,7 +667,7 @@ export class ParticleService {
    * prewarm at `updateSpeed` 0 would simulate nothing and never run again.
    */
   private startSystems(entry: LiveComponent): void {
-    if (this.paused) return;
+    if (this.paused || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
     for (const record of entry.systems) {
       // A start observer may Stop or replace the entry.
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;
@@ -697,6 +722,7 @@ export class ParticleService {
   /** Bundle-level failure: preparation timeout or a native throw outside one slot. */
   private fail(entry: LiveComponent, generation: number, error: unknown): void {
     if (!this.current(entry, generation)) return;
+    entry.preparationFailed = true;
     this.releaseBundle(entry);
     entry.state = "failed";
     this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
@@ -707,6 +733,7 @@ export class ParticleService {
   /** An async Material failure retires only its slot; the other slots may start. */
   private failSlot(entry: LiveComponent, record: SlotRecord, generation: number, error: unknown): void {
     if (!this.current(entry, generation) || !entry.systems.includes(record)) return;
+    entry.preparationFailed = true;
     this.removeSlot(entry, record, { code: "particle.apply_failed", assetGuid: record.emitterGuid, message: describeParticleThrow(error) });
     this.publishStats();
   }

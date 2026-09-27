@@ -84,6 +84,13 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "RenderTargetCapture",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "Scene",
       parentClassId: "BObject",
       kind: "object",
@@ -108,6 +115,13 @@ export class ClassRegistry {
       id: "ActorComponent",
       parentClassId: "BObject",
       kind: "component",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
+      id: "SceneStreamingActor",
+      parentClassId: "Actor",
+      kind: "actor",
       variables: [],
       implementedInterfaces: [],
     });
@@ -327,9 +341,5 @@ export class ClassRegistry {
       newParentId,
       invalidatedMembers,
     });
-  }
-
-  listClassIds(): string[] {
-    return [...this.classes.keys()].sort();
   }
 }

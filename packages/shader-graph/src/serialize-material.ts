@@ -299,7 +299,3 @@ export function materialPinsAreCompatible(
     to as MaterialValueType,
   );
 }
-
-export function materialPinTypeIsNumeric(kind: string): boolean {
-  return kind === "generic" || isNumericType(kind as MaterialValueType);
-}

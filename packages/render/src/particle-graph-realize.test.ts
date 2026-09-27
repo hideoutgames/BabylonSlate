@@ -92,6 +92,21 @@ describe("realizeParticleGraph", () => {
     expect(system.getActiveCount()).toBeLessThanOrEqual(15);
   });
 
+  it("fades the default graph from Create Particle's Color instead of white", () => {
+    const doc = createDefaultParticleGraphDocument();
+    doc.nodes = doc.nodes.map((entry) => entry.id === "create"
+      ? { ...entry, properties: { ...entry.properties, "default:color": [0, 0, 1, 1] } } : entry);
+    const { system } = built(realize(planOf(doc)).result);
+    system.start(0);
+    step(system, 10);
+    // The oldest particle is about a tenth through its 1.5 s life: blue scaled by the white-to-black Gradient.
+    const [red, green, blue, alpha] = system.particles[0]!.color.asArray();
+    expect([red, green]).toEqual([0, 0]);
+    expect(blue).toBeGreaterThan(0.8);
+    expect(blue).toBeLessThan(1);
+    expect(alpha).toBeCloseTo(blue!, 6);
+  });
+
   it("adds exactly its own readiness texture and releases every system and texture with the set", () => {
     const { scene, emitter } = host();
     const baseline = { textures: scene.textures.length, systems: scene.particleSystems.length };
@@ -180,8 +195,11 @@ describe("realizeParticleGraph", () => {
     ], [
       edge("gray", "out", "mix", "a"), edge("vector", "out", "mix", "b"), edge("mix", "out", "steer", "direction"),
     ]);
-    // Float straight into Update Color's Color, in place of the Gradient.
-    doc.edges = [...doc.edges.filter((entry) => entry.id !== "e-gradient-color"), edge("gray", "out", "updateColor", "color")];
+    // Float straight into Update Color's Color, in place of the default Initial Color × Gradient.
+    doc.edges = [
+      ...doc.edges.filter((entry) => entry.targetNodeId !== "updateColor" || entry.targetPinId !== "color"),
+      edge("gray", "out", "updateColor", "color"),
+    ];
     const { system } = built(realize(planOf(doc)).result);
     system.start(0);
     step(system, 10);

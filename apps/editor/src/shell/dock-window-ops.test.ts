@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DockWindowDefinition } from "./window-catalog";
-import { findDockWindow } from "./window-catalog";
+import {
+  listDockWindows,
+  type DockviewDocumentKind,
+  type DockWindowDefinition,
+} from "./window-catalog";
 import {
   capturePanelPlacement,
   closeDockWindow,
@@ -10,6 +13,9 @@ import {
   type DockWindowApi,
   type DockWindowPanel,
 } from "./dock-window-ops";
+
+const catalogWindow = (kind: DockviewDocumentKind, id: string) =>
+  listDockWindows(kind).find((entry) => entry.id === id);
 
 interface GroupBox {
   x: number;
@@ -302,9 +308,9 @@ describe("capturePanelPlacement", () => {
 
   it("records Scene default splits as addPanel-relative placements", () => {
     const api = createFakeApi(sceneDefaultLayout());
-    const outliner = findDockWindow("scene", "scene-outliner");
-    const details = findDockWindow("scene", "scene-details");
-    const output = findDockWindow("scene", "output-log");
+    const outliner = catalogWindow("scene", "scene-outliner");
+    const details = catalogWindow("scene", "scene-details");
+    const output = catalogWindow("scene", "output-log");
     expect(capturePanelPlacement(api, "scene-outliner", outliner)).toMatchObject(
       {
         referencePanelId: "viewport",
@@ -327,7 +333,7 @@ describe("capturePanelPlacement", () => {
       capturePanelPlacement(
         api,
         "prefab-viewport",
-        findDockWindow("graph", "prefab-viewport"),
+        catalogWindow("graph", "prefab-viewport"),
       ),
     ).toMatchObject({
       referencePanelId: "graph",
@@ -337,7 +343,7 @@ describe("capturePanelPlacement", () => {
       capturePanelPlacement(
         api,
         "actor-prefab",
-        findDockWindow("graph", "actor-prefab"),
+        catalogWindow("graph", "actor-prefab"),
       ),
     ).toMatchObject({
       referencePanelId: "graph",
@@ -347,7 +353,7 @@ describe("capturePanelPlacement", () => {
       capturePanelPlacement(
         api,
         "my-class",
-        findDockWindow("graph", "my-class"),
+        catalogWindow("graph", "my-class"),
       ),
     ).toMatchObject({
       referencePanelId: "actor-prefab",
@@ -369,7 +375,7 @@ describe("capturePanelPlacement", () => {
       capturePanelPlacement(
         api,
         "scene-outliner",
-        findDockWindow("scene", "scene-outliner"),
+        catalogWindow("scene", "scene-outliner"),
       ),
     ).toEqual({
       referencePanelId: "viewport",
@@ -414,7 +420,7 @@ describe("capturePanelPlacement", () => {
       capturePanelPlacement(
         api,
         "output-log",
-        findDockWindow("scene", "output-log"),
+        catalogWindow("scene", "output-log"),
       ),
     ).toMatchObject({
       referencePanelId: "viewport",
@@ -472,7 +478,7 @@ describe("openDockWindow", () => {
 
   it("treats a mirrored remembered placement as the catalog default", () => {
     const api = createFakeApi([{ id: "viewport", groupId: "center" }]);
-    const outliner = findDockWindow("scene", "scene-outliner")!;
+    const outliner = catalogWindow("scene", "scene-outliner")!;
     openDockWindow(api, outliner, {
       referencePanelId: "viewport",
       direction: "right",
@@ -484,7 +490,7 @@ describe("openDockWindow", () => {
 
   it("treats a within dump as the catalog split when the catalog is not within", () => {
     const api = createFakeApi([{ id: "viewport", groupId: "center" }]);
-    const outliner = findDockWindow("scene", "scene-outliner")!;
+    const outliner = catalogWindow("scene", "scene-outliner")!;
     openDockWindow(api, outliner, {
       referencePanelId: "viewport",
       direction: "within",
@@ -533,7 +539,7 @@ describe("toggleDockWindow", () => {
 
   it("reopens Outliner left of Viewport after capturing geometry", () => {
     const api = createFakeApi(sceneDefaultLayout());
-    const outliner = findDockWindow("scene", "scene-outliner")!;
+    const outliner = catalogWindow("scene", "scene-outliner")!;
     const closed = toggleDockWindow(api, outliner);
     expect(closed.open).toBe(false);
     expect(closed.placement).toMatchObject({

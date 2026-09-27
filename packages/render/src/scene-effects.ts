@@ -35,6 +35,7 @@ export function planSceneEffects(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled = true,
+  fogVolumesPresent = false,
 ): SceneEffectsPlan | null {
   if (!enabled) return null;
   const sceneLinear =
@@ -47,7 +48,8 @@ export function planSceneEffects(
     sceneLinear || vignette ? { sceneLinear, vignette } : null;
   const fxaa = effects.fxaa;
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
-  const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting : null;
+  const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
+    : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
   if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !reflections && !volumetricLighting) return null;
   return { sceneLinear, bloom, imageProcessing, fxaa, reflections, volumetricLighting };
 }
@@ -106,6 +108,7 @@ export function sceneEffectsKey(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled: boolean,
+  fogVolumesPresent = false,
 ): string {
-  return enabled ? `${mode}${JSON.stringify(effects)}` : "off";
+  return enabled ? `${mode}${JSON.stringify(effects)}${fogVolumesPresent ? ":fogVolumes" : ""}` : "off";
 }

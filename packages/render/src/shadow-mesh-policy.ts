@@ -22,6 +22,8 @@ const SHADOW_SKIP_NAME_PREFIXES = [
   "debugCamera",
   "navmeshDebug",
   "playConsoleViz:",
+  // Visible geometry-less particle emitters would otherwise refresh shadow maps every frame.
+  "particleEmitter:",
 ] as const;
 function shadowSkipMetadata(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
@@ -50,6 +52,8 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
 }
 
 export function participatesInShadows(mesh: AbstractMesh): boolean {
+  // A LOD level is drawn by its master's shadow-map entry.
+  if (mesh.isBlocked) return false;
   if (mesh.name.startsWith("__")) return false;
   if (isSkyboxMesh(mesh)) return false;
   if (mesh instanceof LinesMesh) return false;

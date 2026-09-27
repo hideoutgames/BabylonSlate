@@ -101,8 +101,6 @@ export interface TreeViewProps {
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
-  /** @deprecated Timing follows input: mouse drags immediately; touch/pen hold for 250ms. */
-  reparentArm?: "immediate" | "hold";
   rowHeight?: number;
   emptyLabel?: string;
   "data-testid"?: string;

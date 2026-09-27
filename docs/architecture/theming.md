@@ -103,7 +103,7 @@ Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch
 | Default actions / ink chrome | `--primary` | Near-neutral ink |
 | Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
-| Success | `--success`, `--success-foreground` | Positive status and axis Y |
+| Success | `--success` | Positive status and axis Y |
 | Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a flush neutral enclosure matching the Play button height and corner radius, with an inset outline beneath the controls |
 
 ## Pin type colors
@@ -279,7 +279,7 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-auth
 | File | Ink | Use |
 | --- | --- | --- |
 | `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero |
-| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail (`BrandIcon`), docs nav, favicon source |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail, mobile account gate and launcher (`brandIconSrc`), editor chrome bar (`BrandIcon`), docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 

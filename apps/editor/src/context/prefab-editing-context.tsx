@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   identitySerializedTransform,
+  setSceneStreamingTarget,
   type SerializedComponent,
   type SerializedGraph,
   type SerializedTransform,
@@ -273,6 +274,11 @@ export function PrefabEditingProvider({
 
   const updateComponent = useCallback(
     (componentId: string, property: string, value: unknown) => {
+      if (property === "sceneGuid" && components.some((component) => component.id === componentId && component.classId === "SceneStreamingComponent")) {
+        const guid = typeof value === "string" ? value : null;
+        upsertLocalFromViews(setSceneStreamingTarget(components, componentId, guid, guid ? assetRegistry?.getByGuid(guid)?.header.name ?? "" : ""));
+        return;
+      }
       upsertLocalFromViews(
         components.map((component) =>
           component.id === componentId
@@ -288,7 +294,7 @@ export function PrefabEditingProvider({
         ),
       );
     },
-    [components, upsertLocalFromViews],
+    [assetRegistry, components, upsertLocalFromViews],
   );
 
   const updateComponentTransform = useCallback(

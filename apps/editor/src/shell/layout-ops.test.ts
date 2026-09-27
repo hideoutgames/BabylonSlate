@@ -3,7 +3,6 @@ import { defaultEngineSettings } from "@babylonslate/vfs";
 import {
   applyFocusLayout,
   canFocusLayout,
-  FOCUS_PRIMARY_PANEL,
   focusKeepCandidates,
   focusKeepPanelIds,
   migrateRestoredLayout,
@@ -123,7 +122,6 @@ describe("resolveFocusKeepPanelIds", () => {
   it("uses the primary surface when the keep list is empty", () => {
     expect(resolveFocusKeepPanelIds("scene", [])).toEqual(["viewport"]);
     expect(resolveFocusKeepPanelIds("scene-layer", [])).toEqual(["viewport"]);
-    expect(FOCUS_PRIMARY_PANEL["scene-layer"]).toBe("viewport");
     expect(resolveFocusKeepPanelIds("graph", undefined)).toEqual(["graph"]);
     expect(resolveFocusKeepPanelIds("enum", [])).toEqual(["enum-members"]);
     expect(resolveFocusKeepPanelIds("script-interface", undefined)).toEqual([
@@ -135,8 +133,6 @@ describe("resolveFocusKeepPanelIds", () => {
     ]);
     expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
     expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
-    expect(FOCUS_PRIMARY_PANEL["anim-graph"]).toBe("anim-graph-graph");
-    expect(FOCUS_PRIMARY_PANEL["behaviour-tree"]).toBe("behaviour-tree-graph");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
     ]);
@@ -152,7 +148,6 @@ describe("resolveFocusKeepPanelIds", () => {
       "behaviour-tree-graph",
     ]);
     expect(resolveFocusKeepPanelIds("audio", [])).toEqual(["audio-preview"]);
-    expect(FOCUS_PRIMARY_PANEL.audio).toBe("audio-preview");
     expect(resolveFocusKeepPanelIds("audio-mixer", [])).toEqual([
       "audio-mixer-details",
     ]);
@@ -168,27 +163,17 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("particle-system", [])).toEqual([
       "particle-system-preview",
     ]);
-    expect(FOCUS_PRIMARY_PANEL["particle-emitter"]).toBe(
-      "particle-emitter-preview",
-    );
     expect(resolveFocusKeepPanelIds("particle-graph", [])).toEqual([
       "particle-graph-canvas",
     ]);
-    expect(FOCUS_PRIMARY_PANEL["particle-graph"]).toBe("particle-graph-canvas");
     expect(resolveFocusKeepPanelIds("model", [])).toEqual(["model-preview"]);
-    expect(FOCUS_PRIMARY_PANEL.model).toBe("model-preview");
     expect(resolveFocusKeepPanelIds("skeleton", [])).toEqual(["skeleton-preview"]);
-    expect(FOCUS_PRIMARY_PANEL.skeleton).toBe("skeleton-preview");
     expect(resolveFocusKeepPanelIds("animation", [])).toEqual([
       "animation-preview",
     ]);
-    expect(FOCUS_PRIMARY_PANEL.animation).toBe("animation-preview");
     expect(resolveFocusKeepPanelIds("skybox-creator", [])).toEqual([
       "skybox-creator-preview",
     ]);
-    expect(FOCUS_PRIMARY_PANEL["skybox-creator"]).toBe(
-      "skybox-creator-preview",
-    );
   });
 
   it("keeps an explicit list as-is", () => {

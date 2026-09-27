@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  isRgbaEncodeRequest,
-  isSourceEncodeRequest,
-  type EncodeWorkerHostMessage,
+import type {
+  RgbaEncodeRequest,
+  SourceEncodeRequest,
 } from "./encode-worker-protocol";
 import { canUseWorkerEncode, createWorkerEncodeFn } from "./worker-encode";
 
@@ -19,9 +18,14 @@ vi.mock("./decode-source-rgba", () => ({
   decodeSourceToRgba,
 }));
 
+type HostMessage =
+  | { type: "init" }
+  | SourceEncodeRequest
+  | RgbaEncodeRequest;
+
 class FakeWorker extends EventTarget {
   postMessage = vi.fn<
-    (msg: EncodeWorkerHostMessage, transfer?: Transferable[]) => void
+    (msg: HostMessage, transfer?: Transferable[]) => void
   >((msg) => {
     if (msg.type === "init") {
       queueMicrotask(() => {
@@ -49,7 +53,7 @@ describe("createWorkerEncodeFn", () => {
           constructed += 1;
           const worker = new FakeWorker();
           if (constructed === 1) {
-            worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
+            worker.postMessage = vi.fn((msg: HostMessage) => {
               if (msg.type === "init") {
                 queueMicrotask(() => {
                   worker.dispatchEvent(
@@ -149,9 +153,8 @@ describe("createWorkerEncodeFn", () => {
     expect(encodeCall).toBeDefined();
     if (!encodeCall) return;
     const [message, transfer] = encodeCall;
-    expect(isSourceEncodeRequest(message)).toBe(true);
-    expect(isRgbaEncodeRequest(message)).toBe(false);
-    if (!isSourceEncodeRequest(message)) return;
+    expect(message).not.toHaveProperty("rgba");
+    if (!("source" in message)) throw new Error("expected a source encode");
     expect(message.mime).toBe("image/png");
     expect(message.source).toBeInstanceOf(ArrayBuffer);
     expect(new Uint8Array(message.source)).toEqual(source);
@@ -161,14 +164,14 @@ describe("createWorkerEncodeFn", () => {
     await pending.catch(() => undefined);
   });
 
-  it("falls back to main-thread decode when the worker cannot decode", async () => {
+  it("falls back to main-thread decode, keeping the encode block alignment, when the worker cannot decode", async () => {
     let worker: FakeWorker | null = null;
     vi.stubGlobal(
       "Worker",
       class {
         constructor() {
           worker = new FakeWorker();
-          worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
+          worker.postMessage = vi.fn((msg: HostMessage) => {
             if (msg.type === "init") {
               queueMicrotask(() => {
                 worker!.dispatchEvent(
@@ -203,6 +206,7 @@ describe("createWorkerEncodeFn", () => {
         quality: 2,
         maxDimension: 64,
         generateMipmaps: true,
+        blockAlign: 4,
       },
       "image/jpeg",
     );
@@ -212,10 +216,14 @@ describe("createWorkerEncodeFn", () => {
           expect.any(Uint8Array),
           64,
           "image/jpeg",
+          { blockAlign: 4 },
         );
         expect(
           worker?.postMessage.mock.calls.some(
-            (call) => call[0]?.type === "encode" && isRgbaEncodeRequest(call[0]),
+            (call) =>
+              call[0]?.type === "encode" &&
+              "rgba" in call[0] &&
+              call[0].rgba instanceof ArrayBuffer,
           ),
         ).toBe(true);
       },

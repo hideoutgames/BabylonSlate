@@ -35,7 +35,6 @@ import type {
   ColliderDesc,
   ColliderChanges,
   ColliderShape,
-  ColliderTuning,
   HitResult,
   LineTraceOptions,
   MotionType,
@@ -419,15 +418,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     };
   }
 
-  setBodyMotionType(bodyId: string, motionType: MotionType): void {
-    const record = this.bodies.get(bodyId);
-    if (!record) return;
-    record.desc.motionType = motionType;
-    const body = record.body;
-    if (!body) return;
-    this.applyMotionType(record);
-  }
-
   getBodyVelocity(bodyId: string): BodyVelocity | null {
     const record = this.bodies.get(bodyId);
     const transform = this.getBodyTransform(bodyId);
@@ -685,34 +675,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     shape.filterCollideMask = desc.mask;
   }
 
-  updateCollider(colliderId: string, tuning: ColliderTuning): void {
-    const record = this.colliders.get(colliderId);
-    if (!record) return;
-    const next = { ...record.desc };
-    if (typeof tuning.isTrigger === "boolean") {
-      next.isTrigger = tuning.isTrigger;
-    }
-    if (
-      typeof tuning.friction === "number" &&
-      Number.isFinite(tuning.friction)
-    ) {
-      next.friction = tuning.friction;
-    }
-    if (
-      typeof tuning.restitution === "number" &&
-      Number.isFinite(tuning.restitution)
-    ) {
-      next.restitution = tuning.restitution;
-    }
-    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
-      next.layer = tuning.layer;
-    }
-    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
-      next.mask = tuning.mask;
-    }
-    this.applyColliderChanges(next.bodyId, { upsert: [next], remove: [] });
-  }
-
   listDebugColliders() {
     return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
       this.getBodyTransform(bodyId),
@@ -736,15 +698,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.resetTriggerActors.clear();
     }
     this.flushMutations();
-  }
-
-  readTransforms(): ReadonlyMap<string, PhysicsTransform> {
-    const out = new Map<string, PhysicsTransform>();
-    for (const id of this.bodies.keys()) {
-      const transform = this.getBodyTransform(id);
-      if (transform) out.set(id, transform);
-    }
-    return out;
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {

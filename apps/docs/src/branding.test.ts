@@ -11,10 +11,7 @@ const docsRoot = path.resolve(
 const repoRoot = path.resolve(docsRoot, "../..");
 
 describe("docsBrand", () => {
-  it("uses themeable Slate wordmark and icon from engine-logos", () => {
-    expect(docsBrand.logo.light).toBe("/branding/SlateLogoDark.png");
-    expect(docsBrand.logo.dark).toBe("/branding/SlateLogoLight.png");
-    expect(docsBrand.logo.alt).toBe("BabylonSlate");
+  it("uses the themeable Slate icon from engine-logos", () => {
     expect(docsBrand.navLogo.light).toBe("/branding/SlateIconDark.png");
     expect(docsBrand.navLogo.dark).toBe("/branding/SlateIconLight.png");
     expect(docsBrand.favicon).toBe("/favicon.svg");

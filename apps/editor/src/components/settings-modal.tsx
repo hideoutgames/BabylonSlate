@@ -115,9 +115,10 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
       "project version build compile autosave editor utility objects infinite loop detection loop count",
   },
   {
-    id: "twoD",
-    label: "2D",
-    keywords: "pixels per unit pixel perfect integer zoom sorting layers",
+    id: "game",
+    label: "Game",
+    keywords:
+      "startup scene game instance class 2d pixels per unit pixel perfect sorting layers",
   },
   {
     id: "physics",
@@ -159,7 +160,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     id: "export",
     label: "Export",
     keywords:
-      "export project zip download startup scene packaged player export game packed debugger file count",
+      "export project zip download packaged player export game packed debugger file count",
   },
   {
     id: "sourceControl",
@@ -173,7 +174,7 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
     label: "Project",
     ids: [
       "general",
-      "twoD",
+      "game",
       "physics",
       "fonts",
       "audio",
@@ -229,7 +230,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "templates",
     label: "Templates",
-    keywords: "templates folder homepage",
+    keywords: "templates library add template homepage",
   },
   {
     id: "plugins",
@@ -730,8 +731,78 @@ export function SettingsModal({
         {showProjectBody &&
         projectDocument &&
         twoD &&
-        activeCategoryId === "twoD" ? (
+        activeCategoryId === "game" ? (
         <FieldGroup className="gap-4">
+          <FieldSet>
+            <FieldLegend>Game</FieldLegend>
+            <Field>
+              <FieldLabel>Startup Scene</FieldLabel>
+              <AssetPickerControl
+                value={projectDocument.settings.startupSceneGuid}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+                  onClick={() => setScenePickerOpen(true)}
+                  data-testid="settings-startup-scene"
+                  id="settings-startup-scene"
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry
+                          ?.list()
+                          .find(
+                            (entry) =>
+                              entry.header.guid ===
+                              projectDocument.settings.startupSceneGuid,
+                          );
+                        return asset
+                          ? {
+                              name: asset.header.name,
+                              type: asset.header.type,
+                            }
+                          : undefined;
+                      })(),
+                    ),
+                  )}
+                </Button>
+              </AssetPickerControl>
+              <FieldDescription>
+                Exported games start here. Play and Preview use it when Play
+                From Scene is off.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel>Game Instance</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+                onClick={() => setGameInstancePickerOpen(true)}
+                data-testid="settings-game-instance"
+                id="settings-game-instance"
+              >
+                {selectedPickerIdentity(
+                  classRowIdentity(
+                    gameInstanceClassEntries(
+                      assetRegistry?.list() ?? [],
+                    ).find(
+                      (entry) =>
+                        entry.id ===
+                        projectDocument.settings.gameInstanceClass,
+                    ),
+                    projectDocument.settings.gameInstanceClass,
+                  ),
+                )}
+              </Button>
+              <FieldDescription>
+                GameInstance subclass created for Play, Preview and exported
+                games.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
           <FieldSet>
             <FieldLegend>2D</FieldLegend>
               <Field className="settings-field">
@@ -740,6 +811,7 @@ export function SettingsModal({
                 </FieldLabel>
               <NumberField
                 id="pixels-per-unit"
+                aria-describedby="pixels-per-unit-description"
                 min={1}
                 step={1}
                   className="min-h-[var(--chrome-row,28px)]"
@@ -754,6 +826,10 @@ export function SettingsModal({
                 }
                 data-testid="settings-pixels-per-unit"
               />
+              <FieldDescription id="pixels-per-unit-description">
+                Texture pixels per world unit. Sizes sprites, tilemaps and 2D
+                text.
+              </FieldDescription>
             </Field>
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-pixel-perfect">
@@ -771,26 +847,8 @@ export function SettingsModal({
                 data-testid="settings-pixel-perfect"
               />
               <FieldDescription id="settings-pixel-perfect-description">
-                Keeps pixels sharp and snaps the camera to the pixel grid.
-              </FieldDescription>
-            </Field>
-              <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-integer-zoom">
-                  Integer Zoom Steps
-              </FieldLabel>
-              <Switch
-                id="settings-integer-zoom"
-                aria-describedby="settings-integer-zoom-description"
-                checked={twoD.integerZoomSteps}
-                onCheckedChange={(checked) =>
-                  updateProjectSettings({
-                    twoD: { ...twoD, integerZoomSteps: checked === true },
-                  })
-                }
-                data-testid="settings-integer-zoom"
-              />
-              <FieldDescription id="settings-integer-zoom-description">
-                Game cameras only. Editor zoom stays continuous.
+                Frames the 2D editor view 1:1 with nearest sampling. Play and
+                exported games snap the game camera to the pixel grid.
               </FieldDescription>
             </Field>
             <Field>
@@ -1269,68 +1327,6 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Export</FieldLegend>
-            <Field>
-              <FieldLabel>Startup Scene</FieldLabel>
-              <AssetPickerControl
-                value={projectDocument.settings.startupSceneGuid}
-              >
-                <Button
-                  type="button"
-                  variant="outline"
-                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                  onClick={() => setScenePickerOpen(true)}
-                  data-testid="settings-startup-scene"
-                  id="settings-startup-scene"
-                >
-                  {selectedPickerIdentity(
-                    assetRowIdentity(
-                      (() => {
-                        const asset = assetRegistry
-                          ?.list()
-                          .find(
-                            (entry) =>
-                              entry.header.guid ===
-                              projectDocument.settings.startupSceneGuid,
-                          );
-                        return asset
-                          ? {
-                              name: asset.header.name,
-                              type: asset.header.type,
-                            }
-                          : undefined;
-                      })(),
-                    ),
-                  )}
-                </Button>
-              </AssetPickerControl>
-              <FieldDescription>
-                  Exported games start here. Editor Play uses the open scene.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Game Instance</FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                  className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                onClick={() => setGameInstancePickerOpen(true)}
-                data-testid="settings-game-instance"
-                id="settings-game-instance"
-              >
-                {selectedPickerIdentity(
-                  classRowIdentity(
-                      gameInstanceClassEntries(
-                        assetRegistry?.list() ?? [],
-                      ).find(
-                      (entry) =>
-                        entry.id ===
-                        projectDocument.settings.gameInstanceClass,
-                    ),
-                    projectDocument.settings.gameInstanceClass,
-                  ),
-                )}
-              </Button>
-            </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
               <Switch

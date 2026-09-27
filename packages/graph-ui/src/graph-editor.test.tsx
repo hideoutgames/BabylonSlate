@@ -1605,6 +1605,59 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("moves a single-link output's wire to the node picked after a far pin drag", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const graph = graphWithPins();
+      const singleLinkPins = debugLogPins.map((pin) =>
+        pin.id === "execOut" ? { ...pin, singleLink: true } : pin,
+      );
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: graph.nodes.map((node) =>
+              node.id === "log-a"
+                ? { ...node, data: { ...node.data, __pins: singleLinkPins } }
+                : node,
+            ),
+            edges: [
+              {
+                id: "e:log-a:execOut:log-b:execIn",
+                source: "log-a",
+                target: "log-b",
+                sourceHandle: "execOut",
+                targetHandle: "execIn",
+              },
+            ],
+          }}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
+      });
+      fireEvent.click(getByTestId("node-palette-item-debug.log"));
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      const added = lastGraph.nodes.find(
+        (node) => node.id !== "log-a" && node.id !== "log-b",
+      );
+      expect(added).toBeDefined();
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({
+          source: "log-a",
+          sourceHandle: "execOut",
+          target: added!.id,
+          targetHandle: "execIn",
+        }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("opens Add Node when a far pin drag is released in zone-add-node mode", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -4056,21 +4109,6 @@ describe("GraphEditor", () => {
     });
     fireEvent.click(container.querySelector('[data-handleid="execOut"]')!);
     fireEvent.click(container.querySelector(".react-flow__pane")!);
-    expect(queryByTestId("node-palette")).toBeNull();
-  });
-
-  it("skips empty-pane double-tap when emptyPaneDoubleTapAddsNode is false", () => {
-    const { container, queryByTestId } = render(
-      <GraphEditor
-        initialGraph={graphWithPins()}
-        emptyPaneDoubleTapAddsNode={false}
-        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
-      />,
-    );
-    const pane = container.querySelector(".react-flow__pane");
-    expect(pane).not.toBeNull();
-    fireEvent.click(pane!);
-    fireEvent.click(pane!);
     expect(queryByTestId("node-palette")).toBeNull();
   });
 

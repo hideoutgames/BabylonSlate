@@ -4,6 +4,7 @@ import {
   err,
   isEditorOnlyAsset,
   materialParameterTextureGuidsFromGraph,
+  renderTargetAssetGuidsFromGraph,
   ok,
   text2dImageGuidsFromScene,
   type Result,
@@ -163,6 +164,7 @@ export function collectExportReachability(
           collectTypedRefs(graph, refs);
           for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
+          for (const guid of renderTargetAssetGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);
         }
       }
@@ -184,13 +186,4 @@ export function collectExportReachability(
     ...new Set([...bySceneGuid.values()].flatMap((set) => [...set])),
   ].sort();
   return ok({ guids, bySceneGuid });
-}
-
-/** Backwards-compatible flat closure for callers that do not assign packs. */
-export function collectExportClosure(
-  input: ExportClosureInput,
-): Result<string[], string> {
-  const result = collectExportReachability(input);
-  if ("error" in result) return err(result.error);
-  return ok(result.value.guids);
 }

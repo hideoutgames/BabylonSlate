@@ -6,7 +6,6 @@ import {
   ModuleStage,
   PanelFrame,
   PropertyGrid,
-  SelectableText,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
@@ -51,8 +50,6 @@ import {
   type ParticleGraphNode,
   type ParticleNumericType,
 } from "@babylonslate/particle-graph";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { PARTICLE_STAGE_ROLE } from "@babylonslate/ui/lib/data-types";
@@ -72,6 +69,7 @@ import {
   emitterPreviewLibrary,
 } from "../lib/play-particles";
 import { MessageDetails } from "../components/message-details";
+import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
@@ -792,23 +790,15 @@ export function ParticleGraphCompilerResults({
             {(index) => {
               const row = rows[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  onSelect={() => {
                     setSelectedRow(row);
                     if (row.nodeId) onFocusNode(row.nodeId);
                   }}
-                  data-testid={`particle-graph-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {row.severity}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`particle-graph-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>

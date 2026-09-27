@@ -78,11 +78,6 @@ export class HardwareScalingController {
     this.engine.setHardwareScalingLevel(this.level);
   }
 
-  /** Drop one quality tier (increase scaling level). */
-  dropTier(): void {
-    this.setLevel(this.level + 0.25);
-  }
-
   /**
    * WebGL restore: return to the Engine Settings floor and forget hitch
    * samples so a long `loadScene` cannot ratchet toward maxLevel.

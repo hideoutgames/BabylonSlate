@@ -2,7 +2,6 @@ export {
   createInProcessRuntime,
   type RuntimeDriver,
   type RuntimeDriverOptions,
-  type TransportMode,
 } from "./driver";
 export { replayTracePayload, rawInputFromTraceEvents } from "./trace-replay";
 export {

@@ -385,6 +385,16 @@ export class SceneShadowController {
     const hadPending = this.pending.size > 0;
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
+      // Shadow maps draw the selected level through its master caster, and a
+      // level mirrors its master's receiveShadows.
+      if (mesh.isBlocked) {
+        if (this.meshes.delete(mesh)) {
+          this.spatial.remove(mesh);
+          for (const entry of this.entries.values())
+            entry.generator?.removeShadowCaster(mesh, false);
+        }
+        continue;
+      }
       if (!participatesInShadows(mesh)) {
         mesh.receiveShadows = false;
         if (this.meshes.delete(mesh)) {

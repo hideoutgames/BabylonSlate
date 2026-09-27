@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  createInProcessRuntime,
-  createWorldSnapshot,
-  stringifyWorldSnapshot,
-} from "./transport-harness";
+import { createWorldSnapshot, stringifyWorldSnapshot } from "@babylonslate/object-model";
+import { createInProcessRuntime } from "./transport-harness";
 
 /**
  * Multi-transport parity: in-process driver produces a stable world snapshot

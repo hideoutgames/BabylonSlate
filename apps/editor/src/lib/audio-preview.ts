@@ -6,14 +6,6 @@ import {
 } from "@babylonslate/assets";
 import { attachAudioLifecycle, type AudioPlaybackBackend } from "@babylonslate/render";
 
-export function stopAudioPreviewElement(element: {
-  pause(): void;
-  currentTime: number;
-}): void {
-  element.pause();
-  element.currentTime = 0;
-}
-
 export type AudioPreviewPlayResult = {
   ok: boolean;
   voiceId?: string;

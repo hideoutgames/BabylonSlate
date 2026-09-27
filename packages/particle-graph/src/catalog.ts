@@ -75,21 +75,6 @@ export interface ParticleNodeDefinition {
 
 export const PARTICLE_OUTPUT_NODE_TYPE = "particle.output";
 
-/** Palette groups in display order. */
-export const PARTICLE_PALETTE_CATEGORIES = [
-  "Emitter",
-  "Shape",
-  "Update",
-  "Forces",
-  "Particle Attributes",
-  "System Values",
-  "Constants",
-  "Utility",
-  "Math",
-  "Vector",
-  "Logic",
-] as const;
-
 export type ParticleConditionTest =
   | "equal"
   | "notEqual"
@@ -381,7 +366,13 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
     inputs: [
       { id: "emitPower", name: "Emit Power", type: FLOAT, defaultValue: [1], unit: "m/s", description: "Initial speed along the emit direction (m/s)." },
       { id: "lifetime", name: "Lifetime", type: FLOAT, defaultValue: [1], min: 0.01, unit: "s", description: "Seconds." },
-      { id: "color", name: "Color", type: COLOR, defaultValue: [1, 1, 1, 1] },
+      {
+        id: "color",
+        name: "Color",
+        type: COLOR,
+        defaultValue: [1, 1, 1, 1],
+        description: "Also the Initial Color. A later Update Color replaces it unless it reads Initial Color or Particle Color.",
+      },
       { id: "deadColor", name: "Dead Color", type: COLOR, defaultValue: [0, 0, 0, 0] },
       { id: "size", name: "Size", type: FLOAT, defaultValue: [1], min: 0 },
       { id: "scale", name: "Scale", type: VEC2, defaultValue: [1, 1] },
@@ -763,10 +754,6 @@ const VALUE_TYPE_DEFAULTS: Readonly<Record<string, ParticleNumericType>> = {
   "random.range": "float",
   "gradient.sample": "color",
 };
-
-export function particleNodeValueTypeDefault(type: string): ParticleNumericType | undefined {
-  return VALUE_TYPE_DEFAULTS[type];
-}
 
 /** `properties.valueType` of a Random or Gradient node, with the node's default. */
 export function particleNodeValueType(

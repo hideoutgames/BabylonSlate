@@ -34,7 +34,7 @@ import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { authoredEncodeMaxDimension } from "./resolve-gpu-texture";
+import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
@@ -847,9 +847,13 @@ export class AssetRegistry {
     }, options.signal);
   }
 
+  /**
+   * Re-encode a Texture. `usage` overrides the saved header's Usage so a
+   * Details edit that has not been saved yet encodes with its new policy.
+   */
   async retryTextureEncoding(
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
@@ -864,7 +868,7 @@ export class AssetRegistry {
     if (!recoverable && options?.force !== true) {
       return false;
     }
-    const usage = String(asset.header.payload.usage ?? "albedo");
+    const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
     if (state !== "pending") {
       await this.setCompressionState(guid, "pending");
@@ -872,7 +876,7 @@ export class AssetRegistry {
     const latest = this.byGuid.get(guid) ?? asset;
     const source = await this.loadSourcePixels(latest);
     if (!source) return false;
-    const settings = this.encodeSettingsFor(latest);
+    const settings = this.encodeSettingsFor(latest, usage);
     if (options && "maxDimension" in options && options.maxDimension) {
       settings.maxDimension = effectiveTextureMaxDimension(
         options.maxDimension,
@@ -945,21 +949,11 @@ export class AssetRegistry {
     });
   }
 
-  private encodeSettingsFor(asset: IndexedAsset): TextureEncodeSettings {
-    const payload = asset.header.payload;
-    const quality =
-      typeof payload.compressionQuality === "number" &&
-      Number.isFinite(payload.compressionQuality)
-        ? payload.compressionQuality
-        : this.encodeSettings.quality;
-    return {
-      ...this.encodeSettings,
-      quality,
-      maxDimension: authoredEncodeMaxDimension(
-        payload,
-        this.encodeSettings.maxDimension,
-      ),
-    };
+  private encodeSettingsFor(
+    asset: IndexedAsset,
+    usage = String(asset.header.payload.usage ?? "albedo"),
+  ): TextureEncodeSettings {
+    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage);
   }
 
   private async loadSourcePixels(

@@ -1,4 +1,5 @@
 import { PostProcessRetirement } from "./post-process-retirement";
+import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -22,6 +23,7 @@ import {
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { admittedSceneMeshes, admittedSceneParticles, withSceneStreamNativeVisibility } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -170,7 +172,7 @@ export class ForwardSceneFrameGraph {
     // Babylon clears and restores activeCamera inside its own graph render;
     // the coordinator also pins it per frame. Only authored changes count.
     watch(scene.onActiveCameraChanged, () => {
-      if (this.renderingCamera === undefined && this.suppressCameraMark === 0)
+      if (this.renderingCamera === undefined && this.suppressCameraMark === 0 && !renderTargetCaptureDrawing.has(scene))
         mark();
     });
     watch(scene.onNewSkeletonAddedObservable, mark);
@@ -625,7 +627,7 @@ export class ForwardSceneFrameGraph {
       }
     }
     const revision = this.readinessRevision;
-    this.scene.render(updateCameras);
+    withSceneStreamNativeVisibility(this.scene, () => this.scene.render(updateCameras));
     this.syncMembership();
     // A successful probe after drawing cannot prove a mesh was not skipped.
     // Hold a candidate dirtied by render callbacks and retry on the next frame.
@@ -1049,8 +1051,8 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    this.sceneObjects.meshes = this.scene.meshes;
-    this.sceneObjects.particleSystems = this.scene.particleSystems;
+    this.sceneObjects.meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    this.sceneObjects.particleSystems = admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
     this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;
     const geometry = this.postProcessGraph?.geometryTask;

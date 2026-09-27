@@ -81,62 +81,6 @@ export function gridEdgeFadeRange(coverage: number): {
   return { fadeStart: coverage * 0.35, fadeEnd: coverage * 0.5 };
 }
 
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
-}
-
-/**
- * 1 when the UV sample sits on the 2px screen-space border of the
- * camera-bounds plane, else 0. `fwidthU` / `fwidthV` are the UV change per
- * fragment (same as GLSL `fwidth(uv)`). Equivalent to
- * `cameraBoundsWorldBorderCoverage` for an origin-centered plane: a 16×9
- * rect keeps equal pixel thickness on horizontal and vertical edges.
- */
-export function cameraBoundsBorderCoverage(
-  uv: { x: number; y: number },
-  fwidthU: number,
-  fwidthV: number,
-  lineWidth: number,
-): number {
-  const distX = Math.min(uv.x, 1 - uv.x) / Math.max(fwidthU, 1e-8);
-  const distY = Math.min(uv.y, 1 - uv.y) / Math.max(fwidthV, 1e-8);
-  return Math.min(distX, distY) < lineWidth ? 1 : 0;
-}
-
-/**
- * 1 when the world XY sample sits on the 2px screen-space border of the
- * camera-bounds plane. `half` is `width/2` × `height/2`; derivatives use
- * world XY units. The shader evaluates the equivalent in local unit-plane
- * coordinates so floating-origin offsets cannot affect border coverage.
- */
-export function cameraBoundsWorldBorderCoverage(
-  world: { x: number; y: number },
-  half: { x: number; y: number },
-  fwidthX: number,
-  fwidthY: number,
-  lineWidth: number,
-): number {
-  const distX = (half.x - Math.abs(world.x)) / Math.max(fwidthX, 1e-8);
-  const distY = (half.y - Math.abs(world.y)) / Math.max(fwidthY, 1e-8);
-  const dist = Math.min(distX, distY);
-  return dist >= 0 && dist < lineWidth ? 1 : 0;
-}
-
-/** GLSL-style smoothstep so unit tests match the fragment edge fade. */
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
-/** Edge-fade alpha at a planar distance from the follow origin. */
-export function gridEdgeFadeAlpha(
-  fadeStart: number,
-  fadeEnd: number,
-  planarDist: number,
-): number {
-  return 1 - smoothstep(fadeStart, fadeEnd, planarDist);
-}
-
 function gridViewHalfExtent(
   mode: ViewportMode,
   camera: GridCoverageCamera,

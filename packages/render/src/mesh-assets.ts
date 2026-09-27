@@ -19,6 +19,8 @@ import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
@@ -180,7 +182,7 @@ export function modelSlotFingerprint(
         .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
         .join(",");
       const colliders = JSON.stringify(payload.simpleColliders ?? []);
-      return `${guid}:${payload.importScale}:${slots}:${colliders}`;
+      return `${guid}:${payload.importScale}:${payload.autoLod}:${slots}:${colliders}`;
     })
     .sort()
     .join(";");

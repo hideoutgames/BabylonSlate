@@ -97,8 +97,7 @@ describe("NumericDragField", () => {
     expect(onChange).toHaveBeenCalledWith(6);
   });
 
-  it("reports drag begin and end once per gesture", () => {
-    const onDragBegin = vi.fn();
+  it("reports drag end once per gesture", () => {
     const onDragEnd = vi.fn();
     render(
       <NumericDragField
@@ -106,7 +105,6 @@ describe("NumericDragField", () => {
         value={0}
         sensitivity={1}
         onChange={() => {}}
-        onDragBegin={onDragBegin}
         onDragEnd={onDragEnd}
         data-testid="field"
       />,
@@ -118,7 +116,6 @@ describe("NumericDragField", () => {
     dispatchPointerEvent(scrub, "pointermove", { clientX: 9 });
     dispatchPointerEvent(scrub, "pointerup", { clientX: 9 });
 
-    expect(onDragBegin).toHaveBeenCalledTimes(1);
     expect(onDragEnd).toHaveBeenCalledTimes(1);
     expect(onDragEnd).toHaveBeenCalledWith(9);
   });

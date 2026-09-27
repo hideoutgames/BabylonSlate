@@ -20,6 +20,7 @@ import {
 } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
+import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 
@@ -315,6 +316,48 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
     expect(sunDraw).toHaveBeenCalledTimes(5);
     expect(controller.generator(light)).toBe(generator);
+  });
+
+  it("keeps caching automatic LOD casters and refreshes once when the drawn level changes", async () => {
+    const { scene, camera, material, render } = await fixture();
+    const source = MeshBuilder.CreateSphere("lod source", { segments: 32 }, scene);
+    source.setEnabled(false);
+    const actor = new TransformNode("actor", scene);
+    const part = source.clone("lod caster", actor);
+    part.setEnabled(true);
+    part.material = material;
+    expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const near = scene.customLODSelector!(part, camera);
+    camera.position.z -= 500;
+    camera.getViewMatrix(true);
+    expect(scene.customLODSelector!(part, camera)).not.toBe(near);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
+  it("ignores level changes of automatic LOD casters outside a local light's range", async () => {
+    const { scene, camera, light, material, render } = await fixture();
+    light.range = 10;
+    const source = MeshBuilder.CreateSphere("lod source", { segments: 32 }, scene);
+    source.setEnabled(false);
+    const actor = new TransformNode("actor", scene);
+    actor.position.x = 15;
+    const part = source.clone("distant lod caster", actor);
+    part.setEnabled(true);
+    part.material = material;
+    expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
+    camera.position.set(15, 0, -1.5);
+    camera.setTarget(actor.position);
+    expect(render()).toBe(6);
+    expect(scene.customLODSelector!(part, camera)).toBe(part);
+    expect(render()).toBe(0);
+    // Stay within the shadow distance so the light keeps its map.
+    camera.position.z = -30;
+    camera.getViewMatrix(true);
+    expect(scene.customLODSelector!(part, camera)).not.toBe(part);
+    expect(render()).toBe(0);
   });
 
   it("refreshes local maps when the actual floating render origin moves", async () => {

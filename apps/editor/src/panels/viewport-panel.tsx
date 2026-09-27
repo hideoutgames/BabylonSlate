@@ -1,4 +1,3 @@
-import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
@@ -70,6 +69,7 @@ import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { sceneViewportAssetKey } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
+import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -98,9 +98,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     activeDocumentId,
     applySceneChange,
     projectDocument,
-    projectGuid,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -114,6 +114,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     readAssetChunk,
     assetRegistry,
+    registryVersion,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -257,6 +258,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const editorScene = useMemo(() => scene && sceneStreamingEditorScene(scene, (guid) => {
+    void registryVersion; // Registry headers mutate without replacing the registry.
+    const asset = assetRegistry?.getByGuid?.(guid);
+    return asset?.header.type === "Scene" ? asset.header.name : undefined;
+  }), [scene, assetRegistry, registryVersion]);
   const brushStateRef = useRef<SceneBrushState | null>(null);
   const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
   brushStateRef.current = {
@@ -445,11 +451,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
-        const pipeline = registerScenePipelineStatus(scenePipelineKey(projectGuid, documentId));
-        disposers.push(() => pipeline.dispose());
         const handle = createEngine(canvas, {
           editor: true,
-          onRenderPathChanged: pipeline.publish,
           renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,
@@ -642,7 +645,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     const handle = engineRef.current;
-    if (!scene || !handle) return;
+    if (!scene || !editorScene || !handle) return;
     // Scene overrides arrive before the coalesced settings transaction. Do not
     // apply them through incremental loadScene while its blocking UI is pending.
     if (requestedRenderSettingsKey !== renderSettingsKey) return;
@@ -675,16 +678,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         // Saved Material refreshes must not realize or re-dirty scene structure.
         if (blocking) {
           if (!collected) throw new Error("Scene assets were not collected before realization.");
-          await handle.loadSceneAsync(scene, {
+          await handle.loadSceneAsync(editorScene, {
             ...collected,
             sceneAssetGuid: sceneAssetGuidRef.current,
           });
           if (!isCurrent()) return;
         } else {
-          if (appliedSceneRef.current?.scene === scene && appliedSceneRef.current.handle === handle) return;
-          handle.loadScene(scene, { sceneAssetGuid: sceneAssetGuidRef.current });
+          if (appliedSceneRef.current?.scene === editorScene && appliedSceneRef.current.handle === handle) return;
+          handle.loadScene(editorScene, { sceneAssetGuid: sceneAssetGuidRef.current });
         }
-        appliedSceneRef.current = { scene, handle };
+        appliedSceneRef.current = { scene: editorScene, handle };
       };
       const applyCollectedAssets = async () => {
         if (!blocking && appliedAssetsRef.current?.handle === handle &&
@@ -693,6 +696,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
         const waters = await collectPlayWaterContent();
+        const renderTargetAssets = await collectPlayRenderTargets();
         controller.signal.throwIfAborted();
         const modelBytes = await collectPlayModelBytes(scene);
         controller.signal.throwIfAborted();
@@ -739,6 +743,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
           waters,
+          ...renderTargetAssets,
           tilesets: tileContent.tilesets,
           textureBytes,
           texturePixelSizes,
@@ -834,6 +839,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
+    editorScene,
     viewportAssetsKey,
     requestedRenderSettingsKey,
     renderSettingsKey,
@@ -842,6 +848,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     textureLodKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,

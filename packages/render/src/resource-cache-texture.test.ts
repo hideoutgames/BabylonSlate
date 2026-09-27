@@ -8,6 +8,8 @@ import {
   releaseResourceCacheForEngine,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { installTextureBytes } from "./mesh-assets";
+import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
 
@@ -112,7 +114,7 @@ describe("bounded texture preparation ownership", () => {
     }
   });
 
-  it("settles native-ready header work when GPU wrappers are retired for restoration", async () => {
+  it("settles native-ready header work when a leased wrapper is disposed", async () => {
     const engine = textureEngine();
     const cache = new ResourceCache();
     const source = new Blob([new Uint8Array([4, 5, 6])]);
@@ -124,16 +126,17 @@ describe("bounded texture preparation ownership", () => {
     try {
       const pending = cache.acquireTexture("pending", engine, source);
       expect(pending.resource.isReady()).toBe(true);
-      cache.releaseGpuTextures();
+      pending.resource.dispose();
       await expect(pending.ready).rejects.toThrow("retired during preparation");
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 0, leases: 1, pending: 0 });
       finish(new ArrayBuffer(0));
-      const restored = cache.acquireTexture("pending", engine, source);
-      await restored.ready;
+      const rebuilt = cache.acquireTexture("pending", engine, source);
+      await rebuilt.ready;
       pending.release();
-      expect(restored.resource.isReady()).toBe(true);
+      expect(rebuilt.resource).not.toBe(pending.resource);
+      expect(rebuilt.resource.isReady()).toBe(true);
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
-      restored.release();
+      rebuilt.release();
       cache.flushUnreferenced();
       expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
     } finally { finish(new ArrayBuffer(0)); read.mockRestore(); slice.mockRestore(); cache.dispose(); engine.dispose(); }
@@ -214,21 +217,6 @@ describe("resource cache getTexture", () => {
     bLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
-    cache.dispose();
-    engine.dispose();
-  });
-
-  it("rebuilds after releaseGpuTextures keeps the blob URL", () => {
-    const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const bytes = new Uint8Array([1, 2, 3, 4]);
-    const firstLease = cache.acquireTexture("tex", engine, bytes);
-    const first = firstLease.resource;
-    cache.releaseGpuTextures();
-    const secondLease = cache.acquireTexture("tex", engine, bytes);
-    const second = secondLease.resource;
-    expect(second).not.toBe(first);
-    expect(second.getInternalTexture()).not.toBeNull();
     cache.dispose();
     engine.dispose();
   });
@@ -751,6 +739,25 @@ describe("bindResourceCacheToHandle", () => {
     editor.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(true);
     inner.dispose();
+    engine.dispose();
+  });
+});
+
+describe("WebGPU KTX2 off the 4x4 block grid", () => {
+  it.each([
+    ["raw bytes", () => ktx2HeaderBytes(1, 1)],
+    ["an installed Blob", () => installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]]))!.get("odd")!],
+  ])("gives an ASTC-capable WebGPU engine a KTX2 texture from %s", (_source, bytes) => {
+    const engine = textureEngine();
+    // The engine that used to be refused before upload; ktx2-webgpu-rgba.test.ts covers the RGBA decode.
+    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
+    const cache = new ResourceCache();
+    const lease = acquireMaterialTexture(cache, "odd", engine, bytes());
+    expect(lease?.resource).toBeInstanceOf(Texture);
+    expect(lease!.resource.mimeType).toBe("image/ktx2");
+    lease!.release();
+    cache.dispose();
     engine.dispose();
   });
 });

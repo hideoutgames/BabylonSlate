@@ -1,4 +1,4 @@
-import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
+import { normalizeWaterDefinition, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
 import { isInputAssetType, normalizeInputAssetPayload, type InputAssetDefinition } from "@babylonslate/core";
@@ -77,7 +77,6 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
-  createTemplateStorage,
   getHostPlatform,
   isTestModeEnabled,
   createSecretStore,
@@ -265,7 +264,6 @@ import {
   createPlayAudioSourceLoader,
   playAudioLibraryFromAssets,
 } from "../lib/play-audio";
-import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   beginSaveAllProgress,
   clearDocumentDirtyTrace,
@@ -320,8 +318,15 @@ interface DocumentContextValue {
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
+  /**
+   * Why an edit or re-encode from outside the Texture tab cannot write this
+   * Texture, as a sentence (a read-only root or plugin, or another user's
+   * lock); null when it can. Reads live lock and tab state, so call it while
+   * rendering.
+   */
+  textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
@@ -351,10 +356,6 @@ interface DocumentContextValue {
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
   ) => Promise<void>;
-  renameListedProject: (
-    handle: ProjectFolderHandle,
-    name: string,
-  ) => Promise<void>;
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
@@ -362,7 +363,6 @@ interface DocumentContextValue {
   approveMigrationsAndSave: () => Promise<void>;
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
   forceCloseProject: () => Promise<void>;
-  refreshProjectList: () => Promise<void>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
   exportGameArtifact: (options?: {
     projectSnapshot?: ProjectDocument;
@@ -472,24 +472,13 @@ interface DocumentContextValue {
   toggleDockWindow: (panelId: string) => void;
   isDockWindowOpen: (panelId: string) => boolean;
   getOpenDockWindowCount: () => number;
-  captureActiveLayout: () => void;
   isLayoutFocused: boolean;
   toggleLayoutFocus: () => void;
-  getAvailableDocuments: () => Array<{
-    kind: "scene" | "graph";
-    path: string;
-    label: string;
-  }>;
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
-  /**
-   * Compile every project graph into runtime script bundles.
-   * Does not record Play-loaded bundles — use `collectPlayPreviewScripts` for Play / toolbar Compile.
-   */
-  collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
   /** Compile and validate every project graph for the Play prepare path. */
   collectPlayPreviewScripts: () => Promise<{
     bundles: ScriptBundleEntry[];
@@ -525,6 +514,7 @@ interface DocumentContextValue {
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
+  collectPlayRenderTargets: () => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -621,7 +611,6 @@ interface DocumentContextValue {
   playPreviewBundles: ScriptBundleEntry[];
   playPreviewDiagnostics: Diagnostic[];
   playLoadedSignature: string | null;
-  markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -794,11 +783,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     Diagnostic[]
   >([]);
   const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
-  const markScriptsCurrent = useCallback(() => {
-    setLastCompiledSignature(
-      graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current), inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()])),
-    );
-  }, [projectService]);
   const recordPlayPreviewScripts = useCallback(
     (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
       const signature = graphCompileSignature(
@@ -951,14 +935,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [projectService, settingsStore]);
 
   const refreshTemplates = useCallback(async () => {
-    setTemplates(
-      await loadTemplateCards({
-        platform: getHostPlatform(),
-        loadSettings: () => settingsStore.load(),
-        openTemplatesFolder: createTemplateStorage,
-      }),
-    );
-  }, [settingsStore]);
+    setTemplates(await loadTemplateCards());
+  }, []);
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
@@ -1200,7 +1178,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const retryTextureEncoding = useCallback(
     async (
       guid: string,
-      options?: { maxDimension?: number; force?: boolean },
+      options?: { maxDimension?: number; force?: boolean; usage?: string },
     ) => {
       const ok = await projectService.retryTextureEncoding(guid, options);
       bump();
@@ -1449,12 +1427,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await refreshProjectList();
     },
     [projectService, refreshProjectList, settingsStore],
-  );
-
-  const renameListedProject = useCallback(
-    (handle: ProjectFolderHandle, name: string) =>
-      updateListedProject(handle, { name }),
-    [updateListedProject],
   );
 
   const removeListedProject = useCallback(
@@ -2495,6 +2467,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, notifyAppliedCommand, projectService],
   );
 
+  const textureUsageBlockedReason = useCallback(
+    (guid: string): string | null => {
+      const registry = projectService.registry;
+      const asset = registry?.getByGuid(guid);
+      if (!asset || asset.header.type !== "Texture") return null;
+      if (
+        registry?.getRoot(asset.rootId)?.readOnly ||
+        isPluginDocumentReadOnly(projectService.plugins, asset.path)
+      ) {
+        return "The Texture is read-only.";
+      }
+      const sourceControl = sourceControlRef.current;
+      const open = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
+      // An open tab follows its lock banner (Edit Anyway lifts it); a closed
+      // Texture refuses another user's lock, as Content Browser moves do.
+      if (
+        sourceControl.isDocumentReadOnly(asset.path) ||
+        (!open?.content && sourceControl.refuseIfTheirs(asset.path))
+      ) {
+        const owner = sourceControl.lockForPath(asset.path)?.ownerName;
+        return owner ? `The Texture is locked by ${owner}.` : "The Texture is locked.";
+      }
+      return null;
+    },
+    [documentService, projectService],
+  );
+
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
@@ -2668,34 +2669,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectScriptBundles = useCallback(async (): Promise<
-    ScriptBundleEntry[]
-  > => {
-    const documents = await loadProjectGraphDocuments();
-    const animDocuments = await loadProjectAnimGraphDocuments();
-    const typeSchemas = collectGraphTypeSchemas();
-    const bundles = [
-      ...compileGraphDocuments(documents, {
-      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-        enums: typeSchemas.enums,
-        structs: typeSchemas.structs,
-        cache: graphCompileCacheRef.current,
-      }),
-      ...compileAnimGraphScripts(animDocuments, {
-        cache: graphCompileCacheRef.current,
-      }),
-    ];
-    markScriptsCurrent();
-    return bundles;
-  }, [
-    collectGraphTypeSchemas,
-    loadProjectAnimGraphDocuments,
-    loadProjectGraphDocuments,
-    markScriptsCurrent,
-    documentService,
-    projectService,
-  ]);
-
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
@@ -2781,6 +2754,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "particle-graph"
         | "particle-system"
         | "water"
+        | "render-target"
+        | "render-target-texture"
         | "model"
         | "skeleton"
         | "animation"
@@ -2993,6 +2968,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
     }
     return waters;
+  }, [loadPlayAssetContent, projectService]);
+
+  const collectPlayRenderTargets = useCallback(async () => {
+    const renderTargets = new Map<string, RenderTargetPayload>();
+    const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
+    for (const asset of projectService.registry?.list() ?? []) {
+      if (asset.header.type === "RenderTarget") {
+        const content = await loadPlayAssetContent("render-target", asset.path);
+        if (content) renderTargets.set(asset.header.guid, normalizeRenderTargetPayload(content));
+      } else if (asset.header.type === "RenderTargetTexture") {
+        const content = await loadPlayAssetContent("render-target-texture", asset.path);
+        if (content) renderTargetTextures.set(asset.header.guid, normalizeRenderTargetTexturePayload(content));
+      }
+    }
+    return { renderTargets, renderTargetTextures };
   }, [loadPlayAssetContent, projectService]);
 
   const collectPlayTilemapContent = useCallback(
@@ -3552,12 +3542,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           unpacked: number;
           errors: string[];
         };
-        assetByGuid: (guid: string) => {
-          guid: string;
-          type: string;
-          path: string;
-          placeholder: boolean;
-        } | null;
         seedMissingPluginOverride: (guid: string) => Promise<{
           guid: string;
           type: string;
@@ -3567,7 +3551,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         activeTilemapTile: (gx: number, gy: number) => number | null;
         touchAssetOnDisk: (path: string) => Promise<void>;
         runForegroundRescan: () => Promise<void>;
-        materialPreviewCameraRadius: () => number | null;
         documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
         clearDocumentDirtyTrace: () => void;
         saveAllProgress: typeof saveAllProgress;
@@ -3583,6 +3566,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           compressionState: string | null;
           encodeError: string | null;
           hasPixels: boolean;
+          /** Committed encode (`payload.ktx2ChunkId`) for reading its KTX2 header. */
+          ktx2ChunkId: string | null;
         } | null;
       };
       __babylonslateSourceControl?: SourceControlService;
@@ -3779,12 +3764,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!asset) return null;
         const state = asset.header.payload.compressionState;
         const encodeError = asset.header.payload.encodeError;
+        const ktx2ChunkId = asset.header.payload.ktx2ChunkId;
         return {
           compressionState: typeof state === "string" ? state : null,
           encodeError: typeof encodeError === "string" ? encodeError : null,
           hasPixels: asset.header.chunks.some(
             (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
           ),
+          ktx2ChunkId: typeof ktx2ChunkId === "string" ? ktx2ChunkId : null,
         };
       },
       projectStartupSceneGuid: () =>
@@ -3792,16 +3779,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pluginGuids: () =>
         projectService.plugins.map((plugin) => plugin.pluginGuid),
       enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
-      assetByGuid: (guid: string) => {
-        const asset = projectService.registry?.getByGuid(guid);
-        if (!asset) return null;
-        return {
-          guid: asset.header.guid,
-          type: asset.header.type,
-          path: asset.path,
-          placeholder: asset.placeholder === true,
-        };
-      },
       seedMissingPluginOverride: async (guid: string) => {
         const current =
           projectDocumentRef.current?.settings.pluginOverrides ?? {};
@@ -3835,7 +3812,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await storage.writeBinary(path, bytes);
       },
       runForegroundRescan: () => runForegroundRescanRef.current(),
-      materialPreviewCameraRadius,
       documentDirtyTrace,
       clearDocumentDirtyTrace,
       saveAllProgress,
@@ -4191,46 +4167,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [activeDockApi, documentService, projectService, settingsStore, animEditorModes]);
 
-  const captureActiveLayout = useCallback(() => {
-    const { activeDocumentId } = documentService.getState();
-    if (activeDocumentId) {
-      captureLayoutForId(activeDocumentId);
-    }
-  }, [captureLayoutForId, documentService]);
-
-  const getAvailableDocuments = useCallback(() => {
-    if (!projectDocument) return [];
-    const { tabOrder } = documentService.getState();
-    const openIds = new Set(tabOrder);
-    const available: Array<{
-      kind: "scene" | "graph";
-      path: string;
-      label: string;
-    }> = [];
-
-    for (const path of projectDocument.scenes) {
-      const id = documentId({ kind: "scene", path });
-      if (!openIds.has(id)) {
-        available.push({
-          kind: "scene",
-          path,
-          label: path.split("/").pop() ?? path,
-        });
-      }
-    }
-    for (const path of projectDocument.graphs) {
-      const id = documentId({ kind: "graph", path });
-      if (!openIds.has(id)) {
-        available.push({
-          kind: "graph",
-          path,
-          label: path.split("/").pop() ?? path,
-        });
-      }
-    }
-    return available;
-  }, [documentService, projectDocument]);
-
   const value = useMemo<DocumentContextValue>(
     () => {
       void sourceControlTick;
@@ -4258,7 +4194,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
-      renameListedProject,
       updateListedProject,
       removeListedProject,
       reconnectProject,
@@ -4267,7 +4202,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
-      refreshProjectList,
       exportProject,
       exportGameArtifact,
       zipExportedGame,
@@ -4337,7 +4271,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleDockWindow,
       isDockWindowOpen,
       getOpenDockWindowCount,
-      captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
         const doc = activeId ? documentService.getDocument(activeId) : undefined;
@@ -4345,7 +4278,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return key ? focusedLayoutIds.has(key) : false;
       })(),
       toggleLayoutFocus,
-      getAvailableDocuments,
       assetRegistry: projectService.registry,
       extensionService: projectService.extensions,
       projectGuid: projectService.guid,
@@ -4366,13 +4298,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureUsageBlockedReason,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       writeAssetThumbnail,
       thumbnailVersions,
       thumbnailsEnabled,
-      collectScriptBundles,
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
@@ -4382,6 +4314,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+      collectPlayRenderTargets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4412,7 +4345,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       playPreviewBundles,
       playPreviewDiagnostics,
       playLoadedSignature,
-      markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };
     },
@@ -4434,12 +4366,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureUsageBlockedReason,
       onSessionDiagnostic,
       loadAssetThumbnail,
       writeAssetThumbnail,
       thumbnailVersions,
       thumbnailsEnabled,
-      collectScriptBundles,
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
@@ -4449,6 +4381,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+      collectPlayRenderTargets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4469,7 +4402,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       playLoadedSignature,
       playPreviewBundles,
       playPreviewDiagnostics,
-      markScriptsCurrent,
       listedProjects,
       needsReconnect,
       recoveryAvailable,
@@ -4481,7 +4413,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
-      renameListedProject,
       updateListedProject,
       removeListedProject,
       reconnectProject,
@@ -4490,7 +4421,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
-      refreshProjectList,
       exportProject,
       exportGameArtifact,
       zipExportedGame,
@@ -4539,10 +4469,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleDockWindow,
       isDockWindowOpen,
       getOpenDockWindowCount,
-      captureActiveLayout,
       toggleLayoutFocus,
       focusedLayoutIds,
-      getAvailableDocuments,
     ],
   );
 
@@ -4576,12 +4504,4 @@ export function useDocuments(): DocumentContextValue {
 export function useDockWindowTick(): number {
   return useContext(DockWindowTickContext);
 }
-
-/** @deprecated Use useDocuments instead */
-export function useProject(): DocumentContextValue {
-  return useDocuments();
-}
-
-/** @deprecated Use DocumentProvider instead */
-export const ProjectProvider = DocumentProvider;
 /* eslint-enable react-refresh/only-export-components */

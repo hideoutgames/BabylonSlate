@@ -2,7 +2,6 @@ import type { DockWindowDirection } from "@babylonslate/core";
 import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 
-export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
   | "scene-layer"
@@ -29,6 +28,8 @@ export type DockviewDocumentKind =
   | "particle-graph"
   | "particle-system"
   | "water"
+  | "render-target"
+  | "render-target-texture"
   | "model"
   | "skeleton"
   | "animation"
@@ -63,6 +64,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "particle-graph",
   "particle-system",
   "water",
+  "render-target",
+  "render-target-texture",
   "model",
   "skeleton",
   "animation",
@@ -121,6 +124,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "particle-graph": "particle-graph-canvas",
   "particle-system": "particle-system-preview",
   water: "water-preview",
+  "render-target": "render-target-details",
+  "render-target-texture": "render-target-texture-details",
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
@@ -954,6 +959,8 @@ export function listDockWindows(
     return withOptionalLocks(kind, PARTICLE_GRAPH_WINDOWS, options);
   }
   if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
+  if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Details" }], options);
+  if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Details" }], options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }
@@ -1003,12 +1010,4 @@ export function listDockWindows(
     return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
   }
   return withOptionalLocks(kind, GRAPH_WINDOWS, options);
-}
-
-export function findDockWindow(
-  kind: DockviewDocumentKind,
-  id: string,
-  options?: DockWindowOptions,
-): DockWindowDefinition | undefined {
-  return listDockWindows(kind, options).find((entry) => entry.id === id);
 }

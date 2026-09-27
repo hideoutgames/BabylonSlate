@@ -138,8 +138,11 @@ export function configureKtx2DecoderRuntime(
     ? 0
     : workerDefaults.get(container)!;
   container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
+  // Decoder defaults override per-texture options, so a `false` here would
+  // mask the per-texture `forceRGBA` the Babylon patch sets for a WebGPU
+  // texture off the 4x4 block grid. `undefined` leaves the key out.
   container.DefaultDecoderOptions.forceRGBA =
-    shouldForceKtx2Rgba(options.caps, options.renderer);
+    shouldForceKtx2Rgba(options.caps, options.renderer) ? true : undefined;
 }
 
 /**

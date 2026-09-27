@@ -75,7 +75,7 @@ describe("materialParameterTextureGuidsFromGraph", () => {
           kind: "variable",
           name: "Textures",
           typeId: "asset",
-          typeClassId: "Texture",
+          typeClassId: "RenderTargetTexture",
           container: "array",
           defaultValue: ["texture-array", "texture-array", null],
         },
@@ -96,7 +96,7 @@ describe("materialParameterTextureGuidsFromGraph", () => {
           typeId: "string",
           container: "map",
           keyTypeId: "asset",
-          keyTypeClassId: "Texture",
+          keyTypeClassId: "RenderTargetTexture",
           defaultValue: [{ key: "texture-key", value: "string-value-ignore" }],
         },
         {

@@ -338,23 +338,29 @@ export function createDefaultMaterialDocument(
 }
 
 /**
- * Change a material's domain, dropping the old terminal and any node the new
- * domain does not allow. Switching would otherwise leave, say, a Scene Color
- * node in a surface material, which only surfaces later as a validation error.
+ * Change a material's domain, dropping any node the new domain does not allow.
+ * Switching would otherwise leave, say, a Scene Color node in a surface
+ * material, which only surfaces later as a validation error. Surface and
+ * Landscape draw through the same Material Output, so it stays with its
+ * position, pin defaults and wires; any other switch replaces the terminal with
+ * an unwired one. Switching to Particle also wires Particle Color into the new
+ * Particle Output.
  */
 export function setMaterialDomain(
   doc: MaterialDocument,
   domain: MaterialDomain,
 ): MaterialDocument {
   if (doc.domain === domain) return doc;
+  const terminalType = terminalNodeTypeFor(domain);
+  const keepsTerminal = terminalNodeTypeFor(doc.domain) === terminalType;
   const kept = doc.nodes.filter((node) => {
     const definition = materialNodeDefinition(node.type);
     if (!definition) return true;
-    if (definition.terminal) return false;
+    if (definition.terminal) return keepsTerminal && node.type === terminalType;
     return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
   });
   const keptIds = new Set(kept.map((node) => node.id));
-  return normalizeMaterialDocument({
+  const switched = normalizeMaterialDocument({
     ...doc,
     domain,
     nodes: kept,
@@ -363,6 +369,84 @@ export function setMaterialDomain(
         keptIds.has(edge.sourceNodeId) && keptIds.has(edge.targetNodeId),
     ),
   });
+  return domain === "particle" ? withParticleColorWired(switched) : switched;
+}
+
+/**
+ * The new-Material Base Color constant, untouched and no longer wired. Its
+ * value is the Material Output's own Base Color default, so dropping it loses
+ * nothing; an edited value or a remaining wire marks it as authored.
+ */
+function isUnwiredSurfaceSeed(
+  node: MaterialGraphNode,
+  edges: readonly MaterialGraphEdge[],
+): boolean {
+  const seed = defaultSurfaceGraph().nodes.find(
+    (entry) => entry.id === node.id && entry.type === node.type,
+  );
+  return (
+    seed !== undefined &&
+    !materialNodeDefinition(seed.type)?.terminal &&
+    JSON.stringify(seed.properties) === JSON.stringify(node.properties) &&
+    !edges.some(
+      (edge) => edge.sourceNodeId === node.id || edge.targetNodeId === node.id,
+    )
+  );
+}
+
+function uniqueId(base: string, taken: ReadonlySet<string>): string {
+  let id = base;
+  for (let suffix = 2; taken.has(id); suffix++) id = `${base}-${suffix}`;
+  return id;
+}
+
+/**
+ * Wire Particle Color into an unwired Particle Output, dropping the untouched
+ * Base Color seed the old Surface output used. An unwired output draws the
+ * pin's constant white, ignoring every emitter colour. A wired output is left
+ * as is. Shading Model and Blend Mode stay: Particle ignores them (emitters own
+ * blending), so a return to Surface keeps the authored values.
+ */
+function withParticleColorWired(doc: MaterialDocument): MaterialDocument {
+  const output = doc.nodes.find(
+    (node) => node.type === terminalNodeTypeFor("particle"),
+  );
+  if (
+    !output ||
+    doc.edges.some(
+      (edge) => edge.targetNodeId === output.id && edge.targetPinId === "color",
+    )
+  ) {
+    return doc;
+  }
+  const nodes = doc.nodes.filter((node) => !isUnwiredSurfaceSeed(node, doc.edges));
+  const template = defaultParticleGraph();
+  const templateColor = template.nodes.find(
+    (node) => node.type === "input.particleColor",
+  )!;
+  const templateEdge = template.edges[0]!;
+  const existing = nodes.find((node) => node.type === templateColor.type);
+  // Nodes are at least 320 units wide: left of every node, with a gap, never
+  // lands on a kept one.
+  const left = Math.min(...nodes.map((node) => node.position.x));
+  const color = existing ?? {
+    ...templateColor,
+    id: uniqueId(templateColor.id, new Set(nodes.map((node) => node.id))),
+    position: { x: left - 400, y: output.position.y },
+  };
+  return {
+    ...doc,
+    nodes: existing ? nodes : [...nodes, color],
+    edges: [
+      ...doc.edges,
+      {
+        ...templateEdge,
+        id: uniqueId(templateEdge.id, new Set(doc.edges.map((edge) => edge.id))),
+        sourceNodeId: color.id,
+        targetNodeId: output.id,
+      },
+    ],
+  };
 }
 
 export function normalizeMaterialDocument(

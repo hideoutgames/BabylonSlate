@@ -13,6 +13,11 @@ export type SerializedPin = {
   optional?: boolean;
   defaultValue?: unknown;
   colorHint?: boolean;
+  /**
+   * The pin keeps one link: a new connection replaces its old one instead of
+   * fanning out. Outputs fan out by default (Particle Graph spine outputs opt in).
+   */
+  singleLink?: boolean;
 };
 
 /** Serialized graph with optional pin handles on edges (backward compatible with core). */
@@ -50,6 +55,12 @@ export type PaletteNode = {
   latent?: boolean;
   /** When true, added nodes stamp `data.__editorOnly` for the canvas banner. */
   editorOnly?: boolean;
+  /**
+   * Needs a Target on another object (other-class members, engine component
+   * APIs, scene-placed components). Context Sensitive hides these rows unless
+   * a dragged pin makes them compatible.
+   */
+  outOfContext?: boolean;
 };
 
 export type NavigateRequest = {

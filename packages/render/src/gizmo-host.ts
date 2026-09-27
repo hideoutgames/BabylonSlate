@@ -1,5 +1,7 @@
 import {
   Color3,
+  CreateTorusVertexData,
+  Mesh,
   PositionGizmo,
   RotationGizmo,
   ScaleGizmo,
@@ -92,8 +94,17 @@ export const GIZMO_COLLIDER_SCALE = 2.5;
  */
 export const GIZMO_MIN_CAMERA_DISTANCE = 2;
 
-/** Rotation torus tube multiplier; independent of thin translate/scale shafts. */
-export const GIZMO_ROTATION_THICKNESS = 8;
+/**
+ * Visible rotation ring tube multiplier (Babylon draws `0.005 × thickness`).
+ * A thin line like the translate/scale shafts; picking does not use it.
+ */
+export const GIZMO_ROTATION_THICKNESS = 1.2;
+
+/**
+ * Invisible rotation pick torus multiplier (Babylon builds `0.03 × thickness`).
+ * Fat enough for touch and centered on the visible ring's line.
+ */
+export const GIZMO_ROTATION_COLLIDER_THICKNESS = 8;
 
 /** Compensates Babylon's dragStrength ÷ rootMesh.scaling (grows with handle size). */
 export const GIZMO_SCALE_SENSITIVITY = 10;
@@ -296,6 +307,37 @@ function enlargeGizmoTouchTargets(root: AbstractMesh): void {
   }
 }
 
+/** The drawn torus: an unnamed leaf (the pick torus is "ignore", the drag disc "rotationDisplay"). */
+function isRotationRing(mesh: AbstractMesh): mesh is Mesh {
+  return (
+    mesh instanceof Mesh &&
+    isLeafMesh(mesh) &&
+    mesh.visibility > 0 &&
+    mesh.name === ""
+  );
+}
+
+/**
+ * Babylon builds the visible torus and its pick torus from one thickness.
+ * Keep the fat collider for touch and rebuild the drawn ring as a thin tube on
+ * the same center line, so the touch target does not move off the line.
+ */
+function thinRotationRings(rotation: RotationGizmo): void {
+  for (const axis of [rotation.xGizmo, rotation.yGizmo, rotation.zGizmo]) {
+    for (const mesh of axis._rootMesh.getChildMeshes()) {
+      if (!isRotationRing(mesh)) continue;
+      const extend = mesh.getBoundingInfo().boundingBox.extendSize;
+      const tubeRadius = Math.min(extend.x, extend.y, extend.z);
+      const ringRadius = Math.max(extend.x, extend.y, extend.z) - tubeRadius;
+      CreateTorusVertexData({
+        diameter: ringRadius * 2,
+        thickness: 0.005 * GIZMO_ROTATION_THICKNESS,
+        tessellation: GIZMO_ROTATION_TESSELLATION,
+      }).applyToMesh(mesh);
+    }
+  }
+}
+
 function ensurePointerEvent(): void {
   if (typeof PointerEvent === "function") return;
   class PointerEventShim extends Event {
@@ -341,8 +383,9 @@ export function createGizmoHost(
     layer,
     GIZMO_ROTATION_TESSELLATION,
     false,
-    GIZMO_ROTATION_THICKNESS,
+    GIZMO_ROTATION_COLLIDER_THICKNESS,
   );
+  thinRotationRings(rotation);
   const scale = new ScaleGizmo(layer, GIZMO_SHAFT_THICKNESS);
   const gizmos = [position, rotation, scale];
 

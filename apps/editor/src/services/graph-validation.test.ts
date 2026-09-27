@@ -1290,6 +1290,7 @@ describe("scriptPaletteNodes", () => {
       typeClassId: "MeshComponent",
       implicitSelf: false,
     });
+    expect(meshGet?.outOfContext).toBe(true);
     expect(
       nodes.some(
         (node) =>
@@ -1455,6 +1456,7 @@ describe("scriptPaletteNodes", () => {
       true,
     );
     expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(local?.outOfContext).toBeUndefined();
     const other = nodes.find(
       (node) => node.id === "flow.event.call:Guard:On Alert",
     );
@@ -1465,6 +1467,7 @@ describe("scriptPaletteNodes", () => {
       implicitSelf: false,
     });
     expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(other?.outOfContext).toBe(true);
   });
 
   it("marks inherited parent-class custom events as implicit-self Calls", () => {
@@ -1709,6 +1712,8 @@ describe("scriptPaletteNodes", () => {
       implicitSelf: false,
     });
     expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(other?.outOfContext).toBe(true);
+    expect(localSet?.outOfContext).toBeUndefined();
     expect(nodes.some((node) => node.id.includes("Temp"))).toBe(false);
   });
 
@@ -1750,6 +1755,9 @@ describe("scriptPaletteNodes", () => {
       parentClass: "Actor",
       classId: "Hero",
     });
+    const captureActors = nodes.find((node) => node.id === "variables.get:RenderTargetCaptureComponent:Capture Actors");
+    expect(captureActors?.defaultData).toMatchObject({ propertyKey: "actorIds", container: "array", typeId: "actor" });
+    expect(captureActors?.pins?.some((pin) => pin.direction === "out" && pin.type.kind === "array")).toBe(true);
     const getText = nodes.find(
       (node) => node.id === "variables.get:Text3DComponent:Text",
     );
@@ -1760,6 +1768,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Text3DComponent",
       implicitSelf: false,
     });
+    expect(getText?.outOfContext).toBe(true);
     expect(getText?.pins?.some((pin) => pin.id === "target")).toBe(true);
     const setTextVar = nodes.find(
       (node) => node.id === "variables.set:Text3DComponent:Text",

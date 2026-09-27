@@ -51,6 +51,7 @@ import {
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
+import { sceneStreamingEditorComponents } from "../lib/scene-streaming-editor-labels";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
@@ -83,6 +84,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const {
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -97,7 +99,15 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     projectDocument,
     openDocuments,
     assetRegistry,
+    registryVersion,
   } = useDocuments();
+  const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
+    void registryVersion; // Registry headers mutate without replacing the registry.
+    const asset = assetRegistry?.getByGuid?.(guid);
+    return asset?.header.type === "Scene" ? asset.header.name : undefined;
+  }), [components, assetRegistry, registryVersion]);
+  const previewComponentsRef = useRef(previewComponents);
+  previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
   const overlayPrefab = useMemo(() => {
     const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -276,7 +286,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing]);
 
-  const previewLoadKey = prefabPreviewLoadKey(components);
+  const previewLoadKey = prefabPreviewLoadKey(previewComponents);
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
   );
@@ -321,7 +331,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.loadScene(
-      previewSceneFor(componentsRef.current, prefabPhysicsWorld),
+      previewSceneFor(previewComponentsRef.current, prefabPhysicsWorld),
     );
   }, [previewLoadKey, sharedEngine, prefabPhysicsWorld]);
 
@@ -336,6 +346,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const sprites = await collectPlaySpritePayloads(scene);
         const tileContent = await collectPlayTilemapContent(scene);
         const waters = await collectPlayWaterContent();
+        const renderTargetAssets = await collectPlayRenderTargets();
         const modelBytes = await collectPlayModelBytes(scene);
         const modelPayloads = await collectPlayModelPayloads(scene);
         const materials = await collectPlayMaterialLibrary(
@@ -374,6 +385,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
           waters,
+          ...renderTargetAssets,
           tilesets: tileContent.tilesets,
           textureBytes,
           texturePixelSizes,
@@ -411,6 +423,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     sharedEngine,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,

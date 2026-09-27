@@ -3,7 +3,6 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   MATERIAL_SIDE_STACK_WIDTH,
-  findDockWindow,
   isDockviewDocumentKind,
   listDockWindows,
   primaryDockPanel,
@@ -52,6 +51,13 @@ describe("resolveDockInitialWidth", () => {
 });
 
 describe("listDockWindows", () => {
+  it.each(["render-target", "render-target-texture"] as const)("exposes %s Details to Windows and Focus", (kind) => {
+    expect(isDockviewDocumentKind(kind)).toBe(true);
+    const primary = primaryDockPanel(kind);
+    expect(listDockWindows(kind).map((window) => window.id)).toContain(primary);
+    expect(listDockWindows(kind).find((window) => window.id === primary)).toMatchObject({ component: primary, title: "Details" });
+    expect(listDockWindows(kind, { sourceControl: true }).map((window) => window.id)).toContain("locks");
+  });
   it("lists scene dock tabs with default positions and omits the retired assets dock", () => {
     const windows = listDockWindows("scene");
     expect(windows.map((entry) => entry.id)).toEqual([
@@ -536,7 +542,8 @@ describe("particle graph dock catalog", () => {
 
   it("uses the Material layout around the Graph", () => {
     const position = (id: string) =>
-      findDockWindow("particle-graph", id)?.defaultPosition;
+      listDockWindows("particle-graph").find((entry) => entry.id === id)
+        ?.defaultPosition;
     expect(primaryDockPanel("particle-graph")).toBe("particle-graph-canvas");
     expect(position("particle-graph-canvas")).toBeUndefined();
     expect(position("particle-graph-preview")).toEqual({
@@ -557,8 +564,9 @@ describe("particle graph dock catalog", () => {
 
   it("anchors Locks under the Graph when source control is on", () => {
     expect(
-      findDockWindow("particle-graph", "locks", { sourceControl: true })
-        ?.defaultPosition?.referencePanelId,
+      listDockWindows("particle-graph", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
     ).toBe("particle-graph-canvas");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
+import { createSceneStreamingActor } from "@babylonslate/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -47,7 +48,6 @@ import {
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
-  siblingAssetRelativePath,
   remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
@@ -75,6 +75,15 @@ import {
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("creates a Scene Streaming subclass with an authorable target and attached name marker", () => {
+  const result = buildNewAssetResult({ type: "Class", name: "Room", guid: "room-class", parentClass: "SceneStreamingActor" });
+  expect(result.parentClass).toBe("SceneStreamingActor");
+  expect(result.payload?.components).toEqual([
+    expect.objectContaining({ id: "prefab-scene-streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "", sceneName: "" } }),
+    expect.objectContaining({ classId: "Text3DComponent", parentId: "prefab-scene-streaming", properties: expect.objectContaining({ text: "No Scene", editorOnly: true }) }),
+  ]);
+});
 
 function asset(
   overrides: Partial<IndexedAsset["header"]> & {
@@ -1143,12 +1152,6 @@ describe("content-browser-helpers", () => {
   });
 
   it("seeds P9 document assets with typed suffixes", () => {
-    expect(siblingAssetRelativePath("assets/HUD.class.babasset", "Chip.class.babasset")).toBe(
-      "Chip.class.babasset",
-    );
-    expect(
-      siblingAssetRelativePath("assets/ui/HUD.class.babasset", "Chip.class.babasset"),
-    ).toBe("ui/Chip.class.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.babasset",
@@ -1390,6 +1393,8 @@ describe("content-browser-helpers", () => {
       "ParticleGraph",
       "ParticleSystem",
       "Water",
+      "RenderTarget",
+      "RenderTargetTexture",
       "SkyboxCreator",
     ]);
   });
@@ -1444,6 +1449,8 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
+      "RenderTarget",
+      "RenderTargetTexture",
       "Water",
       "ParticleEmitter",
       "ParticleGraph",
@@ -1922,6 +1929,15 @@ describe("content-browser-helpers", () => {
     expect(assetHeaderDependencies(type, payload)).toEqual(["rope-material"]);
   });
 
+  it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {
+    const actor = createSceneStreamingActor("room", "scene-room", "Room");
+    const unassigned = createSceneStreamingActor("unassigned");
+    const payload = type === "Scene"
+      ? { actors: [actor, { ...actor, id: "room-copy" }, unassigned] }
+      : { nodes: [], edges: [], components: [...actor.components, ...unassigned.components] };
+    expect(assetHeaderDependencies(type, payload)).toEqual(["scene-room"]);
+  });
+
   it("extracts Audio mixer and channel guids for header.dependencies", () => {
     expect(
       assetHeaderDependencies("Audio", {
@@ -2296,4 +2312,19 @@ describe("Water asset authoring", () => {
     expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
+});
+
+it("creates editable render target documents and saves the texture's target dependency", () => {
+  const target = buildNewAssetResult({ type: "RenderTarget", name: "Depth", guid: "target", parentClass: null });
+  expect(target.type).toBe("RenderTarget");
+  expect(JSON.parse(new TextDecoder().decode(target.chunks.find((chunk) => chunk.id === "document")!.data))).toMatchObject({ mode: "SceneColor", width: 512, height: 512 });
+  const texture = buildNewAssetResult({ type: "RenderTargetTexture", name: "Depth Sample", guid: "texture", parentClass: null });
+  expect(texture.payload).toEqual({ renderTargetGuid: null });
+  expect(assetHeaderDependencies("RenderTargetTexture", { ...texture.payload, renderTargetGuid: "target" })).toEqual(["target"]);
+});
+
+it("creates a capture subclass with an editable capture component", () => {
+  const result = buildNewAssetResult({ type: "Class", name: "Security Camera", guid: "capture-class", parentClass: "RenderTargetCapture" });
+  expect(result.payload.components).toEqual([expect.objectContaining({ classId: "RenderTargetCaptureComponent", properties: expect.objectContaining({ captureOnlyActors: false, actorIds: [] }) })]);
+  expect(buildParentClassTreeRows([]).some((row) => row.id === "RenderTargetCapture" && row.parentClassId === "Actor")).toBe(true);
 });

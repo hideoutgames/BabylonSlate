@@ -2,6 +2,7 @@ import {
   identityTransform,
   newGuid,
   normalizeScenePostProcessStack,
+  normalizeSceneStreamingProperties,
   type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
@@ -163,6 +164,22 @@ export class Actor extends BObject {
   }
 }
 
+/** Typed live actor identity for a placed additive-scene origin. */
+export class SceneStreamingActor extends Actor {
+  get targetSceneGuid(): string {
+    return this.sceneStreamingProperties.sceneGuid;
+  }
+
+  get targetSceneName(): string {
+    return this.sceneStreamingProperties.sceneName;
+  }
+
+  private get sceneStreamingProperties() {
+    const component = this.components.find((entry) => entry.classId === "SceneStreamingComponent");
+    return normalizeSceneStreamingProperties(component ? Object.fromEntries(component.variables) : undefined);
+  }
+}
+
 export class ActorComponent extends BObject {
   private materialObject: MaterialObject | null = null;
   private creationCalled = false;
@@ -277,9 +294,7 @@ export class MaterialObject extends BObject {
 }
 
 export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
-  onGameStart?: (self: GameInstance) => void;
   onGameEnd?: (self: GameInstance) => void;
-  onSceneLoaded?: (self: GameInstance, sceneName: string) => void;
   onSceneStartLoading?: (self: GameInstance, sceneName: string) => void;
   onSceneFinishLoading?: (self: GameInstance, sceneName: string) => void;
   onFirstSceneLoaded?: (self: GameInstance, sceneName: string) => void;
@@ -423,16 +438,8 @@ export class GameInstance extends BObject {
     this.gameHooks = options.hooks ?? {};
   }
 
-  callOnGameStart(): void {
-    this.gameHooks.onGameStart?.(this);
-  }
-
   callOnGameEnd(): void {
     this.gameHooks.onGameEnd?.(this);
-  }
-
-  callOnSceneLoaded(sceneName: string): void {
-    this.gameHooks.onSceneLoaded?.(this, sceneName);
   }
 
   callOnSceneStartLoading(sceneName: string): void {
@@ -441,7 +448,6 @@ export class GameInstance extends BObject {
 
   callOnSceneFinishLoading(sceneName: string): void {
     this.gameHooks.onSceneFinishLoading?.(this, sceneName);
-    this.gameHooks.onSceneLoaded?.(this, sceneName);
   }
 
   callOnFirstSceneLoaded(sceneName: string): void {

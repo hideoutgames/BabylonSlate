@@ -905,9 +905,10 @@ function visualForMeshComponent(
 }
 
 function meshAndDescendantMeshes(root: Mesh): Mesh[] {
+  // Automatic LOD levels are blocked meshes that mirror their master's material.
   const children = root
     .getChildMeshes()
-    .filter((child): child is Mesh => child instanceof Mesh);
+    .filter((child): child is Mesh => child instanceof Mesh && !child.isBlocked);
   return [root, ...children];
 }
 import { updateLandscapeMesh } from "./landscape-mesh";

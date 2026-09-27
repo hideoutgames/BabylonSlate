@@ -1,5 +1,6 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
-import { INPUT_KEYS } from "@babylonslate/core";
+import { INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES } from "@babylonslate/core";
+export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -8,8 +9,7 @@ export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
 export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
 export const ENGINE_KEY_ENUM_ID = "engine:Key";
 export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
-
-export const ENGINE_TYPE_GUID_PREFIX = "engine:";
+export const ENGINE_SCENE_STREAMING_STATE_ENUM_ID = "engine:SceneStreamingState";
 
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
@@ -37,6 +37,16 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  {
+    id: ENGINE_SCENE_STREAMING_STATE_ENUM_ID,
+    name: "Scene Streaming State",
+    members: SCENE_STREAMING_STATES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_RENDER_TARGET_MODE_ENUM_ID,
+    name: "Render Target Mode",
+    members: RENDER_TARGET_MODES.map((name, value) => ({ name, value })),
+  },
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",
@@ -115,14 +125,3 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
     ],
   },
 ];
-
-export function engineTypeGuid(id: string): string {
-  const trimmed = id.trim();
-  return trimmed.startsWith(ENGINE_TYPE_GUID_PREFIX)
-    ? trimmed
-    : `${ENGINE_TYPE_GUID_PREFIX}${trimmed}`;
-}
-
-export function isEngineTypeGuid(guid: string): boolean {
-  return guid.startsWith(ENGINE_TYPE_GUID_PREFIX);
-}

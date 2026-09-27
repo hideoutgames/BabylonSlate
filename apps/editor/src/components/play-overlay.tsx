@@ -114,6 +114,8 @@ export interface PlayOverlayProps {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -133,7 +135,6 @@ export interface PlayOverlayProps {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
@@ -200,6 +201,8 @@ export function PlayOverlay({
   spritePayloads,
   spriteAnimationPayloads,
   waterPayloads,
+  renderTargets,
+  renderTargetTextures,
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
@@ -215,7 +218,6 @@ export function PlayOverlay({
   modelPayloads,
   modelClipAnimationGuids,
   retargetAnimationLoads,
-  audioBytes,
   loadAudioSourceBytes,
   audioLibrary,
   animClipCatalog,
@@ -308,6 +310,10 @@ export function PlayOverlay({
   spritePayloadsRef.current = spritePayloads;
   const spriteAnimationPayloadsRef = useRef(spriteAnimationPayloads);
   spriteAnimationPayloadsRef.current = spriteAnimationPayloads;
+  const renderTargetsRef = useRef(renderTargets);
+  renderTargetsRef.current = renderTargets;
+  const renderTargetTexturesRef = useRef(renderTargetTextures);
+  renderTargetTexturesRef.current = renderTargetTextures;
   const waterPayloadsRef = useRef(waterPayloads);
   waterPayloadsRef.current = waterPayloads;
   const tilemapPayloadsRef = useRef(tilemapPayloads);
@@ -340,8 +346,6 @@ export function PlayOverlay({
   modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
   const retargetAnimationLoadsRef = useRef(retargetAnimationLoads);
   retargetAnimationLoadsRef.current = retargetAnimationLoads;
-  const audioBytesRef = useRef(audioBytes);
-  audioBytesRef.current = audioBytes;
   const loadAudioSourceBytesRef = useRef(loadAudioSourceBytes);
   loadAudioSourceBytesRef.current = loadAudioSourceBytes;
   const audioLibraryRef = useRef(audioLibrary);
@@ -484,6 +488,8 @@ export function PlayOverlay({
       spritePayloads: spritePayloadsRef.current,
       spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
       waterPayloads: waterPayloadsRef.current,
+      renderTargets: renderTargetsRef.current,
+      renderTargetTextures: renderTargetTexturesRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
@@ -499,7 +505,6 @@ export function PlayOverlay({
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
       retargetAnimationLoads: retargetAnimationLoadsRef.current,
-      audioBytes: audioBytesRef.current,
       loadAudioSourceBytes: loadAudioSourceBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       animClipCatalog: animClipCatalogRef.current,

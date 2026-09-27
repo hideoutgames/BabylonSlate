@@ -8,6 +8,9 @@ import { MemoryStorageAdapter } from "./memory-adapter";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
 
 const META_KEY = "babylonslate:opfs-meta";
+/** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
+const OPFS_READ_ATTEMPTS = 4;
+const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
 
 interface OpfsMeta {
   currentId: string | null;
@@ -215,12 +218,24 @@ export class OpfsStorageAdapter implements ProjectStorage {
       await this.ensureMemoryBound();
       return this.memory.readBinary(path);
     }
-    try {
-      const { parent, name } = await this.resolveHandle(path, false);
-      const file = await (await parent.getFileHandle(name)).getFile();
-      return new Uint8Array(await file.arrayBuffer());
-    } catch {
-      throw new Error(`File not found: ${path}`);
+    for (let attempt = 1; ; attempt++) {
+      let file: File;
+      try {
+        const { parent, name } = await this.resolveHandle(path, false);
+        file = await (await parent.getFileHandle(name)).getFile();
+      } catch {
+        throw new Error(`File not found: ${path}`);
+      }
+      try {
+        return new Uint8Array(await file.arrayBuffer());
+      } catch (error) {
+        // `getFile()` is a snapshot: a write that closes before it is read
+        // (Chromium swaps the new contents in) fails the read with
+        // NotReadableError or NotFoundError. Read the committed file again.
+        const name = String((error as { name?: unknown } | null)?.name ?? "");
+        if (attempt < OPFS_READ_ATTEMPTS && STALE_SNAPSHOT_ERRORS.has(name)) continue;
+        throw new Error(`Could not read ${path}: ${String(error)}`, { cause: error });
+      }
     }
   }
 
@@ -285,7 +300,16 @@ export class OpfsStorageAdapter implements ProjectStorage {
         if (handle.kind === "directory") {
           out.push({ name, isDir: true, size: null, mtime: null });
         } else {
-          const file = await (handle as FileSystemFileHandle).getFile();
+          // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
+          if (name.endsWith(".crswap")) continue;
+          let file: File;
+          try {
+            file = await (handle as FileSystemFileHandle).getFile();
+          } catch (error) {
+            // Removed (or its swap renamed away) after it was listed.
+            if (error instanceof DOMException && error.name === "NotFoundError") continue;
+            throw error;
+          }
           out.push({
             name,
             isDir: false,
@@ -351,6 +375,3 @@ export class OpfsStorageAdapter implements ProjectStorage {
     }
   }
 }
-
-/** @deprecated Alias — prefer OpfsStorageAdapter. */
-export class WebStorageAdapter extends OpfsStorageAdapter {}

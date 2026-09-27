@@ -10,12 +10,14 @@ describe("isPlayEngineCommandType", () => {
   it("forwards runtime material parameter writes to the renderer", () => {
     expect(isPlayEngineCommandType("setMaterialParameter")).toBe(true);
   });
-  it("forwards session render path requests to the Play engine", () => {
-    expect(isPlayEngineCommandType("setRenderPath")).toBe(true);
+  it("forwards session scalability transactions to the Play engine", () => {
+    expect(isPlayEngineCommandType("setScalability")).toBe(true);
   });
-  it("forwards SceneLayer compositor commands and despawn onto the Play engine", () => {
+  it("forwards Scene lifecycle, compositor commands and despawn onto the Play engine", () => {
     expect(isPlayEngineCommandType("sceneLoading")).toBe(true);
     expect(isPlayEngineCommandType("activeScene")).toBe(true);
+    expect(isPlayEngineCommandType("sceneStreamLoading")).toBe(true);
+    expect(isPlayEngineCommandType("sceneStreamRemoved")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerLoading")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerCreate")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerRemove")).toBe(true);

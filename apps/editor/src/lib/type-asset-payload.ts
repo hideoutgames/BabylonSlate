@@ -92,16 +92,3 @@ export function parseMemberIndex(id: string | null): number | null {
 export function pinKey(methodIndex: number, pinIndex: number): string {
   return `pin:${methodIndex}:${pinIndex}`;
 }
-
-export function parsePinKey(
-  id: string | null,
-): { methodIndex: number; pinIndex: number } | null {
-  if (!id?.startsWith("pin:")) return null;
-  const [, methodRaw, pinRaw] = id.split(":");
-  const methodIndex = Number(methodRaw);
-  const pinIndex = Number(pinRaw);
-  if (!Number.isInteger(methodIndex) || !Number.isInteger(pinIndex)) {
-    return null;
-  }
-  return { methodIndex, pinIndex };
-}

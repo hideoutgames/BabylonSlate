@@ -213,9 +213,6 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
-    case "pause":
-      pauseGate.setPaused(true);
-      return;
     case "step": {
       const rt = ensureRuntime();
       rt.resume();
@@ -277,6 +274,15 @@ function handleControl(msg: ControlMessage): void {
     case "sceneModelsReady":
       runtime?.notifySceneModelsReady(msg.sceneAssetGuid, msg.sceneLoadId);
       return;
+    case "sceneStreamReady":
+      runtime?.notifySceneStreamReady(msg.actorGuid, msg.streamLoadId);
+      return;
+    case "sceneStreamProgress":
+      runtime?.notifySceneStreamProgress(msg.actorGuid, msg.streamLoadId, msg.progress);
+      return;
+    case "sceneStreamFailed":
+      runtime?.notifySceneStreamFailed(msg.actorGuid, msg.streamLoadId, msg.message);
+      return;
     case "sceneLayerLoadingPainted":
       runtime?.notifySceneLayerLoadingPainted(msg.layerId, msg.layerLoadId);
       return;
@@ -295,7 +301,7 @@ function publishSnapshot(): boolean {
     return false;
   }
   const ab = snapshotPing.commitWrite();
-  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration, transferable: true }, [ab]);
+  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
   return true;
 }
 

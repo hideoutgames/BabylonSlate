@@ -183,6 +183,8 @@ export function playLoadControl(options: {
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: string[];
+  renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   animClipCatalog?: Array<{
     guid: string;
     type: string;
@@ -218,20 +220,10 @@ export function playLoadControl(options: {
     audioAssetGuids: options.audioAssetGuids,
     materialParameterCatalog: options.materialParameterCatalog,
     materialTextureAssetGuids: options.materialTextureAssetGuids,
+    renderTargets: options.renderTargets,
+    renderTargetTextures: options.renderTargetTextures,
     animClipCatalog: options.animClipCatalog,
     deferSceneModelsReady: true,
     deferSceneLoadingPaint: true,
-  };
-}
-
-export function inProcessPlayRuntimeOptions(physics: PlayPhysicsSettings): {
-  physicsWorld: PhysicsWorldKind;
-  gravity: [number, number, number];
-  havokWasmUrl: string;
-} {
-  return {
-    physicsWorld: physics.physicsWorld,
-    gravity: physics.gravity,
-    havokWasmUrl: editorHavokWasmUrl(),
   };
 }

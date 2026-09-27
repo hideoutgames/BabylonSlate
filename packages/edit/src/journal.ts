@@ -212,19 +212,6 @@ export function commandToJournalPayload(
   }
 }
 
-/** @deprecated Prefer commandToJournalPayload */
-export const serializeCommand = commandToJournalPayload;
-
-export function reviveGraphCommand(
-  payload: Record<string, unknown> & { type: string },
-): EditCommand<unknown> {
-  const revived = reviveCommand(payload);
-  if (!revived) {
-    throw new Error(`Unknown journal command type: ${payload.type}`);
-  }
-  return revived;
-}
-
 export function registerGraphCommandRevivers(): void {
   registerCommandReviver("graph.moveNode", createMoveNodeCommandFromJson);
   registerCommandReviver("graph.addEdge", createAddEdgeCommandFromJson);

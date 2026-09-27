@@ -3,7 +3,6 @@ import type { SerializedPin } from "./graph-types";
 import {
   FORMAT_GAP_X,
   FORMAT_GAP_Y,
-  collectThenChain,
   formatGraphNodes,
   type FormatEdge,
   type FormatNode,
@@ -197,83 +196,6 @@ function expectNoOverlaps(nodes: readonly FormatNode[]): void {
   }
 }
 
-describe("collectThenChain", () => {
-  it("includes the start node and exec-out successors", () => {
-    const nodes = [node("a", 0, 0), node("b", 40, 80), node("c", 10, 200)];
-    const edges = [execEdge("a", "b"), execEdge("b", "c")];
-    expect(collectThenChain("a", nodes, edges)).toEqual(["a", "b", "c"]);
-  });
-
-  it("does not walk left into exec-in sources", () => {
-    const nodes = [node("a", 0, 0), node("b", 200, 0)];
-    const edges = [execEdge("a", "b")];
-    expect(collectThenChain("b", nodes, edges)).toEqual(["b"]);
-  });
-
-  it("stops on cycles", () => {
-    const nodes = [node("a", 0, 0), node("b", 200, 0)];
-    const edges = [execEdge("a", "b"), execEdge("b", "a")];
-    expect(collectThenChain("a", nodes, edges)).toEqual(["a", "b"]);
-  });
-
-  it("does not include data-out successors of an exec chain", () => {
-    const nodes = [
-      node("event", 0, 0),
-      node("call", 200, 0, execWithResultOut),
-      node("print", 400, 0, execWithValueIn),
-      node("toUpper", 400, 80, dataThruPins),
-    ];
-    const edges = [
-      execEdge("event", "call"),
-      execEdge("call", "print"),
-      dataEdge("call", "toUpper", "in", "result"),
-      dataEdge("toUpper", "print", "value", "value"),
-    ];
-    expect(collectThenChain("event", nodes, edges)).toEqual([
-      "event",
-      "call",
-      "print",
-    ]);
-  });
-
-  it("includes data-out successors when the start node is pure", () => {
-    const nodes = [
-      node("get", 0, 0, dataOutPins),
-      node("left", 200, 0, dataInPins),
-      node("right", 200, 80, dataInPins),
-    ];
-    const edges = [
-      dataEdge("get", "left"),
-      dataEdge("get", "right"),
-    ];
-    expect(collectThenChain("get", nodes, edges)).toEqual([
-      "get",
-      "left",
-      "right",
-    ]);
-  });
-
-  it("does not follow exec-out from an impure data consumer of a pure start", () => {
-    const nodes = [
-      node("get", 0, 0, dataOutPins),
-      node("print", 200, 0, execWithValueIn),
-      node("later", 400, 0),
-    ];
-    const edges = [dataEdge("get", "print"), execEdge("print", "later")];
-    expect(collectThenChain("get", nodes, edges)).toEqual(["get", "print"]);
-  });
-
-  it("does not include data-in sources of the exec chain", () => {
-    const nodes = [
-      node("a", 0, 0),
-      node("b", 200, 0, execWithValueIn),
-      node("get", 5, 200, dataOutPins),
-    ];
-    const edges = [execEdge("a", "b"), dataEdge("get", "b")];
-    expect(collectThenChain("a", nodes, edges)).toEqual(["a", "b"]);
-  });
-});
-
 describe("formatGraphNodes", () => {
   it("is a no-op for an isolated selected node", () => {
     const nodes = [node("solo", 40, 80)];
@@ -331,6 +253,15 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "keep")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "a")).toEqual({ x: 20, y: 90 });
     expect(pos(next, "b")).toEqual({ x: 80, y: 40 });
+  });
+
+  it("leaves the exec-in source of a selected mid-chain node in place", () => {
+    const nodes = [node("a", 0, 0), node("b", 200, 40), node("c", 10, 300)];
+    const edges = [execEdge("a", "b"), execEdge("b", "c")];
+    const next = formatGraphNodes(nodes, edges, ["b"]);
+    expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
+    expect(pos(next, "b")).toEqual({ x: 200, y: 40 });
+    expect(pos(next, "c")).toEqual({ x: 200 + EXEC_STEP, y: 40 });
   });
 
   it("returns the input nodes when nothing is selected", () => {

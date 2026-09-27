@@ -18,12 +18,12 @@
     "@babylonslate/shader-graph": "workspace:*",
     "@noble/hashes": "2.4.0",
     "fflate": "^0.8.3",
-    "ktx-parse": "^1.1.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
     "@babylonslate/vfs": "workspace:*",
+    "ktx-parse": "^1.1.0",
     "typescript": "~5.8.2"
   }
 }

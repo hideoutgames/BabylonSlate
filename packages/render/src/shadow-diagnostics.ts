@@ -22,7 +22,6 @@ export interface ShadowDiagnosticOptions {
   host?: string;
   os?: string;
   requestedBackend?: GpuBackend;
-  backendFallbackReason?: string;
   /** Project convention, when known; an unspecified world unit is not a meter. */
   sceneUnits?: string;
   /** Explicit model selection; the capture never scans the entire scene geometry. */
@@ -99,7 +98,8 @@ export function captureShadowDiagnostics(
   const renderSize = camera?.outputRenderTarget?.getSize();
   const lights = scene.lights.slice(0, limit(options.maxLights, 32));
   const statuses = controller?.diagnostics(lights) ?? [];
-  const selectedMeshes = options.meshes ?? [];
+  // Automatic LOD levels draw in place of their master and share its state.
+  const selectedMeshes = (options.meshes ?? []).filter((mesh) => !mesh.isBlocked);
   const meshes = selectedMeshes.slice(0, limit(options.maxMeshes, 256));
   return {
     version: 1,
@@ -121,7 +121,6 @@ export function captureShadowDiagnostics(
             : (engine as { webGLVersion?: number }).webGLVersion === 1
               ? "webgl1"
               : "webgl2",
-      fallbackReason: text(options.backendFallbackReason),
       adapter: engineAdapterInfo(engine),
       ndcHalfZRange: engine.isNDCHalfZRange,
       reverseDepthBuffer: engine.useReverseDepthBuffer,

@@ -4,7 +4,6 @@ import {
   STRING,
   compileGraph,
   flowSwitchCasePinId,
-  isFlowSwitchKind,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -37,8 +36,6 @@ describe("Switch on Int / Switch on String catalog", () => {
     expect(stringDef?.title).toBe("Switch on String");
     expect(intDef?.category).toBe("flow");
     expect(stringDef?.category).toBe("flow");
-    expect(isFlowSwitchKind(intDef?.structuredFlow?.kind)).toBe(true);
-    expect(isFlowSwitchKind(stringDef?.structuredFlow?.kind)).toBe(true);
     expect(intDef?.structuredFlow).toEqual({
       kind: "switchOnInt",
       valuePin: "value",

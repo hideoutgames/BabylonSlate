@@ -547,7 +547,7 @@ emission and no editor guides/selection:
 [packed WebGL2](../assets/renderer-qualification/2026-09-23-computer-use/animated-packed-webgl2.png),
 [loose WebGPU](../assets/renderer-qualification/2026-09-23-computer-use/animated-loose-webgpu.png).
 [Archive identities](../assets/renderer-qualification/2026-09-23-computer-use/final-exports.json)
-and adjacent DOM diagnostics identify these captures. Build ZIPs remain local;
+identify these captures. Build ZIPs remain local;
 the source fixture is the portable reproduction. Earlier Chrome packed/loose
 reset/reload captures and native automated external-request/transition assertions
 remain valid for unchanged player behavior.
@@ -590,8 +590,7 @@ off and Black Bars on, Play presented
 [240×135 at 0.5](../assets/renderer-qualification/2026-09-23-computer-use/play-scale-05-ready.png)
 and [480×270 after reset](../assets/renderer-qualification/2026-09-23-computer-use/play-reset-ready.png).
 The changed-event readback printed true; CEL bands and outlines survived Low.
-Stopping left Save All disabled. Matching canvas/HUD JSON accompanies each
-capture. The [UI-authored project](../assets/renderer-qualification/2026-09-23-computer-use/authored-project.zip)
+Stopping left Save All disabled. The [UI-authored project](../assets/renderer-qualification/2026-09-23-computer-use/authored-project.zip)
 retains the 0.5 version with a 60-second delay for reproducible observation.
 An initial capture taken during loading was excluded; dimensions alone did not
 establish a presented frame.
@@ -645,7 +644,7 @@ its saved scale remained 1. Play now restores its borrowed Engine scale before
 readmitting editor views. Focused two-cycle coverage also exercises synchronous
 resize notifications; the compiled graph browser cases check actual editor
 buffer restoration. The `5d0f9a91` checks and hands-on rerun above supersede
-that failure; its original capture remains retained. Physical A16 remains deferred.
+that failure; its capture is not kept in the repository. Physical A16 remains deferred.
 
 ## Earlier continuation checkpoints — 22 September 2026
 
@@ -890,8 +889,8 @@ printed software launch arguments for native runs. The actual native project
 used `--use-angle=d3d11 --ignore-gpu-blocklist --enable-gpu-rasterization
 --disable-background-timer-throttling --disable-renderer-backgrounding`.
 Effective API/adapter fields came from the running engines and remain valid.
-Retained JSON is left unchanged; its `graphicsArguments` field is superseded by
-this correction for `f39b1803`, `cb5fba6e` and `f61ff565` native runs. The
+Retained `f39b1803` and `cb5fba6e` native JSON is left unchanged; this correction
+supersedes its `graphicsArguments` field. The
 successful cost reports already overrode that field correctly. The helper now
 uses the selected native project's flags; cost failure reports also use the
 actual flags. A single native receiver case will check the corrected report;
@@ -1193,8 +1192,8 @@ The initial three-consumer captures
 and strict/through overlap captures
 ([WebGL2](../assets/renderer-qualification/2026-09-22-shared-outline/webgl2-through-component-keeps-global-strict.png),
 [WebGPU](../assets/renderer-qualification/2026-09-22-shared-outline/webgpu-through-component-keeps-global-strict.png))
-were visually inspected and agree across APIs. Additional removal, overlap,
-close-occluder, high-ID and disabled captures are retained beside those files.
+were visually inspected and agree across APIs. The removal, overlap,
+close-occluder, high-ID and disabled states are recorded in the diagnostics above.
 
 Four selected ownership/coordinator unit cases passed at `c512b76d`; the render
 package typecheck passed at `49c45f10`; the twelve changed TypeScript files passed
@@ -1314,6 +1313,7 @@ pnpm --silent agent:wait local --script test:e2e -- e2e/p7-physics.spec.ts --pro
 - The two desktop KTX2/environment and Play material-assignment cases passed at `3809c797`. At `2a4c9d88`, both WebGL2 CPU/GPU particle cases and both Spawn Actor Play/Preview Build cases passed; the two WebGPU particle cases failed. At `1937a582`, CPU WebGPU particles and WebGPU model/rich-text generation cycles passed, while GPU WebGPU particles and the encoded tilemap case still failed. Failed mixed batches are not passes.
 - Native WGSL particle effect replacement was missing its shader-language argument. The isolated Babylon patch now preserves that argument (`0819c853`), with lockfile identity `913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa` at `876614a4`. The admitted installation succeeded; Babylon remains 9.20.0 and Havok 1.3.14. The Havok and earlier WebGPU attribute patch hunks remain unchanged.
 - Main through `20720743` is integrated at `99860d6d`, without restoring historical texture pinning. The changed native particle shader still requires browser verification. Existing physics evidence remains applicable because these native patch changes only affect NodeMaterial particle shaders.
+- WebGPU KTX2 off the 4×4 block grid: the isolated Babylon patch adds a `Misc/khronosTextureContainer2.js` `_uploadAsync` hunk that decodes a WebGPU Basis KTX2 whose base size is not whole 4×4 blocks to RGBA (`7ef26a78`). The lockfile patch identity changes in the same commit from `913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa` to `a17447fe6c9320452ac8da0a9c0f4b492665d14586c887ee1e01f703830084f2` (the patch file's SHA-256). Babylon remains 9.20.0 and Havok 1.3.14; the other hunks are unchanged.
 
 The GPU WebGPU retry at `876614a4` timed out after ten minutes **in admission**, before executing. A later four-case browser selection was cancelled while still queued; only its owned process tree was stopped and verified absent. The two-file inspector/physics selection at `a58b8216` timed out after two minutes in admission. Another owner's acceptance server held the shared root slot throughout; no other owner's processes, reservations or host configuration were changed. The initial attempt to pass a file filter to `test:editor-unit` was rejected by the runner; the corrected selection uses `test`.
 
