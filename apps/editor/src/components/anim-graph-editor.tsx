@@ -561,6 +561,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           <GraphEditor
             key={openTransition.id}
             initialGraph={ruleGraph}
+            commitPositionsOnDragEnd
             paletteNodes={rulePalette}
             onPaletteOpenChange={setRulePaletteOpen}
             diagnostics={graphDiagnostics}
@@ -590,6 +591,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       <div className="flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
         <GraphEditor
           initialGraph={initialGraph}
+          commitPositionsOnDragEnd
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}
           edgeTypes={animGraphEdgeTypes}

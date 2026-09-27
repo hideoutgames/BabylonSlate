@@ -44,7 +44,9 @@ function propertiesDiff(
 ): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   return [...keys].filter(
-    (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+    (key) =>
+      before[key] !== after[key] &&
+      JSON.stringify(before[key]) !== JSON.stringify(after[key]),
   );
 }
 
@@ -73,6 +75,7 @@ function diffComponents(
       );
       continue;
     }
+    if (previous === component) continue;
     for (const key of propertiesDiff(previous.properties, component.properties)) {
       commands.push(
         new SetComponentPropertyCommand(
@@ -158,6 +161,12 @@ function diffFolders(
     before.folders.map((folder) => [folder.id, folder]),
   );
   const afterFolders = new Map(after.folders.map((folder) => [folder.id, folder]));
+  const beforeIndexById = new Map(
+    before.folders.map((folder, index) => [folder.id, index]),
+  );
+  const afterIndexById = new Map(
+    after.folders.map((folder, index) => [folder.id, index]),
+  );
 
   for (const [id, folder] of afterFolders) {
     const previous = beforeFolders.get(id);
@@ -165,7 +174,7 @@ function diffFolders(
       commands.push(
         new AddFolderCommand(
           folder,
-          after.folders.findIndex((entry) => entry.id === id),
+          afterIndexById.get(id) ?? -1,
         ),
       );
       continue;
@@ -190,7 +199,7 @@ function diffFolders(
       commands.push(
         new RemoveFolderCommand(
           folder,
-          before.folders.findIndex((entry) => entry.id === id),
+          beforeIndexById.get(id) ?? -1,
         ),
       );
     }
@@ -240,61 +249,66 @@ export function diffSceneCommands(
 
   const beforeActors = new Map(before.actors.map((actor) => [actor.id, actor]));
   const afterActors = new Map(after.actors.map((actor) => [actor.id, actor]));
+  const beforeIndexById = new Map(
+    before.actors.map((actor, index) => [actor.id, index]),
+  );
+  const afterIndexById = new Map(
+    after.actors.map((actor, index) => [actor.id, index]),
+  );
 
   for (const [id, actor] of afterActors) {
     const previous = beforeActors.get(id);
     if (!previous) {
       commands.push(
-        new AddActorCommand(
-          actor,
-          after.actors.findIndex((entry) => entry.id === id),
-        ),
+        new AddActorCommand(actor, afterIndexById.get(id) ?? -1),
       );
       continue;
     }
-    if (previous.name !== actor.name) {
-      commands.push(new RenameActorCommand(id, previous.name, actor.name));
+    if (previous !== actor) {
+      if (previous.name !== actor.name) {
+        commands.push(new RenameActorCommand(id, previous.name, actor.name));
+      }
+      if (previous.parentId !== actor.parentId) {
+        commands.push(
+          new ReparentActorCommand(id, previous.parentId, actor.parentId),
+        );
+      }
+      if ((previous.folderId ?? null) !== (actor.folderId ?? null)) {
+        commands.push(
+          new SetActorFolderCommand(
+            id,
+            previous.folderId ?? null,
+            actor.folderId ?? null,
+          ),
+        );
+      }
+      if (!transformEqual(previous.transform, actor.transform)) {
+        commands.push(
+          new SetActorTransformCommand(id, previous.transform, actor.transform),
+        );
+      }
+      if (
+        previous.visible !== actor.visible ||
+        previous.locked !== actor.locked
+      ) {
+        commands.push(
+          new SetActorFlagsCommand(
+            id,
+            { visible: previous.visible, locked: previous.locked },
+            { visible: actor.visible, locked: actor.locked },
+          ),
+        );
+      }
     }
-    if (previous.parentId !== actor.parentId) {
-      commands.push(
-        new ReparentActorCommand(id, previous.parentId, actor.parentId),
-      );
-    }
-    if ((previous.folderId ?? null) !== (actor.folderId ?? null)) {
-      commands.push(
-        new SetActorFolderCommand(
-          id,
-          previous.folderId ?? null,
-          actor.folderId ?? null,
-        ),
-      );
-    }
-    if (!transformEqual(previous.transform, actor.transform)) {
-      commands.push(
-        new SetActorTransformCommand(id, previous.transform, actor.transform),
-      );
-    }
-    if (
-      previous.visible !== actor.visible ||
-      previous.locked !== actor.locked
-    ) {
-      commands.push(
-        new SetActorFlagsCommand(
-          id,
-          { visible: previous.visible, locked: previous.locked },
-          { visible: actor.visible, locked: actor.locked },
-        ),
-      );
-    }
-    const beforeIndex = before.actors.findIndex((entry) => entry.id === id);
-    const afterIndex = after.actors.findIndex((entry) => entry.id === id);
+    const beforeIndex = beforeIndexById.get(id) ?? -1;
+    const afterIndex = afterIndexById.get(id) ?? -1;
     if (
       beforeIndex !== afterIndex &&
       before.actors.length === after.actors.length
     ) {
       commands.push(new ReorderActorCommand(id, beforeIndex, afterIndex));
     }
-    diffComponents(id, previous, actor, commands);
+    if (previous !== actor) diffComponents(id, previous, actor, commands);
   }
 
   for (const [id, actor] of [...beforeActors].reverse()) {
@@ -302,7 +316,7 @@ export function diffSceneCommands(
       commands.push(
         new RemoveActorCommand(
           actor,
-          before.actors.findIndex((entry) => entry.id === id),
+          beforeIndexById.get(id) ?? -1,
         ),
       );
     }

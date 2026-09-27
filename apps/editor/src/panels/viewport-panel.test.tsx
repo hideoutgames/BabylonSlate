@@ -74,6 +74,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     selection: { actorIds: [] as string[], mode: "3d" as "2d" | "3d" },
     documents: {
       projectDocument: null as ReturnType<typeof createEmptyProject> | null,
+      registryVersion: 0,
       assetRegistry: null as Pick<AssetRegistry, "list" | "getByGuid"> | null,
       applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
       openDocuments: [] as Array<{
@@ -161,6 +162,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayMaterialLibrary: documents.collectPlayMaterialLibrary,
     readAssetChunk: documents.readAssetChunk,
     assetRegistry: documents.assetRegistry,
+    registryVersion: documents.registryVersion,
   }),
 }));
 
@@ -242,6 +244,7 @@ describe("ViewportPanel engine", () => {
     play.preparing = false;
     documents.openDocuments = [];
     documents.assetRegistry = null;
+    documents.registryVersion = 0;
     documents.projectDocument = null;
     selection.actorIds = [];
     documents.applySceneChange.mockClear();
@@ -775,6 +778,7 @@ describe("ViewportPanel engine", () => {
     });
     documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["new-texture", newTexture]]));
     asset = await savedAsset(2);
+    documents.registryVersion += 1;
     rerender(
       <DocumentWorkspaceProvider documentId="scene:S">
         <ViewportPanel {...({} as IDockviewPanelProps)} />
@@ -791,6 +795,7 @@ describe("ViewportPanel engine", () => {
 
     // An unchanged Save All / registry reindex must not trigger another load.
     asset = await savedAsset(2);
+    documents.registryVersion += 1;
     documents.openDocuments = [...documents.openDocuments];
     rerender(
       <DocumentWorkspaceProvider documentId="scene:S">
@@ -848,6 +853,7 @@ describe("ViewportPanel engine", () => {
     const collects = documents.collectPlayAreaEmissions.mock.calls.length;
     const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
     asset.header.chunks.push({ id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } });
+    documents.registryVersion += 1;
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
@@ -857,6 +863,7 @@ describe("ViewportPanel engine", () => {
     expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1);
     // Replacing the source invalidates the old prepared representation.
     asset.header.chunks.find((chunk) => chunk.id === "pixels")!.sha256 = "c".repeat(64);
+    documents.registryVersion += 1;
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 2));
   });

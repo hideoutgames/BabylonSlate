@@ -1,4 +1,4 @@
-import { installedAssetIdentity } from "@babylonslate/assets";
+import { installedAssetIdentity, type IndexedAsset } from "@babylonslate/assets";
 import { installTextureBytes } from "@babylonslate/render";
 import {
   createContext,
@@ -146,9 +146,21 @@ export function MaterialEditingProvider({
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
 
+  const functionAssetsRef = useRef<IndexedAsset[]>([]);
   const functionAssets = useMemo(() => {
     void registryVersion; // Registry contents mutate without replacing its instance.
-    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "MaterialFunction");
+    const next = (assetRegistry?.list() ?? []).filter(
+      (asset) => asset.header.type === "MaterialFunction",
+    );
+    const previous = functionAssetsRef.current;
+    if (
+      previous.length === next.length &&
+      next.every((asset, index) => asset === previous[index])
+    ) {
+      return previous;
+    }
+    functionAssetsRef.current = next;
+    return next;
   }, [assetRegistry, registryVersion]);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);

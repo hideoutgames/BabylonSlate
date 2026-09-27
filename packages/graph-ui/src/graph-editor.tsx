@@ -633,18 +633,34 @@ function GraphEditorCanvas({
     [diagnostics],
   );
 
-  const nodeErrorCount = useCallback(
-    (nodeId: string) =>
-      errorDiagnostics.filter((entry) => entry.nodeId === nodeId).length,
-    [errorDiagnostics],
-  );
-
-  const pinHasError = useCallback(
-    (nodeId: string, pinId: string) =>
-      errorDiagnostics.some(
-        (entry) => entry.nodeId === nodeId && entry.pinId === pinId,
+  const nodeErrorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of errorDiagnostics) {
+      if (entry.nodeId) {
+        counts.set(entry.nodeId, (counts.get(entry.nodeId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [errorDiagnostics]);
+  const pinErrorKeys = useMemo(
+    () =>
+      new Set(
+        errorDiagnostics.flatMap((entry) =>
+          entry.nodeId && entry.pinId
+            ? [`${entry.nodeId}\u0000${entry.pinId}`]
+            : [],
+        ),
       ),
     [errorDiagnostics],
+  );
+  const nodeErrorCount = useCallback(
+    (nodeId: string) => nodeErrorCounts.get(nodeId) ?? 0,
+    [nodeErrorCounts],
+  );
+  const pinHasError = useCallback(
+    (nodeId: string, pinId: string) =>
+      pinErrorKeys.has(`${nodeId}\u0000${pinId}`),
+    [pinErrorKeys],
   );
 
   const lastEmittedRef = useRef<GraphDocument | null>(null);

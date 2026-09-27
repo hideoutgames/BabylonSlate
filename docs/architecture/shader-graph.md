@@ -582,6 +582,10 @@ post-process preview and not exported games. Disabling it detaches passes
 without mutating the scene document. `hardwareScalingLevel` from the same
 settings page is applied to the Engine.
 
+`MaterialEditingProvider` re-reads saved Material Function documents only when
+their registry entries change (a save reindexes the asset); unrelated document
+edits reuse the loaded set.
+
 Play and export close over surface materials, stack materials (including
 disabled entries), transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
