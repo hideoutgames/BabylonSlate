@@ -237,6 +237,10 @@ function updateSurface(surface: CableSurface): void {
 export function updateCablePreview(mesh: Mesh, end: readonly number[], start?: readonly number[]): void {
   const surface = surfaces.get(mesh);
   if (!surface || surface.history?.latest !== undefined && surface.history.latest >= 0) return;
+  // Document edits can change an ancestor after its matrix was cached in this
+  // render ID. Refresh the hierarchy before projecting world-space endpoints;
+  // the later static freeze must not apply that ancestor transform a second time.
+  if (start) mesh.computeWorldMatrix(true);
   const sx = start?.[0] ?? 0, sy = start?.[1] ?? 0, sz = start?.[2] ?? 0;
   if (surface.previewEnd.x === end[0] && surface.previewEnd.y === end[1] && surface.previewEnd.z === end[2] && surface.previewStart.x === sx && surface.previewStart.y === sy && surface.previewStart.z === sz && (!start || surface.world.equals(mesh.computeWorldMatrix()))) return;
   surface.previewEnd.set(end[0]!, end[1]!, end[2]!);
