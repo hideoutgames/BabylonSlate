@@ -36,8 +36,11 @@ type CableState = {
 export class CableWorldSync {
   private readonly states = new Map<ActorComponent, CableState>();
   private sequence = 0;
+  private readonly host: CableHost;
 
-  constructor(private readonly host: CableHost) {}
+  constructor(host: CableHost) {
+    this.host = host;
+  }
 
   assign(component: ActorComponent): CableProperties & { simulationId: number } {
     const properties = parseCableProperties(Object.fromEntries(component.variables));
