@@ -1,3 +1,5 @@
+import { isSceneLayerDeniedComponent } from "@babylonslate/core";
+
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
@@ -70,27 +72,8 @@ export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DPanelComponent",
 ] as const;
 
-const SCENE_LAYER_DENIED_COMPONENTS = new Set([
-  "RagdollComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent",
-  "WaterLakeComponent",
-  "WaterRiverComponent",
-  "WaterPuddleComponent",
-  "WaterRemovalVolumeComponent",
-  "WaterBuoyancyComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "SkyboxComponent",
-  "CameraComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-]);
-
 export function isSceneLayerAllowedComponent(classId: string): boolean {
-  return !SCENE_LAYER_DENIED_COMPONENTS.has(classId);
+  return !isSceneLayerDeniedComponent(classId);
 }
 
 export function isSceneLayerExclusiveComponent(classId: string): boolean {

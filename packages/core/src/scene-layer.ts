@@ -13,7 +13,10 @@ import {
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 
+/** World-only components; the one SceneLayer denylist for Add Component, Place Actors, save and Play. */
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
+  "LandscapeComponent",
+  "FoliageComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
   "SkyboxComponent",
   "CameraComponent",

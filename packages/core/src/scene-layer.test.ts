@@ -40,7 +40,7 @@ describe("SceneLayer schema", () => {
     });
   });
 
-  it("normalizes a partial payload and drops unsupported 3D components", () => {
+  it("normalizes a partial payload and drops unsupported world-only components", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
       actors: [
@@ -55,6 +55,8 @@ describe("SceneLayer schema", () => {
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
             { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: true } },
+            { id: "landscape", classId: "LandscapeComponent", properties: {} },
+            { id: "foliage", classId: "FoliageComponent", properties: {} },
             ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent"].map((classId) => ({ id: classId, classId, properties: {} })),
             {
               id: "fill",
