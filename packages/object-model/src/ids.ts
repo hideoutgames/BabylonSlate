@@ -1,4 +1,12 @@
-import { isSceneLayerDeniedComponent } from "@babylonslate/core";
+import {
+  ENGINE_COMPONENT_CLASS_IDS,
+  SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
+  isSceneLayerDeniedComponent,
+  type EngineComponentClassId,
+} from "@babylonslate/core";
+
+export { ENGINE_COMPONENT_CLASS_IDS, SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS };
+export type { EngineComponentClassId };
 
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
@@ -20,63 +28,6 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTDecorator",
   "BTService",
   "BTComposite",
-] as const;
-
-/** Engine component class ids registered from P3 (behaviour filled later). */
-export const ENGINE_COMPONENT_CLASS_IDS = [
-  "SceneStreamingComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "MeshComponent",
-  "CableComponent",
-  "SpriteComponent",
-  "TilemapComponent",
-  "CameraComponent",
-  "RenderTargetCaptureComponent",
-  "SpringArmComponent",
-  "SplineComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-  "SkyboxComponent",
-  "Text3DComponent",
-  "AudioComponent",
-  "ParticleComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent",
-  "WaterLakeComponent",
-  "WaterRiverComponent",
-  "WaterPuddleComponent",
-  "WaterRemovalVolumeComponent",
-  "WaterBuoyancyComponent",
-  "RigidBodyComponent",
-  "ColliderComponent",
-  "PhysicsConstraintComponent",
-  "RagdollComponent",
-  "AnimationGraphComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
-  "NavMeshComponent",
-  "NavMeshBlockerComponent",
-  "BlockingVolumeComponent",
-  "2DAnchorComponent",
-  "2DButtonComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DPanelComponent",
-] as const;
-
-export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
-  "2DAnchorComponent",
-  "2DButtonComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DPanelComponent",
 ] as const;
 
 export function isSceneLayerAllowedComponent(classId: string): boolean {

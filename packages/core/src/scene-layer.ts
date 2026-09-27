@@ -10,28 +10,10 @@ import {
   type SerializedOutlinerFolder,
   type SerializedScene,
 } from "./scene";
+import { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
-
-/** World-only components; the one SceneLayer denylist for Add Component, Place Actors, save and Play. */
-export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
-  "SplineComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
-  "SkyboxComponent",
-  "CameraComponent",
-  "RenderTargetCaptureComponent",
-  "SpringArmComponent",
-  "CableComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-  "RagdollComponent",
-  "SceneStreamingComponent",
-] as const;
+export { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
 export const SCENE_LAYER_ANCHORS = [
   "topLeft",
