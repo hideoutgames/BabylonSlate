@@ -25,7 +25,6 @@ import {
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
   particleStats,
-  textureBlockSizeMessage,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -316,13 +315,6 @@ function initializePlayer(
         code: diagnostic.code,
         nodeId: diagnostic.nodeId,
       });
-      options.onDiagnostic?.(diagnostics);
-    },
-    onTextureDiagnostic: (diagnostic) => {
-      // Packed games carry no asset names; the guid identifies the Texture.
-      const message = textureBlockSizeMessage({ ...diagnostic, name: diagnostic.assetGuid });
-      options.onConsoleEvent?.({ type: "log", message, severity: "error" });
-      diagnostics.push({ message, severity: "error", code: diagnostic.code, assetGuid: diagnostic.assetGuid });
       options.onDiagnostic?.(diagnostics);
     },
     onSceneLayerPointer: (event) => {

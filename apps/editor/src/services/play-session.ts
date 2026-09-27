@@ -52,7 +52,6 @@ import {
   createEngine,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
-  textureBlockSizeMessage,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -60,7 +59,6 @@ import {
   type EngineHandle,
   type ParticleLibrary,
   type PlayActorPosition,
-  type TextureBlockSizeDiagnostic,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -130,20 +128,6 @@ export function deliverInspectSnapshot(
 
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
-}
-
-/** Session report entry for a texture WebGPU could not draw; Play keeps running. */
-export function textureBlockSizeReportEntry(
-  diagnostic: TextureBlockSizeDiagnostic,
-  name?: string,
-): RuntimeDiagnostic {
-  return {
-    code: diagnostic.code,
-    severity: "error",
-    message: textureBlockSizeMessage({ ...diagnostic, name: name ?? diagnostic.assetGuid }),
-    assetGuid: diagnostic.assetGuid,
-    frameId: 0,
-  };
 }
 
 /** Apply worker sessionPaused onto Play overlay chrome. */
@@ -536,8 +520,6 @@ export function startPlaySession(options: {
   >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Texture display names for session report entries. */
-  textureName?: (guid: string) => string | undefined;
   /** Reads bake assets (project registry or packed container). */
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
@@ -601,8 +583,6 @@ export function startPlaySession(options: {
     if (worker) worker.postControl(control);
     else runtime?.applyRenderPathStatus(control);
   };
-  // Renderer problems the runtime never sees; merged into the Stop report.
-  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const handle = createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
@@ -669,11 +649,6 @@ export function startPlaySession(options: {
         diagnostic.severity === "error" ? "error" : "warning",
       );
     },
-    onTextureDiagnostic: (diagnostic) => {
-      const entry = textureBlockSizeReportEntry(diagnostic, options.textureName?.(diagnostic.assetGuid));
-      hostDiagnostics.push(entry);
-      options.onLog?.(entry.message, "error");
-    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -736,6 +711,7 @@ export function startPlaySession(options: {
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
+  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;

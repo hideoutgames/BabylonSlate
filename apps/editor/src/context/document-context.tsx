@@ -109,7 +109,6 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
-import { changeTextureUsage, type TextureUsageChange } from "../lib/texture-usage-change";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import {
@@ -324,25 +323,10 @@ interface DocumentContextValue {
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
   /**
-   * Texture Details' Usage change from outside the Texture tab, saved at
-   * once (`changeTextureUsage`): an open tab takes it as an undoable edit and
-   * is saved with its other pending edits; a closed Texture is saved
-   * directly. Either way it re-encodes with the new Usage when needed.
-   * Returns the replaced Usage for an Undo; null when the Texture is missing
-   * or unchanged. Rejects with `textureUsageBlockedReason` when blocked, or
-   * when a closed Texture cannot be read or saved. An Undo passes
-   * `expectedUsage` (the Usage its fix set) and rejects with
-   * `TextureUsageChangedError`, writing nothing, when the Usage has changed.
-   */
-  setTextureUsage: (
-    guid: string,
-    usage: string,
-    expectedUsage?: string,
-  ) => Promise<TextureUsageChange | null>;
-  /**
-   * Why `setTextureUsage` cannot change this Texture, as a sentence (a
-   * read-only root or plugin, or another user's lock); null when it can.
-   * Reads live lock and tab state, so call it while rendering.
+   * Why an edit or re-encode from outside the Texture tab cannot write this
+   * Texture, as a sentence (a read-only root or plugin, or another user's
+   * lock); null when it can. Reads live lock and tab state, so call it while
+   * rendering.
    */
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
@@ -2548,45 +2532,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const setTextureUsage = useCallback(
-    async (
-      guid: string,
-      usage: string,
-      expectedUsage?: string,
-    ): Promise<TextureUsageChange | null> => {
-      try {
-        const change = await changeTextureUsage(
-          {
-            projectService,
-            documentService,
-            blockedReason: textureUsageBlockedReason,
-            applyAssetDocumentChange,
-            retryTextureEncoding,
-            afterTabSave: () => refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot),
-          },
-          guid,
-          usage,
-          expectedUsage,
-        );
-        const path = projectService.registry?.getByGuid(guid)?.path;
-        // An open tab's edit already took the lock; a closed save takes it here.
-        if (change && path) void afterMutatingApply(sourceControlRef.current, path);
-        return change;
-      } finally {
-        bump();
-      }
-    },
-    [
-      applyAssetDocumentChange,
-      bump,
-      captureMtimeSnapshot,
-      documentService,
-      projectService,
-      retryTextureEncoding,
-      textureUsageBlockedReason,
-    ],
-  );
-
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
@@ -4479,7 +4424,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
-      setTextureUsage,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
@@ -4550,7 +4494,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
-      setTextureUsage,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       loadAssetThumbnail,
