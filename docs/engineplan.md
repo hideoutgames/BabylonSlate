@@ -98,7 +98,7 @@ Stating these keeps agents from inventing scope:
 - **No multiplayer or networking** of any kind.
 - **Games export to web only.** The Capacitor and Electron shells exist to run the *editor*, not to ship games.
 - **No native code plugins.** Plugins are content and classes (section 10).
-- **No additive or streamed multi-scene loading.** One **world** Scene at a time. SceneLayers are a separate overlay stack on a session compositor, not additive world streaming.
+- **One parent world Scene and physics world at a time.** Runtime Scene streaming adds independently owned instances beneath that world; it does not replace its global settings or open another editor world document. SceneLayers remain a separate overlay stack. See [scene streaming](architecture/scene-editing.md#scene-streaming).
 - **No live property editing while the game is playing** in v1. Stop, edit, play.
 - **No asset marketplace or remote asset fetching.**
 - **The engine is not a git client.** It implements Git LFS locking only; clone, commit, pull and push happen in Working Copy on iPad or any desktop git client (section 12).

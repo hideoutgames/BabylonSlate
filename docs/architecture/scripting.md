@@ -362,7 +362,9 @@ All streaming nodes require a **Target** reference typed as `SceneStreamingActor
 | Get Scene Load Progress | Float from 0 to 1; 0 when unloaded, 1 only when fully loaded |
 | Get Scene State | Engine `SceneStreamingState` enum: Unloaded, Loading, Loaded, Unloading |
 
-Blocking operations keep asset I/O and resource preparation running. Their pause ownership is separate from manual Pause and other blocking operations. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance. These nodes have no editor streaming path.
+Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
+
+The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
 
 ### Actor component graph APIs
 
