@@ -101,6 +101,7 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 - Details **Map** group: Map Width / Map Height (`property-mapWidth` / `property-mapHeight`) with Tile Width/Height.
 - **Layers** rows highlight the layer being edited and dim hidden layers; each has a **Hide / Show** eye button. The Paint canvas composites visible layers in the same project sorting order as Scene/Play (list order breaks ties); the paint-layer picker only chooses where edits go. Visibility uses the saved layer setting (also respected in Scenes and Play), preserves tiles, and participates in undo/redo. Two-finger translation follows the fingers in both axes, using the same +Y-up pan coordinates as Move.
 - **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
+- Brush/eraser strokes retain their visited-cell Set until the gesture ends, so deduplication checks only the latest segment and preserves first-visit cell order. Painting still replays the accumulated cells against the stroke's base map; this change removes repeated deduplication work, not that separate replay cost.
 
 Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
 

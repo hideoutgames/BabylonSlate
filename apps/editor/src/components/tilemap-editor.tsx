@@ -710,6 +710,7 @@ export function TilemapPaint({
     start: { x: number; y: number };
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
+    seen: Set<string>;
   } | null>(null);
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
@@ -808,17 +809,17 @@ export function TilemapPaint({
         start: cell,
         last: cell,
         cells: [cell],
+        seen: new Set([`${cell.x},${cell.y}`]),
       };
     }
     const stroke = strokeRef.current;
     if (!stroke) return;
     if (tool === "brush" || tool === "eraser") {
       const extra = cellsAlongSegment(stroke.last, cell);
-      const seen = new Set(stroke.cells.map((entry) => `${entry.x},${entry.y}`));
       for (const entry of extra) {
         const key = `${entry.x},${entry.y}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        if (stroke.seen.has(key)) continue;
+        stroke.seen.add(key);
         stroke.cells.push(entry);
       }
       stroke.last = cell;
