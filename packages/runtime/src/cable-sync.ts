@@ -1,4 +1,4 @@
-import { CableSimulation, parseCableProperties, parseSpringArmProperties, type CableProperties, type Transform } from "@babylonslate/core";
+import { CableSimulation, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@babylonslate/physics";
@@ -7,16 +7,24 @@ interface CableHost {
   world: World;
   physics: () => PhysicsBackend;
   eligible: (actor: Actor) => boolean;
+  slot: (actor: Actor) => number | undefined;
   emit: (command: CommandMessage) => void;
 }
 
 type CableState = {
   id: number;
   component: ActorComponent;
+  /** World destruction clears component.owner before the actor's slot retires. */
+  owner: Actor | null;
   properties: CableProperties;
   simulation: CableSimulation | null;
   start: [number, number, number];
   end: [number, number, number];
+  startLocal: [number, number, number];
+  endLocal: [number, number, number];
+  startSlot: number;
+  endSlot: number;
+  sentAnchors: Float64Array;
   dirty: boolean;
   changed: boolean;
   query: SphereSweepQuery | null;
@@ -38,8 +46,10 @@ export class CableWorldSync {
       // Float32 packet headers represent these integers exactly.
       if (this.sequence >= 0xffffff) throw new Error("Cable simulation identity limit exceeded");
       state = {
-        id: ++this.sequence, component, properties, simulation: null,
+        id: ++this.sequence, component, owner: component.owner, properties, simulation: null,
         start: [0, 0, 0], end: [0, 0, 0], dirty: true, changed: false,
+        startLocal: [0, 0, 0], endLocal: [0, 0, 0], startSlot: -1, endSlot: -1,
+        sentAnchors: new Float64Array(8).fill(NaN),
         query: null, backend: null, collide: () => {},
       };
       const owned = state;
@@ -48,6 +58,7 @@ export class CableWorldSync {
       };
       this.states.set(component, state);
     } else {
+      state.owner = component.owner ?? state.owner;
       if (state.properties.cableWidth !== properties.cableWidth || !properties.enableCollision) {
         state.query?.dispose();
         state.query = null;
@@ -59,7 +70,7 @@ export class CableWorldSync {
     return { ...properties, simulationId: state.id };
   }
 
-  step(dt: number, gravity: readonly number[]): void {
+  step(dt: number, gravity: readonly number[], frameId: number): void {
     let floats = 0;
     for (const [component, state] of this.states) {
       state.changed = false;
@@ -71,13 +82,22 @@ export class CableWorldSync {
       }
       const properties = state.properties;
       if (!properties.enabled || actor.sceneLayerId || !this.host.eligible(actor)) continue;
-      if (!worldPoint(this.host.world, actor, component, ZERO, state.start)) continue;
+      if (!worldPoint(this.host.world, actor, component, ZERO, state.start, state.startLocal)) continue;
       const target = properties.targetActorId ? this.host.world.findActor(properties.targetActorId) : actor;
       const liveTarget = target && !target.destroyed && !target.sceneLayerId ? target : actor;
       const targetComponent = properties.targetComponentId
-        ? liveTarget.components.find((entry) => !entry.destroyed && (entry.guid === properties.targetComponentId || entry.sourceId === properties.targetComponentId)) ?? null
+        ? findComponent(liveTarget, properties.targetComponentId)
         : properties.targetActorId ? null : component;
-      if (!worldPoint(this.host.world, liveTarget, targetComponent, properties.endPosition, state.end)) continue;
+      if (!worldPoint(this.host.world, liveTarget, targetComponent, properties.endPosition, state.end, state.endLocal)) continue;
+      state.startSlot = this.host.slot(actor) ?? -1;
+      state.endSlot = this.host.slot(liveTarget) ?? -1;
+      let anchorsChanged = state.sentAnchors[0] !== state.startSlot || state.sentAnchors[1] !== state.endSlot;
+      state.sentAnchors[0] = state.startSlot; state.sentAnchors[1] = state.endSlot;
+      for (let axis = 0; axis < 3; axis++) {
+        anchorsChanged ||= state.sentAnchors[2 + axis] !== state.startLocal[axis] || state.sentAnchors[5 + axis] !== state.endLocal[axis];
+        state.sentAnchors[2 + axis] = state.startLocal[axis]!;
+        state.sentAnchors[5 + axis] = state.endLocal[axis]!;
+      }
       if (!state.simulation) state.simulation = new CableSimulation(properties, state.start, state.end);
       if (properties.enableCollision) {
         const backend = this.host.physics();
@@ -88,9 +108,9 @@ export class CableWorldSync {
         }
         state.query ??= backend.createSphereSweep?.(properties.cableWidth / 2) ?? fallbackSweep(backend, properties.cableWidth / 2);
       }
-      state.changed = state.simulation.update(dt, state.start, state.end, gravity, state.collide) || state.dirty;
+      state.changed = state.simulation.update(dt, state.start, state.end, gravity, state.collide) || state.dirty || anchorsChanged;
       state.dirty = false;
-      if (state.changed) floats += 2 + state.simulation.positions.length;
+      if (state.changed) floats += 10 + state.simulation.positions.length;
     }
     if (!floats) return;
     // One compact owned packet per tick, not one message/allocation per cable.
@@ -101,22 +121,41 @@ export class CableWorldSync {
       if (!state.changed || !state.simulation) continue;
       data[offset++] = state.id;
       data[offset++] = state.simulation.positions.length / 3;
+      data[offset++] = state.startSlot;
+      data[offset++] = state.endSlot;
+      data.set(state.startLocal, offset); offset += 3;
+      data.set(state.endLocal, offset); offset += 3;
       data.set(state.simulation.positions, offset);
       offset += state.simulation.positions.length;
     }
-    this.host.emit({ type: "cableFrame", data });
+    this.host.emit({ type: "cableFrame", frameId, data });
   }
 
   dispose(): void {
     for (const state of this.states.values()) state.query?.dispose();
     this.states.clear();
   }
+
+  retire(actor: Actor): void {
+    for (const [component, state] of this.states) {
+      if (state.owner !== actor) continue;
+      state.query?.dispose();
+      this.states.delete(component);
+    }
+  }
 }
 
 const ZERO = [0, 0, 0] as const;
 
+function findComponent(actor: Actor, id: string): ActorComponent | null {
+  for (const component of actor.components) {
+    if (!component.destroyed && (component.guid === id || component.sourceId === id)) return component;
+  }
+  return null;
+}
+
 /** Transform a point through actual TRS ancestry without per-tick matrix allocation. */
-function worldPoint(world: World, actor: Actor, component: ActorComponent | null, point: readonly number[], out: [number, number, number]): boolean {
+function worldPoint(world: World, actor: Actor, component: ActorComponent | null, point: readonly number[], out: [number, number, number], local: [number, number, number]): boolean {
   out[0] = point[0]!; out[1] = point[1]!; out[2] = point[2]!;
   let current = component;
   let depth = 0;
@@ -124,11 +163,15 @@ function worldPoint(world: World, actor: Actor, component: ActorComponent | null
     if (++depth > 128) return false;
     transformPoint(current.transform, out);
     const parentId = current.parentId;
-    current = parentId ? actor.components.find((entry) => !entry.destroyed && (entry.guid === parentId || entry.sourceId === parentId)) ?? null : null;
+    current = parentId ? findComponent(actor, parentId) : null;
     if (current?.classId === "SpringArmComponent") {
-      out[2] -= parseSpringArmProperties({ armLength: current.getVariable("armLength") }).armLength;
+      const length = current.getVariable("armLength");
+      out[2] -= typeof length === "number" && Number.isFinite(length)
+        ? Math.min(SPRING_ARM_LENGTH_LIMITS[1], Math.max(SPRING_ARM_LENGTH_LIMITS[0], length))
+        : DEFAULT_SPRING_ARM_PROPERTIES.armLength;
     }
   }
+  local[0] = out[0]; local[1] = out[1]; local[2] = out[2];
   let owner: Actor | undefined = actor;
   while (owner) {
     if (++depth > 256 || owner.destroyed) return false;

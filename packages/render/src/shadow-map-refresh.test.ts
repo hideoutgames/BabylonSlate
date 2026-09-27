@@ -21,6 +21,7 @@ import {
 import { normalizeShadowSettings } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
+import { applyCableFrame, createCableMesh } from "./cable-mesh";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -100,6 +101,21 @@ async function fixture(floatingOrigin = false) {
 }
 
 describe("local shadow refresh", () => {
+  it("caches resting cable shadows and refreshes changed geometry in the same rendered frame", async () => {
+    const { scene, material, controller, render } = await fixture();
+    const cable = createCableMesh(scene, "cable", { numSegments: 2, numSides: 4 }, 1);
+    cable.material = material;
+    controller.setParticipation(cable, { castShadows: true });
+    applyCableFrame(scene, new Float32Array([1, 3, -1, -1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 0]), 1);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    applyCableFrame(scene, new Float32Array([1, 3, -1, -1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 2, 0, 2, 2, 0]), 2);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    cable.dispose();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
   it("accepts empty mesh roots and refreshes when their submeshes are populated or removed", async () => {
     const { scene, material, controller, map, render } = await fixture();
     expect(render()).toBe(6);

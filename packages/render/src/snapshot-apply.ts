@@ -1,7 +1,7 @@
 import { sceneShadowController } from "./shadow-controller";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
-import { createCableMesh } from "./cable-mesh";
+import { createCableMesh, sampleCableFrame } from "./cable-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -1388,7 +1388,7 @@ export function createPlayMesh(
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "cable" && cable) {
-    const mesh = createCableMesh(scene, name, cable, cable.simulationId);
+    const mesh = createCableMesh(scene, name, cable, cable.simulationId, (id) => binding?.meshes.get(id));
     if (cable.materialGuid) mesh.material = binding?.resolveMaterial?.(cable.materialGuid, { scene }) ?? null;
     return finishPlayWorldMesh(mesh);
   }
@@ -1678,6 +1678,7 @@ export function applySnapshotToScene(
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
+  sampleCableFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   for (let i = 0; i < count; i++) {

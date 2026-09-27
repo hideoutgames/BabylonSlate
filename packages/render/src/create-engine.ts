@@ -2836,7 +2836,7 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "cableFrame") {
-        applyCableFrame(scene, command.data);
+        applyCableFrame(scene, command.data, command.frameId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {

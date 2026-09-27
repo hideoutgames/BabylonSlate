@@ -769,7 +769,7 @@ class InProcessRuntime implements RuntimeDriver {
         }
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.ragdolls.afterStep();
-        if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity);
+        if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
         this.dispatchCollisionEvents();
       },
     });
@@ -777,6 +777,10 @@ class InProcessRuntime implements RuntimeDriver {
       world: this.world,
       physics: () => this.physicsSync.getBackend(),
       eligible: (actor) => this.canTickActor(actor),
+      slot: (actor) => {
+        const slot = this.slotByGuid.get(actor.guid);
+        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+      },
       emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
@@ -1959,6 +1963,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.removingActors.has(actor)) return;
     this.removingActors.add(actor);
     this.ragdolls.retire(actor);
+    this.cables.retire(actor);
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
@@ -4347,7 +4352,10 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     const owner = this.slotOwners.get(slotId);
-    if (owner) this.ragdolls.retire(owner);
+    if (owner) {
+      this.ragdolls.retire(owner);
+      this.cables.retire(owner);
+    }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);

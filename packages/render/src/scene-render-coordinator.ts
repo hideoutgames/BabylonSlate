@@ -3,6 +3,7 @@ import type { Camera, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
+import { flushSceneCables } from "./cable-mesh";
 
 class PreparationChanged extends Error {}
 
@@ -188,6 +189,9 @@ export class SceneRenderCoordinator {
     if (this.disposed || this.scene.isDisposed || !camera ||
       !this.graph.sceneStrictlyReady(camera))
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+    // Dynamic cable bounds must reach shadow admission before its cached caster
+    // decision. The scene observer covers direct/native Scene.render callers.
+    flushSceneCables(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     // Draw on readiness's admission; graph preparation or invalidation re-admits.

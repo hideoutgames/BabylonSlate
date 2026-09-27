@@ -1276,17 +1276,18 @@ export function syncEditorCablePreviews(scene: Scene, actors: readonly Serialize
     const mesh = scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
     if (!(mesh instanceof Mesh)) continue;
     const properties = parseCableProperties(component.properties);
-    if (!properties.targetActorId && !properties.targetComponentId) { updateCablePreview(mesh, properties.endPosition); continue; }
     const targetActor = (properties.targetActorId ? actorsById.get(properties.targetActorId) : undefined) ?? actor;
-    const targetComponent = properties.targetComponentId ? targetActor.components.find((entry) => entry.id === properties.targetComponentId) : undefined;
+    const targetComponent = properties.targetComponentId
+      ? targetActor.components.find((entry) => entry.id === properties.targetComponentId || entry.sourceId === properties.targetComponentId)
+      : properties.targetActorId ? undefined : component;
     const target = targetComponent
       ? authoredTransformMatrix(authoredComponentActorTransform(targetActor, targetComponent)).multiply(actorMatrix(targetActor))
       : actorMatrix(targetActor);
     const cableWorld = authoredTransformMatrix(authoredComponentActorTransform(actor, component)).multiply(actorMatrix(actor));
     if (Math.abs(cableWorld.determinant()) < 1e-12) continue;
     const end = Vector3.TransformCoordinates(Vector3.FromArray(properties.endPosition), target);
-    Vector3.TransformCoordinatesToRef(end, cableWorld.invert(), end);
-    updateCablePreview(mesh, [end.x, end.y, end.z]);
+    const start = Vector3.TransformCoordinates(Vector3.Zero(), cableWorld);
+    updateCablePreview(mesh, [end.x, end.y, end.z], [start.x, start.y, start.z]);
   }
 }
 

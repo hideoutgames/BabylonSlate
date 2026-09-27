@@ -1,6 +1,29 @@
-import { Matrix, Mesh, Vector3, VertexBuffer, type Scene } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Scene } from "@babylonjs/core/scene";
 import { parseCableProperties, type CableProperties } from "@babylonslate/core";
-import { applyMaterialBounds } from "./material-bounds";
+import { updateDynamicMaterialBounds } from "./material-bounds";
+
+const HISTORY_SIZE = 16;
+type CableSnapshot = { frameId: number; previousFrameId: number; alpha: number };
+type CableHistory = {
+  frames: Float64Array;
+  points: Float32Array;
+  anchors: Float64Array;
+  cursor: number;
+  latest: number;
+  previous: Float32Array;
+  next: Float32Array;
+  previousAnchors: Float64Array;
+  nextAnchors: Float64Array;
+  previousFrame: number;
+  nextFrame: number;
+  previousPacket: number;
+  nextPacket: number;
+  alpha: number;
+  pending: boolean;
+};
 
 type CableSurface = {
   mesh: Mesh;
@@ -14,6 +37,11 @@ type CableSurface = {
   point: Vector3;
   normal: Vector3;
   previewEnd: Vector3;
+  previewStart: Vector3;
+  minimum: Vector3;
+  maximum: Vector3;
+  history?: CableHistory;
+  actorForSlot?: (slotId: number) => Mesh | undefined;
   worldSpace: boolean;
   dirty: boolean;
 };
@@ -23,6 +51,115 @@ const sceneSurfaces = new WeakMap<Scene, Set<CableSurface>>();
 // A prepared visual can coexist with its predecessor until an asynchronous model
 // finishes. Both receive the same frame; disposal only removes that mesh.
 const runtimeSurfaces = new WeakMap<Scene, Map<number, Set<CableSurface>>>();
+const snapshots = new WeakMap<Scene, CableSnapshot>();
+
+/** Only this owner writes these dynamic buffers, and always emits geometry revisions. */
+export function hasRevisionTrackedCableGeometry(mesh: Mesh): boolean {
+  const surface = surfaces.get(mesh);
+  return !!surface && mesh.getVerticesData(VertexBuffer.PositionKind) === surface.positions && mesh.getVerticesData(VertexBuffer.NormalKind) === surface.normals;
+}
+
+/** Pair with the actor snapshot, so future packets cannot pull anchors ahead. */
+export function sampleCableFrame(scene: Scene, frameId: number, previousFrameId: number, alpha: number): void {
+  let snapshot = snapshots.get(scene);
+  if (!snapshot) { snapshot = { frameId, previousFrameId, alpha }; snapshots.set(scene, snapshot); }
+  else { snapshot.frameId = frameId; snapshot.previousFrameId = previousFrameId; snapshot.alpha = alpha; }
+}
+
+/** Coalesce worker packets into one upload at actual render admission. */
+export function flushSceneCables(scene: Scene): void {
+  const entries = sceneSurfaces.get(scene);
+  if (!entries) return;
+  const snapshot = snapshots.get(scene);
+  for (const surface of entries) if (surface.mesh.isEnabled()) {
+    selectCablePoints(surface, snapshot);
+    pinCableEndpoints(surface);
+    updateSurface(surface);
+  }
+}
+
+function packetAtOrBefore(history: CableHistory, frameId: number): number {
+  let selected = -1, selectedFrame = -1;
+  for (let i = 0; i < HISTORY_SIZE; i++) {
+    const frame = history.frames[i]!;
+    if (frame <= frameId && frame > selectedFrame) { selected = i; selectedFrame = frame; }
+  }
+  return selected;
+}
+
+function selectCablePoints(surface: CableSurface, snapshot: CableSnapshot | undefined): void {
+  const history = surface.history;
+  if (!history || history.latest < 0) return;
+  const frameId = snapshot?.frameId ?? history.latest;
+  const previousFrameId = snapshot?.previousFrameId ?? frameId;
+  const alpha = Math.max(0, Math.min(1, snapshot?.alpha ?? 1));
+  const oldPrevious = history.previousPacket, oldNext = history.nextPacket;
+  const selectedChanged = history.previousFrame !== previousFrameId || history.nextFrame !== frameId;
+  if (history.pending || selectedChanged) {
+    const width = surface.points.length;
+    // Keep both selected snapshot shapes pinned even if later packets wrap the
+    // bounded history while this renderer is still displaying an older pair.
+    const retainPrevious = history.previousFrame === previousFrameId || history.nextFrame === previousFrameId;
+    if (history.previousFrame !== previousFrameId && history.nextFrame === previousFrameId) {
+      history.previous.set(history.next);
+      history.previousAnchors.set(history.nextAnchors);
+      history.previousPacket = history.nextPacket;
+    }
+    let a = packetAtOrBefore(history, previousFrameId), b = packetAtOrBefore(history, frameId);
+    // A heavily delayed render may outlive the bounded history. Keep a pinned
+    // pair when available; otherwise display the nearest retained shape and
+    // correct its attached endpoints against the sampled actor transforms.
+    if (b < 0 && history.nextFrame !== frameId) b = (history.cursor + HISTORY_SIZE - 1) % HISTORY_SIZE;
+    if (a < 0 && !retainPrevious) a = b;
+    if (a >= 0 && (!retainPrevious || history.frames[a]! > history.previousPacket)) {
+      for (let i = 0; i < width; i++) history.previous[i] = history.points[a * width + i]!;
+      for (let i = 0; i < 8; i++) history.previousAnchors[i] = history.anchors[a * 8 + i]!;
+      history.previousPacket = history.frames[a]!;
+    }
+    if (b >= 0 && (history.nextFrame !== frameId || history.frames[b]! > history.nextPacket)) {
+      for (let i = 0; i < width; i++) history.next[i] = history.points[b * width + i]!;
+      for (let i = 0; i < 8; i++) history.nextAnchors[i] = history.anchors[b * 8 + i]!;
+      history.nextPacket = history.frames[b]!;
+    }
+    if (history.nextPacket < 0) return; // Still waiting for this snapshot's first cable packet.
+    if (history.previousPacket < 0) {
+      history.previous.set(history.next);
+      history.previousAnchors.set(history.nextAnchors);
+      history.previousPacket = history.nextPacket;
+    }
+    history.previousFrame = previousFrameId;
+    history.nextFrame = frameId;
+    history.pending = false;
+  }
+  const effectiveAlpha = history.previousPacket === history.nextPacket ? 1 : alpha;
+  if (oldPrevious === history.previousPacket && oldNext === history.nextPacket && history.alpha === effectiveAlpha) return;
+  for (let i = 0; i < surface.points.length; i++) surface.points[i] = history.previous[i]! + (history.next[i]! - history.previous[i]!) * effectiveAlpha;
+  history.alpha = effectiveAlpha;
+  surface.worldSpace = true;
+  surface.dirty = true;
+}
+
+function pinCableEndpoints(surface: CableSurface): void {
+  const history = surface.history;
+  if (!history || history.nextPacket < 0 || !surface.actorForSlot) return;
+  for (let endpoint = 0; endpoint < 2; endpoint++) {
+    if (endpoint === 0 ? !surface.properties.attachStart : !surface.properties.attachEnd) continue;
+    const slotId = history.nextAnchors[endpoint]!;
+    if (slotId < 0) continue;
+    const root = surface.actorForSlot(slotId);
+    if (!root || root.isDisposed()) continue;
+    const offset = 2 + endpoint * 3;
+    const alpha = history.previousAnchors[endpoint] === slotId ? history.alpha : 1;
+    const previous = history.previousAnchors, next = history.nextAnchors;
+    surface.point.set(previous[offset]! + (next[offset]! - previous[offset]!) * alpha, previous[offset + 1]! + (next[offset + 1]! - previous[offset + 1]!) * alpha, previous[offset + 2]! + (next[offset + 2]! - previous[offset + 2]!) * alpha);
+    Vector3.TransformCoordinatesToRef(surface.point, root.computeWorldMatrix(), surface.point);
+    const particle = endpoint === 0 ? 0 : surface.points.length - 3;
+    if (surface.points[particle] !== Math.fround(surface.point.x) || surface.points[particle + 1] !== Math.fround(surface.point.y) || surface.points[particle + 2] !== Math.fround(surface.point.z)) {
+      surface.point.toArray(surface.points, particle);
+      surface.dirty = true;
+    }
+  }
+}
 
 function updateSurface(surface: CableSurface): void {
   const { mesh, points, positions, normals, circle, properties } = surface;
@@ -38,6 +175,8 @@ function updateSurface(surface: CableSurface): void {
   const sides = properties.numSides;
   let tx = 1, ty = 0, tz = 0;
   let nx = 0, ny = 1, nz = 0;
+  surface.minimum.setAll(Infinity);
+  surface.maximum.setAll(-Infinity);
   for (let i = 0; i < count; i++) {
     const previous = Math.max(0, i - 1) * 3;
     const next = Math.min(count - 1, i + 1) * 3;
@@ -79,39 +218,48 @@ function updateSurface(surface: CableSurface): void {
       }
       surface.point.toArray(positions, vertex);
       surface.normal.toArray(normals, vertex);
+      surface.point.set(positions[vertex]!, positions[vertex + 1]!, positions[vertex + 2]!);
+      surface.minimum.minimizeInPlace(surface.point);
+      surface.maximum.maximizeInPlace(surface.point);
     }
   }
-  mesh.updateVerticesData(VertexBuffer.PositionKind, positions, true);
+  mesh.updateVerticesData(VertexBuffer.PositionKind, positions, false);
   mesh.updateVerticesData(VertexBuffer.NormalKind, normals);
-  // Also update frozen world transforms and material displacement padding.
-  mesh.getBoundingInfo().update(world);
-  applyMaterialBounds(mesh, true);
+  const extent = mesh.geometry!.extend;
+  extent.minimum.copyFrom(surface.minimum);
+  extent.maximum.copyFrom(surface.maximum);
+  // The single global submesh shares these bounds, including its picking path.
+  updateDynamicMaterialBounds(mesh, surface.minimum, surface.maximum);
   surface.dirty = false;
 }
 
 /** Static authored preview; no simulation or editor render-loop subscription. */
-export function updateCablePreview(mesh: Mesh, end: readonly number[]): void {
+export function updateCablePreview(mesh: Mesh, end: readonly number[], start?: readonly number[]): void {
   const surface = surfaces.get(mesh);
-  if (!surface || surface.worldSpace) return;
-  if (surface.previewEnd.x === end[0] && surface.previewEnd.y === end[1] && surface.previewEnd.z === end[2]) return;
+  if (!surface || surface.history?.latest !== undefined && surface.history.latest >= 0) return;
+  const sx = start?.[0] ?? 0, sy = start?.[1] ?? 0, sz = start?.[2] ?? 0;
+  if (surface.previewEnd.x === end[0] && surface.previewEnd.y === end[1] && surface.previewEnd.z === end[2] && surface.previewStart.x === sx && surface.previewStart.y === sy && surface.previewStart.z === sz && (!start || surface.world.equals(mesh.computeWorldMatrix()))) return;
   surface.previewEnd.set(end[0]!, end[1]!, end[2]!);
+  surface.previewStart.set(sx, sy, sz);
   const { points, properties } = surface;
-  const distance = Math.hypot(end[0]!, end[1]!, end[2]!);
+  const dx = end[0]! - sx, dy = end[1]! - sy, dz = end[2]! - sz;
+  const distance = Math.hypot(dx, dy, dz);
   // Parabolic rest preview gives a readable slack silhouette without paying
   // for a settled simulation on each editor document update.
   const sag = properties.attachEnd ? Math.sqrt(Math.max(0, properties.cableLength ** 2 - distance ** 2)) / 2 : 0;
   for (let i = 0; i <= properties.numSegments; i++) {
     const t = i / properties.numSegments;
-    points[i * 3] = end[0]! * t;
-    points[i * 3 + 1] = end[1]! * t - sag * 4 * t * (1 - t);
-    points[i * 3 + 2] = end[2]! * t;
+    points[i * 3] = sx + dx * t;
+    points[i * 3 + 1] = sy + dy * t - sag * 4 * t * (1 - t);
+    points[i * 3 + 2] = sz + dz * t;
   }
+  surface.worldSpace = !!start;
   surface.dirty = true;
   updateSurface(surface);
 }
 
 /** Allocate topology once. Only position/normal buffers change during Play. */
-export function createCableMesh(scene: Scene, name: string, input: Partial<CableProperties>, simulationId?: number): Mesh {
+export function createCableMesh(scene: Scene, name: string, input: Partial<CableProperties>, simulationId?: number, actorForSlot?: (slotId: number) => Mesh | undefined): Mesh {
   const properties = parseCableProperties(input);
   const mesh = new Mesh(name, scene);
   mesh.setEnabled(properties.enabled);
@@ -136,21 +284,21 @@ export function createCableMesh(scene: Scene, name: string, input: Partial<Cable
   mesh.setVerticesData(VertexBuffer.NormalKind, normals, true);
   mesh.setVerticesData(VertexBuffer.UVKind, uvs, false);
   mesh.setIndices(indices, null, false);
-  const surface: CableSurface = { mesh, properties, points: new Float32Array(rings * 3), positions, normals, circle, world: Matrix.Identity(), inverse: Matrix.Identity(), point: new Vector3(), normal: new Vector3(), previewEnd: new Vector3(NaN, NaN, NaN), worldSpace: false, dirty: true };
+  const surface: CableSurface = { mesh, properties, points: new Float32Array(rings * 3), positions, normals, circle, world: Matrix.Identity(), inverse: Matrix.Identity(), point: new Vector3(), normal: new Vector3(), minimum: new Vector3(), maximum: new Vector3(), previewEnd: new Vector3(NaN, NaN, NaN), previewStart: new Vector3(NaN, NaN, NaN), actorForSlot, worldSpace: false, dirty: true };
   surfaces.set(mesh, surface);
   updateCablePreview(mesh, properties.endPosition);
   if (simulationId !== undefined && Number.isSafeInteger(simulationId) && simulationId > 0) {
+    surface.history = { frames: new Float64Array(HISTORY_SIZE).fill(-1), points: new Float32Array(surface.points.length * HISTORY_SIZE), anchors: new Float64Array(HISTORY_SIZE * 8), cursor: 0, latest: -1, previous: new Float32Array(surface.points.length), next: new Float32Array(surface.points.length), previousAnchors: new Float64Array(8), nextAnchors: new Float64Array(8), previousFrame: -1, nextFrame: -1, previousPacket: -1, nextPacket: -1, alpha: -1, pending: false };
     let entries = sceneSurfaces.get(scene);
     if (!entries) {
       entries = new Set();
       sceneSurfaces.set(scene, entries);
-      const observer = scene.onBeforeRenderObservable.add(() => {
-        for (const item of entries) if (item.mesh.isEnabled()) updateSurface(item);
-      });
+      const observer = scene.onBeforeRenderObservable.add(() => flushSceneCables(scene), -1, true);
       scene.onDisposeObservable.addOnce(() => {
         scene.onBeforeRenderObservable.remove(observer);
         sceneSurfaces.delete(scene);
         runtimeSurfaces.delete(scene);
+        snapshots.delete(scene);
       });
     }
     entries.add(surface);
@@ -175,22 +323,30 @@ export function createCableMesh(scene: Scene, name: string, input: Partial<Cable
   return mesh;
 }
 
-/** Packed worker records: simulation id, particle count, then world-space xyz. */
-export function applyCableFrame(scene: Scene, data: Float32Array): void {
+/** Packed records: id/count, actor slots, actor-local anchors, then world xyz. */
+export function applyCableFrame(scene: Scene, data: Float32Array, frameId: number): void {
   const entries = runtimeSurfaces.get(scene);
-  if (!entries) return;
-  for (let offset = 0; offset + 2 <= data.length;) {
+  if (!entries || !Number.isSafeInteger(frameId) || frameId < 0) return;
+  for (let offset = 0; offset + 10 <= data.length;) {
     const id = data[offset++]!, count = data[offset++]!;
-    if (!Number.isInteger(count) || count < 2 || count > 65 || offset + count * 3 > data.length) return;
+    if (!Number.isInteger(count) || count < 2 || count > 65 || offset + 8 + count * 3 > data.length) return;
+    const anchors = offset;
+    offset += 8;
     const end = offset + count * 3;
     let finite = true;
-    for (let i = offset; i < end; i++) if (!Number.isFinite(data[i])) { finite = false; break; }
-    if (finite) for (const surface of entries.get(id) ?? []) {
+    for (let i = anchors; i < end; i++) if (!Number.isFinite(data[i])) { finite = false; break; }
+    const matching = entries.get(id);
+    if (finite && matching) for (const surface of matching) {
       if (surface.points.length !== count * 3) continue;
-      for (let i = 0; i < surface.points.length; i++) surface.points[i] = data[offset + i]!;
-      surface.worldSpace = true;
-      surface.dirty = true;
-      updateSurface(surface);
+      const history = surface.history!;
+      if (frameId <= history.latest) continue;
+      const record = history.cursor;
+      history.frames[record] = frameId;
+      for (let i = 0; i < 8; i++) history.anchors[record * 8 + i] = data[anchors + i]!;
+      for (let i = 0; i < surface.points.length; i++) history.points[record * surface.points.length + i] = data[offset + i]!;
+      history.cursor = (record + 1) % HISTORY_SIZE;
+      history.latest = frameId;
+      history.pending = true;
     }
     offset = end;
   }

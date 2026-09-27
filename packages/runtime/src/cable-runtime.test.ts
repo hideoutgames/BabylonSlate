@@ -22,6 +22,7 @@ function records(data: Float32Array): Map<number, number[]> {
   for (let offset = 0; offset < data.length;) {
     const id = data[offset++]!;
     const size = data[offset++]! * 3;
+    offset += 8; // Actor slot IDs and local endpoint anchors.
     result.set(id, Array.from(data.subarray(offset, offset + size)));
     offset += size;
   }
@@ -36,6 +37,7 @@ describe("CableComponent runtime", () => {
       runtime.start();
       runtime.tick();
       expect(frames()).toHaveLength(1);
+      expect(frames()[0]!.frameId).toBe(1);
       const first = frames()[0]!.data;
       const cables = records(first);
       expect(cables.size).toBe(200);
@@ -98,17 +100,25 @@ describe("CableComponent runtime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("omits sleeping cables until an attachment moves", () => {
-    const { runtime, frames } = setup([createActor("owner", "Owner", { components: [cable("rope", { gravityScale: 0, cableLength: 3, sleepDelay: .05 })] })]);
+  it("omits sleeping cables until an attachment moves or its target retires", () => {
+    const { runtime, frames } = setup([
+      createActor("owner", "Owner", { components: [cable("rope", { targetActorId: "target", gravityScale: 0, cableLength: 3, sleepDelay: .05 })] }),
+      createActor("target", "Target", { components: [] }),
+    ]);
     try {
       runtime.realizePlayWorld(); runtime.start();
       for (let i = 0; i < 10; i++) runtime.tick();
       const count = frames().length;
       for (let i = 0; i < 10; i++) runtime.tick();
       expect(frames()).toHaveLength(count);
+      runtime.getWorld().destroyActor("target");
+      runtime.tick(); runtime.tick();
+      expect(frames()).toHaveLength(count + 1);
+      const fallback = frames().at(-1)!.data;
+      expect(fallback[3]).toBe(fallback[2]); // Endpoint now belongs to the owner, not the retired slot.
       runtime.getWorld().findActor("owner")!.transform.position.y = 2;
       runtime.tick();
-      expect(frames()).toHaveLength(count + 1);
+      expect(frames()).toHaveLength(count + 2);
       expect([...records(frames().at(-1)!.data).values()][0]!.slice(0, 3)).toEqual([0, 2, 0]);
     } finally { runtime.stop(); }
   });

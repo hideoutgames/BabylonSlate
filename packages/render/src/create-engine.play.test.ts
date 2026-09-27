@@ -287,13 +287,14 @@ describe("Play createEngine view", () => {
     const { handle } = playHandle(sharedEngine());
     const cable = { ...parseCableProperties({ numSegments: 2, numSides: 4, cableWidth: 0.4 }), simulationId: 11 };
     handle.applyCommand({ type: "assignMesh", slotId: 7, meshKind: "cable", meshAssetGuid: null, parts: [{ componentId: "rope", meshKind: "cable", meshAssetGuid: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], cable }] });
-    handle.applyCommand({ type: "cableFrame", data: new Float32Array([11, 3, 2, 5, 0, 3, 5, 0, 4, 5, 0]) });
+    handle.applyCommand({ type: "cableFrame", frameId: 1, data: new Float32Array([11, 3, -1, -1, 0, 0, 0, 0, 0, 0, 2, 5, 0, 3, 5, 0, 4, 5, 0]) });
+    handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
     const mesh = handle.scene.getMeshByName("actor-7|rope")!;
     expect(mesh.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(4.8);
     expect(mesh.getBoundingInfo().boundingBox.maximumWorld.x).toBeCloseTo(4);
     handle.applyCommand({ type: "despawn", slotId: 7, actorGuid: "actor" });
     expect(mesh.isDisposed()).toBe(true);
-    expect(() => handle.applyCommand({ type: "cableFrame", data: new Float32Array([11, 3, 20, 50, 0, 30, 50, 0, 40, 50, 0]) })).not.toThrow();
+    expect(() => handle.applyCommand({ type: "cableFrame", frameId: 2, data: new Float32Array([11, 3, -1, -1, 0, 0, 0, 0, 0, 0, 20, 50, 0, 30, 50, 0, 40, 50, 0]) })).not.toThrow();
     expect(handle.scene.getMeshByName("actor-7|rope")).toBeNull();
   });
 

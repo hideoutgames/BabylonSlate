@@ -296,8 +296,8 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
-  /** Packed world-space cable records: simulation ID, particle count, then xyz triples. */
-  | { type: "cableFrame"; data: Float32Array }
+  /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
+  | { type: "cableFrame"; frameId: number; data: Float32Array }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
