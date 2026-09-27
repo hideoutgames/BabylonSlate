@@ -66,7 +66,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 
 ## Virtual keyboard
 
-Focusing a text field on iPad raises the keyboard and can cover a centered modal. `CatalogDialog` search is **not** autofocused on open (`initialFocus` is the scrollable body; `autoFocusSearch` defaults to false). That includes Place Actors, Add Component, and Settings. The anchored Add Node popup follows the same rule: touch opening focuses its body, keyboard and desktop opening focus search. Global Search may autofocus because it is a search-first UI with no category list.
+Focusing a text field on iPad raises the keyboard and can cover a centered modal. `CatalogDialog` search is **not** autofocused on a touch or pointer open (`initialFocus` is the scrollable body; only a keyboard open focuses search). That includes Place Actors, Add Component, and Settings. The anchored Add Node popup follows the same rule: touch opening focuses its body, keyboard and desktop opening focus search. Global Search may autofocus because it is a search-first UI with no category list.
 
 ## Dockview
 

@@ -80,9 +80,6 @@ describe("CatalogDialog", () => {
     expect(onSearchChange).toHaveBeenCalledWith("input");
     fireEvent.click(getByTestId("catalog-category-input"));
     expect(onCategoryChange).toHaveBeenCalledWith("input");
-    expect(
-      getByPlaceholderText("Search").getAttribute("data-autofocus-search"),
-    ).toBeNull();
     expect(getByTestId("catalog-body")).toBeTruthy();
     expect(document.activeElement).not.toBe(getByPlaceholderText("Search"));
   });
@@ -106,28 +103,6 @@ describe("CatalogDialog", () => {
     );
     getByTestId("catalog-search-clear").click();
     expect(onSearchChange).toHaveBeenCalledWith("");
-  });
-
-  it("autofocuses search only when requested", () => {
-    const { getByPlaceholderText } = render(
-      <CatalogDialog
-        open
-        onOpenChange={() => {}}
-        title="Add node"
-        categories={[{ id: "all", label: "All" }]}
-        activeCategoryId="all"
-        onCategoryChange={() => {}}
-        search=""
-        onSearchChange={() => {}}
-        autoFocusSearch
-      >
-        <div>Body</div>
-      </CatalogDialog>,
-    );
-
-    expect(
-      getByPlaceholderText("Search").getAttribute("data-autofocus-search"),
-    ).toBe("true");
   });
 
   it("renders grouped category headings", () => {
