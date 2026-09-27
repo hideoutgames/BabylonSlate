@@ -11,7 +11,7 @@ interface PendingStream extends SceneStreamIdentity {
 /** Shared by Play and the packaged player; never changes the parent scene's loading gate. */
 export function createSceneStreamingReadiness(options: {
   handle: {
-    prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void) => Promise<void>;
+    prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
   };
   onProgress: (identity: SceneStreamIdentity, progress: number) => void;
   onReady: (identity: SceneStreamIdentity) => void;
@@ -49,7 +49,7 @@ export function createSceneStreamingReadiness(options: {
       void (async () => {
         await options.handle.prepareSceneStream(command.slotIds as number[], pending.controller.signal, (progress) => {
           if (current(pending)) options.onProgress(pending, Math.max(0, Math.min(0.99, progress)));
-        });
+        }, pending);
         if (current(pending)) options.onReady(pending);
       })().catch((error: unknown) => {
         if (!current(pending)) return;

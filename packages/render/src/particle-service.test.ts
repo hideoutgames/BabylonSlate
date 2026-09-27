@@ -10,6 +10,8 @@ import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";
+import { admittedSceneParticles, createSceneStreamAdmission } from "./scene-stream-admission";
+import { createSnapshotSceneBinding } from "./snapshot-apply";
 
 /** A Basic emitter using the "mat" Material unless the payload names another. */
 function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
@@ -98,6 +100,31 @@ describe("ParticleService", () => {
   }
 
   const started = (system: unknown) => (system as ParticleSystem | undefined)?.isStarted() === true;
+
+  it("prepares a streamed particle without stalling or starting in the parent scene before publication", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    const { scene, service, emitterMesh, assign } = host({ ready: () => pending });
+    const binding = createSnapshotSceneBinding();
+    const admission = createSceneStreamAdmission(scene, binding);
+    admission.receive({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    admission.receive({ type: "spawn", actorGuid: "fx", classId: "Actor", slotId: 1,
+      sceneStreamActorGuid: "stream", streamLoadId: 1 });
+    binding.meshes.set(1, emitterMesh);
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    expect(admittedSceneParticles(scene)).toEqual([]);
+    expect(service.pendingSlotPreparation(new Set([1]))).toHaveLength(1);
+    expect(system.isStarted()).toBe(false);
+    finish();
+    await vi.waitFor(() => expect(service.playbackState("fx", "particle-1")).toBe("playing"));
+    expect(system.isStarted()).toBe(false);
+    admission.publish([1], { actorGuid: "stream", streamLoadId: 1 });
+    service.startPreparedSlots([1]);
+    expect(system.isStarted()).toBe(true);
+    service.dispose(); admission.clear();
+  });
 
   it("constructs a CPU ParticleSystem, applies billboard quads, and starts on play once its Material binds", async () => {
     const { scene, service, assign } = host();

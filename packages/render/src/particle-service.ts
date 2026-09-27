@@ -1,3 +1,4 @@
+import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
   MeshBuilder,
   type AbstractMesh,
@@ -270,6 +271,11 @@ export class ParticleService {
     return pending;
   }
 
+  startPreparedSlots(slots: readonly number[]): void {
+    const ready = new Set(slots);
+    for (const entry of this.live.values()) if (ready.has(entry.command.slotId) && entry.state === "playing") this.startSystems(entry);
+  }
+
   bindSlot(slotId: number, mesh: AbstractMesh | null): void {
     this.slotMeshes.set(slotId, mesh);
     for (const entry of this.live.values()) {
@@ -466,7 +472,7 @@ export class ParticleService {
       entry.cancel.push(() => host.onDisposeObservable.remove(disposing), () => host.onBeforeRenderObservable.remove(before), () => host.onAfterRenderObservable.remove(after));
       entry.building = false;
       if (entry.systems.some((record) => record.pending)) {
-        const readiness = { isReady: () => false };
+        const readiness = { isReady: () => isSceneStreamSlotPending(host, entry.command.slotId) };
         host.addIsReadyCheck(readiness);
         markSceneReadinessDirty(host);
         entry.preparationCheck = () => {
@@ -541,6 +547,7 @@ export class ParticleService {
       }
       record = created.record;
       const system = record.system;
+      registerSceneStreamParticle(system, entry.command.slotId);
       const ready = bindParticleMaterial(system, lease.resource);
       if (this.paused) {
         system.updateSpeed = 0;
@@ -654,7 +661,7 @@ export class ParticleService {
    * prewarm at `updateSpeed` 0 would simulate nothing and never run again.
    */
   private startSystems(entry: LiveComponent): void {
-    if (this.paused) return;
+    if (this.paused || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
     for (const record of entry.systems) {
       // A start observer may Stop or replace the entry.
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;

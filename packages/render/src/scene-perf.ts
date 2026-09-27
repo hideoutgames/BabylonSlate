@@ -18,6 +18,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
@@ -291,12 +292,21 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
-    let ready = scene.getWaitingItemsCount() === 0 && isEnvironmentLightingReady(scene) && isSceneTextureWorkReady(scene);
+    const admitted = admittedSceneMeshes(scene);
+    const meshes = admitted ?? scene.meshes;
+    let ready = (admitted !== undefined || scene.getWaitingItemsCount() === 0) && isEnvironmentLightingReady(scene);
+    const textures = admittedSceneTextures(scene, meshes);
+    if (textures) {
+      for (const texture of textures) {
+        if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`);
+        if (!texture.isRenderTarget && !texture.isReady()) ready = false;
+      }
+    } else if (!isSceneTextureWorkReady(scene)) ready = false;
     scene.prePassRenderer?.update();
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);
     const materials = new Set<Material>();
-    for (const mesh of scene.meshes) {
+    for (const mesh of meshes) {
       if (!mesh.subMeshes?.length) continue;
       // Start all consumers' compilation even when an earlier one is unready.
       if (!isMeshFrameReady(mesh)) { ready = false; continue; }
@@ -319,13 +329,14 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
         if (textures) for (let index = 0; index < textures.length; index += 1) renderTargets.add(textures.data[index]!);
       }
     }
-    for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = false;
+    for (const geometry of admitted ? new Set(meshes.flatMap((mesh) => mesh instanceof Mesh && mesh.geometry ? [mesh.geometry] : [])) : scene.geometries)
+      if (geometry.delayLoadState === 2) ready = false;
     const cameras = scene.activeCameras?.length ? scene.activeCameras : scene.activeCamera ? [scene.activeCamera] : [];
     for (const camera of cameras) {
       if (!camera.isReady(true)) ready = false;
       if (camera.outputRenderTarget) renderTargets.add(camera.outputRenderTarget);
     }
-    for (const particle of scene.particleSystems) if (!particle.isReady()) ready = false;
+    for (const particle of admittedSceneParticles(scene) ?? scene.particleSystems) if (!particle.isReady()) ready = false;
     if (scene.proceduralTexturesEnabled) {
       for (const texture of scene.proceduralTextures ?? []) if (!texture.isReady()) ready = false;
     }
@@ -335,6 +346,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
       if (!check.isReady()) ready = false;
     }
     for (const light of scene.lights) {
+      if (admitted && !light.isEnabled()) continue;
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
         if (map) renderTargets.add(map);
