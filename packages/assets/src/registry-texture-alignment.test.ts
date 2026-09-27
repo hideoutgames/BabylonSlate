@@ -39,7 +39,15 @@ async function writeTexture(
   storage: MemoryStorageAdapter,
   path: string,
   guid: string,
-  options: { usage?: string; source: [number, number]; sized?: boolean; pixels?: boolean; committed: { id: string; size: [number, number] } },
+  options: {
+    usage?: string;
+    source: [number, number];
+    sized?: boolean;
+    pixels?: boolean;
+    committed: { id: string; size: [number, number] };
+    /** `ktx2Width` / `ktx2Height` a commit recorded. */
+    recorded?: [number, number];
+  },
 ): Promise<void> {
   const [width, height] = options.source;
   const payload: Record<string, unknown> = {
@@ -47,6 +55,7 @@ async function writeTexture(
     compressionState: "compressed",
     ktx2ChunkId: options.committed.id,
     ...(options.sized === false ? {} : { width, height }),
+    ...(options.recorded ? { ktx2Width: options.recorded[0], ktx2Height: options.recorded[1] } : {}),
   };
   await storage.writeBinary(path, await encodeBabasset({
     header: { guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
@@ -121,6 +130,10 @@ describe("texture encode alignment", () => {
     });
     await writeTexture(storage, "assets/unsized-even.babasset", "unsized-even", {
       source: [32, 32], sized: false, committed: { id: KEY_MAX_2048, size: [32, 32] },
+    });
+    // Its payload size is on the grid, so a re-encode would land off it again: never requeued.
+    await writeTexture(storage, "assets/mismatched.babasset", "mismatched", {
+      source: [64, 32], committed: { id: KEY_MAX_64, size: [30, 30] }, recorded: [30, 30],
     });
     // Nothing to re-encode from: it keeps drawing its committed encode.
     await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {

@@ -1101,7 +1101,15 @@ export class AssetRegistry {
     if (this.isAtlasTexture(asset.header.guid)) return padded;
     if (padded) return false;
     const size = await this.committedKtx2Size(asset, usage, cache);
-    return size !== null && (size.width % TEXTURE_BLOCK_EDGE !== 0 || size.height % TEXTURE_BLOCK_EDGE !== 0);
+    if (size === null || (size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0)) {
+      return false;
+    }
+    // Requeue only if the re-encode can differ: padded, or under other
+    // settings. Otherwise (a payload size that disagrees with the source) it
+    // would land off the grid again and repeat after every commit.
+    const settings = this.encodeSettingsFor(asset, usage);
+    if (settings.blockAlign !== undefined) return true;
+    return asset.header.payload.ktx2ChunkId !== (await textureEncodeChunkId(settings, usage));
   }
 
   /**
