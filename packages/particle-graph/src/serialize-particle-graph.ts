@@ -32,6 +32,8 @@ export interface ParticleGraphPin {
   defaultValue?: number[];
   typeLabel?: string;
   description?: string;
+  /** Particle outputs feed one input: a new wire from one replaces its old wire. */
+  singleLink?: true;
 }
 
 function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGraphPin {
@@ -46,6 +48,7 @@ function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGra
         : { kind: pin.type.kind },
     ...(pin.defaultValue ? { defaultValue: [...pin.defaultValue] } : {}),
     ...(pin.description ? { description: pin.description } : {}),
+    ...(direction === "out" && pin.type.kind === "particle" ? { singleLink: true as const } : {}),
   };
 }
 
@@ -281,33 +284,24 @@ export function particlePinsAreCompatible(outgoing: CanvasPin, incoming: CanvasP
 }
 
 type ConnectionGraph = {
-  nodes: ReadonlyArray<{ id: string; type: string }>;
-  edges: ReadonlyArray<{ source: string; target: string; sourceHandle?: string }>;
+  edges: ReadonlyArray<{ source: string; target: string }>;
 };
 
 /**
- * Host veto after pin compatibility (`GraphEditor.canConnect`): a Particle
- * output feeds one input, which keeps the spine linear, and no connection may
- * close a loop.
+ * Host veto after pin compatibility (`GraphEditor.canConnect`): no connection
+ * may close a loop. A linked pin is not refused: the canvas replaces the old
+ * wire on a Particle output (`singleLink`) or on any input, which keeps the
+ * spine linear.
  */
 export function particleConnectionIsAllowed(
   graph: ConnectionGraph,
   connection: { source: string; target: string; sourceHandle: string; targetHandle: string },
 ): boolean {
   if (connection.source === connection.target) return false;
-  const source = graph.nodes.find((node) => node.id === connection.source);
-  const sourcePin = source
-    ? particleNodeDefinition(source.type)?.outputs.find((pin) => pin.id === connection.sourceHandle)
-    : undefined;
-  if (
-    sourcePin?.type.kind === "particle" &&
-    graph.edges.some(
-      (edge) => edge.source === connection.source && (edge.sourceHandle ?? "out") === connection.sourceHandle,
-    )
-  ) {
-    return false;
-  }
   // Adding source → target closes a loop when target already reaches source.
+  // The wires it replaces never change the answer: the walk stops at source
+  // before following source's old output wire, and the target input's old
+  // wire only leads back to target.
   const seen = new Set<string>();
   const stack = [connection.target];
   while (stack.length > 0) {

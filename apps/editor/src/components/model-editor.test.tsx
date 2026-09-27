@@ -43,6 +43,9 @@ vi.mock("../context/document-context", () => ({
   }),
 }));
 
+if (typeof window.PointerEvent === "undefined")
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+
 afterEach(() => {
   playStub.ensureSharedEngine.mockReset();
   playStub.ensureSharedEngine.mockReturnValue(null);
@@ -50,6 +53,23 @@ afterEach(() => {
 });
 
 describe("ModelEditor", () => {
+  it("commits the Auto LOD opt-out without changing slots", () => {
+    const onChange = vi.fn();
+    render(
+      <ModelEditor
+        payload={{ materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }] }}
+        onChange={onChange}
+      />,
+    );
+    const toggle = screen.getByRole("checkbox", { name: "Auto LOD" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      autoLod: false,
+      materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+    }));
+  });
+
   it("exposes named Material slot pickers and omits count fields", () => {
     render(
       <ModelEditor

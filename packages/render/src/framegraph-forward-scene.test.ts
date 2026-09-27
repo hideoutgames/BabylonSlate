@@ -1,6 +1,8 @@
 import {
   FreeCamera,
   MeshBuilder,
+  NodeMaterial,
+  NodeMaterialModes,
   NullEngine,
   NullEngineOptions,
   PassPostProcess,
@@ -8,6 +10,7 @@ import {
   RenderTargetTexture,
   RawTexture,
   Scene,
+  ScenePerformancePriority,
   ShadowGenerator,
   StandardMaterial,
   Vector3,
@@ -19,8 +22,10 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
+import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { ParticleService } from "./particle-service";
 import {
   setSceneEffectsEnabled,
   updateSceneRenderingSettings,
@@ -416,6 +421,39 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(scene.objectRenderers).toEqual([renderer]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
+});
+
+it("draws Play particle systems on graph frames, not only on classic fallback frames", async () => {
+  const { scene, camera } = host();
+  scene.performancePriority = ScenePerformancePriority.Intermediate;
+  const material = new NodeMaterial("particle", scene);
+  material.mode = NodeMaterialModes.Particle;
+  material.createEffectForParticles = () => {};
+  const service = new ParticleService({
+    scene,
+    gpuSupported: false,
+    statsScope: "local",
+    acquireMaterial: (_guid, owner) => ({ key: owner.instanceKey, resource: material, ready: undefined, release: () => {} }),
+  });
+  service.setLibrary({
+    emitters: new Map([["emitter", { kind: "basic", payload: normalizeParticleEmitterPayload({ render: { materialGuid: "mat" } }) }]]),
+    systems: new Map([["system", { emitterGuids: ["emitter"], space: "world", previewSkybox: true }]]),
+  });
+  service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "fx", componentId: "particle-1",
+    particleSystemGuid: "system", play: true });
+  const system = scene.particleSystems[0]!;
+  await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+  // NullEngine uploads no texture and compiles no particle effect: stub only readiness and the native draw.
+  vi.spyOn(system.particleTexture!, "isReady").mockReturnValue(true);
+  vi.spyOn(system, "isReady").mockReturnValue(true);
+  const draw = vi.spyOn(system, "render").mockReturnValue(0);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // Babylon draws a particle system only when its emitter survives the graph's Cull Objects task.
+  expect(draw).toHaveBeenCalledTimes(3);
+  graph.dispose();
+  service.dispose();
 });
 
 it("resizes settings-only effect targets together with the output depth", async () => {

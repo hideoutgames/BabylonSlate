@@ -13,6 +13,7 @@ import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-cont
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
+import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
@@ -67,6 +68,8 @@ export type RenderDiagnostics = {
   };
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: number;
+  /** Visible automatic-LOD meshes, how many draw a simplified level, and the triangles that saves. */
+  autoLod: ReturnType<typeof autoLodDiagnostics>;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
   resources: {
     meshes: number;
@@ -149,8 +152,9 @@ export function createRenderDiagnostics(
       ],
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),
+      autoLod: autoLodDiagnostics(scene),
       resources: {
-        meshes: scene.meshes.length,
+        meshes: liveMeshCount(scene),
         materials: scene.materials.length,
         textures: scene.textures.length,
         cachedTextures: engine.getLoadedTexturesCache().length,

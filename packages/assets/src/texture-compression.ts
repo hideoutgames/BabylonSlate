@@ -15,13 +15,20 @@ export type TextureUsage =
   | "ui"
   | "font"
   | "pixelArt"
-  | "skybox";
+  | "skybox"
+  | "particle";
 
 export interface TextureEncodeSettings {
   format: "uastc" | "etc1s";
   quality: number;
   maxDimension: number;
   generateMipmaps: boolean;
+  /**
+   * Round each encoded base edge up to a multiple of this after the
+   * max-dimension clamp. Set only for Particle usage; see
+   * {@link textureEncodeBlockAlign}.
+   */
+  blockAlign?: number;
 }
 
 export const DEFAULT_TEXTURE_ENCODE_SETTINGS: TextureEncodeSettings = {
@@ -31,7 +38,7 @@ export const DEFAULT_TEXTURE_ENCODE_SETTINGS: TextureEncodeSettings = {
   generateMipmaps: true,
 };
 
-/** Policy defaults: pixel art / sprites / UI / fonts stay uncompressed. */
+/** Policy defaults: pixel art / sprites / UI / fonts / skyboxes stay uncompressed. */
 export function shouldCompressTexture(usage: TextureUsage | string): boolean {
   return (
     usage !== "pixelArt" &&
@@ -59,6 +66,50 @@ export function clampDimension(
   };
 }
 
+/**
+ * Compressed GPU block edge. WebGPU rejects ASTC 4x4 / BC7 textures whose
+ * base width or height is not a multiple of it, which invalidates the frame.
+ */
+export const TEXTURE_BLOCK_EDGE = 4;
+
+/** Encode block alignment for a Texture usage: Particle only, else none. */
+export function textureEncodeBlockAlign(
+  usage: TextureUsage | string,
+): number | undefined {
+  return usage === "particle" ? TEXTURE_BLOCK_EDGE : undefined;
+}
+
+/** Round each edge up to a multiple of `align` (no-op when unset or <= 1). */
+export function alignEncodeSize(
+  width: number,
+  height: number,
+  align?: number,
+): { width: number; height: number } {
+  if (!align || align <= 1) return { width, height };
+  return {
+    width: Math.ceil(width / align) * align,
+    height: Math.ceil(height / align) * align,
+  };
+}
+
+/**
+ * Final encode size: clamp the longest edge to `maxDimension`, then round up
+ * to `blockAlign`. The whole image is resampled to this size, so an aligned
+ * edge may exceed `maxDimension` (1x1 clamped to 1 encodes at 4x4).
+ * `apps/editor/public/basis/encode-worker.js` mirrors this in plain JS.
+ */
+export function textureEncodeSize(
+  width: number,
+  height: number,
+  settings: Pick<TextureEncodeSettings, "maxDimension" | "blockAlign">,
+): { width: number; height: number; clamped: boolean } {
+  const clamped = clampDimension(width, height, settings.maxDimension);
+  return {
+    ...alignEncodeSize(clamped.width, clamped.height, settings.blockAlign),
+    clamped: clamped.clamped,
+  };
+}
+
 /** GPU/encode clamp: min(optional per-asset max, project max). Source size is applied in decode. */
 export function effectiveTextureMaxDimension(
   assetMax: unknown,
@@ -73,7 +124,8 @@ export function effectiveTextureMaxDimension(
 
 /**
  * Deterministic settings hash used as the KTX2 chunk id suffix so changing
- * encode settings invalidates only the compressed variant.
+ * encode settings invalidates only the compressed variant. `blockAlign` is
+ * keyed only when set so unaligned encodes keep their existing ids.
  */
 export async function encodeSettingsHash(
   settings: TextureEncodeSettings,
@@ -83,6 +135,7 @@ export async function encodeSettingsHash(
     quality: settings.quality,
     maxDimension: settings.maxDimension,
     generateMipmaps: settings.generateMipmaps,
+    ...(settings.blockAlign ? { blockAlign: settings.blockAlign } : {}),
   });
   const data = new TextEncoder().encode(payload);
   const digest = await crypto.subtle.digest("SHA-256", data);
