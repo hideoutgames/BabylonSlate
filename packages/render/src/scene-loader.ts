@@ -70,6 +70,7 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
+import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
 import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
@@ -297,7 +298,7 @@ function visualComponentsOf(
   const streaming = actor.components.find((component) => component.classId === "SceneStreamingComponent");
   if (streaming) {
     const text = actor.components.find((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true);
-    return [streaming, {
+    return [{ ...streaming, parentId: null, transform: authoredComponentActorTransform(actor, streaming) }, {
       ...(text ?? { id: `${streaming.id}:label`, classId: "Text3DComponent",
         transform: { ...identitySerializedTransform(), position: [0, 0.8, 0] } }),
       parentId: streaming.id,
