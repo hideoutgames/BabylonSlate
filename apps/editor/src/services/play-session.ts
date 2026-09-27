@@ -512,7 +512,6 @@ export function startPlaySession(options: {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
@@ -623,7 +622,6 @@ export function startPlaySession(options: {
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
     retargetAnimationLoads: options.retargetAnimationLoads,
-    audioBytes: options.audioBytes,
     loadAudioSourceBytes: options.loadAudioSourceBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,

@@ -133,7 +133,6 @@ export interface PlayOverlayProps {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
@@ -217,7 +216,6 @@ export function PlayOverlay({
   modelPayloads,
   modelClipAnimationGuids,
   retargetAnimationLoads,
-  audioBytes,
   loadAudioSourceBytes,
   audioLibrary,
   animClipCatalog,
@@ -343,8 +341,6 @@ export function PlayOverlay({
   modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
   const retargetAnimationLoadsRef = useRef(retargetAnimationLoads);
   retargetAnimationLoadsRef.current = retargetAnimationLoads;
-  const audioBytesRef = useRef(audioBytes);
-  audioBytesRef.current = audioBytes;
   const loadAudioSourceBytesRef = useRef(loadAudioSourceBytes);
   loadAudioSourceBytesRef.current = loadAudioSourceBytes;
   const audioLibraryRef = useRef(audioLibrary);
@@ -504,7 +500,6 @@ export function PlayOverlay({
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
       retargetAnimationLoads: retargetAnimationLoadsRef.current,
-      audioBytes: audioBytesRef.current,
       loadAudioSourceBytes: loadAudioSourceBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       animClipCatalog: animClipCatalogRef.current,
