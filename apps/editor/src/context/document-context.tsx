@@ -735,8 +735,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const secretStore = useMemo(() => createSecretStore(), []);
   const nativeHttp = useMemo(() => createNativeHttp(), []);
   const [sourceControlTick, setSourceControlTick] = useState(0);
-  /** Project guid whose source-control configuration has finished loading. */
-  const [sourceControlConfiguredFor, setSourceControlConfiguredFor] = useState<string | null>(null);
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
   const mtimeSnapshotRef = useRef<{
@@ -865,23 +863,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sourceControlRef.current.dispose();
       return;
     }
-    const guid = projectService.guid;
-    let current = true;
     void sourceControlRef.current.configure({
       settings:
         projectDocument.settings.sourceControl ??
         DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-      projectGuid: guid,
+      projectGuid: projectService.guid,
       platform: getHostPlatform(),
       testMode: isTestModeEnabled(),
       secretStore,
       nativeHttp,
-    }).then(() => {
-      if (current) setSourceControlConfiguredFor(guid);
     });
-    return () => {
-      current = false;
-    };
   }, [
     nativeHttp,
     projectDocument,
@@ -2542,17 +2533,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   // The texture alignment pass re-encodes Textures in the background, so it
-  // waits until this project's source-control locks are known.
-  const lockSource = sourceControlRef.current;
+  // runs only while this project's source-control locks are known.
   const textureGuardProject =
-    projectDocument &&
-    sourceControlConfiguredFor !== null &&
-    sourceControlConfiguredFor === projectService.guid &&
-    (!lockSource.enabled || lockSource.refreshState.lastSuccessAt !== null)
-      ? sourceControlConfiguredFor
+    projectDocument && sourceControlRef.current.locksKnownFor(projectService.guid)
+      ? projectService.guid
       : null;
   useEffect(() => {
     if (!textureGuardProject) return;
+    const sourceControl = sourceControlRef.current;
     // An open Texture tab's Usage may be an unsaved Details edit that already
     // re-encoded; the pass must not undo it with the saved Usage.
     const usageFor = (guid: string): string | undefined => {
@@ -2564,7 +2552,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
       return typeof usage === "string" ? usage : undefined;
     };
-    projectService.setTextureWriteGuard((guid) => textureUsageBlockedReason(guid) === null, { usageFor });
+    // Recheck at write time: reconfiguring source control forgets the locks
+    // before this effect sees it.
+    projectService.setTextureWriteGuard(
+      (guid) => sourceControl.locksKnownFor(textureGuardProject) && textureUsageBlockedReason(guid) === null,
+      { usageFor },
+    );
     void projectService.reconcileTextureAlignment();
     return () => projectService.setTextureWriteGuard(null);
   }, [documentService, projectService, textureGuardProject, textureUsageBlockedReason]);

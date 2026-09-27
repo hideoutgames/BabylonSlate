@@ -100,6 +100,56 @@ describe("SourceControlService", () => {
     expect(service.lockStateForPath("assets/a.babasset")).toBeNull();
     await service.autoLock("assets/a.babasset");
     expect(fake.snapshot()).toHaveLength(0);
+    // Nothing to wait for once configured; closing the project forgets it.
+    expect(service.locksKnownFor("proj")).toBe(true);
+    service.dispose();
+    expect(service.locksKnownFor("proj")).toBe(false);
+  });
+
+  it("knows a project's locks only after a lock refresh, and not while the reopened project's provider loads", async () => {
+    const service = new SourceControlService();
+    const secretStore = new MemorySecretStore();
+    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore, nativeHttp: null };
+    const fake = new FakeLockProvider();
+    let verified!: () => void;
+    const verifying = new Promise<void>((resolve) => { verified = resolve; });
+    const verify = fake.verify.bind(fake);
+    vi.spyOn(fake, "verify").mockImplementationOnce(async () => {
+      await verifying;
+      return verify();
+    });
+    try {
+      await service.configure({ ...config, fake });
+      service.pausePolling();
+      expect(service.locksKnownFor("proj")).toBe(false);
+      verified();
+      await vi.waitFor(() => expect(service.locksKnownFor("proj")).toBe(true));
+      expect(service.locksKnownFor("other")).toBe(false);
+
+      // Close Project, then open it again: its provider is assigned after an await.
+      service.dispose();
+      expect(service.locksKnownFor("proj")).toBe(false);
+      let tokenRead!: () => void;
+      vi.spyOn(secretStore, "get").mockReturnValueOnce(new Promise((resolve) => { tokenRead = () => resolve(null); }));
+      const reopening = service.configure({ ...config, fake: new FakeLockProvider() });
+      expect(service.locksKnownFor("proj")).toBe(false);
+      tokenRead();
+      await reopening;
+      service.pausePolling();
+      await service.refresh();
+      expect(service.locksKnownFor("proj")).toBe(true);
+
+      // Pointing it at another repository forgets the locks until the new provider refreshes.
+      let otherTokenRead!: () => void;
+      vi.spyOn(secretStore, "get").mockReturnValueOnce(new Promise((resolve) => { otherTokenRead = () => resolve(null); }));
+      const reconfiguring = service.configure({ ...config, settings: { ...enabled, repositoryUrl: "https://github.com/org/other" }, fake: new FakeLockProvider() });
+      expect(service.locksKnownFor("proj")).toBe(false);
+      otherTokenRead();
+      await reconfiguring;
+      service.pausePolling();
+      await service.refresh();
+      expect(service.locksKnownFor("proj")).toBe(true);
+    } finally { service.dispose(); }
   });
 
   it("auto-locks on first edit and skips a second attempt", async () => {

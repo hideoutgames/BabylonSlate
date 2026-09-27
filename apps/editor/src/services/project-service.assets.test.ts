@@ -715,9 +715,9 @@ describe("project documents as .babasset", () => {
     await service.loadCurrentProject();
     const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
     const guid = texture!.header.guid;
-    // The editor's guard: the open Texture tab's Usage, once Details changes it.
-    let tabUsage: string | undefined;
-    service.setTextureWriteGuard(() => true, { usageFor: (id) => (id === guid ? tabUsage : undefined) });
+    // The editor's guard: an open Texture tab's Usage, once Details changes it.
+    const tabUsages = new Map<string, string>();
+    service.setTextureWriteGuard(() => true, { usageFor: (id) => tabUsages.get(id) });
     const payload = () => service.registry!.getByGuid(guid)!.header.payload;
     const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
     await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
@@ -725,7 +725,7 @@ describe("project documents as .babasset", () => {
     const opened = (await service.loadDocument("texture", texture!.path)) as Record<string, unknown>;
 
     // Details sets Usage to Particle without saving: Particle pads even an atlas.
-    tabUsage = "particle";
+    tabUsages.set(guid, "particle");
     await service.retryTextureEncoding(guid, { force: true, usage: "particle" });
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
     const particleChunkId = payload().ktx2ChunkId;

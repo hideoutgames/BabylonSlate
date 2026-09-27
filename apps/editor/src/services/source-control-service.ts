@@ -87,9 +87,20 @@ export class SourceControlService {
   private providerRevision = 0;
   private lockRefreshState: LockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
   private lastOperationError: string | null = null;
+  /** Project whose configure() finished; null while a new provider loads and after dispose(). */
+  private configuredProject: string | null = null;
 
   get refreshState(): Readonly<LockRefreshState> {
     return this.lockRefreshState;
+  }
+
+  /**
+   * Whether `projectGuid`'s locks are known: configure() finished for it and,
+   * with a lock provider, a lock refresh has succeeded since.
+   */
+  locksKnownFor(projectGuid: string | null): boolean {
+    if (projectGuid === null || this.configuredProject !== projectGuid) return false;
+    return !this.enabled || this.lockRefreshState.lastSuccessAt !== null;
   }
 
   get operationError(): string | null {
@@ -187,6 +198,7 @@ export class SourceControlService {
       this.refreshRevision += 1;
       this.providerRevision += 1;
       this.lockRefreshState = { ...this.lockRefreshState, status: "idle", error: null };
+      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -200,6 +212,7 @@ export class SourceControlService {
         });
       }
       this.scheduler.start();
+      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -212,10 +225,12 @@ export class SourceControlService {
     this.scheduler = null;
     this.provider = null;
     this.fake = null;
+    this.configuredProject = null;
     this.locksByPath.clear();
     this.autoLockAttempted.clear();
     const hostOk = isSourceControlHost(input.platform, input.testMode);
     if (!hostOk) {
+      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -253,6 +268,7 @@ export class SourceControlService {
       });
       this.scheduler.start();
     }
+    this.configuredProject = input.projectGuid;
     this.emit();
   }
 
@@ -265,6 +281,7 @@ export class SourceControlService {
     this.scheduler = null;
     this.provider = null;
     this.fake = null;
+    this.configuredProject = null;
     this.providerIdentity = "";
     this.locksByPath.clear();
     this.editMode.clear();
