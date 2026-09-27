@@ -129,7 +129,6 @@ import {
 import { createProjectEngineController } from "../lib/project-engine";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
-import { ProjectRenderingContext } from "./project-rendering-context";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -163,7 +162,6 @@ interface PlayContextValue {
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
-  stopPlay: () => void;
   registerSharedEngine: (engine: AbstractEngine | null) => void;
   ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
@@ -180,8 +178,6 @@ const LiveBtStateContext = createContext<LiveBtState | null>(null);
 const PlayDiagnosticsActionsContext = createContext<Pick<
   PlayContextValue, "appendLog" | "reportBtState"
 > | null>(null);
-/** Isolated from PlayContext so DocumentWorkspace does not rerender on logs. */
-const OverlayPlayingContext = createContext(false);
 
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
@@ -1405,14 +1401,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
-      stopPlay: () => {
-        if (previewOpen) {
-          closePreview();
-          return;
-        }
-        setPlaying(false);
-        setSessionPlayScene(null);
-      },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
       sharedEngineGeneration,
@@ -1450,226 +1438,214 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       appendLog,
       reportBtState,
-      closePreview,
-      previewOpen,
     ],
   );
 
   return (
     <PlayContext.Provider value={value}>
-      <ProjectRenderingContext.Provider value={{
-        phase: projectEngineState.phase,
-        requestedBackend,
-        effectiveBackend: projectEngineState.session?.effectiveBackend ?? null,
-        fallbackReason: projectEngineState.session?.fallbackReason,
-        deferredUntilStop: (playing || previewOpen) && projectEngineState.session?.requestedBackend !== requestedBackend,
-      }}>
-      <OverlayPlayingContext.Provider value={playing && !previewOpen}>
-        {children}
-        {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
-          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
-          <ProjectRenderingDialog state={projectEngineState}
-            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
-            onDismiss={() => setRenderingFailureDismissed(true)} />
-        ) : null}
-        {previewPhase || previewPreparationError ? (
-          <PreparingPreviewDialog
-            open
-            phase={previewPhase}
-            error={previewPreparationError}
-            canCancel={previewCanCancel}
-            onRetry={() => { void requestPreviewBuild(); }}
-            onCancel={() => {
-              previewRequestRef.current += 1;
-              setPreviewPhase(null);
-              setPreviewPreparationError(null);
-              preparingRef.current = false;
-              setPreparing(false);
-            }}
-          />
-        ) : null}
-        <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
-          <AlertDialogContent data-testid="startup-scene-alert">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
-              <AlertDialogDescription>
-                {MISSING_STARTUP_SCENE_MESSAGE}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogAction
-                data-testid="startup-scene-alert-ok"
-                onClick={() => setStartupAlertOpen(false)}
-              >
-                OK
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {prepareState ? (
-          <PlayPrepareDialog
-            open
-            phase={prepareState.phase}
-            dirtyNames={prepareState.dirtyNames}
-          />
-        ) : null}
-        <PlayBlockedDialog
-          open={playBlockedOpen}
-          diagnostics={blockedDiagnostics}
-          onOpenChange={setPlayBlockedOpen}
-          onNavigate={(d) => {
-            setFocusDiagnostic(d);
-            const revealId = documentIdToRevealForDiagnostic(
-              d,
-              openDocuments.map((doc) => doc.id),
-            );
-            if (revealId) setActiveDocument(revealId);
-            setPlayBlockedOpen(false);
-          }}
-          onPlayAnyway={() => {
-            setPlayBlockedOpen(false);
-            launchPlay({
-              injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
-              scripts: pendingScriptsRef.current ?? scripts,
-            });
+      {children}
+      {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
+        (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
+        <ProjectRenderingDialog state={projectEngineState}
+          onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
+          onDismiss={() => setRenderingFailureDismissed(true)} />
+      ) : null}
+      {previewPhase || previewPreparationError ? (
+        <PreparingPreviewDialog
+          open
+          phase={previewPhase}
+          error={previewPreparationError}
+          canCancel={previewCanCancel}
+          onRetry={() => { void requestPreviewBuild(); }}
+          onCancel={() => {
+            previewRequestRef.current += 1;
+            setPreviewPhase(null);
+            setPreviewPreparationError(null);
+            preparingRef.current = false;
+            setPreparing(false);
           }}
         />
-        {playing && !previewOpen && engineRef.current ? (
-          <PlayOverlay
-            sharedEngine={engineRef.current}
-            injectFixtureThrow={injectThrow}
-            scripts={scripts}
-            physics={playPhysics}
-            sceneAssetGuid={playSceneGuid}
-            scene={playScene?.scene}
-            project={projectDocument?.metadata}
-            gameInstanceClass={resolveGameInstanceClass(
-              projectDocument?.settings,
-              playScene?.scene,
-            )}
-            scenes={playSceneLibrary}
-            sceneLayers={playSceneLayers}
-            animGraphs={playAnimGraphs}
-            behaviourTrees={playBehaviourTrees}
-            blackboards={playBlackboards}
-            spritePayloads={playSpritePayloads}
-            spriteAnimationPayloads={playSpriteAnimationPayloads}
-            waterPayloads={playWaters}
-            tilemapPayloads={playTilemaps}
-            tilesetPayloads={playTilesets}
-            textureBytes={playTextureBytes}
-            texturePixelSizes={playTexturePixelSizes}
-            fontFacetypeBytes={playFontFacetypeBytes}
-            areaEmissions={playAreaEmissions}
-            fontMsdfJson={playFontMsdfJson}
-            fontMsdfPng={playFontMsdfPng}
-            fontFaceEntries={playFontFaceEntries}
-            fontCssStack={playFontCssStack}
-            fontCssStackByGuid={playFontCssStackByGuid}
-            modelBytes={playModelBytes}
-            modelPayloads={playModelPayloads}
-            modelClipAnimationGuids={playModelClipAnimationGuids}
-            retargetAnimationLoads={playRetargetAnimationLoads}
-            loadAudioSourceBytes={playAudioSourceLoader}
-            audioLibrary={playAudioLibrary}
-            animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
-            particleLibrary={playParticleLibrary}
-            materialDocuments={playMaterialDocuments}
-            materialFunctions={playMaterialFunctions}
-            textureName={(guid) => assetRegistry?.getByGuid(guid)?.header.name}
-            postProcessingEnabled={postProcessingEnabled}
-            hardwareScalingLevel={hardwareScalingLevel}
-            pauseOnPlay={pauseOnPlay}
-            navmeshBytes={playNavmeshBytes}
-            audioReverbBytes={playAudioReverbBytes}
-            audioProjectSettings={projectDocument?.settings.audio}
-            inputAssets={playInputAssets}
-            inputMappings={projectDocument?.settings.input}
-            sortingLayers={projectDocument?.settings.twoD.sortingLayers}
-            pixelsPerUnit={
-              projectDocument?.settings.twoD.pixelsPerUnit ?? 100
-            }
-            pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
-            touchMinTargetPx={
-              projectDocument?.settings.touchMinTargetPx ?? 44
-            }
-            frameCap={
-              projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
-            }
-            infiniteLoopDetection={
-              projectDocument?.settings.infiniteLoopDetection ??
-              DEFAULT_INFINITE_LOOP_DETECTION
-            }
-            loopCount={
-              projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
-            }
-            playPreview={
-              projectDocument?.settings.playPreview ??
-              DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
-            }
-            render={projectDocument?.settings.render}
-            onClose={handleClose}
-          />
-        ) : null}
-        {previewOpen ? (
-          <PreviewBuildOverlay
-            src={previewSrc}
-            iframeRef={previewIframeRef}
-            error={previewError}
-            onClose={closePreview}
-            onLoad={sendPreviewPack}
-            onTrace={(trace) => void openRecordedTrace(trace)}
-          />
-        ) : null}
-        <PreviewSessionReport
-          open={reportOpen}
-          entries={reportEntries}
-          dropped={dropped}
-          onOpenChange={setReportOpen}
-          onNavigate={(entry) => {
-            const nav = sessionReportNavigation(entry, {
-              getByGuid: (guid) => assetRegistry?.getByGuid(guid),
-            });
-            setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
-            setFocusDiagnostic({
-              severity: entry.severity,
-              code: entry.code,
-              message: entry.message,
-              assetGuid: entry.assetGuid ?? "",
-              graphId: entry.graphId ?? "",
-              nodeId: nav.focusedNodeId || undefined,
-              bodyLine: nav.bodyLine ?? entry.bodyLine,
-            });
-            if (nav.document) {
-              void openDocument(nav.document);
-            }
-            setReportOpen(false);
-            appendLog(
-              `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
-            );
-          }}
+      ) : null}
+      <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
+        <AlertDialogContent data-testid="startup-scene-alert">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
+            <AlertDialogDescription>
+              {MISSING_STARTUP_SCENE_MESSAGE}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="startup-scene-alert-ok"
+              onClick={() => setStartupAlertOpen(false)}
+            >
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {prepareState ? (
+        <PlayPrepareDialog
+          open
+          phase={prepareState.phase}
+          dirtyNames={prepareState.dirtyNames}
         />
-        {/* Focus marker for Playwright / graph navigation hook. */}
-        {focusedNodeId ? (
-          <span
-            className="sr-only"
-            data-testid="focused-graph-node"
-            data-node-id={focusedNodeId}
-          >
-            {focusedNodeId}
-          </span>
-        ) : null}
-        {lastRuntimeMode ? (
-          <span
-            className="sr-only"
-            data-testid="play-last-runtime"
-            data-mode={lastRuntimeMode}
-          >
-            {lastRuntimeMode}
-          </span>
-        ) : null}
-      </OverlayPlayingContext.Provider>
-      </ProjectRenderingContext.Provider>
+      ) : null}
+      <PlayBlockedDialog
+        open={playBlockedOpen}
+        diagnostics={blockedDiagnostics}
+        onOpenChange={setPlayBlockedOpen}
+        onNavigate={(d) => {
+          setFocusDiagnostic(d);
+          const revealId = documentIdToRevealForDiagnostic(
+            d,
+            openDocuments.map((doc) => doc.id),
+          );
+          if (revealId) setActiveDocument(revealId);
+          setPlayBlockedOpen(false);
+        }}
+        onPlayAnyway={() => {
+          setPlayBlockedOpen(false);
+          launchPlay({
+            injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
+            scripts: pendingScriptsRef.current ?? scripts,
+          });
+        }}
+      />
+      {playing && !previewOpen && engineRef.current ? (
+        <PlayOverlay
+          sharedEngine={engineRef.current}
+          injectFixtureThrow={injectThrow}
+          scripts={scripts}
+          physics={playPhysics}
+          sceneAssetGuid={playSceneGuid}
+          scene={playScene?.scene}
+          project={projectDocument?.metadata}
+          gameInstanceClass={resolveGameInstanceClass(
+            projectDocument?.settings,
+            playScene?.scene,
+          )}
+          scenes={playSceneLibrary}
+          sceneLayers={playSceneLayers}
+          animGraphs={playAnimGraphs}
+          behaviourTrees={playBehaviourTrees}
+          blackboards={playBlackboards}
+          spritePayloads={playSpritePayloads}
+          spriteAnimationPayloads={playSpriteAnimationPayloads}
+          waterPayloads={playWaters}
+          tilemapPayloads={playTilemaps}
+          tilesetPayloads={playTilesets}
+          textureBytes={playTextureBytes}
+          texturePixelSizes={playTexturePixelSizes}
+          fontFacetypeBytes={playFontFacetypeBytes}
+          areaEmissions={playAreaEmissions}
+          fontMsdfJson={playFontMsdfJson}
+          fontMsdfPng={playFontMsdfPng}
+          fontFaceEntries={playFontFaceEntries}
+          fontCssStack={playFontCssStack}
+          fontCssStackByGuid={playFontCssStackByGuid}
+          modelBytes={playModelBytes}
+          modelPayloads={playModelPayloads}
+          modelClipAnimationGuids={playModelClipAnimationGuids}
+          retargetAnimationLoads={playRetargetAnimationLoads}
+          loadAudioSourceBytes={playAudioSourceLoader}
+          audioLibrary={playAudioLibrary}
+          animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
+          particleLibrary={playParticleLibrary}
+          materialDocuments={playMaterialDocuments}
+          materialFunctions={playMaterialFunctions}
+          textureName={(guid) => assetRegistry?.getByGuid(guid)?.header.name}
+          postProcessingEnabled={postProcessingEnabled}
+          hardwareScalingLevel={hardwareScalingLevel}
+          pauseOnPlay={pauseOnPlay}
+          navmeshBytes={playNavmeshBytes}
+          audioReverbBytes={playAudioReverbBytes}
+          audioProjectSettings={projectDocument?.settings.audio}
+          inputAssets={playInputAssets}
+          inputMappings={projectDocument?.settings.input}
+          sortingLayers={projectDocument?.settings.twoD.sortingLayers}
+          pixelsPerUnit={
+            projectDocument?.settings.twoD.pixelsPerUnit ?? 100
+          }
+          pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
+          touchMinTargetPx={
+            projectDocument?.settings.touchMinTargetPx ?? 44
+          }
+          frameCap={
+            projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+          }
+          infiniteLoopDetection={
+            projectDocument?.settings.infiniteLoopDetection ??
+            DEFAULT_INFINITE_LOOP_DETECTION
+          }
+          loopCount={
+            projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
+          }
+          playPreview={
+            projectDocument?.settings.playPreview ??
+            DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
+          }
+          render={projectDocument?.settings.render}
+          onClose={handleClose}
+        />
+      ) : null}
+      {previewOpen ? (
+        <PreviewBuildOverlay
+          src={previewSrc}
+          iframeRef={previewIframeRef}
+          error={previewError}
+          onClose={closePreview}
+          onLoad={sendPreviewPack}
+          onTrace={(trace) => void openRecordedTrace(trace)}
+        />
+      ) : null}
+      <PreviewSessionReport
+        open={reportOpen}
+        entries={reportEntries}
+        dropped={dropped}
+        onOpenChange={setReportOpen}
+        onNavigate={(entry) => {
+          const nav = sessionReportNavigation(entry, {
+            getByGuid: (guid) => assetRegistry?.getByGuid(guid),
+          });
+          setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
+          setFocusDiagnostic({
+            severity: entry.severity,
+            code: entry.code,
+            message: entry.message,
+            assetGuid: entry.assetGuid ?? "",
+            graphId: entry.graphId ?? "",
+            nodeId: nav.focusedNodeId || undefined,
+            bodyLine: nav.bodyLine ?? entry.bodyLine,
+          });
+          if (nav.document) {
+            void openDocument(nav.document);
+          }
+          setReportOpen(false);
+          appendLog(
+            `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
+          );
+        }}
+      />
+      {/* Focus marker for Playwright / graph navigation hook. */}
+      {focusedNodeId ? (
+        <span
+          className="sr-only"
+          data-testid="focused-graph-node"
+          data-node-id={focusedNodeId}
+        >
+          {focusedNodeId}
+        </span>
+      ) : null}
+      {lastRuntimeMode ? (
+        <span
+          className="sr-only"
+          data-testid="play-last-runtime"
+          data-mode={lastRuntimeMode}
+        >
+          {lastRuntimeMode}
+        </span>
+      ) : null}
     </PlayContext.Provider>
   );
 }
@@ -1684,11 +1660,6 @@ export function usePlay(): PlayContextValue {
 
 export function useOptionalPlay(): PlayContextValue | null {
   return useContext(PlayContext);
-}
-
-/** Overlay Play (not Preview Build). Stable while the session runs. */
-export function useOverlayPlaying(): boolean {
-  return useContext(OverlayPlayingContext);
 }
 
 export function useOutputLog(): { lines: string[] } {

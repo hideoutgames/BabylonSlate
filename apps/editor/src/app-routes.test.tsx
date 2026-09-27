@@ -29,7 +29,6 @@ vi.mock("./context/document-context", () => ({
     createFromTemplate: async () => {},
     openProject: async () => {},
     openListedProject: async () => {},
-    renameListedProject: async () => {},
     updateListedProject: async () => {},
     removeListedProject: async () => {},
     reconnectProject: async () => {},

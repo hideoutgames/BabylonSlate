@@ -71,7 +71,7 @@ Editing Details on a sourced component records `overrideKeys`. Reset (and typing
 
 `SceneEditingProvider` (`apps/editor/src/context/scene-editing-context.tsx`) is shared by viewport, outliner, and details:
 
-- `selectedActorIds`, `selectActor` (single or additive), `setSelectedActorIds`, `isSelected`. Outliner Ctrl/Shift/Meta click and viewport Ctrl/Meta/Shift tap call `selectActor(id, additive)` for actors; Outliner additive also toggles folders in panel state. TreeView two-finger tap range-selects visible Outliner rows (folders and actors). Details with more than one actor uses a **N Actors** heading.
+- `selectedActorIds`, `selectActor` (single or additive), `setSelectedActorIds`. Outliner Ctrl/Shift/Meta click and viewport Ctrl/Meta/Shift tap call `selectActor(id, additive)` for actors; Outliner additive also toggles folders in panel state. TreeView two-finger tap range-selects visible Outliner rows (folders and actors). Details with more than one actor uses a **N Actors** heading.
 - `gizmoTool` / `setGizmoTool` (`translate` \| `rotate` \| `scale` \| `none`)
 - `dragSelectActive` / `setDragSelectActive` — one-shot Drag Select; unpresses after the next tap or marquee
 - `snapEnabled` / `setSnapEnabled` — live viewport settings; persisted via `settings.grid.snapEnabled`

@@ -374,10 +374,6 @@ interface DocumentContextValue {
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
   ) => Promise<void>;
-  renameListedProject: (
-    handle: ProjectFolderHandle,
-    name: string,
-  ) => Promise<void>;
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
@@ -385,7 +381,6 @@ interface DocumentContextValue {
   approveMigrationsAndSave: () => Promise<void>;
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[]; projectDirty: boolean }>;
   forceCloseProject: () => Promise<void>;
-  refreshProjectList: () => Promise<void>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
   exportGameArtifact: (options?: {
     projectSnapshot?: ProjectDocument;
@@ -495,24 +490,13 @@ interface DocumentContextValue {
   toggleDockWindow: (panelId: string) => void;
   isDockWindowOpen: (panelId: string) => boolean;
   getOpenDockWindowCount: () => number;
-  captureActiveLayout: () => void;
   isLayoutFocused: boolean;
   toggleLayoutFocus: () => void;
-  getAvailableDocuments: () => Array<{
-    kind: "scene" | "graph";
-    path: string;
-    label: string;
-  }>;
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
-  /**
-   * Compile every project graph into runtime script bundles.
-   * Does not record Play-loaded bundles — use `collectPlayPreviewScripts` for Play / toolbar Compile.
-   */
-  collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
   /** Compile and validate every project graph for the Play prepare path. */
   collectPlayPreviewScripts: () => Promise<{
     bundles: ScriptBundleEntry[];
@@ -644,7 +628,6 @@ interface DocumentContextValue {
   playPreviewBundles: ScriptBundleEntry[];
   playPreviewDiagnostics: Diagnostic[];
   playLoadedSignature: string | null;
-  markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -817,11 +800,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     Diagnostic[]
   >([]);
   const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
-  const markScriptsCurrent = useCallback(() => {
-    setLastCompiledSignature(
-      graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current), inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()])),
-    );
-  }, [projectService]);
   const recordPlayPreviewScripts = useCallback(
     (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
       const signature = graphCompileSignature(
@@ -1472,12 +1450,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await refreshProjectList();
     },
     [projectService, refreshProjectList, settingsStore],
-  );
-
-  const renameListedProject = useCallback(
-    (handle: ProjectFolderHandle, name: string) =>
-      updateListedProject(handle, { name }),
-    [updateListedProject],
   );
 
   const removeListedProject = useCallback(
@@ -2758,34 +2730,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [documentService, projectService],
   );
-
-  const collectScriptBundles = useCallback(async (): Promise<
-    ScriptBundleEntry[]
-  > => {
-    const documents = await loadProjectGraphDocuments();
-    const animDocuments = await loadProjectAnimGraphDocuments();
-    const typeSchemas = collectGraphTypeSchemas();
-    const bundles = [
-      ...compileGraphDocuments(documents, {
-      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-        enums: typeSchemas.enums,
-        structs: typeSchemas.structs,
-        cache: graphCompileCacheRef.current,
-      }),
-      ...compileAnimGraphScripts(animDocuments, {
-        cache: graphCompileCacheRef.current,
-      }),
-    ];
-    markScriptsCurrent();
-    return bundles;
-  }, [
-    collectGraphTypeSchemas,
-    loadProjectAnimGraphDocuments,
-    loadProjectGraphDocuments,
-    markScriptsCurrent,
-    documentService,
-    projectService,
-  ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
     bundles: ScriptBundleEntry[];
@@ -4286,46 +4230,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [activeDockApi, documentService, projectService, settingsStore, animEditorModes]);
 
-  const captureActiveLayout = useCallback(() => {
-    const { activeDocumentId } = documentService.getState();
-    if (activeDocumentId) {
-      captureLayoutForId(activeDocumentId);
-    }
-  }, [captureLayoutForId, documentService]);
-
-  const getAvailableDocuments = useCallback(() => {
-    if (!projectDocument) return [];
-    const { tabOrder } = documentService.getState();
-    const openIds = new Set(tabOrder);
-    const available: Array<{
-      kind: "scene" | "graph";
-      path: string;
-      label: string;
-    }> = [];
-
-    for (const path of projectDocument.scenes) {
-      const id = documentId({ kind: "scene", path });
-      if (!openIds.has(id)) {
-        available.push({
-          kind: "scene",
-          path,
-          label: path.split("/").pop() ?? path,
-        });
-      }
-    }
-    for (const path of projectDocument.graphs) {
-      const id = documentId({ kind: "graph", path });
-      if (!openIds.has(id)) {
-        available.push({
-          kind: "graph",
-          path,
-          label: path.split("/").pop() ?? path,
-        });
-      }
-    }
-    return available;
-  }, [documentService, projectDocument]);
-
   const value = useMemo<DocumentContextValue>(
     () => {
       void sourceControlTick;
@@ -4353,7 +4257,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
-      renameListedProject,
       updateListedProject,
       removeListedProject,
       reconnectProject,
@@ -4362,7 +4265,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
-      refreshProjectList,
       exportProject,
       exportGameArtifact,
       zipExportedGame,
@@ -4432,7 +4334,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleDockWindow,
       isDockWindowOpen,
       getOpenDockWindowCount,
-      captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
         const doc = activeId ? documentService.getDocument(activeId) : undefined;
@@ -4440,7 +4341,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return key ? focusedLayoutIds.has(key) : false;
       })(),
       toggleLayoutFocus,
-      getAvailableDocuments,
       assetRegistry: projectService.registry,
       extensionService: projectService.extensions,
       projectGuid: projectService.guid,
@@ -4469,7 +4369,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       writeAssetThumbnail,
       thumbnailVersions,
       thumbnailsEnabled,
-      collectScriptBundles,
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
@@ -4509,7 +4408,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       playPreviewBundles,
       playPreviewDiagnostics,
       playLoadedSignature,
-      markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };
     },
@@ -4538,7 +4436,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       writeAssetThumbnail,
       thumbnailVersions,
       thumbnailsEnabled,
-      collectScriptBundles,
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
@@ -4568,7 +4465,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       playLoadedSignature,
       playPreviewBundles,
       playPreviewDiagnostics,
-      markScriptsCurrent,
       listedProjects,
       needsReconnect,
       recoveryAvailable,
@@ -4580,7 +4476,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
-      renameListedProject,
       updateListedProject,
       removeListedProject,
       reconnectProject,
@@ -4589,7 +4484,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
-      refreshProjectList,
       exportProject,
       exportGameArtifact,
       zipExportedGame,
@@ -4638,10 +4532,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleDockWindow,
       isDockWindowOpen,
       getOpenDockWindowCount,
-      captureActiveLayout,
       toggleLayoutFocus,
       focusedLayoutIds,
-      getAvailableDocuments,
     ],
   );
 
@@ -4675,12 +4567,4 @@ export function useDocuments(): DocumentContextValue {
 export function useDockWindowTick(): number {
   return useContext(DockWindowTickContext);
 }
-
-/** @deprecated Use useDocuments instead */
-export function useProject(): DocumentContextValue {
-  return useDocuments();
-}
-
-/** @deprecated Use DocumentProvider instead */
-export const ProjectProvider = DocumentProvider;
 /* eslint-enable react-refresh/only-export-components */
