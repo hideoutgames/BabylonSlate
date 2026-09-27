@@ -4,7 +4,6 @@ export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
-export * from "./create-null-engine";
 export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";
@@ -101,7 +100,7 @@ export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
-export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { WaterField, distanceTransform, isWaterContactMesh } from "./water-field";
 export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";

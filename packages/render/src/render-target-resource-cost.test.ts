@@ -2,10 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   Constants,
   NullEngine,
-  type RenderTargetWrapper,
 } from "@babylonjs/core";
 import {
-  managedRenderTargetResources,
   managedRenderTextureResource,
   renderTargetAllocationBytes,
 } from "./render-target-resource-cost";
@@ -132,17 +130,15 @@ describe("managed render-target storage", () => {
       renderTargetAllocationBytes(rgba),
     )!;
     const first = targetFor(engine, { width: 4, height: 2 });
-    initial.commit(
-      managedRenderTargetResources(first, { colorCategory: "sceneColor" }),
-    );
+    initial.commit([managedRenderTextureResource(first.texture!, "sceneColor")]);
     const replacementSize = renderTargetAllocationBytes({ ...rgba, width: 8 });
     const replacement = beginManagedRenderAllocation(engine, replacementSize)!;
     expect(managedRenderReservations(engine).reservedBytes).toBe(128);
     expect(beginManagedRenderAllocation(engine, 1)).toBeUndefined();
     const next = targetFor(engine, { width: 8, height: 2 });
-    replacement.commit(
-      managedRenderTargetResources(next, { colorCategory: "postprocess" }),
-    );
+    replacement.commit([
+      managedRenderTextureResource(next.texture!, "postprocess"),
+    ]);
     expect(managedLightingReservations(engine).clusterBytes).toBe(8);
     expect(managedRenderReservations(engine).categoryBytes).toMatchObject({
       sceneColor: 32,
@@ -163,13 +159,11 @@ describe("managed render-target storage", () => {
     const target = targetFor(engine, { width: 4, height: 2 });
     const owner = beginManagedRenderAllocation(engine, 64)!;
     owner.commit([
-      ...managedRenderTargetResources(target, { colorCategory: "sceneColor" }),
-      ...managedRenderTargetResources(target, { colorCategory: "postprocess" }),
+      managedRenderTextureResource(target.texture!, "sceneColor"),
+      managedRenderTextureResource(target.texture!, "postprocess"),
     ]);
     const borrowed = beginManagedRenderAllocation(engine, 32)!;
-    borrowed.commit(
-      managedRenderTargetResources(target, { colorCategory: "geometry" }),
-    );
+    borrowed.commit([managedRenderTextureResource(target.texture!, "geometry")]);
     expect(managedRenderReservations(engine)).toMatchObject({
       resourceBytes: 32,
       sharedBytes: 32,
@@ -242,9 +236,7 @@ describe("managed render-target storage", () => {
     const lease = beginManagedRenderAllocation(engine, 32)!;
     const target = targetFor(engine, { width: 8, height: 2 });
     expect(() =>
-      lease.commit(
-        managedRenderTargetResources(target, { colorCategory: "sceneColor" }),
-      ),
+      lease.commit([managedRenderTextureResource(target.texture!, "sceneColor")]),
     ).toThrow(/reserved peak/);
     expect(managedRenderReservations(engine)).toMatchObject({
       resourceBytes: 0,
@@ -256,84 +248,31 @@ describe("managed render-target storage", () => {
     expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
 
-  it("accounts the wrapper's separate WebGL depth buffer and preserves alias identity for MRT outputs", () => {
+  it("reserves MSAA capacity and observes natively allocated mips", () => {
     const engine = engineWithLimit(1000);
     const target = targetFor(engine, { width: 4, height: 2 });
-    const depthTarget = targetFor(engine, { width: 4, height: 2 });
-    const depth = depthTarget.texture!;
-    depth.format = Constants.TEXTUREFORMAT_DEPTH32_FLOAT;
-    depth.incrementReferences();
-    target.setDepthStencilTexture(depth);
-    target._samples = 4;
-    target.texture!.samples = 4;
-    // Native WebGL stores the owned MSAA depth renderbuffer on its wrapper.
-    const depthBuffer = {};
-    (
-      target as RenderTargetWrapper & { _depthStencilBuffer: object }
-    )._depthStencilBuffer = depthBuffer;
-    const resources = managedRenderTargetResources(target, {
-      colorCategory: "geometry",
-    });
-    expect(resources).toEqual([
-      { handle: target.texture, bytes: 160, category: "geometry" },
-      { handle: depth, bytes: 32, category: "depth" },
-      { handle: depthBuffer, bytes: 128, category: "depth" },
-    ]);
-    const lease = beginManagedRenderAllocation(engine, 320)!;
-    lease.commit(resources);
-    expect(managedRenderReservations(engine).categoryBytes).toMatchObject({
-      geometry: 160,
-      depth: 160,
-    });
-    target.dispose();
-    depthTarget.dispose();
-    lease.release();
-  });
-
-  it("reserves lazy WebGPU depth MSAA and observes allocated mips without creating attachments", () => {
-    const engine = engineWithLimit(1000);
-    const target = targetFor(engine, { width: 4, height: 2 });
-    const depthTarget = targetFor(engine, { width: 4, height: 2 });
-    const depth = depthTarget.texture!;
-    depth.format = Constants.TEXTUREFORMAT_DEPTH32_FLOAT;
-    depth.incrementReferences();
-    target.setDepthStencilTexture(depth);
-    Object.defineProperty(engine, "isWebGPU", {
-      value: true,
-      configurable: true,
-    });
-    target._samples = 4;
     Object.defineProperty(
       target.texture!._hardwareTexture!,
       "underlyingResource",
       { value: { mipLevelCount: 3 } },
     );
-    Object.defineProperty(depth._hardwareTexture!, "getMSAATexture", {
-      value: () => {
-        throw new Error("Accounting must not allocate.");
-      },
-    });
-    const resources = managedRenderTargetResources(target, {
-      colorCategory: "sceneColor",
-    });
-    expect(resources).toEqual([
-      { handle: target.texture, bytes: 172, category: "sceneColor" },
-      { handle: depth, bytes: 160, category: "depth" },
-    ]);
+    expect(
+      managedRenderTextureResource(target.texture!, "sceneColor", {
+        samples: 4,
+      }),
+    ).toEqual({ handle: target.texture, bytes: 172, category: "sceneColor" });
     target.dispose();
-    depthTarget.dispose();
   });
 
   it("charges explicitly allocated mips even with generation disabled and keeps restoration siblings reserved", () => {
     const engine = engineWithLimit(100);
     const target = targetFor(engine, { width: 4, height: 2 });
     const lease = beginManagedRenderAllocation(engine, 44)!;
-    lease.commit(
-      managedRenderTargetResources(target, {
-        colorCategory: "postprocess",
+    lease.commit([
+      managedRenderTextureResource(target.texture!, "postprocess", {
         allocatedMipLevels: "full",
       }),
-    );
+    ]);
     engine.onContextRestoredObservable.notifyObservers(engine);
     expect(managedRenderReservations(engine).reservedBytes).toBe(44);
     expect(beginManagedRenderAllocation(engine, 57)).toBeUndefined();
