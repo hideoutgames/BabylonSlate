@@ -1383,13 +1383,17 @@ class InProcessRuntime implements RuntimeDriver {
   notifySceneStreamReady(actorGuid: string, streamLoadId: number): void {
     const stream = this.sceneStreams.get(actorGuid);
     if (this.stopped || !stream || stream.loadId !== streamLoadId || stream.state !== "Loading" || !stream.realized) return;
-    stream.state = "Loaded";
-    stream.progress = 1;
-    this.physicsSync.syncFromWorld(this.world);
-    this.registerNavAgents();
-    this.registerNavObstacles([...stream.actors], stream.navObstacles);
-    stream.resolve();
-    this.flushOwnerActions();
+    try {
+      stream.state = "Loaded";
+      this.physicsSync.syncFromWorld(this.world);
+      this.registerNavAgents();
+      this.registerNavObstacles([...stream.actors], stream.navObstacles);
+      stream.progress = 1;
+      stream.resolve();
+      this.flushOwnerActions();
+    } catch (error) {
+      this.retireSceneStream(stream, error);
+    }
   }
 
   notifySceneStreamFailed(actorGuid: string, streamLoadId: number, message: string): void {
@@ -2051,9 +2055,9 @@ class InProcessRuntime implements RuntimeDriver {
     transform?: Transform;
     streamOwner?: BObject | null;
   }): Actor | null {
-    if (options.streamOwner?.destroyed || this.stopped) return null;
+    if (this.stopped) return null;
     const stream = this.streamForOwner(options.streamOwner);
-    if (stream && (stream.state !== "Loaded" || this.sceneStreams.get(stream.actor.guid) !== stream)) return null;
+    if (stream && (options.streamOwner?.destroyed || stream.state !== "Loaded" || this.sceneStreams.get(stream.actor.guid) !== stream)) return null;
     if (!this.canSpawnActorClass(options.classId)) return null;
     const hooks = this.scriptHost.hooksFor(options.classId);
     if (!hooks) return null;

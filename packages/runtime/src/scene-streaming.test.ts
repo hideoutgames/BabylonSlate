@@ -205,4 +205,34 @@ describe("additive scene streaming", () => {
       expect(world.getActors().some((actor) => actor.classId === "Spawned")).toBe(false);
     } finally { runtime.stop(); }
   });
+
+  it("releases a blocking lease and rolls back only the stream when native physics admission fails", async () => {
+    const { runtime, commands, world, left } = await setup();
+    try {
+      const loading = runtime.loadSceneStream(left, true);
+      const failure = expect(loading).rejects.toThrow("Body allocation failed");
+      const ready = await realized(commands, "left");
+      vi.spyOn(runtime.getPhysicsSync()!.getBackend(), "createBody").mockImplementationOnce(() => { throw new Error("Body allocation failed"); });
+      expect(() => acknowledge(runtime, ready)).not.toThrow();
+      await failure;
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+      expect(runtime.getSceneLoadProgress(left)).toBe(0);
+      expect(world.getActors().map((actor) => actor.guid)).toEqual(["left", "right", "authored"]);
+      runtime.tick();
+      expect(world.clock.tickIndex).toBe(1);
+    } finally { runtime.stop(); }
+  });
+
+  it("preserves ordinary Actor On Destroyed spawning outside a streamed instance", async () => {
+    const death: CompiledScript = { classId: "Parent", parentClassId: "Actor", assetGuid: "death", anchors: [],
+      source: 'export function end(ctx) { ctx.spawnActor("Spawned"); }',
+      entryPoints: [{ name: "end", event: "onDestroyed", isAsync: false }] };
+    const { runtime, world } = await setup({ scripts: [logic("Spawned"), death] });
+    try {
+      world.destroyActor("authored");
+      runtime.tick();
+      expect(world.findActor("authored")).toBeUndefined();
+      expect(world.getActors().filter((actor) => actor.classId === "Spawned")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
 });
