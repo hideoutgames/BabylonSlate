@@ -140,7 +140,7 @@ Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }
 
 ## Export settings (P14)
 
-Project Settings **Export Game** preset: **Bundle Debugger** (off for release). Release export compiles with `compileGraphDocumentsForExport` (Print / Print String / Draw Debug default on; Inspector **Development Only** nodes are omitted). A non-debug player still links `@babylonslate/debugger` **core** commands; debug-tier implementations are not registered (`includeDebug: false`). Opted-in Print and Draw Debug still render. **Preview Build** always bundles the debugger and keeps Development Only nodes. Draw-call ceilings (`DRAW_CALL_WARN_CEILING`) and geometry (`GEOMETRY_BYTE_CEILING`) surface as HUD warnings. See [exporter.md](exporter.md).
+Project Settings **Export Game** preset: **Bundle Debugger** (off for release). Release export compiles with `compileGraphDocuments` and `stripDevelopmentOnly` (Print / Print String / Draw Debug default on; Inspector **Development Only** nodes are omitted). A non-debug player still links `@babylonslate/debugger` **core** commands; debug-tier implementations are not registered (`includeDebug: false`). Opted-in Print and Draw Debug still render. **Preview Build** always bundles the debugger and keeps Development Only nodes. Draw-call ceilings (`DRAW_CALL_WARN_CEILING`) and geometry (`GEOMETRY_BYTE_CEILING`) surface as HUD warnings. See [exporter.md](exporter.md).
 
 ### Trace Inspection
 
