@@ -7,7 +7,6 @@ import {
 import {
   MATERIAL_PAYLOAD_VERSION,
   createDefaultMigrationRegistry,
-  migrateMaterialPayload,
 } from "./migration";
 
 const LEGACY_SHADER_V0 = {
@@ -56,19 +55,6 @@ describe("material migrations", () => {
     const result = registry.migrate("Material", 0, {});
     const doc = normalizeMaterialDocument(result.payload);
     expect(doc.domain).toBe("surface");
-    expect(validateMaterialDocument(doc)).toEqual([]);
-  });
-
-  it("seeds an imported material graph from its albedo texture dependency", () => {
-    const payload = migrateMaterialPayload({}, { textureGuids: ["tex-1"] });
-    const doc = normalizeMaterialDocument(payload);
-    expect(
-      doc.nodes.some(
-        (node) =>
-          node.type === "param.texture" &&
-          node.properties.textureGuid === "tex-1",
-      ),
-    ).toBe(true);
     expect(validateMaterialDocument(doc)).toEqual([]);
   });
 

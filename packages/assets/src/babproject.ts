@@ -148,14 +148,6 @@ export async function exportProjectZip(
   return encodeProjectZip(files);
 }
 
-/** Import a zip into the bound storage directory. */
-export async function importProjectZip(
-  storage: ProjectStorage,
-  zipBytes: Uint8Array,
-): Promise<void> {
-  await writeProjectTree(storage, decodeProjectZip(zipBytes));
-}
-
 /**
  * Rewrite only project name and identity when instantiating from a template (§7.1).
  */
@@ -197,10 +189,4 @@ export async function createProjectFromTemplate(options: {
     name: options.name,
   });
   await writeProjectTree(options.destination, rewritten);
-}
-
-export interface TemplateCard {
-  name: string;
-  /** Directory- or zip-backed template identifier. */
-  id: string;
 }
