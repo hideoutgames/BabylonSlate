@@ -64,6 +64,9 @@ function registryFor(scene: Scene): Registry {
 /** CPU-only owner: local fog does not allocate geometry, textures or shadow maps. */
 export class FogVolumeRenderer {
   readonly volumes: Volume[] = [];
+  readonly scene: Scene;
+  readonly actorId: string;
+  readonly node: TransformNode;
   visible = true;
   private readonly rootWorld = Matrix.Identity();
   private readonly world = Matrix.Identity();
@@ -73,10 +76,13 @@ export class FogVolumeRenderer {
   private readonly disposed: Observer<Node>;
 
   constructor(
-    readonly scene: Scene,
-    readonly actorId: string,
-    readonly node: TransformNode,
+    scene: Scene,
+    actorId: string,
+    node: TransformNode,
   ) {
+    this.scene = scene;
+    this.actorId = actorId;
+    this.node = node;
     this.disposed = node.onDisposeObservable.add(() => removeFogVolumes(scene, actorId));
   }
 
