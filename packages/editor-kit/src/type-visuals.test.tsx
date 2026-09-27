@@ -207,16 +207,16 @@ describe("resolveTypeVisual", () => {
     expect(actorClass.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
   });
 
-  it("keeps the Class color and nearest engine icon on attached custom components", () => {
-    const mesh = resolveTypeVisual({ classId: "MeshComponent" });
-    const userMesh = resolveTypeVisual({
-      classId: "MyMesh",
-      ancestry: ["MyMesh", "MeshComponent", "ActorComponent", "BObject"],
+  it.each(["MeshComponent", "SplineComponent"])("keeps the Class color and nearest engine icon on attached custom %s subclasses", (classId) => {
+    const component = resolveTypeVisual({ classId });
+    const userComponent = resolveTypeVisual({
+      classId: "CustomComponent",
+      ancestry: ["CustomComponent", ...walkAncestry(classId, engineParentOf)],
     });
-    expect(userMesh.colorVar).toBe("var(--asset-animation)");
-    expect(mesh.colorVar).toBe("var(--asset-component)");
-    expect(userMesh.icon).toBe(mesh.icon);
-    expect(userMesh.icon).not.toBe(
+    expect(userComponent.colorVar).toBe("var(--asset-animation)");
+    expect(component.colorVar).toBe("var(--asset-component)");
+    expect(userComponent.icon).toBe(component.icon);
+    expect(userComponent.icon).not.toBe(
       resolveTypeVisual({ classId: "ActorComponent" }).icon,
     );
   });

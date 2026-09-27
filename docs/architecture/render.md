@@ -1644,6 +1644,14 @@ Material generations retain their compile-time texture leases until preparation 
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
 
 Texture installation preserves the existing legacy UASTC descriptor normalization before creating immutable upload Blobs. Stored asset bytes remain unchanged; repeated bindings reuse the installed content without repeating conversion or hashing.
+## Spline
+
+Add **General > Spline** to an actor or Class/Prefab to author a component-local 3D path. Details shares Water River's Curvature, Path Point Count and XYZ controls; **Closed Loop** joins the last point to the first when there are at least three points. Paths keep 2–128 points. Curvature 0 uses straight segments and 1 uses a centripetal Catmull–Rom curve through the control points on all three axes.
+
+In Scene Details, use the component card's **Edit In Viewport** action to target its handles; actor selection defaults to the first editable shape. In Class/Prefab, select the component. Drag a point in the camera-facing plane, drag a faint midpoint to insert a point, or double-click a point to remove it. Use the Details XYZ fields for exact positioning. The curve previews live; release commits one undoable property change in Scene and Class/Prefab documents. Component and ancestor transforms apply normally. The curve is an editor helper and does not render in Play/player.
+
+Spline and Water River share the core sampling implementation, typed point rows and viewport handle lifecycle. Water keeps its existing X/Z curve with linearly interpolated elevation and width; river point drags remain on the local horizontal plane. Water-only width, depth, shading and buoyancy stay on water components.
+
 ## Water
 
 Water assets share one definition between the renderer and game worker. Realistic and Stylized presets expose colors, opacity, reflections, roughness, waves, ripples, foam, sparkles, and density. Colors are authored in sRGB. Ocean, Lake, River, Puddle, and Global Water Volume components own their footprint, depth, wave scale, and current. River control points include elevation and a per-point Width Scale, and the path curves through them; lakes and puddles use elliptical bounds.

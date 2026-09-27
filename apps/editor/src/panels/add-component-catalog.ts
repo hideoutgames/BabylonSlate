@@ -14,6 +14,7 @@ import {
   parseOutlineProperties,
   parseRagdollProperties,
   parseSpringArmProperties,
+  parseSplineProperties,
   createRichText2DComponent,
   createText2DComponent,
   createDefaultRenderTargetCaptureProperties,
@@ -60,6 +61,12 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent(
+    "SplineComponent",
+    "Spline",
+    "Editable 3D path with smooth curves and optional closed loops",
+    "General",
+  ),
   engineComponent(
     "MeshComponent",
     "Mesh",
@@ -272,6 +279,8 @@ export function defaultPropertiesFor(
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":
       return { ...parseSpringArmProperties({}) };
+    case "SplineComponent":
+      return { ...parseSplineProperties({}) };
     case "HemisphericFillLightComponent":
       return {
         intensity: 0.9,

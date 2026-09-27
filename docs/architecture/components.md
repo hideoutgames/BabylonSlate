@@ -207,6 +207,12 @@ and a static four-line node-body preview as Custom GLSL.
 
 Not kit (single call site): `BrandIcon` (editor chrome bar project title).
 
+### Spline and river path editing
+
+Add Component > General > **Spline** exposes a general-purpose 3D path in Scene Details and the Class/Prefab Inspector. Spline and Water River share the typed Curvature, Path Point Count and XYZ point rows. Spline adds Closed Loop; Water River retains per-point Width Scale. Both use the same viewport handle lifecycle for live point dragging, midpoint insertion and double-click removal, with one history entry per released gesture in scenes and prefabs. Desktop control density is unchanged.
+
+Scene component cards expose a compact **Edit In Viewport** action even when collapsed. **Editing In Viewport** marks the active shape; choosing another water or spline component redirects handles without changing card disclosure. This session-only target does not alter the scene or history. Locked actors and multiple actor selections disable the action. Class/Prefab uses its existing component selection.
+
 ### Water asset editor
 
 Water documents use DockView Preview and Details panels with PropertyGrid controls and a Surface Material picker. New Asset offers Realistic and Stylized starting presets. Place Actors has Global Water Volume, Ocean, Lake, River, Puddle, and Water Removal Volume entries; placing a Water asset creates a lake using that asset. Component Details reuse the shared typed property rows, including river Curvature, path points with per-point Width Scale, and buoyancy dimensions. Viewport shape handles (engine-side, on the gizmo utility layer) edit the same properties; see [Water](render.md#water). Global Water Volume hides finite Width/Length controls; Ocean exposes its fixed rectangular bounds. Water Removal Volume Details show Enabled, Shape, and only the dimensions that shape uses (Width becomes Diameter for Sphere, Cylinder and Capsule; Height is hidden for Sphere; Length is Box-only).

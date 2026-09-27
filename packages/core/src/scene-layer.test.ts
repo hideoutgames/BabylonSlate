@@ -52,6 +52,7 @@ describe("SceneLayer schema", () => {
             { id: "cam", classId: "CameraComponent", properties: {} },
             { id: "capture", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: "depth" } },
             { id: "arm", classId: "SpringArmComponent", properties: {} },
+            { id: "spline", classId: "SplineComponent", properties: {} },
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
             { id: "fog", classId: "FogVolumeComponent", properties: {} },
