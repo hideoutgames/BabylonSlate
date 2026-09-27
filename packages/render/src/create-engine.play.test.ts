@@ -964,7 +964,7 @@ describe("Play createEngine view", () => {
     ).toHaveLength(0);
   });
 
-  it("still applies environment from play-mode loadScene", () => {
+  it("applies authored exponential fog and environment from play-mode loadScene", () => {
     const { handle } = playHandle(sharedEngine());
     const scene = createDefaultScene();
     handle.loadScene({
@@ -973,7 +973,9 @@ describe("Play createEngine view", () => {
         ...scene.settings,
         environmentColor: [0.1, 0.2, 0.3],
         fogEnabled: true,
+        fogMode: "exponentialSquared",
         fogColor: [0.4, 0.5, 0.6],
+        fogDensity: 0.03,
         fogStart: 2,
         fogEnd: 40,
       },
@@ -982,6 +984,8 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.g).toBeCloseTo(0.2);
     expect(handle.scene.clearColor.b).toBeCloseTo(0.3);
     expect(handle.scene.fogEnabled).toBe(true);
+    expect(handle.scene.fogMode).toBe(Scene.FOGMODE_EXP2);
+    expect(handle.scene.fogDensity).toBe(0.03);
     expect(handle.scene.fogStart).toBe(2);
     expect(handle.scene.fogEnd).toBe(40);
   });
