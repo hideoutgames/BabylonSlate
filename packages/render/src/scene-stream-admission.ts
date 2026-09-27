@@ -9,7 +9,7 @@ type Scope = {
   baseline: Set<AbstractMesh>;
   textures: Set<BaseTexture>;
   particles: Set<IParticleSystem>;
-  slots: Map<number, string>;
+  slots: Map<number, SceneStreamIdentity & { instanceActorGuid: string }>;
   cached?: { meshes: AbstractMesh[]; meshCount: number; slotCount: number; newestMesh?: AbstractMesh };
 };
 const scopes = new WeakMap<Scene, Scope>();
@@ -110,6 +110,9 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     if ([...streams.values()].some((stream) => stream.loading)) return;
     const scope = scopes.get(scene);
     if (!scope) return;
+    // Removed precedes per-actor despawn on the reliable worker channel.
+    // Keep those still-bound roots staged across the intervening frame.
+    if (scope.slots.size > 0) return;
     // Native import/GPU work can outlive cancellation and its retired slot.
     // Keep excluding those consumers until they settle or leave the Scene.
     // Admitted parent consumers are still checked normally by scene-perf.
@@ -173,12 +176,19 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
       } else if (command.type === "spawn" && command.sceneStreamActorGuid) {
         const owner = streams.get(command.sceneStreamActorGuid);
         if (owner?.loading && owner.loadId === command.streamLoadId)
-          ensureScope().slots.set(command.slotId, command.sceneStreamActorGuid);
+          ensureScope().slots.set(command.slotId, {
+            actorGuid: command.sceneStreamActorGuid,
+            streamLoadId: owner.loadId,
+            instanceActorGuid: command.actorGuid,
+          });
+      } else if (command.type === "despawn") {
+        const scope = scopes.get(scene);
+        if (scope?.slots.get(command.slotId)?.instanceActorGuid === command.actorGuid)
+          scope.slots.delete(command.slotId);
       } else if (command.type === "sceneStreamRemoved") {
         if (streams.get(command.actorGuid)?.loadId !== command.streamLoadId) return;
         streams.delete(command.actorGuid);
         const scope = scopes.get(scene);
-        for (const [slot, owner] of scope?.slots ?? []) if (owner === command.actorGuid) scope!.slots.delete(slot);
         if (scope) scope.cached = undefined;
         prune();
       }
@@ -191,7 +201,9 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
       const owners = new Set(identity ? [identity.actorGuid] : []);
       for (const slot of slotIds) {
         const owner = scope.slots.get(slot);
-        if (owner) owners.add(owner);
+        if (!owner || streams.get(owner.actorGuid)?.loadId !== owner.streamLoadId) continue;
+        if (identity && (owner.actorGuid !== identity.actorGuid || owner.streamLoadId !== identity.streamLoadId)) continue;
+        owners.add(owner.actorGuid);
         scope.slots.delete(slot);
         const root = binding.meshes.get(slot);
         if (root && heldRoots.has(root)) { root.setEnabled(heldRoots.get(root)!); heldRoots.delete(root); }

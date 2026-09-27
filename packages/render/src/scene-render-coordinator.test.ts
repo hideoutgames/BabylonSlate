@@ -4,7 +4,7 @@ import { limitManagedRenderBytes, managedRenderReservations } from "./managed-re
 import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createSceneStreamAdmission } from "./scene-stream-admission";
-import { createSnapshotSceneBinding } from "./snapshot-apply";
+import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { normalizeRenderingQuality } from "@babylonslate/core";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-perf";
@@ -151,6 +151,50 @@ it("keeps the parent drawing after cancel while native import and detached textu
   texture.dispose();
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
+  admission.clear(); renderer.dispose();
+});
+
+it("keeps canceled roots staged between Removed and Despawn and rejects obsolete publication after slot reuse", async () => {
+  const { scene, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  binding.meshes.set(1, MeshBuilder.CreateBox("parent", {}, scene));
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+  admission.receive({ type: "spawn", actorGuid: "old-child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: "stream", streamLoadId: 1 });
+  const child = MeshBuilder.CreateBox("canceled-child", {}, scene);
+  child.material = new StandardMaterial("child-material", scene);
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  child.material.diffuseTexture = texture;
+  const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
+  binding.meshes.set(2, child);
+  admission.sync();
+  admission.receive({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+  admission.sync();
+  expect(child.isEnabled()).toBe(false);
+  expect(renderer.render().rendered).toBe(true);
+  admission.receive({ type: "despawn", actorGuid: "old-child", slotId: 2 });
+  retirePlaySlot(binding, 2);
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 2 });
+  admission.receive({ type: "spawn", actorGuid: "new-child", classId: "Actor", slotId: 2,
+    sceneStreamActorGuid: "stream", streamLoadId: 2 });
+  const replacement = MeshBuilder.CreateBox("replacement", {}, scene);
+  replacement.material = new StandardMaterial("replacement-material", scene);
+  replacement.material.diffuseTexture = texture;
+  binding.meshes.set(2, replacement);
+  admission.sync();
+  admission.receive({ type: "despawn", actorGuid: "old-child", slotId: 2 });
+  admission.publish([2], { actorGuid: "stream", streamLoadId: 1 });
+  admission.sync();
+  expect(replacement.isEnabled()).toBe(false);
+  expect(renderer.render().rendered).toBe(true);
+  textureReady.mockReturnValue(true);
+  admission.publish([2], { actorGuid: "stream", streamLoadId: 2 });
+  expect(replacement.isEnabled()).toBe(true);
   admission.clear(); renderer.dispose();
 });
 
