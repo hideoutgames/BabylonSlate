@@ -29,7 +29,9 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
+import { createSceneStreamAdmission } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -354,7 +356,7 @@ export interface EngineHandle {
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
   whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
-  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void) => Promise<void>;
+  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -827,6 +829,7 @@ function initializeEngine(
   const worldRenderer = new SceneRenderCoordinator(scene);
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
+  let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
@@ -971,6 +974,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
@@ -1060,6 +1064,8 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
+  onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
   if (options.playMode && options.onRagdollPoseCaptured) {
     binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
@@ -2179,6 +2185,7 @@ function initializeEngine(
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
+    streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
     if (!shouldRenderFrame(frameStart, loadingFrame)) {
@@ -2468,6 +2475,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
       unsubscribeRenderPathSession();
@@ -2596,6 +2604,7 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
@@ -2878,6 +2887,7 @@ function initializeEngine(
         );
         scheduler.invalidate("snapshot");
       }
+      streamAdmission?.sync();
     },
     setPaused: (paused: boolean) => {
       callerPaused = paused;
@@ -3143,14 +3153,20 @@ function initializeEngine(
       await Promise.all(playLoads);
       scope.assert();
     },
-    prepareSceneStream: (slotIds, signal, onProgress) => {
+    prepareSceneStream: async (slotIds, signal, onProgress, owner) => {
       if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
       const generation = loadGeneration;
-      return prepareSceneStream(scene, binding, slotIds, {
+      await prepareSceneStream(scene, binding, slotIds, {
         signal, onProgress,
         assertCurrent: () => assertCurrent(generation),
         pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
       });
+      signal.throwIfAborted();
+      assertCurrent(generation);
+      streamAdmission?.publish(slotIds, owner);
+      particleService?.startPreparedSlots(slotIds);
+      appliedSnapshotIdentity = null;
+      scheduler.invalidate("snapshot");
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +
