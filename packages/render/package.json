@@ -25,7 +25,6 @@
   },
   "dependencies": {
     "@babylonjs/core": "9.20.0",
-    "@babylonjs/ktx2decoder": "9.20.0",
     "@babylonjs/loaders": "9.20.0",
     "@babylonjs/serializers": "9.20.0",
     "@babylonslate/assets": "workspace:*",
@@ -41,7 +40,6 @@
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",
-    "@babylonslate/vfs": "workspace:*",
     "typescript": "~5.8.2"
   }
 }
