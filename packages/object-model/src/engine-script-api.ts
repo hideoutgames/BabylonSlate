@@ -357,6 +357,16 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "FogVolumeComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Shape", typeId: "string", propertyKey: "shape" },
+      { name: "Size", typeId: "vec3", propertyKey: "size" },
+      { name: "Density", typeId: "float", propertyKey: "density" },
+      { name: "Edge Falloff", typeId: "float", propertyKey: "edgeFalloff" },
+    ],
+  },
+  {
     classId: "AreaRectLightComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },

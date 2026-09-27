@@ -153,6 +153,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 Add Component → Rendering → **Outline** uses the existing component PropertyGrid for Enabled, Color, Width and **Render Through Meshes**. It applies to an actor's eligible world meshes as one group; different actors sharing a model retain separate styles. It is excluded from SceneLayer component catalogs because world depth and SceneLayer ordering have different semantics. Discovery, inspector history, duplication and Class component inheritance use the normal component architecture.
 
+**Fog Volume** reuses Place Actors / Add Component catalogs and PropertyGrid for Enabled, Shape, Size, Density and Edge Falloff. Project **Volumetric Fog** controls keep shared quality settings available while **Scene-Wide Fog** is off, so local volumes can be tuned independently.
+
 `MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
 retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
 uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host

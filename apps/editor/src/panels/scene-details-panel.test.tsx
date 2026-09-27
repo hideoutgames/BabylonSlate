@@ -590,18 +590,130 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-scene-environment-color")).toBeTruthy();
   });
 
-  it("hides Fog Color Start and End until Fog is enabled", () => {
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+  it("reveals mode-specific controls when fog is enabled and keeps volumetric guidance searchable", () => {
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("property-scene-fog")).toBeTruthy();
+    expect(screen.queryByTestId("property-scene-fog-mode")).toBeNull();
     expect(screen.queryByTestId("property-scene-fog-color")).toBeNull();
     expect(screen.queryByTestId("property-scene-fog-start")).toBeNull();
     expect(screen.queryByTestId("property-scene-fog-end")).toBeNull();
-    scene().settings.fogEnabled = true;
-    cleanup();
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), {
+      target: { value: "volumetric" },
+    });
+    expect(screen.getByTestId("property-scene-fog")).toBeTruthy();
+    expect(screen.queryByTestId("property-scene-name")).toBeNull();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByTestId("property-scene-fog"));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(scene().settings.fogEnabled).toBe(true);
+    expect(screen.getByTestId("property-scene-fog-mode").textContent).toContain("Linear");
     expect(screen.getByTestId("property-scene-fog-color")).toBeTruthy();
     expect(screen.getByTestId("property-scene-fog-start")).toBeTruthy();
     expect(screen.getByTestId("property-scene-fog-end")).toBeTruthy();
+    expect(screen.queryByTestId("property-scene-fog-density")).toBeNull();
+  });
+
+  it("switches exponential fog modes and resets individual controls without losing authored values", async () => {
+    Object.assign(scene().settings, {
+      fogEnabled: true,
+      fogStart: 25,
+      fogEnd: 350,
+      fogDensity: 0.00125,
+      fogColor: [0.2, 0.3, 0.4],
+    });
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const applyChange = () => {
+      harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+      view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    };
+    fireEvent.click(screen.getByTestId("property-scene-fog-mode"));
+    const exponential = await screen.findByRole("option", { name: "Exponential" });
+    fireEvent.pointerDown(exponential);
+    fireEvent.click(exponential);
+    applyChange();
+    expect(scene().settings.fogMode).toBe("exponential");
+    expect(screen.queryByTestId("property-scene-fog-start")).toBeNull();
+    expect(screen.queryByTestId("property-scene-fog-end")).toBeNull();
+    expect(screen.getByTestId("property-scene-fog-density")).toHaveProperty("value", "0.00125");
+    fireEvent.change(screen.getByTestId("property-scene-fog-density"), {
+      target: { value: "0.000125" },
+    });
+    applyChange();
+    fireEvent.blur(screen.getByTestId("property-scene-fog-density"));
+    expect(screen.getByTestId("property-scene-fog-density")).toHaveProperty("value", "0.000125");
+
+    fireEvent.click(screen.getByTestId("property-scene-fog-mode"));
+    const exponentialSquared = await screen.findByRole("option", { name: "Exponential Squared" });
+    fireEvent.pointerDown(exponentialSquared);
+    fireEvent.click(exponentialSquared);
+    applyChange();
+    expect(scene().settings).toMatchObject({
+      fogMode: "exponentialSquared",
+      fogStart: 25,
+      fogEnd: 350,
+      fogDensity: 0.000125,
+      fogColor: [0.2, 0.3, 0.4],
+    });
+    expect(screen.queryByTestId("property-scene-fog-start")).toBeNull();
+    expect(screen.getByTestId("property-scene-fog-density")).toHaveProperty("value", "0.000125");
+    fireEvent.click(screen.getByRole("button", { name: "Reset Fog Density" }));
+    applyChange();
+    expect(scene().settings).toMatchObject({ fogDensity: 0.01, fogMode: "exponentialSquared" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset Fog Mode" }));
+    applyChange();
+    expect(scene().settings).toMatchObject({ fogMode: "linear", fogDensity: 0.01 });
+    expect(screen.getByTestId("property-scene-fog-start")).toHaveProperty("value", "25");
+    expect(screen.getByTestId("property-scene-fog-end")).toHaveProperty("value", "350");
+    fireEvent.click(screen.getByTestId("property-scene-fog"));
+    applyChange();
+    expect(screen.queryByTestId("property-scene-fog-mode")).toBeNull();
+    expect(scene().settings).toMatchObject({
+      fogEnabled: false, fogMode: "linear", fogStart: 25, fogEnd: 350,
+      fogDensity: 0.01, fogColor: [0.2, 0.3, 0.4],
+    });
+  });
+
+  it("keeps linear fog distances ordered when either distance crosses the other", () => {
+    Object.assign(scene().settings, { fogEnabled: true, fogStart: 10, fogEnd: 20 });
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-scene-fog-start"), {
+      target: { value: "30" },
+    });
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(scene().settings.fogStart).toBe(30);
+    expect(scene().settings.fogEnd).toBeCloseTo(30.01);
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-scene-fog-end"), {
+      target: { value: "5" },
+    });
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(scene().settings.fogStart).toBeCloseTo(4.99);
+    expect(scene().settings.fogEnd).toBe(5);
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-scene-fog-end"), {
+      target: { value: "-10" },
+    });
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].settings).toMatchObject({
+      fogStart: 0, fogEnd: 0.01,
+    });
+  });
+
+  it("clamps negative exponential density to zero without changing other fog settings", () => {
+    Object.assign(scene().settings, {
+      fogEnabled: true, fogMode: "exponential", fogStart: 25, fogEnd: 350,
+    });
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-scene-fog-density"), {
+      target: { value: "-0.5" },
+    });
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].settings).toMatchObject({
+      fogEnabled: true, fogMode: "exponential", fogDensity: 0, fogStart: 25, fogEnd: 350,
+    });
   });
 
   it("shows Position Z in 3D and omits Z-Order", () => {

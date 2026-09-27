@@ -9,6 +9,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 
@@ -31,6 +33,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
     limits: readonly [number, number],
     change: (v: number) => void,
     step = 0.01,
+    description?: string,
   ) => {
     const id = `project-effects-${suffix}`;
     return (
@@ -44,7 +47,13 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           max={limits[1]}
           step={step}
           onChange={change}
+          aria-describedby={description ? `${id}-description` : undefined}
         />
+        {description ? (
+          <FieldDescription id={`${id}-description`}>
+            {description}
+          </FieldDescription>
+        ) : null}
       </Field>
     );
   };
@@ -109,63 +118,44 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           )}
         </>
       ) : null}
-      <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
-          <FieldLabel htmlFor="project-effects-volumetric">
-            Volumetric Lighting
-          </FieldLabel>
-          <FieldDescription>
-            Light beams through fog from directional, point and spot lights.
-            Enable light shadows for occluded beams. Lower resolution, steps or
-            light count reduce cost.
-          </FieldDescription>
-        </FieldContent>
-        <Switch
-          id="project-effects-volumetric"
-          data-testid="project-effects-volumetric"
-          checked={volume.enabled}
-          onCheckedChange={(enabled) => patchVolume({ enabled })}
-        />
-      </Field>
-      {volume.enabled ? (
-        <>
-          {number(
-            "Volumetric Resolution Scale",
-            "volumetric-scale",
-            volume.resolutionScale,
-            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
-            (resolutionScale) => patchVolume({ resolutionScale }),
-            0.25,
-          )}
-          {number(
-            "Volumetric Steps",
-            "volumetric-steps",
-            volume.steps,
-            RENDER_EFFECTS_LIMITS.volumetricSteps,
-            (steps) => patchVolume({ steps }),
-            1,
-          )}
-          {number(
-            "Volumetric Light Limit",
-            "volumetric-lights",
-            volume.maxLights,
-            RENDER_EFFECTS_LIMITS.volumetricLights,
-            (maxLights) => patchVolume({ maxLights }),
-            1,
-          )}
-          {number(
-            "Fog Density",
+      <FieldSet className="gap-2">
+        <FieldLegend>Volumetric Fog</FieldLegend>
+        <FieldGroup className="gap-2">
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="project-effects-volumetric">
+                Scene-Wide Fog
+              </FieldLabel>
+              <FieldDescription>
+                Fog lit by directional, point and spot lights. Light colors tint the
+                fog; enable light shadows for occluded beams. Fog Volumes work with
+                this off. The controls below tune both local and scene-wide fog.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="project-effects-volumetric"
+              data-testid="project-effects-volumetric"
+              checked={volume.enabled}
+              onCheckedChange={(enabled) => patchVolume({ enabled })}
+            />
+          </Field>
+          {volume.enabled ? number(
+            "Scene-Wide Fog Density",
             "volumetric-density",
             volume.density,
             RENDER_EFFECTS_LIMITS.volumetricDensity,
             (density) => patchVolume({ density }),
-          )}
+            0.001,
+            "Uniform fog thickness per scene unit. Zero removes scene-wide haze while Fog Volumes still contribute.",
+          ) : null}
           {number(
             "Volumetric Intensity",
             "volumetric-intensity",
             volume.intensity,
             RENDER_EFFECTS_LIMITS.volumetricIntensity,
             (intensity) => patchVolume({ intensity }),
+            0.01,
+            "Brightness of scattered light. Zero removes light beams but keeps fog darkening.",
           )}
           {number(
             "Volumetric Distance",
@@ -174,6 +164,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.volumetricDistance,
             (maxDistance) => patchVolume({ maxDistance }),
             1,
+            "Maximum distance sampled from the camera, in scene units. Scene surfaces stop the fog ray earlier.",
           )}
           {number(
             "Scattering Anisotropy",
@@ -181,9 +172,38 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             volume.anisotropy,
             RENDER_EFFECTS_LIMITS.volumetricAnisotropy,
             (anisotropy) => patchVolume({ anisotropy }),
+            0.01,
+            "Zero scatters evenly. Positive values strengthen beams when looking toward a light; negative values favor the opposite view.",
           )}
-        </>
-      ) : null}
+          {number(
+            "Volumetric Resolution Scale",
+            "volumetric-scale",
+            volume.resolutionScale,
+            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
+            (resolutionScale) => patchVolume({ resolutionScale }),
+            0.25,
+            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum. Lower values reduce cost and soften detail.",
+          )}
+          {number(
+            "Volumetric Steps",
+            "volumetric-steps",
+            volume.steps,
+            RENDER_EFFECTS_LIMITS.volumetricSteps,
+            (steps) => patchVolume({ steps }),
+            1,
+            "More samples reduce banding, especially over long distances, at a higher rendering cost.",
+          )}
+          {number(
+            "Volumetric Light Limit",
+            "volumetric-lights",
+            volume.maxLights,
+            RENDER_EFFECTS_LIMITS.volumetricLights,
+            (maxLights) => patchVolume({ maxLights }),
+            1,
+            "Maximum contributing lights. Lower values reduce cost; hemispheric fill and area lights do not contribute.",
+          )}
+        </FieldGroup>
+      </FieldSet>
     </FieldGroup>
   );
 }
