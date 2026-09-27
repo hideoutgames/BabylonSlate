@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { TextureUsageChangedError } from "../lib/asset-settings";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -18,6 +19,9 @@ const harness: {
   requestRender: ReturnType<typeof vi.fn>;
   focusNode: ReturnType<typeof vi.fn>;
   selectedNodeId: string | null;
+  setTextureUsage: ReturnType<typeof vi.fn>;
+  textureUsageBlockedReason: (guid: string) => string | null;
+  readAssetChunk: ReturnType<typeof vi.fn>;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -29,6 +33,9 @@ const harness: {
   requestRender: vi.fn(),
   focusNode: vi.fn(),
   selectedNodeId: null,
+  setTextureUsage: vi.fn(),
+  textureUsageBlockedReason: () => null,
+  readAssetChunk: vi.fn(),
 };
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -45,7 +52,12 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applyAssetDocumentChange: harness.applyAssetDocumentChange,
+    setTextureUsage: harness.setTextureUsage,
+    textureUsageBlockedReason: (guid: string) => harness.textureUsageBlockedReason(guid),
+    readAssetChunk: harness.readAssetChunk,
+    registryVersion: 0,
     assetRegistry: {
+      textureEncodeMaxDimension: 2048,
       list: () => [
         { header: { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } }, path: "assets/Studio.babasset" },
         {
@@ -60,7 +72,21 @@ vi.mock("../context/document-context", () => ({
       getByGuid: (guid: string) =>
         guid === "tex-1"
           ? { header: { guid, name: "Bark", type: "Texture" } }
-          : guid === "model-1"
+          : guid === "tex-spark"
+            ? { path: "assets/Spark.babasset", header: { guid, name: "Spark", type: "Texture", payload: { usage: "albedo", width: 30, height: 30 } } }
+            : guid === "tex-model"
+            ? {
+                // Extracted from a Model: no header size, only the pixels chunk.
+                path: "assets/Statue_Albedo.babasset",
+                header: {
+                  guid,
+                  name: "Statue_Albedo",
+                  type: "Texture",
+                  payload: { usage: "albedo", compressionState: "pending" },
+                  chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", sha256: "statue-albedo" }],
+                },
+              }
+            : guid === "model-1"
             ? { header: { guid, name: "Statue", type: "Model" } }
             : null,
     },
@@ -104,6 +130,9 @@ beforeEach(() => {
   harness.applyAssetDocumentChange = vi.fn();
   harness.requestRender = vi.fn();
   harness.focusNode = vi.fn();
+  harness.setTextureUsage = vi.fn();
+  harness.textureUsageBlockedReason = () => null;
+  harness.readAssetChunk = vi.fn();
 });
 
 afterEach(() => {
@@ -381,6 +410,151 @@ describe("Material compiler results", () => {
       "material-diagnostic-material.postProcessCost",
     );
     expect(row.getAttribute("data-severity")).toBe("warning");
+  });
+
+  /** A Particle Material whose Texture Sample of `textureGuid` drives Color. */
+  function sampleParticleTexture(textureGuid: string): void {
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid },
+    });
+    doc.edges = [
+      { id: "e-sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" },
+    ];
+    harness.content = doc as unknown as Record<string, unknown>;
+  }
+
+  const SPARK_WARNING = 'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.';
+
+  it("warns about a particle Texture WebGPU would reject and sets its Usage to Particle", () => {
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const row = screen.getByTestId("material-diagnostic-particle.texture_block_align");
+    expect(row.getAttribute("data-severity")).toBe("warning");
+    expect(row.textContent).toContain(
+      'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    fireEvent.click(row);
+    expect(harness.focusNode).toHaveBeenCalledWith("sample");
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    expect(harness.setTextureUsage).toHaveBeenCalledWith("tex-spark", "particle");
+  });
+
+  it("confirms the fix with an Undo that restores the previous Usage", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => ({
+      previousUsage: usage === "particle" ? "normal" : "particle",
+    }));
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    expect(notification.textContent).toContain('Texture "Spark" now uses Particle Usage.');
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    // The Usage the fix replaced, not a default, and only over the fix's Particle.
+    expect(harness.setTextureUsage).toHaveBeenLastCalledWith("tex-spark", "normal", "particle");
+    await waitFor(() =>
+      expect(screen.queryByTestId("texture-usage-notification-tex-spark")).toBeNull(),
+    );
+  });
+
+  it("says why an Undo failed and keeps it for a retry", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => {
+      if (usage !== "particle") throw new Error("The Texture is locked by Ann.");
+      return { previousUsage: "albedo" };
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(notification.textContent).toContain(
+        'Texture "Spark" now uses Particle Usage. Undo failed: The Texture is locked by Ann.',
+      ),
+    );
+    const undo = within(notification).getByRole("button", { name: "Undo" }) as HTMLButtonElement;
+    expect(undo.disabled).toBe(false);
+  });
+
+  it("drops the Undo when the Usage has changed since the fix", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => {
+      if (usage !== "particle") throw new TextureUsageChangedError("albedo");
+      return { previousUsage: "normal" };
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(notification.textContent).toContain(
+        'Texture "Spark" Usage has changed since the fix, so it was not undone.',
+      ),
+    );
+    expect(within(notification).queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("disables the fix while it runs and adds no failure when the Texture already uses Particle", async () => {
+    let finish!: (change: null) => void;
+    harness.setTextureUsage = vi.fn(
+      () => new Promise<null>((resolve) => { finish = resolve; }),
+    );
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const fix = screen.getByRole("button", { name: "Set Usage To Particle" }) as HTMLButtonElement;
+    fireEvent.click(fix);
+    await waitFor(() => expect(fix.disabled).toBe(true));
+    fireEvent.click(fix);
+    expect(harness.setTextureUsage).toHaveBeenCalledOnce();
+    finish(null);
+    await waitFor(() => expect(fix.disabled).toBe(false));
+    expect(
+      screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+    ).not.toContain("could not be changed");
+  });
+
+  it("sizes a Texture extracted from a Model from its decoded pixels", async () => {
+    // PNG signature and IHDR: a 30x30 source that the encoder keeps at 30x30.
+    const png = new Uint8Array(24);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    png.set([0, 0, 0, 30, 0, 0, 0, 30], 16);
+    harness.readAssetChunk = vi.fn(async () => png);
+    sampleParticleTexture("tex-model");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const row = await screen.findByTestId("material-diagnostic-particle.texture_block_align");
+    expect(row.textContent).toContain(
+      'Texture "Statue_Albedo" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    expect(harness.readAssetChunk).toHaveBeenCalledWith("assets/Statue_Albedo.babasset", "pixels");
+  });
+
+  it("says why a read-only or locked Texture cannot take the fix instead of offering it", () => {
+    harness.textureUsageBlockedReason = (guid) =>
+      guid === "tex-spark" ? "The Texture is locked by Ann." : null;
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    expect(
+      screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+    ).toContain(`${SPARK_WARNING} The Texture is locked by Ann.`);
+    expect(screen.queryByRole("button", { name: "Set Usage To Particle" })).toBeNull();
+  });
+
+  it("says why the fix failed and keeps it for a retry", async () => {
+    harness.setTextureUsage = vi.fn(async () => {
+      throw new Error("File not found");
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+      ).toContain(`${SPARK_WARNING} Its Usage could not be changed: File not found`),
+    );
+    expect(screen.getByRole("button", { name: "Set Usage To Particle" })).toBeTruthy();
   });
 });
 

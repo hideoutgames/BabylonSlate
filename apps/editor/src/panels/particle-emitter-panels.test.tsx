@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
   createDefaultParticleEmitterPayload,
@@ -23,9 +23,32 @@ if (typeof window !== "undefined") {
 }
 
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
-vi.mock("../context/document-context", () => {
+const mocks = vi.hoisted(() => ({ setTextureUsage: vi.fn(async () => ({ previousUsage: "albedo" })) }));
+
+vi.mock("../context/document-context", async () => {
+  const { createDefaultMaterialDocument } = await import("@babylonslate/shader-graph");
+  // SparksMat samples a 30x30 Albedo Texture, which WebGPU rejects once compressed.
+  const sparks = createDefaultMaterialDocument("SparksMat", "particle");
+  sparks.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-spark" } });
+  sparks.edges = [
+    { id: "e-sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" },
+  ];
+  const spark = {
+    path: "assets/Spark.babasset",
+    header: { guid: "tex-spark", name: "Spark", type: "Texture", payload: { usage: "albedo", width: 30, height: 30 } },
+  };
   const documents = {
+    registryVersion: 0,
+    setTextureUsage: mocks.setTextureUsage,
+    textureUsageBlockedReason: () => null,
+    collectPlayMaterialLibrary: async (_scene: unknown, _extra: unknown, guids: readonly string[]) => ({
+      documents: new Map(guids.includes("mat-particle") ? [["mat-particle", sparks]] : []),
+      functions: new Map(),
+      textureGuids: [],
+    }),
     assetRegistry: {
+      textureEncodeMaxDimension: 2048,
+      getByGuid: (guid: string) => (guid === spark.header.guid ? spark : undefined),
       list: () => [
         {
           header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
@@ -155,6 +178,24 @@ describe("ParticleEmitterEditor", () => {
     expect(screen.queryByTestId("search-item-mat-surface")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-mat-particle"));
     expect(history.read().render.materialGuid).toBe("mat-particle");
+  });
+
+  it("warns above a collapsed Emitter card when its Material samples a Texture WebGPU would reject", async () => {
+    const initial = createDefaultParticleEmitterPayload();
+    initial.render.materialGuid = "mat-particle";
+    renderWithHistory(initial);
+    fireEvent.click(screen.getByTestId("module-card-emitter-toggle"));
+    expect(screen.queryByTestId("module-card-emitter-body")).toBeNull();
+    const notice = await screen.findByTestId("particle-texture-usage-notice");
+    expect(notice.textContent).toContain(
+      'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    fireEvent.click(within(notice).getByRole("button", { name: "Set Usage To Particle" }));
+    expect(mocks.setTextureUsage).toHaveBeenCalledWith("tex-spark", "particle");
+    // The fix is confirmed in Details, where it was clicked.
+    expect((await screen.findByTestId("texture-usage-notification-tex-spark")).textContent).toContain(
+      'Texture "Spark" now uses Particle Usage.',
+    );
   });
 
   it("opens a P17-shaped document with the new module defaults", () => {

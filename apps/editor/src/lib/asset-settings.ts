@@ -242,6 +242,20 @@ export function applyTextureUsageChange(
   };
 }
 
+/**
+ * A Usage change was refused because the Texture no longer uses the Usage
+ * the caller expected (someone changed it since), so nothing was written.
+ */
+export class TextureUsageChangedError extends Error {
+  readonly currentUsage: string;
+
+  constructor(currentUsage: string) {
+    super("Its Usage has changed since.");
+    this.name = "TextureUsageChangedError";
+    this.currentUsage = currentUsage;
+  }
+}
+
 export function patchTextureDownsample(
   payload: Record<string, unknown>,
   value: string | number | undefined,
