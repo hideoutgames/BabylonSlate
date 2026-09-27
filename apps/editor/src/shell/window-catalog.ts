@@ -1004,11 +1004,3 @@ export function listDockWindows(
   }
   return withOptionalLocks(kind, GRAPH_WINDOWS, options);
 }
-
-export function findDockWindow(
-  kind: DockviewDocumentKind,
-  id: string,
-  options?: DockWindowOptions,
-): DockWindowDefinition | undefined {
-  return listDockWindows(kind, options).find((entry) => entry.id === id);
-}
