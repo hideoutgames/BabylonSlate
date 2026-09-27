@@ -405,9 +405,9 @@ Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
 ignore positions. The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
-exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
-e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
-attach only to that canvas (`attachMaterialPreviewGestures`); never
+exposes `data-camera-radius` so e2e can dispatch wheel and two-pointer pinch
+on the preview canvas. Gestures attach only to that canvas
+(`attachMaterialPreviewGestures`); never
 `camera.attachControl`, which Babylon binds to the Engine input element.
 
 ## Pin defaults and Details

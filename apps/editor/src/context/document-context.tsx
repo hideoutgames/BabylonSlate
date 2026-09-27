@@ -266,7 +266,6 @@ import {
   createPlayAudioSourceLoader,
   playAudioLibraryFromAssets,
 } from "../lib/play-audio";
-import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   beginSaveAllProgress,
   clearDocumentDirtyTrace,
@@ -3587,12 +3586,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           unpacked: number;
           errors: string[];
         };
-        assetByGuid: (guid: string) => {
-          guid: string;
-          type: string;
-          path: string;
-          placeholder: boolean;
-        } | null;
         seedMissingPluginOverride: (guid: string) => Promise<{
           guid: string;
           type: string;
@@ -3602,7 +3595,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         activeTilemapTile: (gx: number, gy: number) => number | null;
         touchAssetOnDisk: (path: string) => Promise<void>;
         runForegroundRescan: () => Promise<void>;
-        materialPreviewCameraRadius: () => number | null;
         documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
         clearDocumentDirtyTrace: () => void;
         saveAllProgress: typeof saveAllProgress;
@@ -3831,16 +3823,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pluginGuids: () =>
         projectService.plugins.map((plugin) => plugin.pluginGuid),
       enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
-      assetByGuid: (guid: string) => {
-        const asset = projectService.registry?.getByGuid(guid);
-        if (!asset) return null;
-        return {
-          guid: asset.header.guid,
-          type: asset.header.type,
-          path: asset.path,
-          placeholder: asset.placeholder === true,
-        };
-      },
       seedMissingPluginOverride: async (guid: string) => {
         const current =
           projectDocumentRef.current?.settings.pluginOverrides ?? {};
@@ -3874,7 +3856,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await storage.writeBinary(path, bytes);
       },
       runForegroundRescan: () => runForegroundRescanRef.current(),
-      materialPreviewCameraRadius,
       documentDirtyTrace,
       clearDocumentDirtyTrace,
       saveAllProgress,
