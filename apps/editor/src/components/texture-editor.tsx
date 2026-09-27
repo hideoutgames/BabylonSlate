@@ -400,7 +400,7 @@ export function TextureDetails({
       <div className="flex flex-col gap-2 px-2 py-2">
         <p className="text-xs text-muted-foreground">
           {compressed
-            ? `Encoded to GPU formats in the background after import or when settings change.${usage === "particle" ? " Particle Textures encode at a size rounded up to a multiple of 4 for WebGPU." : ""}`
+            ? `Encoded to GPU formats in the background after import or when settings change. ${usage === "particle" ? "Particle Textures always encode at a size rounded up to a multiple of 4 for WebGPU." : "Compressed Textures encode at a size rounded up to a multiple of 4 for WebGPU, except Textures used by a Tileset, Sprite or Sprite Animation, which keep their size."}`
             : `${usageLabel(usage)} Textures stay uncompressed to keep exact pixels.`}
         </p>
         {encodeError ? (

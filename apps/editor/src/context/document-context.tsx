@@ -735,6 +735,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const secretStore = useMemo(() => createSecretStore(), []);
   const nativeHttp = useMemo(() => createNativeHttp(), []);
   const [sourceControlTick, setSourceControlTick] = useState(0);
+  /** Project guid whose source-control configuration has finished loading. */
+  const [sourceControlConfiguredFor, setSourceControlConfiguredFor] = useState<string | null>(null);
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
   const mtimeSnapshotRef = useRef<{
@@ -863,16 +865,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sourceControlRef.current.dispose();
       return;
     }
+    const guid = projectService.guid;
+    let current = true;
     void sourceControlRef.current.configure({
       settings:
         projectDocument.settings.sourceControl ??
         DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-      projectGuid: projectService.guid,
+      projectGuid: guid,
       platform: getHostPlatform(),
       testMode: isTestModeEnabled(),
       secretStore,
       nativeHttp,
+    }).then(() => {
+      if (current) setSourceControlConfiguredFor(guid);
     });
+    return () => {
+      current = false;
+    };
   }, [
     nativeHttp,
     projectDocument,
@@ -2532,6 +2541,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
+  // The texture alignment pass re-encodes Textures in the background, so it
+  // waits until this project's source-control locks are known.
+  const lockSource = sourceControlRef.current;
+  const textureGuardProject =
+    projectDocument &&
+    sourceControlConfiguredFor !== null &&
+    sourceControlConfiguredFor === projectService.guid &&
+    (!lockSource.enabled || lockSource.refreshState.lastSuccessAt !== null)
+      ? sourceControlConfiguredFor
+      : null;
+  useEffect(() => {
+    if (!textureGuardProject) return;
+    projectService.setTextureWriteGuard((guid) => textureUsageBlockedReason(guid) === null);
+    void projectService.reconcileTextureAlignment();
+    return () => projectService.setTextureWriteGuard(null);
+  }, [projectService, textureGuardProject, textureUsageBlockedReason]);
+
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
@@ -3633,6 +3659,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        /** Texture alignment passes run and queued, and the Textures they requeued. */
+        textureAlignment: () => { runs: number; pending: number; requeued: string[] };
         textureEncodeState: (path: string) => {
           compressionState: string | null;
           encodeError: string | null;
@@ -3828,6 +3856,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       readAssetChunk: (path: string, chunkId: string) =>
         projectService.readAssetChunk(path, chunkId),
       lastNavBake: () => lastNavBakeSaveResult(),
+      textureAlignment: () => projectService.textureAlignmentState,
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()

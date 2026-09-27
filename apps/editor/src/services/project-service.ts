@@ -105,6 +105,10 @@ import {
   writeProjectPlugin,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
+  ATLAS_REFERRER_TYPES,
+  ATLAS_TEXTURES_META,
+  atlasTextureGuids,
+  type ImageSize,
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
@@ -202,13 +206,26 @@ function headerMetaForSave(
     const parsed = parseSpriteAnimationPayload(content);
     return {
       durationMs: spriteAnimationDurationMs(parsed),
+      [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>),
     };
+  }
+  if (ATLAS_REFERRER_TYPES.has(type)) {
+    // The registry reads a referrer's atlases from its header, never its document.
+    return { [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>) };
   }
   return undefined;
 }
 
 /** Texture payload fields owned by the registry's encode queue, not the document. */
-const TEXTURE_ENCODE_STATE_KEYS = ["compressionState", "ktx2ChunkId", "encodeError", "encodeWallMs"] as const;
+const TEXTURE_ENCODE_STATE_KEYS = [
+  "compressionState",
+  "ktx2ChunkId",
+  "encodeError",
+  "encodeWallMs",
+  "ktx2Width",
+  "ktx2Height",
+  "ktx2BlockAlign",
+] as const;
 
 /**
  * An open Texture document keeps the payload it opened with, but encodes can
@@ -293,6 +310,12 @@ export class ProjectService {
   private readonly registryListeners = new Set<() => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
+  /** Lets the texture alignment pass write, for the project it was set for. */
+  private textureWriteGuard: { projectGuid: string | null; canWrite: (guid: string) => boolean } | null = null;
+  /** Committed KTX2 base sizes by chunk sha256, kept across registry remounts. */
+  private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
+  private textureAlignmentChain: Promise<unknown> = Promise.resolve();
+  private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
 
   constructor(
     storage: ProjectStorage,
@@ -391,6 +414,13 @@ export class ProjectService {
       onComplete: async (result) => {
         await this.assetRegistry?.commitCompressedTexture(result);
         this.emitRegistryChange();
+        // A Tileset, Sprite or Sprite Animation may have picked the texture
+        // while it encoded; recheck it, unless an unsaved Details Usage chose
+        // this encode (the pass reads the saved Usage).
+        const saved = this.assetRegistry?.getByGuid(result.assetGuid)?.header.payload.usage;
+        if (result.usage === undefined || result.usage === String(saved ?? "albedo")) {
+          void this.reconcileTextureAlignment([result.assetGuid]);
+        }
       },
       onError: (guid, error) => {
         this.emitTextureEncodeDiagnostic(guid, error);
@@ -523,6 +553,51 @@ export class ProjectService {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
     );
+  }
+
+  /**
+   * Let the texture alignment pass write to this project: `canWrite(guid)`
+   * is false for Textures that are locked or read-only. The editor sets it
+   * once source-control locks are known, then runs the pass; null (or
+   * closing the project) stops it.
+   */
+  setTextureWriteGuard(canWrite: ((guid: string) => boolean) | null): void {
+    this.textureWriteGuard = canWrite ? { projectGuid: this.projectGuid, canWrite } : null;
+  }
+
+  /**
+   * Requeue compressed Textures whose committed encode is stale for the
+   * alignment policy (all Textures, or `guids`). Runs one at a time on the
+   * current registry, and only while a write guard for this project is set.
+   * Resolves with the number requeued.
+   */
+  reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
+    const run = async () => {
+      const registry = this.assetRegistry;
+      const guard = this.textureWriteGuard;
+      if (!registry || !guard || guard.projectGuid !== this.projectGuid) return 0;
+      const requeued = await registry.reconcileTextureAlignment({
+        guids,
+        canWrite: guard.canWrite,
+        ktx2SizeCache: this.ktx2SizeCache,
+      });
+      this.textureAlignment.runs += 1;
+      for (const guid of requeued) this.textureAlignment.requeued.add(guid);
+      if (requeued.length > 0) this.emitRegistryChange();
+      return requeued.length;
+    };
+    this.textureAlignment.pending += 1;
+    const next = this.textureAlignmentChain.then(run, run).finally(() => {
+      this.textureAlignment.pending -= 1;
+    });
+    this.textureAlignmentChain = next.catch(() => 0);
+    return next;
+  }
+
+  /** Alignment passes finished and still queued, and every Texture they requeued (test hook). */
+  get textureAlignmentState(): { runs: number; pending: number; requeued: string[] } {
+    const { runs, pending, requeued } = this.textureAlignment;
+    return { runs, pending, requeued: [...requeued] };
   }
 
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
@@ -831,6 +906,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    this.textureWriteGuard = null;
     await this.extensions.close();
     this.cancelEmissionJobs();
     await this.storage.releaseFolder();
@@ -1060,10 +1136,18 @@ export class ProjectService {
       nodeTitles: SEARCH_NODE_TITLES,
     });
     this.bindThumbnailWriter();
+    // Every encode pads by atlas status, so legacy Tilesets, Sprites and
+    // Sprite Animations must be decoded before anything is queued.
+    await registry.resolveLegacyAtlasReferrers();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
       await registry.requeueUncompressedTextures();
     }
+    registry.setAtlasStatusListener((guids) => {
+      void this.reconcileTextureAlignment(guids);
+    });
+    // A remount rebuilds the registry; recheck against what is on disk now.
+    if (this.textureWriteGuard) void this.reconcileTextureAlignment();
     return registry;
   }
 

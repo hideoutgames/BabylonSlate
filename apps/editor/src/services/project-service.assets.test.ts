@@ -19,7 +19,10 @@ import {
   normalizeSkeletonPayload,
   readAssetDocumentHeader,
   clearDeletedAssetRefs,
+  createDefaultTilesetPayload,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  sniffImageSize,
+  textureEncodeSize,
   writeTraceDocument,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
@@ -32,6 +35,26 @@ import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
+
+/** KTX2 identifier plus pixelWidth / pixelHeight. */
+function ktx2Header(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(32);
+  bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(20, width, true);
+  view.setUint32(24, height, true);
+  return bytes;
+}
+
+/** PNG signature + IHDR size (enough for size sniffing). */
+function pngHeader(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
 
 async function scaffolded(authentic = false) {
   const storage = new MemoryStorageAdapter("documents");
@@ -619,12 +642,12 @@ describe("project documents as .babasset", () => {
     const registry = service.registry!;
     expect(await registry.reindexPath(path)).not.toBeNull();
     const opened = (await service.loadDocument("texture", path)) as Record<string, unknown>;
-    const ktx2 = new Uint8Array([1, 2, 3]);
+    const ktx2 = ktx2Header(4, 4);
     await registry.commitCompressedTexture({
       assetGuid: "tex-spark",
       ktx2,
       wallMs: 5,
-      settings: DEFAULT_TEXTURE_ENCODE_SETTINGS,
+      settings: { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: 4 },
     });
     const committed = registry.getByGuid("tex-spark")!.header.payload.ktx2ChunkId as string;
 
@@ -636,9 +659,46 @@ describe("project documents as .babasset", () => {
       compressionState: "compressed",
       ktx2ChunkId: committed,
       encodeWallMs: 5,
+      // What the alignment pass reads instead of the chunk.
+      ktx2Width: 4,
+      ktx2Height: 4,
+      ktx2BlockAlign: 4,
     });
     expect(saved.header.payload).not.toHaveProperty("encodeError");
     expect(saved.chunks.get(committed)).toEqual(ktx2);
+  });
+
+  it("keeps a Tileset's texture at its own size, even when picked mid-encode, and pads it again once no atlas uses it", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Atlas.babproject");
+    await installMinimalProject(storage);
+    const service = new ProjectService(storage, {
+      // Stand-in encoder: a KTX2 header at the size the real encoders produce.
+      encode: async (source, settings) => {
+        const size = sniffImageSize(source)!;
+        const encoded = textureEncodeSize(size.width, size.height, settings);
+        return { ktx2: ktx2Header(encoded.width, encoded.height), wallMs: 0 };
+      },
+    });
+    await service.loadCurrentProject();
+    service.setTextureWriteGuard(() => true);
+    const registry = service.registry!;
+    const encoded = () => {
+      const payload = registry.getByGuid(texture!.header.guid)!.header.payload;
+      return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
+    };
+
+    service.pauseTextureEncodeQueue();
+    const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
+    const tilesetPath = "assets/Ground.tileset.babasset";
+    await service.saveDocument("tileset", tilesetPath, { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
+    expect(readAssetDocumentHeader(await storage.readBinary(tilesetPath)).payload.atlasTextures).toEqual([texture!.header.guid]);
+    // The import encode was queued padded, before the Tileset used the texture.
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
+
+    await registry.deleteAsset(service.guidForPath(tilesetPath)!);
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
   });
 
   it("saves Model slots onto the header without replacing the source GLB", async () => {
