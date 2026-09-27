@@ -129,7 +129,7 @@ A node-graph emitter for custom per-particle logic. Package `packages/particle-g
 
 ### Catalog
 
-Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`) that picks its header colour ([theming → Particle stage roles](theming.md#particle-stage-roles)). Palette categories in order:
+Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`) that picks its header colour ([theming → Particle stage roles](theming.md#particle-stage-roles)). Palette categories:
 
 | Category | Nodes (Babylon blocks) |
 | --- | --- |
@@ -196,7 +196,7 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
 
 ### Lowering and build
 
-- `lowerParticleGraphDocument(doc)` validates, then walks back from Emitter Output over inputs in catalog pin order. The `ParticleBuildPlan` holds `settings`, topological `operations`, `spine`, `materialGuid`, `dependencies`, `cost` and `hash`. The order never depends on the node array, and unreachable nodes never enter it.
+- `lowerParticleGraphDocument(doc)` validates, then walks back from Emitter Output over inputs in catalog pin order. The `ParticleBuildPlan` holds `settings`, topological `operations` and `hash`; render takes the Material from the document or emitter. The order never depends on the node array, and unreachable nodes never enter it.
 - Each operation id is its node id, the anchor for build diagnostics. Inputs reference earlier operations (with a Float splat marked) or carry constants already sized to the pin type and clamped to its range. Gradient stops arrive sorted, with a stop at 0 prepended when missing, because Babylon returns 0 below its first stop.
 - **Compile key:** `particleGraphCompileKey` is an FNV-1a hash of the settings and operations. Positions, the name, `materialGuid`, unreachable nodes and defaults on wired pins never change it. A graph with errors gets a stable `invalid:<hash>` of its settings, nodes (without positions) and edges.
 - **Build:** `realizeParticleGraph(plan, { scene, name, emitter, space })` (`packages/render/src/particle-graph-realize.ts`) runs synchronously inside `ParticleService.prepare`, using the block table in `particle-graph-blocks.ts`:
@@ -215,7 +215,7 @@ Render adds node-anchored build codes: `particle.compile.unsupportedNode` (no bl
   - A failure returns `particle.compile.*` diagnostics anchored to the graph node (and pin when known). Babylon's string throws are attributed to the block that was building. The set and any partial system are disposed, and no texture is created.
 - The Material binds after the build through the Basic path (`bindParticleMaterial`).
 - Retiring a slot stops the system, then calls `set.dispose()`, which disposes the blocks, the system and its readiness texture. `ParticleSystemSet.emitterNode` is never used, because its dispose would destroy the actor's emitter mesh.
-- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.20 has no GPU node path), at the authored capacity up to 4096. `plan.cost` counts operations and the value operations evaluated per particle per frame. Device cost on the A16 iPad is unmeasured.
+- **CPU cost:** graph slots are always CPU `ParticleSystem`s (Babylon 9.20 has no GPU node path), at the authored capacity up to 4096. Device cost on the A16 iPad is unmeasured.
 
 ### Local Space
 

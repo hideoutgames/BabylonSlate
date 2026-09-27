@@ -9,9 +9,16 @@ import {
   particleNodeDefinition,
 } from "./catalog";
 import { newParticleNodeProperties } from "./document";
-import { particleComponentCount } from "./types";
 
 const TITLE_CASE = /^[A-Z0-9][A-Za-z0-9]*( [A-Z0-9][A-Za-z0-9]*)*$/;
+const PIN_WIDTH: Record<string, number> = {
+  generic: 1,
+  float: 1,
+  vec2: 2,
+  vec3: 3,
+  color: 4,
+  particle: 0,
+};
 const RADIAL_SHAPES = new Set(["shape.sphere", "shape.cone", "shape.cylinder"]);
 
 describe("particle node catalog", () => {
@@ -42,8 +49,9 @@ describe("particle node catalog", () => {
     for (const definition of PARTICLE_CATALOG) {
       for (const pin of definition.inputs) {
         if (!pin.defaultValue) continue;
-        const width = pin.type.kind === "generic" ? 1 : particleComponentCount(pin.type.kind);
-        expect(pin.defaultValue, `${definition.type}.${pin.id}`).toHaveLength(width);
+        expect(pin.defaultValue, `${definition.type}.${pin.id}`).toHaveLength(
+          PIN_WIDTH[pin.type.kind]!,
+        );
       }
     }
   });

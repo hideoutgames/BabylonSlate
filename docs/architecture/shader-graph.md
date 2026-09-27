@@ -197,7 +197,7 @@ not in the pure validator. See [particles](particles.md#look).
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:
 topologically ordered operations, explicit operands (including ordered numeric conversions),
-texture bindings, dependencies, cost features and a content hash that ignores
+texture bindings and dependencies, cost features and a content hash that ignores
 node positions. Material Function calls are **inlined** here under namespaced
 operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
