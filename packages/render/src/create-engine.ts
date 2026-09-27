@@ -12,11 +12,13 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
+import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -1449,7 +1451,7 @@ function initializeEngine(
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
-        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); },
+        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
   onRollback(() => editorSync?.dispose());
@@ -1461,6 +1463,37 @@ function initializeEngine(
     outlineHost.refreshSettings();
   };
   const outlineActorBySlot = new Map<number, string>();
+  const editorFogActors = new Set<string>();
+  const syncEditorFogVolumes = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    const retained = new Set<string>();
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      const volumes = actor.visible ? fogVolumeBindings(actor.components) : [];
+      if (root && volumes.length) {
+        upsertFogVolumes(scene, actor.id, root, volumes);
+        retained.add(actor.id);
+      }
+    }
+    for (const id of editorFogActors) if (!retained.has(id)) removeFogVolumes(scene, id);
+    editorFogActors.clear();
+    for (const id of retained) editorFogActors.add(id);
+  };
+  const runtimeFogActorBySlot = new Map<number, string>();
+  const refreshRuntimeFogVolumes = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = binding.fogVolumes.get(slotId);
+    const previous = runtimeFogActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      removeFogVolumes(scene, previous);
+      runtimeFogActorBySlot.delete(slotId);
+    }
+    if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings);
+    runtimeFogActorBySlot.set(slotId, authored.actorId);
+  };
   const refreshRuntimeOutline = (slotId: number) => {
     if (options.editor) return;
     const root = binding.meshes.get(slotId);
@@ -1478,7 +1511,10 @@ function initializeEngine(
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);
   };
-  binding.onVisualChanged = refreshRuntimeOutline;
+  binding.onVisualChanged = (slotId) => {
+    refreshRuntimeOutline(slotId);
+    refreshRuntimeFogVolumes(slotId);
+  };
 
   let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
@@ -1573,7 +1609,8 @@ function initializeEngine(
   ) => {
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
-      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+        isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
     }
@@ -2720,6 +2757,12 @@ function initializeEngine(
           else binding.outlines.delete(command.slotId);
           throw error;
         }
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setFogVolumes") {
+        appliedSnapshotIdentity = null;
+        binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
+        refreshRuntimeFogVolumes(command.slotId);
         scheduler.invalidate("asset");
       }
       if (command.type === "setAreaLights") {
