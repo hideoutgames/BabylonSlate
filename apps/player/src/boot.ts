@@ -337,6 +337,10 @@ function initializePlayer(
     },
     onRenderPathChanged: publishRenderPathStatus,
     onScalabilityApplied: publishScalabilityStatus,
+    onRagdollPoseCaptured: (result) => {
+      if (worker) worker.postControl(result);
+      else runtime?.applyRagdollPoseCaptured(result);
+    },
     onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
   });
   own(() => handle.dispose());

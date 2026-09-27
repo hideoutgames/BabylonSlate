@@ -136,8 +136,9 @@ export function AtlasTileGrid({
     width: number;
     height: number;
   } | null>(null);
-  const highlightedIds = new Set(
-    selectionPreview?.ids ?? selectedIds ?? [selectedId],
+  const highlightedIds = useMemo(
+    () => new Set(selectionPreview?.ids ?? selectedIds ?? [selectedId]),
+    [selectionPreview?.ids, selectedIds, selectedId],
   );
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -419,6 +420,73 @@ export function AtlasTileGrid({
     });
   };
 
+  const tileButtons = useMemo(
+    () =>
+      filled.tiles.map((tile) => {
+        const rect = tilesetTileRect(filled, tile.id);
+        if (!rect) return null;
+        const selected = highlightedIds.has(tile.id);
+        return (
+          <button
+            key={tile.id}
+            type="button"
+            data-testid={`${testId}-cell-${tile.id}`}
+            data-selected={selected ? "true" : "false"}
+            data-collision={collisionAttr(tile.collision)}
+            className={cn(
+              "absolute box-border border-solid border-foreground/25 outline-none [border-width:calc(1px/var(--atlas-zoom,1))] hover:bg-foreground/10 focus-visible:z-10 focus-visible:shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--ring)]",
+              selected
+                ? "z-10 border-transparent shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--graph-state-selected),0_0_0_calc(1px/var(--atlas-zoom,1))_var(--background)]"
+                : null,
+              tile.collision === "full"
+                ? "bg-primary/20 [background-image:repeating-linear-gradient(45deg,transparent,transparent_4px,oklch(0.65_0.12_250/0.4)_4px,oklch(0.65_0.12_250/0.4)_8px)]"
+                : null,
+            )}
+            style={{
+              left: `${(rect.x / filled.atlasWidth) * 100}%`,
+              top: `${(rect.y / filled.atlasHeight) * 100}%`,
+              width: `${(rect.width / filled.atlasWidth) * 100}%`,
+              height: `${(rect.height / filled.atlasHeight) * 100}%`,
+            }}
+            aria-label={`Tile ${tile.id}`}
+            aria-pressed={selected}
+            onKeyDown={() => {
+              didPanRef.current = false;
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (didPanRef.current) {
+                event.preventDefault();
+                return;
+              }
+              onSelect(tile.id);
+            }}
+          >
+            {tile.collision &&
+            typeof tile.collision === "object" &&
+            tile.collision.points.length > 1 ? (
+              <svg
+                className="pointer-events-none absolute inset-0 size-full text-primary"
+                viewBox="0 0 1 1"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <polyline
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="0.06"
+                  points={tile.collision.points
+                    .map((point) => `${point.x},${1 - point.y}`)
+                    .join(" ")}
+                />
+              </svg>
+            ) : null}
+          </button>
+        );
+      }),
+    [filled, highlightedIds, onSelect, testId],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col p-3" data-testid={testId}>
       <div
@@ -462,14 +530,18 @@ export function AtlasTileGrid({
         ) : null}
         <div
           ref={imageRef}
-          className={cn(panZoom ? "absolute left-0 top-0" : "relative shrink-0")}
-          style={{
-            width: Math.max(1, filled.atlasWidth),
-            height: Math.max(1, filled.atlasHeight),
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: "0 0",
-            "--atlas-zoom": panZoom ? zoom : 1,
-          } as CSSProperties}
+          className={cn(
+            panZoom ? "absolute left-0 top-0" : "relative shrink-0",
+          )}
+          style={
+            {
+              width: Math.max(1, filled.atlasWidth),
+              height: Math.max(1, filled.atlasHeight),
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "0 0",
+              "--atlas-zoom": panZoom ? zoom : 1,
+            } as CSSProperties
+          }
         >
           {imageUrl ? (
             <img
@@ -485,68 +557,7 @@ export function AtlasTileGrid({
               }}
             />
           ) : null}
-          {filled.tiles.map((tile) => {
-            const rect = tilesetTileRect(filled, tile.id);
-            if (!rect) return null;
-            const selected = highlightedIds.has(tile.id);
-            return (
-              <button
-                key={tile.id}
-                type="button"
-                data-testid={`${testId}-cell-${tile.id}`}
-                data-selected={selected ? "true" : "false"}
-                data-collision={collisionAttr(tile.collision)}
-                className={cn(
-                  "absolute box-border border-solid border-foreground/25 outline-none [border-width:calc(1px/var(--atlas-zoom,1))] hover:bg-foreground/10 focus-visible:z-10 focus-visible:shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--ring)]",
-                  selected
-                    ? "z-10 border-transparent shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--graph-state-selected),0_0_0_calc(1px/var(--atlas-zoom,1))_var(--background)]"
-                    : null,
-                  tile.collision === "full"
-                    ? "bg-primary/20 [background-image:repeating-linear-gradient(45deg,transparent,transparent_4px,oklch(0.65_0.12_250/0.4)_4px,oklch(0.65_0.12_250/0.4)_8px)]"
-                    : null,
-                )}
-                style={{
-                  left: `${(rect.x / filled.atlasWidth) * 100}%`,
-                  top: `${(rect.y / filled.atlasHeight) * 100}%`,
-                  width: `${(rect.width / filled.atlasWidth) * 100}%`,
-                  height: `${(rect.height / filled.atlasHeight) * 100}%`,
-                }}
-                aria-label={`Tile ${tile.id}`}
-                aria-pressed={selected}
-                onKeyDown={() => {
-                  didPanRef.current = false;
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (didPanRef.current) {
-                    event.preventDefault();
-                    return;
-                  }
-                  onSelect(tile.id);
-                }}
-              >
-                {tile.collision &&
-                typeof tile.collision === "object" &&
-                tile.collision.points.length > 1 ? (
-                  <svg
-                    className="pointer-events-none absolute inset-0 size-full text-primary"
-                    viewBox="0 0 1 1"
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                  >
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="0.06"
-                      points={tile.collision.points
-                        .map((point) => `${point.x},${1 - point.y}`)
-                        .join(" ")}
-                    />
-                  </svg>
-                ) : null}
-              </button>
-            );
-          })}
+          {tileButtons}
           {selectionPreview ? (
             <div
               aria-hidden="true"

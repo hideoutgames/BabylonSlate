@@ -710,6 +710,7 @@ export function TilemapPaint({
     start: { x: number; y: number };
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
+    seen: Set<string>;
   } | null>(null);
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
@@ -808,17 +809,17 @@ export function TilemapPaint({
         start: cell,
         last: cell,
         cells: [cell],
+        seen: new Set([`${cell.x},${cell.y}`]),
       };
     }
     const stroke = strokeRef.current;
     if (!stroke) return;
     if (tool === "brush" || tool === "eraser") {
       const extra = cellsAlongSegment(stroke.last, cell);
-      const seen = new Set(stroke.cells.map((entry) => `${entry.x},${entry.y}`));
       for (const entry of extra) {
         const key = `${entry.x},${entry.y}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        if (stroke.seen.has(key)) continue;
+        stroke.seen.add(key);
         stroke.cells.push(entry);
       }
       stroke.last = cell;
@@ -1269,7 +1270,7 @@ function useLoadedTilesets(
   const loadPayloads = useCallback(async () => {
     const next = new Map<string, TilesetPayload>();
     for (const guid of guids.split(",").filter(Boolean)) {
-      const asset = assetRegistry?.list().find((entry) => entry.header.guid === guid);
+      const asset = assetRegistry?.getByGuid(guid);
       if (!asset) continue;
       const open = openDocuments.find((doc) => doc.ref.path === asset.path);
       const raw = open?.content ?? (loadAssetDocument ? await loadAssetDocument("tileset", asset.path) : null);
@@ -1316,9 +1317,9 @@ function useTilesetAtlases(
     void (async () => {
       const next = new Map<string, HTMLImageElement>();
       for (const [guid, tileset] of payloads) {
-        const texture = (assetRegistry?.list() ?? []).find(
-          (asset) => asset.header.guid === tileset.textureGuid,
-        );
+        const texture = tileset.textureGuid
+          ? assetRegistry?.getByGuid(tileset.textureGuid)
+          : undefined;
         if (!texture || !readAssetChunk) continue;
         const bytes = await readAssetChunk(texture.path, "pixels");
         if (!bytes || bytes.byteLength === 0) continue;

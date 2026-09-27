@@ -55,6 +55,7 @@ import {
   DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
+  GIZMO_ROTATION_COLLIDER_THICKNESS,
   GIZMO_ROTATION_THICKNESS,
   GIZMO_SCALE_SENSITIVITY,
   GIZMO_SHAFT_THICKNESS,
@@ -2287,39 +2288,44 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("builds rotation rings thicker than translate shafts, with aligned colliders", () => {
-    expect(GIZMO_ROTATION_THICKNESS).toBe(8);
+  it("draws thin rotation rings inside fat pick tori on the same center line", () => {
     expect(GIZMO_ROTATION_THICKNESS).toBeGreaterThan(GIZMO_SHAFT_THICKNESS);
+    expect(GIZMO_ROTATION_COLLIDER_THICKNESS).toBeGreaterThan(
+      GIZMO_ROTATION_THICKNESS,
+    );
 
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    const children = host.rotationGizmo.xGizmo._rootMesh.getChildMeshes();
-    const visual = children.find(
-      (mesh) =>
-        mesh.visibility > 0 &&
-        mesh.name !== "rotationDisplay" &&
-        mesh.getChildMeshes().length === 0,
-    );
-    const collider = children.find((mesh) => mesh.name === "ignore");
-    expect(visual).toBeDefined();
-    expect(collider).toBeDefined();
-    expect(visual!.scaling.x).toBeCloseTo(1);
-    expect(collider!.scaling.x).toBeCloseTo(1);
-
-    visual!.computeWorldMatrix(true);
-    visual!.refreshBoundingInfo(false, false);
-    collider!.computeWorldMatrix(true);
-    collider!.refreshBoundingInfo(false, false);
-    const visualBox = visual!.getBoundingInfo().boundingBox;
-    const colliderBox = collider!.getBoundingInfo().boundingBox;
-    const minExtent = (v: Vector3) => Math.min(v.x, v.y, v.z);
-    const maxExtent = (v: Vector3) => Math.max(v.x, v.y, v.z);
-    // Hairline at shaft thickness 0.45 is ~0.001; thickness 8 is ~0.02.
-    expect(minExtent(visualBox.extendSize)).toBeGreaterThan(0.01);
-    expect(
-      maxExtent(colliderBox.extendSizeWorld) /
-        maxExtent(visualBox.extendSizeWorld),
-    ).toBeLessThan(2);
+    // A torus in local space: max extent is ring radius + tube radius, min extent is the tube radius.
+    const tube = (extend: Vector3) => 2 * Math.min(extend.x, extend.y, extend.z);
+    const ringRadius = (extend: Vector3) =>
+      Math.max(extend.x, extend.y, extend.z) - Math.min(extend.x, extend.y, extend.z);
+    for (const axis of [
+      host.rotationGizmo.xGizmo,
+      host.rotationGizmo.yGizmo,
+      host.rotationGizmo.zGizmo,
+    ]) {
+      const children = axis._rootMesh.getChildMeshes();
+      const visual = children.find(
+        (mesh) =>
+          mesh.visibility > 0 &&
+          mesh.name !== "rotationDisplay" &&
+          mesh.getChildMeshes().length === 0,
+      );
+      const collider = children.find((mesh) => mesh.name === "ignore");
+      expect(visual).toBeDefined();
+      expect(collider).toBeDefined();
+      expect(visual!.scaling.x).toBeCloseTo(1);
+      expect(collider!.scaling.x).toBeCloseTo(1);
+      const visualExtend = visual!.getBoundingInfo().boundingBox.extendSize;
+      const colliderExtend = collider!.getBoundingInfo().boundingBox.extendSize;
+      // The pick torus stays under the drawn line instead of growing off it.
+      expect(ringRadius(visualExtend)).toBeCloseTo(ringRadius(colliderExtend), 5);
+      // Babylon's thickness-8 pick tube (0.24) is the touch target; the drawn ring is a line.
+      expect(tube(colliderExtend)).toBeGreaterThan(0.2);
+      expect(tube(visualExtend)).toBeLessThan(0.01);
+      expect(tube(colliderExtend) / tube(visualExtend)).toBeGreaterThan(10);
+    }
     host.dispose();
   });
 });

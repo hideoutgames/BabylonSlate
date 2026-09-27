@@ -285,6 +285,41 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
 
+  it("hides out-of-context members while Context Sensitive is on, unless a dragged pin reaches them", () => {
+    const guardTarget: SerializedPin = {
+      id: "target",
+      name: "Target",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "Guard" },
+    };
+    const setAlert: PaletteNode = {
+      id: "variables.set:Guard:Alert",
+      title: "Set Alert",
+      category: "Variables",
+      pins: [execIn, execOut, guardTarget],
+      outOfContext: true,
+    };
+    const props = { onOpenChange: vi.fn(), paletteNodes: [log, setAlert], onAddNode: vi.fn() };
+    const { getByTestId, queryByTestId, rerender } = render(<NodePalette open {...props} />);
+    expect(itemIds()).toEqual(["node-palette-item-debug.log"]);
+    expect(queryByTestId("node-palette-category-Variables")).toBeNull();
+
+    fireEvent.click(getByTestId("node-palette-context-sensitive"));
+    expect(itemIds()).toEqual([
+      "node-palette-item-debug.log",
+      "node-palette-item-variables.set:Guard:Alert",
+    ]);
+
+    fireEvent.click(getByTestId("node-palette-context-sensitive"));
+    rerender(<NodePalette open {...props} filterPin={execOut} />);
+    expect(getByTestId("node-palette-context-sensitive").getAttribute("aria-checked")).toBe("true");
+    expect(itemIds()).toEqual([
+      "node-palette-item-debug.log",
+      "node-palette-item-variables.set:Guard:Alert",
+    ]);
+  });
+
   it("shows readable category labels and sorts categories by them", () => {
     const nodes = [
       { ...log, category: "uv" },

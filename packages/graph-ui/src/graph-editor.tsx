@@ -75,6 +75,7 @@ import {
   graphNodeTypes,
   resolveNodeType,
 } from "./graph-nodes";
+import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
@@ -103,8 +104,12 @@ import {
   shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
-import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
-import type { PinDisplayLookup } from "./wildcard-display";
+import {
+  createPinDisplayNodesSelector,
+  displayPinTypesForGraph,
+  pinTypeKey,
+  type PinDisplayLookup,
+} from "./wildcard-display";
 import {
   GRAPH_DEFAULT_ZOOM,
   resolveGraphMountViewport,
@@ -306,26 +311,6 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
       targetHandle: edge.targetHandle,
       ...(edge.type ? { type: edge.type } : {}),
       ...animTransitionEdgeMarkers(edge.type),
-    };
-  });
-}
-
-function styleFlowEdges(
-  edges: Edge[],
-  nodes: CanvasNode[],
-  displayTypes: PinDisplayLookup,
-): Edge[] {
-  return edges.map((edge) => {
-    const source = nodes.find((node) => node.id === edge.source);
-    const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
-    const pin = pins.find((entry) => entry.id === edge.sourceHandle);
-    const display =
-      (edge.sourceHandle
-        ? displayTypes.get(pinTypeKey(edge.source, edge.sourceHandle))
-        : undefined) ?? pin?.type;
-    return {
-      ...edge,
-      style: edgeStyleForPin(display),
     };
   });
 }
@@ -627,9 +612,11 @@ function GraphEditorCanvas({
   }>>([]);
   const proximityPathsRef = useRef(proximityPaths);
   proximityPathsRef.current = proximityPaths;
+  const [selectPinDisplayNodes] = useState(createPinDisplayNodesSelector);
+  const pinNodes = selectPinDisplayNodes(nodes);
   const pinDisplayTypes = useMemo(
-    () => displayPinTypesForGraph(nodes, edges),
-    [edges, nodes],
+    () => displayPinTypesForGraph(pinNodes, edges),
+    [edges, pinNodes],
   );
   const pinDisplayTypesRef = useRef(pinDisplayTypes);
   pinDisplayTypesRef.current = pinDisplayTypes;
@@ -2068,8 +2055,8 @@ function GraphEditorCanvas({
   );
 
   const styledEdges = useMemo(
-    () => styleFlowEdges(edges, nodes, pinDisplayTypes),
-    [edges, nodes, pinDisplayTypes],
+    () => styleFlowEdges(edges, pinNodes, pinDisplayTypes),
+    [edges, pinNodes, pinDisplayTypes],
   );
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
