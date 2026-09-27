@@ -10,7 +10,19 @@ type Scope = {
   textures: Set<BaseTexture>;
   particles: Set<IParticleSystem>;
   slots: Map<number, SceneStreamIdentity & { instanceActorGuid: string }>;
-  cached?: { meshes: AbstractMesh[]; meshCount: number; slotCount: number; newestMesh?: AbstractMesh };
+  restore: AbstractMesh[];
+  textureScratch: Set<BaseTexture>;
+  cached?: {
+    meshes: AbstractMesh[];
+    meshSet: Set<AbstractMesh>;
+    meshCount: number;
+    slotCount: number;
+    newestMesh?: AbstractMesh;
+    particles?: IParticleSystem[];
+    particleCount?: number;
+    particleSlotCount?: number;
+    newestParticle?: IParticleSystem;
+  };
 };
 const scopes = new WeakMap<Scene, Scope>();
 const particleSlots = new WeakMap<IParticleSystem, number>();
@@ -39,28 +51,41 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
     for (const child of root.getChildMeshes()) meshes.add(child);
   }
   const result = [...meshes];
-  scope.cached = { meshes: result, meshCount: scene.meshes.length, slotCount: scope.binding.meshes.size, newestMesh };
+  scope.cached = { meshes: result, meshSet: meshes, meshCount: scene.meshes.length, slotCount: scope.binding.meshes.size, newestMesh };
   return result;
 }
 
 export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  const live = new Set(scene.particleSystems);
-  for (const system of scope.particles) if (!live.has(system)) scope.particles.delete(system);
-  return scene.particleSystems.filter((system) => {
+  admittedSceneMeshes(scene);
+  const cached = scope.cached!;
+  const newestParticle = scene.particleSystems.at(-1);
+  if (cached.particles && cached.particleCount === scene.particleSystems.length &&
+      cached.particleSlotCount === scope.slots.size && cached.newestParticle === newestParticle) return cached.particles;
+  for (const system of scope.particles) if (!scene.particleSystems.includes(system)) scope.particles.delete(system);
+  const particles = cached.particles ?? [];
+  let count = 0;
+  for (const system of scene.particleSystems) {
     const slot = particleSlots.get(system);
-    return slot === undefined ? scope.particles.has(system) : !scope.slots.has(slot);
-  });
+    if (slot === undefined ? scope.particles.has(system) : !scope.slots.has(slot)) particles[count++] = system;
+  }
+  particles.length = count;
+  cached.particles = particles;
+  cached.particleCount = scene.particleSystems.length;
+  cached.particleSlotCount = scope.slots.size;
+  cached.newestParticle = newestParticle;
+  return particles;
 }
 
-/** Keep failed or newly changed parent textures strict while ignoring staged uploads. */
+/** Keep failed or newly changed parent textures strict while ignoring staged uploads. The returned Set is borrowed until the next call. */
 export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMesh[]): Set<BaseTexture> | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  const live = new Set(scene.textures);
-  for (const texture of scope.textures) if (!live.has(texture)) scope.textures.delete(texture);
-  const textures = new Set(scope.textures);
+  for (const texture of scope.textures) if (!scene.textures.includes(texture)) scope.textures.delete(texture);
+  const textures = scope.textureScratch;
+  textures.clear();
+  for (const texture of scope.textures) textures.add(texture);
   for (const mesh of meshes) for (const texture of (mesh.material ?? scene.defaultMaterial).getActiveTextures()) textures.add(texture);
   for (const system of admittedSceneParticles(scene) ?? []) {
     if (system.particleTexture) textures.add(system.particleTexture);
@@ -72,8 +97,9 @@ export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMes
 export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T): T {
   const admitted = admittedSceneMeshes(scene);
   if (!admitted) return draw();
-  const included = new Set(admitted);
-  const restore: AbstractMesh[] = [];
+  const scope = scopes.get(scene)!;
+  const included = scope.cached!.meshSet;
+  const restore = scope.restore;
   try {
     for (const mesh of scene.meshes) {
       if (included.has(mesh) || !mesh.isEnabled(false)) continue;
@@ -82,6 +108,7 @@ export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T):
     return draw();
   } finally {
     for (const mesh of restore) if (!mesh.isDisposed()) mesh.setEnabled(true);
+    restore.length = 0;
   }
 }
 
@@ -95,8 +122,10 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
   const ensureScope = (): Scope => {
     let scope = scopes.get(scene);
     if (!scope) {
-      scope = { binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
-        particles: new Set(scene.particleSystems), slots: new Map() };
+      scope = {
+        binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
+        particles: new Set(scene.particleSystems), slots: new Map(), restore: [], textureScratch: new Set(),
+      };
       scopes.set(scene, scope);
     }
     return scope;
@@ -107,7 +136,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     heldRoots.clear(); heldLights.clear();
   };
   const prune = () => {
-    if ([...streams.values()].some((stream) => stream.loading)) return;
+    for (const stream of streams.values()) if (stream.loading) return;
     const scope = scopes.get(scene);
     if (!scope) return;
     // Removed precedes per-actor despawn on the reliable worker channel.
@@ -118,14 +147,14 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     // Admitted parent consumers are still checked normally by scene-perf.
     if (scene.getWaitingItemsCount() > 0) return;
     const admitted = admittedSceneMeshes(scene)!;
+    const admittedSet = scope.cached!.meshSet;
     const textures = admittedSceneTextures(scene, admitted)!;
     try {
       for (const texture of scene.textures) {
         if (!textures.has(texture) && !texture.isRenderTarget && (texture.loadingError || !texture.isReady())) return;
       }
-      const meshes = new Set(admitted);
       for (const mesh of scene.meshes) {
-        if (!meshes.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
+        if (!admittedSet.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
       }
     } catch {
       // A retired import's native failure must not become the parent's failure.
