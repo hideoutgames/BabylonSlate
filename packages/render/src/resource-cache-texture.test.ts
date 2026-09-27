@@ -114,6 +114,34 @@ describe("bounded texture preparation ownership", () => {
       create.mockRestore(); read.mockRestore(); slice.mockRestore(); live.release(); cache.dispose(); engine.dispose(); vi.useRealTimers();
     }
   });
+
+  it("settles native-ready header work when a leased wrapper is disposed", async () => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const source = new Blob([new Uint8Array([4, 5, 6])]);
+    const header = source.slice(0, 64 * 1024);
+    let finish!: (value: ArrayBuffer) => void;
+    const measurement = new Promise<ArrayBuffer>((resolve) => { finish = resolve; });
+    const slice = vi.spyOn(source, "slice").mockReturnValue(header);
+    const read = vi.spyOn(header, "arrayBuffer").mockReturnValue(measurement);
+    try {
+      const pending = cache.acquireTexture("pending", engine, source);
+      expect(pending.resource.isReady()).toBe(true);
+      pending.resource.dispose();
+      await expect(pending.ready).rejects.toThrow("retired during preparation");
+      expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 0, leases: 1, pending: 0 });
+      finish(new ArrayBuffer(0));
+      const rebuilt = cache.acquireTexture("pending", engine, source);
+      await rebuilt.ready;
+      pending.release();
+      expect(rebuilt.resource).not.toBe(pending.resource);
+      expect(rebuilt.resource.isReady()).toBe(true);
+      expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
+      rebuilt.release();
+      cache.flushUnreferenced();
+      expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+    } finally { finish(new ArrayBuffer(0)); read.mockRestore(); slice.mockRestore(); cache.dispose(); engine.dispose(); }
+  });
 });
 
 describe("resource cache getTexture", () => {

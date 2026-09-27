@@ -212,6 +212,10 @@ describe("Water rendering", () => {
       expect(point.y).toBeCloseTo(sample.height, 5);
       mesh.dispose();
       expect(scene.materials).not.toContain(material);
+      // A disposed surface leaves the per-scene set, so later frames never resample it.
+      const resample = vi.spyOn(mesh, "updateVerticesData");
+      setSceneWaterTime(scene, 4); updateSceneWater(scene);
+      expect(resample).not.toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("fills a curved, widening river inside its query footprint and reshapes it live", () => {

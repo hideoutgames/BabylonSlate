@@ -27,6 +27,7 @@ describe("hardware scaling", () => {
       initialLevel: 1.5,
     });
     expect(scaling.getLevel()).toBe(1.5);
+    expect(engine.setHardwareScalingLevel).toHaveBeenCalledWith(1.5);
   });
 
   it("does not call setHardwareScalingLevel when the clamped level is unchanged", () => {
