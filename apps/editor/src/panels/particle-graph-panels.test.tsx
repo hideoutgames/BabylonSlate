@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
@@ -9,7 +9,11 @@ import {
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
 } from "@babylonslate/particle-graph";
-import { ParticleGraphEditingProvider } from "../context/particle-graph-editing-context";
+import {
+  ParticleGraphEditingProvider,
+  useParticleGraphEditing,
+  type ParticleGraphEditingValue,
+} from "../context/particle-graph-editing-context";
 import {
   ParticleGraphCanvasPanel,
   ParticleGraphCompilerResultsPanel,
@@ -376,6 +380,48 @@ describe("Particle Graph document panels", () => {
     expect(
       (await within(results).findByTestId("texture-usage-notification-tex-spark")).textContent,
     ).toContain('Texture "Spark" now uses Particle Usage.');
+  });
+
+  it("leaves the No Material of a Texture WebGPU refused to that Texture's warning", async () => {
+    let editing: ParticleGraphEditingValue | null = null;
+    function Probe() {
+      editing = useParticleGraphEditing();
+      return null;
+    }
+    store.reset({
+      ...createDefaultParticleGraphDocument("Embers"),
+      materialGuid: "mat-particle",
+    } as unknown as Record<string, unknown>);
+    render(
+      <ParticleGraphEditingProvider documentId={DOC_ID}>
+        <Probe />
+        <ParticleGraphCompilerResultsPanel {...panelProps} />
+      </ParticleGraphEditingProvider>,
+    );
+    const results = screen.getByTestId("particle-graph-compiler-results");
+    const warningId = "particle-graph-diagnostic-particle.texture_block_align";
+    await within(results).findByTestId(warningId);
+    const report = (textureGuid: string) =>
+      act(() => {
+        const current = editing!;
+        current.reportBuildDiagnostics(current.previewKey!, [
+          {
+            code: "particle.missing_material",
+            message: `Texture "${textureGuid}" (30×30) was not drawn.`,
+            textureGuid,
+          },
+        ]);
+      });
+    const noMaterial = () =>
+      within(results).queryByTestId("particle-graph-diagnostic-particle.missing_material");
+
+    // A refused Texture no warning names still explains the build's No Material.
+    report("tex-other");
+    expect(noMaterial()?.getAttribute("data-severity")).toBe("error");
+
+    report("tex-spark");
+    expect(noMaterial()).toBeNull();
+    expect(within(results).getByTestId(warningId).getAttribute("data-severity")).toBe("warning");
   });
 
   it("commits Details edits to the open document", () => {

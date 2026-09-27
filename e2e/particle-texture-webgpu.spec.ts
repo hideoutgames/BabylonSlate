@@ -378,6 +378,9 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   const graphEmpty = graphPreview.getByTestId("particle-preview-empty");
   await expect(graphEmpty).toContainText("No Material", { timeout: 30_000 });
   await expect(graphEmpty).toContainText(refused);
+  // The build's No Material is that warning's cause, so Compiler Results does not repeat it as an error.
+  await expect(graphResults.getByTestId("particle-graph-diagnostic-particle.missing_material")).toHaveCount(0);
+  await expect(graphRow).toBeVisible();
   await saveAllIfEnabled(page);
   await closeDocumentTab(page, "particle-graph");
 
@@ -415,7 +418,7 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   });
 
   const run: PreviewDraw = { retries: 0, drawMs: null, firstDraw: { red: 0, moved: 0 }, steady: { red: 0, moved: 0 } };
-  let failuresBeforeDraw = 0;
+  let failuresBeforeDraw: string[] = [];
   let failuresWhileDrawing: string[] = [];
   let compressed: CompressedTexture[] | null = null;
   try {
@@ -423,11 +426,12 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
     await expect
       .poll(() => compressedGpuTextures(page), { timeout: 30_000 })
       .toContainEqual(expect.objectContaining({ width: 4, height: 4 }));
-    // Count GPU failures from the first good draw (WebGPU never binds the refused 1x1 texture).
+    // No GPU failure at any point: WebGPU never uploads the refused 1x1 KTX2, the Usage save
+    // binds source pixels, and the commit binds the 4x4 KTX2. Split at the first good draw.
     await expectPreviewDraws(preview, canvas, run, () => {
-      failuresBeforeDraw = gpuFailures.splice(0).length;
+      failuresBeforeDraw = [...gpuFailures];
     });
-    failuresWhileDrawing = [...gpuFailures];
+    failuresWhileDrawing = gpuFailures.slice(failuresBeforeDraw.length);
   } finally {
     await canvas.screenshot({ path: testInfo.outputPath("particle-texture-usage-fix.png") }).catch(() => undefined);
     compressed = await compressedGpuTextures(page).catch(() => null);
@@ -440,6 +444,7 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
     });
   }
   expect(Math.min(run.steady.red, run.steady.moved)).toBeGreaterThan(200);
+  expect(failuresBeforeDraw).toEqual([]);
   expect(failuresWhileDrawing).toEqual([]);
   // After the click the texture reached the GPU as 4x4 blocks, never off the 4-texel grid.
   expect(compressed).toContainEqual(expect.objectContaining({ width: 4, height: 4 }));
