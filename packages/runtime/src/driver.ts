@@ -1446,6 +1446,11 @@ class InProcessRuntime implements RuntimeDriver {
       this.navYawByActor.delete(actor.guid);
       this.navSteeredActors.delete(actor.guid);
     }
+    // A graph may retain a destroyed actor reference. Its WeakMap ownership
+    // must not retain the rest of the unloaded instance through this set.
+    stream.actors.clear();
+    stream.idMap = new Map();
+    stream.navObstacles.length = 0;
     this.physicsSync.syncFromWorld(this.world);
     if (failure || !wasLoaded) stream.reject(failure ?? sceneRealizationCancelled());
     else stream.resolve();
