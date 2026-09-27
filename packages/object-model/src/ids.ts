@@ -6,6 +6,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "Scene",
   "SceneLayer",
   "SceneLayerActor",
+  "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -22,6 +23,7 @@ export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
 
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
+  "SceneStreamingComponent",
   "LandscapeComponent",
   "FoliageComponent",
   "MeshComponent",
@@ -79,6 +81,7 @@ export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "SceneStreamingComponent",
   "RagdollComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent",
   "WaterLakeComponent",

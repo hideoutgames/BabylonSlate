@@ -1,5 +1,5 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
-import { INPUT_KEYS } from "@babylonslate/core";
+import { INPUT_KEYS, SCENE_STREAMING_STATES } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -8,6 +8,7 @@ export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
 export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
 export const ENGINE_KEY_ENUM_ID = "engine:Key";
 export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
+export const ENGINE_SCENE_STREAMING_STATE_ENUM_ID = "engine:SceneStreamingState";
 
 export const ENGINE_TYPE_GUID_PREFIX = "engine:";
 
@@ -37,6 +38,11 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  {
+    id: ENGINE_SCENE_STREAMING_STATE_ENUM_ID,
+    name: "Scene Streaming State",
+    members: SCENE_STREAMING_STATES.map((name, value) => ({ name, value })),
+  },
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",

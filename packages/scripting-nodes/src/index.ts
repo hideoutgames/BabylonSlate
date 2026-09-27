@@ -16,6 +16,7 @@ import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
 import { sceneNodes } from "./scene";
+import { sceneStreamingNodes } from "./scene-streaming";
 import { projectNodes } from "./project";
 import { gameInstanceNodes } from "./game-instance";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
@@ -56,6 +57,7 @@ export * from "./input";
 export * from "./audio";
 export * from "./particles";
 export * from "./scene";
+export * from "./scene-streaming";
 export * from "./project";
 export * from "./game-instance";
 export * from "./scene-layer";
@@ -140,6 +142,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...audioNodes,
     ...particleNodes,
     ...sceneNodes,
+    ...sceneStreamingNodes,
     ...projectNodes,
     ...gameInstanceNodes,
     ...sceneLayerNodes,
