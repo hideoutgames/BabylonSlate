@@ -198,7 +198,7 @@ packages/
   particle-graph/  Particle Graph IR, catalog, validator, lowering, compile key (Babylon-free)
   debugger/        command registry, console, stats HUD, log buffer, trace recorder
   exporter/        itch.io-style zip export
-  test-kit/        harnesses, fixtures, fake adapters, golden-file helpers
+  test-kit/        harnesses, fixtures, golden-file helpers
 ```
 
 Boundary rules, enforced by an ESLint import-restriction config extending [.agents/rules/agent-workflow.md](../.agents/rules/agent-workflow.md):
@@ -1396,7 +1396,7 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 ### P3
 
 - [x] **p3-object-model** — P3: object-model package with BObject, Actor, ActorComponent and GameInstance, class registry with inheritance and re-parenting, engine components, ScriptInterface dispatch, deterministic tick scheduler with a named physics phase slot reserved from the start even though P7 fills it, since retrofitting a phase other systems already order against is how ordering bugs get baked in
-- [x] **p3-harness** — P3: test-kit deterministic runtime harness (seeded RNG, fixed dt, N-tick world snapshots) plus fake VFS and asset fixtures
+- [x] **p3-harness** — P3: test-kit deterministic runtime harness (seeded RNG, fixed dt, N-tick world snapshots)
 
 ### P4
 

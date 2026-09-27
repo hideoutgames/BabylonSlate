@@ -105,7 +105,6 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 | Export | Role |
 | --- | --- |
 | `runDeterministicScenario` | Seed RNG, fixed dt, N in-process ticks, return canonical snapshot |
-| `installHarnessProjectFixtures` | Memory VFS + minimal project/asset JSON stubs |
 
 Acceptance: a 120-tick scenario reproduces a committed golden byte-exactly and is identical across two runs with the same seed.
 
