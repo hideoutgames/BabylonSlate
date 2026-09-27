@@ -265,7 +265,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   PluginSettings: PuzzleIcon,
 };
 
-const COMPONENT_CLASS_IDS = new Set(ENGINE_COMPONENT_CLASS_IDS);
+const COMPONENT_CLASS_IDS = new Set<string>(ENGINE_COMPONENT_CLASS_IDS);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Scene: "scene",
