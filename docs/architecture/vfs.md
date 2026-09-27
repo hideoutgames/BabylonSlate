@@ -18,7 +18,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 | Adapter | Host | Notes |
 | --- | --- | --- |
-| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser) |
+| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser); `readBinary` reads again when a save replaces the file between `getFile()` and the read (Chromium fails that stale snapshot with `NotReadableError` / `NotFoundError`), so a Preview reading a Texture while its encode commits gets the saved bytes; a snapshot that stays unreadable reports its real read error instead of `File not found` |
 | Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; root-confined relative paths; `openKnownFolder` reopens without picker; Reconnect on staleness or revoked scope access |
 | Memory | Tests | In-memory tree |
@@ -95,7 +95,7 @@ Decided for P1, in this order:
 
 **Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
 
-CI covers memory, OPFS (jsdom memory fallback, plus a stubbed OPFS root for listing with a swap file and a vanished entry) and Documents-via-fake-filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
+CI covers memory, OPFS (jsdom memory fallback, plus a stubbed OPFS root for listing with a swap file and a vanished entry, and for reading a file replaced mid-read) and Documents-via-fake-filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
 
 ## SecretStore and nativeHttp (P15)
 
