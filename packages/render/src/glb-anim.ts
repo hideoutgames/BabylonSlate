@@ -276,7 +276,10 @@ function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet 
       if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
     };
     const lods = await generateModelLods(container, current, entry.geometryKey);
-    current();
+    if (cache.disposed || entry.retired) {
+      lods.dispose();
+      throw new Error("Model preparation cancelled");
+    }
     entry.lodSet = lods;
     entry.accounted += lods.indexBytes;
     cache.accountedBytes += lods.indexBytes;
@@ -686,11 +689,12 @@ export function beginSlotModelAnimLoad(
   const load = (async () => {
     let prepared: PreparedModelInstance | undefined;
     const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed);
+    // Generation overlaps preparation; the instance publishes at full detail
+    // and its levels attach once they are ready.
+    const lods = autoLod ? lease.lods() : null;
     let published = false;
     try {
       const container = await wait(lease.load);
-      if (!request.isCurrent()) return;
-      const lods = autoLod ? await wait(lease.lods()) : null;
       if (!request.isCurrent()) return;
       prepared = prepareModelInstance(placeholder, container, importScale);
       prepared.bundle.releaseWith(() => lease.release());
@@ -738,9 +742,6 @@ export function beginSlotModelAnimLoad(
       }
       await wait(Promise.resolve(prepareInstance?.(prepared.staging)));
       if (!request.isCurrent()) return;
-      // After slot materials, so levels start with the actor's materials and
-      // the preparation below warms their variants too.
-      if (lods) attachModelLods(prepared.staging, lods);
       await wait(prepareInstanceMaterials(prepared.staging, () => {
         if (!request.isCurrent()) throw new Error("Model preparation was cancelled");
       }, cancellation));
@@ -774,6 +775,13 @@ export function beginSlotModelAnimLoad(
       previousInstance?.bundle.dispose();
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
+      const current = prepared;
+      // Levels share the master's buffers and materials, so their effects are
+      // already compiled. A replaced or despawned instance keeps none.
+      void lods?.then((set) => {
+        if (set && meta[MODEL_INSTANCE_KEY] === current && !current.wrapper.isDisposed())
+          attachModelLods(current.wrapper, set);
+      });
     } catch (error) {
       // A superseded or disposed actor no longer owns this failure. Current
       // failures must reach the scene readiness waiter, even when command

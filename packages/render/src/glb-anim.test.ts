@@ -336,7 +336,7 @@ describe("beginSlotModelAnimLoad", () => {
     expect(Math.hypot(scale!.x, scale!.y, scale!.z)).toBeCloseTo(20, 5);
   });
 
-  it("attaches automatic LOD levels only to Auto LOD models and re-realizes when the setting changes", async () => {
+  it("attaches automatic LOD levels to published Auto LOD models and re-realizes when the setting changes", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -348,7 +348,7 @@ describe("beginSlotModelAnimLoad", () => {
     await beginSlotModelAnimLoad(scene, binding, 2, "model-1", bytes, root);
     const [part] = visualMeshes(root) as Mesh[];
     expect(visualMeshes(root)).toHaveLength(1);
-    expect(part!.getLODLevels().length).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(part!.getLODLevels().length).toBeGreaterThan(0));
     for (const level of part!.getLODLevels()) expect(level.mesh!.isDescendantOf(root)).toBe(true);
 
     binding.modelPayloads = new Map([["model-1", { ...payload, autoLod: false }]]);

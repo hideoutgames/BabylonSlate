@@ -13,7 +13,14 @@ scope.onmessage = async (event) => {
   try {
     if (!MeshoptSimplifier.supported) throw new Error("WebAssembly is unavailable");
     await MeshoptSimplifier.ready;
-    const levels = event.data.meshes.map((mesh) => simplifyLevels(MeshoptSimplifier, mesh));
+    const levels = event.data.meshes.map((mesh) => {
+      // One malformed mesh keeps full detail without failing the whole model.
+      try {
+        return simplifyLevels(MeshoptSimplifier, mesh);
+      } catch {
+        return [];
+      }
+    });
     // An empty submesh range is carried forward unchanged, so buffers repeat.
     const transfer = new Set(levels.flatMap((mesh) => mesh.flatMap((level) => level.ranges.map((range) => range.buffer))));
     scope.postMessage({ levels }, [...transfer]);

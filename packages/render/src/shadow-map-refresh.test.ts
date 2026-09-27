@@ -313,7 +313,10 @@ describe("local shadow refresh", () => {
     expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
     expect(render()).toBe(6);
     expect(render()).toBe(0);
+    const near = scene.customLODSelector!(part, camera);
     camera.position.z -= 500;
+    camera.getViewMatrix(true);
+    expect(scene.customLODSelector!(part, camera)).not.toBe(near);
     expect(render()).toBe(6);
     expect(render()).toBe(0);
   });
@@ -324,14 +327,20 @@ describe("local shadow refresh", () => {
     const source = MeshBuilder.CreateSphere("lod source", { segments: 32 }, scene);
     source.setEnabled(false);
     const actor = new TransformNode("actor", scene);
-    actor.position.x = 100;
+    actor.position.x = 15;
     const part = source.clone("distant lod caster", actor);
     part.setEnabled(true);
     part.material = material;
     expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
+    camera.position.set(15, 0, -1.5);
+    camera.setTarget(actor.position);
     expect(render()).toBe(6);
+    expect(scene.customLODSelector!(part, camera)).toBe(part);
     expect(render()).toBe(0);
-    camera.position.z -= 500;
+    // Stay within the shadow distance so the light keeps its map.
+    camera.position.z = -30;
+    camera.getViewMatrix(true);
+    expect(scene.customLODSelector!(part, camera)).not.toBe(part);
     expect(render()).toBe(0);
   });
 

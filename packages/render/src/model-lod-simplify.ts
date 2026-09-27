@@ -106,9 +106,10 @@ export function simplifyLevels(simplifier: Simplifier, input: LodSimplifyInput):
       : floor;
     let worst = 0;
     const ranges = current.map((range) => {
-      if (range.length === 0) return range;
+      if (range.length === 0 || range.length % 3 !== 0) return range;
       // Share the target across submeshes in proportion to their triangles.
-      const target = Math.max(3, Math.floor((targetTriangles * range.length) / (3 * currentTriangles)) * 3);
+      const share = Math.floor((targetTriangles * range.length) / (3 * currentTriangles)) * 3;
+      const target = Math.min(range.length, Math.max(3, share));
       const [indices, reached] = attributes
         ? simplifier.simplifyWithAttributes(range, input.positions, 3, attributes.data, attributes.stride,
           attributes.weights, null, target, error, flags)
@@ -123,6 +124,8 @@ export function simplifyLevels(simplifier: Simplifier, input: LodSimplifyInput):
     current = ranges;
     currentTriangles = triangles;
     spentError += worst;
+    // A static level at its floor has no triangles left to remove.
+    if (!input.deforming && triangles <= floor) break;
   }
   return levels;
 }

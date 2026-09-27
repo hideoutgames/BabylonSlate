@@ -25,7 +25,10 @@ const AUTO_LOD_HYSTERESIS = 0.1;
 const AUTO_LOD_YIELD_MS = 8;
 /** A stuck worker falls back to the main thread instead of holding model loads. */
 const AUTO_LOD_WORKER_TIMEOUT_MS = 30_000;
-/** Generated levels shared by every Scene of the Engine (editor, Play, previews). */
+/**
+ * Generated levels are shared by every Scene (editor, Play, previews). Models
+ * a Scene still uses stay cached, plus this many recently released ones.
+ */
 const AUTO_LOD_CACHED_MODELS = 32;
 
 type LodSubMesh = {
@@ -86,13 +89,18 @@ function materialsOf(material: Material | null): Material[] {
   return [material];
 }
 
-/** Indexed static-topology triangle meshes that Babylon renders through their own LOD list. */
-function eligible(mesh: AbstractMesh): mesh is Mesh {
+/** Indexed meshes that Babylon draws through their own LOD list. */
+function drawsOwnLevels(mesh: AbstractMesh): mesh is Mesh {
   if (!(mesh instanceof Mesh) || mesh.isUnIndexed || !mesh.geometry || mesh.hasThinInstances) return false;
   // Babylon selects LODs for glTF instances without the Scene selector.
   if (mesh.instances.length > 0) return false;
   // CPU skinning rewrites the position buffer that levels share.
-  if (mesh.skeleton && !mesh.computeBonesUsingShaders) return false;
+  return !(mesh.skeleton && !mesh.computeBonesUsingShaders);
+}
+
+/** Dense triangle-list model meshes worth simplifying. */
+function eligible(mesh: AbstractMesh): mesh is Mesh {
+  if (!drawsOwnLevels(mesh)) return false;
   if (materialsOf(mesh.material).some((material) => material.fillMode !== Material.TriangleFillMode)) return false;
   return mesh.getTotalIndices() / 3 >= AUTO_LOD_MIN_SOURCE_TRIANGLES;
 }
@@ -151,26 +159,42 @@ function levelData(prepared: PreparedMesh, level: LodLevelIndices): LodLevelData
 }
 
 let workerQueue: Promise<unknown> = Promise.resolve();
+let queuedJobs = 0;
+let lodWorker: Worker | null = null;
 
-/** One disposable worker at a time; terminating it returns the simplifier's heap. */
+function releaseWorker(): void {
+  lodWorker?.terminate();
+  lodWorker = null;
+}
+
+/**
+ * Models simplify one at a time in a shared worker. It exits when the queue
+ * drains, returning the simplifier's heap, or after any failure.
+ */
 function simplifyInWorker(meshes: LodSimplifyInput[]): Promise<LodLevelIndices[][]> {
+  queuedJobs++;
   const job = workerQueue.then(() => new Promise<LodLevelIndices[][]>((resolve, reject) => {
-    const worker = new Worker(new URL("./model-lod.worker.ts", import.meta.url), { type: "module" });
-    const finish = (settle: () => void) => {
+    const worker = lodWorker ??= new Worker(new URL("./model-lod.worker.ts", import.meta.url), { type: "module" });
+    const finish = (settle: () => void, failed: boolean) => {
       clearTimeout(timeout);
-      worker.terminate();
+      worker.onmessage = worker.onerror = worker.onmessageerror = null;
+      if (failed) releaseWorker();
       settle();
     };
-    const timeout = setTimeout(() => finish(() => reject(new Error("timed out"))), AUTO_LOD_WORKER_TIMEOUT_MS);
+    const fail = (message: string) => finish(() => reject(new Error(message)), true);
+    const timeout = setTimeout(() => fail("timed out"), AUTO_LOD_WORKER_TIMEOUT_MS);
     worker.onmessage = (event: MessageEvent<ModelLodWorkerReply>) => {
       const reply = event.data;
-      finish(() => "error" in reply ? reject(new Error(reply.error)) : resolve(reply.levels));
+      if ("error" in reply) fail(reply.error);
+      else finish(() => resolve(reply.levels), false);
     };
-    worker.onerror = (event) => finish(() => reject(new Error(event.message || "worker failed")));
-    worker.onmessageerror = () => finish(() => reject(new Error("invalid worker reply")));
+    worker.onerror = (event) => fail(event.message || "worker failed");
+    worker.onmessageerror = () => fail("invalid worker reply");
     // Structured cloning leaves these inputs intact for the main-thread fallback.
     worker.postMessage({ meshes } satisfies ModelLodWorkerRequest);
-  }));
+  })).finally(() => {
+    if (--queuedJobs === 0) releaseWorker();
+  });
   workerQueue = job.catch(() => {});
   return job;
 }
@@ -218,15 +242,42 @@ async function generateLevels(prepared: PreparedMesh[]): Promise<ModelLevels> {
   return models;
 }
 
-const generatedModels = new Map<string, Promise<ModelLevels>>();
+type CachedModel = { key: string; levels: Promise<ModelLevels>; users: number };
+/** Least recently used first. */
+const generatedModels = new Map<string, CachedModel>();
 
-function rememberModel(key: string, levels: Promise<ModelLevels>): void {
-  generatedModels.delete(key);
-  generatedModels.set(key, levels);
-  while (generatedModels.size > AUTO_LOD_CACHED_MODELS) generatedModels.delete(generatedModels.keys().next().value!);
-  levels.catch(() => {
-    if (generatedModels.get(key) === levels) generatedModels.delete(key);
-  });
+function touchModel(cached: CachedModel): void {
+  if (generatedModels.get(cached.key) !== cached) return;
+  generatedModels.delete(cached.key);
+  generatedModels.set(cached.key, cached);
+}
+
+function acquireModel(key: string, generate: () => Promise<ModelLevels>): CachedModel {
+  let cached = generatedModels.get(key);
+  if (!cached) {
+    const created: CachedModel = { key, levels: generate(), users: 0 };
+    created.levels.catch(() => {
+      if (generatedModels.get(key) === created) generatedModels.delete(key);
+    });
+    generatedModels.set(key, created);
+    cached = created;
+  }
+  cached.users++;
+  touchModel(cached);
+  return cached;
+}
+
+function releaseModel(cached: CachedModel): void {
+  if (--cached.users > 0) return;
+  touchModel(cached);
+  let unused = 0;
+  for (const entry of generatedModels.values()) if (!entry.users) unused++;
+  for (const [key, entry] of generatedModels) {
+    if (unused <= AUTO_LOD_CACHED_MODELS) break;
+    if (entry.users) continue;
+    generatedModels.delete(key);
+    unused--;
+  }
 }
 
 /**
@@ -242,17 +293,18 @@ export async function generateModelLods(
 ): Promise<ModelLodSet> {
   const candidates = container.meshes.flatMap((mesh, index) => eligible(mesh) ? [{ mesh, index }] : []);
   let models: ModelLevels = new Map();
+  let cached: CachedModel | undefined;
   if (candidates.length) {
-    let pending = cacheKey ? generatedModels.get(cacheKey) : undefined;
-    if (pending) {
-      rememberModel(cacheKey!, pending);
-    } else {
-      // Low-poly models never load the simplifier.
-      pending = generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));
-      if (cacheKey) rememberModel(cacheKey, pending);
+    // Low-poly models never load the simplifier.
+    const generate = () => generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));
+    if (cacheKey) cached = acquireModel(cacheKey, generate);
+    try {
+      models = await (cached?.levels ?? generate());
+      assertCurrent();
+    } catch (error) {
+      if (cached) releaseModel(cached);
+      throw error;
     }
-    models = await pending;
-    assertCurrent();
   }
   const records = new Map<Mesh, SceneLevel[]>();
   let indexBytes = 0;
@@ -270,6 +322,7 @@ export async function generateModelLods(
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (cached) releaseModel(cached);
       for (const levels of records.values()) {
         for (const level of levels) {
           if (level.geometry && !level.geometry.isDisposed()) level.geometry.dispose();
@@ -485,7 +538,9 @@ export function attachModelLods(root: TransformNode, lods: ModelLodSet): number 
   for (const master of root.getChildMeshes()) {
     if (!(master instanceof Mesh) || master.isBlocked || master.hasLODLevels) continue;
     const levels = lods.levelsFor(master.source);
-    if (!levels?.length || master.geometry !== master.source!.geometry || !eligible(master)) continue;
+    // Levels are triangle lists over the source; a wireframe or point material
+    // on this actor draws them through Babylon's own topology conversion.
+    if (!levels?.length || master.geometry !== master.source!.geometry || !drawsOwnLevels(master)) continue;
     const scene = master.getScene();
     const state = lodsFor(scene);
     const binding: LodBinding = { master, levels: [], current: new WeakMap() };
