@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   classHeaderMeta,
-  functionLibraryHeaderMeta,
   isEditorFunctionLibraryClass,
   isEditorGraphClass,
   isEditorGraphHost,
@@ -88,31 +87,6 @@ describe("editor-only assets", () => {
     );
     expect(isFunctionLibraryClass("MathLib", parentOf)).toBe(true);
     expect(isFunctionLibraryClass("Hero", parentOf)).toBe(false);
-  });
-
-  it("indexes only function members for a FunctionLibrary header", () => {
-    expect(
-      functionLibraryHeaderMeta({
-        members: [
-          {
-            kind: "function",
-            name: "Add",
-            pins: [{ name: "a", typeId: "float", direction: "in" }],
-          },
-          { kind: "variable", name: "X" },
-          { kind: "event", name: "On Hit" },
-          { kind: "function", name: "Scale" },
-        ],
-      }),
-    ).toEqual({
-      functions: [
-        {
-          name: "Add",
-          pins: [{ name: "a", typeId: "float", direction: "in" }],
-        },
-        { name: "Scale", pins: [] },
-      ],
-    });
   });
 
   it("indexes class variables, functions, and events with typeClassId for closed assets", () => {

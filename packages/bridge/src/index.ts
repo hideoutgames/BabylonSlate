@@ -12,7 +12,6 @@ export {
 export {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
-  clearSnapshot,
   isPublishedSnapshot,
   readActorSlot,
   readActorSlotInto,

@@ -211,7 +211,6 @@ export function parseSceneLayerHitTest(
 export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
 export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
   SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
-export const SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH = 16;
 
 const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
   topLeft: [-1, 1],

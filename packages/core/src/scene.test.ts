@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultScene } from "./project";
 import {
-  actorChildren,
   actorSubtree,
-  actorsInFolder,
   createActor,
   createMeshComponent,
   findActor,
@@ -479,16 +477,9 @@ describe("scene schema", () => {
     });
   });
 
-  it("finds actors and their children", () => {
+  it("finds actors by id", () => {
     const scene = nestedScene();
     expect(findActor(scene, "child")?.name).toBe("Child");
-    expect(actorChildren(scene, "root").map((actor) => actor.id)).toEqual([
-      "child",
-    ]);
-    expect(actorChildren(scene, null).map((actor) => actor.id)).toEqual([
-      "root",
-      "other",
-    ]);
   });
 
   it("collects a subtree regardless of actor ordering", () => {
@@ -519,14 +510,6 @@ describe("scene schema", () => {
     expect(wouldCreateFolderCycle(scene, "root-folder", "child-folder")).toBe(true);
     expect(wouldCreateFolderCycle(scene, "root-folder", null)).toBe(false);
     expect(wouldCreateFolderCycle(scene, "child-folder", null)).toBe(false);
-  });
-
-  it("lists actors by folder in scene order", () => {
-    const scene = foldersScene();
-    expect(actorsInFolder(scene, "child-folder").map((actor) => actor.id)).toEqual([
-      "inside",
-    ]);
-    expect(actorsInFolder(scene, null).map((actor) => actor.id)).toEqual(["outside"]);
   });
 
   it("allocates a folder id that no folder is using", () => {

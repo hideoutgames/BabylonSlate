@@ -11,10 +11,8 @@ import {
   documentKindForAssetType,
   documentKindLabel,
   isAssetDocumentKind,
-  isClosableDocumentKind,
   isSceneWorkspaceKind,
   isContentBrowserId,
-  isLogicGraphAssetType,
   labelFromPath,
   migrateLegacyLayout,
   migrateRestoredDocumentId,
@@ -127,9 +125,6 @@ describe("Class and settings documents", () => {
     expect(documentKindForAssetType("Graph")).toBe("graph");
     expect(assetTypeForDocumentKind("graph")).toBe("Class");
     expect(documentKindLabel("graph")).toBe("Class");
-    expect(isLogicGraphAssetType("Class")).toBe(true);
-    expect(isLogicGraphAssetType("Graph")).toBe(true);
-    expect(isLogicGraphAssetType("Scene")).toBe(false);
     expect(labelFromPath("assets/hero.class.babasset")).toBe("Hero");
     expect(
       createDocumentRef("graph", "assets/hero.class.babasset", { name: "Hero" })
@@ -363,8 +358,6 @@ describe("document ids and layouts", () => {
     expect(documentId(CONTENT_BROWSER_REF)).toBe(CONTENT_BROWSER_ID);
     expect(isContentBrowserId(CONTENT_BROWSER_ID)).toBe(true);
     expect(isContentBrowserId("scene:assets/main.scene.babasset")).toBe(false);
-    expect(isClosableDocumentKind("content-browser")).toBe(false);
-    expect(isClosableDocumentKind("scene")).toBe(true);
   });
 
   it("namespaces asset document ids by kind and path", () => {

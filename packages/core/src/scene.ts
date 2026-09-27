@@ -662,13 +662,6 @@ export function findActor(
   return scene.actors.find((actor) => actor.id === actorId);
 }
 
-export function actorChildren(
-  scene: SerializedScene,
-  parentId: string | null,
-): SerializedActor[] {
-  return scene.actors.filter((actor) => actor.parentId === parentId);
-}
-
 /** Actor plus every descendant, in scene order. */
 export function actorSubtree(
   scene: SerializedScene,
@@ -696,15 +689,6 @@ export function findFolder(
   return scene.folders.find((folder) => folder.id === folderId);
 }
 
-export function folderChildren(
-  scene: SerializedScene,
-  parentFolderId: string | null,
-): SerializedOutlinerFolder[] {
-  return scene.folders.filter(
-    (folder) => folder.parentFolderId === parentFolderId,
-  );
-}
-
 /** Folder plus every descendant folder, in scene order. */
 export function folderSubtree(
   scene: SerializedScene,
@@ -726,14 +710,6 @@ export function folderSubtree(
     }
   }
   return scene.folders.filter((folder) => ids.has(folder.id));
-}
-
-/** Actors listed directly in a folder, or at the scene root when null. */
-export function actorsInFolder(
-  scene: SerializedScene,
-  folderId: string | null,
-): SerializedActor[] {
-  return scene.actors.filter((actor) => actor.folderId === folderId);
 }
 
 /** True when moving `folderId` under `parentFolderId` would create a cycle. */
