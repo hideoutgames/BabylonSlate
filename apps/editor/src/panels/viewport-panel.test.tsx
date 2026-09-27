@@ -522,6 +522,27 @@ describe("ViewportPanel engine", () => {
     expect(createEngineMock).toHaveBeenCalledOnce();
   });
 
+  it("persists a spline viewport gesture as one scene edit on the addressed component", async () => {
+    const actor = createActor("a", "Path");
+    actor.components.push({ id: "path", classId: "SplineComponent", properties: {
+      points: [[0, 0, 0], [0, 0, 5]], curvature: 0.5, closed: false,
+    } });
+    const untouched = createActor("b", "Other");
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [actor, untouched] },
+    }];
+    renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    act(() => options.onComponentShapeEdit?.({ actorId: "a", componentId: "path", properties: { points: [[1, 2, 3], [4, 5, 6]] } }));
+    expect(documents.applySceneChange).toHaveBeenCalledOnce();
+    const next = documents.applySceneChange.mock.calls[0]![1];
+    expect(next.actors[0]!.components.at(-1)!.properties).toEqual({ points: [[1, 2, 3], [4, 5, 6]], curvature: 0.5, closed: false });
+    expect(next.actors[0]!.transform).toBe(actor.transform);
+    expect(next.actors[1]).toBe(untouched);
+    expect(actor.components.at(-1)!.properties.points).toEqual([[0, 0, 0], [0, 0, 5]]);
+  });
+
   it("drops the selected actors in one scene edit and leaves no-hit actors untouched", async () => {
     const a = createActor("a", "Box A");
     const b = createActor("b", "Box B");

@@ -74,6 +74,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     selectedIds,
     setSelectedId,
     commitComponentGizmo,
+    commitComponentProperties,
     commitComponentTransforms,
     applyPivotTransform,
   } = usePrefabEditing();
@@ -159,6 +160,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   selectedIdRef.current = selectedId;
   const commitComponentGizmoRef = useRef(commitComponentGizmo);
   commitComponentGizmoRef.current = commitComponentGizmo;
+  const commitComponentPropertiesRef = useRef(commitComponentProperties);
+  commitComponentPropertiesRef.current = commitComponentProperties;
   const applyPivotTransformRef = useRef(applyPivotTransform);
   applyPivotTransformRef.current = applyPivotTransform;
 
@@ -214,6 +217,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
               }
             : undefined,
         );
+      },
+      onComponentShapeEdit: (edit) => {
+        commitComponentPropertiesRef.current(edit.componentId, edit.properties);
       },
       editorFlySpeed: () => flySpeedRef.current,
     });

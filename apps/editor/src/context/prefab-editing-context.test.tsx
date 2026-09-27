@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   createMeshComponent,
+  type SerializedGraph,
   type SerializedTransform,
 } from "@babylonslate/core";
 import {
@@ -10,7 +11,7 @@ import {
 } from "./prefab-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 
-const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true));
 const documentOverrides = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
@@ -173,6 +174,34 @@ function BatchTransformProbe({
     </button>
   );
 }
+
+function ShapeEditProbe() {
+  const { commitComponentProperties } = usePrefabEditing();
+  return <button type="button" onClick={() => commitComponentProperties("path", {
+    points: [[1, 2, 3], [4, 5, 6], [7, 8, 9]], closed: true,
+  })}>Commit Shape</button>;
+}
+
+it("persists a spline gesture in one graph edit while retaining its transform and other properties", () => {
+  const transform: SerializedTransform = { position: [4, 3, 2], rotation: [0, 0, 0, 1], scale: [2, 3, 4] };
+  const path = { id: "path", classId: "SplineComponent", parentId: "prefab-mesh", transform,
+    properties: { points: [[0, 0, 0], [0, 0, 5]], curvature: 0.5, closed: false } };
+  const mesh = createMeshComponent("prefab-mesh", "box");
+  documentOverrides.value = { openDocuments: [{
+    id: "graph:assets/Hero.class.babasset",
+    ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+    content: { nodes: [], edges: [], members: [], components: [mesh, path] },
+  }] };
+  render(<PrefabEditingProvider><ShapeEditProbe /></PrefabEditingProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Commit Shape" }));
+  expect(applyGraphChange).toHaveBeenCalledOnce();
+  const next = applyGraphChange.mock.calls[0]![1] as { components: typeof path[] };
+  expect(next.components[1]).toEqual({ ...path, properties: {
+    points: [[1, 2, 3], [4, 5, 6], [7, 8, 9]], closed: true, curvature: 0.5,
+  } });
+  expect(next.components[0]).toMatchObject(mesh);
+  expect(path.properties.points).toEqual([[0, 0, 0], [0, 0, 5]]);
+});
 
 describe("PrefabEditingContext batch transforms", () => {
   it("persists inherited and local drops together without changing other components", () => {
