@@ -37,9 +37,8 @@ describe("2D projection golden", () => {
       lockstepMaxSteps: 1,
     });
     scene = new Scene(engine);
-    const controller = createEditorCamera(scene, { mode: "2d" });
+    const controller = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 5 });
     controller.updateOrthoBounds(WIDTH / HEIGHT);
-    controller.setOrthoHalfHeight(5);
     scene.updateTransformMatrix();
   });
 

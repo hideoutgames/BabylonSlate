@@ -12,7 +12,6 @@ import type {
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
-  ColliderTuning,
   HitResult,
   LineTraceOptions,
   OverlapResult,
@@ -381,7 +380,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     };
   }
 
-  setBodyMotionType(
+  private setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],
   ): void {
@@ -559,51 +558,6 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.queriesDirty = true;
   }
 
-  updateCollider(colliderId: string, tuning: ColliderTuning): void {
-    const record = this.colliders.get(colliderId);
-    if (!record) return;
-    const apply = (collider: RapierCollider) => {
-      if (typeof tuning.isTrigger === "boolean") {
-        collider.setSensor(tuning.isTrigger);
-      }
-      if (
-        typeof tuning.friction === "number" &&
-        Number.isFinite(tuning.friction)
-      ) {
-        collider.setFriction(tuning.friction);
-      }
-      if (
-        typeof tuning.restitution === "number" &&
-        Number.isFinite(tuning.restitution)
-      ) {
-        collider.setRestitution(tuning.restitution);
-      }
-    };
-    apply(record.collider);
-    if (record.extra) apply(record.extra);
-    if (typeof tuning.isTrigger === "boolean") {
-      record.desc.isTrigger = tuning.isTrigger;
-    }
-    if (
-      typeof tuning.friction === "number" &&
-      Number.isFinite(tuning.friction)
-    ) {
-      record.desc.friction = tuning.friction;
-    }
-    if (
-      typeof tuning.restitution === "number" &&
-      Number.isFinite(tuning.restitution)
-    ) {
-      record.desc.restitution = tuning.restitution;
-    }
-    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
-      record.desc.layer = tuning.layer;
-    }
-    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
-      record.desc.mask = tuning.mask;
-    }
-  }
-
   listDebugColliders() {
     return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
       this.getBodyTransform(bodyId),
@@ -633,13 +587,6 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
       this.recordCollisionEvent(handleA, handleB, started);
     });
-  }
-
-  readTransforms(): ReadonlyMap<string, PhysicsTransform> {
-    const out = new Map<string, PhysicsTransform>();
-    for (const id of this.bodies.keys())
-      out.set(id, this.getBodyTransform(id)!);
-    return out;
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {

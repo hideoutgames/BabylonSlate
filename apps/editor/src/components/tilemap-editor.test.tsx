@@ -16,7 +16,6 @@ import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-s
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import {
   TilemapDetails,
-  TilemapEditor,
   TilemapPaint,
   TilemapPalette,
 } from "./tilemap-editor";
@@ -95,6 +94,23 @@ function mapWithGround(): TilemapPayload {
     tilesetGuid: "ts-ground",
     tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 2 }],
   };
+}
+
+/** Details, Palette and Paint panels sharing one editing session, as in a Tilemap document. */
+function TilemapDocument({
+  payload,
+  onChange,
+}: {
+  payload: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
+}) {
+  return (
+    <TilemapEditingProvider>
+      <TilemapDetails payload={payload} onChange={onChange} />
+      <TilemapPalette payload={payload} onChange={onChange} />
+      <TilemapPaint payload={payload} onChange={onChange} />
+    </TilemapEditingProvider>
+  );
 }
 
 function TilemapHarness({
@@ -394,7 +410,7 @@ describe("TilemapPaint", () => {
         <button disabled={!stack.canUndo} onClick={() => setDoc(stack.undo(doc)!.doc)}>Undo Test Edit</button>
         <button disabled={!stack.canRedo} onClick={() => setDoc(stack.redo(doc)!.doc)}>Redo Test Edit</button>
         <output data-testid="stored-tilemap">{JSON.stringify(doc)}</output>
-        <TilemapEditor payload={doc} onChange={(next, mergeKey) => {
+        <TilemapDocument payload={doc} onChange={(next, mergeKey) => {
           setDoc(stack.apply(doc, new SetAssetDocumentCommand(doc, next, mergeKey)).doc);
           onChange(next);
         }} />
@@ -702,10 +718,10 @@ describe("TilemapPaint", () => {
   });
 });
 
-describe("TilemapEditor empty state", () => {
+describe("Tilemap document empty state", () => {
   it("prompts to add a tileset instead of showing a blank canvas", () => {
     render(
-      <TilemapEditor
+      <TilemapDocument
         payload={createDefaultTilemapPayload() as unknown as Record<string, unknown>}
         onChange={() => {}}
       />,

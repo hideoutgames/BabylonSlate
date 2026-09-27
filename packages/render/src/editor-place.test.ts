@@ -123,9 +123,8 @@ describe("editor place position", () => {
   });
 
   it("round-trips a 2D world point through canvas pixels", () => {
-    const controller = createEditorCamera(scene, { mode: "2d" });
+    const controller = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 5 });
     controller.updateOrthoBounds(WIDTH / HEIGHT);
-    controller.setOrthoHalfHeight(5);
     controller.camera.getViewMatrix();
     scene.updateTransformMatrix();
     const world = new Vector3(3, -2, 0);

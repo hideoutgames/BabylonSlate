@@ -3,8 +3,6 @@ import { createFontPayload } from "../font-payload";
 import type { ImportOptions, ImportResult, ImportResultChunk } from "./types";
 import { baseName, extensionOf } from "./util";
 
-export const FONT_EXTENSIONS = new Set(["woff2", "woff", "ttf", "otf"]);
-
 /** Glyph JSON chunk attached to a Font for flat 3D Text (`CreateTextShapePaths`). */
 export const FONT_FACETYPE_CHUNK_ID = "facetype-glyphs";
 

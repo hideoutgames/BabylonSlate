@@ -6,8 +6,11 @@ import {
 export interface InputCaptureHandle {
   ring: InputRingBuffer;
   setTick: (tick: number) => void;
+  /**
+   * Poll gamepads once per frame. A pad sampled on the previous poll but
+   * missing now is reported as `gamepadDisconnect`.
+   */
   pollGamepads: () => void;
-  pushTouchAxis: (controlId: string, value: number) => void;
   dispose: () => void;
 }
 
@@ -33,6 +36,7 @@ export function attachInputCapture(
   canvas.tabIndex = 0;
   canvas.focus({ preventScroll: true });
   const heldKeys = new Set<string>();
+  let sampledPads = new Set<number>();
 
   const push = (raw: RawInputEvent) => {
     ring.push(raw);
@@ -103,9 +107,11 @@ export function attachInputCapture(
       if (options.skipPointerAndKeyboard?.()) releaseKeys();
       if (typeof navigator === "undefined" || !navigator.getGamepads) return;
       const pads = navigator.getGamepads();
+      const present = new Set<number>();
       for (let i = 0; i < pads.length; i++) {
         const pad = pads[i];
-        if (!pad) continue;
+        if (!pad || pad.connected === false) continue;
+        present.add(pad.index);
         push({
           kind: "gamepad",
           tick,
@@ -114,9 +120,11 @@ export function attachInputCapture(
           buttons: pad.buttons.map((b) => b.value),
         });
       }
-    },
-    pushTouchAxis: (controlId, value) => {
-      push({ kind: "touchAxis", tick, controlId, value });
+      for (const index of sampledPads) {
+        if (!present.has(index))
+          push({ kind: "gamepadDisconnect", tick, gamepadIndex: index });
+      }
+      sampledPads = present;
     },
     dispose: () => {
       releaseKeys();

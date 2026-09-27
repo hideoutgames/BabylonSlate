@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
-import { OpfsStorageAdapter, WebStorageAdapter } from "./web-adapter";
+import { OpfsStorageAdapter } from "./web-adapter";
 
 vi.mock("./test-mode", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./test-mode")>();
@@ -41,10 +41,6 @@ describe("OPFS / web storage adapter", () => {
 
   it("createStorage returns OPFS adapter on web platform", () => {
     expect(createStorage()).toBeInstanceOf(OpfsStorageAdapter);
-  });
-
-  it("WebStorageAdapter remains an OpfsStorageAdapter alias", () => {
-    expect(new WebStorageAdapter()).toBeInstanceOf(OpfsStorageAdapter);
   });
 
   it("uses fixed project name when test mode is enabled", async () => {

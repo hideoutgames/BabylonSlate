@@ -182,7 +182,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
         classId: "GameInstance",
         guid: "gi",
         hooks: {
-          onSceneLoaded: (_self, sceneName) => {
+          onSceneFinishLoading: (_self, sceneName) => {
             loaded = sceneName;
           },
         },

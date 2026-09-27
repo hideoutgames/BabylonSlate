@@ -185,19 +185,11 @@ warning, not a blocker. `material.stageMismatch` is raised when a fragment-only
 node (derivatives, `texture.sampleLod`, Normal Map, …) reaches **World Position
 Offset**, including through a Material Function (`call/inner` node ids).
 
-For Particle-domain Materials the editor adds `particle.texture_block_align`
-warnings (Compiler Results only; the Graph rings errors, not warnings) for
-sampled Textures WebGPU would reject, each with a **Set Usage To Particle** row
-action. Selecting the row focuses the sampling node (or the Function call
-holding it). The check needs
-registry data, so it lives in `apps/editor/src/lib/particle-texture-usage.ts`,
-not in the pure validator. See [particles](particles.md#look).
-
 ## Lowering and compilation
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:
 topologically ordered operations, explicit operands (including ordered numeric conversions),
-texture bindings, dependencies, cost features and a content hash that ignores
+texture bindings and dependencies, cost features and a content hash that ignores
 node positions. Material Function calls are **inlined** here under namespaced
 operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
@@ -405,9 +397,9 @@ Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
 ignore positions. The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
-exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
-e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
-attach only to that canvas (`attachMaterialPreviewGestures`); never
+exposes `data-camera-radius` so e2e can dispatch wheel and two-pointer pinch
+on the preview canvas. Gestures attach only to that canvas
+(`attachMaterialPreviewGestures`); never
 `camera.attachControl`, which Babylon binds to the Engine input element.
 
 ## Pin defaults and Details
@@ -426,16 +418,18 @@ defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
-- **No node selected:** Domain (Surface / Post Process / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
-  Cutoff when masked) plus the cost line. Non-surface domains hide Shading Model and Two Sided; the Particle domain
+- **No node selected:** Domain (Surface / Landscape / Post Process / Particle), Shading Model, Blend Mode, Two Sided
+  (and Alpha Cutoff when masked) plus the cost line. Post Process and Particle hide Shading Model and Two Sided; Particle
   also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
 
 Changing Domain (`setMaterialDomain`):
 
-- Drops the old terminal, the nodes the new domain does not allow, and their wires; normalizing adds the new
-  domain's terminal unwired.
+- Drops the nodes the new domain does not allow and their wires.
+- **Surface ↔ Landscape:** both draw through the same Material Output, so it stays with its position, pin defaults
+  and every wire whose source survives (Landscape-only nodes and their wires go when returning to Surface).
+- **Any other switch:** drops the old terminal and its wires; normalizing adds the new domain's terminal unwired.
 - **To Particle:** the Particle Output gets **Particle Color** wired into Color (an existing Particle Color node is
   reused). Otherwise the output draws constant white and ignores every emitter colour. The new-Material Base Color
   constant goes too when it is untouched and no longer wired; an edited constant stays. Shading Model and Blend Mode

@@ -29,7 +29,6 @@ import {
   SceneComponentPicker,
   ContextMenuOverlay,
   FolderBreadcrumbs,
-  InputMappingEditor,
   NamedListEditor,
   EntryListEditor,
   DisclosureSection,
@@ -76,7 +75,6 @@ import {
   normalizeTilesetPayload,
   type ParticleScalarValue,
 } from "@babylonslate/assets";
-import { createDefaultInputMappings } from "@babylonslate/input";
 import {
   ASSET_COLOR_VAR,
   PIN_COLOR_VAR,
@@ -645,7 +643,6 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
           rowHeight={touch ? 44 : undefined}
           selectedId={`${prefix}${selectedId}`}
           onSelect={(id) => setSelectedId(id.slice(prefix.length))}
-          reparentArm={touch ? "immediate" : "hold"}
           onReparent={(dragId, targetId, placement = "into") => {
             const sourceId = dragId.slice(prefix.length);
             const destinationId = targetId?.slice(prefix.length) ?? null;
@@ -726,7 +723,6 @@ function GalleryComposites() {
   const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [entryItems, setEntryItems] = useState(["One", "Two"]);
-  const [mappings, setMappings] = useState(createDefaultInputMappings);
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
@@ -1175,13 +1171,6 @@ function GalleryComposites() {
               data-testid={`gallery-entry-${index}`}
             />
           )}
-        />
-      </div>
-      <div className="rounded-lg border border-border p-3">
-        <InputMappingEditor
-          value={mappings}
-          onChange={setMappings}
-          data-testid="gallery-input-mapping"
         />
       </div>
       <SearchDialog

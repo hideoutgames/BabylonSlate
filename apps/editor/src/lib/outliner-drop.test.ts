@@ -4,9 +4,10 @@ import {
   createDefaultScene,
   type SerializedScene,
 } from "@babylonslate/core";
-import { actorRowId, folderRowId } from "../panels/scene-outliner-panel";
 import {
+  actorRowId,
   applyOutlinerDropMoves,
+  folderRowId,
   outlinerTreeDropMoves,
 } from "./outliner-drop";
 

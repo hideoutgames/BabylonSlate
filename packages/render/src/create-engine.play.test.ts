@@ -1,4 +1,4 @@
-import { ktx2HeaderBytes, mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
+import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
@@ -8,6 +8,7 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
+  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   createActor,
@@ -15,18 +16,20 @@ import {
   fogVolumeBindings,
   outlineBindings,
   createDefaultScene,
+  createDefaultRenderTargetCaptureProperties,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
   engineCommandBus,
   requestEditorDrop,
+  type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, createDefaultSpritePayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
-import { ResourceCache, resourceCacheForEngine, TextureUploadRefusedError } from "./resource-cache";
+import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
@@ -34,6 +37,7 @@ import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
@@ -169,6 +173,14 @@ function pointerAt(
   };
 }
 
+/** A live session render change, as the runtime's ScalabilitySession emits it. */
+function scalabilityCommand(overrides: RenderSettingsPatch): CommandMessage {
+  return {
+    type: "setScalability",
+    transaction: { revision: 1, settings: { render: normalizeRenderProjectSettings({}), frameCap: 60 }, overrides },
+  };
+}
+
 describe("Play createEngine view", () => {
   const handles: Array<{ dispose: () => void }> = [];
   const engines: NullEngine[] = [];
@@ -284,6 +296,21 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it("keeps manual Pause and blocking streaming pauses independent", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.setSceneStreamingPaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setPaused(true);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(true);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+  });
 
   function renderViews(engine: NullEngine) {
     if (!engine.getRenderingCanvas())
@@ -906,7 +933,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
+    const shared = resourceCacheForEngine(engine).acquireTexture("shared", engine, new Uint8Array([1, 2, 3, 4]));
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
@@ -914,9 +941,10 @@ describe("Play createEngine view", () => {
     first.dispose();
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(release).not.toHaveBeenCalled();
+    expect(shared.resource.getInternalTexture()).not.toBeNull();
     expect(live.scene.isDisposed).toBe(false);
     expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    shared.release();
     unsubscribe();
   });
 
@@ -1185,8 +1213,8 @@ describe("Play createEngine view", () => {
       now += 4;
     });
     for (const [second, cap] of [30, 60, 15, 30].entries()) {
-      // The first second must use the configured cap before any console setter.
-      if (second > 0) handle.applyCommand({ type: "setFrameCap", fps: cap });
+      // The first second must use the configured cap before any live change.
+      if (second > 0) handle.scheduler.setFrameCap(cap);
       const before = renders;
       for (let frame = 0; frame < 60; frame += 1) {
         now = second * 1000 + frame * (1000 / 60);
@@ -1820,7 +1848,7 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.dropTier();
+    handle.scaling.setLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
@@ -2812,89 +2840,6 @@ describe("Play createEngine view", () => {
     );
   });
 
-  it("keeps a mesh's default material and reports once when WebGPU refuses its Material texture", () => {
-    const sampling = (domain: "surface" | "particle") => {
-      const doc = createDefaultMaterialDocument(domain, domain);
-      doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "odd" } });
-      doc.edges = [{ id: "sample-output", sourceNodeId: "sample", sourcePinId: domain === "particle" ? "rgba" : "rgb",
-        targetNodeId: "output", targetPinId: domain === "particle" ? "color" : "baseColor" }];
-      return doc;
-    };
-    const onTextureDiagnostic = vi.fn();
-    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-      textureBytes: new Map([["odd", ktx2HeaderBytes(1, 1)]]),
-      materialDocuments: new Map([["surface", sampling("surface")], ["tinted", sampling("surface")], ["sparks", sampling("particle")]]),
-      onTextureDiagnostic,
-    });
-    handles.push(handle);
-    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: null });
-    const mesh = handle.scene.getMeshByName("actor-1")!;
-    const initial = mesh.material;
-    // The cache refuses on WebGPU only (resource-cache-texture.test.ts); NullEngine is not WebGPU.
-    const acquireTexture = ResourceCache.prototype.acquireTexture;
-    let refusals = 0;
-    const refuse = vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, guid, ...rest) {
-      if (guid !== "odd") return acquireTexture.call(this, guid, ...rest);
-      refusals += 1;
-      throw new TextureUploadRefusedError(guid, { width: 1, height: 1 });
-    });
-    try {
-      // A second Material compiles and is refused again; the report stays single.
-      handle.applyCommand({ type: "assignMaterial", slotId: 1, materialAssetGuid: "surface" });
-      handle.applyCommand({ type: "assignMaterial", slotId: 1, materialAssetGuid: "tinted" });
-    } finally { refuse.mockRestore(); }
-    expect(refusals).toBe(2);
-    expect(mesh.isDisposed()).toBe(false);
-    expect(mesh.material).toBe(initial);
-    expect(handle.scene.materials.some((material) => /surface|tinted/.test(material.name))).toBe(false);
-    expect(onTextureDiagnostic).toHaveBeenCalledOnce();
-    expect(onTextureDiagnostic).toHaveBeenCalledWith({
-      code: "texture.webgpuBlockSize", assetGuid: "odd", width: 1, height: 1, particle: true, other: true,
-    });
-  });
-
-  it("adopts a staged Model + Sprite actor without its refused sprite texture and reports it once", async () => {
-    const onTextureDiagnostic = vi.fn();
-    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-      onTextureDiagnostic,
-    });
-    handles.push(handle);
-    const sprite = createDefaultSpritePayload();
-    sprite.textureGuid = "odd";
-    handle.setMeshAssets({
-      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
-      spritePayloads: new Map([["badge", sprite]]),
-      textureBytes: new Map([["odd", ktx2HeaderBytes(1, 1)]]),
-    });
-    // The cache refuses on WebGPU only (resource-cache-texture.test.ts); NullEngine is not WebGPU.
-    const acquireTexture = ResourceCache.prototype.acquireTexture;
-    const refuse = vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, guid, ...rest) {
-      if (guid !== "odd") return acquireTexture.call(this, guid, ...rest);
-      throw new TextureUploadRefusedError(guid, { width: 1, height: 1 });
-    });
-    const part = (componentId: string, meshKind: string, meshAssetGuid: string, y: number) => ({
-      componentId, parentId: null, meshKind, meshAssetGuid, position: [0, y, 0] as [number, number, number],
-      rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number],
-    });
-    try {
-      handle.applyCommand({ type: "assignMesh", slotId: 2, actorGuid: "hero", meshKind: "box", meshAssetGuid: null,
-        parts: [part("body", "box", "hero", 0), part("badge", "sprite", "badge", 2)] });
-      // A refused sprite texture must not fail the staged Model load (Play would abort).
-      await handle.whenEditorModelsReady();
-    } finally { refuse.mockRestore(); }
-    const root = handle.scene.getMeshByName("actor-2")!;
-    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
-    expect(handle.scene.materials.some((material) => material.name.startsWith("albedo:"))).toBe(false);
-    expect(onTextureDiagnostic).toHaveBeenCalledOnce();
-    expect(onTextureDiagnostic).toHaveBeenCalledWith({
-      code: "texture.webgpuBlockSize", assetGuid: "odd", width: 1, height: 1, particle: false, other: true,
-    });
-  });
-
   it("records a mesh material after a possessing Default Camera is assigned", () => {
     const { handle } = playHandle(sharedEngine());
     handle.applyCommand({
@@ -3303,11 +3248,19 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("applies setRenderingQuality on Play views only, not the editor viewport", () => {
-    const play = playHandle(sharedEngine());
-    const editor = editorHandle(sharedEngine());
-    play.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
-    editor.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
+  it("applies setScalability quality on Play views only, not the editor viewport", () => {
+    const playEngine = sharedEngine();
+    const playLoop = vi.spyOn(playEngine, "runRenderLoop");
+    const play = playHandle(playEngine);
+    const editorEngine = sharedEngine();
+    const editorLoop = vi.spyOn(editorEngine, "runRenderLoop");
+    const editor = editorHandle(editorEngine);
+    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    play.handle.applyCommand(command);
+    editor.handle.applyCommand(command);
+    // Transactions apply at the next frame boundary of the owning view.
+    playLoop.mock.calls[0]![0]();
+    editorLoop.mock.calls[0]![0]();
     expect(play.handle.scaling.getLevel()).toBe(2);
     expect(editor.handle.scaling.getLevel()).toBe(1);
   });
@@ -3731,6 +3684,101 @@ describe("Play createEngine view", () => {
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
   });
 
+  it("waits for shared fog rendering preparation without letting one canceled stream fail its sibling", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    for (const [slotId, actorGuid] of [[4, "left"], [5, "right"]] as const) {
+      handle.applyCommand({ type: "sceneStreamLoading", actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `${actorGuid}-fog`, classId: "Actor",
+        sceneStreamActorGuid: actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid: `${actorGuid}-fog`, meshAssetGuid: null, meshKind: null });
+      handle.applyCommand({ type: "setFogVolumes", slotId, actorId: `${actorGuid}-fog`, volumes });
+    }
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reached!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => { reached = resolve; });
+    const prepare = SceneRenderCoordinator.prototype.prepare;
+    let shared: ReturnType<typeof prepare> | undefined;
+    let waiters = 0;
+    // Hold the renderer-owned asynchronous boundary, then use the real graph.
+    // Its first caller must not lend a per-stream cancellation to shared work.
+    const preparing = vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockImplementation(function (this: SceneRenderCoordinator, assertCurrent = () => {}) {
+      shared ??= gate.then(() => prepare.call(this, assertCurrent));
+      if (++waiters === 2) reached();
+      return shared.then((result) => { assertCurrent(); return result; });
+    });
+    const leftAbort = new AbortController();
+    const left = handle.prepareSceneStream([4], leftAbort.signal, undefined, { actorGuid: "left", streamLoadId: 1 });
+    const leftRejected = expect(left).rejects.toThrow("cancel left");
+    let rightReady = false;
+    const right = handle.prepareSceneStream([5], new AbortController().signal, undefined, { actorGuid: "right", streamLoadId: 1 })
+      .then(() => { rightReady = true; });
+    try {
+      await bothWaiting;
+      expect(rightReady).toBe(false);
+      leftAbort.abort(new Error("cancel left"));
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "left-fog" });
+      await leftRejected;
+      expect(hasFogVolumes(handle.scene, "left-fog")).toBe(false);
+      expect(hasFogVolumes(handle.scene, "right-fog")).toBe(true);
+      expect(rightReady).toBe(false);
+      release();
+      await right;
+      expect(rightReady).toBe(true);
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "right", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "right-fog" });
+      expect(hasFogVolumes(handle.scene)).toBe(false);
+      expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+    } finally {
+      leftAbort.abort(new Error("cancel left"));
+      release();
+      preparing.mockRestore();
+      await Promise.allSettled([left, leftRejected, right]);
+    }
+  });
+
+  it("admits streamed capture producers only when ready and restores the loaded sibling on unload", async () => {
+    const engine = sharedEngine();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+      const target = allocate(size, options);
+      target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    const { handle } = playHandle(engine);
+    handle.setMeshAssets({ renderTargets: new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]) });
+    const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" };
+    handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    for (const [slotId, actorGuid] of [[4, "pending"], [5, "loaded"]] as const) {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "RenderTargetCapture",
+        ...(slotId === 4 ? { sceneStreamActorGuid: "stream", streamLoadId: 1 } : {}) });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "renderTargetCapture" });
+      handle.applyCommand({ type: "configureRenderTargetCapture", slotId, actorGuid, settings });
+    }
+    const captures = sceneRenderTargetCaptures(handle.scene);
+    const owners: string[] = [];
+    const ready = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const draw = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+      owners.push(this.activeCamera!.name);
+    });
+    try {
+      captures.render();
+      expect(owners).toEqual(["renderTargetCapture:loaded"]);
+      await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:pending");
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "pending" });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:loaded");
+    } finally { ready.mockRestore(); draw.mockRestore(); }
+  });
+
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
@@ -4138,9 +4186,8 @@ describe("Play createEngine view", () => {
     expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
   });
 
-  it("applies a setRenderPath command game-wide and reports the session status", () => {
+  it("applies a setScalability render path game-wide and reports the session status", () => {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
     const { handle: sibling } = playHandle(engine);
     const statuses: string[] = [];
     const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -4149,8 +4196,12 @@ describe("Play createEngine view", () => {
       onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
     });
     handles.push(withStatus);
+    // The newest Play view owns the shared framebuffer and applies the transaction.
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loops.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(sibling.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(statuses).toContain("clusteredForward");
@@ -4159,10 +4210,12 @@ describe("Play createEngine view", () => {
     expect(statuses.at(-1)).toBe("forward");
   });
 
-  it("ignores setRenderPath on non-Play handles", () => {
+  it("ignores setScalability on non-Play handles", () => {
     const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = editorHandle(engine);
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loop.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
     // The Engine-level API still applies to shared scenes on the same Engine.
     handle.setRenderPath("clusteredForward");

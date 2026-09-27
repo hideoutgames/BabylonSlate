@@ -439,24 +439,6 @@ export async function acquireResources(request, options = {}) {
   }
 }
 
-export async function inheritedLease(value, request) {
-  if (!value) return false;
-  try {
-    const { ticket, token } = JSON.parse(value);
-    const row = await readJson(ticket);
-    return Boolean(
-      row?.active &&
-      row.token === token &&
-      alive(row.pid) &&
-      ["workers", "browsers", "memoryGiB"].every(
-        (key) => request[key] <= row.request[key],
-      ),
-    );
-  } catch {
-    return false;
-  }
-}
-
 /** Nested stages are sequential within each inherited scope, with no upgrades. */
 export async function claimInheritedLease(value, request) {
   if (!value) return null;

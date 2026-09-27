@@ -36,7 +36,6 @@ export interface SceneEditingContextValue {
   /** Session-only component whose shape handles override the selected actor's default. */
   shapeEditTarget: SceneShapeEditTarget | null;
   setShapeEditTarget: (target: SceneShapeEditTarget | null) => void;
-  isSelected: (actorId: string) => boolean;
   gizmoTool: GizmoTool;
   setGizmoTool: (tool: GizmoTool) => void;
   snapEnabled: boolean;
@@ -267,7 +266,6 @@ export function SceneEditingProvider({
       setSelectedActorIds,
       shapeEditTarget,
       setShapeEditTarget,
-      isSelected: (actorId: string) => selectedActorIds.includes(actorId),
       gizmoTool,
       setGizmoTool,
       snapEnabled,

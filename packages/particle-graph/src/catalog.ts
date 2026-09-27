@@ -75,21 +75,6 @@ export interface ParticleNodeDefinition {
 
 export const PARTICLE_OUTPUT_NODE_TYPE = "particle.output";
 
-/** Palette groups in display order. */
-export const PARTICLE_PALETTE_CATEGORIES = [
-  "Emitter",
-  "Shape",
-  "Update",
-  "Forces",
-  "Particle Attributes",
-  "System Values",
-  "Constants",
-  "Utility",
-  "Math",
-  "Vector",
-  "Logic",
-] as const;
-
 export type ParticleConditionTest =
   | "equal"
   | "notEqual"
@@ -769,10 +754,6 @@ const VALUE_TYPE_DEFAULTS: Readonly<Record<string, ParticleNumericType>> = {
   "random.range": "float",
   "gradient.sample": "color",
 };
-
-export function particleNodeValueTypeDefault(type: string): ParticleNumericType | undefined {
-  return VALUE_TYPE_DEFAULTS[type];
-}
 
 /** `properties.valueType` of a Random or Gradient node, with the node's default. */
 export function particleNodeValueType(

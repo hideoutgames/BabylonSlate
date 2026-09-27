@@ -51,7 +51,6 @@ interface ModifierState {
 
 interface ResolverInternals {
   heldKeys: Set<string>;
-  heldMouseButtons: Set<number>;
   heldPointerButtons: Set<number>;
   pointerButtons: Map<number, Set<number>>;
   heldGamepadButtons: Set<string>;
@@ -103,10 +102,7 @@ function actionBindingHeld(
     case "key":
       return state.heldKeys.has(binding.code);
     case "mouseButton":
-      return (
-        state.heldMouseButtons.has(Number(binding.code)) ||
-        state.heldPointerButtons.has(Number(binding.code))
-      );
+      return state.heldPointerButtons.has(Number(binding.code));
     case "pointer":
       return state.heldPointerButtons.has(
         binding.code === "primary" ? 0 : Number(binding.code),
@@ -192,7 +188,6 @@ function updateModifiers(
 export class InputResolver {
   private readonly state: ResolverInternals = {
     heldKeys: new Set(),
-    heldMouseButtons: new Set(),
     heldPointerButtons: new Set(),
     pointerButtons: new Map(),
     heldGamepadButtons: new Set(),
@@ -211,25 +206,9 @@ export class InputResolver {
 
   constructor(mappings: InputMappings) {
     this.mappings = structuredClone(mappings);
-    this.bindings = new InputBindingProfile(
-      mappings,
-      (current) => {
-        this.mappings = current;
-      },
-      () => {
-        this.state.heldKeys.clear();
-        this.state.modifiers = {
-          shift: false,
-          ctrl: false,
-          alt: false,
-          meta: false,
-        };
-      },
-    );
-  }
-
-  setMappings(mappings: InputMappings): void {
-    this.bindings.setDefaults(mappings);
+    this.bindings = new InputBindingProfile(mappings, (current) => {
+      this.mappings = current;
+    });
   }
 
   /** Apply one tick's events and return the resolved action / axis snapshot. */
@@ -321,7 +300,6 @@ export class InputResolver {
     sampleActions();
     sampleInputs();
     for (const event of events) {
-      if (!this.bindings.accepts(event)) continue;
       switch (event.kind) {
         case "key": {
           const down = event.phase === "down";
@@ -330,27 +308,6 @@ export class InputResolver {
             pressed("key", event.code);
           if (down) this.state.heldKeys.add(event.code);
           else this.state.heldKeys.delete(event.code);
-          break;
-        }
-        case "mouse": {
-          if (this.state.primaryPointerId == null) {
-            this.state.cursor.x = event.x;
-            this.state.cursor.y = event.y;
-            if (event.phase === "down") this.state.cursor.pressed = true;
-            else if (event.phase === "up" || event.phase === "cancel") {
-              this.state.cursor.pressed = false;
-            }
-          }
-          if (event.phase === "down") {
-            if (
-              !this.state.heldMouseButtons.has(event.button) &&
-              !this.state.heldPointerButtons.has(event.button)
-            )
-              pressed("mouseButton", String(event.button));
-            this.state.heldMouseButtons.add(event.button);
-          } else if (event.phase === "up" || event.phase === "cancel") {
-            this.state.heldMouseButtons.delete(event.button);
-          }
           break;
         }
         case "pointer": {
@@ -379,8 +336,7 @@ export class InputResolver {
             this.state.cursor.y = event.y;
             if (
               event.phase === "down" &&
-              !this.state.heldPointerButtons.has(event.button) &&
-              !this.state.heldMouseButtons.has(event.button)
+              !this.state.heldPointerButtons.has(event.button)
             )
               pressed("mouseButton", String(event.button));
             this.state.heldPointerButtons = new Set(
@@ -424,30 +380,17 @@ export class InputResolver {
           }
           break;
         }
-        case "gamepadConnection": {
-          if (event.connected) {
-            if (!this.state.connectedPads.has(event.gamepadIndex)) {
-              this.state.connectedPads.add(event.gamepadIndex);
-              connections.push({
-                gamepadIndex: event.gamepadIndex,
-                connected: true,
-              });
-            }
-          } else if (this.state.connectedPads.delete(event.gamepadIndex)) {
-            connections.push({
-              gamepadIndex: event.gamepadIndex,
-              connected: false,
-            });
-            for (const key of [...this.state.heldGamepadButtons]) {
-              if (key.startsWith(`${event.gamepadIndex}:`)) {
-                this.state.heldGamepadButtons.delete(key);
-              }
-            }
-            for (const key of [...this.state.gamepadAxes.keys()]) {
-              if (key.startsWith(`${event.gamepadIndex}:`)) {
-                this.state.gamepadAxes.delete(key);
-              }
-            }
+        case "gamepadDisconnect": {
+          const pad = event.gamepadIndex;
+          if (!this.state.connectedPads.delete(pad)) break;
+          connections.push({ gamepadIndex: pad, connected: false });
+          // The pad's last sample must not keep actions held or sticks deflected.
+          for (const key of [...this.state.heldGamepadButtons]) {
+            if (key.startsWith(`${pad}:`))
+              this.state.heldGamepadButtons.delete(key);
+          }
+          for (const key of [...this.state.gamepadAxes.keys()]) {
+            if (key.startsWith(`${pad}:`)) this.state.gamepadAxes.delete(key);
           }
           break;
         }
@@ -568,36 +511,5 @@ export class InputResolver {
         lastHeldSeconds: 0,
       }
     );
-  }
-
-  isActionHeld(action: string): boolean {
-    const mapping =
-      this.mappings.actions.find((row) => row.id === action) ??
-      this.mappings.actions.find((row) => row.name === action);
-    return mapping?.id
-      ? this.inputStates[mapping.id]?.held === true
-      : this.state.previousHeldActions.has(action);
-  }
-
-  reset(): void {
-    this.inputStates = {};
-    this.bindings.clearInputState();
-    this.state.heldKeys.clear();
-    this.state.heldMouseButtons.clear();
-    this.state.heldPointerButtons.clear();
-    this.state.pointerButtons.clear();
-    this.state.heldGamepadButtons.clear();
-    this.state.gamepadAxes.clear();
-    this.state.touchAxes.clear();
-    this.state.connectedPads.clear();
-    this.state.previousHeldActions.clear();
-    this.state.cursor = { x: 0, y: 0, pressed: false };
-    this.state.primaryPointerId = null;
-    this.state.modifiers = {
-      shift: false,
-      ctrl: false,
-      alt: false,
-      meta: false,
-    };
   }
 }

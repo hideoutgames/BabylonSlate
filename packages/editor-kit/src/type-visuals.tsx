@@ -46,7 +46,7 @@ import {
   WorkflowIcon,
 } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { ASSET_COLOR_TOKENS, assetColorVar } from "@babylonslate/ui/lib/data-types";
+import { assetColorVar } from "@babylonslate/ui/lib/data-types";
 
 export type AssetVisualFamily =
   | "scene"
@@ -91,6 +91,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   Scene: "BObject",
   SceneLayer: "BObject",
   SceneLayerActor: "Actor",
+  SceneStreamingActor: "Actor",
   ActorComponent: "BObject",
   GameInstance: "BObject",
   FunctionLibrary: "BObject",
@@ -131,6 +132,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   HemisphericFillLightComponent: "ActorComponent",
   SkyboxComponent: "ActorComponent",
   Text3DComponent: "ActorComponent",
+  SceneStreamingComponent: "ActorComponent",
   AudioComponent: "ActorComponent",
   ParticleComponent: "ActorComponent",
   GlobalWaterVolumeComponent: "ActorComponent",
@@ -173,6 +175,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Actor: ACTOR_ICON,
   SceneLayer: Layers2Icon,
   SceneLayerActor: ACTOR_ICON,
+  SceneStreamingActor: LayersIcon,
   AnimationGraphComponent: WorkflowIcon,
   BehaviourTreeComponent: ListTreeIcon,
   NavAgentComponent: NavigationIcon,
@@ -201,6 +204,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   HemisphericFillLightComponent: LightbulbIcon,
   SkyboxComponent: CloudIcon,
   Text3DComponent: TypeIcon,
+  SceneStreamingComponent: LayersIcon,
   AudioComponent: Volume2Icon,
   ParticleComponent: SparklesIcon,
   GlobalWaterVolumeComponent: WavesIcon,
@@ -266,6 +270,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "HemisphericFillLightComponent",
   "SkyboxComponent",
   "Text3DComponent",
+  "SceneStreamingComponent",
   "AudioComponent",
   "ParticleComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
@@ -326,8 +331,6 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };
-
-export { ASSET_COLOR_TOKENS };
 
 const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   scene: assetColorVar("scene"),

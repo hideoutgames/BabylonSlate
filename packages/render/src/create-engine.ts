@@ -13,7 +13,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -32,6 +32,9 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneStreamIdentity } from "./scene-streaming-readiness";
+import { prepareSceneStream } from "./scene-stream-preparation";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -106,9 +109,7 @@ import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCo
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
-  TEXTURE_BLOCK_SIZE_DIAGNOSTIC,
   type Ktx2DecoderRuntimeOptions,
-  type TextureBlockSizeDiagnostic,
 } from "./ktx2-transcoder";
 import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
@@ -147,10 +148,8 @@ import {
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
   type TextureResources,
-  type TextureUploadRefusedError,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
-import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -264,6 +263,8 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
+  setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
   setRegisterViewEnabled: (enabled: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
@@ -323,8 +324,6 @@ export interface EngineHandle {
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
-  /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
-  postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Explicit local quality preferences; runtime commands take precedence. */
@@ -360,6 +359,8 @@ export interface EngineHandle {
   whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
   whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
+  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void, owner?: SceneStreamIdentity) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -403,7 +404,6 @@ export interface CreateEngineOptions {
   onDragSelectEnd?: () => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
-  onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
   /** A component shape handle was released; merge properties as one undoable change. */
   onComponentShapeEdit?: (edit: ComponentShapeEdit) => void;
@@ -543,13 +543,6 @@ export interface CreateEngineOptions {
     severity?: string;
     nodeId?: string;
   }) => void;
-  /**
-   * A texture was not uploaded because WebGPU would reject it: its Materials
-   * are unavailable (default mesh material, skipped particle slot) and a
-   * Sprite, Tilemap or 2D texture draws without it. Reported once per texture
-   * content. Format with `textureBlockSizeMessage`.
-   */
-  onTextureDiagnostic?: (diagnostic: TextureBlockSizeDiagnostic) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
@@ -843,6 +836,7 @@ function initializeEngine(
   const worldRenderer = new SceneRenderCoordinator(scene);
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
+  let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
   let releasedHandle: Promise<void> | null = null;
   let contextLost = false;
   let loadGeneration = 0;
@@ -987,6 +981,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
@@ -1076,6 +1071,8 @@ function initializeEngine(
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  if (options.playMode) streamAdmission = createSceneStreamAdmission(scene, binding);
+  onRollback(() => streamAdmission?.clear());
   onRollback(() => disposeSnapshotBinding(binding));
   if (options.playMode && options.onRagdollPoseCaptured) {
     binding.ragdoll = new RagdollPoseController(binding, options.onRagdollPoseCaptured, () => scheduler.invalidate("snapshot"));
@@ -1162,28 +1159,7 @@ function initializeEngine(
     if (options.playMode) return;
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
-  const refusedTextures = new Set<string>();
-  /** `direct`: a Sprite, Tilemap or 2D texture binds it without a Material. */
-  const reportRefusedTexture = (refused: TextureUploadRefusedError, direct: boolean): void => {
-    const guid = refused.assetGuid;
-    const bytes = binding.textureBytes?.get(guid);
-    // Every apply compiles or binds again and refuses again; a re-encode reports anew.
-    const key = `${guid}\0${bytes ? assetByteFingerprint(bytes) : ""}`;
-    if (refusedTextures.has(key)) return;
-    refusedTextures.add(key);
-    let particle = false;
-    let other = direct;
-    for (const document of materialDocuments.values()) {
-      const lowered = materialLibrary.planFor(document);
-      if (!lowered.ok || !lowered.plan.textures.some((texture) => texture.textureGuid === guid)) continue;
-      if (lowered.plan.domain === "particle") particle = true;
-      else other = true;
-    }
-    const { width, height } = refused;
-    options.onTextureDiagnostic?.({ code: TEXTURE_BLOCK_SIZE_DIAGNOSTIC, assetGuid: guid, width, height, particle, other });
-  };
-  binding.onTextureRefused = (refused) => reportRefusedTexture(refused, true);
-  const materialLibrary: MaterialLibrary = new MaterialLibrary({
+  const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
     acquireTexture: (guid, consumerScene) => {
@@ -1192,7 +1168,7 @@ function initializeEngine(
       }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return acquireMaterialTexture(resourceCache, guid, engine, bytes, undefined, (refused) => reportRefusedTexture(refused, false));
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
@@ -1281,7 +1257,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     const camera = scene.activeCamera;
@@ -1292,7 +1267,6 @@ function initializeEngine(
     retireAttachedStack();
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
-    lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled || !camera) return;
     attachedStack = worldRenderer.attachPostProcess({
       scene,
@@ -1301,10 +1275,7 @@ function initializeEngine(
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      onDiagnostic: (diagnostic) => {
-        lastPostProcessDiagnostics.push(diagnostic);
-        options.onPostProcessDiagnostic?.(diagnostic);
-      },
+      onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
 
@@ -1366,10 +1337,8 @@ function initializeEngine(
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            onDiagnostic: (diagnostic) => {
-              lastPostProcessDiagnostics.push(diagnostic);
-              options.onPostProcessDiagnostic?.(diagnostic);
-            },
+            onDiagnostic: (diagnostic) =>
+              options.onPostProcessDiagnostic?.(diagnostic),
           });
         },
       })
@@ -1507,7 +1476,7 @@ function initializeEngine(
       runtimeFogActorBySlot.delete(slotId);
     }
     if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
-    upsertFogVolumes(scene, authored.actorId, root, authored.bindings);
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
   const refreshRuntimeOutline = (slotId: number) => {
@@ -1572,7 +1541,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids, onTextureRefused: binding.onTextureRefused };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -1773,7 +1742,6 @@ function initializeEngine(
           );
         }
         debugOverlayInstance.followLivePose();
-        options.onGizmoDrag?.();
       },
       onDragEnd: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
@@ -2270,6 +2238,7 @@ function initializeEngine(
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
+    streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
     if (!shouldRenderFrame(frameStart, loadingFrame)) {
@@ -2539,6 +2508,16 @@ function initializeEngine(
     void fontRegistry.registerAll(options.fontFaceEntries);
   }
 
+  let callerPaused = false;
+  let sceneStreamingPaused = false;
+  const applyPause = () => {
+    const paused = callerPaused || sceneStreamingPaused;
+    binding.paused = paused;
+    scheduler.setPaused(paused);
+    audioService?.setPaused(paused);
+    particleService?.setPaused(paused);
+  };
+
   return {
     engine,
     scene,
@@ -2549,6 +2528,7 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
       unsubscribeRenderPathSession();
@@ -2677,14 +2657,12 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
         return;
-      }
-      if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scheduler }, command);
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
@@ -2785,7 +2763,7 @@ function initializeEngine(
       if (command.type === "configureRenderTargetCapture") {
         const transform = command.transform;
         renderTargetCaptures.configure(command.actorGuid, command.settings,
-          () => binding.meshes.get(command.slotId) ?? null, transform ? {
+          () => isSceneStreamSlotPending(scene, command.slotId) ? null : binding.meshes.get(command.slotId) ?? null, transform ? {
             position: [transform.position.x, transform.position.y, transform.position.z],
             rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
             scale: [transform.scale.x, transform.scale.y, transform.scale.z],
@@ -2937,18 +2915,6 @@ function initializeEngine(
         scheduler.invalidate("camera");
       }
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
-      if (command.type === "setRenderingQuality" && options.playMode) {
-        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
-        setSceneRenderSettings(scene);
-        applyRenderingQuality();
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setRenderPath" && options.playMode) {
-        requestRenderPath(
-          engine,
-          command.renderPath ? { renderPath: command.renderPath } : {},
-        );
-      }
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
@@ -2988,12 +2954,15 @@ function initializeEngine(
         );
         scheduler.invalidate("snapshot");
       }
+      streamAdmission?.sync();
     },
     setPaused: (paused: boolean) => {
-      binding.paused = paused;
-      scheduler.setPaused(paused);
-      audioService?.setPaused(paused);
-      particleService?.setPaused(paused);
+      callerPaused = paused;
+      applyPause();
+    },
+    setSceneStreamingPaused: (paused: boolean) => {
+      sceneStreamingPaused = paused;
+      applyPause();
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
@@ -3135,7 +3104,6 @@ function initializeEngine(
         zOrder: layer.zOrder,
       })),
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
-    postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       setSceneEffectsEnabled(scene, enabled);
@@ -3250,6 +3218,43 @@ function initializeEngine(
         .map(([, pending]) => pending);
       await Promise.all(playLoads);
       scope.assert();
+    },
+    prepareSceneStream: async (slotIds, signal, onProgress, owner) => {
+      if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
+      const generation = loadGeneration;
+      await prepareSceneStream(scene, binding, slotIds, {
+        signal, onProgress,
+        assertCurrent: () => assertCurrent(generation),
+        pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+      });
+      signal.throwIfAborted();
+      assertCurrent(generation);
+      if (streamAdmission?.publish(slotIds, owner) === false)
+        throw new Error("Scene streaming publication was superseded.");
+      if (slotIds.some((slot) => {
+        const fog = binding.fogVolumes.get(slot);
+        return fog && hasFogVolumes(scene, fog.actorId);
+      })) {
+        // Fog can introduce the shared effects pipeline. Its graph and actor
+        // geometry must be ready before the runtime acknowledges Loaded.
+        // Preparation belongs to the renderer, so one canceled stream cannot
+        // reject a sibling waiting for the same graph generation.
+        let cancel!: () => void;
+        const cancelled = new Promise<never>((_, reject) => {
+          cancel = () => reject(signal.reason);
+          signal.addEventListener("abort", cancel, { once: true });
+        });
+        try {
+          await Promise.race([worldRenderer.prepare(() => assertCurrent(generation)), cancelled]);
+        } finally {
+          signal.removeEventListener("abort", cancel);
+        }
+        signal.throwIfAborted();
+        assertCurrent(generation);
+      }
+      particleService?.startPreparedSlots(slotIds);
+      appliedSnapshotIdentity = null;
+      scheduler.invalidate("snapshot");
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +

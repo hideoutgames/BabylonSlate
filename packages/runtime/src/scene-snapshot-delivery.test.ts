@@ -5,6 +5,20 @@ import { createInProcessRuntime } from "./driver";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 
 describe("Scene batch snapshot delivery", () => {
+  it("publishes streamed poses before readiness and drops stale instances without affecting siblings", () => {
+    let available = false;
+    const sent: CommandMessage[] = [];
+    let snapshots = 0;
+    const delivery = createSceneSnapshotDelivery({ publishSnapshot: () => { if (available) snapshots++; return available; }, send: (command) => sent.push(command) });
+    delivery.receive({ type: "sceneStreamRealized", actorGuid: "left", streamLoadId: 1, slotIds: [3] });
+    delivery.receive({ type: "sceneStreamRealized", actorGuid: "right", streamLoadId: 2, slotIds: [4] });
+    delivery.receive({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 1 });
+    expect(sent).toEqual([]);
+    available = true;
+    delivery.flush();
+    expect(snapshots).toBe(1);
+    expect(sent).toEqual([{ type: "sceneStreamRealized", actorGuid: "right", streamLoadId: 2, slotIds: [4] }]);
+  });
   it("retains independent layer markers across a world change and drops only a removed layer", () => {
     let available = false;
     const sent: CommandMessage[] = [];

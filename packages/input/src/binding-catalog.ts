@@ -1,5 +1,5 @@
 /**
- * Bindable device codes for input asset and native Input Control pickers.
+ * Bindable device codes for input asset pickers and binding labels.
  * Labels are the same strings the editor shows on a closed binding.
  */
 

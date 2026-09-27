@@ -28,6 +28,7 @@ import {
   classIdsFromVariableMembers,
   areaEmissionTextureGuids,
   createDefaultScene,
+  createSceneStreamingActor,
   createInputAssetPayload,
   isInputAssetType,
   createDefaultSceneLayer,
@@ -91,6 +92,7 @@ export const ENGINE_BASE_CLASSES = [
   "Actor",
   "RenderTargetCapture",
   "SceneLayerActor",
+  "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -1507,7 +1509,9 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
-    if (parentClass === "RenderTargetCapture") {
+    if (parentClass === "SceneStreamingActor") {
+      payload.components = createSceneStreamingActor("prefab").components;
+    } else if (parentClass === "RenderTargetCapture") {
       payload.components = [{ id: "prefab-capture", classId: "RenderTargetCaptureComponent", properties: { ...createDefaultRenderTargetCaptureProperties() } }];
     }
     return {
@@ -1740,15 +1744,6 @@ export function newAssetFileName(
   return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
 }
 
-/** Relative path next to an existing asset (`assets/HUD.class.babasset` → `Chip.class.babasset`). */
-export function siblingAssetRelativePath(hostPath: string, fileName: string): string {
-  const slash = hostPath.lastIndexOf("/");
-  const dir = slash >= 0 ? hostPath.slice(0, slash) : "";
-  const relativeDir =
-    dir === "assets" || dir === "" ? "" : dir.replace(/^assets\//, "");
-  return relativeDir ? `${relativeDir}/${fileName}` : fileName;
-}
-
 /**
  * Textures, called functions and the preview mesh a material references.
  * Saving writes these into `header.dependencies[]` so Show References, delete
@@ -1822,7 +1817,10 @@ export function assetHeaderDependencies(
       for (const component of components) {
         if (!component || typeof component !== "object") continue;
         addClass(component.classId);
-        if (component.classId === "RenderTargetCaptureComponent") {
+        if (component.classId === "SceneStreamingComponent") {
+          const guid = component.properties?.sceneGuid;
+          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
+        } else if (component.classId === "RenderTargetCaptureComponent") {
           const guid = component.properties?.renderTargetGuid;
           if (typeof guid === "string" && guid) unique.add(guid);
         }
@@ -2036,16 +2034,6 @@ function documentAsset(
       },
     ],
   };
-}
-
-export function folderRelativePath(
-  selectedFolderPath: string,
-  assetsRoot: string,
-): string {
-  if (selectedFolderPath === assetsRoot) return "";
-  return selectedFolderPath.startsWith(`${assetsRoot}/`)
-    ? selectedFolderPath.slice(assetsRoot.length + 1)
-    : "";
 }
 
 export function joinAssetFolderPath(folderPath: string, fileName: string): string {

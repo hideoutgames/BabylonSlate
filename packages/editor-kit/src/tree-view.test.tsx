@@ -313,7 +313,6 @@ describe("TreeView", () => {
         nodes={nodes}
         onSelect={onSelect}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -453,77 +452,69 @@ describe("TreeView", () => {
     vi.useRealTimers();
   });
 
-  it.each(["hold", "immediate"] as const)(
-    "reparents with mouse click-drag when reparentArm is %s",
-    (reparentArm) => {
-      const onReparent = vi.fn();
-      render(
-        <TreeView
-          nodes={nodes}
-          onReparent={onReparent}
-          reparentArm={reparentArm}
-          data-testid="tree"
-        />,
-      );
+  it("reparents with mouse click-drag", () => {
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        data-testid="tree"
+      />,
+    );
 
-      const tree = screen.getByTestId("tree");
-      tree.getBoundingClientRect = () =>
-        ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
 
-      const row = screen.getByTestId("tree-row-child");
-      dispatchPointerEvent(row, "pointerdown", {
-        pointerType: "mouse",
-        clientX: 10,
-        clientY: 40,
-      });
-      dispatchPointerEvent(row, "pointermove", {
-        pointerType: "mouse",
-        clientX: 60,
-        clientY: 70,
-      });
-      dispatchPointerEvent(row, "pointerup", {
-        pointerType: "mouse",
-        clientX: 60,
-        clientY: 70,
-      });
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 60,
+      clientY: 70,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 60,
+      clientY: 70,
+    });
 
-      expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
-    },
-  );
+    expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
+  });
 
-  it.each(["hold", "immediate"] as const)(
-    "keeps early touch movement scrollable when reparentArm is %s",
-    (reparentArm) => {
-      vi.useFakeTimers();
-      const onReparent = vi.fn();
-      const onContextMenu = vi.fn();
-      render(
-        <TreeView
-          nodes={nodes}
-          onReparent={onReparent}
-          onContextMenu={onContextMenu}
-          reparentArm={reparentArm}
-          data-testid="tree"
-        />,
-      );
+  it("keeps early touch movement scrollable", () => {
+    vi.useFakeTimers();
+    const onReparent = vi.fn();
+    const onContextMenu = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        onContextMenu={onContextMenu}
+        data-testid="tree"
+      />,
+    );
 
-      const tree = screen.getByTestId("tree");
-      tree.getBoundingClientRect = () =>
-        ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
 
-      const row = screen.getByTestId("tree-row-child");
-      dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
-      dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
-      expect(dispatchTouchMove(row, 10, 80).defaultPrevented).toBe(false);
-      act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
-      dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
-      expect(dispatchTouchMove(row, 10, 70).defaultPrevented).toBe(false);
-      dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
+    expect(dispatchTouchMove(row, 10, 80).defaultPrevented).toBe(false);
+    act(() => vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS));
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
+    expect(dispatchTouchMove(row, 10, 70).defaultPrevented).toBe(false);
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
 
-      expect(onReparent).not.toHaveBeenCalled();
-      expect(onContextMenu).not.toHaveBeenCalled();
-    },
-  );
+    expect(onReparent).not.toHaveBeenCalled();
+    expect(onContextMenu).not.toHaveBeenCalled();
+  });
 
   it("holds then drags touch rows without native scrolling or swipe-selection", () => {
     vi.useFakeTimers();
@@ -536,7 +527,6 @@ describe("TreeView", () => {
         onReparent={onReparent}
         onSelect={onSelect}
         onContextMenu={onContextMenu}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -791,7 +781,6 @@ describe("TreeView", () => {
         ]}
         onReparent={onReparent}
         onSelect={onSelect}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -972,7 +961,6 @@ describe("TreeView", () => {
         nodes={nodes}
         onExternalDrop={onExternalDrop}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1014,7 +1002,6 @@ describe("TreeView", () => {
         nodes={nodes}
         onExternalDrop={onExternalDrop}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1053,7 +1040,6 @@ describe("TreeView", () => {
       <TreeView
         nodes={nodes}
         onReparent={() => {}}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1090,7 +1076,6 @@ describe("TreeView", () => {
       <TreeView
         nodes={nodes}
         onReparent={() => {}}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1127,7 +1112,6 @@ describe("TreeView", () => {
       <TreeView
         nodes={nodes}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1159,7 +1143,6 @@ describe("TreeView", () => {
       <TreeView
         nodes={nodes}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );
@@ -1194,7 +1177,6 @@ describe("TreeView", () => {
         onExternalDrop={() => {}}
         onExternalDragMove={onExternalDragMove}
         onReparent={onReparent}
-        reparentArm="immediate"
         data-testid="tree"
       />,
     );

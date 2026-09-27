@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, QualityOverrides, RenderPath, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -169,7 +169,6 @@ export type ControlMessage =
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
-  | { type: "pause" }
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
@@ -199,6 +198,9 @@ export type ControlMessage =
   | { type: "sceneLayerLoadingPainted"; layerId: string; layerLoadId: number }
   | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
   | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneStreamReady"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneStreamProgress"; actorGuid: string; streamLoadId: number; progress: number }
+  | { type: "sceneStreamFailed"; actorGuid: string; streamLoadId: number; message: string }
   /** Engine-reported render path status for `renderpath` console readback. */
   | ({ type: "renderPathStatus" } & RenderPathStatus)
   | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement };
@@ -321,6 +323,9 @@ export type CommandMessage =
       classId: string;
       /** Live overlay instance id when this actor belongs to a SceneLayer. */
       sceneLayerId?: string | null;
+      /** Loading stream ownership is available before asynchronous visual assignment. */
+      sceneStreamActorGuid?: string;
+      streamLoadId?: number;
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
@@ -475,6 +480,10 @@ export type CommandMessage =
     }
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneStreamBlocking"; blocking: boolean }
+  | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
+  | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
   | { type: "sceneLayerLoading"; layerId: string; assetGuid: string; layerLoadId: number }
   | { type: "sceneLayerLoadFailed"; layerId: string; layerLoadId: number; message: string }
@@ -655,21 +664,9 @@ export type CommandMessage =
       componentId?: string;
       playing: boolean;
     }
-  | {
-      type: "setRenderResolution";
-      width: number;
-      height: number;
-    }
   | { type: "sessionPaused"; paused: boolean }
-  | { type: "setRenderingQuality"; overrides: QualityOverrides }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
-  | {
-      /** Non-persistent game-wide session render path; null resumes the project path. */
-      type: "setRenderPath";
-      renderPath: RenderPath | null;
-    }
   | { type: "setLightsDebug"; enabled: boolean }
-  | { type: "setFrameCap"; fps: number }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }
@@ -707,12 +704,10 @@ export type CommandMessage =
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }
   | { channel: "input"; payload: ArrayBuffer | SharedArrayBuffer }
-  | { channel: "rpc"; payload: unknown }
   | { channel: "snapshotLayoutAck"; generation: number }
   /** Hands a consumed transferable snapshot buffer back for reuse (no per-frame alloc). */
   | { channel: "recycleSnapshot"; payload: ArrayBuffer };
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
-  | { channel: "snapshot"; payload: ArrayBuffer; generation: number; transferable?: true }
-  | { channel: "rpc"; payload: unknown };
+  | { channel: "snapshot"; payload: ArrayBuffer; generation: number };

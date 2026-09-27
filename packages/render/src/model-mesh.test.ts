@@ -1,11 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
-import {
-  createMeshFromModelBytes,
-  encodeTranslatedTetrahedronGlb,
-  encodeTriangleGlb,
-  encodeYRotatedTriangleGlb,
-} from "./glb-test-fixtures";
+import { describe, expect, it } from "vitest";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import {
   packedGltfBytes,
   gpuModelBytes,
@@ -69,77 +63,5 @@ describe("gpuModelBytes", () => {
         texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
       }).byteLength,
     ).toBe(glb.byteLength);
-  });
-});
-
-describe("createMeshFromModelBytes", () => {
-  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
-    [];
-
-  afterEach(() => {
-    while (handles.length > 0) {
-      const handle = handles.pop();
-      handle?.scene.dispose();
-      handle?.engine.dispose();
-    }
-  });
-
-  it("builds a triangle mesh from a valid GLB and rejects garbage", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const mesh = createMeshFromModelBytes(
-      handle.scene,
-      "hero",
-      encodeTriangleGlb(),
-    );
-    expect(mesh?.name).toBe("hero");
-    expect(mesh?.getTotalVertices()).toBe(3);
-    expect(
-      createMeshFromModelBytes(handle.scene, "bad", new Uint8Array([0, 1, 2])),
-    ).toBeNull();
-  });
-
-  it("bakes the first mesh node's translation into vertex positions", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const mesh = createMeshFromModelBytes(
-      handle.scene,
-      "hero",
-      encodeTranslatedTetrahedronGlb([4, 0, 0]),
-    );
-    expect(mesh?.getTotalVertices()).toBe(4);
-    const center = mesh!.getBoundingInfo().boundingBox.center;
-    expect(center.x).toBeCloseTo(4.25);
-    expect(center.y).toBeCloseTo(0.25);
-    expect(center.z).toBeCloseTo(0.25);
-  });
-
-  it("bakes the parent node's translation onto the first mesh", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const mesh = createMeshFromModelBytes(
-      handle.scene,
-      "hero",
-      encodeTranslatedTetrahedronGlb([0, 0, 0], [4, 0, 0]),
-    );
-    const center = mesh!.getBoundingInfo().boundingBox.center;
-    expect(center.x).toBeCloseTo(4.25);
-    expect(center.y).toBeCloseTo(0.25);
-    expect(center.z).toBeCloseTo(0.25);
-  });
-
-  it("bakes the first mesh node's Y rotation into vertex positions", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const mesh = createMeshFromModelBytes(
-      handle.scene,
-      "hero",
-      encodeYRotatedTriangleGlb(),
-    );
-    const positions = mesh!.getVerticesData("position");
-    expect(positions).not.toBeNull();
-    expect(positions![0]).toBeCloseTo(0);
-    expect(positions![1]).toBeCloseTo(0);
-    expect(positions![2]).toBeCloseTo(-1);
   });
 });

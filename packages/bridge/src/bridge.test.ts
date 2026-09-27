@@ -23,7 +23,6 @@ import {
 } from "./snapshot-buffer";
 import { SeqLockSnapshotPair } from "./seq-lock";
 import { TransferablePingPong } from "./transferable";
-import { createRpcHost, type RpcResponse, type RpcTransport } from "./rpc";
 
 describe("snapshot layout", () => {
   it("uses the locked header and stride sizes from bridge.md", () => {
@@ -194,34 +193,5 @@ describe("transferable ping-pong", () => {
     ping.cancelWrite();
     const reused = ping.beginWrite();
     expect(reused.buffer).toBe(scratchBuffer);
-  });
-});
-
-describe("typed RPC", () => {
-  it("round-trips a request and response over a fake transport", async () => {
-    const pending: Array<{
-      data: unknown;
-      reply: (v: RpcResponse) => void;
-    }> = [];
-    const transport: RpcTransport = {
-      post(message) {
-        return new Promise((resolve) => {
-          pending.push({ data: message, reply: resolve });
-        });
-      },
-    };
-    const host = createRpcHost(transport);
-    const callPromise = host.call<{ n: number }, { doubled: number }>("double", {
-      n: 21,
-    });
-    expect(pending).toHaveLength(1);
-    const req = pending[0]!.data as {
-      id: number;
-      method: string;
-      params: { n: number };
-    };
-    expect(req.method).toBe("double");
-    pending[0]!.reply({ id: req.id, result: { doubled: req.params.n * 2 } });
-    await expect(callPromise).resolves.toEqual({ doubled: 42 });
   });
 });

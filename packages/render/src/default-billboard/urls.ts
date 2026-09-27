@@ -11,8 +11,6 @@ export const ENGINE_BILLBOARD_FILES = [
   "navmesh.png",
 ] as const;
 
-export type EngineBillboardFile = (typeof ENGINE_BILLBOARD_FILES)[number];
-
 function viteBaseUrl(): string {
   if (typeof import.meta === "undefined") {
     return "/";

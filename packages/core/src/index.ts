@@ -2,6 +2,8 @@ export * from "./storage-port";
 export * from "./command-bus";
 export * from "./scene";
 export * from "./scene-layer";
+export * from "./scene-streaming";
+export * from "./scene-streaming-actor";
 export * from "./skybox";
 export * from "./text3d";
 export * from "./text2d";

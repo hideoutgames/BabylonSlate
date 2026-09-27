@@ -113,11 +113,6 @@ export class AssetRegistry {
     this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
   }
 
-  /** Project max encode edge, as bound by `setEncodePipeline`. */
-  get textureEncodeMaxDimension(): number {
-    return this.encodeSettings.maxDimension;
-  }
-
   /** Write CB thumbnails into derived data (ProjectService supplies storage). */
   setThumbnailWriter(writer: ThumbnailWriter | null): void {
     this.thumbnailWriter = writer;

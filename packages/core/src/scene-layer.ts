@@ -13,11 +13,11 @@ import {
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 
-/** SceneLayer document schema (v1): overlay actors, folders, 2D gravity, post-process. */
-export const SCENE_LAYER_SCHEMA_VERSION = 1;
-
+/** World-only components; the one SceneLayer denylist for Add Component, Place Actors, save and Play. */
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "SplineComponent",
+  "LandscapeComponent",
+  "FoliageComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
   "SkyboxComponent",
   "CameraComponent",
@@ -29,10 +29,8 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "OutlineComponent",
   "HemisphericFillLightComponent",
   "RagdollComponent",
+  "SceneStreamingComponent",
 ] as const;
-
-export type SceneLayerDeniedComponentClassId =
-  (typeof SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS)[number];
 
 export const SCENE_LAYER_ANCHORS = [
   "topLeft",
@@ -214,7 +212,6 @@ export function parseSceneLayerHitTest(
 export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
 export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
   SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
-export const SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH = 16;
 
 const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
   topLeft: [-1, 1],

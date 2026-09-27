@@ -79,14 +79,3 @@ export function tilemapChunkVertexData(options: {
   }
   return { positions, uvs, indices, animatedTiles };
 }
-
-/** Local offset so a parallax of 1 stays in world space and 0 tracks the camera. */
-export function tilemapParallaxOffset(
-  parallax: { x: number; y: number },
-  camera: { x: number; y: number },
-): { x: number; y: number } {
-  return {
-    x: camera.x * (1 - parallax.x),
-    y: camera.y * (1 - parallax.y),
-  };
-}

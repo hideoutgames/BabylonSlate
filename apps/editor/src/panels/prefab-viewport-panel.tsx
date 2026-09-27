@@ -51,6 +51,7 @@ import {
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
+import { sceneStreamingEditorComponents } from "../lib/scene-streaming-editor-labels";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
@@ -99,7 +100,15 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     projectDocument,
     openDocuments,
     assetRegistry,
+    registryVersion,
   } = useDocuments();
+  const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
+    void registryVersion; // Registry headers mutate without replacing the registry.
+    const asset = assetRegistry?.getByGuid?.(guid);
+    return asset?.header.type === "Scene" ? asset.header.name : undefined;
+  }), [components, assetRegistry, registryVersion]);
+  const previewComponentsRef = useRef(previewComponents);
+  previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
   const overlayPrefab = useMemo(() => {
     const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -283,7 +292,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing]);
 
-  const previewLoadKey = prefabPreviewLoadKey(components);
+  const previewLoadKey = prefabPreviewLoadKey(previewComponents);
   const materialLibraryKey = savedMaterialLibraryKey(
     assetRegistry?.list() ?? [],
   );
@@ -328,7 +337,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.loadScene(
-      previewSceneFor(componentsRef.current, prefabPhysicsWorld),
+      previewSceneFor(previewComponentsRef.current, prefabPhysicsWorld),
     );
   }, [previewLoadKey, sharedEngine, prefabPhysicsWorld]);
 

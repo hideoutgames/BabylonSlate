@@ -176,17 +176,6 @@ export async function unpackEngineExtensionZip(storage: ProjectStorage, bytes: U
   return descriptor;
 }
 
-export async function packEngineExtensionFiles(
-  files: ProjectTreeFile[],
-  options: { id: string },
-): Promise<{ zip: Uint8Array; indexEntry: { id: string; file: string } }> {
-  validateFolderName(options.id);
-  return {
-    zip: encodeProjectZip(inspectExtensionFiles(files).files),
-    indexEntry: { id: options.id, file: `${options.id}.babextension` },
-  };
-}
-
 /** New projects receive independent editable copies, preserving source and asset GUIDs. */
 export async function installEngineExtensionDefaults(projectStorage: ProjectStorage, engineStorage: ProjectStorage): Promise<ExtensionDescriptor[]> {
   const existing = await discoverProjectExtensions(projectStorage);

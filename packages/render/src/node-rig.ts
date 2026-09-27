@@ -21,7 +21,6 @@ export function ensureNodeRotationQuaternion(node: TransformNode): void {
 export interface LinkedSkeletonFromNodeRigOptions {
   name?: string;
   createMesh?: boolean;
-  boneMeshSize?: number;
 }
 
 export interface LinkedSkeletonFromNodeRigResult {
@@ -60,7 +59,7 @@ export function createLinkedSkeletonFromNodeRig(
   const boneMesh = options.createMesh
     ? MeshBuilder.CreateSphere(
         "dummy",
-        { diameter: options.boneMeshSize || 0.08, segments: 8 },
+        { diameter: 0.08, segments: 8 },
         scene,
       )
     : null;

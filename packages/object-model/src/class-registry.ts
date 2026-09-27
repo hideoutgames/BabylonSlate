@@ -119,6 +119,13 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "SceneStreamingActor",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "GameInstance",
       parentClassId: "BObject",
       kind: "gameInstance",
@@ -334,9 +341,5 @@ export class ClassRegistry {
       newParentId,
       invalidatedMembers,
     });
-  }
-
-  listClassIds(): string[] {
-    return [...this.classes.keys()].sort();
   }
 }

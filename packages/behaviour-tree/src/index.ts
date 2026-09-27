@@ -27,7 +27,6 @@ export {
 export { validateBehaviourTree, type BehaviourTreeValidateContext } from "./validate";
 export { evaluateBehaviourTree } from "./evaluate";
 export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
-export { registerBehaviourTreeValidationRules } from "./rules";
 export {
   BT_COMPARE_OPS,
   BT_COMPOSITE_CATALOG,
@@ -44,7 +43,6 @@ export {
   type BtPropertyFieldKind,
 } from "./catalog";
 export {
-  addChildNode,
   addDecorator,
   addService,
   canReparentNode,
@@ -52,11 +50,8 @@ export {
   duplicateSubtree,
   moveAttachment,
   removeAttachment,
-  reparentNode,
-  pruneUnreachable,
   wrapInSequence,
 } from "./edit";
-export type { AddChildNodeOptions } from "./edit";
 export {
   BT_CHILDREN_HANDLE,
   BT_CHILDREN_PIN,

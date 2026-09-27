@@ -31,7 +31,7 @@ it("builds from the captured pose and keeps limbs connected when a queried bone 
     expect(hip.x).toBeLessThan(-0.2);
     ragdoll.dispose();
     ragdoll.dispose();
-    expect(backend.readTransforms().size).toBe(0);
+    expect(backend.scene.transformNodes).toHaveLength(0);
     expect(ragdoll.readPose()).toEqual([]);
     expect(backend.lineTrace({ x: -10, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }).hit).toBe(false);
   } finally { backend.dispose(); }
@@ -42,7 +42,7 @@ it("validates the skeleton before mutation and rolls back every native resource 
   try {
     expect(() => new RagdollPhysics(backend, "actor", "bad", [bones[0]!, { ...bones[1]!, parentName: "missing" }], properties())).toThrow("parent");
     expect(() => new RagdollPhysics(backend, "actor", "bad", bones, { ...properties(), boneNames: ["hip", "foot"] })).toThrow("connected");
-    expect(backend.readTransforms().size).toBe(0);
+    expect(backend.scene.transformNodes).toHaveLength(0);
     const original = backend.createConstraint.bind(backend);
     let allocations = 0;
     const fail = vi.spyOn(backend, "createConstraint").mockImplementation((desc) => {
@@ -51,7 +51,7 @@ it("validates the skeleton before mutation and rolls back every native resource 
     });
     expect(() => new RagdollPhysics(backend, "actor", "partial", bones, properties())).toThrow("joint setup");
     fail.mockRestore();
-    expect(backend.readTransforms().size).toBe(0);
+    expect(backend.scene.transformNodes).toHaveLength(0);
     // Reuse the same namespace after failure: no stale native body/joint may survive.
     const retry = new RagdollPhysics(backend, "actor", "partial", bones, properties());
     for (let i = 0; i < 10; i++) backend.step(1 / 60);

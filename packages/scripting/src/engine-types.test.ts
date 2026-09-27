@@ -4,23 +4,9 @@ import {
   ENGINE_ENUMS,
   ENGINE_HIT_RESULT_STRUCT_ID,
   ENGINE_STRUCTS,
-  ENGINE_TYPE_GUID_PREFIX,
-  engineTypeGuid,
-  isEngineTypeGuid,
 } from "./engine-types";
 
 describe("engine type registry", () => {
-  it("prefixes stable engine ids without double-prefixing", () => {
-    expect(engineTypeGuid("CollisionChannel")).toBe(
-      `${ENGINE_TYPE_GUID_PREFIX}CollisionChannel`,
-    );
-    expect(engineTypeGuid("engine:CollisionChannel")).toBe(
-      "engine:CollisionChannel",
-    );
-    expect(isEngineTypeGuid("engine:CollisionChannel")).toBe(true);
-    expect(isEngineTypeGuid("asset-guid")).toBe(false);
-  });
-
   it("registers Collision Channel and Hit Result", () => {
     expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual(expect.arrayContaining([
       ENGINE_COLLISION_CHANNEL_ENUM_ID,

@@ -23,6 +23,7 @@ import {
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { admittedSceneMeshes, admittedSceneParticles, withSceneStreamNativeVisibility } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -626,7 +627,7 @@ export class ForwardSceneFrameGraph {
       }
     }
     const revision = this.readinessRevision;
-    this.scene.render(updateCameras);
+    withSceneStreamNativeVisibility(this.scene, () => this.scene.render(updateCameras));
     this.syncMembership();
     // A successful probe after drawing cannot prove a mesh was not skipped.
     // Hold a candidate dirtied by render callbacks and retry on the next frame.
@@ -1050,8 +1051,8 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    this.sceneObjects.meshes = this.scene.meshes;
-    this.sceneObjects.particleSystems = this.scene.particleSystems;
+    this.sceneObjects.meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    this.sceneObjects.particleSystems = admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
     this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;
     const geometry = this.postProcessGraph?.geometryTask;

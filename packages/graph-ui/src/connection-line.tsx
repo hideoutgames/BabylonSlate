@@ -113,11 +113,9 @@ export function GraphConnectionLineView({
       })
     : false;
   const showHint = pin
-    ? connectEndMode === "disabled"
-      ? false
-      : connectEndMode === "add-node"
-        ? !toHandle
-        : inAddZone
+    ? connectEndMode === "add-node"
+      ? !toHandle
+      : inAddZone
     : false;
   const badge = hintOffset(fromX, fromY, toX, toY);
   const hintLabel =

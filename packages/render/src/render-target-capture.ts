@@ -18,6 +18,7 @@ import type { ResourceLease } from "./resource-cache";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { particleMaterialForSystem } from "./node-material-particles";
+import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
@@ -197,11 +198,13 @@ export class RenderTargetCaptures {
       if (!settings.enabled || !guid || owners.has(guid)) continue;
       const definition = this.definitions.get(guid);
       if (!definition) continue;
-      // A target has one producer per frame, in stable actor insertion order.
+      const root = capture.root();
+      if (!root && !capture.fallback) continue;
+      // A staged producer cannot claim a loaded sibling's shared asset output.
+      // Eligible producers retain stable actor insertion order.
       owners.add(guid);
       if (!settings.captureEveryFrame && !capture.requested) continue;
-      const actorWorld = capture.root()?.computeWorldMatrix(true) ?? capture.fallback;
-      if (!actorWorld) continue;
+      const actorWorld = root?.computeWorldMatrix(true) ?? capture.fallback!;
       capture.local.multiplyToRef(actorWorld, this.world);
       if (!this.world.decompose(this.scale, this.rotation, this.position)) continue;
       capture.camera.position.copyFrom(this.position);
@@ -215,7 +218,7 @@ export class RenderTargetCaptures {
       // during readiness. Keep non-color passes independent of particles.
       const attachment = target.texture.getInternalTexture();
       target.texture.particleSystemList = !target.depth && !target.normals
-        ? this.scene.particleSystems.filter((system) => {
+        ? (admittedSceneParticles(this.scene) ?? this.scene.particleSystems).filter((system) => {
           if (system.particleTexture?.getInternalTexture() === attachment ||
               particleMaterialForSystem(system)?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return false;
           if (!capture.settings.captureOnlyActors) return true;
@@ -337,7 +340,7 @@ export class RenderTargetCaptures {
     const candidates = capture.settings.captureOnlyActors ? new Set(capture.settings.actorIds.flatMap((id) => {
       const root = this.actorRoots.get(id)?.();
       return root ? [root, ...root.getChildMeshes()] : [];
-    })) : this.scene.meshes;
+    })) : admittedSceneMeshes(this.scene) ?? this.scene.meshes;
     let count = 0;
     for (const mesh of candidates) if (eligible(mesh)) target.meshes[count++] = mesh;
     target.meshes.length = count;

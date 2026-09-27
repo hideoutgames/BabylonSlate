@@ -1,3 +1,5 @@
+import { isSceneLayerDeniedComponent } from "@babylonslate/core";
+
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
@@ -7,6 +9,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "Scene",
   "SceneLayer",
   "SceneLayerActor",
+  "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -19,10 +22,9 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTComposite",
 ] as const;
 
-export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
-
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
+  "SceneStreamingComponent",
   "LandscapeComponent",
   "FoliageComponent",
   "MeshComponent",
@@ -66,9 +68,6 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "2DPanelComponent",
 ] as const;
 
-export type EngineComponentClassId =
-  (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
-
 export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DAnchorComponent",
   "2DButtonComponent",
@@ -79,33 +78,8 @@ export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DPanelComponent",
 ] as const;
 
-export type SceneLayerExclusiveComponentClassId =
-  (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
-
-const SCENE_LAYER_DENIED_COMPONENTS = new Set([
-  "SplineComponent",
-  "RenderTargetCaptureComponent",
-  "RagdollComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent",
-  "WaterLakeComponent",
-  "WaterRiverComponent",
-  "WaterPuddleComponent",
-  "WaterRemovalVolumeComponent",
-  "WaterBuoyancyComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "SkyboxComponent",
-  "CameraComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-]);
-
 export function isSceneLayerAllowedComponent(classId: string): boolean {
-  return !SCENE_LAYER_DENIED_COMPONENTS.has(classId);
+  return !isSceneLayerDeniedComponent(classId);
 }
 
 export function isSceneLayerExclusiveComponent(classId: string): boolean {

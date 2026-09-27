@@ -158,7 +158,6 @@ function registerIpc(): void {
     return storage.openKnownFolder(folder);
   });
   handle("project:list", async () => storage.listProjects());
-  handle("project:current", async () => storage.getCurrentFolder());
   handle("project:release", async () => storage.releaseFolder());
   handle("project:readBinary", async (_event, path) => {
     const bytes = await storage.readBinary(String(path));

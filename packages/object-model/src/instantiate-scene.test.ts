@@ -6,10 +6,23 @@ import {
   createDefaultSceneSettings,
   createMeshComponent,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { ClassRegistry } from "./class-registry";
-import { attachSerializedComponents, createActorsFromSerializedScene, createActorsFromSerializedSceneLayer } from "./instantiate-scene";
+import { attachSerializedComponents, createActorFromSerialized } from "./instantiate-scene";
 import { World } from "./world";
+import { SceneStreamingActor } from "./objects";
+
+/** Every document row through the per-actor factory, as Play instantiates a scene or SceneLayer. */
+function documentActors(
+  world: World,
+  document: SerializedScene | SerializedSceneLayer,
+  sceneLayerId?: string,
+) {
+  return document.actors.flatMap((serialized) =>
+    createActorFromSerialized(world, serialized, undefined, sceneLayerId) ?? [],
+  );
+}
 
 function testWorld() {
   return new World({
@@ -51,16 +64,16 @@ describe("outliner folders", () => {
         createActor("loose", "Loose"),
       ],
     };
-    const actors = createActorsFromSerializedScene(world, scene);
+    const actors = documentActors(world, scene);
     expect(actors.map((actor) => actor.guid)).toEqual(["grouped", "loose"]);
   });
 });
 
-describe("createActorsFromSerializedSceneLayer", () => {
+describe("createActorFromSerialized for SceneLayer rows", () => {
   it("tags overlay actors with the live SceneLayer id", () => {
     const world = testWorld();
     const layer = world.createSceneLayer({ assetGuid: "hud", zOrder: 1 });
-    const actors = createActorsFromSerializedSceneLayer(
+    const actors = documentActors(
       world,
       {
         name: "HUD",
@@ -90,7 +103,7 @@ describe("createActorsFromSerializedSceneLayer", () => {
   it("drops Skybox, Camera, and Light when instantiating overlay actors", () => {
     const world = testWorld();
     const layer = world.createSceneLayer({ assetGuid: "hud", zOrder: 0 });
-    const actors = createActorsFromSerializedSceneLayer(
+    const actors = documentActors(
       world,
       {
         name: "HUD",
@@ -132,10 +145,25 @@ describe("createActorsFromSerializedSceneLayer", () => {
   });
 });
 
-describe("createActorsFromSerializedScene", () => {
+describe("createActorFromSerialized", () => {
+  it("instantiates the dedicated streaming actor identity and its authored scene target", () => {
+    const world = testWorld();
+    const actors = documentActors(world, {
+      ...createDefaultScene(),
+      actors: [createActor("stream", "Courtyard", { classId: "SceneStreamingActor", components: [
+        { id: "origin", classId: "SceneStreamingComponent", properties: { sceneGuid: "scene-courtyard", sceneName: "Courtyard" } },
+      ] })],
+    });
+    const actor = actors[0];
+    expect(actor).toBeInstanceOf(SceneStreamingActor);
+    expect(world.classRegistry.isA(actor!.classId, "Actor")).toBe(true);
+    expect((actor as SceneStreamingActor).targetSceneGuid).toBe("scene-courtyard");
+    expect((actor as SceneStreamingActor).targetSceneName).toBe("Courtyard");
+  });
+
   it("builds unspawned actors with serialized ids, transforms, and components", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Level",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -179,7 +207,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies serialized component transforms onto runtime components", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Offset",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -208,7 +236,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies graphGuid onto AnimationGraphComponent assetGuid", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Anim",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -230,7 +258,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies treeGuid onto BehaviourTreeComponent assetGuid", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "AI",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -253,7 +281,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies audioAssetGuid onto AudioComponent assetGuid", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Audio",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -275,7 +303,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies particleSystemGuid onto ParticleComponent assetGuid", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Particles",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -297,7 +325,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies fontAssetGuid onto Text3DComponent assetGuid", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Text",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -319,7 +347,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("skips SceneLayerActor when realizing a world scene", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Level",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
@@ -334,7 +362,7 @@ describe("createActorsFromSerializedScene", () => {
 
   it("copies serialized component sourceId onto the live ActorComponent", () => {
     const world = testWorld();
-    const actors = createActorsFromSerializedScene(world, {
+    const actors = documentActors(world, {
       name: "Level",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),

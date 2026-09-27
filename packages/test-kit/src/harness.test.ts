@@ -7,26 +7,11 @@ import {
   writeGolden,
 } from "./golden";
 import { runDeterministicScenario } from "./harness";
-import {
-  assertHarnessFixtureReadable,
-  installHarnessProjectFixtures,
-} from "./harness-fixtures";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UPDATE_GOLDEN = process.env.UPDATE_GOLDEN === "1";
 
 describe("deterministic runtime harness", () => {
-  it("installs fake VFS project fixtures readable from memory storage", async () => {
-    const { storage, paths } = await installHarnessProjectFixtures();
-    expect(paths).toContain("project.json");
-    expect(paths).toContain("assets/Enemy.class.json");
-    const bytes = await assertHarnessFixtureReadable(
-      storage,
-      "assets/Enemy.class.json",
-    );
-    expect(bytes.byteLength).toBeGreaterThan(0);
-  });
-
   it("reproduces a 120-tick snapshot exactly (acceptance)", () => {
     const a = runDeterministicScenario({ seed: 20260811, ticks: 120 });
     const b = runDeterministicScenario({ seed: 20260811, ticks: 120 });

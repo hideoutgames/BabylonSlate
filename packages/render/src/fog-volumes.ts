@@ -68,6 +68,7 @@ export class FogVolumeRenderer {
   readonly actorId: string;
   readonly node: TransformNode;
   visible = true;
+  admitted = true;
   private readonly rootWorld = Matrix.Identity();
   private readonly world = Matrix.Identity();
   private readonly part = Matrix.Identity();
@@ -120,7 +121,7 @@ export class FogVolumeRenderer {
   }
 
   prepare(): boolean {
-    if (!this.visible || this.node.isDisposed() || !this.node.isEnabled()) return false;
+    if (!this.admitted || !this.visible || this.node.isDisposed() || !this.node.isEnabled()) return false;
     // Babylon's same-frame shortcut precedes its dirty-ancestor check. Refresh
     // only changed hierarchies so edits bind immediately without losing caching.
     const rootWorld = this.node.computeWorldMatrix(!this.node.isSynchronized());
@@ -146,9 +147,13 @@ export class FogVolumeRenderer {
 }
 
 /** True for authored active sources, independent of camera visibility. */
-export function hasFogVolumes(scene: Scene): boolean {
+export function hasFogVolumes(scene: Scene, actorId?: string): boolean {
+  if (actorId !== undefined) {
+    const owner = registries.get(scene)?.owners.get(actorId);
+    return Boolean(owner?.admitted && owner.visible && owner.volumes.length);
+  }
   for (const owner of registries.get(scene)?.owners.values() ?? [])
-    if (owner.visible && owner.volumes.length) return true;
+    if (owner.admitted && owner.visible && owner.volumes.length) return true;
   return false;
 }
 
@@ -161,6 +166,7 @@ export function upsertFogVolumes(
   actorId: string,
   node: TransformNode,
   bindings: readonly FogVolumeBinding[],
+  admitted = true,
 ): boolean {
   if (!bindings.length || node.isDisposed()) return removeFogVolumes(scene, actorId);
   const registry = registryFor(scene);
@@ -174,6 +180,7 @@ export function upsertFogVolumes(
     registry.owners.set(actorId, owner);
     changed = true;
   }
+  if (owner.admitted !== admitted) { owner.admitted = admitted; changed = true; }
   changed = owner.update(bindings) || changed;
   if (changed) updateDemand(scene);
   return changed;

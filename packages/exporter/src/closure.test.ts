@@ -11,7 +11,7 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
 } from "@babylonslate/assets";
-import { collectExportClosure, collectExportReachability } from "./closure";
+import { collectExportReachability } from "./closure";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type { ExportIndexedAsset } from "./types";
 
@@ -27,12 +27,34 @@ function asset(
   };
 }
 
-describe("collectExportClosure", () => {
+describe("collectExportReachability", () => {
+  it("packs nested streamed scenes and their assets without requiring a Change Scene node", () => {
+    const stream = (id: string, target: string) => createActor(id, id, { classId: "SceneStreamingActor", components: [
+      { id: `${id}-component`, classId: "SceneStreamingComponent", properties: { sceneGuid: target, sceneName: target } },
+    ] });
+    const scenes: Record<string, SerializedScene> = {
+      parent: { ...createDefaultScene(), actors: [stream("left", "child"), stream("right", "child")] },
+      child: { ...createDefaultScene(), actors: [stream("nested", "leaf")] },
+      leaf: { ...createDefaultScene(), actors: [createActor("mesh", "Mesh", { components: [
+        { ...createMeshComponent("model", "model"), properties: { meshKind: "model", assetGuid: "model-asset" } },
+      ] })] },
+    };
+    const result = collectExportReachability({ startupSceneGuid: "parent", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [
+        ...Object.keys(scenes).map((guid) => asset({ guid, type: "Scene", name: guid })),
+        asset({ guid: "model-asset", type: "Model", name: "Model" }),
+        asset({ guid: "unused", type: "Scene", name: "Unused" }),
+      ], sceneByGuid: (guid) => scenes[guid] ?? null, graphByGuid: () => null });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toEqual(["child", "leaf", "model-asset", "parent"]);
+    expect([...result.value.bySceneGuid.get("leaf")!].sort()).toEqual(["leaf", "model-asset"]);
+  });
   it("packs capture targets through material samplers and typed graph references", () => {
     const scene = { ...createDefaultScene(), actors: [createActor("screen", "Screen", {
       classId: "Monitor", components: [{ ...createMeshComponent("mesh"), properties: { materialGuid: "material" } }],
     })] };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
       assets: [
         asset({ guid: "scene", type: "Scene", name: "Scene" }),
@@ -50,7 +72,9 @@ describe("collectExportClosure", () => {
       payloadByGuid: (guid) => guid === "material" ? { nodes: [{ type: "texture.sample", properties: { textureGuid: "image" } }] }
         : guid === "image" ? { renderTargetGuid: "depth" } : null,
     });
-    expect(result).toEqual({ ok: true, value: ["class", "depth", "image", "material", "normals", "scene"] });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toEqual(["class", "depth", "image", "material", "normals", "scene"]);
   });
 
   it("packs Class variable constraints and defaults without scanning ordinary strings", () => {
@@ -67,7 +91,7 @@ describe("collectExportClosure", () => {
     };
     const model = createMeshComponent("prefab-mesh", "model");
     model.properties.assetGuid = "model-child";
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-main",
       assets: [
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
@@ -92,9 +116,9 @@ describe("collectExportClosure", () => {
           ? { nodes: [], edges: [], components: [model] }
           : null,
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      value: ["class-array", "class-base", "class-host", "class-key", "class-key-base", "class-map", "class-spawn", "model-child", "scene-main"],
+      value: { guids: ["class-array", "class-base", "class-host", "class-key", "class-key-base", "class-map", "class-spawn", "model-child", "scene-main"] },
     });
   });
 
@@ -109,7 +133,7 @@ describe("collectExportClosure", () => {
         nodes: [{ id: "texture", type: "material.setTextureParameter", position: { x: 0, y: 0 }, data: { properties: { "default:value": "tex-runtime", "default:name": "tex-unused" } } }], edges: [],
       } },
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-main",
       assets: [
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
@@ -123,7 +147,7 @@ describe("collectExportClosure", () => {
       sceneByGuid: () => ({ ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] }),
       graphByGuid: (guid) => guid === "class-hero" ? graph : null,
     });
-    expect(result).toEqual({ ok: true, value: ["class-hero", "scene-main", "tex-class", "tex-local", "tex-runtime"] });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["class-hero", "scene-main", "tex-class", "tex-local", "tex-runtime"] } });
   });
   it("reports per-scene reachability with deterministic shared dependency ownership inputs", () => {
     const assets = [
@@ -201,7 +225,7 @@ describe("collectExportClosure", () => {
         ],
       }),
     ];
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene",
       assets: [
         asset({ guid: "scene", type: "Scene", name: "Main" }),
@@ -212,10 +236,10 @@ describe("collectExportClosure", () => {
       sceneByGuid: () => scene,
       graphByGuid: () => null,
     });
-    expect(result).toEqual({ ok: true, value: ["scene"] });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["scene"] } });
   });
   it("fails when startupSceneGuid is missing", () => {
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: null,
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       pluginEnabledGuids: new Set(),
@@ -228,7 +252,7 @@ describe("collectExportClosure", () => {
   });
 
   it("fails when the startup scene guid is stale", () => {
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "missing-scene",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       pluginEnabledGuids: new Set(),
@@ -265,7 +289,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -305,7 +329,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.sort()).toEqual(
+    expect(result.value.guids.sort()).toEqual(
       [
         "class-game",
         "class-hero",
@@ -315,8 +339,8 @@ describe("collectExportClosure", () => {
         "sprite-1",
       ].sort(),
     );
-    expect(result.value).not.toContain("unused");
-    expect(result.value).not.toContain("euo-1");
+    expect(result.value.guids).not.toContain("unused");
+    expect(result.value.guids).not.toContain("euo-1");
   });
 
   it("follows sprite payload textureGuid when header.dependencies is empty", () => {
@@ -334,7 +358,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -356,10 +380,10 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "sprite-1", "tex-atlas"]),
     );
-    expect(result.value).not.toContain("unused-tex");
+    expect(result.value.guids).not.toContain("unused-tex");
   });
 
   it("follows Sprite Animation frame textureGuids when header.dependencies is empty", () => {
@@ -377,7 +401,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -414,10 +438,10 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "loco-1", "walk-anim", "tex-walk"]),
     );
-    expect(result.value).not.toContain("unused-tex");
+    expect(result.value.guids).not.toContain("unused-tex");
   });
 
   it("keeps a Behaviour Tree Play Animation clipAssetGuid in the closure", () => {
@@ -435,7 +459,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -473,10 +497,10 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "tree-1", "idle-1"]),
     );
-    expect(result.value).not.toContain("unused-anim");
+    expect(result.value.guids).not.toContain("unused-anim");
   });
 
   it("follows graph pin guids and header dependencies", () => {
@@ -495,7 +519,7 @@ describe("collectExportClosure", () => {
       ...createDefaultScene(),
       actors: [createActor("a", "Pawn", { classId: "Pawn" })],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -517,16 +541,16 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "class-pawn", "sfx-1", "iface-1"]),
     );
-    expect(result.value).not.toContain("other-scene");
+    expect(result.value.guids).not.toContain("other-scene");
   });
 
   it("omits disabled plugin roots", () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("a", "Starter", { classId: "StarterActor" })];
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -545,13 +569,13 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(["scene-1"]);
+    expect(result.value.guids).toEqual(["scene-1"]);
   });
 
   it("keeps enabled plugin assets in the closure", () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("a", "Starter", { classId: "StarterActor" })];
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -570,14 +594,14 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "plug-class"]),
     );
   });
 
   it("strips PluginSettings and EditorUtilityInterface types", () => {
     const scene = createDefaultScene();
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({
@@ -596,7 +620,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(["scene-1"]);
+    expect(result.value.guids).toEqual(["scene-1"]);
   });
 
   it("strips SkyboxCreator helpers and keeps referenced skybox face Textures", () => {
@@ -617,7 +641,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({
@@ -648,7 +672,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining([
         "scene-1",
         "face-px",
@@ -659,9 +683,9 @@ describe("collectExportClosure", () => {
         "face-nz",
       ]),
     );
-    expect(result.value).not.toContain("helper-1");
-    expect(result.value).not.toContain("src-tex");
-    expect(result.value).not.toContain("unused-tex");
+    expect(result.value.guids).not.toContain("helper-1");
+    expect(result.value.guids).not.toContain("src-tex");
+    expect(result.value.guids).not.toContain("unused-tex");
   });
 
   it("includes a Scene referenced by Change Scene display name", () => {
@@ -676,7 +700,7 @@ describe("collectExportClosure", () => {
       ],
       edges: [],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -703,7 +727,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "scene-2", "class-pawn"]),
     );
   });
@@ -723,7 +747,7 @@ describe("collectExportClosure", () => {
         }),
       ],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       audioMixerGuid: "mixer-1",
       assets: [
@@ -758,7 +782,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.sort()).toEqual(
+    expect(result.value.guids.sort()).toEqual(
       [
         "att-1",
         "ch-master",
@@ -769,7 +793,7 @@ describe("collectExportClosure", () => {
         "sfx-1",
       ].sort(),
     );
-    expect(result.value).not.toContain("unused-mix");
+    expect(result.value.guids).not.toContain("unused-mix");
   });
 
   it("includes ParticleComponent → Particle System → Emitters and Particle Graphs → Material → Texture", () => {
@@ -820,7 +844,7 @@ describe("collectExportClosure", () => {
       ["unused-em", emitterWithMaterial("mat-unused")],
       ["unused-pg", graphWithMaterial("mat-unused")],
     ]);
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -842,15 +866,15 @@ describe("collectExportClosure", () => {
       graphByGuid: () => null,
       payloadByGuid: (guid) => payloads.get(guid) ?? null,
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      value: ["em-1", "em-2", "mat-1", "mat-2", "pg-1", "ps-1", "scene-1", "tex-1", "tex-2"],
+      value: { guids: ["em-1", "em-2", "mat-1", "mat-2", "pg-1", "ps-1", "scene-1", "tex-1", "tex-2"] },
     });
   });
 
   it("includes a project GameInstance class when the scene field is empty", () => {
     const scene = createDefaultScene();
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       gameInstanceClass: "MyGame",
       assets: [
@@ -869,7 +893,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "class-game"]),
     );
   });
@@ -886,7 +910,7 @@ describe("collectExportClosure", () => {
       },
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -914,7 +938,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining([
         "scene-1",
         "mat-rock",
@@ -924,7 +948,7 @@ describe("collectExportClosure", () => {
         "tex-albedo",
       ]),
     );
-    expect(result.value).not.toContain("unused-mat");
+    expect(result.value.guids).not.toContain("unused-mat");
   });
 
   it("includes Model slot Materials and graph textureGuids from payloads", () => {
@@ -934,7 +958,7 @@ describe("collectExportClosure", () => {
       ...createDefaultScene(),
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -980,10 +1004,10 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "model-1", "mat-hero", "tex-albedo"]),
     );
-    expect(result.value).not.toContain("unused-tex");
+    expect(result.value.guids).not.toContain("unused-tex");
   });
 
   it("does not treat Type:guid strings as asset refs", () => {
@@ -998,7 +1022,7 @@ describe("collectExportClosure", () => {
       ],
       edges: [],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1021,11 +1045,11 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining(["scene-1", "class-host"]),
     );
-    expect(result.value).not.toContain("mat-1");
-    expect(result.value).not.toContain("unused-mat");
+    expect(result.value.guids).not.toContain("mat-1");
+    expect(result.value.guids).not.toContain("unused-mat");
   });
 
   it("includes SceneLayer documents from scene spawn lists, graphs, and overlay actor assets", () => {
@@ -1047,7 +1071,7 @@ describe("collectExportClosure", () => {
       ],
       edges: [],
     };
-    const result = collectExportClosure({
+    const result = collectExportReachability({
       startupSceneGuid: "scene-1",
       gameInstanceClass: "MyGame",
       assets: [
@@ -1112,7 +1136,7 @@ describe("collectExportClosure", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual(
+    expect(result.value.guids).toEqual(
       expect.arrayContaining([
         "scene-1",
         "hud",
@@ -1125,17 +1149,17 @@ describe("collectExportClosure", () => {
         "font-1",
       ]),
     );
-    expect(result.value).not.toContain("unused-layer");
+    expect(result.value.guids).not.toContain("unused-layer");
   });
 });
 
 
 it("packs enabled input assets at startup even when no graph currently references them", () => {
-  const result = collectExportClosure({ startupSceneGuid: "scene", assets: [
+  const result = collectExportReachability({ startupSceneGuid: "scene", assets: [
     asset({ guid: "scene", name: "Main", type: "Scene" }),
     asset({ guid: "action", name: "Jump", type: "InputAction" }),
     asset({ guid: "axis", name: "Move", type: "InputAxis" }),
     asset({ guid: "disabled", name: "Plugin Input", type: "InputAction", rootId: "plugin:disabled" }),
   ], pluginEnabledGuids: new Set(), parentOf: () => null, sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
-  expect(result).toEqual({ ok: true, value: ["action", "axis", "scene"] });
+  expect(result).toMatchObject({ ok: true, value: { guids: ["action", "axis", "scene"] } });
 });

@@ -2,7 +2,6 @@ import type { DockWindowDirection } from "@babylonslate/core";
 import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 
-export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
   | "scene-layer"
@@ -1011,12 +1010,4 @@ export function listDockWindows(
     return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
   }
   return withOptionalLocks(kind, GRAPH_WINDOWS, options);
-}
-
-export function findDockWindow(
-  kind: DockviewDocumentKind,
-  id: string,
-  options?: DockWindowOptions,
-): DockWindowDefinition | undefined {
-  return listDockWindows(kind, options).find((entry) => entry.id === id);
 }

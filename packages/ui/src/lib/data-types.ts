@@ -47,27 +47,6 @@ export const PIN_KIND_COLOR_VAR: Record<string, string> = {
   particle: PIN_COLOR_VAR.particle,
 };
 
-export const PIN_COLOR_TOKENS = [
-  "--pin-exec",
-  "--pin-bool",
-  "--pin-int",
-  "--pin-float",
-  "--pin-string",
-  "--pin-vector",
-  "--pin-rotator",
-  "--pin-quat",
-  "--pin-transform",
-  "--pin-color",
-  "--pin-object",
-  "--pin-actor",
-  "--pin-class",
-  "--pin-struct",
-  "--pin-enum",
-  "--pin-wildcard",
-  "--pin-delegate",
-  "--pin-particle",
-] as const;
-
 /** Graph node header roles; `--node-*` values live in `styles/globals.css`. */
 export const NODE_ROLE_COLOR_VAR = {
   event: "var(--node-event)",
@@ -165,21 +144,6 @@ export const ASSET_COLOR_VAR: Record<AssetColorFamily, string> = {
   folder: "var(--asset-folder)",
   unknown: "var(--muted-foreground)",
 };
-
-export const ASSET_COLOR_TOKENS = [
-  "--asset-scene",
-  "--asset-graph",
-  "--asset-texture",
-  "--asset-material",
-  "--asset-model",
-  "--asset-audio",
-  "--asset-font",
-  "--asset-animation",
-  "--asset-class",
-  "--asset-script-type",
-  "--asset-component",
-  "--asset-folder",
-] as const;
 
 export function pinColorVar(kind: string): string {
   return PIN_KIND_COLOR_VAR[kind] ?? PIN_COLOR_VAR.wildcard;

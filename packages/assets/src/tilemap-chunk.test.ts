@@ -6,7 +6,7 @@ import {
   readGolden,
   writeGolden,
 } from "@babylonslate/test-kit";
-import { tilemapChunkVertexData, tilemapParallaxOffset } from "./tilemap-chunk";
+import { tilemapChunkVertexData } from "./tilemap-chunk";
 import { emptyChunkTiles } from "./tilemap-payload";
 import { normalizeTilesetPayload } from "./tileset-payload";
 
@@ -189,18 +189,5 @@ describe("tilemapChunkVertexData", () => {
     expect(decoDraw.positions).toEqual([
       1, 0, 0, 2, 0, 0, 2, 1, 0, 1, 1, 0,
     ]);
-  });
-});
-
-describe("tilemapParallaxOffset", () => {
-  it("keeps world lock at 1 and tracks the camera at 0", () => {
-    expect(tilemapParallaxOffset({ x: 1, y: 1 }, { x: 10, y: 4 })).toEqual({
-      x: 0,
-      y: 0,
-    });
-    expect(tilemapParallaxOffset({ x: 0, y: 0.5 }, { x: 10, y: 4 })).toEqual({
-      x: 10,
-      y: 2,
-    });
   });
 });
