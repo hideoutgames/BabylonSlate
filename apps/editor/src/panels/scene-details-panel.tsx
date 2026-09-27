@@ -42,6 +42,7 @@ import {
   type SerializedScene,
   isSceneWorkspaceKind,
   normalizeCelShadingSettings,
+  normalizeSceneFogSettings,
   normalizeScenePostProcessStack,
   newGuid,
 } from "@babylonslate/core";
@@ -435,6 +436,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         kind: "boolean",
         id: "scene-fog",
         label: "Fog",
+        description: "Distance fog. For light scattering, use Volumetric Fog in Project Settings > Rendering > Post Processing.",
         value: scene.settings.fogEnabled,
         defaultValue: defaults.fogEnabled,
         onChange: (fogEnabled) =>
@@ -442,6 +444,27 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       },
       ...(scene.settings.fogEnabled
         ? [
+            {
+              kind: "enum" as const,
+              id: "scene-fog-mode",
+              label: "Fog Mode",
+              description: "Linear fades between Start and End. Exponential modes use Density; Exponential Squared builds more gradually nearby.",
+              value: scene.settings.fogMode,
+              defaultValue: defaults.fogMode,
+              options: [
+                { value: "linear", label: "Linear" },
+                { value: "exponential", label: "Exponential" },
+                { value: "exponentialSquared", label: "Exponential Squared" },
+              ],
+              onChange: (fogMode: string) =>
+                mutate({
+                  ...scene,
+                  settings: {
+                    ...scene.settings,
+                    ...normalizeSceneFogSettings({ ...scene.settings, fogMode }),
+                  },
+                }),
+            },
             {
               kind: "color" as const,
               id: "scene-fog-color",
@@ -454,30 +477,67 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   settings: { ...scene.settings, fogColor },
                 }),
             },
-            {
-              kind: "number" as const,
-              id: "scene-fog-start",
-              label: "Fog Start",
-              value: scene.settings.fogStart,
-              defaultValue: defaults.fogStart,
-              onChange: (fogStart: number) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, fogStart },
-                }),
-            },
-            {
-              kind: "number" as const,
-              id: "scene-fog-end",
-              label: "Fog End",
-              value: scene.settings.fogEnd,
-              defaultValue: defaults.fogEnd,
-              onChange: (fogEnd: number) =>
-                mutate({
-                  ...scene,
-                  settings: { ...scene.settings, fogEnd },
-                }),
-            },
+            ...(scene.settings.fogMode === "linear"
+              ? [
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-start",
+                    label: "Fog Start",
+                    description: "Distance from the camera where fog begins. Moving beyond End also moves End.",
+                    unit: "scene units",
+                    value: scene.settings.fogStart,
+                    defaultValue: defaults.fogStart,
+                    min: 0,
+                    onChange: (fogStart: number) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          ...normalizeSceneFogSettings({ ...scene.settings, fogStart }),
+                        },
+                      }),
+                  },
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-end",
+                    label: "Fog End",
+                    description: "Distance where fog reaches full color. Moving before Start also moves Start.",
+                    unit: "scene units",
+                    value: scene.settings.fogEnd,
+                    defaultValue: defaults.fogEnd,
+                    min: 0.01,
+                    onChange: (fogEnd: number) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          ...normalizeSceneFogSettings({
+                            ...scene.settings,
+                            fogStart: Math.min(scene.settings.fogStart, fogEnd - 0.01),
+                            fogEnd,
+                          }),
+                        },
+                      }),
+                  },
+                ]
+              : [
+                  {
+                    kind: "number" as const,
+                    id: "scene-fog-density",
+                    label: "Fog Density",
+                    description: "Higher values obscure nearby objects. Zero leaves distance fog invisible.",
+                    value: scene.settings.fogDensity,
+                    defaultValue: defaults.fogDensity,
+                    min: 0,
+                    precision: 6,
+                    sensitivity: 0.0001,
+                    onChange: (fogDensity: number) =>
+                      mutate({
+                        ...scene,
+                        settings: { ...scene.settings, fogDensity },
+                      }),
+                  },
+                ]),
           ]
         : []),
       {
