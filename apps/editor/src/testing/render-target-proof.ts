@@ -62,7 +62,8 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       const pixels = await engine.readPixels(16, 16, 1, 1);
       const pixel = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
       // Babylon returns the canvas attachment's native channel order on WebGPU.
-      if (backend === "webgpu" && navigator.gpu.getPreferredCanvasFormat() === "bgra8unorm")
+      const canvasFormat = (engine.getCreationOptions() as { swapChainFormat?: string }).swapChainFormat;
+      if (backend === "webgpu" && canvasFormat === "bgra8unorm")
         [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
       results.push({ mode, pixel });
     };
