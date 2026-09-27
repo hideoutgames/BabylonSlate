@@ -215,8 +215,8 @@ describe("ParticleService", () => {
     } else {
       expect(state()).toBe("failed");
       expect(scene.particleSystems).toHaveLength(0);
-      expect(() => service.pendingSlotPreparation(new Set([1]))).toThrow("failed to load");
     }
+    expect(() => service.pendingSlotPreparation(new Set([1]))).toThrow("failed to load");
     expect(leases.released).toBe(1);
     service.dispose();
     expect(leases.released).toBe(leases.acquired);

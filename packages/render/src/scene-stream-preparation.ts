@@ -23,24 +23,29 @@ export async function prepareSceneStream(
     if (!active) throw new Error("Scene streaming preparation has ended.");
     options.signal.throwIfAborted();
     options.assertCurrent();
-    for (const slot of slots) {
-      if (binding.meshSorting.get(slot) !== assignments.get(slot))
-        throw new Error("Streamed actor visuals were replaced during loading.");
-    }
   };
-  check();
+  const checkAssignment = (slot: number) => {
+    if (binding.meshSorting.get(slot) !== assignments.get(slot))
+      throw new Error("Streamed actor visuals were replaced during loading.");
+  };
+  const checkAssignments = () => {
+    check();
+    for (const slot of slots) checkAssignment(slot);
+  };
+  checkAssignments();
   let abort!: () => void;
   const cancelled = new Promise<never>((_, reject) => {
     abort = () => reject(options.signal.reason);
     options.signal.addEventListener("abort", abort, { once: true });
   });
   const wait = <T>(work: Promise<T>) => Promise.race([work, cancelled]);
-  const waitAssets = async (loads: readonly (Promise<void> | undefined)[], phase: string, progress?: (completed: number) => void) => {
+  const waitAssets = async (loads: readonly { slot: number; load: Promise<void> | undefined }[], phase: string, progress?: (completed: number) => void) => {
     const deadline = createStallDeadline(() => `Streamed scene ${phase} made no progress for 30 seconds.`, 30_000);
     let completed = 0;
-    await deadline.race(wait(Promise.all(loads.map(async (load) => {
+    await deadline.race(wait(Promise.all(loads.map(async ({ slot, load }) => {
       await load;
       check();
+      checkAssignment(slot);
       deadline.advance(phase);
       progress?.(++completed);
     })).then(() => {})));
@@ -49,17 +54,17 @@ export async function prepareSceneStream(
     // Model work includes deferred visual replacement and its owned texture leases.
     const loads = [...slots].flatMap((slot) => {
       const load = binding.slotAnimLoads?.get(slot);
-      return load ? [load] : [];
+      return load ? [{ slot, load }] : [];
     });
     await waitAssets(loads, "models", (completed) => options.onProgress?.(0.45 + 0.15 * completed / loads.length));
-    check();
+    checkAssignments();
     const roots = [...slots].flatMap((slot) => {
       const root = binding.meshes.get(slot);
-      return root ? [root] : [];
+      return root ? [{ slot, root }] : [];
     });
-    await waitAssets(roots.map((root) => ownedVisualTexturePreparation(root)), "textures");
-    check();
-    const meshes = new Set<AbstractMesh>();
+    await waitAssets(roots.map(({ slot, root }) => ({ slot, load: ownedVisualTexturePreparation(root) })), "textures");
+    checkAssignments();
+    const meshSlots = new Map<AbstractMesh, number>();
     const materials = new Set<Material>();
     const addMaterial = (material: Material) => {
       if (materials.has(material)) return;
@@ -67,17 +72,17 @@ export async function prepareSceneStream(
       if (material instanceof MultiMaterial)
         for (const child of material.subMaterials) if (child) addMaterial(child);
     };
-    for (const root of roots) {
+    for (const { slot, root } of roots) {
       for (const mesh of [root, ...root.getChildMeshes()]) {
-        meshes.add(mesh);
+        meshSlots.set(mesh, slot);
         if (mesh.getTotalVertices() > 0) addMaterial(mesh.material ?? scene.defaultMaterial);
       }
     }
     let previous = "";
     let lastProgress = Date.now();
     for (;;) {
-      check();
-      for (const mesh of meshes) if (mesh.isDisposed()) throw new Error("Streamed actor was removed during loading.");
+      checkAssignments();
+      for (const mesh of meshSlots.keys()) if (mesh.isDisposed()) throw new Error("Streamed actor was removed during loading.");
       const pending = options.pendingParticles?.(slots) ?? [];
       for (const material of materials) {
         if (material instanceof NodeMaterial && !nodeMaterialTexturesSampleReady(material))
@@ -95,8 +100,11 @@ export async function prepareSceneStream(
       await wait(new Promise<void>((resolve) => setTimeout(resolve, 16)));
     }
     options.onProgress?.(0.75);
-    await wait(prewarmMeshMaterials(scene, meshes, check));
-    check();
+    await wait(prewarmMeshMaterials(scene, meshSlots.keys(), (mesh) => {
+      check();
+      if (mesh) checkAssignment(meshSlots.get(mesh)!);
+    }));
+    checkAssignments();
     options.onProgress?.(0.95);
   } finally {
     active = false;

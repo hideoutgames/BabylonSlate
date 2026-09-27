@@ -174,12 +174,12 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
 export async function prewarmMeshMaterials(
   scene: Scene,
   meshes: Iterable<AbstractMesh>,
-  assertCurrent?: () => void,
+  assertCurrent?: (mesh?: AbstractMesh) => void,
 ): Promise<void> {
   let finished = false;
-  const check = () => {
+  const check = (mesh?: AbstractMesh) => {
     if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
-    assertCurrent?.();
+    assertCurrent?.(mesh);
   };
   check();
   syncSceneLighting(scene);
@@ -187,7 +187,7 @@ export async function prewarmMeshMaterials(
   try {
     await deadline.race((async () => {
       for (const mesh of meshes) {
-        check();
+        check(mesh);
         if (!(mesh instanceof Mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
         // The same material can have different effects for skinned, morphed,
@@ -196,14 +196,15 @@ export async function prewarmMeshMaterials(
           ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
           : new Set([material]);
         for (const entry of materials) {
-          check();
+          check(mesh);
           deadline.advance(`"${entry.name}" for "${mesh.name}"`);
           if (entry instanceof NodeMaterial) await prewarmMaterial(entry, mesh);
           else await entry.forceCompilationAsync(mesh);
-          check();
+          check(mesh);
           if (mesh.hasThinInstances || mesh.instances.length > 0) {
             deadline.advance(`"${entry.name}" for instances of "${mesh.name}"`);
             await entry.forceCompilationAsync(mesh, { useInstances: true });
+            check(mesh);
           }
         }
       }

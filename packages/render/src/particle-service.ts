@@ -265,7 +265,7 @@ export class ParticleService {
     const pending: string[] = [];
     for (const entry of this.live.values()) {
       if (!slots.has(entry.command.slotId)) continue;
-      if (entry.state === "failed" && entry.preparationFailed)
+      if (entry.preparationFailed)
         throw new Error(`Streamed particle component ${entry.key} failed to load.`);
       if (entry.state === "preparing" || entry.systems.some((record) => !record.system.isReady()))
         pending.push(`particle ${entry.key}`);

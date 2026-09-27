@@ -96,4 +96,43 @@ describe("streamed render resource preparation", () => {
     expect(progress).not.toHaveBeenCalled();
     expect(f.compile).not.toHaveBeenCalled();
   });
+
+  it("keeps assignment validation linear while preparing a batch of mesh consumers", async () => {
+    const f = fixture();
+    const slots = Array.from({ length: 64 }, (_, index) => index + 1);
+    for (const slot of slots) {
+      if (slot !== 1) {
+        const root = MeshBuilder.CreateBox(`streamed-${slot}`, {}, f.scene);
+        root.material = f.material;
+        f.binding.meshes.set(slot, root);
+        f.binding.meshSorting.set(slot, { actorGuid: `streamed-${slot}` });
+      }
+      f.binding.slotAnimLoads!.set(slot, Promise.resolve());
+    }
+    const assignmentReads = vi.spyOn(f.binding.meshSorting, "get");
+    await prepareSceneStream(f.scene, f.binding, slots, f.options);
+    expect(f.compile).toHaveBeenCalledTimes(slots.length);
+    // Count work rather than elapsed time: rescanning all slots at every native
+    // completion would exceed this generous linear budget even on a fast host.
+    expect(assignmentReads.mock.calls.length).toBeLessThanOrEqual(slots.length * 16);
+  });
+
+  it.each([1, 2])("rejects slot %s reuse during a later shader wait before acknowledging readiness", async (replacedSlot) => {
+    const f = fixture();
+    const next = MeshBuilder.CreateBox("second streamed mesh", {}, f.scene);
+    const material = new StandardMaterial("second streamed material", f.scene);
+    next.material = material;
+    f.binding.meshes.set(2, next);
+    f.binding.meshSorting.set(2, { actorGuid: "second" });
+    const shader = deferred();
+    const compile = vi.spyOn(material, "forceCompilationAsync").mockReturnValue(shader.promise);
+    const progress = vi.fn();
+    const work = prepareSceneStream(f.scene, f.binding, [1, 2], { ...f.options, onProgress: progress });
+    const rejected = expect(work).rejects.toThrow("replaced");
+    await vi.waitFor(() => expect(compile).toHaveBeenCalled());
+    f.binding.meshSorting.set(replacedSlot, { actorGuid: "replacement" });
+    shader.resolve();
+    await rejected;
+    expect(progress).not.toHaveBeenCalledWith(0.95);
+  });
 });
