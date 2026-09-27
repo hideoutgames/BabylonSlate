@@ -18,8 +18,6 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTComposite",
 ] as const;
 
-export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
-
 /** Engine component class ids registered from P3 (behaviour filled later). */
 export const ENGINE_COMPONENT_CLASS_IDS = [
   "LandscapeComponent",
@@ -62,9 +60,6 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "2DPanelComponent",
 ] as const;
 
-export type EngineComponentClassId =
-  (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
-
 export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DAnchorComponent",
   "2DButtonComponent",
@@ -74,9 +69,6 @@ export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DRichTextComponent",
   "2DPanelComponent",
 ] as const;
-
-export type SceneLayerExclusiveComponentClassId =
-  (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "RagdollComponent",

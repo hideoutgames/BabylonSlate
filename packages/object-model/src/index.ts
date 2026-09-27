@@ -8,8 +8,6 @@ export {
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
-  type EngineBaseClassId,
-  type EngineComponentClassId,
 } from "./ids";
 export {
   BUTTON_MOUSE_EVENTS,
@@ -65,7 +63,6 @@ export {
   TickClock,
   type PhaseHook,
   type TickPhase,
-  type TickSchedulerOptions,
 } from "./tick";
 export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {

@@ -13,7 +13,6 @@ import {
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
   SCENE_LAYER_HIT_TESTS,
-  SCENE_LAYER_SCHEMA_VERSION,
 } from "./scene-layer";
 import { createActor, createDefaultSceneSettings } from "./scene";
 
@@ -39,10 +38,6 @@ describe("SceneLayer schema", () => {
       width: 20,
       height: 10,
     });
-  });
-
-  it("stamps schema version 1 for new SceneLayer assets", () => {
-    expect(SCENE_LAYER_SCHEMA_VERSION).toBe(1);
   });
 
   it("normalizes a partial payload and drops unsupported 3D components", () => {

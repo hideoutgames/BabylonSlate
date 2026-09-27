@@ -13,9 +13,6 @@ import {
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 
-/** SceneLayer document schema (v1): overlay actors, folders, 2D gravity, post-process. */
-export const SCENE_LAYER_SCHEMA_VERSION = 1;
-
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
   "SkyboxComponent",
@@ -27,9 +24,6 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "HemisphericFillLightComponent",
   "RagdollComponent",
 ] as const;
-
-export type SceneLayerDeniedComponentClassId =
-  (typeof SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS)[number];
 
 export const SCENE_LAYER_ANCHORS = [
   "topLeft",
