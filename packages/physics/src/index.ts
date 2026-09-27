@@ -1,6 +1,7 @@
 export type {
   PhysicsBackend,
   CreatePhysicsBackend,
+  SphereSweepQuery,
 } from "./backend";
 export type {
   PhysicsWorldKind,

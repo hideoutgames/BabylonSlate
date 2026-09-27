@@ -47,6 +47,10 @@ let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
   if (sceneSnapshots.receive(command)) return;
+  if (command.type === "cableFrame") {
+    postMessage({ channel: "command", payload: command }, [command.data.buffer as ArrayBuffer]);
+    return;
+  }
   if (command.type === "snapshotLayout") {
     try {
       snapshotPing = snapshotPing.grow(command.capacity);

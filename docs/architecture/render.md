@@ -1439,6 +1439,20 @@ guides are excluded. SceneLayers do not support this world-outline component.
 Regular instances remain independent actors; one thin-instance mesh is one actor
 group. There is no authored per-thin-index style or selection API.
 
+### Cable component
+
+`CableComponent` is a world component available through Add Component and Place Actors → Environment → Cable. It renders a material-backed tube in editor, Play and the exported player. The editor previews a static sag; Play runs the simulation in the game worker after rigid-body physics.
+
+- Start attaches to the component origin by default. End attaches to `endPosition` in the cable's space, or the selected actor/component's space. Either end can be released. Component targets resolve live IDs and prefab source IDs; missing targets fall back to the owner/actor. Actor and component ancestry contribute rotation and scale to endpoints; length and diameter use world units.
+- Default quality: 16 segments, 6 sides, 6 distance-constraint iterations and a 1/60-second substep. Gravity Scale, Cable Force, Damping and optional Stiffness control motion. An endpoint separation longer than Cable Length stretches the cable; it never pulls attached actors.
+- Simulation reuses particle buffers, limits catch-up to Max Substeps (default 4), and drops excess stall time. Settled cables sleep until an attached endpoint, gravity or configuration changes. Sleep Threshold is speed in world units/second; zero disables sleeping. Disabled cables preserve their state and render hidden.
+- The worker registers cables when visuals are assigned and sends changed cables in one packed `cableFrame` per tick (`simulationId`, particle count, XYZ triples). Native workers transfer the packet buffer. No per-particle physics bodies or per-cable frame messages are created. Sleeping cables send no geometry updates.
+- Tubes retain index/UV buffers and update reusable position/normal buffers and bounds only when needed. A shared scene observer handles geometry updates and world-to-local reprojection under moving parents. Materials use the normal material pipeline; Tile Material repeats UVs along the length.
+- **Enable Collision defaults off.** When enabled, free particles sweep spheres against scene colliders at each substep, with Collision Friction removing tangential velocity. Havok reuses a sphere shape and query scratch per cable, ignores triggers and resolves initial overlaps. Collision-enabled cables remain awake. This is one-way scene collision: no cable self-collision, segment collision, rigid-body reaction or pulling force. The software fallback uses the backend's approximate sweep.
+- Authoring bounds limit segments to 64, sides to 12, iterations to 16 and substeps to 8. Endpoint offsets/force components clamp to ±1,000,000. Hundreds of active cables are the intended workload; cost scales with segment count × iterations × substeps, and collision adds particle queries. GPU cost still includes a draw per visible cable; no device frame-rate guarantee is implied.
+
+The focused `cable-simulation.bench.ts` benchmark measures 300 active default cables separately from sleeping cables. It measures CPU simulation only, excluding rendering, physics queries and transport.
+
 ### Spring arm
 
 `SpringArmComponent` (`@babylonslate/core` `spring-arm-component.ts`, render

@@ -13,6 +13,7 @@ import {
   parseOutlineProperties,
   parseRagdollProperties,
   parseSpringArmProperties,
+  parseCableProperties,
   createRichText2DComponent,
   createText2DComponent,
 } from "@babylonslate/core";
@@ -184,6 +185,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Physics body",
     "Physics",
   ),
+  engineComponent("CableComponent", "Cable", "Simulated cable with optional scene collision", "Physics"),
   engineComponent(
     "ColliderComponent",
     "Collider",
@@ -264,6 +266,8 @@ export function defaultPropertiesFor(
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":
       return { ...parseSpringArmProperties({}) };
+    case "CableComponent":
+      return { ...parseCableProperties({}) };
     case "HemisphericFillLightComponent":
       return {
         intensity: 0.9,

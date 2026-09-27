@@ -296,6 +296,8 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  /** Packed world-space cable records: simulation ID, particle count, then xyz triples. */
+  | { type: "cableFrame"; data: Float32Array }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
@@ -362,6 +364,7 @@ export type CommandMessage =
       };
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        cable?: import("@babylonslate/core").CableProperties & { simulationId?: number };
         water?: import("@babylonslate/core").WaterBodyProperties;
         /** Water Removal Volume shape; Play keeps an invisible mesh that cuts water. */
         waterRemoval?: import("@babylonslate/core").WaterRemovalProperties;

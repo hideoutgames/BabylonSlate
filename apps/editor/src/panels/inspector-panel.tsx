@@ -798,6 +798,7 @@ function ClassMemberDetails({
 
 function PrefabComponentDetails({
   component,
+  components,
   sortingLayers,
   collisionLayers,
   physicsWorld,
@@ -812,6 +813,7 @@ function PrefabComponentDetails({
   onUpdateTransform,
 }: {
   component: SerializedComponent;
+  components: readonly SerializedComponent[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
   physicsWorld: "3d" | "2d";
@@ -878,6 +880,7 @@ function PrefabComponentDetails({
             fontHasMsdfPng,
             physicsWorld,
             onPickAsset: setAssetPick,
+            actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
           })}
         />
         {component.classId === "2DPanelComponent" ? (
@@ -1242,6 +1245,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
           component={selectedPrefabComponent}
+          components={prefabComponents}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
           physicsWorld={physicsWorld}

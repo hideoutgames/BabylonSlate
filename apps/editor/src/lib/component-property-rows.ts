@@ -59,6 +59,7 @@ import {
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
+import { cablePropertyRows } from "./cable-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -85,6 +86,7 @@ export type ComponentPropertyContext = {
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
   actorLabel?: (actorId: string) => string | undefined;
+  actorComponents?: (actorId: string) => readonly SerializedComponent[];
   onPickActor?: (componentId: string) => void;
 };
 
@@ -528,6 +530,11 @@ export function componentPropertyRows(
   switch (component.classId) {
     case "PhysicsConstraintComponent":
       return physicsConstraintPropertyRows(actorId, component, update, context);
+    case "CableComponent":
+      return [
+        ...cablePropertyRows(actorId, component, update, context),
+        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Cable Material"),
+      ];
     case "RagdollComponent": {
       const parsed = parseRagdollProperties(component.properties);
       const defaults = parseRagdollProperties({});
@@ -2031,8 +2038,11 @@ export function applyPrefabPropertyDefaults(
         }
         return { ...row, defaultValue: [value.x, value.y, value.z] as [number, number, number] };
       }
-      if (prefab.classId === "PhysicsConstraintComponent" && row.kind === "asset" && key === "targetActorId") {
+      if ((prefab.classId === "PhysicsConstraintComponent" || prefab.classId === "CableComponent") && row.kind === "asset" && key === "targetActorId") {
         return { ...row, defaultValue: String(prefab.properties[key] ?? "") || null };
+      }
+      if (prefab.classId === "CableComponent" && row.kind === "enum" && key === "targetComponentId") {
+        return { ...row, defaultValue: String(prefab.properties[key] ?? "") };
       }
       if (
         key === "materialGuid" && prefab.classId === "MeshComponent" &&

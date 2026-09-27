@@ -362,6 +362,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `SkyboxComponent` | Size | — | — |
 | `CameraComponent` | Field Of View, Orthographic Size, Projection Mode, Near Clip, Far Clip | Possess | — |
 | `SpringArmComponent` | Arm Length, Enable Location Lag, Location Lag Speed, Max Location Lag Distance, Enable Rotation Lag, Rotation Lag Speed, Draw Debug Lag | — | — |
+| `CableComponent` | Enabled; Cable Length, Segments, Cable Width, Sides, Tile Material, Material; Attach Start/End, End Position, Target Actor ID, Target Component ID; Solver Iterations, Enable Stiffness, Gravity Scale, Cable Force, Damping, Substep Time, Max Substeps, Enable Collision, Collision Friction, Sleep Threshold, Sleep Delay | — | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
 | `HemisphericFillLightComponent` | Enabled, Color, Ground Color, Intensity | — | — |
 | `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |

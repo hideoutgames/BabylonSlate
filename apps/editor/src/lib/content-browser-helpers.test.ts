@@ -1916,6 +1916,12 @@ describe("content-browser-helpers", () => {
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
   });
 
+  it.each(["Scene", "Class"])("retains cable material dependencies in %s assets", (type) => {
+    const components = [{ id: "cable", classId: "CableComponent", properties: { materialGuid: "rope-material", targetActorId: "hook-actor" } }];
+    const payload = type === "Scene" ? { actors: [{ id: "rope", classId: "Actor", components }] } : { components };
+    expect(assetHeaderDependencies(type, payload)).toEqual(["rope-material"]);
+  });
+
   it("extracts Audio mixer and channel guids for header.dependencies", () => {
     expect(
       assetHeaderDependencies("Audio", {

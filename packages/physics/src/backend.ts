@@ -19,6 +19,14 @@ import type {
 } from "./types";
 import type { DebugColliderPrimitive } from "./debug-colliders";
 
+/** Reusable radius-specific query. Results/vectors are borrowed until the next sweep. */
+export interface SphereSweepQuery {
+  /** Distance is sphere-center travel; location is the hit collider's surface. Initial overlaps have distance zero. */
+  sweep(sx: number, sy: number, sz: number, ex: number, ey: number, ez: number): HitResult;
+  /** Idempotent. Queries return a miss after disposal, including backend shutdown. */
+  dispose(): void;
+}
+
 /**
  * Transport-agnostic physics port hosted inside the game worker.
  * Sync queries must return on the calling execution pin (same tick).
@@ -86,6 +94,8 @@ export interface PhysicsBackend {
     start: PhysicsTransform,
     end: PhysicsTransform,
   ): HitResult;
+  /** Optional optimized query for repeated sphere casts, excluding triggers. Own until disposed. */
+  createSphereSweep?(radius: number): SphereSweepQuery;
 
   /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;

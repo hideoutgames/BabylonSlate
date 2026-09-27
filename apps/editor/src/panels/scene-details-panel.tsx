@@ -321,6 +321,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const postProcessEntries = normalizeScenePostProcessStack(scene?.settings.postProcessStack);
   const actorId = selectedActorIds[0] ?? null;
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
+  const actorDisplayNames = scene ? sceneActorDisplayNames(scene) : new Map<string, string>();
+  const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const prefabTemplates = useMemo(() => {
     const assets = assetRegistry?.list() ?? [];
     const graphs = collectClassGraphsForPalette({
@@ -1073,7 +1075,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasMsdfPng,
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
-            actorLabel: (targetId) => sceneActorDisplayNames(scene).get(targetId),
+            actorLabel: (targetId) => actorDisplayNames.get(targetId),
+            actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
@@ -1433,24 +1436,26 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         open={constraintTargetPick?.actorId === actor.id}
         onOpenChange={(open) => { if (!open) setConstraintTargetPick(null); }}
         title="Pick Target Actor"
-        description="Choose a physics actor in this scene. Both actors need collision; at least one must be dynamic."
-        placeholder="Search Physics Actors"
-        emptyLabel="No Matching Physics Actors"
+        description={pickingCableTarget ? "Choose an actor for the cable end, or Self for a local attachment." : "Choose a physics actor in this scene. Both actors need collision; at least one must be dynamic."}
+        placeholder={pickingCableTarget ? "Search Actors" : "Search Physics Actors"}
+        emptyLabel={pickingCableTarget ? "No Matching Actors" : "No Matching Physics Actors"}
         items={[
-          { id: "", label: "None", description: "Leave the constraint unconnected" },
-          ...physicsConstraintTargets(scene, actor.id),
+          { id: "", label: pickingCableTarget ? "Self" : "None", description: pickingCableTarget ? "Use this actor's cable or a local component" : "Leave the constraint unconnected" },
+          ...(pickingCableTarget
+            ? scene.actors.filter((candidate) => candidate.id !== actor.id).map((candidate) => ({ id: candidate.id, label: actorDisplayNames.get(candidate.id)!, description: candidate.classId, group: "Actors" }))
+            : physicsConstraintTargets(scene, actor.id)),
         ]}
         onSelect={(targetActorId) => {
           if (constraintTargetPick?.actorId !== actor.id) return;
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((component) => component.id === constraintTargetPick.componentId
-              ? { ...component, properties: { ...component.properties, targetActorId } }
+              ? { ...component, properties: { ...component.properties, targetActorId: pickingCableTarget ? targetActorId || null : targetActorId, ...(pickingCableTarget ? { targetComponentId: null } : {}) } }
               : component),
           }));
           setConstraintTargetPick(null);
         }}
-        data-testid="details-constraint-target-picker"
+        data-testid={pickingCableTarget ? "details-cable-target-picker" : "details-constraint-target-picker"}
       />
       <AddComponentDialog
         open={addComponentOpen}

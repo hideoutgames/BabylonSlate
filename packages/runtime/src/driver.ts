@@ -1,4 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { CableWorldSync } from "./cable-sync";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
@@ -461,6 +462,7 @@ class InProcessRuntime implements RuntimeDriver {
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly ragdolls: RagdollWorldSync;
+  private readonly cables: CableWorldSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -767,8 +769,15 @@ class InProcessRuntime implements RuntimeDriver {
         }
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.ragdolls.afterStep();
+        if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity);
         this.dispatchCollisionEvents();
       },
+    });
+    this.cables = new CableWorldSync({
+      world: this.world,
+      physics: () => this.physicsSync.getBackend(),
+      eligible: (actor) => this.canTickActor(actor),
+      emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
       world: this.world,
@@ -3710,8 +3719,8 @@ class InProcessRuntime implements RuntimeDriver {
       );
       const parts = playPartsNeeded(renderables) ||
         renderables.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID)
-        ? renderables.map((component) =>
-            playMeshPartOf(
+        ? renderables.map((component) => ({
+            ...playMeshPartOf(
               component,
               nearestVisualParentId(
                 component,
@@ -3719,7 +3728,8 @@ class InProcessRuntime implements RuntimeDriver {
                 renderableIds,
               ),
             ),
-          )
+            ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+          }))
         : undefined;
       const skyboxComp = renderables.find(
         (component) => component.classId === "SkyboxComponent",
@@ -4514,6 +4524,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.clear();
     this.layerLoads.clear();
     this.ragdolls.dispose();
+    this.cables.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {
@@ -4990,6 +5001,7 @@ function isPlayRenderable(
   if (
     component.classId === "LandscapeComponent" ||
     component.classId === "FoliageComponent" ||
+    component.classId === "CableComponent" ||
     component.classId === "MeshComponent" ||
     component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent" ||
@@ -5088,6 +5100,7 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (component.classId === "CableComponent") return "cable";
   if (waterKindForClass(component.classId)) return "water";
   if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
   if (component.classId === "LandscapeComponent") return "landscape";
@@ -5140,6 +5153,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
+    components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
     components.length > 1 ||
     components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||

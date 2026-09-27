@@ -66,6 +66,7 @@ describe("playPrefabDependencyScene", () => {
       classId: "UnplacedActor",
       components: [
         { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", materialGuid: "surface" } },
+        { id: "cable", classId: "CableComponent", properties: { materialGuid: "braided-rope" } },
         { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "sprite" } },
         { id: "tiles", classId: "TilemapComponent", properties: { assetGuid: "tilemap" } },
         { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "animation-graph" } },
@@ -88,7 +89,7 @@ describe("playPrefabDependencyScene", () => {
       skyTextures: skyboxFaceGuidsFromScene(dependencies),
     }).toEqual({
       models: ["model"],
-      materials: ["surface"],
+      materials: ["surface", "braided-rope"],
       sprites: ["sprite"],
       tilemaps: ["tilemap"],
       animationGraphs: ["animation-graph"],

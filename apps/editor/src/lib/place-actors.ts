@@ -32,6 +32,7 @@ export type PlaceActorKind =
   | { type: "camera" }
   | { type: "skybox" }
   | { type: "text3d" }
+  | { type: "cable" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
   | { type: "blocking-volume" }
@@ -71,6 +72,7 @@ const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
+  { id: "cable", title: "Cable", category: "Environment", kind: { type: "cable" } },
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
   { id: "water-global", title: "Global Water Volume", category: "Water", kind: { type: "water", classId: "GlobalWaterVolumeComponent" } },
   { id: "water-removal", title: "Water Removal Volume", category: "Water", kind: { type: "water", classId: "WaterRemovalVolumeComponent" } },
@@ -207,7 +209,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "light" &&
         item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
-        item.kind.type !== "skybox" && item.kind.type !== "water",
+        item.kind.type !== "skybox" && item.kind.type !== "water" && item.kind.type !== "cable",
     ),
     ...OVERLAY_PLACE_ACTORS,
   ];
@@ -344,6 +346,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   }
   if (kind.type === "text3d") {
     return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
+  }
+  if (kind.type === "cable") {
+    return resolveTypeVisual({ classId: "CableComponent", family: "class" });
   }
   if (kind.type === "navmesh") {
     return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
@@ -530,6 +535,12 @@ export function spawnPlacedActor(
   if (kind.type === "water") {
     return finish(createActor(id, item.title, { transform, components: [{ id: id + "-water", classId: kind.classId, properties: defaultPropertiesFor(kind.classId) }] }));
   }
+  if (kind.type === "cable") {
+    return finish(createActor(id, item.title, {
+      transform,
+      components: [{ id: `${id}-cable`, classId: "CableComponent", properties: defaultPropertiesFor("CableComponent") }],
+    }));
+  }
   if (kind.type === "overlay-2d") {
     return finish(createActor(id, item.title, {
       transform,
@@ -656,6 +667,14 @@ export function duplicateSceneActor(
     ...component,
     id: componentIds.get(component.id)!,
     ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
+    ...(component.classId === "CableComponent" && (!component.properties.targetActorId || component.properties.targetActorId === source.id)
+      ? { properties: {
+        ...component.properties,
+        targetActorId: component.properties.targetActorId ? copy.id : null,
+        targetComponentId: typeof component.properties.targetComponentId === "string"
+          ? componentIds.get(component.properties.targetComponentId) ?? component.properties.targetComponentId
+          : null,
+      } } : {}),
   }));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
@@ -673,24 +692,31 @@ export function duplicateSceneActors(
 ): SerializedActor[] {
   let next = scene;
   const actorCopies = new Map<string, string>();
+  const componentCopies = new Map<string, Map<string, string>>();
   const copies: SerializedActor[] = [];
   for (const id of new Set(actorIds)) {
     const source = scene.actors.find((actor) => actor.id === id);
     if (!source) continue;
     const copy = duplicateSceneActor(next, source);
     actorCopies.set(source.id, copy.id);
+    componentCopies.set(source.id, new Map(source.components.map((component, index) => [component.id, copy.components[index]!.id])));
     copies.push(copy);
     next = { ...next, actors: [...next.actors, copy] };
   }
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
-      if (component.classId !== "PhysicsConstraintComponent") return component;
+      if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "CableComponent") return component;
       const target = component.properties.targetActorId;
       if (typeof target !== "string" || !actorCopies.has(target)) return component;
       return {
         ...component,
-        properties: { ...component.properties, targetActorId: actorCopies.get(target)! },
+        properties: {
+          ...component.properties, targetActorId: actorCopies.get(target)!,
+          ...(component.classId === "CableComponent" && typeof component.properties.targetComponentId === "string"
+            ? { targetComponentId: componentCopies.get(target)?.get(component.properties.targetComponentId) ?? component.properties.targetComponentId }
+            : {}),
+        },
       };
     }),
   }));

@@ -14,6 +14,7 @@ export * from "./resource-cache";
 export * from "./render-scheduler";
 export * from "./snapshot-sync";
 export * from "./snapshot-apply";
+export { createCableMesh, applyCableFrame } from "./cable-mesh";
 export * from "./hardware-scaling";
 export * from "./play-console-apply";
 export * from "./play-free-cam";

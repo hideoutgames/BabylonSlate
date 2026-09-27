@@ -589,7 +589,7 @@ export function textureGuidsFromPlayPayloads(
   return guids;
 }
 
-/** Material asset guids referenced by scene MeshComponents and overlay 2DMaterial. */
+/** Material asset guids referenced by world and overlay rendering components. */
 export function materialAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
@@ -597,6 +597,7 @@ export function materialAssetGuidsFromScene(
   const seen = new Set<string>();
   for (const guid of [
     ...componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "CableComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),

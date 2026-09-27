@@ -1808,7 +1808,7 @@ export function assetHeaderDependencies(
       for (const component of components) {
         if (!component || typeof component !== "object") continue;
         addClass(component.classId);
-        if (component.classId !== "MeshComponent") continue;
+        if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
         for (const key of ["materialGuid", "assetGuid"]) {
           const guid = component.properties?.[key];
           if (typeof guid === "string" && guid.length > 0) unique.add(guid);
