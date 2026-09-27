@@ -1270,7 +1270,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private async waitForSimulation(owner: BObject | null): Promise<void> {
-    while (this.streamBlockingCount > 0 && !this.stopped && !owner?.destroyed)
+    while ((this.streamBlockingCount > 0 || this.paused) && !this.stopped && !owner?.destroyed)
       await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
     const stream = this.streamForOwner(owner);
     if (this.stopped || owner?.destroyed || (stream && this.sceneStreams.get(stream.actor.guid) !== stream))
@@ -2102,7 +2102,8 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canTickActor(actor: Actor): boolean {
-    if (this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
+    if (this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor) ||
+      (this.paused && this.actorStream.has(actor))) return false;
     if (!actor.sceneLayerId) return this.canTickScene();
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
@@ -2143,7 +2144,7 @@ class InProcessRuntime implements RuntimeDriver {
       : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
     if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.layer === owner && this.layerLoads.get(owner.guid)?.ready === true;
-    if (owner instanceof Scene) return (owner === this.world.currentScene || this.streamForOwner(owner)?.state === "Loaded") && this.canTickScene();
+    if (owner instanceof Scene) return (owner === this.world.currentScene || (!this.paused && this.streamForOwner(owner)?.state === "Loaded")) && this.canTickScene();
     // Detached components and superseded GameInstances have no active owner.
     return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
@@ -4837,6 +4838,12 @@ class InProcessRuntime implements RuntimeDriver {
   resume(): void {
     if (this.stopped) return;
     this.paused = false;
+    this.flushOwnerActions();
+    if (this.streamBlockingCount === 0) {
+      const waiters = [...this.simulationWaiters];
+      this.simulationWaiters.clear();
+      for (const resume of waiters) resume();
+    }
   }
 
   pushInput(events: readonly RawInputEvent[]): void {
