@@ -52,6 +52,13 @@ export function pinAllowsMultipleIncoming(
   return pin.kind === "exec";
 }
 
+/** Outputs fan out unless the host flags them `singleLink`. Missing pins do not strip. */
+function pinAllowsMultipleOutgoing(
+  pin: SerializedPin | undefined,
+): boolean {
+  return pin?.singleLink !== true;
+}
+
 function sameDirectedPair(left: PinEdgeRef, right: PinEdgeRef): boolean {
   return left.source === right.source && left.target === right.target;
 }
@@ -221,17 +228,24 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
     }
   }
   const targetPin = pinFor(candidate.target, candidate.targetHandle ?? "");
-  const exclusive =
+  const sourcePin = pinFor(candidate.source, candidate.sourceHandle ?? "");
+  const exclusiveTarget =
     options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
-  const kept = exclusive
-    ? edges.filter(
-        (edge) =>
-          !(
-            edge.target === candidate.target &&
-            edge.targetHandle === candidate.targetHandle
-          ),
-      )
-    : [...edges];
+  const exclusiveSource = !pinAllowsMultipleOutgoing(sourcePin);
+  // A new wire replaces the old one on an exclusive input or single-link output.
+  const kept = edges.filter(
+    (edge) =>
+      !(
+        exclusiveTarget &&
+        edge.target === candidate.target &&
+        edge.targetHandle === candidate.targetHandle
+      ) &&
+      !(
+        exclusiveSource &&
+        edge.source === candidate.source &&
+        edge.sourceHandle === candidate.sourceHandle
+      ),
+  );
   const id =
     candidate.id ??
     `e:${candidate.source}:${candidate.sourceHandle ?? ""}:${candidate.target}:${candidate.targetHandle ?? ""}`;
