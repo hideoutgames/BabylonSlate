@@ -1290,6 +1290,7 @@ class InProcessRuntime implements RuntimeDriver {
     const existing = this.sceneStreams.get(actor.guid);
     if (existing) {
       if (existing.state === "Unloading") return Promise.reject(new Error("The target scene is unloading."));
+      if (existing.state === "Loaded") return Promise.resolve();
       return this.withStreamBlock(existing.promise, blocking);
     }
     const component = this.streamingComponent(actor);

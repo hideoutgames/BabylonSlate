@@ -118,6 +118,7 @@ describe("additive scene streaming", () => {
       expect(world.getActors().filter((actor) => actor.classId === "ChildActor").every((actor) => actor.getVariable("began") === true)).toBe(true);
       expect(runtime.getSceneLoadProgress(left)).toBe(1);
       expect(runtime.getSceneLoadProgress(right)).toBe(1);
+      await runtime.loadSceneStream(left, true);
       expect(commands.filter((command) => command.type === "sceneStreamBlocking")).toEqual([
         { type: "sceneStreamBlocking", blocking: true }, { type: "sceneStreamBlocking", blocking: false },
       ]);
