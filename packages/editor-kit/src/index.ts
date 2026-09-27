@@ -66,11 +66,6 @@ export {
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
-export {
-  useHoldDragMenu,
-  type UseHoldDragMenuOptions,
-  type UseHoldDragMenuResult,
-} from "./use-hold-drag-menu";
 
 export {
   ParameterListEditor,
