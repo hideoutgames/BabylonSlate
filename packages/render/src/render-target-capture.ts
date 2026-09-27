@@ -107,7 +107,9 @@ export class RenderTargetCaptures {
   private readonly rotation = new Quaternion();
   private readonly scale = new Vector3();
   private readonly world = Matrix.Identity();
-  constructor(private readonly scene: Scene) {
+  private readonly scene: Scene;
+  constructor(scene: Scene) {
+    this.scene = scene;
     this.beforeRender = scene.onBeforeRenderObservable.add(() => this.render())!;
     this.addedMesh = scene.onNewMeshAddedObservable.add(() => { this.rootsDirty = true; })!;
     this.removedMesh = scene.onMeshRemovedObservable.add(() => { this.rootsDirty = true; })!;

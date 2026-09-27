@@ -60,7 +60,7 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       } while (performance.now() < deadline);
       if (!acquired.material.isReadyForSubMesh(screen, screen.subMeshes![0]!)) throw new Error("Material sampler did not become ready.");
       const pixels = await engine.readPixels(16, 16, 1, 1);
-      results.push({ mode, pixel: Array.from(pixels) });
+      results.push({ mode, pixel: Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)) });
     };
     const capture = async (mode: RenderTargetMode, onlyActors = false, label: string = mode) => {
       captures.setAssets(new Map([["target", { mode, width: 32, height: 32 }]]), textures);

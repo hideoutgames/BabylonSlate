@@ -22,7 +22,7 @@ export function RenderTargetDetailsPanel(_props: IDockviewPanelProps) {
     },
     ...(["width", "height"] as const).map((key): PropertyRow => ({
       id: `render-target-${key}`, kind: "number", label: key === "width" ? "Width" : "Height", value: target[key],
-      min: 1, max: 4096, step: 1, defaultValue: 512, unit: "px", onChange: (value) => commit({ [key]: value }),
+      min: 1, max: 4096, precision: 0, sensitivity: 1, defaultValue: 512, unit: "px", onChange: (value) => commit({ [key]: value }),
     })),
   ];
   return <PanelFrame data-testid="render-target-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div></PanelFrame>;
