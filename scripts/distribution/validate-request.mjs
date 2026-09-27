@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { appendFile } from "node:fs/promises";
+import { GITHUB_RELEASE_PLATFORMS, requestedPlatforms } from "./contract.mjs";
 import { preflight } from "./preflight.mjs";
 import { githubClient } from "./github.mjs";
 
@@ -22,8 +23,14 @@ try {
     git: async args => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(),
   });
   const { identity } = result;
-  await appendFile(process.env.GITHUB_OUTPUT, `source_sha=${identity.sourceSha}\nidentity=${JSON.stringify(identity)}\ndry_run=${result.dryRun}\nwindows=${identity.platforms !== "ipados"}\nipados=${identity.platforms !== "windows"}\n`);
-  await appendFile(process.env.GITHUB_STEP_SUMMARY, `### ${result.dryRun ? "Dry Run" : "Validated Request"}\n\n${identity.title}\n\nSource: \`${identity.sourceSha}\`\n\nWindows: ${identity.platforms === "ipados" ? "Not requested" : `\`${identity.tag}\` (unsigned)`}\n\niPadOS: ${identity.platforms === "windows" ? "Not requested" : `${identity.appleMarketingVersion} / ${identity.appleBuildNumber}, private ${identity.testFlightGroup}`}\n\nExact-source Verify run: ${result.verifyRunId}. No App Store submission.\n`);
+  const requested = requestedPlatforms(identity.platforms);
+  const enabled = platform => requested.includes(platform);
+  const githubRelease = GITHUB_RELEASE_PLATFORMS.some(enabled);
+  const outputs = ["windows", "macos", "linux", "android", "ipados"].map(platform => `${platform}=${enabled(platform)}`).join("\n");
+  await appendFile(process.env.GITHUB_OUTPUT, `source_sha=${identity.sourceSha}\nidentity=${JSON.stringify(identity)}\ndry_run=${result.dryRun}\n${outputs}\ngithub_release=${githubRelease}\n`);
+  const lines = ["windows", "macos", "linux", "android"].map(platform => `\n${platform === "macos" ? "macOS" : platform[0].toUpperCase() + platform.slice(1)}: ${enabled(platform) ? `\`${identity.tag}\`` : "Not requested"}`);
+  lines.push(`\niPadOS: ${enabled("ipados") ? `${identity.appleMarketingVersion} / ${identity.appleBuildNumber}, private ${identity.testFlightGroup}` : "Not requested"}`);
+  await appendFile(process.env.GITHUB_STEP_SUMMARY, `### ${result.dryRun ? "Dry Run" : "Validated Request"}\n\n${identity.title}\n\nSource: \`${identity.sourceSha}\`\n${lines.join("\n")}\n\nExact-source Verify run: ${result.verifyRunId}. No App Store submission.\n`);
 } catch (error) {
   console.error(error instanceof Error && !error.message.includes("Command failed") ? error.message : "Source validation failed; confirm the commit exists on protected main");
   process.exitCode = 1;

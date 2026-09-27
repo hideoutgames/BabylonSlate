@@ -6,8 +6,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:host": "node scripts/build-host.mjs",
-    "package:windows": "node scripts/package-windows.mjs",
-    "smoke:windows": "node scripts/smoke-windows.mjs"
+    "package:windows": "node scripts/package-desktop.mjs windows",
+    "package:macos": "node scripts/package-desktop.mjs macos",
+    "package:linux": "node scripts/package-desktop.mjs linux",
+    "smoke:windows": "node scripts/smoke-desktop.mjs windows",
+    "smoke:macos": "node scripts/smoke-desktop.mjs macos",
+    "smoke:linux": "node scripts/smoke-desktop.mjs linux"
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*",

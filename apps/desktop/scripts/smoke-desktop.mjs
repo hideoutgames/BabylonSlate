@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, cp, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,28 +8,59 @@ import { extractAll, listPackage } from "@electron/asar";
 import { _electron, expect } from "@playwright/test";
 import { stageRenderer } from "./layout.mjs";
 
-if (process.platform !== "win32") throw new Error("Installed-app checks require Windows");
+const platform = process.argv[2];
+const hosts = { windows: "win32", macos: "darwin", linux: "linux" };
+if (!hosts[platform] || process.platform !== hosts[platform]) throw new Error(`${platform || "Desktop"} installed-app checks require their native host`);
 const desktop = fileURLToPath(new URL("..", import.meta.url));
 const repo = resolve(desktop, "../..");
 const manifest = JSON.parse(await readFile(join(desktop, "dist/public/build-manifest.json"), "utf8"));
+if (manifest.platform !== platform) throw new Error("Packaged manifest platform differs from smoke host");
 const sandbox = await mkdtemp(join(tmpdir(), "BabylonSlate-installed-check-"));
 const installDir = join(sandbox, "installed");
 const userData = join(sandbox, "user-data");
-const installer = join(sandbox, "installer.exe");
 const hidden = [];
+let executable;
+let archive;
 let app;
-const run = (command, args) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { cwd: sandbox, windowsHide: true, stdio: "pipe" });
+let installer;
+let dmgMounted = false;
+const run = (command, args, cwd = sandbox) => new Promise((resolvePromise, reject) => {
+  const child = spawn(command, args, { cwd, windowsHide: true, stdio: "pipe" });
   child.once("error", reject);
-  child.once("close", code => code === 0 ? resolve() : reject(new Error("Installer command failed")));
+  child.once("close", code => code === 0 ? resolvePromise() : reject(new Error(`Command failed: ${command}`)));
 });
 try {
-  await cp(join(desktop, `dist/public/BabylonSlate-${manifest.windowsVersion}-x64.exe`), installer);
-  await run(installer, ["/S", `/D=${installDir}`]);
+  if (platform === "windows") {
+    installer = join(sandbox, "installer.exe");
+    await cp(join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-x64.exe`), installer);
+    await run(installer, ["/S", `/D=${installDir}`]);
+    executable = join(installDir, "BabylonSlate.exe");
+    archive = join(installDir, "resources/app.asar");
+  } else if (platform === "macos") {
+    const arch = process.arch === "arm64" ? "arm64" : "x64";
+    const zip = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.zip`);
+    await mkdir(installDir);
+    await run("ditto", ["-x", "-k", zip, installDir]);
+    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/BabylonSlate");
+    archive = join(installDir, "BabylonSlate.app/Contents/Resources/app.asar");
+    const mount = join(sandbox, "dmg");
+    await mkdir(mount);
+    const dmg = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.dmg`);
+    await run("hdiutil", ["attach", "-nobrowse", "-readonly", "-noverify", "-mountpoint", mount, dmg]);
+    dmgMounted = true;
+    await access(join(mount, "BabylonSlate.app/Contents/Info.plist"));
+    await run("hdiutil", ["detach", mount]);
+    dmgMounted = false;
+  } else {
+    const appImage = join(sandbox, `BabylonSlate-${manifest.packageVersion}-x64.AppImage`);
+    await cp(join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-x64.AppImage`), appImage);
+    await chmod(appImage, 0o755);
+    await run(appImage, ["--appimage-extract"]);
+    executable = join(sandbox, "squashfs-root/babylonslate");
+    archive = join(sandbox, "squashfs-root/resources/app.asar");
+  }
   await mkdir(userData);
-  // Installed-app acceptance must not install a different published version.
   await writeFile(join(userData, "engine-settings.json"), JSON.stringify({ automaticUpdatesEnabled: false }));
-  const archive = join(installDir, "resources/app.asar");
   const names = listPackage(archive).map(name => name.replaceAll("\\", "/").replace(/^\//, ""));
   for (const name of names) {
     assert.ok(/^(?:package.json|host(?:\/|$)|renderer(?:\/|$))/.test(name), "Unexpected packaged root");
@@ -42,8 +73,6 @@ try {
     const contents = await readFile(join(extracted, name), "utf8");
     assert.ok(!/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{70,}/.test(contents), "Credential pattern in package");
   }
-  // Make the old repository-relative renderer layout unavailable during launch.
-  // Both source and destination are checked, generated directories in this checkout.
   for (const relativePath of ["apps/editor/dist", "apps/player/dist"]) {
     const source = resolve(repo, relativePath);
     const destination = `${source}.distribution-smoke-hidden`;
@@ -52,11 +81,17 @@ try {
     hidden.push([source, destination]);
   }
   const cleanEnv = {};
-  for (const key of ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT"]) if (process.env[key]) cleanEnv[key] = process.env[key];
-  const launch = () => _electron.launch({ executablePath: join(installDir, "BabylonSlate.exe"), cwd: sandbox, args: [`--user-data-dir=${userData}`], env: cleanEnv, timeout: 60000 });
+  const environmentKeys = platform === "windows"
+    ? ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT"]
+    : ["PATH", "HOME", "DISPLAY", "XAUTHORITY", "TMPDIR", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
+  for (const key of environmentKeys) if (process.env[key]) cleanEnv[key] = process.env[key];
+  const chromiumArgs = platform === "windows" ? [] : ["--enable-unsafe-swiftshader"];
+  // Extracted AppImages have no SUID sandbox helper on hosted runners.
+  if (platform === "linux") chromiumArgs.push("--no-sandbox");
+  const launch = () => _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 });
   app = await launch();
   assert.equal(resolve(await app.evaluate(({ app }) => app.getPath("userData"))), resolve(userData));
-  assert.equal(await app.evaluate(({ app }) => app.getVersion()), manifest.windowsVersion);
+  assert.equal(await app.evaluate(({ app }) => app.getVersion()), manifest.packageVersion);
   let page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
@@ -113,14 +148,16 @@ try {
   await page.getByTestId(/^open-listed-project-DistributionSmoke(?:\.babproject)?$/).click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.babylonslate.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);
-  console.log("Installed Windows checks passed: identity, production storage/persistence, editor, player, workers, wasm, and package allowlist.");
+  console.log(`Installed ${platform} checks passed: identity, production storage/persistence, editor, player, workers, wasm, and package allowlist.`);
 } finally {
   if (app) await app.close().catch(() => {});
   for (const [source, destination] of hidden.reverse()) await rename(destination, source);
-  // Only this invocation's checked temporary installation is removed.
   assert.equal(dirname(resolve(sandbox)), resolve(tmpdir()));
-  const entries = await readdir(installDir).catch(() => []);
-  const uninstaller = entries.find(name => /^Uninstall.*\.exe$/i.test(name));
-  if (uninstaller) await run(join(installDir, uninstaller), ["/S"]).catch(() => {});
+  if (dmgMounted) await run("hdiutil", ["detach", join(sandbox, "dmg")]).catch(() => {});
+  if (platform === "windows") {
+    const entries = await readdir(installDir).catch(() => []);
+    const uninstaller = entries.find(name => /^Uninstall.*\.exe$/i.test(name));
+    if (uninstaller) await run(join(installDir, uninstaller), ["/S"]).catch(() => {});
+  }
   await rm(sandbox, { recursive: true, force: true });
 }
