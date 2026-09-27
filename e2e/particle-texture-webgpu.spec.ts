@@ -225,7 +225,8 @@ test("A running emitter Preview draws a 1x1 Albedo KTX2 on WebGPU and rebinds it
   let failuresWhileDrawing: string[] = [];
   let compressed: CompressedTexture[] | null = null;
   try {
-    // WebGPU decodes the 1x1 KTX2 to RGBA, so the Preview draws it rather than showing No Material.
+    // The 1x1 Texture draws rather than showing No Material, and nothing reaches the GPU compressed off the grid.
+    // (Only texture-webgpu-fallback.spec.ts can tell a KTX2 draw from a source PNG one.)
     await expectPreviewDraws(preview, canvas, "red", albedoRun);
     await expect(preview.getByTestId("particle-preview-empty")).toHaveCount(0);
     albedoCompressed = await compressedGpuTextures(page);

@@ -124,7 +124,7 @@ export async function resolveGpuTexture(
   let selectedChunkId = selected.chunk.id;
   let selectedBytes = await readChunk(selectedChunkId);
   if (blockAlign && selected.kind === "ktx2") {
-    // Particle Textures bind only a block-aligned KTX2 (WebGPU rejects others).
+    // Particle Textures bind only a block-aligned KTX2, the size Particle encodes at.
     // A retained encode from an earlier Usage may be selected first; try the
     // committed encode before falling back to source pixels.
     const committed = header.payload.ktx2ChunkId;

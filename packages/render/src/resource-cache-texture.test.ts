@@ -761,8 +761,9 @@ describe("WebGPU KTX2 off the 4x4 block grid", () => {
   it.each([
     ["raw bytes", () => ktx2HeaderBytes(1, 1)],
     ["an installed Blob", () => installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]]))!.get("odd")!],
-  ])("uploads it from %s as a KTX2 texture; the Babylon patch decodes it to RGBA", (_source, bytes) => {
+  ])("gives an ASTC-capable WebGPU engine a KTX2 texture from %s", (_source, bytes) => {
     const engine = textureEngine();
+    // The engine that used to be refused before upload; ktx2-webgpu-rgba.test.ts covers the RGBA decode.
     vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
     vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
     const cache = new ResourceCache();

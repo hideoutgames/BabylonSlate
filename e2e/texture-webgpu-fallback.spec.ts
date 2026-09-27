@@ -385,7 +385,7 @@ test("WebGPU draws an off-grid Tilemap atlas decoded to RGBA the same way up as 
   test.setTimeout(300_000);
   const { gpuFailures } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
-  const readings: Record<string, TileReading & { compressed: CompressedTexture[] | null }> = {};
+  const readings: Record<string, TileReading & { compressed: CompressedTexture[] }> = {};
   // A 10×20 KTX2 is off the 4×4 block grid (decoded to RGBA); 12×24 stays block-compressed.
   for (const [label, tile, source] of [
     ["png", 10, "png"],
@@ -394,15 +394,21 @@ test("WebGPU draws an off-grid Tilemap atlas decoded to RGBA the same way up as 
   ] as const) {
     await openMinimalTestProject(page, await atlasScene(page, tile, source));
     await openMainScene(page);
+    let proof: ViewportProofResult | undefined;
     let reading: TileReading | undefined;
     await expect(async () => {
-      reading = tileReading(await viewportProof(page, testInfo, `tilemap-${label}`, { skyboxPoints: GRID_POINTS }));
+      proof = await viewportProof(page, testInfo, `tilemap-${label}`, { skyboxPoints: GRID_POINTS });
+      reading = tileReading(proof);
       expect(reading.green + reading.red, label).toBeGreaterThanOrEqual(3);
     }).toPass({ timeout: 60_000 });
-    readings[label] = { ...reading!, compressed: await compressedGpuTextures(page) };
+    // Software WebGL2 decodes every KTX2 to RGBA, so a fallback would prove nothing here.
+    expect(proof!.backend, label).toBe("webgpu");
+    const recorded = await compressedGpuTextures(page);
+    expect(recorded, label).not.toBeNull();
+    readings[label] = { ...reading!, compressed: recorded! };
   }
-  const { png, rgba, compressed } = readings as Record<"png" | "rgba" | "compressed", TileReading & { compressed: CompressedTexture[] | null }>;
-  const blockCompressed = compressed.compressed?.some((texture) => texture.width === 12 && texture.height === 24) ?? false;
+  const { png, rgba, compressed } = readings as Record<"png" | "rgba" | "compressed", TileReading & { compressed: CompressedTexture[] }>;
+  const blockCompressed = compressed.compressed.some((texture) => texture.width === 12 && texture.height === 24);
   await testInfo.attach("tilemap-orientation", { body: JSON.stringify({ readings, blockCompressed, gpuFailures }), contentType: "application/json" });
   // Recorded, not asserted: WebGPU's compressed upload ignores invertY, so it may read the other way up.
   testInfo.annotations.push({
@@ -412,6 +418,6 @@ test("WebGPU draws an off-grid Tilemap atlas decoded to RGBA the same way up as 
   expect(png.reads).toBe("upright");
   expect(rgba.reads).toBe(png.reads);
   // The 10×20 KTX2 was drawn, and never block-compressed.
-  expect(offBlockGrid(rgba.compressed ?? [])).toEqual([]);
+  expect(offBlockGrid(rgba.compressed)).toEqual([]);
   expect(gpuFailures).toEqual([]);
 });

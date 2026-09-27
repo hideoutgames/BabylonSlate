@@ -151,7 +151,7 @@ const TEXTURE_PROGRESS_FIELDS = new Set(["compressionState", "encodeWallMs", "en
 /**
  * The saved Texture headers that decide which bytes the Preview uploads: the
  * payload (Usage, Downsample, committed KTX2) and the chunks. It changes when a
- * Usage fix is saved or an encode commits, not while an encode is running.
+ * Usage change is saved or an encode commits, not while an encode is running.
  */
 function textureHeadersKey(
   textureByGuid: ((guid: string) => IndexedAsset | undefined) | undefined,
@@ -440,8 +440,8 @@ export function ParticlePreviewCanvas({
     showSkybox,
   ]);
 
-  // The scene keeps the bytes it uploaded. A saved Texture change (Set Usage to
-  // Particle, a finished encode) starts a new scene, the way Retry does.
+  // The scene keeps the bytes it uploaded. A saved Texture change (a Usage
+  // change, a finished encode) starts a new scene, the way Retry does.
   useEffect(() => {
     const loaded = loadedTexturesRef.current;
     if (!loaded || loaded.guids.length === 0) return;

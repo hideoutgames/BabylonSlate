@@ -351,8 +351,9 @@ describe("applyAlbedoTexture", () => {
       winner.release();
     } finally { create.mockRestore(); report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose(); }
   });
-  it("gives a sprite on WebGPU its KTX2 off the 4x4 block grid", () => {
+  it("gives a sprite on an ASTC-capable WebGPU engine its KTX2 off the 4x4 block grid as its diffuse texture", () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    // The engine that used to be refused before upload; ktx2-webgpu-rgba.test.ts covers the RGBA decode.
     vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
     vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
     const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
