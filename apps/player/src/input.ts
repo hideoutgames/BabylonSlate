@@ -7,7 +7,6 @@ export interface InputCaptureHandle {
   ring: InputRingBuffer;
   setTick: (tick: number) => void;
   pollGamepads: () => void;
-  pushTouchAxis: (controlId: string, value: number) => void;
   dispose: () => void;
 }
 
@@ -114,9 +113,6 @@ export function attachInputCapture(
           buttons: pad.buttons.map((b) => b.value),
         });
       }
-    },
-    pushTouchAxis: (controlId, value) => {
-      push({ kind: "touchAxis", tick, controlId, value });
     },
     dispose: () => {
       releaseKeys();

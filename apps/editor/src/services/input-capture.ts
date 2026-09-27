@@ -9,8 +9,6 @@ export interface InputCaptureHandle {
   setTick: (tick: number) => void;
   /** Poll gamepads once per frame (axes have no events). */
   pollGamepads: () => void;
-  /** Push a Play overlay joystick sample into the Play ring. */
-  pushTouchAxis: (controlId: string, value: number) => void;
   dispose: () => void;
 }
 
@@ -144,9 +142,6 @@ export function attachInputCapture(
           }
         }
       }
-    },
-    pushTouchAxis: (controlId, value) => {
-      push({ kind: "touchAxis", tick, controlId, value });
     },
     dispose: () => {
       releaseKeys();

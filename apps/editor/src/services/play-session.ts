@@ -340,8 +340,6 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Latest sim tick (in-process World clock, else last published snapshot). */
   lastTickIndex: () => number;
-  /** Push a touch joystick sample into the Play input ring. */
-  pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
@@ -1152,9 +1150,6 @@ export function startPlaySession(options: {
         runtime?.getWorld().clock.tickIndex,
         lastWorkerTickIndex,
       ),
-    pushTouchAxis: (controlId: string, value: number) => {
-      input?.pushTouchAxis(controlId, value);
-    },
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },

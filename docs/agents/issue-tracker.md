@@ -437,7 +437,7 @@ Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are 
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
 | Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
-| HUD TouchButton / TouchDPad → input | Removed with the game HUD. Play overlay virtual sticks remain (`play-hud-joystick.ts`) |
+| HUD TouchButton / TouchDPad → input | Removed with the game HUD. There is no on-screen Play movement stick; Touch bindings are fed only by the `injectTestTouchAxis` test hook |
 | `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 stats HUD parked. Game HUD removed |
 
 ### Authoring-surface wave (before P11)
