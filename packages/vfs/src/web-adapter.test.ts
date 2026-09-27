@@ -124,6 +124,38 @@ describe("OPFS / web storage adapter", () => {
     );
   });
 
+  it("lists an OPFS folder while a write's swap file comes and goes", async () => {
+    const notFound = () => Promise.reject(new DOMException("gone", "NotFoundError"));
+    const file = (size: number) => ({
+      kind: "file",
+      getFile: async () => ({ size, lastModified: 7 }),
+    });
+    // Chromium lists `<name>.crswap` while a writable is open (readable until it
+    // closes); an entry removed after listing rejects getFile().
+    const entries: Array<[string, unknown]> = [
+      ["main.scene.babasset.crswap", file(5)],
+      ["main.scene.babasset", file(3)],
+      ["removed.babasset", { kind: "file", getFile: notFound }],
+      ["Input", { kind: "directory" }],
+      ["Backup.crswap", { kind: "directory" }],
+    ];
+    const project = {
+      async *entries() {
+        yield* entries;
+      },
+    };
+    const root = { getDirectoryHandle: async () => project };
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Test.babproject");
+
+    expect(await storage.readdir("")).toEqual([
+      { name: "main.scene.babasset", isDir: false, size: 3, mtime: 7 },
+      { name: "Input", isDir: true, size: null, mtime: null },
+      { name: "Backup.crswap", isDir: true, size: null, mtime: null },
+    ]);
+  });
+
   it("treats a trailing slash and dot as the same directory", async () => {
     const storage = await openedAdapter();
     await storage.writeText("scenes/main.scene.json", "{}");

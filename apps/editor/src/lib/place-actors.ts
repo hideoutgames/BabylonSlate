@@ -32,6 +32,7 @@ export type PlaceActorKind =
   | { type: "hemispheric-fill" }
   | { type: "camera" }
   | { type: "skybox" }
+  | { type: "fog-volume" }
   | { type: "text3d" }
   | { type: "scene-streaming" }
   | { type: "navmesh" }
@@ -105,6 +106,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Skybox",
     category: "Environment",
     kind: { type: "skybox" },
+  },
+  {
+    id: "fog-volume",
+    title: "Fog Volume",
+    category: "Environment",
+    kind: { type: "fog-volume" },
   },
   {
     id: "text3d",
@@ -216,7 +223,8 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
         item.kind.type !== "skybox" && item.kind.type !== "water" &&
-        item.kind.type !== "scene-streaming",
+        item.kind.type !== "scene-streaming" &&
+        item.kind.type !== "fog-volume",
     ),
     ...OVERLAY_PLACE_ACTORS,
   ];
@@ -352,6 +360,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "skybox") {
     return resolveTypeVisual({ classId: "SkyboxComponent", family: "class" });
   }
+  if (kind.type === "fog-volume") {
+    return resolveTypeVisual({ classId: "FogVolumeComponent", family: "class" });
+  }
   if (kind.type === "text3d") {
     return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
   }
@@ -472,6 +483,16 @@ export function spawnPlacedActor(
       transform,
       locked: true,
       components: [createSkyboxComponent(`${id}-skybox`)],
+    }));
+  }
+  if (kind.type === "fog-volume") {
+    return finish(createActor(id, "Fog Volume", {
+      transform,
+      components: [{
+        id: `${id}-fog`,
+        classId: "FogVolumeComponent",
+        properties: defaultPropertiesFor("FogVolumeComponent"),
+      }],
     }));
   }
   if (kind.type === "text3d") {

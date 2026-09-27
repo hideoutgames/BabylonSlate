@@ -117,6 +117,27 @@ describe("componentPropertyRows", () => {
     target.onChange?.(null);
     expect(update).toHaveBeenCalledWith("sceneGuid", null);
   });
+
+  it("authors fog shape independently and keeps size, density and edge falloff in valid ranges", () => {
+    const properties = { ...defaultPropertiesFor("FogVolumeComponent"), size: [4, 6, 8], density: 0.005 };
+    const { rows, update } = rowsFor({ id: "fog", classId: "FogVolumeComponent", properties });
+    const shape = rows.find((row) => row.label === "Shape");
+    const size = rows.find((row) => row.label === "Size");
+    const density = rows.find((row) => row.label === "Density");
+    const edge = rows.find((row) => row.label === "Edge Falloff");
+    if (shape?.kind !== "enum" || size?.kind !== "vector3" || density?.kind !== "number" || edge?.kind !== "slider") throw new Error("Missing Fog Volume controls");
+    shape.onChange("sphere");
+    expect(update).toHaveBeenLastCalledWith("shape", "sphere");
+    expect(properties.size).toEqual([4, 6, 8]);
+    size.onChange([-2, 7, 9]);
+    expect(update).toHaveBeenLastCalledWith("size", [0.01, 7, 9]);
+    density.onChange(0.000125);
+    expect(update).toHaveBeenLastCalledWith("density", 0.000125);
+    density.onChange(-1);
+    expect(update).toHaveBeenLastCalledWith("density", 0);
+    edge.onChange(2);
+    expect(update).toHaveBeenLastCalledWith("edgeFalloff", 1);
+  });
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
     expect(properties).toEqual({ enabled: true, color: [0.03, 0.03, 0.03], width: 1, throughMeshes: false });

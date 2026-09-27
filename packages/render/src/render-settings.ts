@@ -53,6 +53,8 @@ type SceneRendering = {
   effects: RenderEffectsSettings;
   /** Session post-processing toggle; off also restores per-material display. */
   effectsEnabled: boolean;
+  /** Local components request the shared fog pass without changing project settings. */
+  fogVolumesPresent: boolean;
   /** Baked identity of the live effects settings; rebuilt only on a settings
    * change so per-frame readiness probes never serialize the block again. */
   effectsKey: string;
@@ -94,6 +96,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       environmentOverrides: {},
       effects,
       effectsEnabled: true,
+      fogVolumesPresent: false,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       listeners: new Set(),
@@ -144,11 +147,13 @@ export function updateSceneRenderingSettings(
     state.effects,
     state.mode,
     state.effectsEnabled,
+    state.fogVolumesPresent,
   );
   state.effectsPlan = planSceneEffects(
     state.effects,
     state.mode,
     state.effectsEnabled,
+    state.fogVolumesPresent,
   );
   syncImageProcessingMode(scene, state);
 }
@@ -163,6 +168,15 @@ export function setSceneEffectsEnabled(scene: Scene, enabled: boolean): void {
   if (state.effectsEnabled === enabled) return;
   state.effectsEnabled = enabled;
   updateSceneRenderingSettings(scene);
+}
+
+/** Only presence changes rebuild the pass; bounds and density remain live uniforms. */
+export function setSceneFogVolumesPresent(scene: Scene, present: boolean): void {
+  const state = sceneRenderingSettings(scene);
+  if (state.fogVolumesPresent === present || scene.isDisposed) return;
+  state.fogVolumesPresent = present;
+  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, present);
+  state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, present);
 }
 
 /** Materials emit linear HDR only while a Scene Linear display stage exists. */

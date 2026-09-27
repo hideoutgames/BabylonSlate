@@ -26,6 +26,10 @@ The parent retains its world settings and navigation mesh. Child Scene Defaults 
 
 ## SerializedScene v4
 
+**Fog Volumes:** Place Actors → Environment → **Fog Volume**, or Add Component → Rendering → **Fog Volume**. Choose Box or Sphere; Size gives full local dimensions (unequal sphere axes form an ellipsoid). Move, rotate and scale the actor or component normally. Density controls extinction and Edge Falloff softens the boundary; zero falloff makes a hard edge. Pickable wire bounds are editor-only. Fog Volumes work immediately, including from outside their bounds, without enabling scene-wide fog. They support normal saving, duplication, undo and Class components; SceneLayers exclude them.
+
+Project Settings → Rendering → Post Processing → **Volumetric Fog** contains shared appearance and quality controls. **Scene-Wide Fog** adds background density independently. At most eight nearby visible volumes contribute at once; overlaps add density. Lower Volumetric Resolution Scale, Volumetric Steps and Volumetric Light Limit to reduce cost. The viewport Post-processing toggle disables both local and scene-wide volumetrics. See [render architecture](render.md) for bounds, lighting and transparency limits.
+
 Scene Defaults lists Post Process passes and Scene Layers as compact two-line entries: a single-line asset picker with Open Asset, followed by Enabled, layer Z-Order, and reorder/remove controls. Names truncate with full names and paths available on hover. Desktop controls are 28px; coarse-pointer controls expand and wrap without overlapping. Counts appear beside Add. Reordering moves the complete entry, preserving independent Enabled and Z-Order values even when an asset appears more than once.
 
 | Field          | Role                                                                                                 |

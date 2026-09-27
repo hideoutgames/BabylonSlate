@@ -1,6 +1,6 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
-import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
+import { areaRectLightBindings, fogVolumeBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -484,6 +484,7 @@ class InProcessRuntime implements RuntimeDriver {
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
   private outlineSlots = new Set<number>();
+  private fogVolumeSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -1124,6 +1125,7 @@ class InProcessRuntime implements RuntimeDriver {
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
           if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
           else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
@@ -3986,6 +3988,29 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private emitActorFogVolumes(actor: Actor, slotId: number): void {
+    const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
+      !component.destroyed && component.classId === "FogVolumeComponent");
+    if (!hasVolume && !this.fogVolumeSlots.has(slotId)) return;
+    const volumes = hasVolume ? fogVolumeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
+      const { position, rotation, scale } = component.transform;
+      const size = component.getVariable("size");
+      return {
+        id: component.guid, classId: component.classId, parentId: component.parentId,
+        properties: component.classId === "FogVolumeComponent" ? {
+          enabled: component.getVariable("enabled"), shape: component.getVariable("shape"),
+          size: size == null ? undefined : rgbTuple(size), density: component.getVariable("density"),
+          edgeFalloff: component.getVariable("edgeFalloff"),
+        } : {},
+        transform: { position: [position.x, position.y, position.z] as [number, number, number],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
+          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
+      };
+    })) : [];
+    this.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes });
+    if (volumes.length) this.fogVolumeSlots.add(slotId); else this.fogVolumeSlots.delete(slotId);
+  }
+
   private cameraAssignPayload(
     actor: Actor,
     camera: ActorComponent,
@@ -4008,6 +4033,7 @@ class InProcessRuntime implements RuntimeDriver {
   private emitMeshAssignment(actor: Actor, slotId: number): void {
     if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
     this.emitActorOutlines(actor, slotId);
+    this.emitActorFogVolumes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
     const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
@@ -4231,6 +4257,8 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "rigidbody",
         parts: [playMeshPartOf(rigid)],
       });
+    } else if (this.fogVolumeSlots.has(slotId)) {
+      this.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
     }
   }
 
@@ -4690,6 +4718,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (owner) this.ragdolls.retire(owner);
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
+    this.fogVolumeSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);

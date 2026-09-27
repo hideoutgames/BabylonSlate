@@ -58,6 +58,7 @@ describe("SceneLayer schema", () => {
             { id: "arm", classId: "SpringArmComponent", properties: {} },
             { id: "light", classId: "LightComponent", properties: {} },
             { id: "area", classId: "AreaRectLightComponent", properties: {} },
+            { id: "fog", classId: "FogVolumeComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
             { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: true } },
             ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent"].map((classId) => ({ id: classId, classId, properties: {} })),

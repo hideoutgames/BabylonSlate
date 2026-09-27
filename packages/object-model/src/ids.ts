@@ -33,6 +33,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
+  "FogVolumeComponent",
   "OutlineComponent",
   "HemisphericFillLightComponent",
   "SkyboxComponent",
@@ -96,6 +97,7 @@ const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
+  "FogVolumeComponent",
   "OutlineComponent",
   "HemisphericFillLightComponent",
 ]);

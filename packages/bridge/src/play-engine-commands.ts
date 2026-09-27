@@ -5,6 +5,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
   "setAreaLights",
   "setActorOutlines",
+  "setFogVolumes",
   "assignMaterial",
   "attachToBone",
   "captureRagdollPose",

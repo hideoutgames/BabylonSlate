@@ -23,6 +23,7 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
+  "FogVolumeComponent",
   "OutlineComponent",
   "HemisphericFillLightComponent",
   "RagdollComponent",

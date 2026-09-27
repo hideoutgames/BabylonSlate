@@ -304,6 +304,7 @@ export type CommandMessage =
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
   | { type: "waterTime"; seconds: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
+  | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@babylonslate/core").FogVolumeBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
