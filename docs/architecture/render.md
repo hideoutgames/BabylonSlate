@@ -6,6 +6,7 @@
 - Runtime realization and removal use bounded chunks. Async operations leave gameplay running; blocking operations hold a separate simulation pause until completion. The editor only builds the billboard and scene-name label.
 - Play and the packaged player share `createSceneStreamingReadiness`. A complete `sceneStreamRealized` batch identifies its actor slots; `prepareSceneStream` awaits only those model instances, owned textures, particle preparation and material consumers. It does not load another Babylon Scene or wait for unrelated streams. Loaded/progress 1 is acknowledged only after preparation succeeds.
 - Load identities and cancellation discard obsolete completions on unload, replacement, scene change or stop. Unload retires instance actors through the normal script, physics, audio, particle and render ownership paths; shared resource leases remain owned by other consumers.
+- Streamed content uses the parent's navigation mesh. Its agents and dynamic blockers are instance-owned; child baked navigation meshes and cost volumes are not merged. Child scenes must use the parent's physics-world kind (2D or 3D).
 
 See [authoring](scene-editing.md#scene-streaming) and [NodeGraph API](scripting.md#scene-streaming-nodes).
 
