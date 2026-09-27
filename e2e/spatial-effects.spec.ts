@@ -115,3 +115,72 @@ for (const backend of ["webgl2", "webgpu"] as const)
       ).toBeLessThan(5);
     });
   }
+
+/** Camera spans 12 x 9 world units in a 96 x 72 orthographic capture. */
+function fogDarkening(before: number[], after: number[], centerX: number, centerY: number) {
+  let difference = 0;
+  for (let y = centerY - 1; y <= centerY + 1; y++)
+    for (let x = centerX - 1; x <= centerX + 1; x++) {
+      const index = (y * 96 + x) * 4;
+      difference += before[index]! - after[index]!;
+    }
+  return difference / 9;
+}
+
+function pixelDifference(before: number[], after: number[]) {
+  return before.reduce((sum, value, index) => sum + Math.abs(value - after[index]!), 0) / before.length;
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`local fog volumes stay bounded and retire on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) &&
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        errors.push(message.text());
+    });
+    await page.goto("/?test=1&spatialEffectsProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __spatialEffectsProof?: unknown;
+    }).__spatialEffectsProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __spatialEffectsProof: typeof runSpatialEffectsProof;
+    }).__spatialEffectsProof(backend, "fogVolumes"), backend).catch(async (error: unknown) => {
+      await testInfo.attach("fog-volume-errors", {
+        body: JSON.stringify(errors), contentType: "application/json",
+      });
+      throw error;
+    });
+    await testInfo.attach("fog-volume-pixels", {
+      body: JSON.stringify(result), contentType: "application/json",
+    });
+    expect(errors).toEqual([]);
+    expect(result.reservations.reservedBytes).toBe(0);
+    expect(result.fogCaptures).toHaveLength(2);
+    for (const capture of result.fogCaptures) {
+      const { path, off, box, moved, sphere } = capture;
+      expect(off[(36 * 96 + 32) * 4], `${path}: visible neutral backdrop`).toBeGreaterThan(100);
+      expect(fogDarkening(off, box, 32, 36), `${path}: local fog activates with global fog disabled and density zero`).toBeGreaterThan(30);
+      expect(Math.abs(fogDarkening(off, box, 64, 36)), `${path}: neighboring rays remain clear`).toBeLessThan(1);
+
+      // One diagonal crosses the rotated long axis; the other misses its short
+      // axis. Sorting avoids depending on the GPU readback's vertical origin.
+      const diagonals = [
+        (fogDarkening(off, box, 40, 44) + fogDarkening(off, box, 24, 28)) / 2,
+        (fogDarkening(off, box, 40, 28) + fogDarkening(off, box, 24, 44)) / 2,
+      ].sort((a, b) => a - b);
+      expect(Math.abs(diagonals[0]!), `${path}: rotated box's narrow axis`).toBeLessThan(1);
+      expect(diagonals[1], `${path}: rotated box's long axis`).toBeGreaterThan(15);
+      expect(Math.abs(fogDarkening(off, moved, 32, 36)), `${path}: live movement clears the old location`).toBeLessThan(1);
+      expect(fogDarkening(off, moved, 64, 36), `${path}: live movement reaches the new location`).toBeGreaterThan(30);
+      expect(fogDarkening(off, sphere, 74, 36), `${path}: scaled sphere extends horizontally`).toBeGreaterThan(20);
+      expect(Math.abs(fogDarkening(off, sphere, 64, 44)), `${path}: scaled sphere remains narrow vertically`).toBeLessThan(1);
+      expect(pixelDifference(off, capture.disabled), `${path}: disabled local sources restore scene color`).toBeLessThan(1);
+      expect(pixelDifference(off, capture.removed), `${path}: removing the final source restores scene color`).toBeLessThan(1);
+      expect(fogDarkening(capture.insideOff, capture.inside, 48, 36), `${path}: camera inside a volume sees fog`).toBeGreaterThan(30);
+    }
+    expect(pixelDifference(result.fogCaptures[0]!.box, result.fogCaptures[1]!.box), "native and graph local fog parity").toBeLessThan(3);
+  });
+}

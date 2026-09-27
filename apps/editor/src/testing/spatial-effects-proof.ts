@@ -10,9 +10,12 @@ import {
   PointLight,
   Scene,
   SpotLight,
+  TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import {
+  fogVolumeBindings,
+  identitySerializedTransform,
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
 } from "@babylonslate/core";
@@ -24,7 +27,58 @@ import {
 } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
+import { removeFogVolumes, upsertFogVolumes } from "@babylonslate/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+
+async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => Promise<number[]>) {
+  const root = new TransformNode("Local Fog Actor", scene);
+  const properties = { enabled: true, shape: "box", size: [2, 2, 2], density: 0.8, edgeFalloff: 0 };
+  const update = () => upsertFogVolumes(scene, "fog-actor", root, fogVolumeBindings([{
+    id: "fog-component",
+    classId: "FogVolumeComponent",
+    properties,
+    transform: identitySerializedTransform(),
+  }]));
+  try {
+    const off = await draw();
+    root.position.x = -2;
+    root.scaling.set(1.5, 0.75, 1);
+    root.rotation.z = Math.PI / 4;
+    update();
+    const box = await draw();
+    // Root transform changes must reach the shader without replacing bindings.
+    root.position.x = 2;
+    const moved = await draw();
+    root.rotation.z = 0;
+    root.scaling.set(2, 0.5, 1);
+    properties.shape = "sphere";
+    update();
+    const sphere = await draw();
+    properties.enabled = false;
+    update();
+    const disabled = await draw();
+    properties.enabled = true;
+    update();
+    await draw();
+    removeFogVolumes(scene, "fog-actor");
+    const removed = await draw();
+
+    camera.position.set(0, 0, 0);
+    camera.setTarget(new Vector3(0, 0, 8));
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    const insideOff = await draw();
+    root.position.set(0, 0, 0);
+    root.scaling.set(1, 1, 1);
+    properties.shape = "box";
+    properties.size = [4, 4, 4];
+    update();
+    const inside = await draw();
+    return { off, box, moved, sphere, disabled, removed, insideOff, inside };
+  } finally {
+    removeFogVolumes(scene, "fog-actor");
+    root.dispose();
+  }
+}
 
 function normalIdentityDocument() {
   const document = createDefaultMaterialDocument("Normals Identity", "postProcess");
@@ -65,7 +119,7 @@ function normalIdentityDocument() {
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
-  kind: "reflections" | "point" | "spot" | "sun" | "combined",
+  kind: "reflections" | "point" | "spot" | "sun" | "combined" | "fogVolumes",
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -80,6 +134,7 @@ export async function runSpatialEffectsProof(
         });
   engine.setSize(96, 72);
   const captures = [];
+  const fogCaptures = [];
   try {
     for (const path of ["frameGraph", "classic"] as const) {
       const scene = new Scene(engine);
@@ -93,6 +148,15 @@ export async function runSpatialEffectsProof(
       camera.minZ = 0.1;
       camera.maxZ = 30;
       camera.setTarget(new Vector3(0, 0.6, 0));
+      if (kind === "fogVolumes") {
+        camera.position.set(0, 0, -8);
+        camera.setTarget(Vector3.Zero());
+        camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+        camera.orthoLeft = -6;
+        camera.orthoRight = 6;
+        camera.orthoTop = 4.5;
+        camera.orthoBottom = -4.5;
+      }
       scene.activeCamera = camera;
       if (path === "classic") scene.activeCameras = [camera];
       const black = new PBRMaterial("Neutral Occluders", scene);
@@ -104,6 +168,12 @@ export async function runSpatialEffectsProof(
         scene,
       );
       floor.material = black;
+      if (kind === "fogVolumes") {
+        black.albedoColor.set(0.6, 0.6, 0.6);
+        black.backFaceCulling = false;
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.z = 8;
+      }
       let light: DirectionalLight | SpotLight | PointLight | undefined;
       if (kind === "reflections" || kind === "combined") {
         const document = createDefaultMaterialDocument("Authored Mirror");
@@ -132,7 +202,7 @@ export async function runSpatialEffectsProof(
         box.position.y = 1.3;
         box.material = red;
       }
-      if (kind !== "reflections") {
+      if (kind !== "reflections" && kind !== "fogVolumes") {
         const position = new Vector3(0, 3, 0);
         light =
           kind === "point"
@@ -177,6 +247,11 @@ export async function runSpatialEffectsProof(
           anisotropy: 0,
         },
       });
+      if (kind === "fogVolumes") {
+        Object.assign(effects.volumetricLighting, {
+          enabled: false, density: 0, intensity: 0, resolutionScale: 1, maxDistance: 20,
+        });
+      }
       const settings = () =>
         setSceneRenderSettings(scene, {
           mode: "pbr",
@@ -244,6 +319,10 @@ export async function runSpatialEffectsProof(
         return result;
       };
       try {
+        if (kind === "fogVolumes") {
+          fogCaptures.push({ path, ...await captureFogVolumes(scene, camera, draw) });
+          continue;
+        }
         const off = await draw();
         effects.reflections.enabled =
           kind === "reflections" || kind === "combined";
@@ -365,7 +444,7 @@ export async function runSpatialEffectsProof(
         engine.endFrame();
       }
     }
-    return { captures, reservations: managedRenderReservations(engine) };
+    return { captures, fogCaptures, reservations: managedRenderReservations(engine) };
   } finally {
     engine.dispose();
     canvas.remove();
