@@ -185,6 +185,14 @@ warning, not a blocker. `material.stageMismatch` is raised when a fragment-only
 node (derivatives, `texture.sampleLod`, Normal Map, …) reaches **World Position
 Offset**, including through a Material Function (`call/inner` node ids).
 
+For Particle-domain Materials the editor adds `particle.texture_block_align`
+warnings (Compiler Results only; the Graph rings errors, not warnings) for
+sampled Textures WebGPU would reject, each with a **Set Usage To Particle** row
+action. Selecting the row focuses the sampling node (or the Function call
+holding it). The check needs
+registry data, so it lives in `apps/editor/src/lib/particle-texture-usage.ts`,
+not in the pure validator. See [particles](particles.md#look).
+
 ## Lowering and compilation
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:

@@ -131,6 +131,7 @@ import {
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
+import { applyTextureUsageChange, TextureUsageChangedError } from "../lib/asset-settings";
 import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
@@ -205,6 +206,26 @@ function headerMetaForSave(
     };
   }
   return undefined;
+}
+
+/** Texture payload fields owned by the registry's encode queue, not the document. */
+const TEXTURE_ENCODE_STATE_KEYS = ["compressionState", "ktx2ChunkId", "encodeError", "encodeWallMs"] as const;
+
+/**
+ * An open Texture document keeps the payload it opened with, but encodes can
+ * commit meanwhile. Saving takes these fields from the file (absent stays
+ * absent) so `ktx2ChunkId` never points back at a superseded encode.
+ */
+function withSavedTextureEncodeState(
+  content: Record<string, unknown>,
+  saved: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...content };
+  for (const key of TEXTURE_ENCODE_STATE_KEYS) {
+    if (key in saved) next[key] = saved[key];
+    else delete next[key];
+  }
+  return next;
 }
 
 export interface ProjectLoadResult {
@@ -498,11 +519,47 @@ export class ProjectService {
 
   async retryTextureEncoding(
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
     );
+  }
+
+  /**
+   * Texture Details' Usage change for a Texture without an open tab: the new
+   * Usage is saved to the file at once, then the Texture re-encodes when the
+   * change affects its encode. The read and the save share the asset's write
+   * slot, so an encode commit cannot rewrite the file between them. Returns
+   * the Usage it replaced; null when `guid` is not a Texture or already uses
+   * `usage` (nothing is saved). With `expectedUsage` (an Undo), a file whose
+   * Usage is neither `usage` nor `expectedUsage` is left alone and the call
+   * rejects with `TextureUsageChangedError`.
+   */
+  async setTextureUsage(
+    guid: string,
+    usage: string,
+    expectedUsage?: string,
+  ): Promise<{ previousUsage: string } | null> {
+    const registry = this.assetRegistry;
+    if (registry?.getByGuid(guid)?.header.type !== "Texture") return null;
+    const saved = await registry.withAssetWrite(guid, async () => {
+      // A move queued ahead of this write may have changed the path.
+      const asset = registry.getByGuid(guid);
+      if (asset?.header.type !== "Texture") return null;
+      const payload = (await this.loadDocument("texture", asset.path)) as Record<string, unknown>;
+      const previousUsage = String(payload.usage ?? "albedo");
+      if (previousUsage === usage) return null;
+      if (expectedUsage !== undefined && previousUsage !== expectedUsage) {
+        throw new TextureUsageChangedError(previousUsage);
+      }
+      const change = applyTextureUsageChange(payload, usage);
+      await this.saveDocumentUnlocked("texture", asset.path, change.payload);
+      return { previousUsage, shouldRequeue: change.shouldRequeue };
+    });
+    if (!saved) return null;
+    if (saved.shouldRequeue) await this.retryTextureEncoding(guid, { force: true, usage });
+    return { previousUsage: saved.previousUsage };
   }
 
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
@@ -1682,6 +1739,9 @@ export class ProjectService {
         kind === "animation") &&
       existing !== null &&
       !existing.hasDocumentChunk;
+    if (storeInHeader && existing && type === "Texture") {
+      content = withSavedTextureEncodeState(content as Record<string, unknown>, existing.payload);
+    }
 
     if (isAssetDocumentPath(path)) {
       const extraChunks = await this.extraChunksFor(path);
@@ -1895,6 +1955,7 @@ export class ProjectService {
     name: string;
     parentClass: string | null;
     hasDocumentChunk: boolean;
+    payload: Record<string, unknown>;
   } | null> {
     if (!(await this.storageForPath(path).exists(path))) return null;
     try {
@@ -1908,6 +1969,7 @@ export class ProjectService {
         hasDocumentChunk: header.chunks.some(
           (chunk) => chunk.id === DOCUMENT_CHUNK_ID,
         ),
+        payload: header.payload,
       };
     } catch {
       return null;
