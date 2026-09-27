@@ -6,7 +6,8 @@ import { projectContentRoot, type ContentRoot } from "./content-root";
 import { EncodeQueue, type EncodeJobResult } from "./encode-queue";
 import { sniffImageSize } from "./image-size";
 import { AssetRegistry } from "./registry";
-import { textureEncodeSize } from "./texture-compression";
+import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
+import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId, textureEncodeSize } from "./texture-compression";
 import { createDefaultTilesetPayload } from "./tileset-payload";
 
 /** PNG signature + IHDR size (enough for size sniffing). */
@@ -33,7 +34,14 @@ function ktx2(width: number, height: number): Uint8Array {
 const KEY_MAX_1 = "ktx2:30d6ee4fb9bf2d2e";
 const KEY_MAX_64 = "ktx2:e733358fdabe67c2";
 const KEY_MAX_2048 = "ktx2:34dad383eac5f9b6";
-const PARTICLE_KEY_MAX_1 = "ktx2:particle-max-1";
+
+/** The id a 1x1 Particle encode commits under (its `blockAlign` is keyed). */
+function particleKeyMax1(): Promise<string> {
+  return textureEncodeChunkId(
+    textureEncodeSettingsFor({ usage: "particle", width: 1, height: 1 }, DEFAULT_TEXTURE_ENCODE_SETTINGS, "particle"),
+    "particle",
+  );
+}
 
 async function writeTexture(
   storage: MemoryStorageAdapter,
@@ -121,8 +129,10 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/aligned.babasset", "aligned", { source: [64, 32], committed: { id: KEY_MAX_64, size: [64, 32] } });
     await writeTexture(storage, "assets/atlas-odd.babasset", "atlas-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     await writeTexture(storage, "assets/locked-odd.babasset", "locked-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    // A Particle encode from before sizes were recorded, under its real id: its
+    // clamped source size is off the grid, but Particle always pads.
     await writeTexture(storage, "assets/particle-odd.babasset", "particle-odd", {
-      usage: "particle", source: [1, 1], committed: { id: PARTICLE_KEY_MAX_1, size: [4, 4] },
+      usage: "particle", source: [1, 1], committed: { id: await particleKeyMax1(), size: [4, 4] },
     });
     // No recorded source size (Model textures, WebP): the committed KTX2 header decides.
     await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
