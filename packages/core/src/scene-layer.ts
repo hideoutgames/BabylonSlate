@@ -10,26 +10,13 @@ import {
   type SerializedOutlinerFolder,
   type SerializedScene,
 } from "./scene";
+import { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
+export { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
 /** SceneLayer document schema (v1): overlay actors, folders, 2D gravity, post-process. */
 export const SCENE_LAYER_SCHEMA_VERSION = 1;
-
-export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
-  "SkyboxComponent",
-  "CameraComponent",
-  "RenderTargetCaptureComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-  "RagdollComponent",
-  "SceneStreamingComponent",
-] as const;
 
 export type SceneLayerDeniedComponentClassId =
   (typeof SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS)[number];

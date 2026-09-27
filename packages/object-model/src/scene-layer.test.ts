@@ -48,6 +48,8 @@ describe("SceneLayer object model", () => {
     expect(isSceneLayerAllowedComponent("RigidBodyComponent")).toBe(true);
     expect(isSceneLayerAllowedComponent("ColliderComponent")).toBe(true);
     expect(isSceneLayerAllowedComponent("2DButtonComponent")).toBe(true);
+    expect(isSceneLayerAllowedComponent("LandscapeComponent")).toBe(false);
+    expect(isSceneLayerAllowedComponent("FoliageComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("SkyboxComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("CameraComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("LightComponent")).toBe(false);

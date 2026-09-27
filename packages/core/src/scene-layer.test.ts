@@ -53,6 +53,8 @@ describe("SceneLayer schema", () => {
           ...createActor("banner", "Banner", { classId: "SceneLayerActor" }),
           components: [
             { id: "sprite", classId: "SpriteComponent", properties: {} },
+            { id: "landscape", classId: "LandscapeComponent", properties: {} },
+            { id: "foliage", classId: "FoliageComponent", properties: {} },
             { id: "sky", classId: "SkyboxComponent", properties: {} },
             { id: "cam", classId: "CameraComponent", properties: {} },
             { id: "capture", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: "depth" } },

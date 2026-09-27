@@ -1,3 +1,13 @@
+import {
+  ENGINE_COMPONENT_CLASS_IDS,
+  SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS,
+  SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
+  type EngineComponentClassId,
+} from "@babylonslate/core";
+
+export { ENGINE_COMPONENT_CLASS_IDS, SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS };
+export type { EngineComponentClassId };
+
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
@@ -22,88 +32,10 @@ export const ENGINE_BASE_CLASS_IDS = [
 
 export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
 
-/** Engine component class ids registered from P3 (behaviour filled later). */
-export const ENGINE_COMPONENT_CLASS_IDS = [
-  "SceneStreamingComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "MeshComponent",
-  "SpriteComponent",
-  "TilemapComponent",
-  "CameraComponent",
-  "RenderTargetCaptureComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-  "SkyboxComponent",
-  "Text3DComponent",
-  "AudioComponent",
-  "ParticleComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent",
-  "WaterLakeComponent",
-  "WaterRiverComponent",
-  "WaterPuddleComponent",
-  "WaterRemovalVolumeComponent",
-  "WaterBuoyancyComponent",
-  "RigidBodyComponent",
-  "ColliderComponent",
-  "PhysicsConstraintComponent",
-  "RagdollComponent",
-  "AnimationGraphComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
-  "NavMeshComponent",
-  "NavMeshBlockerComponent",
-  "BlockingVolumeComponent",
-  "2DAnchorComponent",
-  "2DButtonComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DPanelComponent",
-] as const;
-
-export type EngineComponentClassId =
-  (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
-
-export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
-  "2DAnchorComponent",
-  "2DButtonComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DPanelComponent",
-] as const;
-
 export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
-const SCENE_LAYER_DENIED_COMPONENTS = new Set([
-  "SceneStreamingComponent",
-  "RenderTargetCaptureComponent",
-  "RagdollComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent",
-  "WaterLakeComponent",
-  "WaterRiverComponent",
-  "WaterPuddleComponent",
-  "WaterRemovalVolumeComponent",
-  "WaterBuoyancyComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "SkyboxComponent",
-  "CameraComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-]);
+const SCENE_LAYER_DENIED_COMPONENTS = new Set(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS);
 
 export function isSceneLayerAllowedComponent(classId: string): boolean {
   return !SCENE_LAYER_DENIED_COMPONENTS.has(classId);
