@@ -87,7 +87,7 @@ it("prepares clustered lighting once per requested color capture while retrying 
   const light = new HemisphericLight("Cluster Boundary", Vector3.Up(), scene);
   vi.spyOn(light, "getTypeID").mockReturnValue(LightConstants.LIGHTTYPEID_CLUSTERED_CONTAINER);
   const batchDraw = vi.fn();
-  const update = vi.fn((_camera: { name: string } | null) => ({ render: batchDraw }));
+  const update = vi.fn<(camera: { name: string } | null) => { render: typeof batchDraw }>(() => ({ render: batchDraw }));
   Object.assign(light, { isSupported: true, _updateBatches: update });
   const output = captures.acquireTexture("texture")!.resource;
   captures.request("capture"); captures.render();
