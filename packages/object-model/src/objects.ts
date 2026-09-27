@@ -2,6 +2,7 @@ import {
   identityTransform,
   newGuid,
   normalizeScenePostProcessStack,
+  normalizeSceneStreamingProperties,
   type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
@@ -160,6 +161,22 @@ export class Actor extends BObject {
     component.owner = this;
     this.components.push(component);
     if (this.world) component.callOnCreation();
+  }
+}
+
+/** Typed live actor identity for a placed additive-scene origin. */
+export class SceneStreamingActor extends Actor {
+  get targetSceneGuid(): string {
+    return this.sceneStreamingProperties.sceneGuid;
+  }
+
+  get targetSceneName(): string {
+    return this.sceneStreamingProperties.sceneName;
+  }
+
+  private get sceneStreamingProperties() {
+    const component = this.components.find((entry) => entry.classId === "SceneStreamingComponent");
+    return normalizeSceneStreamingProperties(component ? Object.fromEntries(component.variables) : undefined);
   }
 }
 

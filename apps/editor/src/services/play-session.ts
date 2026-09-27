@@ -51,7 +51,7 @@ import {
 import {
   createEngine,
   createSceneLoadReadiness,
-  textureBlockSizeMessage,
+  createSceneStreamingReadiness,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -59,7 +59,6 @@ import {
   type EngineHandle,
   type ParticleLibrary,
   type PlayActorPosition,
-  type TextureBlockSizeDiagnostic,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -129,20 +128,6 @@ export function deliverInspectSnapshot(
 
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
-}
-
-/** Session report entry for a texture WebGPU could not draw; Play keeps running. */
-export function textureBlockSizeReportEntry(
-  diagnostic: TextureBlockSizeDiagnostic,
-  name?: string,
-): RuntimeDiagnostic {
-  return {
-    code: diagnostic.code,
-    severity: "error",
-    message: textureBlockSizeMessage({ ...diagnostic, name: name ?? diagnostic.assetGuid }),
-    assetGuid: diagnostic.assetGuid,
-    frameId: 0,
-  };
 }
 
 /** Apply worker sessionPaused onto Play overlay chrome. */
@@ -493,6 +478,8 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -530,8 +517,6 @@ export function startPlaySession(options: {
   >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Texture display names for session report entries. */
-  textureName?: (guid: string) => string | undefined;
   /** Reads bake assets (project registry or packed container). */
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
@@ -595,8 +580,6 @@ export function startPlaySession(options: {
     if (worker) worker.postControl(control);
     else runtime?.applyRenderPathStatus(control);
   };
-  // Renderer problems the runtime never sees; merged into the Stop report.
-  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const handle = createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
@@ -607,6 +590,8 @@ export function startPlaySession(options: {
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
     waterPayloads: options.waterPayloads,
+    renderTargets: options.renderTargets,
+    renderTargetTextures: options.renderTargetTextures,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -659,11 +644,6 @@ export function startPlaySession(options: {
         diagnostic.message,
         diagnostic.severity === "error" ? "error" : "warning",
       );
-    },
-    onTextureDiagnostic: (diagnostic) => {
-      const entry = textureBlockSizeReportEntry(diagnostic, options.textureName?.(diagnostic.assetGuid));
-      hostDiagnostics.push(entry);
-      options.onLog?.(entry.message, "error");
     },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
@@ -727,6 +707,7 @@ export function startPlaySession(options: {
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
+  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
@@ -774,6 +755,22 @@ export function startPlaySession(options: {
       finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
+  const streamReadiness = createSceneStreamingReadiness({
+    handle,
+    onProgress: ({ actorGuid, streamLoadId }, progress) => {
+      worker?.postControl({ type: "sceneStreamProgress", actorGuid, streamLoadId, progress });
+      runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
+    },
+    onReady: ({ actorGuid, streamLoadId }) => {
+      worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
+      runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
+    },
+    onFailed: ({ actorGuid, streamLoadId }, error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
+      runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
+    },
+  });
   const consoleWaiters: Array<
     (result: { success: boolean; output: string }) => void
   > = [];
@@ -804,6 +801,7 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
+    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {
@@ -815,11 +813,12 @@ export function startPlaySession(options: {
     ) {
       handle.applyCommand(command);
     }
-    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }
     sceneReadiness.receive(command);
+    streamReadiness.receive(command);
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
@@ -914,8 +913,10 @@ export function startPlaySession(options: {
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,
+    renderTargets: Object.fromEntries(options.renderTargets ?? []),
+    renderTargetTextures: Object.fromEntries(options.renderTargetTextures ?? []),
   });
 
   try {
@@ -1208,6 +1209,7 @@ export function startPlaySession(options: {
       resetBoot();
       pauseGate?.reset();
       sceneReadiness.dispose();
+      streamReadiness.dispose();
       stopped = true;
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);

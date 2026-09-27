@@ -1,5 +1,7 @@
 import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
-import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
+import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -84,7 +86,15 @@ export interface ScriptHostServices {
   /** World actors in deterministic spawn order for class queries. */
   getActors?(): readonly Actor[];
   /** Live Scene instance for the active Play scene, if any. */
-  getSceneReference?(): Scene | null;
+  getSceneReference?(owner?: BObject | null): Scene | null;
+  getTargetSceneName?(target: unknown): string;
+  loadScene?(target: unknown, blocking: boolean): Promise<void>;
+  unloadScene?(target: unknown, blocking: boolean): Promise<void>;
+  isSceneLoaded?(target: unknown): boolean;
+  getSceneLoadProgress?(target: unknown): number;
+  getSceneState?(target: unknown): SceneStreamingState;
+  resolveInstanceId?(owner: BObject | null, id: string): string;
+  waitForSimulation?(owner: BObject | null): Promise<void>;
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -94,7 +104,7 @@ export interface ScriptHostServices {
     transform?: unknown,
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
-  spawnActor?(classId: string, transform?: unknown): Actor | null;
+  spawnActor?(classId: string, transform?: unknown, owner?: BObject | null): Actor | null;
   attachToBone?(actor: Actor, target: Actor | null, boneName: string): void;
   print(
     message: string,
@@ -186,6 +196,9 @@ export interface ScriptHostServices {
   getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
   resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
   possessCamera?(target: unknown): void;
+  getRenderTargetMode?(guid: string): RenderTargetMode;
+  getRenderTargetTextureTarget?(guid: string): string | null;
+  captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
@@ -366,6 +379,14 @@ export interface ScriptContext {
   spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;
+  getTargetSceneName(target: unknown): string;
+  loadSceneAsync(target: unknown): void;
+  unloadSceneAsync(target: unknown): void;
+  loadSceneBlocking(target: unknown): Promise<void>;
+  unloadSceneBlocking(target: unknown): Promise<void>;
+  isSceneLoaded(target: unknown): boolean;
+  getSceneLoadProgress(target: unknown): number;
+  getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
   getSceneReference(): Scene | null;
@@ -504,6 +525,11 @@ export interface ScriptContext {
   resetMaterialColorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
   possessCamera(target: unknown): void;
+  getRenderTargetMode(guid: string | null): RenderTargetMode;
+  getRenderTargetTextureTarget(guid: string | null): string | null;
+  captureRenderTarget(target: unknown): void;
+  getRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty): unknown;
+  setRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty, value: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
   getCameraOrthographicSize(target: unknown): number;
@@ -929,10 +955,21 @@ export class ScriptHost {
       setVariable: (name, value) => {
         store?.setVariable(name, value);
       },
-      getVariableFrom: (target, name) =>
-        (target ?? self)?.getVariable(name),
+      getVariableFrom: (target, name) => {
+        const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
+          return this.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
+        }
+        return object?.getVariable(name);
+      },
       setVariableOn: (target, name, value) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
+          if (this.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
+            this.applyComponentVariable(object, name, value);
+          }
+          return;
+        }
         if (object instanceof Scene && String(name ?? "") === "gravity") {
           const gravity = asScriptVec3(value);
           if (!gravity) return;
@@ -1162,13 +1199,19 @@ export class ScriptHost {
         componentsOfType(services, classId).next().value ?? null,
       getAllComponentsOfType: (classId) =>
         [...componentsOfType(services, classId)],
-      getComponentById: (actor, componentId) =>
-        findComponentByIdFromTarget(
-          actor ?? self,
-          componentId,
+      getComponentById: (actor, componentId) => {
+        const target = actor ?? self;
+        // Spawned prefabs resolve their own sourceId before an authored scene
+        // component with the same id can claim the stream-wide translation.
+        const local = findComponentById(asActor(target), componentId);
+        if (local) return local;
+        return findComponentByIdFromTarget(
+          target,
+          services.resolveInstanceId?.(target, componentId) ?? componentId,
           services.getActors?.(),
-          services.getSceneReference?.() ?? null,
-        ),
+          services.getSceneReference?.(target) ?? null,
+        );
+      },
       callComponentFunction: (target, name, args) =>
         this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
       addComponent: (actor, classId, transform) => {
@@ -1177,13 +1220,29 @@ export class ScriptHost {
         return services.addComponent?.(target, classId, transform) ?? null;
       },
       spawnActor: (classId, transform) =>
-        services.spawnActor?.(String(classId), transform) ?? null,
+        services.spawnActor?.(String(classId), transform, self) ?? null,
       getSceneLoadingProgress: () =>
         clamp01(services.getSceneLoadingProgress?.() ?? 1),
+      getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
+      loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
+      unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
+      loadSceneBlocking: async (target) => {
+        await services.loadScene?.(target, true);
+        await services.waitForSimulation?.(self);
+        if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+      },
+      unloadSceneBlocking: async (target) => {
+        await services.unloadScene?.(target, true);
+        await services.waitForSimulation?.(self);
+        if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+      },
+      isSceneLoaded: (target) => services.isSceneLoaded?.(target) ?? false,
+      getSceneLoadProgress: (target) => clamp01(services.getSceneLoadProgress?.(target) ?? 0),
+      getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
       getProjectName: () => services.getProjectName?.() ?? "",
       getProjectVersion: () => services.getProjectVersion?.() ?? "",
       getSceneReference: () => {
-        const scene = services.getSceneReference?.() ?? null;
+        const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
       },
       isA: (instance, classId) => {
@@ -1507,6 +1566,23 @@ export class ScriptHost {
       },
       possessCamera: (target) => {
         services.possessCamera?.(target);
+      },
+      getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
+      getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
+      captureRenderTarget: (target) => {
+        const component = captureComponent(target);
+        if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
+      },
+      getRenderTargetCaptureProperty: (target, key) => {
+        const component = captureComponent(target);
+        if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
+        return key === "actorIds" ? captureActorReferences(component, (id) => services.findActor?.(id)) : captureProperties(component)[key];
+      },
+      setRenderTargetCaptureProperty: (target, key, value) => {
+        const component = captureComponent(target);
+        if (component && this.canInvokeOwner(component) && setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) {
+          this.applyComponentVariable(component, key, value);
+        }
       },
       getCameraFieldOfView: (target) =>
         Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),

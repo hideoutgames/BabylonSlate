@@ -107,6 +107,8 @@ export type ControlMessage =
       materialParameterCatalog?: MaterialParameterCatalog;
       /** Loaded 2D Texture assets; environment containers are excluded. */
       materialTextureAssetGuids?: string[];
+      renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
+      renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
       /** Animation / Sprite Animation clip metadata for BT Play Animation. */
       animClipCatalog?: Array<{
         guid: string;
@@ -196,6 +198,9 @@ export type ControlMessage =
   | { type: "sceneLayerLoadingPainted"; layerId: string; layerLoadId: number }
   | { type: "sceneLayerReady"; layerId: string; layerLoadId: number }
   | { type: "sceneModelsReady"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneStreamReady"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneStreamProgress"; actorGuid: string; streamLoadId: number; progress: number }
+  | { type: "sceneStreamFailed"; actorGuid: string; streamLoadId: number; message: string }
   /** Engine-reported render path status for `renderpath` console readback. */
   | ({ type: "renderPathStatus" } & RenderPathStatus)
   | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement };
@@ -295,11 +300,20 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "captureRenderTarget"; actorGuid: string }
+  | {
+      type: "configureRenderTargetCapture";
+      actorGuid: string;
+      slotId: number;
+      settings: import("@babylonslate/core").RenderTargetCaptureProperties | null;
+      transform?: import("@babylonslate/core").Transform;
+    }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
   | { type: "waterTime"; seconds: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
+  | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@babylonslate/core").FogVolumeBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
@@ -309,6 +323,9 @@ export type CommandMessage =
       classId: string;
       /** Live overlay instance id when this actor belongs to a SceneLayer. */
       sceneLayerId?: string | null;
+      /** Loading stream ownership is available before asynchronous visual assignment. */
+      sceneStreamActorGuid?: string;
+      streamLoadId?: number;
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
@@ -463,6 +480,10 @@ export type CommandMessage =
     }
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
+  | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneStreamBlocking"; blocking: boolean }
+  | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
+  | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }
   | { type: "sceneLayerLoading"; layerId: string; assetGuid: string; layerLoadId: number }
   | { type: "sceneLayerLoadFailed"; layerId: string; layerLoadId: number; message: string }

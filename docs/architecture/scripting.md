@@ -4,6 +4,12 @@ Shared surface for graph IR, pin types, validation, and JS codegen (engineplan �
 
 P4 already owns stack→node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them. ExecuteJavaScript hoist lines carry `bodyLine` so a runtime throw inside the user body maps to the CodeMirror line; tapping a session-report row opens the owning Class (or BehaviourTree) asset if needed. `Log` at Error severity is a session-report row (`runtime.log`), not only Output Log.
 
+## Render target capture
+
+The rendering nodes expose **Get Render Target Mode** from a RenderTarget asset reference and **Get Texture Render Target** from a RenderTargetTexture reference. The mode output is the engine **Render Target Mode** enum, usable with enum comparison and selection nodes.
+
+Nodes taking a **Render Target Capture** actor reference expose Get/Set Target, Enabled, Capture Every Frame, Capture Only Actors, Actors, Field Of View, Near Clip, and Far Clip, plus **Capture Render Target**. Actors is an `Actor[]` pin: getters resolve saved IDs to live actors, and setters persist their IDs. Missing/destroyed actors are omitted; mutating a returned array does not change the filter until Set is called. The capture component's reflected properties use the same behavior. Missing asset lookups return Scene Color for mode and None for a texture's target. See [capture rendering](render.md#render-targets).
+
 ## Project getters
 
 The Project node category exposes pure string getters **Get Project Name** (`project.getName`) and **Get Project Version** (`project.getVersion`). They read authored metadata through `ctx.getProjectName()` / `ctx.getProjectVersion()` in Play, worker sessions, and packaged builds. Editor utility hosts read the current project's metadata. Version is set in Project Settings > General and is informational; it does not change execution. See [exported identity](exporter.md#project-identity).
@@ -356,9 +362,26 @@ Normal Play includes compiled prefab components in resource discovery, so an unp
 
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` when handling explicit bridge spawn requests; loading their scripts never creates Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 
+### Scene streaming nodes
+
+All streaming nodes require a **Target** reference typed as `SceneStreamingActor`. The actor is a live object reference distinct from a Scene asset or the current world Scene.
+
+| Node | Result |
+| --- | --- |
+| Get Target Scene Name | Target Scene name as a String |
+| Load Scene Async / Unload Scene Async | Start the operation and continue the graph and gameplay |
+| Load Scene Blocking / Unload Scene Blocking | Pause gameplay simulation until the operation completes, then continue the graph |
+| Is Scene Loaded | Boolean; true only after the complete actor batch and its render resources are ready |
+| Get Scene Load Progress | Float from 0 to 1; 0 when unloaded, 1 only when fully loaded |
+| Get Scene State | Engine `SceneStreamingState` enum: Unloaded, Loading, Loaded, Unloading |
+
+Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
+
+The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
+
 ### Actor component graph APIs
 
-Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
+Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, scene-wide fog/IBL, `physicsWorld`, editor grid) stay off the catalog.
 
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
@@ -371,6 +394,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `SpringArmComponent` | Arm Length, Enable Location Lag, Location Lag Speed, Max Location Lag Distance, Enable Rotation Lag, Rotation Lag Speed, Draw Debug Lag | — | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
 | `HemisphericFillLightComponent` | Enabled, Color, Ground Color, Intensity | — | — |
+| `FogVolumeComponent` | Enabled (`bool`), Shape (`string`: `box` / `sphere`), Size (`vec3`), Density (`float`), Edge Falloff (`float`) | — | — |
 | `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |
 | `2DTextComponent` / `2DRichTextComponent` | shared text + Hit Test, Renderer, Outline, Outline Color, Alignment, Vertical Alignment, Bold, Italic, Underline, Wrap Width, Wrap Height | Set Text | On Text Changed |
 | `AudioComponent` | Audio, Volume, Loop | Play, Stop | On Audio Finished |

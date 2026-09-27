@@ -67,6 +67,19 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits capture settings through typed controls and keeps actor filtering opt-in", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "capture", classId: "RenderTargetCaptureComponent", properties: defaultPropertiesFor("RenderTargetCaptureComponent") });
+  const target = rows.find((row) => row.label === "Render Target");
+  if (target?.kind !== "asset") throw new Error("Missing Render Target picker");
+  target.onPick();
+  expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "renderTargetGuid", allowedTypes: ["RenderTarget"] }));
+  const filter = rows.find((row) => row.label === "Capture Only Actors");
+  if (filter?.kind !== "boolean") throw new Error("Missing capture filter");
+  expect(filter.value).toBe(false);
+  filter.onChange(true);
+  expect(update).toHaveBeenCalledWith("captureOnlyActors", true);
+});
+
 it("edits Global Water Volume settings without exposing finite bounds", () => {
   const { rows, update } = rowsFor({ id: "global", classId: "GlobalWaterVolumeComponent", properties: {} });
   expect(rows.some((row) => row.label === "Width" || row.label === "Length")).toBe(false);
@@ -106,6 +119,38 @@ it("edits a Water Removal Volume with only the sizes its shape uses", () => {
 });
 
 describe("componentPropertyRows", () => {
+  it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {
+    const { rows, onPickAsset, update } = rowsFor({ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "cave", sceneName: "Cave" } }, { assetLabel: () => "Cave", assetType: () => "Scene" });
+    expect(rows).toHaveLength(1);
+    const target = rows[0];
+    if (target?.kind !== "asset") throw new Error("Missing Target Scene picker");
+    expect(target.displayLabel).toBe("Cave");
+    target.onPick?.();
+    expect(onPickAsset).toHaveBeenCalledWith({ componentId: "stream", property: "sceneGuid", allowedTypes: ["Scene"], title: "Pick Target Scene" });
+    target.onChange?.(null);
+    expect(update).toHaveBeenCalledWith("sceneGuid", null);
+  });
+
+  it("authors fog shape independently and keeps size, density and edge falloff in valid ranges", () => {
+    const properties = { ...defaultPropertiesFor("FogVolumeComponent"), size: [4, 6, 8], density: 0.005 };
+    const { rows, update } = rowsFor({ id: "fog", classId: "FogVolumeComponent", properties });
+    const shape = rows.find((row) => row.label === "Shape");
+    const size = rows.find((row) => row.label === "Size");
+    const density = rows.find((row) => row.label === "Density");
+    const edge = rows.find((row) => row.label === "Edge Falloff");
+    if (shape?.kind !== "enum" || size?.kind !== "vector3" || density?.kind !== "number" || edge?.kind !== "slider") throw new Error("Missing Fog Volume controls");
+    shape.onChange("sphere");
+    expect(update).toHaveBeenLastCalledWith("shape", "sphere");
+    expect(properties.size).toEqual([4, 6, 8]);
+    size.onChange([-2, 7, 9]);
+    expect(update).toHaveBeenLastCalledWith("size", [0.01, 7, 9]);
+    density.onChange(0.000125);
+    expect(update).toHaveBeenLastCalledWith("density", 0.000125);
+    density.onChange(-1);
+    expect(update).toHaveBeenLastCalledWith("density", 0);
+    edge.onChange(2);
+    expect(update).toHaveBeenLastCalledWith("edgeFalloff", 1);
+  });
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
     expect(properties).toEqual({ enabled: true, color: [0.03, 0.03, 0.03], width: 1, throughMeshes: false });

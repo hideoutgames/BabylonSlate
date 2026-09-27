@@ -152,6 +152,55 @@ describe("OPFS / web storage adapter", () => {
     ]);
   });
 
+  /** A stubbed OPFS project whose `file.babasset` hands out each snapshot in turn. */
+  async function adapterOverSnapshots(snapshots: Array<() => Promise<ArrayBuffer>>) {
+    let reads = 0;
+    const handle = {
+      getFile: async () => {
+        const read = snapshots[Math.min(reads, snapshots.length - 1)]!;
+        reads += 1;
+        return { arrayBuffer: read };
+      },
+    };
+    const project = {
+      getFileHandle: async (name: string) => {
+        if (name !== "file.babasset") throw new DOMException("missing", "NotFoundError");
+        return handle;
+      },
+    };
+    const root = { getDirectoryHandle: async () => project };
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Test.babproject");
+    return { storage, reads: () => reads };
+  }
+
+  it("reads the saved file when a write replaces it between getFile() and the read", async () => {
+    // Chromium fails a getFile() snapshot once a writable closes over the file:
+    // NotReadableError, or NotFoundError when the old contents are already gone.
+    for (const name of ["NotReadableError", "NotFoundError"]) {
+      const { storage } = await adapterOverSnapshots([
+        () => Promise.reject(new DOMException("stale snapshot", name)),
+        async () => new Uint8Array([4, 5, 6]).buffer,
+      ]);
+      expect(await storage.readBinary("file.babasset")).toEqual(new Uint8Array([4, 5, 6]));
+    }
+  });
+
+  it("reports a file that stays unreadable by its error, and a missing one as not found", async () => {
+    const { storage, reads } = await adapterOverSnapshots([
+      () => Promise.reject(new DOMException("stale snapshot", "NotReadableError")),
+    ]);
+    const unreadable = storage.readBinary("file.babasset");
+    await expect(unreadable).rejects.toThrow(/NotReadableError/);
+    await expect(unreadable).rejects.not.toThrow(/File not found/);
+    // Retried with fresh snapshots before giving up.
+    expect(reads()).toBeGreaterThan(1);
+    await expect(storage.readBinary("missing.babasset")).rejects.toThrow(
+      "File not found: missing.babasset",
+    );
+  });
+
   it("treats a trailing slash and dot as the same directory", async () => {
     const storage = await openedAdapter();
     await storage.writeText("scenes/main.scene.json", "{}");

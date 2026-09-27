@@ -338,20 +338,25 @@ export function createDefaultMaterialDocument(
 }
 
 /**
- * Change a material's domain, dropping the old terminal and any node the new
- * domain does not allow. Switching would otherwise leave, say, a Scene Color
- * node in a surface material, which only surfaces later as a validation error.
- * Switching to Particle also wires Particle Color into the new Particle Output.
+ * Change a material's domain, dropping any node the new domain does not allow.
+ * Switching would otherwise leave, say, a Scene Color node in a surface
+ * material, which only surfaces later as a validation error. Surface and
+ * Landscape draw through the same Material Output, so it stays with its
+ * position, pin defaults and wires; any other switch replaces the terminal with
+ * an unwired one. Switching to Particle also wires Particle Color into the new
+ * Particle Output.
  */
 export function setMaterialDomain(
   doc: MaterialDocument,
   domain: MaterialDomain,
 ): MaterialDocument {
   if (doc.domain === domain) return doc;
+  const terminalType = terminalNodeTypeFor(domain);
+  const keepsTerminal = terminalNodeTypeFor(doc.domain) === terminalType;
   const kept = doc.nodes.filter((node) => {
     const definition = materialNodeDefinition(node.type);
     if (!definition) return true;
-    if (definition.terminal) return false;
+    if (definition.terminal) return keepsTerminal && node.type === terminalType;
     return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
   });
   const keptIds = new Set(kept.map((node) => node.id));

@@ -10,11 +10,13 @@ import {
   emptySkyboxFaces,
   parseText3DProperties,
   parseAreaRectLightProperties,
+  parseFogVolumeProperties,
   parseOutlineProperties,
   parseRagdollProperties,
   parseSpringArmProperties,
   createRichText2DComponent,
   createText2DComponent,
+  createDefaultRenderTargetCaptureProperties,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -91,6 +93,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   ),
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
   engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
+  engineComponent("FogVolumeComponent", "Fog Volume", "Local box or sphere of volumetric fog with soft edges", "Rendering"),
   engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
   engineComponent(
     "HemisphericFillLightComponent",
@@ -111,6 +114,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Rendering",
   ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
+  engineComponent("RenderTargetCaptureComponent", "Render Target Capture", "Captures a selected render pass into a Render Target", "Camera"),
   engineComponent(
     "SpringArmComponent",
     "Spring Arm",
@@ -260,6 +264,10 @@ export function defaultPropertiesFor(
       };
     case "AreaRectLightComponent":
       return { ...parseAreaRectLightProperties({}) };
+    case "RenderTargetCaptureComponent":
+      return { ...createDefaultRenderTargetCaptureProperties() };
+    case "FogVolumeComponent":
+      return { ...parseFogVolumeProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":

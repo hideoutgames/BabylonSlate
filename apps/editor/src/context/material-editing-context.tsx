@@ -343,7 +343,7 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || !readAssetChunk) continue;
+        if (!asset || asset.header.type === "RenderTargetTexture" || !readAssetChunk) continue;
         const pixels = await readAssetChunk(asset.path, "pixels");
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);

@@ -10,7 +10,7 @@ import {
   type CubeTexture,
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@babylonslate/assets";
-import { PIXEL_ART_TEXTURE_SAMPLING, TextureUploadRefusedError, type TextureResources, type ResourceLease } from "./resource-cache";
+import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
 import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -19,14 +19,11 @@ import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
-  /**
-   * A Sprite, Tilemap or 2D texture was not uploaded because WebGPU would
-   * reject it; the mesh draws with its default or unlit material instead.
-   */
-  onTextureRefused?: (refused: TextureUploadRefusedError) => void;
   /** Validated native emission data, separate from original Texture bytes. */
   areaEmissions?: ReadonlyMap<string, AreaEmissionPixels>;
   /** Authored Texture payload width/height (source pixels), not LOD GPU bytes. */
@@ -310,13 +307,6 @@ export function applyAlbedoTexture(
   try { next = assets.resourceCache.acquireTexture(textureGuid, scene.getEngine(), source, { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true }); }
   catch (error) {
     binding.failed = `${textureGuid}:${identity}`;
-    if (error instanceof TextureUploadRefusedError) {
-      // Handled state, not a failed preparation: staged visuals adopt without it.
-      binding.preparation = undefined;
-      if (assets.onTextureRefused) assets.onTextureRefused(error);
-      else console.warn(error.message);
-      return;
-    }
     binding.preparation = Promise.reject(error);
     void binding.preparation.catch(() => {});
     console.error("Sprite texture replacement failed", error);

@@ -22,9 +22,9 @@ import {
   attachLifecyclePause,
   createEngine,
   createSceneLoadReadiness,
+  createSceneStreamingReadiness,
   navDebugBlockersFromActors,
   particleStats,
-  textureBlockSizeMessage,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -248,6 +248,8 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    renderTargets: content.renderTargets,
+    renderTargetTextures: content.renderTargetTextures,
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
@@ -313,13 +315,6 @@ function initializePlayer(
         code: diagnostic.code,
         nodeId: diagnostic.nodeId,
       });
-      options.onDiagnostic?.(diagnostics);
-    },
-    onTextureDiagnostic: (diagnostic) => {
-      // Packed games carry no asset names; the guid identifies the Texture.
-      const message = textureBlockSizeMessage({ ...diagnostic, name: diagnostic.assetGuid });
-      options.onConsoleEvent?.({ type: "log", message, severity: "error" });
-      diagnostics.push({ message, severity: "error", code: diagnostic.code, assetGuid: diagnostic.assetGuid });
       options.onDiagnostic?.(diagnostics);
     },
     onSceneLayerPointer: (event) => {
@@ -446,7 +441,9 @@ function initializePlayer(
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
+    renderTargets: Object.fromEntries(content.renderTargets),
+    renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
     animClipCatalog: content.animClipCatalog,
     deferSceneModelsReady: true,
     deferSceneLoadingPaint: true,
@@ -533,8 +530,26 @@ function initializePlayer(
     },
   });
   own(() => sceneReadiness.dispose());
+  const streamReadiness = createSceneStreamingReadiness({
+    handle,
+    onProgress: ({ actorGuid, streamLoadId }, progress) => {
+      worker?.postControl({ type: "sceneStreamProgress", actorGuid, streamLoadId, progress });
+      runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
+    },
+    onReady: ({ actorGuid, streamLoadId }) => {
+      worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
+      runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
+    },
+    onFailed: ({ actorGuid, streamLoadId }, error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
+      runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
+    },
+  });
+  own(() => streamReadiness.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (halted) return;
+    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
       const paused = pauseState.setConsolePaused(command.paused === true);
       handle.setPaused(paused);
@@ -548,11 +563,12 @@ function initializePlayer(
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
-    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }
     sceneReadiness.receive(command);
+    streamReadiness.receive(command);
     if (command.type === "print") {
       printHud.applyPrint({
         message: command.message,

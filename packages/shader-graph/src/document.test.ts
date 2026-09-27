@@ -302,8 +302,31 @@ describe("switching material domain", () => {
     expect(normalizeMaterialDocument(doc).domain).toBe("landscape");
     const surface = setMaterialDomain(doc, "surface");
     expect(surface.nodes.some((node) => node.id === "height")).toBe(false);
-    expect(surface.edges.some((edge) => edge.id === "height-edge")).toBe(false);
-    expect(surface.nodes.some((node) => node.type === "output.surface")).toBe(true);
+    // Only the dropped node's wire goes; Base Color stays wired into the same output.
+    expect(surface.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
+    expect(surface.nodes.filter((node) => node.type === "output.surface")).toEqual([
+      expect.objectContaining({ id: "output", position: { x: 300, y: 0 } }),
+    ]);
+  });
+
+  it("keeps the Material Output with its position, pin defaults and wires across a Surface and Landscape round trip", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes = doc.nodes.map((node) =>
+      node.id === "output"
+        ? { ...node, position: { x: 640, y: 120 }, properties: { "default:metallic": [1] } }
+        : node,
+    );
+    doc.nodes.push({ id: "rough", type: "const.float", position: { x: 0, y: 200 }, properties: { value: 0.2 } });
+    doc.edges.push({ id: "rough-edge", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+
+    const landscape = setMaterialDomain(doc, "landscape");
+    expect(landscape.domain).toBe("landscape");
+    expect(landscape.nodes).toEqual(doc.nodes);
+    expect(landscape.edges).toEqual(doc.edges);
+
+    const surface = setMaterialDomain(landscape, "surface");
+    expect(surface.nodes).toEqual(doc.nodes);
+    expect(surface.edges).toEqual(doc.edges);
   });
 
   it("replaces the surface terminal with the post-process terminal", () => {

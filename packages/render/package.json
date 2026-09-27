@@ -17,6 +17,7 @@
     "./clustered-light-capabilities": "./src/clustered-light-capabilities.ts",
     "./scene-render-coordinator": "./src/scene-render-coordinator.ts",
     "./framegraph-forward-scene": "./src/framegraph-forward-scene.ts",
+    "./fog-volumes": "./src/fog-volumes.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts"
   },
   "scripts": {

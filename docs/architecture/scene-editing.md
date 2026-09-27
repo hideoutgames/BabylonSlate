@@ -8,11 +8,27 @@ Shared-surface design note for viewport, outliner, details, and the edit layer. 
 
 SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world scene. See [scene-layers.md](scene-layers.md).
 
+Scene streaming places another Scene through a `SceneStreamingActor`; it does not open another world document. See [scene streaming](#scene-streaming).
+
 Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
 
 Place Actors and Class Add Component share the `CatalogResultRow` appearance: contiguous striped rows, type icons, names and muted secondary labels. Search, categories and project asset bindings remain available; actor/component results stay unwindowed.
 
+## Scene streaming
+
+Place **Scene Streaming** or a project Scene asset to add a `SceneStreamingActor`. Its **Target Scene** picker stores the target Scene asset on `SceneStreamingComponent`; the component's transform, relative to its actor and component parents, defines the target scene's local origin. Edit that origin in the component's **Transform** fields. The editor displays only the existing billboard and a camera-facing `Text3DComponent` with the selected scene name. It never realizes the target scene's actors. Scene and Prefab viewports resolve the label from the current Scene asset header, so renaming the asset refreshes the editor-only marker without changing the authored document.
+
+NodeGraphs control each actor's independent instance during Play, Preview Build, and exported games. See [streaming nodes](scripting.md#scene-streaming-nodes) and [runtime ownership](render.md#additive-scene-streaming).
+
+Streaming targets are recorded as asset dependencies for Scene and prefab Class documents, including unsaved edits, so Show References and deletion checks include their target Scenes.
+
+The parent retains its world settings and navigation mesh. Child Scene Defaults and default SceneLayers are not applied automatically. Runtime streaming realizes content from the prepared session library; it is not deferred loading of source files from storage.
+
 ## SerializedScene v4
+
+**Fog Volumes:** Place Actors → Environment → **Fog Volume**, or Add Component → Rendering → **Fog Volume**. Choose Box or Sphere; Size gives full local dimensions (unequal sphere axes form an ellipsoid). Move, rotate and scale the actor or component normally. Density controls extinction and Edge Falloff softens the boundary; zero falloff makes a hard edge. Pickable wire bounds are editor-only. Fog Volumes work immediately, including from outside their bounds, without enabling scene-wide fog. They support normal saving, duplication, undo and Class components; SceneLayers exclude them.
+
+Project Settings → Rendering → Post Processing → **Volumetric Fog** contains shared appearance and quality controls. **Scene-Wide Fog** adds background density independently. At most eight nearby visible volumes contribute at once; overlaps add density. Lower Volumetric Resolution Scale, Volumetric Steps and Volumetric Light Limit to reduce cost. The viewport Post-processing toggle disables both local and scene-wide volumetrics. See [render architecture](render.md) for bounds, lighting and transparency limits.
 
 Scene Defaults lists Post Process passes and Scene Layers as compact two-line entries: a single-line asset picker with Open Asset, followed by Enabled, layer Z-Order, and reorder/remove controls. Names truncate with full names and paths available on hover. Desktop controls are 28px; coarse-pointer controls expand and wrap without overlapping. Counts appear beside Add. Reordering moves the complete entry, preserving independent Enabled and Z-Order values even when an asset appears more than once.
 

@@ -297,6 +297,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
+  const [playRenderTargets, setPlayRenderTargets] = useState<{ renderTargets: Map<string, import("@babylonslate/core").RenderTargetPayload>; renderTargetTextures: Map<string, import("@babylonslate/core").RenderTargetTexturePayload> }>({ renderTargets: new Map(), renderTargetTextures: new Map() });
   const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
@@ -378,6 +379,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     collectPlaySpritePayloads,
     collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -1082,6 +1084,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
 
         try {
+          setPlayRenderTargets(await collectPlayRenderTargets());
           const waters = await collectPlayWaterContent();
           setPlayWaters(waters);
           const particles = await collectPlayParticles();
@@ -1133,6 +1136,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayWaters(new Map());
+          setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyParticleLibrary());
@@ -1287,6 +1291,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -1443,209 +1448,210 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlayContext.Provider value={value}>
-      {children}
-      {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
-        (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
-        <ProjectRenderingDialog state={projectEngineState}
-          onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
-          onDismiss={() => setRenderingFailureDismissed(true)} />
-      ) : null}
-      {previewPhase || previewPreparationError ? (
-        <PreparingPreviewDialog
-          open
-          phase={previewPhase}
-          error={previewPreparationError}
-          canCancel={previewCanCancel}
-          onRetry={() => { void requestPreviewBuild(); }}
-          onCancel={() => {
-            previewRequestRef.current += 1;
-            setPreviewPhase(null);
-            setPreviewPreparationError(null);
-            preparingRef.current = false;
-            setPreparing(false);
+        {children}
+        {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
+          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
+          <ProjectRenderingDialog state={projectEngineState}
+            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
+            onDismiss={() => setRenderingFailureDismissed(true)} />
+        ) : null}
+        {previewPhase || previewPreparationError ? (
+          <PreparingPreviewDialog
+            open
+            phase={previewPhase}
+            error={previewPreparationError}
+            canCancel={previewCanCancel}
+            onRetry={() => { void requestPreviewBuild(); }}
+            onCancel={() => {
+              previewRequestRef.current += 1;
+              setPreviewPhase(null);
+              setPreviewPreparationError(null);
+              preparingRef.current = false;
+              setPreparing(false);
+            }}
+          />
+        ) : null}
+        <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
+          <AlertDialogContent data-testid="startup-scene-alert">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
+              <AlertDialogDescription>
+                {MISSING_STARTUP_SCENE_MESSAGE}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction
+                data-testid="startup-scene-alert-ok"
+                onClick={() => setStartupAlertOpen(false)}
+              >
+                OK
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {prepareState ? (
+          <PlayPrepareDialog
+            open
+            phase={prepareState.phase}
+            dirtyNames={prepareState.dirtyNames}
+          />
+        ) : null}
+        <PlayBlockedDialog
+          open={playBlockedOpen}
+          diagnostics={blockedDiagnostics}
+          onOpenChange={setPlayBlockedOpen}
+          onNavigate={(d) => {
+            setFocusDiagnostic(d);
+            const revealId = documentIdToRevealForDiagnostic(
+              d,
+              openDocuments.map((doc) => doc.id),
+            );
+            if (revealId) setActiveDocument(revealId);
+            setPlayBlockedOpen(false);
+          }}
+          onPlayAnyway={() => {
+            setPlayBlockedOpen(false);
+            launchPlay({
+              injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
+              scripts: pendingScriptsRef.current ?? scripts,
+            });
           }}
         />
-      ) : null}
-      <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
-        <AlertDialogContent data-testid="startup-scene-alert">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
-            <AlertDialogDescription>
-              {MISSING_STARTUP_SCENE_MESSAGE}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              data-testid="startup-scene-alert-ok"
-              onClick={() => setStartupAlertOpen(false)}
-            >
-              OK
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {prepareState ? (
-        <PlayPrepareDialog
-          open
-          phase={prepareState.phase}
-          dirtyNames={prepareState.dirtyNames}
+        {playing && !previewOpen && engineRef.current ? (
+          <PlayOverlay
+            sharedEngine={engineRef.current}
+            injectFixtureThrow={injectThrow}
+            scripts={scripts}
+            physics={playPhysics}
+            sceneAssetGuid={playSceneGuid}
+            scene={playScene?.scene}
+            project={projectDocument?.metadata}
+            gameInstanceClass={resolveGameInstanceClass(
+              projectDocument?.settings,
+              playScene?.scene,
+            )}
+            scenes={playSceneLibrary}
+            sceneLayers={playSceneLayers}
+            animGraphs={playAnimGraphs}
+            behaviourTrees={playBehaviourTrees}
+            blackboards={playBlackboards}
+            spritePayloads={playSpritePayloads}
+            spriteAnimationPayloads={playSpriteAnimationPayloads}
+            waterPayloads={playWaters}
+            renderTargets={playRenderTargets.renderTargets}
+            renderTargetTextures={playRenderTargets.renderTargetTextures}
+            tilemapPayloads={playTilemaps}
+            tilesetPayloads={playTilesets}
+            textureBytes={playTextureBytes}
+            texturePixelSizes={playTexturePixelSizes}
+            fontFacetypeBytes={playFontFacetypeBytes}
+            areaEmissions={playAreaEmissions}
+            fontMsdfJson={playFontMsdfJson}
+            fontMsdfPng={playFontMsdfPng}
+            fontFaceEntries={playFontFaceEntries}
+            fontCssStack={playFontCssStack}
+            fontCssStackByGuid={playFontCssStackByGuid}
+            modelBytes={playModelBytes}
+            modelPayloads={playModelPayloads}
+            modelClipAnimationGuids={playModelClipAnimationGuids}
+            retargetAnimationLoads={playRetargetAnimationLoads}
+            loadAudioSourceBytes={playAudioSourceLoader}
+            audioLibrary={playAudioLibrary}
+            animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
+            particleLibrary={playParticleLibrary}
+            materialDocuments={playMaterialDocuments}
+            materialFunctions={playMaterialFunctions}
+            postProcessingEnabled={postProcessingEnabled}
+            hardwareScalingLevel={hardwareScalingLevel}
+            pauseOnPlay={pauseOnPlay}
+            navmeshBytes={playNavmeshBytes}
+            audioReverbBytes={playAudioReverbBytes}
+            audioProjectSettings={projectDocument?.settings.audio}
+            inputAssets={playInputAssets}
+            inputMappings={projectDocument?.settings.input}
+            sortingLayers={projectDocument?.settings.twoD.sortingLayers}
+            pixelsPerUnit={
+              projectDocument?.settings.twoD.pixelsPerUnit ?? 100
+            }
+            pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
+            touchMinTargetPx={
+              projectDocument?.settings.touchMinTargetPx ?? 44
+            }
+            frameCap={
+              projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+            }
+            infiniteLoopDetection={
+              projectDocument?.settings.infiniteLoopDetection ??
+              DEFAULT_INFINITE_LOOP_DETECTION
+            }
+            loopCount={
+              projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
+            }
+            playPreview={
+              projectDocument?.settings.playPreview ??
+              DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
+            }
+            render={projectDocument?.settings.render}
+            onClose={handleClose}
+          />
+        ) : null}
+        {previewOpen ? (
+          <PreviewBuildOverlay
+            src={previewSrc}
+            iframeRef={previewIframeRef}
+            error={previewError}
+            onClose={closePreview}
+            onLoad={sendPreviewPack}
+            onTrace={(trace) => void openRecordedTrace(trace)}
+          />
+        ) : null}
+        <PreviewSessionReport
+          open={reportOpen}
+          entries={reportEntries}
+          dropped={dropped}
+          onOpenChange={setReportOpen}
+          onNavigate={(entry) => {
+            const nav = sessionReportNavigation(entry, {
+              getByGuid: (guid) => assetRegistry?.getByGuid(guid),
+            });
+            setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
+            setFocusDiagnostic({
+              severity: entry.severity,
+              code: entry.code,
+              message: entry.message,
+              assetGuid: entry.assetGuid ?? "",
+              graphId: entry.graphId ?? "",
+              nodeId: nav.focusedNodeId || undefined,
+              bodyLine: nav.bodyLine ?? entry.bodyLine,
+            });
+            if (nav.document) {
+              void openDocument(nav.document);
+            }
+            setReportOpen(false);
+            appendLog(
+              `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
+            );
+          }}
         />
-      ) : null}
-      <PlayBlockedDialog
-        open={playBlockedOpen}
-        diagnostics={blockedDiagnostics}
-        onOpenChange={setPlayBlockedOpen}
-        onNavigate={(d) => {
-          setFocusDiagnostic(d);
-          const revealId = documentIdToRevealForDiagnostic(
-            d,
-            openDocuments.map((doc) => doc.id),
-          );
-          if (revealId) setActiveDocument(revealId);
-          setPlayBlockedOpen(false);
-        }}
-        onPlayAnyway={() => {
-          setPlayBlockedOpen(false);
-          launchPlay({
-            injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
-            scripts: pendingScriptsRef.current ?? scripts,
-          });
-        }}
-      />
-      {playing && !previewOpen && engineRef.current ? (
-        <PlayOverlay
-          sharedEngine={engineRef.current}
-          injectFixtureThrow={injectThrow}
-          scripts={scripts}
-          physics={playPhysics}
-          sceneAssetGuid={playSceneGuid}
-          scene={playScene?.scene}
-          project={projectDocument?.metadata}
-          gameInstanceClass={resolveGameInstanceClass(
-            projectDocument?.settings,
-            playScene?.scene,
-          )}
-          scenes={playSceneLibrary}
-          sceneLayers={playSceneLayers}
-          animGraphs={playAnimGraphs}
-          behaviourTrees={playBehaviourTrees}
-          blackboards={playBlackboards}
-          spritePayloads={playSpritePayloads}
-          spriteAnimationPayloads={playSpriteAnimationPayloads}
-          waterPayloads={playWaters}
-          tilemapPayloads={playTilemaps}
-          tilesetPayloads={playTilesets}
-          textureBytes={playTextureBytes}
-          texturePixelSizes={playTexturePixelSizes}
-          fontFacetypeBytes={playFontFacetypeBytes}
-          areaEmissions={playAreaEmissions}
-          fontMsdfJson={playFontMsdfJson}
-          fontMsdfPng={playFontMsdfPng}
-          fontFaceEntries={playFontFaceEntries}
-          fontCssStack={playFontCssStack}
-          fontCssStackByGuid={playFontCssStackByGuid}
-          modelBytes={playModelBytes}
-          modelPayloads={playModelPayloads}
-          modelClipAnimationGuids={playModelClipAnimationGuids}
-          retargetAnimationLoads={playRetargetAnimationLoads}
-          loadAudioSourceBytes={playAudioSourceLoader}
-          audioLibrary={playAudioLibrary}
-          animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
-          particleLibrary={playParticleLibrary}
-          materialDocuments={playMaterialDocuments}
-          materialFunctions={playMaterialFunctions}
-          textureName={(guid) => assetRegistry?.getByGuid(guid)?.header.name}
-          postProcessingEnabled={postProcessingEnabled}
-          hardwareScalingLevel={hardwareScalingLevel}
-          pauseOnPlay={pauseOnPlay}
-          navmeshBytes={playNavmeshBytes}
-          audioReverbBytes={playAudioReverbBytes}
-          audioProjectSettings={projectDocument?.settings.audio}
-          inputAssets={playInputAssets}
-          inputMappings={projectDocument?.settings.input}
-          sortingLayers={projectDocument?.settings.twoD.sortingLayers}
-          pixelsPerUnit={
-            projectDocument?.settings.twoD.pixelsPerUnit ?? 100
-          }
-          pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
-          touchMinTargetPx={
-            projectDocument?.settings.touchMinTargetPx ?? 44
-          }
-          frameCap={
-            projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
-          }
-          infiniteLoopDetection={
-            projectDocument?.settings.infiniteLoopDetection ??
-            DEFAULT_INFINITE_LOOP_DETECTION
-          }
-          loopCount={
-            projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
-          }
-          playPreview={
-            projectDocument?.settings.playPreview ??
-            DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
-          }
-          render={projectDocument?.settings.render}
-          onClose={handleClose}
-        />
-      ) : null}
-      {previewOpen ? (
-        <PreviewBuildOverlay
-          src={previewSrc}
-          iframeRef={previewIframeRef}
-          error={previewError}
-          onClose={closePreview}
-          onLoad={sendPreviewPack}
-          onTrace={(trace) => void openRecordedTrace(trace)}
-        />
-      ) : null}
-      <PreviewSessionReport
-        open={reportOpen}
-        entries={reportEntries}
-        dropped={dropped}
-        onOpenChange={setReportOpen}
-        onNavigate={(entry) => {
-          const nav = sessionReportNavigation(entry, {
-            getByGuid: (guid) => assetRegistry?.getByGuid(guid),
-          });
-          setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
-          setFocusDiagnostic({
-            severity: entry.severity,
-            code: entry.code,
-            message: entry.message,
-            assetGuid: entry.assetGuid ?? "",
-            graphId: entry.graphId ?? "",
-            nodeId: nav.focusedNodeId || undefined,
-            bodyLine: nav.bodyLine ?? entry.bodyLine,
-          });
-          if (nav.document) {
-            void openDocument(nav.document);
-          }
-          setReportOpen(false);
-          appendLog(
-            `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
-          );
-        }}
-      />
-      {/* Focus marker for Playwright / graph navigation hook. */}
-      {focusedNodeId ? (
-        <span
-          className="sr-only"
-          data-testid="focused-graph-node"
-          data-node-id={focusedNodeId}
-        >
-          {focusedNodeId}
-        </span>
-      ) : null}
-      {lastRuntimeMode ? (
-        <span
-          className="sr-only"
-          data-testid="play-last-runtime"
-          data-mode={lastRuntimeMode}
-        >
-          {lastRuntimeMode}
-        </span>
-      ) : null}
+        {/* Focus marker for Playwright / graph navigation hook. */}
+        {focusedNodeId ? (
+          <span
+            className="sr-only"
+            data-testid="focused-graph-node"
+            data-node-id={focusedNodeId}
+          >
+            {focusedNodeId}
+          </span>
+        ) : null}
+        {lastRuntimeMode ? (
+          <span
+            className="sr-only"
+            data-testid="play-last-runtime"
+            data-mode={lastRuntimeMode}
+          >
+            {lastRuntimeMode}
+          </span>
+        ) : null}
     </PlayContext.Provider>
   );
 }

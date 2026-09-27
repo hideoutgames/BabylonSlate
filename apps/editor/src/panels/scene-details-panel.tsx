@@ -3,6 +3,8 @@ import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
+import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -38,6 +40,7 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   patchComponentProperties,
+  setSceneStreamingTarget,
   type SerializedActor,
   type SerializedScene,
   isSceneWorkspaceKind,
@@ -1103,7 +1106,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         componentPropertyRows(
           actor.id,
           component,
-          (property, value) =>
+          (property, value) => {
+            if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
+              const guid = typeof value === "string" ? value : null;
+              updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
+              return;
+            }
             updateActor((entry) => ({
               ...entry,
               components: entry.components.map((candidate) =>
@@ -1118,7 +1126,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     }
                   : candidate,
               ),
-            })),
+            }));
+          },
           {
             sortingLayers,
             collisionLayers,
@@ -1140,7 +1149,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         template,
       );
       const colliderRows =
-        component.classId === "ColliderComponent"
+        component.classId === "ColliderComponent" || component.classId === "SceneStreamingComponent"
           ? spatialTransformPropertyRows(
               `${actor.id}-${component.id}`,
               scene.viewportMode,
@@ -1168,9 +1177,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ? "Text"
             : component.classId === "2DPanelComponent"
               ? "Nine Slice"
-              : component.classId === "RagdollComponent"
-                ? "Bone Names"
-              : "";
+              : component.classId === "RenderTargetCaptureComponent"
+                ? "Capture Actors"
+                : component.classId === "RagdollComponent"
+                  ? "Bone Names"
+                  : "";
       return {
         component,
         index,
@@ -1324,6 +1335,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
+                  {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
+                    <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
+                      onChange={(actorIds) => updateActor((entry) => ({ ...entry, components: entry.components.map((candidate) => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, actorIds } } : candidate) }))} />
+                  ) : null}
                   {showExtras && component.classId === "RagdollComponent" ? (
                     <RagdollBoneNamesEditor
                       boneNames={component.properties.boneNames as string[] | undefined}
@@ -1350,6 +1365,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                         <MultilineTextField
                           id={`text3d-text-${component.id}`}
                           title="Text"
+                          disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
                           value={
                             parseText3DProperties(component.properties).text
                           }
@@ -1418,7 +1434,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     <PropertyGrid
                       title="Transform"
                       rows={colliderRows}
-                      data-testid={`collider-transform-grid-${component.id}`}
+                      data-testid={`${component.classId === "ColliderComponent" ? "collider" : "component"}-transform-grid-${component.id}`}
                     />
                   ) : null}
                   {showExtras && component.classId === "NavMeshComponent" ? (
@@ -1457,6 +1473,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onPick={(guid) => {
           if (!assetPick) return;
           const { componentId, property } = assetPick;
+          if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
+            updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));
+            setAssetPick(null);
+            return;
+          }
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((candidate) => {

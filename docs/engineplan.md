@@ -1,5 +1,7 @@
 # BabylonSlate Engine Plan
 
+**Scene streaming** adds independent Scene instances through `SceneStreamingActor` and target-required NodeGraph nodes. The streaming component defines the instance origin; editor viewports show only its billboard and scene-name `Text3DComponent`. Play, Preview Build and exported games support async operations and simulation-blocking operations with per-instance state, progress, readiness and teardown. See [scene streaming](architecture/scene-editing.md#scene-streaming).
+
 Scene authoring includes **Design**, **Landscape**, and **Foliage** modes with separate layouts and Focus settings. Landscape heightfields and painted material layers, plus Model-only instanced foliage strokes, persist as scene components and render in editor and Play/player. See [Scene modes](architecture/scene-editing.md#scene-modes) and [Landscape materials](architecture/shader-graph.md#landscape-materials).
 
 > **Status:** Living document — authoritative architecture and delivery plan for BabylonSlate.
@@ -96,7 +98,7 @@ Stating these keeps agents from inventing scope:
 - **No multiplayer or networking** of any kind.
 - **Games export to web only.** The Capacitor and Electron shells exist to run the *editor*, not to ship games.
 - **No native code plugins.** Plugins are content and classes (section 10).
-- **No additive or streamed multi-scene loading.** One **world** Scene at a time. SceneLayers are a separate overlay stack on a session compositor, not additive world streaming.
+- **One parent world Scene and physics world at a time.** Runtime Scene streaming adds independently owned instances beneath that world; it does not replace its global settings or open another editor world document. SceneLayers remain a separate overlay stack. See [scene streaming](architecture/scene-editing.md#scene-streaming).
 - **No live property editing while the game is playing** in v1. Stop, edit, play.
 - **No asset marketplace or remote asset fetching.**
 - **The engine is not a git client.** It implements Git LFS locking only; clone, commit, pull and push happen in Working Copy on iPad or any desktop git client (section 12).
@@ -353,7 +355,7 @@ Place Actors and Duplicate allocate unused scene names (`Camera`, `Camera 2`; `C
 
 **Scripting is a small catalog in the same slice.** **Possess Camera** (Class graphs): exec in/out, an actor pin; it changes the **global** Play `activeCamera` for the session (same object as Default Camera, not a local viewport). Also get/set field of view, get/set orthographic size, enable/disable light, set light color, set light intensity. Graphs emit commands or mutate component variables; they do not import Babylon. Possess is a camera switch, not a follow rig.
 
-**Later spatial effects.** Project post-processing supports optional half-resolution PBR screen-space reflections with environment fallback and bounded, shadow-aware volumetric fog from directional, point and spot lights. Settings persist into Play/export and default off for existing projects. See [render architecture](architecture/render.md) for quality controls, capability limits and ownership.
+**Later spatial effects.** Project post-processing supports optional half-resolution PBR screen-space reflections with environment fallback and bounded, shadow-aware volumetric fog from directional, point and spot lights. Placeable **Fog Volumes** add box/ellipsoid density with soft edges, independently of Scene-Wide Fog, using the same pass and quality budget. Up to eight nearby visible volumes contribute at once; ray clipping skips empty space. Settings and components persist into Play/export; existing scenes retain their prior defaults. See [render architecture](architecture/render.md) for quality controls, capability limits and ownership.
 
 **Out of v1:** area lights, multiple shadow casters, Cinemachine-style follow or virtual cameras, extra viewports, render-target cameras, camera stacking, post-process as lighting. **Possess Camera is in v1** (global active-camera switch only). The skybox **mesh** is in v1 (`SkyboxComponent`); IBL remains the optional guid.
 
@@ -502,7 +504,7 @@ The reason this has to sit in the import pipeline and not in the exporter is tha
 - Normal maps compress to UASTC and never to ETC1S, which handles them badly.
 - Sprites and tilesets flagged as pixel art stay uncompressed. They are usually small enough that it does not matter, and correctness beats the saving.
 - UI textures and fonts stay uncompressed by default, for the same crisp-edge reason.
-- Particle textures compress to UASTC at a base size rounded up to a multiple of 4 (after the clamp and downsample), because WebGPU rejects ASTC/BC7 textures that are not block-aligned and the invalid upload blanks every frame. Other compressed textures off the 4×4 grid are refused at WebGPU upload instead: their Materials are unavailable (default mesh material, particle **No Material**), Sprites, Tilemaps and 2D textures draw without them, and Play reports the texture, its size and the fix, so the frame keeps presenting.
+- Particle textures compress to UASTC at a base size rounded up to a multiple of 4 (after the clamp and downsample), because WebGPU rejects ASTC/BC7 textures that are not block-aligned and the invalid upload blanks every frame. Other compressed textures off the 4×4 grid decode to RGBA on WebGPU instead (a per-texture Babylon patch), so they draw at four bytes per texel and the frame keeps presenting.
 - Anything with a nonzero-alpha cutout mask is checked, since alpha in block formats is where artifacts concentrate.
 
 Every one of these is a per-texture override in the asset's details panel, with the policy default shown so a user can see what was chosen for them and why.
@@ -574,6 +576,8 @@ Tests, not hope:
 **A resolution clamp is the other half of the win and is much cheaper.** Project Settings still carries a maximum *import* texture dimension (default 2048), applied after decode on the longest edge, with source bytes preserved. Each Texture’s Settings tab sets **Downsample** (Full, 1/2, 1/4, 1/8, 1/16) instead of a Max Dimension picker; `payload.maxDimension` migrates to the nearest factor. Engine Settings **Editor Texture LOD** (default on at 50% of source, 256 floor, skybox/pixelArt exempt) further shrinks GPU residency in the editor and overlay Play only — packed games use authored downsample, never the editor LOD slider. Effective editor GPU edge is `min(source, authored downsample, engine quality)` then floored at `min(source, 256)` and never upscaled. Encode settings hash `ktx2:<hash>` from that authored size (plus `blockAlign: 4` for Particle only, so other ids are unchanged); `selectTextureChunk` / export prefer `payload.ktx2ChunkId`, not the first KTX2 in the file. Mipmaps stay on for 3D and off for pixel art. The Texture Settings tab shows a source preview; Usage (including Pixel Art) is the filter/compression policy — no extra mip/nearest toggles.
 
 ## 4. Asset type catalog
+
+**Render Target** stores capture mode (Scene Color, Depth Pass, World Normal) and resolution. **Render Target Texture** references its live output for material samplers. Place a **Render Target Capture** actor, assign its target, and optionally enable an actor-only filter. NodeGraphs expose the mode enum, capture controls and Actor-reference array. See [render targets](architecture/render.md#render-targets).
 
 The spec's list, plus one addition flagged below:
 - **Scene** for levels. Singleton: opening a scene replaces the current Scene tab.
@@ -865,7 +869,6 @@ When Preview ends, whether the user taps X or the session crashes, the editor sh
 - `Log` calls at Error severity.
 - Runtime assertions the engine emits deliberately, such as calling a method on a destroyed actor or reading a null component, tagged with the same diagnostic codes as edit-time validation where possible.
 - Behaviour-tree nodes that **throw**, which is distinct from a task returning Failure. Failure is ordinary control flow that Selectors depend on, so it is never reported as an error.
-- Renderer problems the main thread detects, such as a WebGPU texture refused for being block-compressed off the 4×4 grid (`texture.webgpuBlockSize`: texture name, size and fix; Play keeps running and the row opens the Texture).
 
 Each event is **deduplicated by `(code, assetGuid, nodeId)`**, keeping the first message and a count rather than keying on the message text, since messages routinely embed varying values and would otherwise defeat dedup. An error thrown every tick is one row with a count of 3600, not 3600 rows. The reporter also caps distinct entries per session, dropping the tail with a "and N more" note, so a runaway failure cannot exhaust worker memory. Each entry carries first and last timestamp and frame id, so the trace recorder can jump to the moment if one was armed.
 

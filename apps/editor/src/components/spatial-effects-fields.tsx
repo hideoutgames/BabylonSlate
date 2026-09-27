@@ -9,6 +9,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 
@@ -116,35 +118,36 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           )}
         </>
       ) : null}
-      <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
-          <FieldLabel htmlFor="project-effects-volumetric">
-            Volumetric Fog
-          </FieldLabel>
-          <FieldDescription>
-            Fog lit by directional, point and spot lights. Light colors tint the
-            fog; enable light shadows for occluded beams. Independent of Scene
-            Details fog; enabling both combines their effects.
-          </FieldDescription>
-        </FieldContent>
-        <Switch
-          id="project-effects-volumetric"
-          data-testid="project-effects-volumetric"
-          checked={volume.enabled}
-          onCheckedChange={(enabled) => patchVolume({ enabled })}
-        />
-      </Field>
-      {volume.enabled ? (
-        <>
-          {number(
-            "Fog Density",
+      <FieldSet className="gap-2">
+        <FieldLegend>Volumetric Fog</FieldLegend>
+        <FieldGroup className="gap-2">
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="project-effects-volumetric">
+                Scene-Wide Fog
+              </FieldLabel>
+              <FieldDescription>
+                Fog lit by directional, point and spot lights. Light colors tint the
+                fog; enable light shadows for occluded beams. Fog Volumes work with
+                this off. The controls below tune both local and scene-wide fog.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="project-effects-volumetric"
+              data-testid="project-effects-volumetric"
+              checked={volume.enabled}
+              onCheckedChange={(enabled) => patchVolume({ enabled })}
+            />
+          </Field>
+          {volume.enabled ? number(
+            "Scene-Wide Fog Density",
             "volumetric-density",
             volume.density,
             RENDER_EFFECTS_LIMITS.volumetricDensity,
             (density) => patchVolume({ density }),
             0.001,
-            "Fog thickness per scene unit. Small values give subtle haze; zero clears the effect.",
-          )}
+            "Uniform fog thickness per scene unit. Zero removes scene-wide haze while Fog Volumes still contribute.",
+          ) : null}
           {number(
             "Volumetric Intensity",
             "volumetric-intensity",
@@ -199,8 +202,8 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             1,
             "Maximum contributing lights. Lower values reduce cost; hemispheric fill and area lights do not contribute.",
           )}
-        </>
-      ) : null}
+        </FieldGroup>
+      </FieldSet>
     </FieldGroup>
   );
 }

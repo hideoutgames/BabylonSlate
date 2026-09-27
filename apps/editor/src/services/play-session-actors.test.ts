@@ -58,6 +58,9 @@ describe.each(["worker", "in-process"] as const)(
         gameInstanceClass?: string;
         presentFirstFrame?: () => Promise<void>;
         onFatalDiagnostic?: () => void;
+        scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
+        prepareSceneStream?: () => Promise<void>;
+        applyCommand?: (command: CommandMessage) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -67,7 +70,7 @@ describe.each(["worker", "in-process"] as const)(
         applySceneEnvironment() {},
         scheduler: { invalidate() {}, acquireObstruction: () => () => {} },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
-        applyCommand() {},
+        applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot() {},
         renderPathStatus: () => ({
           requested: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -78,6 +81,8 @@ describe.each(["worker", "in-process"] as const)(
         whenMaterialTexturesReady: () => Promise.resolve(),
         prewarmSceneMaterials: () => Promise.resolve(),
         presentFirstFrame: options.presentFirstFrame ?? (() => Promise.resolve()),
+        prepareSceneStream: options.prepareSceneStream ?? (() => Promise.resolve()),
+        setSceneStreamingPaused() {},
         dispose() {},
         whenReleased: () => Promise.resolve(),
       } as unknown as ReturnType<typeof createEngine>);
@@ -132,6 +137,9 @@ describe.each(["worker", "in-process"] as const)(
               runtime.notifySceneLoadingPainted(control.sceneAssetGuid, control.sceneLoadId);
             if (control.type === "sceneModelsReady")
               runtime.notifySceneModelsReady(control.sceneAssetGuid, control.sceneLoadId);
+            if (control.type === "sceneStreamReady") runtime.notifySceneStreamReady(control.actorGuid, control.streamLoadId);
+            if (control.type === "sceneStreamProgress") runtime.notifySceneStreamProgress(control.actorGuid, control.streamLoadId, control.progress);
+            if (control.type === "sceneStreamFailed") runtime.notifySceneStreamFailed(control.actorGuid, control.streamLoadId, control.message);
             if (control.type === "stop") {
               boot.reset();
               runtime.stop();
@@ -146,6 +154,7 @@ describe.each(["worker", "in-process"] as const)(
         } as unknown as Parameters<typeof startPlaySession>[0]["sharedEngine"],
         sceneAssetGuid: "scene",
         scene: { ...createDefaultScene(), actors: options.actors ?? [] },
+        scenes: options.scenes,
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
@@ -159,6 +168,58 @@ describe.each(["worker", "in-process"] as const)(
       const runtime = await play();
       expect(runtime.getWorld().getActors()).toHaveLength(0);
       expect(session!.spawnedActorGuids()).toEqual([]);
+    });
+
+    it("delivers capture lens edits and explicit capture requests to the renderer", async () => {
+      const applyCommand = vi.fn();
+      await play({
+        actors: [createActor("capture", "Capture", { classId: "Monitor", components: [
+          { id: "lens", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: "screen", captureEveryFrame: false } },
+        ] })],
+        scripts: [{
+          assetGuid: "monitor", classId: "Monitor", parentClassId: "RenderTargetCapture",
+          anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+          source: `export function onBeginPlay(ctx) {
+            ctx.setRenderTargetCaptureProperty(ctx.self, "fieldOfView", 45);
+            ctx.captureRenderTarget(ctx.self);
+          }`,
+        }],
+        applyCommand,
+      });
+      await vi.waitFor(() => {
+        expect(applyCommand).toHaveBeenCalledWith(expect.objectContaining({
+          type: "configureRenderTargetCapture", actorGuid: "capture",
+          settings: expect.objectContaining({ renderTargetGuid: "screen", captureEveryFrame: false, fieldOfView: 45 }),
+        }));
+        expect(applyCommand).toHaveBeenCalledWith({ type: "captureRenderTarget", actorGuid: "capture" });
+      });
+    });
+
+    it("keeps stream readiness isolated while the host pauses and resumes a blocking graph load", async () => {
+      let finish!: () => void;
+      const prepare = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+      const applyCommand = vi.fn();
+      const runtime = await play({ actors: [createActor("streamer", "Streamer", { classId: "SceneStreamingActor", components: [
+        { id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "child", sceneName: "Child" } },
+      ] })], scenes: [{ guid: "child", scene: { ...createDefaultScene(), actors: [createActor("child", "Child", { classId: "main" })] } }],
+      prepareSceneStream: prepare, applyCommand });
+      const target = runtime.getWorld().findActor("streamer")!;
+      const loading = runtime.loadSceneStream(target, true);
+      await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+      const loadingCommand = applyCommand.mock.calls.map(([command]) => command as CommandMessage).find((command) => command.type === "sceneStreamLoading");
+      expect(loadingCommand).toEqual({ type: "sceneStreamLoading", actorGuid: "streamer", streamLoadId: expect.any(Number) });
+      const before = runtime.getWorld().clock.tickIndex;
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(before);
+      expect(runtime.getSceneState(target)).toBe("Loading");
+      finish();
+      await loading;
+      expect(runtime.getSceneState(target)).toBe("Loaded");
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(before + 1);
+      await runtime.unloadSceneStream(target);
+      expect(applyCommand).toHaveBeenCalledWith({ ...loadingCommand, type: "sceneStreamRemoved" });
+      expect(runtime.getWorld().getActors().map((actor) => actor.guid)).toEqual(["streamer"]);
     });
 
     it("keeps Game Instance ticking and withholds scene finish until the renderer presents", async () => {

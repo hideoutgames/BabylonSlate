@@ -1,6 +1,8 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
+import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
-import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
+import { areaRectLightBindings, fogVolumeBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -42,6 +44,7 @@ import {
 } from "@babylonslate/object-model";
 import {
   createDefaultSceneSettings,
+  cloneSceneStreamingActorsSteps,
   DEFAULT_PLAY_FRAME_CAP,
   eulerDegreesToQuaternion,
   isSceneLayerDeniedComponent,
@@ -67,6 +70,7 @@ import {
   type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
+  type SceneStreamingState,
 } from "@babylonslate/core";
 import {
   InputRingBuffer,
@@ -142,6 +146,7 @@ import {
   formatInspectActor,
 } from "./console-inspect";
 import { actorParentGuid, actorWorldTransform, actorWorldTransforms } from "./actor-world-transform";
+import { composeParentChildTransform } from "./actor-world-transform";
 import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
@@ -200,6 +205,8 @@ export interface RuntimeDriverOptions {
   audioAssetGuids?: readonly string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: readonly string[];
+  renderTargets?: Readonly<Record<string, RenderTargetPayload>>;
+  renderTargetTextures?: Readonly<Record<string, RenderTargetTexturePayload>>;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -277,6 +284,14 @@ export interface RuntimeDriver {
   finishPlayLoading(): void;
   /** Complete the matching deferred load after the host presents its ready frame. */
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void;
+  loadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
+  unloadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
+  getTargetSceneName(target: unknown): string;
+  getSceneState(target: unknown): SceneStreamingState;
+  getSceneLoadProgress(target: unknown): number;
+  notifySceneStreamReady(actorGuid: string, streamLoadId: number): void;
+  notifySceneStreamProgress(actorGuid: string, streamLoadId: number, progress: number): void;
+  notifySceneStreamFailed(actorGuid: string, streamLoadId: number, message: string): void;
   notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void;
   notifySceneLayerReady(layerId: string, layerLoadId: number): void;
   notifySceneLayerLoadingPainted(layerId: string, layerLoadId: number): void;
@@ -398,6 +413,26 @@ interface SceneRealization {
   painted: (() => void) | null;
 }
 
+interface SceneStream {
+  actor: Actor;
+  loadId: number;
+  assetGuid: string;
+  state: Exclude<SceneStreamingState, "Unloaded">;
+  progress: number;
+  actors: Set<Actor>;
+  idMap: ReadonlyMap<string, string>;
+  scene: Scene;
+  controller: AbortController;
+  realized: boolean;
+  notified: boolean;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  unloadPromise?: Promise<void>;
+  navObstacles: string[];
+  origin?: Transform;
+}
+
 class InProcessRuntime implements RuntimeDriver {
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
@@ -428,6 +463,12 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
+  private streamBlockingCount = 0;
+  private streamLoadId = 0;
+  private readonly sceneStreams = new Map<string, SceneStream>();
+  private readonly actorStream = new WeakMap<Actor, SceneStream>();
+  private readonly streamScenes = new WeakMap<Scene, SceneStream>();
+  private readonly simulationWaiters = new Set<() => void>();
   private readonly scalability: ScalabilitySession;
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private readonly scalabilityProjectRenderPath: RenderPath;
@@ -441,6 +482,8 @@ class InProcessRuntime implements RuntimeDriver {
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
   private outlineSlots = new Set<number>();
+  private captureSlots = new Set<number>();
+  private fogVolumeSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -694,7 +737,7 @@ class InProcessRuntime implements RuntimeDriver {
         z: this.gravity[2],
       }),
       {
-        actorFilter: (actor) => actor.sceneLayerId == null,
+        actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
@@ -735,7 +778,7 @@ class InProcessRuntime implements RuntimeDriver {
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
       onPhase: (phase) => this.markPhase(phase),
-      canTickScene: () => !this.stopped,
+      canTickScene: () => !this.stopped && this.streamBlockingCount === 0,
       canTickActor: (actor) => this.canTickActor(actor),
       componentHooksFor: (classId) => {
         if (!registry.isA(classId, "ActorComponent")) return undefined;
@@ -943,12 +986,13 @@ class InProcessRuntime implements RuntimeDriver {
           },
         };
       },
-      spawnActor: (classId, transform) => {
+      spawnActor: (classId, transform, owner) => {
         const id = String(classId ?? "").trim();
         if (!id) return null;
         return this.spawnScriptedActor({
           classId: id,
           transform: coerceTransform(transform),
+          streamOwner: owner,
         });
       },
       getActors: () => this.world.getActors(),
@@ -958,8 +1002,8 @@ class InProcessRuntime implements RuntimeDriver {
         if (slotId === undefined || targetSlotId === undefined) return;
         this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
       },
-      getSceneReference: () => {
-        const scene = this.world.currentScene;
+      getSceneReference: (owner) => {
+        const scene = this.streamForOwner(owner)?.scene ?? this.world.currentScene;
         return scene && !scene.destroyed ? scene : null;
       },
       getSceneLoadingProgress: () => {
@@ -967,6 +1011,14 @@ class InProcessRuntime implements RuntimeDriver {
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
+      getTargetSceneName: (target) => this.getTargetSceneName(target),
+      loadScene: (target, blocking) => this.loadSceneStream(target, blocking),
+      unloadScene: (target, blocking) => this.unloadSceneStream(target, blocking),
+      isSceneLoaded: (target) => this.getSceneState(target) === "Loaded",
+      getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
+      getSceneState: (target) => this.getSceneState(target),
+      resolveInstanceId: (owner, id) => this.streamForOwner(owner)?.idMap.get(id) ?? id,
+      waitForSimulation: (owner) => this.waitForSimulation(owner),
       getProjectName: () => options.project?.name ?? "",
       getProjectVersion: () => options.project?.version ?? "",
       setWorldGravity: (gravity) => {
@@ -1060,6 +1112,16 @@ class InProcessRuntime implements RuntimeDriver {
       possessCamera: (target) => {
         this.possessCamera(target);
       },
+      getRenderTargetMode: (guid) => normalizeRenderTargetPayload(
+        options.renderTargets && Object.hasOwn(options.renderTargets, guid) ? options.renderTargets[guid] : null,
+      ).mode,
+      getRenderTargetTextureTarget: (guid) => normalizeRenderTargetTexturePayload(
+        options.renderTargetTextures && Object.hasOwn(options.renderTargetTextures, guid) ? options.renderTargetTextures[guid] : null,
+      ).renderTargetGuid,
+      captureRenderTarget: (target) => {
+        if (!(target instanceof Actor) || !this.canRunOwner(target) || !captureComponent(target)) return;
+        this.emit({ type: "captureRenderTarget", actorGuid: target.guid });
+      },
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
@@ -1069,7 +1131,9 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
-          if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
+          else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
           else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
@@ -1162,6 +1226,286 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private streamForOwner(owner?: BObject | null): SceneStream | undefined {
+    if (owner instanceof Scene) return this.streamScenes.get(owner);
+    const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner : null;
+    return actor ? this.actorStream.get(actor) : undefined;
+  }
+
+  private streamActorReady(actor: Actor): boolean {
+    return this.sceneStreamReady(this.actorStream.get(actor));
+  }
+
+  private sceneStreamReady(stream: SceneStream | undefined): boolean {
+    for (let owner = stream; owner; owner = this.actorStream.get(owner.actor)) {
+      if (owner.state !== "Loaded" || this.sceneStreams.get(owner.actor.guid) !== owner) return false;
+    }
+    return true;
+  }
+
+  private streamingActor(target: unknown): Actor | null {
+    return target instanceof Actor && !target.destroyed && target.world === this.world &&
+      this.world.classRegistry.isA(target.classId, "SceneStreamingActor") ? target : null;
+  }
+
+  private streamingComponent(actor: Actor): ActorComponent | undefined {
+    return actor.components.find((component) => !component.destroyed && component.classId === "SceneStreamingComponent");
+  }
+
+  getTargetSceneName(target: unknown): string {
+    const actor = this.streamingActor(target);
+    const component = actor && this.streamingComponent(actor);
+    if (!component) return "";
+    const guid = String(component.getVariable("sceneGuid") ?? "");
+    return this.sceneLibrary.get(guid)?.name ?? String(component.getVariable("sceneName") ?? "");
+  }
+
+  getSceneState(target: unknown): SceneStreamingState {
+    const actor = this.streamingActor(target);
+    return actor ? this.sceneStreams.get(actor.guid)?.state ?? "Unloaded" : "Unloaded";
+  }
+
+  getSceneLoadProgress(target: unknown): number {
+    const actor = this.streamingActor(target);
+    return actor ? this.sceneStreams.get(actor.guid)?.progress ?? 0 : 0;
+  }
+
+  private withStreamBlock(operation: Promise<void>, blocking: boolean): Promise<void> {
+    if (!blocking) return operation;
+    this.streamBlockingCount++;
+    if (this.streamBlockingCount === 1) this.emit({ type: "sceneStreamBlocking", blocking: true });
+    return operation.finally(() => {
+      this.streamBlockingCount--;
+      if (this.streamBlockingCount === 0 && !this.stopped) this.emit({ type: "sceneStreamBlocking", blocking: false });
+      this.accumulator = 0;
+      this.flushOwnerActions();
+      if (this.streamBlockingCount === 0) {
+        const waiters = [...this.simulationWaiters];
+        this.simulationWaiters.clear();
+        for (const resume of waiters) resume();
+      }
+    });
+  }
+
+  private async waitForSimulation(owner: BObject | null): Promise<void> {
+    while ((this.streamBlockingCount > 0 || this.paused) && !this.stopped && !owner?.destroyed)
+      await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
+    const stream = this.streamForOwner(owner);
+    if (this.stopped || owner?.destroyed || !this.sceneStreamReady(stream))
+      throw sceneRealizationCancelled();
+  }
+
+  loadSceneStream(target: unknown, blocking = false): Promise<void> {
+    const actor = this.streamingActor(target);
+    if (this.stopped || !actor) return Promise.reject(new Error("Scene streaming requires a live SceneStreamingActor Target."));
+    const existing = this.sceneStreams.get(actor.guid);
+    if (existing) {
+      if (existing.state === "Unloading") return Promise.reject(new Error("The target scene is unloading."));
+      if (existing.state === "Loaded") return Promise.resolve();
+      return this.withStreamBlock(existing.promise, blocking);
+    }
+    const component = this.streamingComponent(actor);
+    const key = String(component?.getVariable("sceneGuid") ?? "");
+    const document = this.sceneLibrary.get(key);
+    if (!document) return Promise.reject(new Error(`The target scene is not available: ${key || "No Scene Selected"}.`));
+    if (document.settings.physicsWorld !== this.physicsWorldKind)
+      return Promise.reject(new Error("Streamed scenes must use the parent scene's Physics World."));
+    const guid = this.sceneGuidByKey.get(key) ?? key;
+    for (let ancestor = this.actorStream.get(actor); ancestor; ancestor = this.actorStream.get(ancestor.actor)) {
+      if (ancestor.state === "Unloading" || this.sceneStreams.get(ancestor.actor.guid) !== ancestor)
+        return Promise.reject(new Error("The containing scene is unloading."));
+      if (ancestor.assetGuid === guid) return Promise.reject(new Error("Recursive scene streaming is not supported."));
+    }
+    const loadId = ++this.streamLoadId;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    // Cancellation may happen before a graph attaches its awaited continuation.
+    void promise.catch(() => {});
+    const hooks = this.scriptHost.hooksFor(sceneAssetClassId(guid));
+    const scene = new Scene({ guid: `stream:${actor.guid}:${loadId}`, assetGuid: guid, sceneName: document.name,
+      hooks: hooks ? {
+        onCreation: (self) => this.runOwnerCreation(self, () => hooks.onCreation?.(self)),
+        onTick: (self, context) => this.guardScript(() => hooks.onTick?.(self, context)),
+        onDestroyed: (self) => this.runOwnerDestroyed(self, () => hooks.onDestroyed?.(self)),
+      } : undefined });
+    const stream: SceneStream = { actor, loadId, assetGuid: guid, state: "Loading", progress: 0,
+      actors: new Set(), idMap: new Map(), scene, controller: new AbortController(), realized: false, notified: false,
+      promise, resolve, reject, navObstacles: [] };
+    this.sceneStreams.set(actor.guid, stream);
+    this.streamScenes.set(scene, stream);
+    const operation = this.withStreamBlock(promise, blocking);
+    this.emit({ type: "sceneStreamLoading", actorGuid: actor.guid, streamLoadId: loadId });
+    void Promise.resolve().then(async () => {
+      await runSceneRealizationWork(this.realizeSceneStream(stream, document, component!), stream.controller.signal,
+        this.cooperativeSceneLoading ?? {});
+    }).catch((error: unknown) => {
+      if (this.sceneStreams.get(actor.guid) !== stream || stream.state === "Unloading") return;
+      this.retireSceneStream(stream, error);
+    });
+    return operation;
+  }
+
+  private *realizeSceneStream(stream: SceneStream, document: SerializedScene, component: ActorComponent): Generator<void, void, unknown> {
+    const checkpoint = () => {
+      stream.controller.signal.throwIfAborted();
+      if (this.stopped || stream.actor.destroyed || stream.actor.world !== this.world) throw sceneRealizationCancelled();
+    };
+    checkpoint();
+    const cloned = yield* cloneSceneStreamingActorsSteps(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
+    stream.idMap = cloned.idMap;
+    let origin = component.transform;
+    let parentId = component.parentId;
+    const visited = new Set([component.guid]);
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = stream.actor.components.find((entry) => entry.guid === parentId);
+      if (!parent) break;
+      origin = composeParentChildTransform(parent.transform, origin);
+      parentId = parent.parentId;
+    }
+    stream.origin = origin;
+    for (const serialized of cloned.actors) {
+      checkpoint();
+      const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks);
+      if (actor) {
+        if (serialized.parentId === stream.actor.guid) actor.transform = composeParentChildTransform(origin, actor.transform);
+        stream.actors.add(actor);
+        this.actorStream.set(actor, stream);
+      }
+      yield;
+    }
+    let realized = 0;
+    for (const actor of stream.actors) {
+      checkpoint();
+      this.scriptHost.bindInterfaceHandlers(actor);
+      this.realizeActor(actor, checkpoint);
+      stream.progress = ++realized / Math.max(1, stream.actors.size) * 0.5;
+      yield;
+    }
+    checkpoint();
+    this.scriptHost.bindInterfaceHandlers(stream.scene);
+    stream.scene.callOnCreation();
+    this.world.flushPending();
+    stream.realized = true;
+    stream.progress = 0.5;
+    this.publishSceneStreamRealized(stream);
+  }
+
+  private publishSceneStreamRealized(stream: SceneStream): void {
+    if (!stream.realized || stream.notified || stream.state !== "Loading" || !this.streamActorReady(stream.actor)) return;
+    stream.notified = true;
+    this.publishSnapshot();
+    if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+    this.emit({ type: "sceneStreamRealized", actorGuid: stream.actor.guid, streamLoadId: stream.loadId,
+      slotIds: [...stream.actors].flatMap((actor) => { const slot = this.slotByGuid.get(actor.guid); return slot === undefined ? [] : [slot]; }) });
+    if (!this.deferSceneModelsReady) this.notifySceneStreamReady(stream.actor.guid, stream.loadId);
+  }
+
+  notifySceneStreamProgress(actorGuid: string, streamLoadId: number, progress: number): void {
+    const stream = this.sceneStreams.get(actorGuid);
+    if (!stream || stream.loadId !== streamLoadId || stream.state !== "Loading" || !Number.isFinite(progress)) return;
+    stream.progress = Math.max(stream.progress, 0.5 + Math.min(0.999, Math.max(0, progress)) * 0.5);
+  }
+
+  notifySceneStreamReady(actorGuid: string, streamLoadId: number): void {
+    const stream = this.sceneStreams.get(actorGuid);
+    if (this.stopped || !stream || stream.loadId !== streamLoadId || stream.state !== "Loading" || !stream.notified || !this.streamActorReady(stream.actor)) return;
+    try {
+      stream.state = "Loaded";
+      this.physicsSync.syncFromWorld(this.world);
+      this.registerNavAgents();
+      this.registerNavObstacles([...stream.actors], stream.navObstacles);
+      stream.progress = 1;
+      stream.resolve();
+      for (const pending of [...this.sceneStreams.values()]) this.publishSceneStreamRealized(pending);
+      this.flushOwnerActions();
+    } catch (error) {
+      this.retireSceneStream(stream, error);
+    }
+  }
+
+  notifySceneStreamFailed(actorGuid: string, streamLoadId: number, message: string): void {
+    const stream = this.sceneStreams.get(actorGuid);
+    if (stream?.loadId === streamLoadId) this.retireSceneStream(stream, new Error(message));
+  }
+
+  unloadSceneStream(target: unknown, blocking = false): Promise<void> {
+    const actor = this.streamingActor(target);
+    if (!actor) return Promise.reject(new Error("Scene streaming requires a live SceneStreamingActor Target."));
+    const stream = this.sceneStreams.get(actor.guid);
+    if (!stream) return Promise.resolve();
+    if (stream.unloadPromise) return this.withStreamBlock(stream.unloadPromise, blocking);
+    stream.state = "Unloading";
+    stream.progress = 0;
+    stream.controller.abort(sceneRealizationCancelled());
+    const controller = new AbortController();
+    const operation = Promise.resolve().then(async () => {
+      await runSceneRealizationWork(this.removeSceneStreamActors(stream), controller.signal, this.cooperativeSceneLoading ?? {});
+      this.retireSceneStream(stream);
+      if (!this.stopped) this.publishSnapshot();
+    });
+    stream.unloadPromise = operation;
+    return this.withStreamBlock(operation, blocking);
+  }
+
+  private *removeSceneStreamActors(stream: SceneStream): Generator<void, void, unknown> {
+    for (const child of stream.actors) {
+      if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+      const nested = this.sceneStreams.get(child.guid);
+      if (nested) {
+        nested.state = "Unloading";
+        nested.progress = 0;
+        nested.controller.abort(sceneRealizationCancelled());
+        yield* this.removeSceneStreamActors(nested);
+        this.retireSceneStream(nested);
+      }
+      // Another unload or Stop can drain this same subtree while we yield.
+      if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+      if (!stream.actors.has(child)) continue;
+      this.removeSceneStreamActor(stream, child);
+      yield;
+    }
+  }
+
+  private removeSceneStreamActor(stream: SceneStream, actor: Actor): void {
+    this.removeOwnedActor(actor);
+    const agent = this.navAgentByActor.get(actor.guid);
+    if (agent) this.nav?.removeAgent(agent);
+    this.navAgentByActor.delete(actor.guid);
+    this.navTargetByActor.delete(actor.guid);
+    this.navYawByActor.delete(actor.guid);
+    this.navSteeredActors.delete(actor.guid);
+    stream.actors.delete(actor);
+    // Destruction hooks belong to this actor's budget, not a final subtree batch.
+    // flushPending drains queues; it does not rescan the remaining world itself.
+    this.world.flushPending();
+  }
+
+  private retireSceneStream(stream: SceneStream, failure?: unknown): void {
+    if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+    const wasLoaded = stream.state === "Loaded";
+    stream.state = "Unloading";
+    stream.progress = 0;
+    stream.controller.abort(sceneRealizationCancelled());
+    this.sceneStreams.delete(stream.actor.guid);
+    this.emit({ type: "sceneStreamRemoved", actorGuid: stream.actor.guid, streamLoadId: stream.loadId });
+    for (const actor of stream.actors) this.removeSceneStreamActor(stream, actor);
+    this.world.flushPending();
+    stream.scene.destroyed = true;
+    stream.scene.callOnDestroyed();
+    this.pendingOwnerActions.delete(stream.scene);
+    for (const obstacle of stream.navObstacles) this.nav?.removeObstacle(obstacle);
+    // A graph may retain a destroyed actor reference. Its WeakMap ownership
+    // must not retain the rest of the unloaded instance through this set.
+    stream.actors.clear();
+    stream.idMap = new Map();
+    stream.navObstacles.length = 0;
+    this.physicsSync.syncFromWorld(this.world);
+    if (failure || !wasLoaded) stream.reject(failure ?? sceneRealizationCancelled());
+    else stream.resolve();
+  }
+
   async loadPhysics(): Promise<void> {
     if (this.stopped) throw sceneRealizationCancelled();
     const lifecycleId = this.lifecycleId;
@@ -1209,7 +1553,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     backend.setGravity({ x: this.gravity[0], y: this.gravity[1], z: this.gravity[2] });
     const physicsSync = new PhysicsWorldSync(backend, {
-      actorFilter: (actor) => actor.sceneLayerId == null,
+      actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
     });
     const overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
       actorFilter: (actor) => actor.sceneLayerId != null && this.canTickActor(actor),
@@ -1755,9 +2099,14 @@ class InProcessRuntime implements RuntimeDriver {
     variables?: Record<string, unknown>;
     implementedInterfaces?: string[];
     transform?: Transform;
+    streamOwner?: BObject | null;
   }): Actor | null {
+    if (this.stopped) return null;
+    const stream = this.streamForOwner(options.streamOwner);
+    if (stream && (options.streamOwner?.destroyed || !this.sceneStreamReady(stream))) return null;
     if (!this.canSpawnActorClass(options.classId)) return null;
-    const hooks = this.scriptHost.hooksFor(options.classId);
+    const hooks = this.scriptHost.hooksFor(options.classId) ??
+      (this.world.classRegistry.isA(options.classId, "RenderTargetCapture") ? {} : undefined);
     if (!hooks) return null;
     const actor = this.world.createActor({
       classId: options.classId,
@@ -1772,6 +2121,12 @@ class InProcessRuntime implements RuntimeDriver {
           this.runOwnerDestroyed(self, () => hooks.onDestroyed?.(self)),
       },
     });
+    if (stream) {
+      stream.actors.add(actor);
+      this.actorStream.set(actor, stream);
+      actor.setVariable("parentId", stream.actor.guid);
+      if (stream.origin) actor.transform = composeParentChildTransform(stream.origin, actor.transform);
+    }
     this.scriptHost.bindInterfaceHandlers(actor);
     const components = this.scriptHost.scriptsFor(options.classId)
       .find((script) => script.components !== undefined)?.components;
@@ -1795,15 +2150,16 @@ class InProcessRuntime implements RuntimeDriver {
   };
 
   private canTickScene(): boolean {
-    return !this.sceneWorkBlocked && !this.bootLoading && !this.stopped;
+    return !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
   }
 
   private hasReadyLayers(): boolean {
-    return !this.stopped && [...this.layerLoads.values()].some((load) => load.ready && !load.layer.destroyed);
+    return !this.stopped && this.streamBlockingCount === 0 && [...this.layerLoads.values()].some((load) => load.ready && !load.layer.destroyed);
   }
 
   private canTickActor(actor: Actor): boolean {
-    if (this.stopped || actor.destroyed) return false;
+    if (this.stopped || actor.destroyed || this.streamBlockingCount > 0 || !this.streamActorReady(actor) ||
+      (this.paused && this.actorStream.has(actor))) return false;
     if (!actor.sceneLayerId) return this.canTickScene();
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
@@ -1836,7 +2192,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canRunOwner(owner: BObject): boolean {
-    if (this.stopped || owner.destroyed) return false;
+    if (this.stopped || owner.destroyed || this.streamBlockingCount > 0) return false;
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRunOwner(owner.owner);
     if (owner === this.world.gameInstance) return true;
@@ -1844,7 +2200,10 @@ class InProcessRuntime implements RuntimeDriver {
       : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
     if (owner instanceof SceneLayer) return this.layerLoads.get(owner.guid)?.layer === owner && this.layerLoads.get(owner.guid)?.ready === true;
-    if (owner instanceof Scene) return owner === this.world.currentScene && this.canTickScene();
+    if (owner instanceof Scene) {
+      const stream = this.streamForOwner(owner);
+      return (owner === this.world.currentScene || (!this.paused && stream !== undefined && this.sceneStreamReady(stream))) && this.canTickScene();
+    }
     // Detached components and superseded GameInstances have no active owner.
     return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
@@ -1941,6 +2300,8 @@ class InProcessRuntime implements RuntimeDriver {
   private removeOwnedActor(actor: Actor): void {
     if (this.removingActors.has(actor)) return;
     this.removingActors.add(actor);
+    const stream = this.sceneStreams.get(actor.guid);
+    if (stream) this.retireSceneStream(stream);
     this.ragdolls.retire(actor);
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
@@ -2216,6 +2577,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (this.stopped) return;
+    for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     const changeId = ++this.sceneChangeId;
     const current = () => !this.stopped && this.sceneChangeId === changeId;
     this.sceneWorkBlocked = true;
@@ -2555,7 +2917,7 @@ class InProcessRuntime implements RuntimeDriver {
     actor: Actor,
     transforms?: ReadonlyMap<string, Transform>,
   ): void {
-    if (!this.nav || actor.destroyed) return;
+    if (!this.nav || actor.destroyed || !this.streamActorReady(actor)) return;
     if (this.navAgentByActor.has(actor.guid)) return;
     const component = actor.components.find(
       (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
@@ -2587,10 +2949,11 @@ class InProcessRuntime implements RuntimeDriver {
     );
   }
 
-  private registerNavObstacles(): void {
+  private registerNavObstacles(actors: readonly Actor[] = this.world.getActors(), acquired?: string[]): void {
     if (!this.nav) return;
-    for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
+    const transforms = actorWorldTransforms(this.world.getActors(), actors);
+    for (const actor of actors) {
+      if (actor.destroyed || !this.streamActorReady(actor)) continue;
       const component = actor.components.find(
         (entry) =>
           entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
@@ -2599,27 +2962,31 @@ class InProcessRuntime implements RuntimeDriver {
       const props = parseNavMeshBlockerProperties(
         Object.fromEntries(component.variables),
       );
+      const transform = transforms.get(actor.guid) ?? actor.transform;
       const aabb = rotatedBoxWorldAabb(
         [
-          actor.transform.position.x,
-          actor.transform.position.y,
-          actor.transform.position.z,
+          transform.position.x,
+          transform.position.y,
+          transform.position.z,
         ],
         [
-          actor.transform.rotation.x,
-          actor.transform.rotation.y,
-          actor.transform.rotation.z,
-          actor.transform.rotation.w,
+          transform.rotation.x,
+          transform.rotation.y,
+          transform.rotation.z,
+          transform.rotation.w,
         ],
         [
-          actor.transform.scale.x,
-          actor.transform.scale.y,
-          actor.transform.scale.z,
+          transform.scale.x,
+          transform.scale.y,
+          transform.scale.z,
         ],
       );
       const pose = this.toNavObstaclePose(aabb.center);
       const navSize = this.toNavObstacleSize(aabb.size);
       if (props.area === "cost") {
+        // Cost volumes mutate the parent's baked navmesh and cannot be removed.
+        // Streamed instances therefore share its existing navigation costs.
+        if (this.actorStream.has(actor)) continue;
         this.nav.applyCostVolume({
           id: actor.guid,
           kind: props.kind,
@@ -2630,14 +2997,15 @@ class InProcessRuntime implements RuntimeDriver {
         continue;
       }
       if (!props.dynamic) continue;
-      this.nav.addObstacle("box", pose, navSize);
+      const obstacle = this.nav.addObstacle("box", pose, navSize);
+      acquired?.push(obstacle);
     }
   }
 
   private syncNavCostVolumes(): void {
     if (!this.nav) return;
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
+      if (actor.destroyed || this.actorStream.has(actor)) continue;
       const component = actor.components.find(
         (entry) =>
           entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
@@ -2684,7 +3052,7 @@ class InProcessRuntime implements RuntimeDriver {
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = actors.get(actorGuid);
-      if (!actor || actor.destroyed || !actor.components.some((component) =>
+      if (!actor || actor.destroyed || !this.streamActorReady(actor) || !actor.components.some((component) =>
         component.classId === "NavAgentComponent" && !component.destroyed)) {
         this.stopNavAgent(actorGuid);
         this.nav.removeAgent(agentId);
@@ -3629,6 +3997,29 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private emitActorFogVolumes(actor: Actor, slotId: number): void {
+    const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
+      !component.destroyed && component.classId === "FogVolumeComponent");
+    if (!hasVolume && !this.fogVolumeSlots.has(slotId)) return;
+    const volumes = hasVolume ? fogVolumeBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
+      const { position, rotation, scale } = component.transform;
+      const size = component.getVariable("size");
+      return {
+        id: component.guid, classId: component.classId, parentId: component.parentId,
+        properties: component.classId === "FogVolumeComponent" ? {
+          enabled: component.getVariable("enabled"), shape: component.getVariable("shape"),
+          size: size == null ? undefined : rgbTuple(size), density: component.getVariable("density"),
+          edgeFalloff: component.getVariable("edgeFalloff"),
+        } : {},
+        transform: { position: [position.x, position.y, position.z] as [number, number, number],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w] as [number, number, number, number],
+          scale: [scale.x, scale.y, scale.z] as [number, number, number] },
+      };
+    })) : [];
+    this.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes });
+    if (volumes.length) this.fogVolumeSlots.add(slotId); else this.fogVolumeSlots.delete(slotId);
+  }
+
   private cameraAssignPayload(
     actor: Actor,
     camera: ActorComponent,
@@ -3648,8 +4039,22 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
+  private emitRenderTargetCapture(actor: Actor, slotId: number): void {
+    const component = captureComponent(actor);
+    if (!component && !this.captureSlots.has(slotId)) return;
+    this.emit({
+      type: "configureRenderTargetCapture", actorGuid: actor.guid, slotId,
+      settings: component ? captureProperties(component) : null,
+      ...(component ? { transform: captureLocalTransform(component) } : {}),
+    });
+    if (component) this.captureSlots.add(slotId); else this.captureSlots.delete(slotId);
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
+    if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
+    this.emitRenderTargetCapture(actor, slotId);
     this.emitActorOutlines(actor, slotId);
+    this.emitActorFogVolumes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
     const lights = hasAreaLight ? areaRectLightBindings(actor.components.filter((component) => !component.destroyed).map((component) => {
@@ -3668,7 +4073,9 @@ class InProcessRuntime implements RuntimeDriver {
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.world);
-    const renderables = playRenderablesOf(actor.components, skipButtonMesh);
+    const renderables = playRenderablesOf(this.actorStream.has(actor)
+      ? actor.components.filter((component) => component.classId !== "SkyboxComponent")
+      : actor.components, skipButtonMesh);
     if (renderables.length > 0) {
       const primary = renderables[0]!;
       const meshKind = playMeshKindOf(primary);
@@ -3816,6 +4223,11 @@ class InProcessRuntime implements RuntimeDriver {
       });
       return;
     }
+    const capture = captureComponent(actor);
+    if (capture) {
+      this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
+      return;
+    }
     const camera = actor.components.find(
       (component) =>
         component.classId === "CameraComponent" && !component.destroyed,
@@ -3871,6 +4283,8 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "rigidbody",
         parts: [playMeshPartOf(rigid)],
       });
+    } else if (this.fogVolumeSlots.has(slotId)) {
+      this.emit({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: null });
     }
   }
 
@@ -3973,6 +4387,11 @@ class InProcessRuntime implements RuntimeDriver {
 
   private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
+    if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
+      attachSerializedComponents(this.world, actor, [{
+        id: `${actor.guid}:capture`, classId: "RenderTargetCaptureComponent", properties: createDefaultRenderTargetCaptureProperties(),
+      }]);
+    }
     this.applyActorDefaults(actor);
     const slotId = this.assignSlot(actor);
     checkpoint();
@@ -4125,7 +4544,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (actor && !actor.destroyed) return actor;
     }
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed || actor.sceneLayerId) continue;
+      if (actor.destroyed || actor.sceneLayerId || this.actorStream.has(actor)) continue;
       if (
         actor.components.some(
           (component) =>
@@ -4298,12 +4717,14 @@ class InProcessRuntime implements RuntimeDriver {
     if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
     this.slotByGuid.set(actor.guid, slotId);
     this.slotOwners.set(slotId, actor);
+    const stream = this.actorStream.get(actor);
     this.emit({
       type: "spawn",
       slotId,
       actorGuid: actor.guid,
       classId: actor.classId,
       ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}),
+      ...(stream ? { sceneStreamActorGuid: stream.actor.guid, streamLoadId: stream.loadId } : {}),
     });
     return slotId;
   }
@@ -4328,6 +4749,8 @@ class InProcessRuntime implements RuntimeDriver {
     if (owner) this.ragdolls.retire(owner);
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
+    this.captureSlots.delete(slotId);
+    this.fogVolumeSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);
@@ -4479,6 +4902,9 @@ class InProcessRuntime implements RuntimeDriver {
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
+    for (const resume of this.simulationWaiters) resume();
+    this.simulationWaiters.clear();
+    for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     for (const work of [...this.independentLayerWork.values()]) {
       work.controller.abort(sceneRealizationCancelled());
       // Finish live ownership cleanup before Stop returns; a later rejected
@@ -4517,6 +4943,12 @@ class InProcessRuntime implements RuntimeDriver {
   resume(): void {
     if (this.stopped) return;
     this.paused = false;
+    this.flushOwnerActions();
+    if (this.streamBlockingCount === 0) {
+      const waiters = [...this.simulationWaiters];
+      this.simulationWaiters.clear();
+      for (const resume of waiters) resume();
+    }
   }
 
   pushInput(events: readonly RawInputEvent[]): void {
@@ -4536,7 +4968,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   tick(): void {
-    if (!this.running || this.paused || this.processingTick) return;
+    if (!this.running || this.paused || this.streamBlockingCount > 0 || this.processingTick) return;
     this.processingTick = true;
     try {
       this.runTick();
@@ -4577,6 +5009,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.loopGuard.reset();
     try {
       this.world.tick();
+      if (this.canTickScene()) {
+        for (const stream of this.sceneStreams.values()) {
+          if (!this.canTickScene()) break;
+          if (this.sceneStreamReady(stream)) this.scriptHost.hooksFor(stream.scene.classId)?.onTick?.(stream.scene, {
+            dt: simDt, tickIndex: this.world.clock.tickIndex, world: this.world,
+          });
+        }
+      }
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
@@ -4668,7 +5108,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   advance(elapsedSeconds: number): void {
-    if (!this.running || this.paused) return;
+    if (!this.running || this.paused || this.streamBlockingCount > 0) return;
     this.accumulator += elapsedSeconds;
     let steps = 0;
     while (this.accumulator >= this.dt && steps < this.maxCatchUp) {
@@ -4779,6 +5219,9 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshotOriginGeneration = 0;
 
   private publishSnapshot(): void {
+    for (const stream of [...this.sceneStreams.values()]) {
+      if (stream.actor.destroyed || stream.actor.world !== this.world) this.retireSceneStream(stream);
+    }
     const actors = this.world.getActors();
     const liveGuids = new Set(actors.map((actor) => actor.guid));
     let removedActors = false;
@@ -4971,7 +5414,7 @@ function isPlayRenderable(
   component: ActorComponent,
   skipButtonMesh: boolean,
 ): boolean {
-  if (component.destroyed) return false;
+  if (component.destroyed || component.getVariable("editorOnly") === true) return false;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
@@ -5088,6 +5531,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
     return `light:${typeof kind === "string" ? kind : "point"}`;
   }
   if (component.classId === "CameraComponent") return "camera";
+  if (component.classId === "RenderTargetCaptureComponent") return "renderTargetCapture";
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return "springarm";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";

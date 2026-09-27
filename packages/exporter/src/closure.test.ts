@@ -28,6 +28,55 @@ function asset(
 }
 
 describe("collectExportReachability", () => {
+  it("packs nested streamed scenes and their assets without requiring a Change Scene node", () => {
+    const stream = (id: string, target: string) => createActor(id, id, { classId: "SceneStreamingActor", components: [
+      { id: `${id}-component`, classId: "SceneStreamingComponent", properties: { sceneGuid: target, sceneName: target } },
+    ] });
+    const scenes: Record<string, SerializedScene> = {
+      parent: { ...createDefaultScene(), actors: [stream("left", "child"), stream("right", "child")] },
+      child: { ...createDefaultScene(), actors: [stream("nested", "leaf")] },
+      leaf: { ...createDefaultScene(), actors: [createActor("mesh", "Mesh", { components: [
+        { ...createMeshComponent("model", "model"), properties: { meshKind: "model", assetGuid: "model-asset" } },
+      ] })] },
+    };
+    const result = collectExportReachability({ startupSceneGuid: "parent", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [
+        ...Object.keys(scenes).map((guid) => asset({ guid, type: "Scene", name: guid })),
+        asset({ guid: "model-asset", type: "Model", name: "Model" }),
+        asset({ guid: "unused", type: "Scene", name: "Unused" }),
+      ], sceneByGuid: (guid) => scenes[guid] ?? null, graphByGuid: () => null });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toEqual(["child", "leaf", "model-asset", "parent"]);
+    expect([...result.value.bySceneGuid.get("leaf")!].sort()).toEqual(["leaf", "model-asset"]);
+  });
+  it("packs capture targets through material samplers and typed graph references", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("screen", "Screen", {
+      classId: "Monitor", components: [{ ...createMeshComponent("mesh"), properties: { materialGuid: "material" } }],
+    })] };
+    const result = collectExportReachability({
+      startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      assets: [
+        asset({ guid: "scene", type: "Scene", name: "Scene" }),
+        asset({ guid: "class", type: "Class", name: "Monitor" }),
+        asset({ guid: "material", type: "Material", name: "Screen" }),
+        asset({ guid: "image", type: "RenderTargetTexture", name: "Image" }),
+        asset({ guid: "depth", type: "RenderTarget", name: "Depth" }),
+        asset({ guid: "normals", type: "RenderTarget", name: "Normals" }),
+        asset({ guid: "unused", type: "RenderTarget", name: "Unused" }),
+      ],
+      sceneByGuid: (guid) => guid === "scene" ? scene : null,
+      graphByGuid: (guid) => guid === "class" ? { nodes: [
+        { id: "mode", type: "render-target.getMode", position: { x: 0, y: 0 }, data: { properties: { "default:target": "normals" } } },
+      ], edges: [], members: [{ id: "name", kind: "variable", name: "Label", typeId: "string", defaultValue: "unused" }] } : null,
+      payloadByGuid: (guid) => guid === "material" ? { nodes: [{ type: "texture.sample", properties: { textureGuid: "image" } }] }
+        : guid === "image" ? { renderTargetGuid: "depth" } : null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toEqual(["class", "depth", "image", "material", "normals", "scene"]);
+  });
+
   it("packs Class variable constraints and defaults without scanning ordinary strings", () => {
     const graph: SerializedGraph = {
       nodes: [],

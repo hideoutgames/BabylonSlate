@@ -46,6 +46,22 @@ function lensDirection(mesh: Mesh): Vector3 {
 }
 
 describe("editor camera model", () => {
+  it("uses the same camera geometry for capture actors without adding a gameplay camera", () => {
+    const { scene } = setup();
+    const editor = createEditorCamera(scene);
+    const sync = new EditorSceneSync(scene);
+    const camera = cameraActor("camera");
+    const capture = createActor("capture", "Capture", { components: [
+      { id: "capture-component", classId: "RenderTargetCaptureComponent", properties: {}, transform: identitySerializedTransform() },
+    ] });
+    sync.apply({ ...createDefaultScene(), actors: [camera, capture] });
+    const model = scene.getMeshByName(editorComponentMeshName("camera", "camera")) as Mesh;
+    const captureModel = scene.getMeshByName(editorComponentMeshName("capture", "capture-component")) as Mesh;
+    expect(captureModel.geometry).toBe(model.geometry);
+    expect(scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}capture`)).toBeNull();
+    expect(scene.activeCamera).toBe(editor.camera);
+    sync.dispose();
+  });
   it("shares a small texture-free mesh and releases its resources after the last camera", () => {
     const { scene } = setup();
     const first = createEditorCameraModel(scene, "first");

@@ -4,6 +4,7 @@ import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } fro
 import { normalizeMaterialParameterOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
+import { normalizeSceneStreamingProperties } from "./scene-streaming";
 
 
 /**
@@ -336,8 +337,10 @@ function normalizeComponent(
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
+      source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
+      source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
@@ -766,5 +769,6 @@ export function wouldCreateComponentCycle(
   return false;
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
+import { parseFogVolumeProperties } from "./fog-volume";
 import { parseOutlineProperties } from "./outline-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";

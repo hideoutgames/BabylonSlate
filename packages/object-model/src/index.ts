@@ -51,6 +51,7 @@ export {
   GameInstance,
   Scene,
   SceneLayer,
+  SceneStreamingActor,
   type GameInstanceHooks,
   type LifecycleHooks,
   type TickContext,

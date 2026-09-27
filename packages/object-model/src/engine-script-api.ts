@@ -11,6 +11,7 @@ export type EngineScriptVariable = {
   typeClassId?: string;
   /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
   typeClassIds?: readonly string[];
+  container?: "single" | "array" | "map";
   propertyKey: string;
   /** When true, the palette injects Get only (no Set). */
   getOnly?: boolean;
@@ -140,6 +141,19 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  {
+    classId: "RenderTargetCaptureComponent",
+    variables: [
+      { name: "Render Target", typeId: "asset", typeClassId: "RenderTarget", propertyKey: "renderTargetGuid" },
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Capture Every Frame", typeId: "bool", propertyKey: "captureEveryFrame" },
+      { name: "Capture Only Actors", typeId: "bool", propertyKey: "captureOnlyActors" },
+      { name: "Capture Actors", typeId: "actor", typeClassId: "Actor", container: "array", propertyKey: "actorIds" },
+      { name: "Field Of View", typeId: "float", propertyKey: "fieldOfView" },
+      { name: "Near Clip", typeId: "float", propertyKey: "nearClip" },
+      { name: "Far Clip", typeId: "float", propertyKey: "farClip" },
+    ],
+  },
   ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent"].map((classId): EngineClassScriptApi => ({
     classId,
     variables: [
@@ -340,6 +354,16 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Enable Rotation Lag", typeId: "bool", propertyKey: "enableRotationLag" },
       { name: "Rotation Lag Speed", typeId: "float", propertyKey: "rotationLagSpeed" },
       { name: "Draw Debug Lag", typeId: "bool", propertyKey: "drawDebugLag" },
+    ],
+  },
+  {
+    classId: "FogVolumeComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Shape", typeId: "string", propertyKey: "shape" },
+      { name: "Size", typeId: "vec3", propertyKey: "size" },
+      { name: "Density", typeId: "float", propertyKey: "density" },
+      { name: "Edge Falloff", typeId: "float", propertyKey: "edgeFalloff" },
     ],
   },
   {

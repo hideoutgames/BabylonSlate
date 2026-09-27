@@ -11,6 +11,7 @@ import {
 import { ClassRegistry } from "./class-registry";
 import { attachSerializedComponents, createActorFromSerialized } from "./instantiate-scene";
 import { World } from "./world";
+import { SceneStreamingActor } from "./objects";
 
 /** Every document row through the per-actor factory, as Play instantiates a scene or SceneLayer. */
 function documentActors(
@@ -145,6 +146,21 @@ describe("createActorFromSerialized for SceneLayer rows", () => {
 });
 
 describe("createActorFromSerialized", () => {
+  it("instantiates the dedicated streaming actor identity and its authored scene target", () => {
+    const world = testWorld();
+    const actors = documentActors(world, {
+      ...createDefaultScene(),
+      actors: [createActor("stream", "Courtyard", { classId: "SceneStreamingActor", components: [
+        { id: "origin", classId: "SceneStreamingComponent", properties: { sceneGuid: "scene-courtyard", sceneName: "Courtyard" } },
+      ] })],
+    });
+    const actor = actors[0];
+    expect(actor).toBeInstanceOf(SceneStreamingActor);
+    expect(world.classRegistry.isA(actor!.classId, "Actor")).toBe(true);
+    expect((actor as SceneStreamingActor).targetSceneGuid).toBe("scene-courtyard");
+    expect((actor as SceneStreamingActor).targetSceneName).toBe("Courtyard");
+  });
+
   it("builds unspawned actors with serialized ids, transforms, and components", () => {
     const world = testWorld();
     const actors = documentActors(world, {

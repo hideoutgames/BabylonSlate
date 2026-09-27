@@ -18,6 +18,7 @@ describe("ClassRegistry", () => {
     expect(registry.isA("EditorFunctionLibrary", "FunctionLibrary")).toBe(true);
     expect(registry.isA("EditorFunctionLibrary", "BObject")).toBe(true);
     expect(registry.isA("Actor", "BObject")).toBe(true);
+    expect(registry.isA("RenderTargetCapture", "Actor")).toBe(true);
     expect(registry.isA("MeshComponent", "ActorComponent")).toBe(true);
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       expect(registry.has(id)).toBe(true);

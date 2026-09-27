@@ -1,4 +1,5 @@
 import { setAuthoredLightEnabled } from "./light-policy";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import {
@@ -588,6 +589,9 @@ export function* syncAuthoredIlluminationSteps(
 ): Generator<number, void, unknown> {
   const state = stateOf(scene);
   const previousActive = scene.activeCamera;
+  const captures = sceneRenderTargetCaptures(scene);
+  captures.setAssets(options.assets?.renderTargets, options.assets?.renderTargetTextures);
+  captures.syncAuthored(sceneData);
   applySceneEnvironment(scene, sceneData, {
     applyClearColor: options.applyClearColor,
     assets: options.assets,

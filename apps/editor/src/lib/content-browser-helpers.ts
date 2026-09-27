@@ -1,4 +1,4 @@
-import { createDefaultWaterDefinition, normalizeWaterDefinition, type WaterStyle } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
@@ -28,6 +28,7 @@ import {
   classIdsFromVariableMembers,
   areaEmissionTextureGuids,
   createDefaultScene,
+  createSceneStreamingActor,
   createInputAssetPayload,
   isInputAssetType,
   createDefaultSceneLayer,
@@ -89,7 +90,9 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
+  "RenderTargetCapture",
   "SceneLayerActor",
+  "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -229,6 +232,8 @@ export const CREATABLE_ASSET_TYPES = [
   "ParticleGraph",
   "ParticleSystem",
   "Water",
+  "RenderTarget",
+  "RenderTargetTexture",
   "SkyboxCreator",
 ] as const;
 
@@ -262,7 +267,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -304,6 +309,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   ParticleSystem:
     "Plays up to 8 Basic Particle Emitters or Particle Graphs together on one actor.",
   Water: "Shared water appearance and waves for oceans, lakes, rivers, and puddles.",
+  RenderTarget: "A scene capture's render mode and output resolution.",
+  RenderTargetTexture: "A live Render Target output that Materials can sample as a texture.",
   SkyboxCreator:
     "Editor-only helper tool that slices a texture into six skybox faces.",
 };
@@ -1439,6 +1446,8 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
+  if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
+  if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
   if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
 
   if (type === "Scene") {
@@ -1500,6 +1509,11 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
+    if (parentClass === "SceneStreamingActor") {
+      payload.components = createSceneStreamingActor("prefab").components;
+    } else if (parentClass === "RenderTargetCapture") {
+      payload.components = [{ id: "prefab-capture", classId: "RenderTargetCaptureComponent", properties: { ...createDefaultRenderTargetCaptureProperties() } }];
+    }
     return {
       type: "Class",
       name,
@@ -1716,6 +1730,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   ParticleGraph: ".particlegraph.babasset",
   ParticleSystem: ".particles.babasset",
   Water: ".water.babasset",
+  RenderTarget: ".rendertarget.babasset",
+  RenderTargetTexture: ".rendertargettexture.babasset",
   SkyboxCreator: ".skyboxcreator.babasset",
 };
 
@@ -1764,6 +1780,7 @@ export function assetHeaderDependencies(
   visitInputRefs(payload);
   const unique = new Set<string>([
     ...inputRefs,
+    ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
@@ -1772,6 +1789,7 @@ export function assetHeaderDependencies(
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
     ...(assetType === "Water" && normalizeWaterDefinition(payload).materialGuid ? [normalizeWaterDefinition(payload).materialGuid!] : []),
+    ...(assetType === "RenderTargetTexture" && normalizeRenderTargetTexturePayload(payload).renderTargetGuid ? [normalizeRenderTargetTexturePayload(payload).renderTargetGuid!] : []),
     ...skyboxCreatorAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
@@ -1799,6 +1817,13 @@ export function assetHeaderDependencies(
       for (const component of components) {
         if (!component || typeof component !== "object") continue;
         addClass(component.classId);
+        if (component.classId === "SceneStreamingComponent") {
+          const guid = component.properties?.sceneGuid;
+          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
+        } else if (component.classId === "RenderTargetCaptureComponent") {
+          const guid = component.properties?.renderTargetGuid;
+          if (typeof guid === "string" && guid) unique.add(guid);
+        }
         if (component.classId !== "MeshComponent") continue;
         for (const key of ["materialGuid", "assetGuid"]) {
           const guid = component.properties?.[key];
