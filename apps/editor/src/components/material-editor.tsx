@@ -255,7 +255,7 @@ function useTextureExists(): (guid: string) => boolean {
   return useCallback(
     (guid: string) => {
       const header = assetRegistry?.getByGuid(guid)?.header;
-      return header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload);
+      return header?.type === "RenderTargetTexture" || (header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload));
     },
     [assetRegistry],
   );
@@ -790,7 +790,7 @@ function MaterialNodeDetails({
     void registryVersion; // Registry contents mutate without replacing its instance.
     if (!pickOpen || !isTextureNode) return [];
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
+      .filter((asset) => asset.header.type === "RenderTargetTexture" || (asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload)))
       .map((asset) => ({
         guid: asset.header.guid,
         name: asset.header.name,
@@ -945,7 +945,7 @@ function MaterialNodeDetails({
             open={pickOpen}
             onOpenChange={setPickOpen}
             assets={textureAssets}
-            allowedTypes={["Texture"]}
+            allowedTypes={["Texture", "RenderTargetTexture"]}
             title="Pick Texture"
             allowNone
             onPick={(guid) => {

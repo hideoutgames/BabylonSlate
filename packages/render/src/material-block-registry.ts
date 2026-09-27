@@ -105,6 +105,7 @@ export interface MaterialPlumbing {
   cameraPosition?: NodeMaterialConnectionPoint;
   viewDirection?: NodeMaterialConnectionPoint;
   uv?: NodeMaterialConnectionPoint;
+  uv2?: NodeMaterialConnectionPoint;
   screenUv?: NodeMaterialConnectionPoint;
   /** Clip-space transform vector input; connected after World Position Offset. */
   clipPosition?: NodeMaterialConnectionPoint;

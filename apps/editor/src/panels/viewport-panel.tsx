@@ -101,6 +101,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectGuid,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -693,6 +694,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         const tileContent = await collectPlayTilemapContent(scene);
         const waters = await collectPlayWaterContent();
+        const renderTargetAssets = await collectPlayRenderTargets();
         controller.signal.throwIfAborted();
         const modelBytes = await collectPlayModelBytes(scene);
         controller.signal.throwIfAborted();
@@ -739,6 +741,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
           waters,
+          ...renderTargetAssets,
           tilesets: tileContent.tilesets,
           textureBytes,
           texturePixelSizes,
@@ -842,6 +845,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     textureLodKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,

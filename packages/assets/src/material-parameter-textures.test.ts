@@ -11,5 +11,7 @@ it("excludes loaded ENV and DDS cubes from runtime 2D Texture parameter admissio
     ["sky-dds", new Uint8Array([0x44, 0x44, 0x53, 0x20])],
   ]);
   expect(materialParameterTextureAssetGuids(textures)).toEqual(["color"]);
+  expect(materialParameterTextureAssetGuids(textures, new Map([["capture", { renderTargetGuid: "target" }]])))
+    .toEqual(["color", "capture"]);
   expect([...textures.keys()]).toEqual(["color", "sky-env", "sky-dds"]);
 });

@@ -52,6 +52,13 @@ describe("resolveDockInitialWidth", () => {
 });
 
 describe("listDockWindows", () => {
+  it.each(["render-target", "render-target-texture"] as const)("exposes %s Details to Windows and Focus", (kind) => {
+    expect(isDockviewDocumentKind(kind)).toBe(true);
+    const primary = primaryDockPanel(kind);
+    expect(listDockWindows(kind).map((window) => window.id)).toContain(primary);
+    expect(findDockWindow(kind, primary)).toMatchObject({ component: primary, title: "Details" });
+    expect(listDockWindows(kind, { sourceControl: true }).map((window) => window.id)).toContain("locks");
+  });
   it("lists scene dock tabs with default positions and omits the retired assets dock", () => {
     const windows = listDockWindows("scene");
     expect(windows.map((entry) => entry.id)).toEqual([

@@ -1,4 +1,5 @@
 import { PostProcessRetirement } from "./post-process-retirement";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
@@ -439,6 +440,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  renderTargets?: MeshAssetContext["renderTargets"];
+  renderTargetTextures?: MeshAssetContext["renderTargetTextures"];
   areaEmissions?: MeshAssetContext["areaEmissions"];
   /** Authored Texture source pixels for overlay 2DTexture world size. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
@@ -1086,6 +1089,11 @@ function initializeEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
+  binding.renderTargets = options.renderTargets;
+  binding.renderTargetTextures = options.renderTargetTextures;
+  const renderTargetCaptures = sceneRenderTargetCaptures(scene);
+  renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
+  const captureActorSlots = new Map<number, string>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
@@ -1173,7 +1181,10 @@ function initializeEngine(
   const materialLibrary: MaterialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
-    acquireTexture: (guid) => {
+    acquireTexture: (guid, consumerScene) => {
+      if (binding.renderTargetTextures?.has(guid)) {
+        return renderTargetCaptures.acquireTexture(guid, consumerScene);
+      }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
       return acquireMaterialTexture(resourceCache, guid, engine, bytes, undefined, (refused) => reportRefusedTexture(refused, false));
@@ -1521,6 +1532,9 @@ function initializeEngine(
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
+      binding.renderTargets = assets.renderTargets;
+      binding.renderTargetTextures = assets.renderTargetTextures;
+      renderTargetCaptures.setAssets(assets.renderTargets, assets.renderTargetTextures);
       binding.areaEmissions = assets.areaEmissions;
       let emissionChanged = false;
       for (const group of binding.areaLights.values())
@@ -2666,6 +2680,8 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "spawn") {
+        captureActorSlots.set(command.slotId, command.actorGuid);
+        renderTargetCaptures.registerActor(command.actorGuid, () => binding.meshes.get(command.slotId) ?? null);
         appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
         if (command.sceneLayerId) {
@@ -2691,6 +2707,9 @@ function initializeEngine(
         }
       }
       if (command.type === "despawn") {
+        const actorGuid = captureActorSlots.get(command.slotId);
+        if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
+        captureActorSlots.delete(command.slotId);
         appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
@@ -2701,6 +2720,8 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        renderTargetCaptures.clear();
+        captureActorSlots.clear();
         particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
@@ -2748,6 +2769,20 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
+      if (command.type === "configureRenderTargetCapture") {
+        const transform = command.transform;
+        renderTargetCaptures.configure(command.actorGuid, command.settings,
+          () => binding.meshes.get(command.slotId) ?? null, transform ? {
+            position: [transform.position.x, transform.position.y, transform.position.z],
+            rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
+            scale: [transform.scale.x, transform.scale.y, transform.scale.z],
+          } : undefined);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "captureRenderTarget") {
+        renderTargetCaptures.request(command.actorGuid);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setActorOutlines") {
         const previous = binding.outlines.get(command.slotId);
         binding.outlines.set(command.slotId, { actorId: command.actorId, bindings: command.outlines });

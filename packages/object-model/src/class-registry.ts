@@ -84,6 +84,13 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "RenderTargetCapture",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "Scene",
       parentClassId: "BObject",
       kind: "object",

@@ -19,6 +19,8 @@ import { foliagePreparation } from "./foliage-mesh";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waters?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   resourceCache?: TextureResources;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;

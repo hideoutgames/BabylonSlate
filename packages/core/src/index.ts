@@ -50,3 +50,4 @@ export * from "./water-removal";
 export * from "./landscape";
 export * from "./foliage";
 export * from "./spring-arm-component";
+export * from "./render-target";
