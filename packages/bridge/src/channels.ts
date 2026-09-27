@@ -689,4 +689,4 @@ export type BridgeHostMessage =
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
-  | { channel: "snapshot"; payload: ArrayBuffer; generation: number; transferable?: true };
+  | { channel: "snapshot"; payload: ArrayBuffer; generation: number };
