@@ -63,7 +63,7 @@ type GraphEdge = {
 };
 type LogicGraph = {
   id: string;
-  kind: "event" | "function" | "macro";
+  kind: "event" | "function";
   nodes: GraphNode[];
   edges: GraphEdge[];
 };
@@ -73,7 +73,7 @@ Migration: bump graph asset schema; committed historical goldens under `packages
 
 ## Pin type system
 
-Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fast-check for assignability).
+Single module `packages/scripting/src/types.ts`; `types.test.ts` covers assignability.
 
 | Family | Forms |
 | --- | --- |
@@ -142,7 +142,7 @@ type Diagnostic = {
 };
 ```
 
-**Rule registration hook:** `registerValidationRule(rule)` so `behaviour-tree` adds BT structural rules without a second linter. `@babylonslate/behaviour-tree` calls `registerBehaviourTreeValidationRules()`; `TypeContext.behaviourTree` carries the tree payload. See [behaviour-tree.md](behaviour-tree.md).
+**Rule registration hook:** `registerValidationRule(rule)` adds package rules to `validateGraphs`; `createDefaultNodeRegistry()` registers the physics and SceneLayer rules. Behaviour Trees use `validateBehaviourTree` instead ([behaviour-tree.md](behaviour-tree.md#validation)).
 
 **Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse, BT (later).
 

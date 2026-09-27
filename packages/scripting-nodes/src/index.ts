@@ -81,47 +81,6 @@ export * from "./rotator";
 export * from "./color";
 export * from "./quat";
 
-export const ALL_NODE_CATEGORIES = [
-  "flow",
-  "math",
-  "vector",
-  "string",
-  "select",
-  "array",
-  "map",
-  "actor",
-  "component",
-  "transform",
-  "physics",
-  "input",
-  "audio",
-  "particles",
-  "scene",
-  "project",
-  "game-instance",
-  "scene-layer",
-  "render",
-  "scalability",
-  "material",
-  "debug",
-  "interface",
-  "variables",
-  "functions",
-  "casting",
-  "timers",
-  "behaviour-tree",
-  "navigation",
-  "camera",
-  "light",
-  "animation",
-  "struct",
-  "enum",
-  "literal",
-  "rotator",
-  "color",
-  "quaternion",
-] as const;
-
 export function allNodeDefinitions(): NodeDefinition[] {
   return [
     ...flowNodes,

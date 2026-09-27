@@ -47,8 +47,6 @@ function intFact(id: string, title: string, field: string): NodeDefinition {
   };
 }
 
-export const ANIMATION_EXCLUSIVE_NODE_PREFIX = "anim.";
-
 export const animationNodes: NodeDefinition[] = [
   {
     id: "anim.event.initialize",
@@ -167,19 +165,3 @@ export const animationNodes: NodeDefinition[] = [
     },
   },
 ];
-
-export function isAnimationExclusiveNode(nodeId: string): boolean {
-  return nodeId.startsWith(ANIMATION_EXCLUSIVE_NODE_PREFIX);
-}
-
-export function isAnimationRuleOnlyNode(nodeId: string): boolean {
-  return (
-    nodeId.startsWith("anim.rule.") || nodeId.startsWith("anim.state.")
-  );
-}
-
-export function isAnimationObjectEventNode(nodeId: string): boolean {
-  return (
-    nodeId === "anim.event.initialize" || nodeId === "anim.event.update"
-  );
-}

@@ -10,7 +10,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import {
-  ALL_NODE_CATEGORIES,
   createDefaultNodeRegistry,
   quatNodes,
 } from "./index";
@@ -34,7 +33,6 @@ function node(
 
 describe("quaternion nodes", () => {
   it("registers Make/Break and quaternion math on the quaternion palette", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("quaternion");
     expect(quatNodes.map((entry) => entry.id)).toEqual([
       "quat.make",
       "quat.break",
