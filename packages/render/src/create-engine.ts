@@ -144,7 +144,6 @@ import {
   type TextureUploadRefusedError,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
-import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -2619,9 +2618,6 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
         return;
       }
-      if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scheduler }, command);
-      }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
@@ -2846,18 +2842,6 @@ function initializeEngine(
         scheduler.invalidate("camera");
       }
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
-      if (command.type === "setRenderingQuality" && options.playMode) {
-        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
-        setSceneRenderSettings(scene);
-        applyRenderingQuality();
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setRenderPath" && options.playMode) {
-        requestRenderPath(
-          engine,
-          command.renderPath ? { renderPath: command.renderPath } : {},
-        );
-      }
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {

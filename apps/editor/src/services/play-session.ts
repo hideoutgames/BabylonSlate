@@ -869,9 +869,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "setRenderResolution") {
-      options.onSetRenderResolution?.(command.width, command.height);
-    }
     if (command.type === "btState") {
       options.onBtState?.({
         slotId: command.slotId,

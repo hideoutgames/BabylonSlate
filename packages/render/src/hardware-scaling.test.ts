@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core";
 import {
   HardwareScalingController,
   type FramePressureSample,
@@ -117,5 +117,20 @@ describe("frame pressure scaling", () => {
     const scaling = controller({ maxLevel: 2 });
     for (let i = 0; i < 30; i++) scaling.noteFramePressure(sample(40, 40));
     expect(scaling.getLevel()).toBe(2);
+  });
+});
+
+describe("quality resolution bounds", () => {
+  it("uses the chosen resolution bounds and leaves fixed scaling unchanged under load", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine);
+    scaling.configureQuality({ scale: 0.75, minScale: 0.5, targetFps: 60, dynamic: true });
+    expect(scaling.getLevel()).toBeCloseTo(4 / 3);
+    for (let i = 0; i < 100; i++) scaling.noteFramePressure({ presentationMs: null, cpuMs: 100, gpuMs: null });
+    expect(scaling.getLevel()).toBe(2);
+    scaling.configureQuality({ scale: 1, minScale: 1, targetFps: 60, dynamic: false });
+    for (let i = 0; i < 100; i++) scaling.noteFramePressure({ presentationMs: null, cpuMs: 100, gpuMs: null });
+    expect(scaling.getLevel()).toBe(1);
+    engine.dispose();
   });
 });

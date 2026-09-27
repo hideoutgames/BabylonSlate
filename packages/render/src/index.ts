@@ -15,7 +15,6 @@ export * from "./render-scheduler";
 export * from "./snapshot-sync";
 export * from "./snapshot-apply";
 export * from "./hardware-scaling";
-export * from "./play-console-apply";
 export * from "./play-free-cam";
 export * from "./play-console-viz";
 export * from "./play-debug-draw";

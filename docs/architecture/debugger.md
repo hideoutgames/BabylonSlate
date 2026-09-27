@@ -63,8 +63,8 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits `setRenderingQuality` with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. |
-| `volume` / `framecap` | Typed setters emit `setGlobalVolume` / `setFrameCap`; optional arguments query current values. |
+| `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits a `setScalability` transaction with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. |
+| `volume` / `framecap` | Typed setters emit `setGlobalVolume` / a `setScalability` frame-cap patch; optional arguments query current values. |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
 | `pause` / `resume` / `unpause` / `step` | `pause` / `resume` / overlay-style `resume`→`tick`→`pause`. Console pause/resume emit `{ type: "sessionPaused" }` so overlay chrome matches |

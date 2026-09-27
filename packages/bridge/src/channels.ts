@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, QualityOverrides, RenderPath, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -644,21 +644,9 @@ export type CommandMessage =
       componentId?: string;
       playing: boolean;
     }
-  | {
-      type: "setRenderResolution";
-      width: number;
-      height: number;
-    }
   | { type: "sessionPaused"; paused: boolean }
-  | { type: "setRenderingQuality"; overrides: QualityOverrides }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
-  | {
-      /** Non-persistent game-wide session render path; null resumes the project path. */
-      type: "setRenderPath";
-      renderPath: RenderPath | null;
-    }
   | { type: "setLightsDebug"; enabled: boolean }
-  | { type: "setFrameCap"; fps: number }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }
