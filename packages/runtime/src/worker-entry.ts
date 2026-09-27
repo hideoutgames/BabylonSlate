@@ -209,9 +209,6 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
-    case "pause":
-      pauseGate.setPaused(true);
-      return;
     case "step": {
       const rt = ensureRuntime();
       rt.resume();

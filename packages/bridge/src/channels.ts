@@ -167,7 +167,6 @@ export type ControlMessage =
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
-  | { type: "pause" }
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
