@@ -13,6 +13,11 @@ export type SerializedPin = {
   optional?: boolean;
   defaultValue?: unknown;
   colorHint?: boolean;
+  /**
+   * The pin keeps one link: a new connection replaces its old one instead of
+   * fanning out. Outputs fan out by default (Particle Graph spine outputs opt in).
+   */
+  singleLink?: boolean;
 };
 
 /** Serialized graph with optional pin handles on edges (backward compatible with core). */
