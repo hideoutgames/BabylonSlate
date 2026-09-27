@@ -654,6 +654,9 @@ importers:
       earcut:
         specifier: ^3.2.3
         version: 3.2.3
+      meshoptimizer:
+        specifier: 1.1.1
+        version: 1.1.1
     devDependencies:
       '@babylonslate/test-kit':
         specifier: workspace:*

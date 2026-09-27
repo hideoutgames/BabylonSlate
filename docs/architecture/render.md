@@ -62,6 +62,7 @@ are ready; see the typed session contract below.
 | `quality.textures.anisotropy` | Live sampling state | Capability-clamped texture sampling |
 | `quality.textures.lodBias` | Material/graph rebuild | Quality texture blocks/plugins |
 | `quality.textures.byteBudget` | Resource admission | Shared Engine resource cache; no forced disposal of referenced assets |
+| `quality.geometry.autoLod`, `lodDistanceScale` | Live selection state | Scene automatic LOD selector; generated levels stay loaded, so no model reloads |
 | `quality.postprocessing.resolutionScale` | Graph/resource rebuild | Authored post-process owners, including SceneLayers |
 | `quality.lighting.localLightMode`, `maxLocalLights` | Lighting admission/resource update | Managed scene lighting and clustered owners; report effective limits |
 | `shadows.enabled`, `mapSize`, `localMapSize`, `cascades`, `filter`, `filterQuality`, `localLightMode`, `maxLocalLights` | Shadow resource/variant rebuild | Managed shadow controller and lighting budgets |
@@ -81,7 +82,7 @@ are ready; see the typed session contract below.
 Physical A16 budgets and outline acceptance are tracked in [renderer qualification](../design/renderer-qualification.md#production-outline-qualification-gate). This application inventory does not itself certify outline coverage, area lights or device performance.
 Generated text records its pick, glyph, underline and construction materials in a visual bundle at creation, including materials later replaced by an inline image. The same bundle pattern owns the construction material of 3D text and overlay texture quads even after an authored material replaces it. Retirement cancels effects, disposes render users and owned materials/wrappers, then releases shared atlas leases. Borrowed material-library results remain library-owned.
 
-Model realization consumes immutable `modelSources` installed beside the raw `modelBytes` used for synchronous collision extraction. Scene-local decoded generations are keyed by the installed source identity and the texture-slimming decision before unpacking bytes. Instance scale and animation/retarget dependencies belong to the instance descriptor. Preparing and live instances hold exact source leases; an older generation is retired after its last instance releases it. A failed source entry is removed by exact entry identity, permitting retry without evicting a newer request.
+Model realization consumes immutable `modelSources` installed beside the raw `modelBytes` used for synchronous collision extraction. Scene-local decoded generations are keyed by the installed source identity and the texture-slimming decision before unpacking bytes. Instance scale, the Model's Auto LOD flag and animation/retarget dependencies belong to the instance descriptor; generated LOD indices are cached per model bytes across Scenes (see [Automatic LOD](#automatic-lod)). Preparing and live instances hold exact source leases; an older generation is retired after its last instance releases it. A failed source entry is removed by exact entry identity, permitting retry without evicting a newer request.
 
 Model instances stage independent nodes, explicit material clones and animation bindings before publication to the winning placeholder epoch. Babylon automatic material cloning is disabled; a per-instance map records each material and MultiMaterial, and newly cloned texture wrappers are owned separately from source references. Standard/PBR serialization clones texture wrappers (except borrowed render targets); clone adapters compare the supported material's active texture references and keep the source lease for borrowed resources. Material/texture animation targets follow the clone map. `InstantiatedEntries` owns native roots, skeletons and animation groups; slot playback views borrow those groups. Failure retires the provisional bundle and preserves the previous visual. Preview containers similarly reject publication to a disposed or superseded host.
 
@@ -461,6 +462,47 @@ Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/as
 Skeleton assets show bones only. Animation **Show Bones** hides the model and displays the same cyan bone connectors and white joints while the clip keeps looping; switching it off restores the original mesh visibility. `attachSkeletonPreview` keeps source nodes enabled for animation, updates debug geometry in world space each render, and releases its geometry/materials and restores visibility on disposal. Rigs with no bones keep their original model visibility.
 
 Gameplay AnimationGraph state changes seek each paused clip within its authored `from`–`to` frame range. A clip whose first key is after frame zero advances normally; normalized time zero selects that first key. Departing clips restore their original animated channels before the incoming pose is applied, so returning from Walk to Idle does not retain a hip offset that Idle never animates. This reset is scoped to the owning actor's clips and keeps live animatables paused. Jump To State uses the wired AnimationGraphComponent and resolves the selected state's Animation asset and clip name before rendering (see [Animation Graph runtime](anim-graph.md#runtime)).
+
+### Automatic LOD
+
+Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture streaming is not implemented. Babylon 9.20 has no mip streaming or residency API, and swapping resolutions would need its internal texture fields.
+
+- **Generation.** The first Auto LOD actor of a model simplifies each eligible mesh with meshoptimizer. The simplification itself is Babylon-free (`model-lod-simplify.ts`).
+  - One shared module worker (`model-lod.worker.ts`) simplifies queued models one at a time. It exits when the queue drains, returning the simplifier's memory, and after any failure.
+  - When workers are unavailable or fail, simplification runs on the main thread in short steps. A mesh that cannot be simplified keeps full detail without affecting the rest of its model.
+  - Eligible meshes are indexed triangle meshes with at least 1024 triangles, GPU skinning, and no glTF instances or thin instances.
+  - Up to three cascaded levels are error-driven: each stays within about 2 px of a 1080 px view at its switch point. Normals and UVs are weighted, and open borders are locked so separately switching parts do not crack.
+  - Static meshes can go down to 1% of their triangles. Skinned and morphing meshes keep 50/25/12.5% floors because their error is measured in bind pose.
+  - A level must remove at least 20% of the previous level's triangles.
+  - Generated indices are cached per model bytes while any Scene uses them, plus the 32 most recently released models, so the editor viewport, Play, previews and SceneLayers share them. Levels are not persisted or exported; the player generates them after boot.
+- **Index-only levels.** A level is a Babylon `Geometry` that wraps the model's own GPU vertex buffers without owning them (on WebGPU, the aligned copy) and adds its own index buffer, using the source index width.
+  - Skinning, morph targets, tangents, extra UV sets and material defines therefore match the master.
+  - Extra memory is index data only, and it counts toward the Scene's accounted geometry bytes.
+  - One level Geometry per Scene is shared by every actor. It is released with its last LOD mesh and rebuilt from the cached indices; the model's vertex buffers are unaffected, including after a context restore.
+- **Attachment.** `beginSlotModelAnimLoad` starts generation with the model load and publishes the instance at full detail, so model readiness never waits for simplification. Levels attach when generation finishes, if that instance is still published.
+  - Levels share the master's vertex buffers, materials and index width, so their shader variants are already compiled. A wireframe or point material on the actor draws them through Babylon's own topology conversion.
+  - Each level is a child `Mesh` of its master, attached with `Mesh.addLODLevel` and `useLODScreenCoverage`. It is unpickable and is disposed with the actor.
+  - Material changes reach levels through `onMaterialChangedObservable`.
+  - A Scene `onBeforeRender` pass mirrors receive-shadows, rendering group, alpha index, visibility, layer mask, side orientation, skeleton, morph targets and non-uniform scaling.
+- **Selection.** A Scene `customLODSelector` runs on the classic path and in every ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
+  - It uses Babylon's screen-coverage formula with the aspect normalized to 1, so a bound shadow-map target cannot change the choice. Orthographic cameras use their vertical extent.
+  - It applies 10% screen-size hysteresis per camera.
+  - Level thresholds are screen sizes (bounding-sphere diameter / view height) of 0.5, 0.25 and 0.125, scaled by **LOD Distance Scale**.
+  - While the editor freezes active meshes for brush tools, selection keeps full detail.
+- **Consumers.**
+  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), editor material overrides, pickability writers, shadow-caster admission, shadow receiver warmup, water contact, live mesh counts and shadow diagnostic captures.
+  - Shadow maps draw the selected level through the master caster.
+  - Local shadow maps keep caching auto-LOD casters. A map re-renders once when a caster within its light's range changes its drawn level.
+  - `RenderDiagnostics.autoLod` and the stats HUD report visible auto-LOD meshes, how many draw a simplified level, and the triangles saved.
+- **Settings.**
+  - Per Model, **Auto LOD** (`ModelPayload.autoLod`, default on) controls whether levels are generated. Changing it re-realizes loaded actors.
+  - The project Scalability **Geometry** group has **Auto LOD** and **LOD Distance Scale** (Low 0.5, Medium 1, High 1.5, Ultra 2; range 0.25–4). Both apply live to selection. Off draws full detail but keeps generated levels loaded.
+  - SceneLayers follow the world Scene's Geometry settings.
+  - A project saved before this group existed takes the tier shared by its saved Resolution, Textures, Post Processing and Lighting groups, otherwise Medium.
+- **Limits.**
+  - Model Preview, thumbnails and foliage batches stay at full detail.
+  - LOD reduces vertex and triangle work, not draw calls: materials remain per actor.
+  - There is no cross-fade.
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 
@@ -916,7 +958,7 @@ Only the first enabled directional light in stable scene order illuminates a sce
 
 Material color inputs and Color (sRGB) samples decode to linear graph values; Data (Linear) samples remain numerical data. Unlit converts its final color to display space once. CEL converts base/emissive graph colors before its display-space ramp, without changing texture decoding when switching render modes. PBR retains its linear lighting and image-processing output. The obsolete Legacy (Unconverted) texture option is removed.
 
-The shared core ownership registry covers every scalability field: Shadows owns all shadow controls; Resolution owns scale, dynamic/minimum scale and target FPS; Textures owns residency budget, anisotropy and LOD bias; Post Processing owns opt-in pass resolution; Lighting owns local direct-light Auto/Manual capacity (4/16/64/256). Local illumination and shadow-map counts are independent. Manual illumination counts override the Auto target; Forward shader or clustered storage admission can still reduce the effective count. Global sun/fill slots remain separate. The same resolver drives project controls, typed Play/player commands and console queries.
+The shared core ownership registry covers every scalability field: Shadows owns all shadow controls; Resolution owns scale, dynamic/minimum scale and target FPS; Textures owns residency budget, anisotropy and LOD bias; Post Processing owns opt-in pass resolution; Lighting owns local direct-light Auto/Manual capacity (4/16/64/256); Geometry owns automatic Model LOD enablement and its LOD distance scale (0.5/1/1.5/2). Local illumination and shadow-map counts are independent. Manual illumination counts override the Auto target; Forward shader or clustered storage admission can still reduce the effective count. Global sun/fill slots remain separate. The same resolver drives project controls, typed Play/player commands and console queries.
 
 Each category saves `preset` provenance independently from its `profile` admission tier. Any manual cost edit makes the category Custom, even if it matches another preset. Reload preserves Custom; reapplying a category preset resets its complete cost settings. Legacy values are retained and classified by their actual complete settings. Scene sparse shadow overrides and local/session overrides report Custom until reset to inheritance or replaced by an explicit preset. Artistic and structural choices are independent: CEL/PBR and CEL style, IBL enablement/intensity/orientation/strength, render path/backend, output design size/aspect and frame caps neither change nor mark categories Custom. Authored post-process entry IDs remain independent of scalability. Passes stay enabled and ordered; only passes marked scalable may render below full resolution.
 
@@ -1104,7 +1146,7 @@ Runtime and worker commands carry `setScalability` revisions. The Play view appl
 
 ### Class Graph Scalability nodes
 
-The **Scalability** category supplies Get Effective Scalability, Set Scalability Preset, Set Render Scale, Set Render Resolution, Set Frame Cap, shadow/lighting/texture/resolution/post-processing quality setters, FXAA, rendering effects, CEL shading, environment lighting, render mode/path, Reset to Project Defaults, and Event Scalability Changed. Enum and Structure pins are engine types, available through Make/Break Structure. Every setter returns a Scalability Result with revision, status and message. Get Effective Scalability exposes requested/effective settings, readiness, backend selection and fallback diagnostics. Vignette tint uses the graph Color pin through the dedicated color setter/readback; serialized render data retains its RGB tuple.
+The **Scalability** category supplies Get Effective Scalability, Set Scalability Preset, Set Render Scale, Set Render Resolution, Set Frame Cap, shadow/lighting/texture/geometry/resolution/post-processing quality setters, FXAA, rendering effects, CEL shading, environment lighting, render mode/path, Reset to Project Defaults, and Event Scalability Changed. Enum and Structure pins are engine types, available through Make/Break Structure. Every setter returns a Scalability Result with revision, status and message. Get Effective Scalability exposes requested/effective settings, readiness, backend selection and fallback diagnostics. Vignette tint uses the graph Color pin through the dedicated color setter/readback; serialized render data retains its RGB tuple.
 
 Use the changed event to react to renderer confirmation or failure. An immediate `rebuildPending` result only accepts the request; it is not evidence of presentation. Console quality, framecap and renderpath commands use the same session service. Existing Render/Set Render Resolution graphs remain compatible and enter that service too. Changes survive scene transitions and reset with the Play/player session; they never write project defaults. Class Graphs for Actor, ActorComponent and GameInstance expose the event. Backend creation remains a host startup operation; no ordinary live backend-switch node is advertised.
 

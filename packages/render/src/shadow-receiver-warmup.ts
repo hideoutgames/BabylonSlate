@@ -39,6 +39,10 @@ export class ShadowReceiverWarmup {
     this.work = work;
     for (const mesh of this.scene.meshes) {
       if (!mesh.receiveShadows || mesh.isDisposed() || !mesh.getTotalVertices()) continue;
+      // An automatic LOD level shares its master's material and vertex buffers
+      // and mirrors its shadow, skeleton, morph and layer state, so the
+      // master's probe compiles the same effect.
+      if (mesh.isBlocked) continue;
       const instanced = mesh.hasThinInstances || mesh.isAnInstance;
       const variants = instanced ? [true] : mesh instanceof Mesh && mesh.instances.length ? [false, true] : [false];
       for (const source of mesh.subMeshes ?? []) {

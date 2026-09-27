@@ -52,6 +52,8 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
 }
 
 export function participatesInShadows(mesh: AbstractMesh): boolean {
+  // A LOD level is drawn by its master's shadow-map entry.
+  if (mesh.isBlocked) return false;
   if (mesh.name.startsWith("__")) return false;
   if (isSkyboxMesh(mesh)) return false;
   if (mesh instanceof LinesMesh) return false;

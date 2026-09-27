@@ -28,6 +28,7 @@ import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -65,12 +66,17 @@ type ModelPlaceholderMeta = {
 
 type CachedGlb = {
   key: string;
+  /** Model bytes identity; generated LOD indices are shared across Scenes by it. */
+  geometryKey: string;
   guid: string;
   references: number;
   retired: boolean;
   accounted: number;
   container?: AssetContainer;
   load: Promise<AssetContainer>;
+  /** Automatic LOD levels, generated once when an Auto LOD actor first needs them. */
+  lods?: Promise<ModelLodSet | null>;
+  lodSet?: ModelLodSet;
 };
 
 type SceneGlbCache = {
@@ -257,8 +263,33 @@ function retireSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (cache.entries.get(entry.key) === entry) cache.entries.delete(entry.key);
   cache.accountedBytes = Math.max(0, cache.accountedBytes - entry.accounted);
   entry.accounted = 0;
+  entry.lodSet?.dispose();
+  entry.lodSet = undefined;
   entry.container?.dispose();
   entry.container = undefined;
+}
+
+/** Shared generation; a failure leaves this model at full detail. */
+function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet | null> {
+  entry.lods ??= entry.load.then(async (container) => {
+    const current = () => {
+      if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
+    };
+    const lods = await generateModelLods(container, current, entry.geometryKey);
+    if (cache.disposed || entry.retired) {
+      lods.dispose();
+      throw new Error("Model preparation cancelled");
+    }
+    entry.lodSet = lods;
+    entry.accounted += lods.indexBytes;
+    cache.accountedBytes += lods.indexBytes;
+    return lods;
+  }).catch((error: unknown) => {
+    if (!cache.disposed && !entry.retired)
+      console.warn(`[render] Model ${entry.guid} keeps full detail; automatic LOD failed: ${String(error)}`);
+    return null;
+  });
+  return entry.lods;
 }
 
 function releaseUnusedSource(cache: SceneGlbCache, entry: CachedGlb): void {
@@ -271,14 +302,18 @@ export function acquireGlbContainer(
   source: Blob,
   payload?: unknown,
   packed?: PackedTextureSlimProof | null,
-): { key: string; load: Promise<AssetContainer>; release(): void } {
+): { key: string; load: Promise<AssetContainer>; lods(): Promise<ModelLodSet | null>; release(): void } {
   const cache = cacheFor(scene);
   if (cache.disposed || scene.isDisposed) throw new Error("Model scene is disposed");
   const key = modelSourceKey(guid, source, payload, packed);
   cache.requested.set(guid, key);
   let entry = cache.entries.get(key);
   if (!entry) {
-    entry = { key, guid, references: 0, retired: false, accounted: 0, load: Promise.resolve(null as unknown as AssetContainer) };
+    entry = {
+      key, guid, references: 0, retired: false, accounted: 0,
+      geometryKey: `${guid}:${installedAssetIdentity(source)}`,
+      load: Promise.resolve(null as unknown as AssetContainer),
+    };
     cache.entries.set(key, entry);
     const created = entry;
     cache.loadCount += 1;
@@ -312,6 +347,7 @@ export function acquireGlbContainer(
   return {
     key,
     load: held.load,
+    lods: () => modelLods(cache, held),
     release() {
       if (released) return;
       released = true;
@@ -601,6 +637,7 @@ export function beginSlotModelAnimLoad(
   const importScale = normalizeModelImportScale(
     binding.modelPayloads?.get(clipAssetGuid)?.importScale,
   );
+  const autoLod = binding.modelPayloads?.get(clipAssetGuid)?.autoLod !== false;
   const packed = packedSlimProof(binding);
   const animations = JSON.stringify({
     clips: [...(binding.modelClipAnimationGuids?.get(clipAssetGuid) ?? [])],
@@ -609,7 +646,7 @@ export function beginSlotModelAnimLoad(
       return [row, source ? installedAssetIdentity(source) : null];
     }),
   });
-  const key = `${modelSourceKey(clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed)}:scale=${importScale}:${animations}`;
+  const key = `${modelSourceKey(clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed)}:scale=${importScale}:lod=${autoLod}:${animations}`;
   const meta = asPlaceholderMeta(placeholder);
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
     return Promise.resolve();
@@ -652,6 +689,9 @@ export function beginSlotModelAnimLoad(
   const load = (async () => {
     let prepared: PreparedModelInstance | undefined;
     const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed);
+    // Generation overlaps preparation; the instance publishes at full detail
+    // and its levels attach once they are ready.
+    const lods = autoLod ? lease.lods() : null;
     let published = false;
     try {
       const container = await wait(lease.load);
@@ -735,6 +775,13 @@ export function beginSlotModelAnimLoad(
       previousInstance?.bundle.dispose();
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
+      const current = prepared;
+      // Levels share the master's buffers and materials, so their effects are
+      // already compiled. A replaced or despawned instance keeps none.
+      void lods?.then((set) => {
+        if (set && meta[MODEL_INSTANCE_KEY] === current && !current.wrapper.isDisposed())
+          attachModelLods(current.wrapper, set);
+      });
     } catch (error) {
       // A superseded or disposed actor no longer owns this failure. Current
       // failures must reach the scene readiness waiter, even when command

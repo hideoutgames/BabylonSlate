@@ -64,6 +64,7 @@ describe("resolveMeshSimpleColliders", () => {
             points: [{ x: 0, y: 0, z: 0 }],
           },
         ],
+        autoLod: true,
       },
     );
     expect(colliders).toHaveLength(1);
@@ -134,6 +135,7 @@ describe("meshCollisionFingerprint", () => {
         skeletonGuid: null,
         importScale: 1,
         simpleColliders: [],
+        autoLod: true,
       },
     );
     const after = meshCollisionFingerprint(
@@ -154,6 +156,7 @@ describe("meshCollisionFingerprint", () => {
             points: [{ x: 1, y: 0, z: 0 }],
           },
         ],
+        autoLod: true,
       },
     );
     expect(after).not.toBe(before);
@@ -173,6 +176,7 @@ describe("cookComplexCollisionMeshes", () => {
             skeletonGuid: null,
             importScale: 2,
             simpleColliders: [],
+            autoLod: true,
           },
         ],
       ]),

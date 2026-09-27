@@ -209,6 +209,7 @@ it("reuses unchanged installed collision content and resolves only its changed s
         name: "Source",
       }),
     ],
+    autoLod: true,
   };
   actor.attachComponent(
     world.createComponent({

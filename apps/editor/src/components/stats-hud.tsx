@@ -81,6 +81,7 @@ export function StatsHud({
         {rendering ? <span data-testid="stats-hud-rendering"><SelectableText>
           {`render CPU ${rendering.cpuMs.toFixed(2)} ms · engine GPU ${rendering.gpuMs === null ? rendering.gpuStatus : `${rendering.gpuMs.toFixed(2)} ms`} · ${rendering.width}×${rendering.height} · ${rendering.samples} sample · shadows ${rendering.shadowDrawCalls} draws / ${Math.round(rendering.shadowTriangles)} triangles / ${rendering.shadowPasses} allocated passes / ~${formatBytes(rendering.shadowMapBytes)}`}
           {rendering.readbackMs === null ? "" : ` · readback + copy ${rendering.readbackMs.toFixed(2)} ms`}
+          {rendering.autoLod.meshes ? ` · LOD ${rendering.autoLod.reduced}/${rendering.autoLod.meshes} meshes reduced, ${Math.round(rendering.autoLod.trianglesSaved)} triangles saved` : ""}
           {rendering.qualityLimits.length ? ` · ${rendering.qualityLimits.join(", ")}` : ""}
         </SelectableText></span> : null}
         <span

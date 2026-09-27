@@ -670,6 +670,7 @@ describe("loadExportDocuments", () => {
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
         simpleColliders: [],
+        autoLod: true,
       },
       source: glb,
     });
