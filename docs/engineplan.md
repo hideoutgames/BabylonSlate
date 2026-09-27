@@ -1275,7 +1275,7 @@ The project is built by autonomous agents working in parallel, which is a failur
 - `@capacitor/core@^7` to `^8`, verifying the scoped-storage plugin.
 - `@xyflow/react@^12.6` to `^12.11.2`.
 - `vitest@^3` to `^4`, and `@playwright/test@^1.51` to `^1.62`.
-- Add `zod@^4` for schemas, `fflate` for zip, `fast-check`, `@vitest/coverage-v8` and `coi-serviceworker`.
+- Add `zod@^4` for schemas, `fflate` for zip, `fast-check` and `@vitest/coverage-v8`. `coi-serviceworker` is vendored as a locally modified copy in `apps/editor/public/`, not installed as a package.
 - Add the Basis Universal encoder wasm for import-time KTX2 encoding, plus `ktx-parse` for reading and rewriting KTX2 headers without a full decode. The matching transcoder files Babylon needs at load (`basis_transcoder` js and wasm, the UASTC-to-ASTC and UASTC-to-BC7 modules, the Zstd decoder) are vendored into `public/` rather than fetched from a CDN, since both the editor and an itch.io export must be self-contained. Section 3.5 has the rationale.
 - Add `@dimforge/rapier2d-compat` for the 2D physics backend, loaded only when a scene uses a 2D world so a 3D-only game never downloads it. Wasm-load failure falls back to `SoftwarePhysicsBackend` (AABB); `planck.js` is not a dependency.
 - Add `recast-navigation` (`@recast-navigation/core`, `@recast-navigation/generators`, and `@recast-navigation/babylon` for editor-side mesh input and debug draw) as the single navigation library for both editor baking and worker queries. Babylon's built-in `RecastJSPlugin` is deliberately unused: it is `Scene`-coupled and therefore main-thread-only, and mixing it with a second wrapper would stake the navmesh format on two libraries agreeing byte-for-byte. Loaded only for scenes that have a navmesh.
