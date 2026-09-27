@@ -230,7 +230,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "templates",
     label: "Templates",
-    keywords: "templates folder homepage",
+    keywords: "templates library add template homepage",
   },
   {
     id: "plugins",

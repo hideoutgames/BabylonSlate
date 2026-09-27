@@ -29,16 +29,6 @@ export function TilemapEditingProvider({ children }: { children: ReactNode }) {
 }
 
 /* eslint-disable react-refresh/only-export-components -- context module */
-export function useTilemapEditing(): TilemapEditingContextValue {
-  const context = useContext(TilemapEditingContext);
-  if (!context) {
-    throw new Error(
-      "useTilemapEditing must be used within TilemapEditingProvider",
-    );
-  }
-  return context;
-}
-
 export function useOptionalTilemapEditing(): TilemapEditingContextValue | null {
   return useContext(TilemapEditingContext);
 }

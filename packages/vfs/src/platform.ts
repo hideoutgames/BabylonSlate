@@ -40,7 +40,6 @@ export interface ElectronProjectBridge {
   openDocumentsProject(name: string): Promise<ProjectFolderHandle>;
   openKnownFolder(handle: ProjectFolderHandle): Promise<ProjectFolderHandle>;
   listProjects(): Promise<ProjectFolderHandle[]>;
-  getCurrentFolder(): Promise<ProjectFolderHandle | null>;
   releaseFolder(): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;

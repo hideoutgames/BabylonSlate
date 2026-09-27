@@ -3,7 +3,6 @@ import { normalizeScene } from "@babylonslate/core";
 import { createRuntimeFromLoad } from "@babylonslate/runtime";
 import {
   canonicalPlaySceneGuid,
-  inProcessPlayRuntimeOptions,
   playLoadControl,
   playPhysicsFromOpenDocuments,
   playSceneFromOpenDocuments,
@@ -34,10 +33,6 @@ describe("playLoadControl", () => {
       vi.stubGlobal("location", { origin: "https://hideoutgames.github.io" });
       const expected = `https://hideoutgames.github.io${base}havok/HavokPhysics.wasm`;
       expect(playLoadControl({}).havokWasmUrl).toBe(expected);
-      expect(inProcessPlayRuntimeOptions({
-        physicsWorld: "3d",
-        gravity: [0, -9.81, 0],
-      }).havokWasmUrl).toBe(expected);
     },
   );
 
@@ -392,17 +387,5 @@ describe("resolvePreviewStartupGuid", () => {
         startupSceneGuid: "startup-guid",
       }),
     ).toBe("startup-guid");
-  });
-});
-
-describe("inProcessPlayRuntimeOptions", () => {
-  it("includes the vendored Havok wasm URL so in-process Play does not stay on AABB", () => {
-    const options = inProcessPlayRuntimeOptions({
-      physicsWorld: "3d",
-      gravity: [0, -9.81, 0],
-    });
-    expect(options.physicsWorld).toBe("3d");
-    expect(options.gravity).toEqual([0, -9.81, 0]);
-    expect(options.havokWasmUrl).toMatch(/\/havok\/HavokPhysics\.wasm$/);
   });
 });

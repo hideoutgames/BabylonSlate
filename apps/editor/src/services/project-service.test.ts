@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
-import { WebStorageAdapter } from "@babylonslate/vfs";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
@@ -110,7 +109,7 @@ describe("project round-trip", () => {
   });
   it("creates and saves a new project", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await storage.openDocumentsProject("RoundTrip.babproject");
 
@@ -126,7 +125,7 @@ describe("project round-trip", () => {
 
   it("creates a project folder without a .babproject suffix", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await service.createEmptyProject("MyGame");
     expect(storage.getCurrentFolder()?.name).toBe("MyGame");
@@ -134,7 +133,7 @@ describe("project round-trip", () => {
 
   it("refuses to create over an existing project folder", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await service.createEmptyProject("Taken");
     await expect(service.createEmptyProject("Taken")).rejects.toThrow(
@@ -179,7 +178,7 @@ describe("project round-trip", () => {
 
   it("rewrites metadata.name without renaming the folder", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     const handle = await storage.openDocumentsProject("RenameMe.babproject");
     await service.loadCurrentProject();
@@ -278,7 +277,7 @@ describe("project round-trip", () => {
 
   it("removes the registered folder when project scaffolding fails", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
       new Error("Invalid bundled Mannequin GLB"),
@@ -294,7 +293,7 @@ describe("project round-trip", () => {
 
   it("keeps a pre-existing folder that lacks project.json when scaffolding fails", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await storage.openDocumentsProject("Kept");
     await storage.writeText("notes.txt", "x");
@@ -310,7 +309,7 @@ describe("project round-trip", () => {
 
   it("does not delete another operation's folder when the current folder changed mid-scaffold", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     let reject!: (e: Error) => void;
     vi.mocked(loadKenneyMannequinGlb).mockImplementationOnce(
@@ -332,7 +331,7 @@ describe("project round-trip", () => {
 
   it("surfaces the original error when cleanup itself fails", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     vi.mocked(loadKenneyMannequinGlb).mockRejectedValueOnce(
       new Error("Invalid bundled Mannequin GLB"),
@@ -367,7 +366,7 @@ describe("project round-trip", () => {
 
   it("removes the registered folder when template scaffolding fails", async () => {
     localStorage.clear();
-    const storage = new WebStorageAdapter();
+    const storage = new OpfsStorageAdapter();
     const service = new ProjectService(storage);
     await expect(
       service.createFromTemplate({

@@ -29,12 +29,3 @@ export function setEncodeQueuePauseReason(
   else reasons.delete(reason);
   notify();
 }
-
-/** @deprecated Prefer setEncodeQueuePauseReason — kept for call-site clarity. */
-export function setEncodeQueuePaused(paused: boolean): void {
-  setEncodeQueuePauseReason("legacy", paused);
-}
-
-export function isEncodeQueuePauseRequested(): boolean {
-  return reasons.size > 0;
-}

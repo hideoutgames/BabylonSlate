@@ -48,7 +48,6 @@ import {
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
-  siblingAssetRelativePath,
   remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
@@ -1153,12 +1152,6 @@ describe("content-browser-helpers", () => {
   });
 
   it("seeds P9 document assets with typed suffixes", () => {
-    expect(siblingAssetRelativePath("assets/HUD.class.babasset", "Chip.class.babasset")).toBe(
-      "Chip.class.babasset",
-    );
-    expect(
-      siblingAssetRelativePath("assets/ui/HUD.class.babasset", "Chip.class.babasset"),
-    ).toBe("ui/Chip.class.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.babasset",

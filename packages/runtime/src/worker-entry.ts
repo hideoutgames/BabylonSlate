@@ -209,9 +209,6 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
-    case "pause":
-      pauseGate.setPaused(true);
-      return;
     case "step": {
       const rt = ensureRuntime();
       rt.resume();
@@ -300,7 +297,7 @@ function publishSnapshot(): boolean {
     return false;
   }
   const ab = snapshotPing.commitWrite();
-  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration, transferable: true }, [ab]);
+  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
   return true;
 }
 

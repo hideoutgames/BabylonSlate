@@ -77,8 +77,9 @@ describe("attachViewportGestures", () => {
   function attach(
     mode: "2d" | "3d",
     options: Parameters<typeof attachViewportGestures>[2] = {},
+    orthoHalfHeight?: number,
   ) {
-    const controller = createEditorCamera(scene, { mode, scheduler });
+    const controller = createEditorCamera(scene, { mode, scheduler, orthoHalfHeight });
     const handle = attachViewportGestures(
       canvas as unknown as HTMLCanvasElement,
       controller,
@@ -147,8 +148,7 @@ describe("attachViewportGestures", () => {
   });
 
   it("pans a larger world delta in 2D when the frustum is zoomed out", () => {
-    const { controller } = attach("2d");
-    controller.setOrthoHalfHeight(16);
+    const { controller } = attach("2d", {}, 16);
 
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointermove", pointer(1, 60, 140));

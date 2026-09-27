@@ -5,7 +5,7 @@ import type {
   BtNode,
   BtService,
 } from "./types";
-import { defaultPropertiesForClassId, kindForCatalogClassId } from "./catalog";
+import { defaultPropertiesForClassId } from "./catalog";
 import {
   BT_DUPLICATE_OFFSET,
   BT_LAYOUT_NODE_HEIGHT,
@@ -324,80 +324,6 @@ export function moveAttachment(
   });
 }
 
-export function pruneUnreachable(
-  doc: BehaviourTreeDocument,
-): BehaviourTreeDocument {
-  const keep = subtreeIds(doc, doc.rootId);
-  return withEditorPositions(
-    {
-      ...doc,
-      nodes: doc.nodes
-        .filter((node) => keep.has(node.id))
-        .map((node) => ({
-          ...node,
-          children: node.children.filter((childId) => keep.has(childId)),
-        })),
-    },
-    keepEditorPositionsFor(doc, keep),
-  );
-}
-
-export type AddChildNodeOptions = {
-  parentOf?: (id: string) => string | null | undefined;
-  position?: BtEditorPosition;
-};
-
-function addChildOptions(
-  parentOfOrOptions?:
-    | ((id: string) => string | null | undefined)
-    | AddChildNodeOptions,
-): AddChildNodeOptions {
-  if (typeof parentOfOrOptions === "function") {
-    return { parentOf: parentOfOrOptions };
-  }
-  return parentOfOrOptions ?? {};
-}
-
-export function addChildNode(
-  doc: BehaviourTreeDocument,
-  parentId: string,
-  classId: string,
-  parentOfOrOptions?:
-    | ((id: string) => string | null | undefined)
-    | AddChildNodeOptions,
-): BehaviourTreeDocument {
-  const options = addChildOptions(parentOfOrOptions);
-  const parent = doc.nodes.find((node) => node.id === parentId);
-  if (!parent || parent.kind === "task") return doc;
-  const used = usedIds(doc);
-  const kind = kindForCatalogClassId(classId, options.parentOf);
-  const id = uniqueId(kind === "task" ? "task" : kind, used);
-  const child: BtNode = {
-    id,
-    kind,
-    classId,
-    children: [],
-    decorators: [],
-    services: [],
-    properties: defaultPropertiesForClassId(classId),
-  };
-  const next: BehaviourTreeDocument = {
-    ...doc,
-    nodes: [
-      ...doc.nodes.map((node) =>
-        node.id === parentId ? { ...node, children: [...node.children, id] } : node,
-      ),
-      child,
-    ],
-  };
-  if (!options.position && !doc.editorPositions) return next;
-  const positions = clonePositions(doc.editorPositions);
-  if (options.position) {
-    positions[id] = { x: options.position.x, y: options.position.y };
-  }
-  return withEditorPositions(next, positions);
-}
-
 export function canReparentNode(
   doc: BehaviourTreeDocument,
   nodeId: string,
@@ -409,25 +335,4 @@ export function canReparentNode(
   if (!child || !parent || parent.kind === "task") return false;
   if (subtreeIds(doc, nodeId).has(newParentId)) return false;
   return true;
-}
-
-export function reparentNode(
-  doc: BehaviourTreeDocument,
-  nodeId: string,
-  newParentId: string,
-): BehaviourTreeDocument {
-  if (!canReparentNode(doc, nodeId, newParentId)) return doc;
-  return {
-    ...doc,
-    nodes: doc.nodes.map((node) => {
-      const without = node.children.filter((childId) => childId !== nodeId);
-      if (node.id === newParentId) {
-        return { ...node, children: [...without, nodeId] };
-      }
-      if (without.length !== node.children.length) {
-        return { ...node, children: without };
-      }
-      return node;
-    }),
-  };
 }

@@ -187,12 +187,3 @@ export function collectExportReachability(
   ].sort();
   return ok({ guids, bySceneGuid });
 }
-
-/** Backwards-compatible flat closure for callers that do not assign packs. */
-export function collectExportClosure(
-  input: ExportClosureInput,
-): Result<string[], string> {
-  const result = collectExportReachability(input);
-  if ("error" in result) return err(result.error);
-  return ok(result.value.guids);
-}

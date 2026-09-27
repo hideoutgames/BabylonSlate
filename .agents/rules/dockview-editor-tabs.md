@@ -9,15 +9,14 @@ The toolbar **Windows** menu only works when the active document kind is in `Doc
 Do all of these in the same change:
 
 1. Add the kind to `DockviewDocumentKind` / `DOCKVIEW_KINDS` in `apps/editor/src/shell/window-catalog.ts`.
-2. Add a `DockWindowDefinition[]` (stable `id`, `component`, Title Case `title`, `defaultPosition` relative to a primary panel).
+2. Add a `DockWindowDefinition[]` (stable `id`, `component`, Title Case `title`, `defaultPosition` relative to a primary panel) and the primary panel id in `DOCK_PRIMARY_PANEL`.
 3. Register the `component` in `apps/editor/src/shell/panel-registry.tsx` (`IDockviewPanelProps`).
 4. Implement panels under `apps/editor/src/panels/` with `PanelFrame` (omit a duplicate title when DockView already shows the tab name).
 5. Mount `DockviewShell` for that kind in `apps/editor/src/components/document-workspace.tsx` and pass the **real** `documentKind` — do not fall through to the scene/graph branch.
 6. Map the asset type in `documentKindForAssetType` (`packages/core/src/document.ts`).
-7. Add `FOCUS_PRIMARY_PANEL` in `apps/editor/src/shell/layout-ops.ts`.
-8. Cover the catalog in `window-catalog.test.ts`.
+7. Cover the catalog in `window-catalog.test.ts`.
 
-`WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`.
+`WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`. Default layouts and the Focus fallback use `primaryDockPanel(kind)`; `layout-ops.ts` needs no per-kind entry.
 
 ## Animation Graph exception
 

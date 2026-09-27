@@ -6,7 +6,10 @@ const isElectron = vi.fn(() => false);
 vi.mock("./platform", () => ({
   isMobilePlatform: () => isMobile(),
   isElectronHost: () => isElectron(),
-  getElectronUserDataBridge: () => null,
+  getElectronUserDataBridge: () =>
+    isElectron()
+      ? { readSettings: async () => null, writeSettings: async () => {} }
+      : null,
   getHostPlatform: () =>
     isMobile() ? "ios" : isElectron() ? "electron" : "web",
 }));

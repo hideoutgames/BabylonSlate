@@ -314,7 +314,6 @@ describe("app settings", () => {
     const store = new MemoryAppSettingsStore();
     const next = engineSettingsSchema.parse({
       ...defaultEngineSettings(),
-      templatesFolder: "/Templates",
       undoHistoryLength: 100,
       recents: [
         {
@@ -327,6 +326,17 @@ describe("app settings", () => {
     });
     await store.save(next);
     expect(await store.load()).toEqual(next);
+  });
+
+  it("keeps loading settings saved with retired keys", () => {
+    const parsed = engineSettingsSchema.parse({
+      templatesFolder: "/Templates",
+      defaultProjectLocation: "/Projects",
+      undoHistoryLength: 100,
+      debuggerDefaults: { showFps: true, logLevel: "debug", overlayConsole: false },
+    });
+    expect(parsed.undoHistoryLength).toBe(100);
+    expect(parsed.debuggerDefaults.overlayConsole).toBe(false);
   });
 
   it("serializes debugger, viewport, appearance, and recent updates", async () => {

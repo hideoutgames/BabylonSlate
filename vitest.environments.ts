@@ -3,7 +3,6 @@ export const domLogicTests = [
   "apps/player/src/boot.test.ts",
   "apps/player/src/scene-loading-state.test.ts",
   "apps/editor/src/lib/audio-preview.test.ts",
-  "apps/editor/src/services/template-service.test.ts",
   "apps/editor/src/services/project-service.test.ts",
   "apps/editor/src/services/project-service.assets.test.ts",
   "apps/editor/src/services/lifecycle-pause.test.ts",

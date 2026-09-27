@@ -43,7 +43,7 @@ describe("SceneLayer object model", () => {
     expect(world.getActors()).toHaveLength(1);
   });
 
-  it("allows sprites and 2D physics components but not skybox, camera, or light", () => {
+  it("allows sprites and 2D physics components but not world-only components", () => {
     expect(isSceneLayerAllowedComponent("SpriteComponent")).toBe(true);
     expect(isSceneLayerAllowedComponent("RigidBodyComponent")).toBe(true);
     expect(isSceneLayerAllowedComponent("ColliderComponent")).toBe(true);
@@ -54,6 +54,8 @@ describe("SceneLayer object model", () => {
     expect(isSceneLayerAllowedComponent("HemisphericFillLightComponent")).toBe(
       false,
     );
+    expect(isSceneLayerAllowedComponent("LandscapeComponent")).toBe(false);
+    expect(isSceneLayerAllowedComponent("FoliageComponent")).toBe(false);
     expect([...SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS]).toEqual([
       "2DAnchorComponent",
       "2DButtonComponent",

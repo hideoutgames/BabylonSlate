@@ -8,7 +8,6 @@ export interface EditorActorTransform extends SerializedTransform {
 
 export type EngineCommand =
   | { type: "log"; message: string }
-  | { type: "resize"; width: number; height: number }
   | {
       type: "editor.drop";
       viewportId: string;

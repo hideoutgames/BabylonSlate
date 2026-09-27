@@ -25,7 +25,7 @@ export function fitContainedRect(
 /**
  * Locked custom-resolution size for letterbox present.
  * `blackBars: false` does not cap the buffer — the host fills and cameras
- * follow the live aspect. A live `setRenderResolution` override still locks.
+ * follow the live aspect. A live `ctx.setRenderResolution` override still locks.
  */
 export function playFramebufferSize(
   render?: {

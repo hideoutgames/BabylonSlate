@@ -31,7 +31,3 @@ export const A16_POLICY = {
   defaultFormat: "uastc" as const,
   mainThreadMedianMsMaxDuringEncode: 1,
 };
-
-export function fixtureId(spec: EncodeFixtureSpec): string {
-  return `${spec.size}-${spec.format}`;
-}

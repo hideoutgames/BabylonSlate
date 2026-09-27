@@ -8,10 +8,10 @@ import {
 } from "@babylonslate/core";
 import {
   actorRowId,
-  flattenOutliner,
   folderRowId,
   outlinerRowTarget,
-} from "./scene-outliner-panel";
+} from "../lib/outliner-drop";
+import { flattenOutliner } from "./scene-outliner-panel";
 
 function sceneWith(partial: Partial<SerializedScene>): SerializedScene {
   return { ...createDefaultScene(), actors: [], folders: [], ...partial };

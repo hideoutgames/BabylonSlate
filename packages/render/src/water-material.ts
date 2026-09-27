@@ -316,11 +316,6 @@ function withWaterEnvironment(light: ReturnType<typeof sceneWaterLighting>, envi
   return { ...light, ambient: [ambient.r, ambient.g, ambient.b] as const };
 }
 
-/** Sun direction/color and a diffuse light estimate used to light the water body. */
-export function waterLighting(scene: Scene, environmentStrength: number, reflective: boolean) {
-  return withWaterEnvironment(sceneWaterLighting(scene), environmentStrength, reflective || scene.environmentTexture !== null);
-}
-
 type WaterRemovalCandidate = ReturnType<typeof sceneWaterRemovals>[number] & {
   position: Vector3;
   radius: number;

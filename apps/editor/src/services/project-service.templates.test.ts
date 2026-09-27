@@ -1,17 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   createEmptyProjectFiles,
   encodeAssetDocument,
   encodeProjectZip,
+  listTemplates,
   writeProjectTree,
 } from "@babylonslate/assets";
-import {
-  defaultEngineSettings,
-  MemoryStorageAdapter,
-  type EngineSettings,
-} from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
-import { loadTemplateCards } from "./template-service";
 
 async function folderWithTemplates() {
   const storage = new MemoryStorageAdapter("documents");
@@ -28,64 +24,9 @@ async function folderWithTemplates() {
   return storage;
 }
 
-function settings(patch: Partial<EngineSettings> = {}): EngineSettings {
-  return { ...defaultEngineSettings(), ...patch };
-}
-
-describe("Homepage template cards", () => {
-  it("lists directory and zip templates from the settings folder", async () => {
-    const storage = await folderWithTemplates();
-    const openTemplatesFolder = vi.fn(async () => storage);
-
-    const cards = await loadTemplateCards({
-      platform: "ios",
-      loadSettings: async () => settings({ templatesFolder: "Templates" }),
-      openTemplatesFolder,
-    });
-
-    expect(cards.map((c) => c.name)).toEqual(["Platformer", "TopDown"]);
-    expect(openTemplatesFolder).toHaveBeenCalledWith("Templates");
-  });
-
-  it("offers Empty only on web", async () => {
-    const openTemplatesFolder = vi.fn();
-    const cards = await loadTemplateCards({
-      platform: "web",
-      loadSettings: async () => settings({ templatesFolder: "Templates" }),
-      openTemplatesFolder,
-    });
-
-    expect(cards).toEqual([]);
-    expect(openTemplatesFolder).not.toHaveBeenCalled();
-  });
-
-  it("shows no cards until a templates folder is set", async () => {
-    const cards = await loadTemplateCards({
-      platform: "ios",
-      loadSettings: async () => settings({ templatesFolder: null }),
-      openTemplatesFolder: vi.fn(),
-    });
-    expect(cards).toEqual([]);
-  });
-
-  it("degrades to no cards when the templates folder cannot be opened", async () => {
-    const cards = await loadTemplateCards({
-      platform: "ios",
-      loadSettings: async () => settings({ templatesFolder: "Gone" }),
-      openTemplatesFolder: async () => {
-        throw new Error("folder missing");
-      },
-    });
-    expect(cards).toEqual([]);
-  });
-
+describe("Create Project from a template", () => {
   it("creates a project from a template card with a new name and identity", async () => {
-    const templates = await folderWithTemplates();
-    const cards = await loadTemplateCards({
-      platform: "ios",
-      loadSettings: async () => settings({ templatesFolder: "Templates" }),
-      openTemplatesFolder: async () => templates,
-    });
+    const cards = await listTemplates(await folderWithTemplates());
 
     const destination = new MemoryStorageAdapter("documents");
     const service = new ProjectService(destination);
@@ -123,11 +64,7 @@ describe("Homepage template cards", () => {
       sceneBytes,
     );
 
-    const cards = await loadTemplateCards({
-      platform: "ios",
-      loadSettings: async () => settings({ templatesFolder: "Templates" }),
-      openTemplatesFolder: async () => templates,
-    });
+    const cards = await listTemplates(templates);
     const destination = new MemoryStorageAdapter("documents");
     const service = new ProjectService(destination);
     const { document } = await service.createFromTemplate({

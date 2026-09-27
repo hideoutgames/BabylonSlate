@@ -15,7 +15,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -85,8 +84,7 @@ export type NestedMenuItem =
         testId?: string;
       }>;
     }
-  | { type: "separator"; id: string }
-  | { type: "label"; id: string; label: string };
+  | { type: "separator"; id: string };
 
 export interface NestedMenuProps {
   items: NestedMenuItem[];
@@ -120,11 +118,6 @@ function NestedMenuItems({
       {items.map((item) => {
         if (item.type === "separator") {
           return <DropdownMenuSeparator key={item.id} />;
-        }
-        if (item.type === "label") {
-          return (
-            <DropdownMenuLabel key={item.id}>{item.label}</DropdownMenuLabel>
-          );
         }
         if (item.type === "checkbox") {
           return (
@@ -284,13 +277,6 @@ function OverlayMenuItems({
         if (item.type === "separator") {
           return (
             <Separator key={item.id} className="context-menu-separator" />
-          );
-        }
-        if (item.type === "label") {
-          return (
-            <div key={item.id} className="context-menu-label">
-              {item.label}
-            </div>
           );
         }
         if (item.type === "checkbox") {

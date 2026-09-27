@@ -1,4 +1,5 @@
 import type { ColliderDesc, PhysicsTransform, Quat, Vec3 } from "./types";
+import { identityQuat, multiplyQuat, rotateQuatVec } from "./collider-bake";
 
 export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline" | "capsule" | "capsule2d" | "cylinder" | "convex" | "mesh";
 
@@ -15,38 +16,13 @@ export type DebugColliderPrimitive = {
   indices?: number[];
 };
 
-function identityQuat(): Quat {
-  return { x: 0, y: 0, z: 0, w: 1 };
-}
-
-function rotateOffset(rotation: Quat, offset: Vec3): Vec3 {
-  const { x, y, z, w } = rotation;
-  const tx = 2 * (y * offset.z - z * offset.y);
-  const ty = 2 * (z * offset.x - x * offset.z);
-  const tz = 2 * (x * offset.y - y * offset.x);
-  return {
-    x: offset.x + w * tx + (y * tz - z * ty),
-    y: offset.y + w * ty + (z * tx - x * tz),
-    z: offset.z + w * tz + (x * ty - y * tx),
-  };
-}
-
-function multiplyQuat(a: Quat, b: Quat): Quat {
-  return {
-    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-  };
-}
-
 export function colliderWorldPosition(
   desc: ColliderDesc,
   bodyTransform: Pick<PhysicsTransform, "position" | "rotation">,
 ): Vec3 {
   const offset = desc.translation;
   if (!offset) return { ...bodyTransform.position };
-  const rotated = rotateOffset(bodyTransform.rotation ?? identityQuat(), offset);
+  const rotated = rotateQuatVec(bodyTransform.rotation ?? identityQuat(), offset);
   return {
     x: bodyTransform.position.x + rotated.x,
     y: bodyTransform.position.y + rotated.y,
@@ -60,7 +36,7 @@ function polylinePoints(
   rotation: Quat,
 ): Vec3[] {
   return points.map((point) => {
-    const rotated = rotateOffset(rotation, {
+    const rotated = rotateQuatVec(rotation, {
       x: point.x,
       y: point.y,
       z: point.z ?? 0,

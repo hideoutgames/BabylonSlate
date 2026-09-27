@@ -661,11 +661,7 @@ export function connectEventPointerId(event: Event | {
   return 1;
 }
 
-export type ConnectEndMode =
-  | "default"
-  | "add-node"
-  | "disabled"
-  | "zone-add-node";
+export type ConnectEndMode = "default" | "add-node" | "zone-add-node";
 
 export type SecondaryCancelPointer = {
   connectionActive: boolean;
@@ -727,7 +723,6 @@ export function connectEndAction(
   decision: ConnectEndBreakDecision,
   mode: ConnectEndMode = "default",
 ): ConnectEndAction {
-  if (mode === "disabled") return "none";
   if (decision.hasTargetHandle) return "none";
   if (mode === "add-node") {
     if (decision.pointerOverNode) return "none";
@@ -763,18 +758,6 @@ export function edgeTouchesPin(
     (edge.source === nodeId && edge.sourceHandle === pinId) ||
     (edge.target === nodeId && edge.targetHandle === pinId)
   );
-}
-
-export function edgesTouchingPin<T extends PinEdgeRef>(
-  edges: readonly T[],
-  nodeId: string,
-  pinId: string,
-): T[] {
-  return edges.filter((edge) => edgeTouchesPin(edge, nodeId, pinId));
-}
-
-export function edgeTouchesNode(edge: PinEdgeRef, nodeId: string): boolean {
-  return edge.source === nodeId || edge.target === nodeId;
 }
 
 export function edgesTouchingNodes<T extends PinEdgeRef>(

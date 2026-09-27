@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { PinTypePicker } from "./pin-type-picker";
-import { isPinPickerType } from "./pin-types";
 
 if (typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -41,26 +40,12 @@ describe("PinTypePicker", () => {
       />,
     );
     expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByTestId("search-item-array")).toBeNull();
+    expect(screen.queryByTestId("search-item-map")).toBeNull();
     const vec3 = screen.getByTestId("search-item-vec3");
     expect(vec3.textContent).toContain("Vector 3");
     expect(vec3.querySelector("[data-type-color-swatch]")).not.toBeNull();
     vec3.click();
     expect(onChange).toHaveBeenCalledWith("vec3");
-  });
-
-  it("narrows known pin picker types", () => {
-    expect(isPinPickerType("bool")).toBe(true);
-    expect(isPinPickerType("class")).toBe(true);
-    expect(isPinPickerType("vec4")).toBe(true);
-    expect(isPinPickerType("rotator")).toBe(true);
-    expect(isPinPickerType("color")).toBe(true);
-    expect(isPinPickerType("transform")).toBe(true);
-    expect(isPinPickerType("actor")).toBe(true);
-    expect(isPinPickerType("asset")).toBe(true);
-    expect(isPinPickerType("wildcard")).toBe(true);
-    expect(isPinPickerType("quat")).toBe(true);
-    expect(isPinPickerType("array")).toBe(false);
-    expect(isPinPickerType("map")).toBe(false);
-    expect(isPinPickerType("widget")).toBe(false);
   });
 });

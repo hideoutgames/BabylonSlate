@@ -813,17 +813,6 @@ export function pinTypeFromParameterType(type: ParameterValueType): PinType {
   }
 }
 
-export function parameterRowsFromPinList(
-  rows: ReadonlyArray<{ name: string; type?: unknown }>,
-  prefix: string,
-): ParameterRow[] {
-  return rows.map((row, index) => ({
-    id: `${prefix}-${index}-${row.name}`,
-    name: row.name,
-    type: parameterTypeFromPin(row.type),
-  }));
-}
-
 export function javaScriptPinRows(
   rows: ReadonlyArray<{ id?: string; name: string; type?: unknown }>,
   prefix: string,
@@ -841,15 +830,6 @@ export function javaScriptPinsFromRows(rows: readonly PinListRow[]) {
     id: row.id,
     name: row.name,
     type: pinTypeForVariable({ ...row, typeId: row.type }),
-  }));
-}
-
-export function pinListFromParameterRows(
-  rows: readonly ParameterRow[],
-): Array<{ name: string; type: PinType }> {
-  return rows.map((row) => ({
-    name: row.name,
-    type: pinTypeFromParameterType(row.type),
   }));
 }
 

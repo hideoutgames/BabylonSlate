@@ -69,9 +69,6 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await expect(
       page.getByTestId("gallery-catalog").getByText("Rendering"),
     ).toBeVisible();
-    await expect(
-      page.getByTestId("gallery-catalog-search"),
-    ).not.toHaveAttribute("data-autofocus-search");
     await expect(page.getByTestId("gallery-catalog-search")).not.toBeFocused();
     await expect(page.getByTestId("gallery-catalog-body")).toBeVisible();
     await page.keyboard.press("Escape");

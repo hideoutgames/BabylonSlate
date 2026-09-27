@@ -20,7 +20,7 @@ import {
   type ParticleSpace,
 } from "@babylonslate/core";
 import { stableStringify } from "./bytes";
-import { burstFireTimes, type ParticleBurst } from "./particle-schedule";
+import type { ParticleBurst } from "./particle-schedule";
 import {
   PARTICLE_COLOR_SPEC,
   PARTICLE_VALUE_SPECS,
@@ -661,53 +661,6 @@ export function resolveBasicEmitterPlan(
         : [],
     },
   };
-}
-
-/** Fire events above this make the Capacity hint report an unbounded need. */
-const SLOT_NEED_EVENT_LIMIT = 4096;
-
-/**
- * Upper bound of simultaneously live particles, for the editor's Capacity hint:
- * rate × longest lifetime plus the peak burst particles in any lifetime-long window
- * (across loop wraps). Infinity when bursts fire more than 4096 events in that span.
- */
-export function basicEmitterSlotNeed(payload: ParticleEmitterPayload): number {
-  const { emitter, spawn, initialize } = payload;
-  const lifetime = scalarValueBounds(initialize.lifetime).max;
-  const once = emitter.loop === "once";
-  const rateSpan = once ? Math.min(lifetime, emitter.duration) : lifetime;
-  // The epsilon keeps float products such as 30 × 1.2 from rounding up a whole particle.
-  const rateNeed = Math.max(
-    0,
-    Math.ceil(scalarValueBounds(spawn.rate).max * rateSpan - 1e-9),
-  );
-  if (!spawn.bursts.enabled) return rateNeed;
-  const cycles = once ? 1 : Math.ceil(lifetime / emitter.duration) + 1;
-  const events: Array<{ time: number; count: number }> = [];
-  for (let cycle = 0; cycle < cycles; cycle += 1) {
-    for (const burst of spawn.bursts.entries) {
-      const remaining = SLOT_NEED_EVENT_LIMIT - events.length;
-      const times = burstFireTimes(burst, emitter.duration, remaining + 1);
-      if (times.length > remaining) return Number.POSITIVE_INFINITY;
-      for (const time of times) {
-        events.push({ time: cycle * emitter.duration + time, count: burst.count });
-      }
-    }
-  }
-  events.sort((a, b) => a.time - b.time);
-  let peak = 0;
-  let live = 0;
-  let oldest = 0;
-  for (const event of events) {
-    live += event.count;
-    // A particle fired `lifetime` ago has died by now (age ≥ life).
-    while (events[oldest]!.time <= event.time - lifetime) {
-      live -= events[oldest]!.count;
-      oldest += 1;
-    }
-    peak = Math.max(peak, live);
-  }
-  return rateNeed + peak;
 }
 
 export type ParticleEmitterChangeTier = "none" | "live" | "respawn" | "rebuild";
