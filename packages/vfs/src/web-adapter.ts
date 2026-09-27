@@ -282,11 +282,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
     };
     if (dirHandle.entries) {
       for await (const [name, handle] of dirHandle.entries()) {
-        // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
-        if (name.endsWith(".crswap")) continue;
         if (handle.kind === "directory") {
           out.push({ name, isDir: true, size: null, mtime: null });
         } else {
+          // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
+          if (name.endsWith(".crswap")) continue;
           let file: File;
           try {
             file = await (handle as FileSystemFileHandle).getFile();

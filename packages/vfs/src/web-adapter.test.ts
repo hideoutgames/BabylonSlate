@@ -130,13 +130,14 @@ describe("OPFS / web storage adapter", () => {
       kind: "file",
       getFile: async () => ({ size, lastModified: 7 }),
     });
-    // Chromium lists `<name>.crswap` while a writable is open; closing it (or any
-    // concurrent removal) makes the listed handle's getFile() reject.
+    // Chromium lists `<name>.crswap` while a writable is open (readable until it
+    // closes); an entry removed after listing rejects getFile().
     const entries: Array<[string, unknown]> = [
-      ["main.scene.babasset.crswap", { kind: "file", getFile: notFound }],
+      ["main.scene.babasset.crswap", file(5)],
       ["main.scene.babasset", file(3)],
       ["removed.babasset", { kind: "file", getFile: notFound }],
       ["Input", { kind: "directory" }],
+      ["Backup.crswap", { kind: "directory" }],
     ];
     const project = {
       async *entries() {
@@ -151,6 +152,7 @@ describe("OPFS / web storage adapter", () => {
     expect(await storage.readdir("")).toEqual([
       { name: "main.scene.babasset", isDir: false, size: 3, mtime: 7 },
       { name: "Input", isDir: true, size: null, mtime: null },
+      { name: "Backup.crswap", isDir: true, size: null, mtime: null },
     ]);
   });
 
