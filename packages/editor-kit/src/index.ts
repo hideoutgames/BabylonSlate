@@ -34,7 +34,6 @@ export {
   ariaKeyShortcuts,
   chordFromEvent,
   chordHasCommandModifier,
-  chordMatchesEvent,
   describeChord,
   formatChord,
   isApplePlatform,
@@ -92,7 +91,6 @@ export {
   pinPickerKeepsTypeClassId,
   ASSET_REF_PICKER_TYPES,
   type PinPickerType,
-  type FunctionPinPickerType,
 } from "./pin-types";
 export {
   NumericDragField,
