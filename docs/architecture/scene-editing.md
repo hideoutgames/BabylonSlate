@@ -20,6 +20,8 @@ Place **Scene Streaming** or a project Scene asset to add a `SceneStreamingActor
 
 NodeGraphs control each actor's independent instance during Play, Preview Build, and exported games. See [streaming nodes](scripting.md#scene-streaming-nodes) and [runtime ownership](render.md#additive-scene-streaming).
 
+Streaming targets are recorded as asset dependencies for Scene and prefab Class documents, including unsaved edits, so Show References and deletion checks include their target Scenes.
+
 The parent retains its world settings and navigation mesh. Child Scene Defaults and default SceneLayers are not applied automatically. Runtime streaming realizes content from the prepared session library; it is not deferred loading of source files from storage.
 
 ## SerializedScene v4

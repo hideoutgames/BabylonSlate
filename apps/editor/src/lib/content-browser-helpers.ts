@@ -1813,6 +1813,10 @@ export function assetHeaderDependencies(
       for (const component of components) {
         if (!component || typeof component !== "object") continue;
         addClass(component.classId);
+        if (component.classId === "SceneStreamingComponent") {
+          const guid = component.properties?.sceneGuid;
+          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
+        }
         if (component.classId !== "MeshComponent") continue;
         for (const key of ["materialGuid", "assetGuid"]) {
           const guid = component.properties?.[key];

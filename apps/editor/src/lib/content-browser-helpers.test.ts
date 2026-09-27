@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
+import { createSceneStreamingActor } from "@babylonslate/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -1923,6 +1924,15 @@ describe("content-browser-helpers", () => {
         { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
       ],
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
+  });
+
+  it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {
+    const actor = createSceneStreamingActor("room", "scene-room", "Room");
+    const unassigned = createSceneStreamingActor("unassigned");
+    const payload = type === "Scene"
+      ? { actors: [actor, { ...actor, id: "room-copy" }, unassigned] }
+      : { nodes: [], edges: [], components: [...actor.components, ...unassigned.components] };
+    expect(assetHeaderDependencies(type, payload)).toEqual(["scene-room"]);
   });
 
   it("extracts Audio mixer and channel guids for header.dependencies", () => {
