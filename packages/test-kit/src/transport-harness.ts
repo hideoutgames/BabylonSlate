@@ -4,7 +4,3 @@
  * produce identical world state for the same seed and tick count.
  */
 export { createInProcessRuntime } from "@babylonslate/runtime";
-export {
-  createWorldSnapshot,
-  stringifyWorldSnapshot,
-} from "@babylonslate/object-model";

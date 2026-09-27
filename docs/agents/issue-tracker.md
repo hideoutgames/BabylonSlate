@@ -395,7 +395,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
-| Core quality commands “mutate real engine settings” | Play applies `setGlobalVolume` / `setFrameCap` / `setRenderQuality` / `setResolutionScale` | `p8-console-apply` (done) |
+| Core quality commands “mutate real engine settings” | Play applies `setGlobalVolume` and `setScalability` transactions (quality, resolution scale, frame cap) | `p8-console-apply` (done) |
 | No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `resume` / `unpause`; console `step` matches overlay; `sessionPaused` updates chrome | `p8-console-session` (done) |
 | No free cam / spectate without pausing | `freecam` detached fly/pan; simulation keeps ticking | `p8-console-freecam` (done) |
 | `showcollision` / `showbounds` / `wireframe` / `slomo` | `slomo` scales tick `dt`; viz overlays + Stats HUD + `dumpactors` / `inspect` | `p8-console-slomo`, `p8-console-viz` (done) |
