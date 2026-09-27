@@ -32,7 +32,7 @@ export interface ShapeHandlesHost<Target extends ShapeHandleTarget> {
 }
 export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHandle, Target extends ShapeHandleTarget> {
   name: string;
-  parse: (properties: Record<string, unknown>, target: Target) => Body;
+  parse: (properties: unknown, target: Target) => Body;
   read: (mesh: Mesh) => Body | null;
   update: (mesh: Mesh, body: Body) => void;
   handles: (body: Body) => Handle[];

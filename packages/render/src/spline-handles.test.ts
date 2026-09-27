@@ -83,6 +83,7 @@ describe("Spline shape handles", () => {
     expect(selectedShapeComponent(scene, ["a"], [])?.component.id).toBe("river");
     expect(selectedShapeComponent(scene, ["a"], ["mesh"])).toBeNull();
     expect(selectedShapeComponent(scene, ["a"], ["river", "curve"])).toBeNull();
+    expect(selectedShapeComponent(scene, [], ["curve"])).toBeNull();
     expect(selectedShapeComponent(scene, ["a", "b"], [])).toBeNull();
     expect(selectedShapeComponent({ ...scene, actors: [{ ...actor, locked: true }] }, ["a"], ["curve"])).toBeNull();
   });
