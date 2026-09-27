@@ -1427,21 +1427,21 @@ class InProcessRuntime implements RuntimeDriver {
     stream.progress = 0;
     stream.controller.abort(sceneRealizationCancelled());
     const controller = new AbortController();
-    const self = this;
-    function* removeActors(): Generator<void, void, unknown> {
-      for (const child of stream!.actors) {
-        if (self.sceneStreams.get(actor!.guid) !== stream) return;
-        self.removeOwnedActor(child);
-        yield;
-      }
-    }
     const operation = Promise.resolve().then(async () => {
-      await runSceneRealizationWork(removeActors(), controller.signal, this.cooperativeSceneLoading ?? {});
+      await runSceneRealizationWork(this.removeSceneStreamActors(stream), controller.signal, this.cooperativeSceneLoading ?? {});
       this.retireSceneStream(stream);
       if (!this.stopped) this.publishSnapshot();
     });
     stream.unloadPromise = operation;
     return this.withStreamBlock(operation, blocking);
+  }
+
+  private *removeSceneStreamActors(stream: SceneStream): Generator<void, void, unknown> {
+    for (const child of stream.actors) {
+      if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+      this.removeOwnedActor(child);
+      yield;
+    }
   }
 
   private retireSceneStream(stream: SceneStream, failure?: unknown): void {

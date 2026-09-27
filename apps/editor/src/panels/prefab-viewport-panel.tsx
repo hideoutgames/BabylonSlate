@@ -101,6 +101,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     registryVersion,
   } = useDocuments();
   const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
+    void registryVersion; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
   }), [components, assetRegistry, registryVersion]);

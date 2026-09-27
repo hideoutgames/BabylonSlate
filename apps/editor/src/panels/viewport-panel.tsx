@@ -260,6 +260,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const editorScene = useMemo(() => scene && sceneStreamingEditorScene(scene, (guid) => {
+    void registryVersion; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
   }), [scene, assetRegistry, registryVersion]);
