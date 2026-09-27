@@ -631,7 +631,7 @@ describe("SceneDetailsPanel authoring", () => {
       view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     };
     fireEvent.click(screen.getByTestId("property-scene-fog-mode"));
-    const exponential = await screen.findByRole("option", { name: "Exponential", exact: true });
+    const exponential = await screen.findByRole("option", { name: "Exponential" });
     fireEvent.pointerDown(exponential);
     fireEvent.click(exponential);
     applyChange();
