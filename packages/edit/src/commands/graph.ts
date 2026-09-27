@@ -274,29 +274,6 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   }
 }
 
-export type GraphEditCommand =
-  | MoveNodeCommand
-  | AddEdgeCommand
-  | RemoveEdgeCommand
-  | SetNodeDataCommand
-  | AddNodeCommand
-  | RemoveNodeCommand
-  | SetGraphMembersCommand
-  | SetGraphComponentsCommand
-  | SetGraphFunctionGraphsCommand;
-
-export const GRAPH_COMMAND_TYPES = [
-  "graph.moveNode",
-  "graph.addEdge",
-  "graph.removeEdge",
-  "graph.setNodeData",
-  "graph.addNode",
-  "graph.removeNode",
-  "graph.setMembers",
-  "graph.setComponents",
-  "graph.setFunctionGraphs",
-] as const;
-
 export function createMoveNodeCommandFromJson(
   payload: Record<string, unknown>,
 ): MoveNodeCommand {
