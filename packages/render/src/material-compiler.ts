@@ -1105,7 +1105,7 @@ function applyWorldPositionOffset(
  * Vertex transform and world-space geometry every surface material needs.
  * Returns the vertex output node the material must own.
  */
-function createSurfacePlumbing(
+export function createSurfacePlumbing(
   name: string,
   created: NodeMaterialBlock[],
   plumbing: MaterialPlumbing,

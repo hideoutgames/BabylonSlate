@@ -444,6 +444,14 @@ describe("spawnPlacedActor placement", () => {
 });
 
 describe("duplicateSceneActor", () => {
+  it("remaps selected capture actors while preserving external actor references", () => {
+    const scene = createDefaultScene();
+    const capture = createActor("capture", "Capture", { components: [{ id: "capture-component", classId: "RenderTargetCaptureComponent", properties: { captureOnlyActors: true, actorIds: ["subject", "external"] } }] });
+    scene.actors = [capture, createActor("subject", "Subject"), createActor("external", "External")];
+    const [copy, subject] = duplicateSceneActors(scene, ["capture", "subject"]);
+    expect(copy!.components[0]!.properties.actorIds).toEqual([subject!.id, "external"]);
+    expect(capture.components[0]!.properties.actorIds).toEqual(["subject", "external"]);
+  });
   it("remaps constraints inside a duplicated selection and preserves external targets", () => {
     const scene = createDefaultScene();
     const source = createActor("arm", "Arm", { components: [

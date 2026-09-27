@@ -229,6 +229,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "LightComponent",
   "HemisphericFillLightComponent",
   "CameraComponent",
+  "RenderTargetCaptureComponent",
   SPRING_ARM_COMPONENT_CLASS_ID,
   "AudioComponent",
   "SkyboxComponent",
@@ -328,6 +329,7 @@ function isBillboardComponent(component: SerializedComponent): boolean {
   return (
     isAuthoredLightClassId(component.classId) ||
     component.classId === "CameraComponent" ||
+    component.classId === "RenderTargetCaptureComponent" ||
     component.classId === "AudioComponent" ||
     component.classId === "ParticleComponent" ||
     component.classId === "NavMeshComponent"
@@ -353,7 +355,7 @@ export function helperBillboardIconOf(
     (component) => component.classId === "LightComponent",
   );
   if (light) return lightBillboardIcon(light.properties.lightKind);
-  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+  if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return "camera";
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
@@ -421,7 +423,7 @@ function componentVisualKind(
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
-  if (component.classId === "CameraComponent") return EDITOR_CAMERA_MODEL_KIND;
+  if (component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent") return EDITOR_CAMERA_MODEL_KIND;
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
     return `springarm:${parseSpringArmProperties(component.properties).armLength}`;
   }
@@ -591,7 +593,7 @@ export function editorMeshKindOf(
     return editorBillboardKind(lightBillboardIcon(light?.properties.lightKind));
   }
   if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
-  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+  if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return EDITOR_CAMERA_MODEL_KIND;
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
@@ -678,7 +680,7 @@ export function createMeshForComponent(
     applyEditorBillboardFromActor(mesh, actor);
     return mesh;
   }
-  if (component.classId === "CameraComponent") {
+  if (component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent") {
     return createEditorCameraModel(scene, name);
   }
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {

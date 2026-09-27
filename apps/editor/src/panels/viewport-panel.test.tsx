@@ -236,6 +236,7 @@ describe("ViewportPanel engine", () => {
     receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
+    handle.editor.gizmos.setSnap.mockClear();
     play.registerSharedEngine.mockClear();
     play.playing = false;
     play.preparing = false;
@@ -717,10 +718,11 @@ describe("ViewportPanel engine", () => {
           cameraBounds2D: { width: 32, height: 18 },
         }),
       );
+      // Grid is applied during construction; snap follows the engineEpoch effect.
+      expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith(
+        expect.objectContaining({ translate: 0.5 }),
+      );
     });
-    expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith(
-      expect.objectContaining({ translate: 0.5 }),
-    );
     selection.mode = "3d";
   });
 

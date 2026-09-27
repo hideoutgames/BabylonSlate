@@ -45,7 +45,7 @@ describe("collectExportClosure", () => {
       ],
       sceneByGuid: (guid) => guid === "scene" ? scene : null,
       graphByGuid: (guid) => guid === "class" ? { nodes: [
-        { id: "mode", type: "render-target.getMode", data: { properties: { "default:target": "normals" } } },
+        { id: "mode", type: "render-target.getMode", position: { x: 0, y: 0 }, data: { properties: { "default:target": "normals" } } },
       ], edges: [], members: [{ id: "name", kind: "variable", name: "Label", typeId: "string", defaultValue: "unused" }] } : null,
       payloadByGuid: (guid) => guid === "material" ? { nodes: [{ type: "texture.sample", properties: { textureGuid: "image" } }] }
         : guid === "image" ? { renderTargetGuid: "depth" } : null,

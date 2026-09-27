@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "./render-target-panels";
 
@@ -21,8 +21,10 @@ it("saves the selected engine render mode while retaining the resolution", async
   harness.content = { mode: "SceneColor", width: 640, height: 320 };
   render(<RenderTargetDetailsPanel {...({} as IDockviewPanelProps)} />);
   fireEvent.click(screen.getByTestId("property-render-target-mode"));
-  fireEvent.click(await screen.findByRole("option", { name: "Depth Pass" }));
-  expect(harness.commit).toHaveBeenLastCalledWith("target", { mode: "DepthPass", width: 640, height: 320 });
+  const option = await screen.findByRole("option", { name: "Depth Pass" });
+  fireEvent.pointerDown(option, { pointerType: "mouse" });
+  fireEvent.click(option);
+  await waitFor(() => expect(harness.commit).toHaveBeenLastCalledWith("target", { mode: "DepthPass", width: 640, height: 320 }));
 });
 
 it("links a Render Target Texture to a target and excludes image assets", async () => {

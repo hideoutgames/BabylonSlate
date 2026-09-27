@@ -111,6 +111,8 @@ export const ASSET_REF_PICKER_TYPES = [
   "AudioChannel",
   "AudioMixer",
   "Texture",
+  "RenderTarget",
+  "RenderTargetTexture",
   "Material",
   "Font",
   "Sprite",

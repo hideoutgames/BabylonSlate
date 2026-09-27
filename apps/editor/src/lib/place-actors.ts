@@ -691,6 +691,9 @@ export function duplicateSceneActors(
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
+      if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
+        return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };
+      }
       if (component.classId !== "PhysicsConstraintComponent") return component;
       const target = component.properties.targetActorId;
       if (typeof target !== "string" || !actorCopies.has(target)) return component;

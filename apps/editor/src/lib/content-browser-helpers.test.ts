@@ -1390,6 +1390,8 @@ describe("content-browser-helpers", () => {
       "ParticleGraph",
       "ParticleSystem",
       "Water",
+      "RenderTarget",
+      "RenderTargetTexture",
       "SkyboxCreator",
     ]);
   });
@@ -1444,6 +1446,8 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
+      "RenderTarget",
+      "RenderTargetTexture",
       "Water",
       "ParticleEmitter",
       "ParticleGraph",

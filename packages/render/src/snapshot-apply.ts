@@ -1021,6 +1021,7 @@ export function isPlayHelperMeshKind(
     meshKind === "particle" ||
     meshKind === "rigidbody" ||
     meshKind === SPRING_ARM_MESH_KIND ||
+    meshKind === "renderTargetCapture" ||
     meshKind.startsWith("light:")
   );
 }
