@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@babylonslate/assets";
+import type { AssetRegistry } from "@babylonslate/assets";
 import { assetTypeForDocumentKind, type DocumentRef } from "@babylonslate/core";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
 import {
@@ -6,18 +6,28 @@ import {
   visualForIndexedAsset,
 } from "./content-browser-helpers";
 
-/** Keep document navigation consistent with the Content Browser's asset identity. */
-export function documentTypeVisual(
-  ref: DocumentRef,
-  assets: readonly IndexedAsset[],
+/** Share within a render; a new resolver observes in-place registry updates. */
+export function createDocumentTypeVisualResolver(
+  registry: AssetRegistry | null | undefined,
 ) {
-  const indexed = assets.find((asset) => asset.path === ref.path);
-  return indexed
-    ? visualForIndexedAsset(indexed, classParentLookup(assets))
-    : resolveTypeVisual({
-        assetType:
-          ref.kind === "content-browser"
-            ? undefined
-            : assetTypeForDocumentKind(ref.kind),
-      });
+  let parents: ReturnType<typeof classParentLookup> | undefined;
+  const parentOf = (id: string) => {
+    parents ??= classParentLookup(registry?.list() ?? []);
+    return parents(id);
+  };
+  return (ref: DocumentRef) => {
+    const indexed = registry?.getByPath(ref.path);
+    return indexed
+      ? visualForIndexedAsset(indexed, parentOf)
+      : resolveTypeVisual({
+          assetType:
+            ref.kind === "content-browser"
+              ? undefined
+              : assetTypeForDocumentKind(ref.kind),
+        });
+  };
 }
+
+export type DocumentTypeVisualResolver = ReturnType<
+  typeof createDocumentTypeVisualResolver
+>;

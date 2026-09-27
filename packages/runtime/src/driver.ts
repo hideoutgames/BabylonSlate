@@ -2683,7 +2683,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private tickCrowd(): void {
+  private tickCrowd(actors: ReadonlyMap<string, Actor>): void {
     if (!this.nav) return;
     this.syncNavCostVolumes();
     const worldTransforms = actorWorldTransforms(this.world.getActors());
@@ -2691,7 +2691,7 @@ class InProcessRuntime implements RuntimeDriver {
     const physicalAgents = new Set<string>();
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = this.world.findActor(actorGuid);
+      const actor = actors.get(actorGuid);
       if (!actor || actor.destroyed || !actor.components.some((component) =>
         component.classId === "NavAgentComponent" && !component.destroyed)) {
         this.stopNavAgent(actorGuid);
@@ -2718,7 +2718,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = this.world.findActor(actorGuid);
+      const actor = actors.get(actorGuid);
       if (!actor || actor.destroyed) continue;
       if (physicalAgents.has(actorGuid)) {
         if (this.navTargetByActor.has(actorGuid)) {
@@ -4605,7 +4605,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.navFrameActors = new Map(this.world.getActors().map((actor) => [actor.guid, actor]));
       try {
         this.tickBehaviourTrees();
-        if (this.canTickScene()) this.tickCrowd();
+        if (this.canTickScene()) this.tickCrowd(this.navFrameActors);
       } finally {
         this.navFrameActors = null;
       }

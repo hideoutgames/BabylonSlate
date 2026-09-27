@@ -253,6 +253,10 @@ export function DocumentWorkspace() {
     );
   }
 
+  // Share ancestry only within this render: the registry mutates in place.
+  // Build it lazily so tabs outside the working set do no registry traversal.
+  let parentOf: ReturnType<typeof classParentLookup> | undefined;
+
   return (
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
@@ -584,14 +588,14 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (!shouldMount) return null;
+
         const sceneContent =
           isSceneWorkspaceKind(doc.ref.kind)
             ? (doc.content as SerializedScene | null)
             : null;
-        const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-        const indexed = assetRegistry
-          ?.list()
-          .find((asset) => asset.path === doc.ref.path);
+        parentOf ??= classParentLookup(assetRegistry?.list() ?? []);
+        const indexed = assetRegistry?.getByPath(doc.ref.path);
         const actorPrefab =
           doc.ref.kind !== "graph" ||
           !indexed ||
@@ -608,8 +612,6 @@ export function DocumentWorkspace() {
           ).includes("SceneLayerActor");
         const overlayWorkspace =
           doc.ref.kind === "scene-layer" || overlayPrefab;
-
-        if (!shouldMount) return null;
 
         return (
           <WorkspaceErrorBoundary key={id}>
