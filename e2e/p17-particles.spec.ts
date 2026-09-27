@@ -62,7 +62,7 @@ async function chooseValueMode(
   await expect(menu).toHaveCount(0);
 }
 
-/** Particle Domain Material; the new Particle Output starts unwired. */
+/** Particle Domain Material; the switch wires Particle Color into the Particle Output. */
 async function createParticleMaterial(page: Page, name: string): Promise<string> {
   await createContentBrowserAsset(page, "Material", name);
   await openAssetFromBrowser(page, `assets/${name}.material.babasset`);

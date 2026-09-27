@@ -1,11 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import {
-  addMaterialPaletteNode,
-  compileMaterialPreview,
-  connectMaterialPins,
-  guidForPath,
-} from "./material-graph";
+import { guidForPath } from "./material-graph";
 import {
   createContentBrowserAsset,
   openAssetFromBrowser,
@@ -40,28 +35,14 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   await expect(content).toHaveCount(0);
 }
 
-/** Particle Domain Material; with `particleColor` it draws each particle's own color. */
-async function createParticleMaterial(
-  page: Page,
-  name: string,
-  options: { particleColor?: boolean } = {},
-): Promise<string> {
+/** New Material switched to the Particle Domain, which draws each particle's own color. */
+async function createParticleMaterial(page: Page, name: string): Promise<string> {
   await createContentBrowserAsset(page, "Material", name);
   await openAssetFromBrowser(page, `assets/${name}.material.babasset`);
   await expect(page.getByTestId("document-workspace-material")).toBeVisible();
   await page.getByTestId("property-domain").click();
   await page.getByRole("option", { name: "Particle", exact: true }).click();
   await expect(page.getByTestId("property-domain")).toContainText("Particle");
-  if (options.particleColor) {
-    await addMaterialPaletteNode(page, "Particle Color", "input.particleColor");
-    await connectMaterialPins(page, "input.particleColor-", "color", '[data-id="output"]', "color");
-    await expect(
-      page
-        .getByTestId("material-graph-editor")
-        .locator('.react-flow__edge[data-id*=":color:output:color"]'),
-    ).toHaveCount(1);
-    await compileMaterialPreview(page);
-  }
   const guid = await guidForPath(page, `assets/${name}.material.babasset`);
   expect(guid.length).toBeGreaterThan(0);
   return guid;
@@ -188,6 +169,25 @@ function changedPixels(canvas: Locator): () => Promise<number> {
     });
 }
 
+/** Pixels drawn over the corner background colour, and how many of them are blue. */
+async function bluePixels(canvas: Locator): Promise<{ drawn: number; blue: number }> {
+  return canvas.evaluate((element: HTMLCanvasElement) => {
+    const context = element.getContext("2d");
+    if (!context) return { drawn: 0, blue: 0 };
+    const data = context.getImageData(0, 0, element.width, element.height).data;
+    const background = [data[0]!, data[1]!, data[2]!];
+    let drawn = 0;
+    let blue = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const [r, g, b] = [data[i]!, data[i + 1]!, data[i + 2]!];
+      if (Math.max(r - background[0]!, g - background[1]!, b - background[2]!) <= 40) continue;
+      drawn += 1;
+      if (b - Math.max(r, g) > 40) blue += 1;
+    }
+    return { drawn, blue };
+  });
+}
+
 /** Picks a Value Mode for a Basic emitter Details row (`value-mode-<rowId>`). */
 async function chooseValueMode(page: Page, rowId: string, mode: "constant" | "range" | "curve"): Promise<void> {
   const menu = page.getByTestId(`value-mode-${rowId}-menu`);
@@ -199,12 +199,12 @@ async function chooseValueMode(page: Page, rowId: string, mode: "constant" | "ra
   await expect(menu).toHaveCount(0);
 }
 
-type ParticleFrame = { green: number; white: number };
+type ParticleFrame = { green: number; blue: number };
 
 /**
  * Reads `count` consecutive animation frames of the canvas at half resolution. Particles blend
  * additively and move, so each pixel's minimum over the window is the particle-free background;
- * a frame's particles are what it adds to that: green (Basic emitter) or white (Particle Graph).
+ * a frame's particles are what it adds to that: green (Basic emitter) or blue (Particle Graph).
  */
 async function particleFrames(canvas: Locator, count: number): Promise<ParticleFrame[]> {
   return canvas.evaluate(async (element: HTMLCanvasElement, count) => {
@@ -233,15 +233,15 @@ async function particleFrames(canvas: Locator, count: number): Promise<ParticleF
     }
     return frames.map((data) => {
       let green = 0;
-      let white = 0;
+      let blue = 0;
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i]! - background[i]!;
         const g = data[i + 1]! - background[i + 1]!;
         const b = data[i + 2]! - background[i + 2]!;
         if (g > 40 && r < 25 && b < 25) green += 1;
-        else if (r > 30 && g > 30 && b > 30) white += 1;
+        else if (b > 30 && r < 25 && g < 25) blue += 1;
       }
-      return { green, white };
+      return { green, blue };
     });
   }, count);
 }
@@ -277,7 +277,7 @@ test.describe("Particle Graph", () => {
       if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
     });
     await openTestProject(page);
-    const materialGuid = await createParticleMaterial(page, "EmberMat", { particleColor: true });
+    const materialGuid = await createParticleMaterial(page, "EmberMat");
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleGraph", "Embers");
@@ -325,6 +325,20 @@ test.describe("Particle Graph", () => {
     await expect(preview.getByTestId("particle-preview-backend")).toHaveText("CPU");
     await expect(results).toContainText("No Issues");
     await expect(results.locator('[data-testid^="particle-graph-diagnostic-"]')).toHaveCount(0);
+
+    // Neither the Particle Domain Material nor the default graph replaces Create Particle's Color.
+    await particleGraphEditor(page)
+      .locator('.react-flow__node[data-id="create"]')
+      .click({ position: { x: 12, y: 6 } });
+    const createColor = details.getByTestId("property-color-hex");
+    await createColor.fill("#0000ff");
+    await createColor.press("Tab");
+    await expect(createColor).toHaveValue("#0000ff");
+    await expect(async () => {
+      const { drawn, blue } = await bluePixels(previewCanvas);
+      expect(drawn).toBeGreaterThan(200);
+      expect(blue / drawn, `${blue} of ${drawn} drawn pixels are blue`).toBeGreaterThan(0.9);
+    }).toPass({ timeout: 15_000 });
     await saveAllIfEnabled(page);
 
     await createContentBrowserAsset(page, "ParticleEmitter", "EmberSparks");
@@ -335,7 +349,7 @@ test.describe("Particle Graph", () => {
     await pickAsset(page, "particle-emitter-material-picker", materialGuid);
     const basicBackend = page.getByTestId("particle-emitter-preview").getByTestId("particle-preview-backend");
     await expect(basicBackend).toHaveText(/^(GPU|CPU)$/, { timeout: 30_000 });
-    // Constant green, dense and large, so Play can tell this emitter's pixels from the white graph.
+    // Constant green, dense and large, so Play can tell this emitter's pixels from the blue graph.
     await chooseValueMode(page, "color", "constant");
     const hex = emitterDetails.getByTestId("property-color-hex");
     await hex.fill("#00ff00");
@@ -400,14 +414,13 @@ test.describe("Particle Graph", () => {
       .toEqual({ systems: 2, playing: 1, graphSystems: 1 });
     // Play draws through the FrameGraph, whose culling gates each particle draw on its emitter.
     // Both slots must show on nearly every frame, not only on the classic frame after a resize.
-    // Without particles the animated scene still adds up to ~130 "white" pixels, never green;
-    // with them a frame adds ~250+ green and ~1700+ white.
+    // Without particles the animated scene still adds up to ~130 grey pixels, never green or blue.
     let frames: ParticleFrame[] = [];
     try {
       await expect
         .poll(async () => {
           frames = await particleFrames(page.getByTestId("play-canvas"), 40);
-          return frames.filter((frame) => frame.green >= 100 && frame.white >= 500).length / 40;
+          return frames.filter((frame) => frame.green >= 100 && frame.blue >= 500).length / 40;
         }, { timeout: 20_000 })
         .toBeGreaterThanOrEqual(0.9);
     } finally {

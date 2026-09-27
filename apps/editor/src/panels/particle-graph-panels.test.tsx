@@ -361,7 +361,9 @@ describe("Particle Graph document panels", () => {
     }
     expect(links(normalizeParticleGraphDocument(current))).toEqual([
       "create.out > shape.particle",
-      "gradient.out > updateColor.color",
+      "gradient.out > multiply.b",
+      "initialColor.out > multiply.a",
+      "multiply.out > updateColor.color",
       "normalizedAge.out > gradient.ratio",
       "shape.out > velocity.particle",
       "updateColor.out > output.particle",
@@ -382,7 +384,9 @@ describe("Particle Graph document panels", () => {
 
     expect(links(normalizeParticleGraphDocument(store.getSnapshot()))).toEqual([
       "create.out > shape.particle",
-      "gradient.out > updateColor.color",
+      "gradient.out > multiply.b",
+      "initialColor.out > multiply.a",
+      "multiply.out > updateColor.color",
       "normalizedAge.out > gradient.ratio",
       "normalizedAge.out > grow.size",
       "shape.out > velocity.particle",

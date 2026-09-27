@@ -266,6 +266,90 @@ describe("particle graph validation", () => {
     expect(unreachable).toEqual([expect.objectContaining({ nodeId: "loose", severity: "warning" })]);
   });
 
+  describe("Create Particle's Color overwritten by Update Color", () => {
+    /** Create → Point Shape → Apply Velocity → `updates` → Emitter Output, plus value nodes. */
+    function colorSpine(updates: NodeSpec[], values: NodeSpec[] = [], valueEdges: EdgeSpec[] = [], createColor?: number[]) {
+      const chain = ["move", ...updates.map(([id]) => id), "output"];
+      return build(
+        [
+          ["create", "particle.create", createColor ? { "default:color": createColor } : {}],
+          ["shape", "shape.point"],
+          ["move", "update.basicPosition"],
+          ...updates,
+          ["output", "particle.output"],
+          ...values,
+        ],
+        [
+          ["create", "out", "shape", "particle"],
+          ["shape", "out", "move", "particle"],
+          ...chain.slice(1).map((id, index): EdgeSpec => [chain[index]!, "out", id, "particle"]),
+          ...valueEdges,
+        ],
+      );
+    }
+    const overridden = (doc: ParticleGraphDocument) =>
+      diagnostics(doc).filter((entry) => entry.code === "particle.colorOverridden");
+    const WARNING = [expect.objectContaining({ nodeId: "create", pinId: "color", severity: "warning" })];
+
+    it.each<[string, ParticleGraphDocument]>([
+      [
+        "a Gradient over Normalized Age (the old default graph)",
+        colorSpine([["tint", "update.color"]], [["age", "input.contextual.normalizedAge"], ["ramp", "gradient.sample"]], [
+          ["age", "out", "ramp", "ratio"],
+          ["ramp", "out", "tint", "color"],
+        ]),
+      ],
+      [
+        "a Color constant over an authored Create Color",
+        colorSpine([["tint", "update.color"]], [["blue", "const.color", { value: [0, 0, 1, 1] }]], [["blue", "out", "tint", "color"]], [1, 0, 0, 1]),
+      ],
+      ["its own unwired Color value", colorSpine([["tint", "update.color", { "default:color": [0, 1, 0, 1] }]])],
+      [
+        "a later constant after one that read Initial Color",
+        colorSpine([["keep", "update.color"], ["tint", "update.color"]], [["initial", "input.contextual.initialColor"], ["blue", "const.color"]], [
+          ["initial", "out", "keep", "color"],
+          ["blue", "out", "tint", "color"],
+        ]),
+      ],
+    ])("warns on Create Particle's Color when Update Color reads %s", (_case, doc) => {
+      expect(overridden(doc)).toEqual(WARNING);
+    });
+
+    it.each<[string, ParticleGraphDocument]>([
+      ["no Update Color follows", colorSpine([], [], [], [1, 0, 0, 1])],
+      [
+        "Update Color scales Particle Color",
+        colorSpine([["tint", "update.color"]], [["current", "input.contextual.color"], ["fade", "math.multiply", { "default:b": [0.9] }]], [
+          ["current", "out", "fade", "a"],
+          ["fade", "out", "tint", "color"],
+        ]),
+      ],
+      [
+        "Update Color multiplies Initial Color by a Gradient (the default graph)",
+        colorSpine([["tint", "update.color"]], [
+          ["initial", "input.contextual.initialColor"],
+          ["age", "input.contextual.normalizedAge"],
+          ["ramp", "gradient.sample"],
+          ["mix", "math.multiply"],
+        ], [
+          ["age", "out", "ramp", "ratio"],
+          ["initial", "out", "mix", "a"],
+          ["ramp", "out", "mix", "b"],
+          ["mix", "out", "tint", "color"],
+        ]),
+      ],
+      [
+        "a later Update Color restores Initial Color after a constant",
+        colorSpine([["tint", "update.color"], ["restore", "update.color"]], [["blue", "const.color"], ["initial", "input.contextual.initialColor"]], [
+          ["blue", "out", "tint", "color"],
+          ["initial", "out", "restore", "color"],
+        ]),
+      ],
+    ])("keeps Create Particle's Color quiet when %s", (_case, doc) => {
+      expect(overridden(doc)).toEqual([]);
+    });
+  });
+
   it("checks the Material slot against the project", () => {
     const doc = withSpine();
     expect(codes(doc, { materialDomain: () => "surface" })).toEqual(["particle.materialDomain"]);
