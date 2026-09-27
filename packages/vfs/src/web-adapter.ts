@@ -360,6 +360,3 @@ export class OpfsStorageAdapter implements ProjectStorage {
     }
   }
 }
-
-/** @deprecated Alias — prefer OpfsStorageAdapter. */
-export class WebStorageAdapter extends OpfsStorageAdapter {}

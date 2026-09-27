@@ -69,7 +69,7 @@ Fields: templates folder, default project location, recents + bookmarks (each re
 
 Number fields (frame cap, hardware scaling, pointer scale, undo length, graph default zoom, camera speed, Prefab grid size, model import default scale, texture budget MB, audio budget MB, max voices, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur. Focusing the field selects all on first click, tap, or Tab.
 
-`createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
+`createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. If a bridge read or write fails, the Electron store keeps settings in memory for the session.
 
 ## iOS public copy (P14)
 

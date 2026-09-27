@@ -62,14 +62,6 @@ describe("Electron userData app settings", () => {
     expect((await store.load()).viewportFrameCap).toBe(30);
   });
 
-  it("works with no bridge at all (stub until the desktop host lands)", async () => {
-    const store = new ElectronAppSettingsStore(null);
-    const next = defaultEngineSettings();
-    next.thumbnailsEnabled = false;
-    await store.save(next);
-    expect((await store.load()).thumbnailsEnabled).toBe(false);
-  });
-
   it("detects the Electron host from the injected bridge", () => {
     expect(isElectronHost()).toBe(false);
     expect(getHostPlatform()).toBe("web");

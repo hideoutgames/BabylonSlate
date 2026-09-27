@@ -1,17 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("./platform", () => ({
-  getHostPlatform: vi.fn(() => "web"),
-}));
-
-const { getHostPlatform } = await import("./platform");
-const { pickImportFiles } = await import("./import-picker");
+import { pickImportFiles } from "./import-picker";
 
 describe("pickImportFiles", () => {
   afterEach(() => {
     vi.useRealTimers();
-    vi.mocked(getHostPlatform).mockReturnValue("web");
-    delete (globalThis as { babylonslate?: unknown }).babylonslate;
     document.body.innerHTML = "";
   });
 
@@ -71,19 +63,6 @@ describe("pickImportFiles", () => {
     expect(picked[0]!.name).toBe("late.png");
     clickSpy.mockRestore();
     vi.useRealTimers();
-  });
-
-  it("prefers the native document picker bridge on ios", async () => {
-    vi.mocked(getHostPlatform).mockReturnValue("ios");
-    (globalThis as { babylonslate?: unknown }).babylonslate = {
-      documentPicker: {
-        pickImportFiles: async () => [
-          { name: "native.png", data: new Uint8Array([9]) },
-        ],
-      },
-    };
-    const picked = await pickImportFiles();
-    expect(picked).toEqual([{ name: "native.png", bytes: new Uint8Array([9]) }]);
   });
 
   it("rejects a provider audio read failure and removes the input so importing can be retried", async () => {

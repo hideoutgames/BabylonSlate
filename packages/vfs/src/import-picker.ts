@@ -1,5 +1,3 @@
-import { getHostPlatform } from "./platform";
-
 export interface PickedImportFile {
   name: string;
   bytes: Uint8Array;
@@ -17,45 +15,11 @@ export interface PickImportFilesOptions {
  * Host-agnostic import picker (engineplan P2 Content Browser).
  * UI must call this instead of Capacitor plugins or ad-hoc file inputs.
  *
- * - web / electron: hidden `<input type="file">`
- * - ios / android: Capacitor document picker when a host bridge is installed;
- *   otherwise the same DOM file input (WKWebView presents the system picker)
+ * Every host uses a hidden `<input type="file">`; on iOS, WKWebView presents
+ * the system document picker for it.
  */
-export async function pickImportFiles(
+export function pickImportFiles(
   options: PickImportFilesOptions = {},
-): Promise<PickedImportFile[]> {
-  const platform = getHostPlatform();
-  if (platform === "ios" || platform === "android") {
-    const native = await tryNativeDocumentPicker(options);
-    if (native) return native;
-  }
-  return pickImportFilesViaDom(options);
-}
-
-interface NativePickerBridge {
-  pickImportFiles?(
-    options: PickImportFilesOptions,
-  ): Promise<Array<{ name: string; data: ArrayBuffer | Uint8Array }>>;
-}
-
-async function tryNativeDocumentPicker(
-  options: PickImportFilesOptions,
-): Promise<PickedImportFile[] | null> {
-  const host = globalThis as {
-    babylonslate?: { documentPicker?: NativePickerBridge };
-  };
-  const picker = host.babylonslate?.documentPicker;
-  if (!picker?.pickImportFiles) return null;
-  const files = await picker.pickImportFiles(options);
-  return files.map((file) => ({
-    name: file.name,
-    bytes:
-      file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data),
-  }));
-}
-
-function pickImportFilesViaDom(
-  options: PickImportFilesOptions,
 ): Promise<PickedImportFile[]> {
   if (typeof document === "undefined") {
     return Promise.resolve([]);
