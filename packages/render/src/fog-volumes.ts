@@ -121,7 +121,9 @@ export class FogVolumeRenderer {
 
   prepare(): boolean {
     if (!this.visible || this.node.isDisposed() || !this.node.isEnabled()) return false;
-    const rootWorld = this.node.computeWorldMatrix();
+    // Babylon's same-frame shortcut precedes its dirty-ancestor check. Refresh
+    // only changed hierarchies so edits bind immediately without losing caching.
+    const rootWorld = this.node.computeWorldMatrix(!this.node.isSynchronized());
     if (this.dirty || !this.rootWorld.equals(rootWorld)) {
       this.dirty = false;
       this.rootWorld.copyFrom(rootWorld);

@@ -13,10 +13,11 @@ import { sceneRenderingSettings } from "./render-settings";
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
 
-function fixture() {
+function fixture(rightHanded = false) {
   const engine = new NullEngine({ renderWidth: 128, renderHeight: 128, textureSize: 128, deterministicLockstep: false, lockstepMaxSteps: 1 });
   engines.push(engine);
   const scene = new Scene(engine);
+  scene.useRightHandedSystem = rightHanded;
   const camera = new FreeCamera("camera", Vector3.Zero(), scene);
   camera.minZ = 0.1;
   camera.maxZ = 100;
@@ -52,6 +53,7 @@ it("preserves the full parent/component transform and updates moving or degenera
   expect(localY.x).toBeCloseTo(0);
   expect(localY.y).toBeCloseTo(1);
 
+  // A second view or editor edit can request fog again within the same frame.
   parent.position.x = 1;
   const moved = selectFogVolumes(scene, camera, 30)[0]!;
   const point = Vector3.TransformCoordinates(new Vector3(1 + 2 * Math.SQRT2, Math.SQRT2, 10), moved.inverseWorld);
@@ -83,8 +85,8 @@ it("admits the nearest eight visible volumes and rejects disabled, invalid and d
 });
 
 it.each([false, true])("keeps camera-containing and orthographic edge volumes without out-of-range crowding (right handed: %s)", (rightHanded) => {
-  const { scene, camera, root } = fixture();
-  scene.useRightHandedSystem = rightHanded;
+  // Babylon captures the scene's forward axis when it constructs the camera.
+  const { scene, camera, root } = fixture(rightHanded);
   camera.setTarget(Vector3.Forward());
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([
     component("inside", [0, 0, 0], { size: [4, 4, 4], shape: "sphere" }),
