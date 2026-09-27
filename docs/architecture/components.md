@@ -112,6 +112,8 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 
 Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`, `displayPickerTitle`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`. Picker identity: `assetRowIdentity`, `classRowIdentity`, `selectedPickerIdentity`. Keybinds: chord helpers (`parseChord`, `normalizeChord`, `chordFromEvent`, `ariaKeyShortcuts`, `describeChord`); see [keybinds.md](keybinds.md).
 
+`AtlasTileGrid` memoizes its highlighted IDs and cell elements independently of pan and zoom. Pure pan, pinch, and wheel updates change the wrapper transform without rebuilding the tile buttons; selection previews, tile edits, callbacks, and test IDs still refresh the cells. Zoom-dependent borders continue to use the wrapper's inherited `--atlas-zoom` value.
+
 ## Graph (`@babylonslate/graph-ui`)
 
 Reusable by script, shader, animation, behaviour-tree and particle graphs, and the Content Browser read-only References dialog.
