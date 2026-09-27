@@ -1755,6 +1755,9 @@ describe("scriptPaletteNodes", () => {
       parentClass: "Actor",
       classId: "Hero",
     });
+    const captureActors = nodes.find((node) => node.id === "variables.get:RenderTargetCaptureComponent:Capture Actors");
+    expect(captureActors?.defaultData).toMatchObject({ propertyKey: "actorIds", container: "array", typeId: "actor" });
+    expect(captureActors?.pins?.some((pin) => pin.direction === "out" && pin.type.kind === "array")).toBe(true);
     const getText = nodes.find(
       (node) => node.id === "variables.get:Text3DComponent:Text",
     );

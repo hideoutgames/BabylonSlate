@@ -25,6 +25,19 @@ it("keeps the established pipeline for defaults in every mode", () => {
   expect(planSceneEffects(effects(), "cel")).toBeNull();
 });
 
+it("activates local fog without global density and respects the post-processing switch", () => {
+  const settings = effects({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting,
+    density: 0.3, steps: 16, resolutionScale: 0.25 } });
+  expect(planSceneEffects(settings, "pbr", true, true)?.volumetricLighting).toMatchObject({
+    enabled: true, density: 0, steps: 16, resolutionScale: 0.25,
+  });
+  expect(settings.volumetricLighting).toMatchObject({ enabled: false, density: 0.3 });
+  expect(planSceneEffects(settings, "pbr", false, true)).toBeNull();
+  expect(planSceneEffects(settings, "pbr", true, false)).toBeNull();
+  settings.volumetricLighting.enabled = true;
+  expect(planSceneEffects(settings, "pbr", true, true)?.volumetricLighting?.density).toBe(0.3);
+});
+
 it("adds the Scene Linear and Display Color stages for PBR only", () => {
   const linear = effects({
     colorPipeline: { version: 1, mode: "sceneLinear" },

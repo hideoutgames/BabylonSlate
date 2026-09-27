@@ -94,7 +94,7 @@ function documentForPlan(
 
 export interface MaterialLibraryOptions {
   particlePreview?: boolean;
-  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
+  acquireTexture?: (guid: string, scene: Scene) => ResourceLease<Texture> | null;
   textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
   /** Return a new record whenever a function document changes; lowering is
@@ -232,7 +232,7 @@ export class MaterialLibrary {
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
-    const textures = materialTextureBindings(this.options.acquireTexture, this.options.textureIdentity);
+    const textures = materialTextureBindings(this.options.acquireTexture ? (guid) => this.options.acquireTexture!(guid, scene) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
     try { compiled = compileMaterialPlan(lowered.plan, {
       scene,

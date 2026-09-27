@@ -20,6 +20,25 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places a typed capture actor with an optional actor filter and no main-camera component", () => {
+  const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "render-target-capture")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "capture", ORIGIN);
+  expect(actor.classId).toBe("RenderTargetCapture");
+  expect(actor.components).toEqual([expect.objectContaining({ classId: "RenderTargetCaptureComponent", properties: expect.objectContaining({ captureOnlyActors: false, actorIds: [], renderTargetGuid: null }) })]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.id === entry.id)).toBe(false);
+});
+
+it("places a fog volume at the requested position and keeps it out of SceneLayers", () => {
+  const entry = placeActorsForHost({ overlay: false }).find((item) => item.id === "fog-volume")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "fog", [3, 4, 5]);
+  expect(actor.transform.position).toEqual([3, 4, 5]);
+  expect(actor.components).toEqual([expect.objectContaining({
+    classId: "FogVolumeComponent",
+    properties: { enabled: true, shape: "box", size: [10, 10, 10], density: 0.1, edgeFalloff: 0.2 },
+  })]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.id === "fog-volume")).toBe(false);
+});
+
 it("places a Global Water Volume with usable water defaults", () => {
   const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-global")!;
   const actor = spawnPlacedActor(createDefaultScene(), entry, "global-water", [0, 5, 0]);
@@ -436,6 +455,14 @@ describe("spawnPlacedActor placement", () => {
 });
 
 describe("duplicateSceneActor", () => {
+  it("remaps selected capture actors while preserving external actor references", () => {
+    const scene = createDefaultScene();
+    const capture = createActor("capture", "Capture", { components: [{ id: "capture-component", classId: "RenderTargetCaptureComponent", properties: { captureOnlyActors: true, actorIds: ["subject", "external"] } }] });
+    scene.actors = [capture, createActor("subject", "Subject"), createActor("external", "External")];
+    const [copy, subject] = duplicateSceneActors(scene, ["capture", "subject"]);
+    expect(copy!.components[0]!.properties.actorIds).toEqual([subject!.id, "external"]);
+    expect(capture.components[0]!.properties.actorIds).toEqual(["subject", "external"]);
+  });
   it("remaps constraints inside a duplicated selection and preserves external targets", () => {
     const scene = createDefaultScene();
     const source = createActor("arm", "Arm", { components: [

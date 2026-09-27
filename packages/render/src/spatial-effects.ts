@@ -29,6 +29,7 @@ import {
 } from "./volumetric-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
+import { bindFogVolumes, hasFogVolumes } from "./fog-volumes";
 
 /** Delay native define setters until all settings/camera flags are configured.
  * Babylon otherwise overwrites (and leaks) each intermediate Effect reference. */
@@ -233,6 +234,7 @@ export function createSpatialStages(
     }
     const volume = plan.volumetricLighting;
     if (volume) {
+      const localVolumes = hasFogVolumes(scene);
       const lights = selectVolumetricLights(scene, camera, volume);
       const shadows = lights.map((light) => volumeShadowLayout(scene, light));
       const uniforms = [
@@ -242,6 +244,7 @@ export function createSpatialStages(
         "volumeSettings",
         "volumeCamera",
         "volumeShadowOffset",
+        ...(localVolumes ? ["fogVolumeCount", "fogVolumeInverse", "fogVolumeParameters"] : []),
       ];
       const samplers = ["depthSampler"];
       shadows.forEach((shadow, i) => {
@@ -266,6 +269,7 @@ export function createSpatialStages(
             volume.steps,
             engine.isNDCHalfZRange,
             engine.useReverseDepthBuffer,
+            localVolumes,
           ),
           uniforms,
           samplers,
@@ -308,6 +312,7 @@ export function createSpatialStages(
             camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0,
           );
           bindVolumetricLights(effect, scene, camera, lights);
+          if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });
       const scale = Math.max(0.25, volume.resolutionScale * quality);

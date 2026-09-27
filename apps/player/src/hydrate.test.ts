@@ -48,6 +48,24 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
+  it.each(["packed", "loose"] as const)("hydrates live render target assets without treating them as uploaded images (%s)", async (mode) => {
+    const packed = await exportGame({
+      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+        { guid: "depth", type: "RenderTarget", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify({ mode: "DepthPass", width: 128, height: 64 })) },
+        { guid: "image", type: "RenderTargetTexture", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify({ renderTargetGuid: "depth" })) },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.renderTargets.get("depth")).toEqual({ mode: "DepthPass", width: 128, height: 64 });
+    expect(content.renderTargetTextures.get("image")).toEqual({ renderTargetGuid: "depth" });
+    expect(game.textureBytes.has("image")).toBe(false);
+  });
+
   it("hydrates sprite, tilemap, and navmesh payloads from the packed game", async () => {
     const scene = {
       ...createDefaultScene(),

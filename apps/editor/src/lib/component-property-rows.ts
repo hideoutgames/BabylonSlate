@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
+  normalizeRenderTargetCaptureProperties,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   quaternionToEulerDegrees,
   isEditorGraphClass,
@@ -16,6 +17,7 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   parseAreaRectLightProperties,
+  parseFogVolumeProperties,
   parseOutlineProperties,
   parseRagdollProperties,
   OUTLINE_WIDTH_LIMITS,
@@ -526,6 +528,25 @@ export function componentPropertyRows(
     ];
   }
   switch (component.classId) {
+    case "RenderTargetCaptureComponent": {
+      const capture = normalizeRenderTargetCaptureProperties(component.properties);
+      return [
+        assetRow(actorId, component, "renderTargetGuid", "Render Target", ["RenderTarget"], update, context, "Pick Render Target"),
+        ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
+          kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
+          defaultValue: key !== "captureOnlyActors",
+          ...(key === "captureEveryFrame" ? { description: "Disable automatic captures and request captures from a NodeGraph." } : {}),
+          ...(key === "captureOnlyActors" ? { description: "Capture only the actors in Capture Actors. An empty enabled list captures nothing." } : {}),
+          onChange: (value) => update(key, value),
+        })),
+        ...([
+          ["fieldOfView", "Field Of View", 1, 179], ["nearClip", "Near Clip", 0.001, 100000], ["farClip", "Far Clip", 0.002, 100000],
+        ] as const).map(([key, label, min, max]): PropertyRow => ({
+          kind: "number", id: rowId(actorId, component.id, key), label, value: capture[key], min, max,
+          onChange: (value) => update(key, value),
+        })),
+      ];
+    }
     case "PhysicsConstraintComponent":
       return physicsConstraintPropertyRows(actorId, component, update, context);
     case "RagdollComponent": {
@@ -1450,6 +1471,34 @@ export function componentPropertyRows(
         lagSpeedRow("rotationLagSpeed", "Rotation Lag Speed", properties.enableRotationLag),
         { kind: "boolean", id: rowId(actorId, component.id, "drawDebugLag"), label: "Draw Debug Lag", value: properties.drawDebugLag,
           description: "During Play, draw the target arm (yellow), the lagged arm (green), the lag offset (red), and recent socket trails.", onChange: (next) => update("drawDebugLag", next) },
+      ];
+    }
+    case "FogVolumeComponent": {
+      const properties = parseFogVolumeProperties(component.properties);
+      const defaults = parseFogVolumeProperties({});
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+          value: properties.enabled, defaultValue: defaults.enabled,
+          description: "Local fog works independently of Scene-Wide Fog. Shared quality is in Project Settings > Rendering > Post Processing.",
+          onChange: (next) => update("enabled", next) },
+        { kind: "enum", id: rowId(actorId, component.id, "shape"), label: "Shape",
+          value: properties.shape, defaultValue: defaults.shape,
+          options: [{ value: "box", label: "Box" }, { value: "sphere", label: "Sphere" }],
+          onChange: (next) => update("shape", next === "sphere" ? "sphere" : "box") },
+        { kind: "vector3", id: rowId(actorId, component.id, "size"), label: "Size", unit: "scene units",
+          value: properties.size, defaultValue: defaults.size, sensitivity: 0.1,
+          description: properties.shape === "sphere"
+            ? "Full diameters along local X, Y and Z. Different values stretch the sphere. Actor and component scale also apply."
+            : "Full width, height and depth along local X, Y and Z. Actor and component scale also apply.",
+          onChange: (next) => update("size", next.slice(0, 3).map((value) => Math.max(0.01, value))) },
+        { kind: "number", id: rowId(actorId, component.id, "density"), label: "Density",
+          value: properties.density, defaultValue: defaults.density, min: 0, precision: 6, sensitivity: 0.0001,
+          description: "Additional fog inside this volume. Zero contributes no fog; overlapping volumes add density.",
+          onChange: (next) => update("density", Math.max(0, next)) },
+        { kind: "slider", id: rowId(actorId, component.id, "edgeFalloff"), label: "Edge Falloff",
+          value: properties.edgeFalloff, defaultValue: defaults.edgeFalloff, min: 0, max: 1, step: 0.01,
+          description: "Fraction of the half-size used for soft edges. Zero gives a hard boundary; one fades from the center.",
+          onChange: (next) => update("edgeFalloff", Math.min(1, Math.max(0, next))) },
       ];
     }
     case "AreaRectLightComponent": {

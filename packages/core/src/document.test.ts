@@ -48,6 +48,8 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
     expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
     expect(labelFromPath("assets/Legacy.shader.babasset")).toBe("Legacy");
+    expect(labelFromPath("assets/Depth.rendertarget.babasset")).toBe("Depth");
+    expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
 
   it("does not treat UserInterface as a document kind", () => {

@@ -2,10 +2,13 @@ import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import {
   identitySerializedTransform,
+  fogVolumeBindings,
+  parseFogVolumeProperties,
   overlayPanelDestFromScale,
   parseOverlayPanelProperties,
   parseSkyboxFaces,
@@ -229,6 +232,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "LightComponent",
   "HemisphericFillLightComponent",
   "CameraComponent",
+  "RenderTargetCaptureComponent",
   SPRING_ARM_COMPONENT_CLASS_ID,
   "AudioComponent",
   "SkyboxComponent",
@@ -245,6 +249,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "NavMeshBlockerComponent",
   "BlockingVolumeComponent",
   "WaterRemovalVolumeComponent",
+  "FogVolumeComponent",
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
@@ -328,6 +333,7 @@ function isBillboardComponent(component: SerializedComponent): boolean {
   return (
     isAuthoredLightClassId(component.classId) ||
     component.classId === "CameraComponent" ||
+    component.classId === "RenderTargetCaptureComponent" ||
     component.classId === "AudioComponent" ||
     component.classId === "ParticleComponent" ||
     component.classId === "NavMeshComponent"
@@ -353,7 +359,7 @@ export function helperBillboardIconOf(
     (component) => component.classId === "LightComponent",
   );
   if (light) return lightBillboardIcon(light.properties.lightKind);
-  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+  if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return "camera";
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
@@ -379,6 +385,7 @@ export function needsOriginRoot(
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
+    visuals.some((component) => component.classId === "FogVolumeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -400,6 +407,10 @@ function componentVisualKind(
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
+  if (component.classId === "FogVolumeComponent") {
+    const volume = parseFogVolumeProperties(component.properties);
+    return `fogVolume:${volume.shape}:${volume.size.join(",")}`;
+  }
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
   if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
@@ -421,7 +432,7 @@ function componentVisualKind(
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
-  if (component.classId === "CameraComponent") return EDITOR_CAMERA_MODEL_KIND;
+  if (component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent") return EDITOR_CAMERA_MODEL_KIND;
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
     return `springarm:${parseSpringArmProperties(component.properties).armLength}`;
   }
@@ -591,7 +602,7 @@ export function editorMeshKindOf(
     return editorBillboardKind(lightBillboardIcon(light?.properties.lightKind));
   }
   if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
-  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+  if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return EDITOR_CAMERA_MODEL_KIND;
   }
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
@@ -656,6 +667,7 @@ export function createMeshForComponent(
     return createWaterMesh(scene, name, body, definition, definition?.materialGuid ? assets?.resolveMaterial?.(definition.materialGuid, { scene }) : null);
   }
   if (component.classId === "WaterRemovalVolumeComponent") return createWaterRemovalMesh(scene, name, component.properties, { editor: true });
+  if (component.classId === "FogVolumeComponent") return createFogVolumeGuide(scene, name, component.properties);
   if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
   if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
   if (component.classId === "SpriteComponent") {
@@ -678,7 +690,7 @@ export function createMeshForComponent(
     applyEditorBillboardFromActor(mesh, actor);
     return mesh;
   }
-  if (component.classId === "CameraComponent") {
+  if (component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent") {
     return createEditorCameraModel(scene, name);
   }
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) {
@@ -951,9 +963,15 @@ function createActorOriginHierarchy(
       mesh.isPickable = visualIsPickable(mesh, actor.locked);
       meshes.set(component.id, mesh);
     }
+    const fogBindings = new Map(fogVolumeBindings(actor.components).map((binding) => [binding.id, binding]));
     for (const component of visuals) {
       const mesh = meshes.get(component.id);
       if (!mesh) continue;
+      const fogBinding = fogBindings.get(component.id);
+      if (fogBinding) {
+        syncFogVolumeGuideAttachments(mesh, root, fogBinding, actor.visible);
+        continue;
+      }
       const parentId = parentVisualMeshId(component, meshes, componentsById);
       const parent = parentId ? meshes.get(parentId) : undefined;
       mesh.parent = parent ? attachmentParentFor(parent) : root;
@@ -1155,6 +1173,7 @@ export function applyComponentChildTransforms(
   actor: SerializedActor,
 ): void {
   if (!isEditorActorOrigin(mesh)) return;
+  const fogBindings = new Map(fogVolumeBindings(actor.components).map((binding) => [binding.id, binding]));
   for (const component of visualComponentsOf(actor)) {
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
@@ -1165,6 +1184,8 @@ export function applyComponentChildTransforms(
       child,
       component.transform ?? identitySerializedTransform(),
     );
+    const fogBinding = fogBindings.get(component.id);
+    if (fogBinding) syncFogVolumeGuideAttachments(child, mesh, fogBinding, actor.visible);
   }
 }
 

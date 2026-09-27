@@ -57,6 +57,10 @@ describe("structNodePropertyRows", () => {
 });
 
 describe("assetPickerAllowedTypes", () => {
+  it("admits live render output for a Texture pin without widening other asset types", () => {
+    expect(assetPickerAllowedTypes("Texture", undefined)).toEqual(["Texture", "RenderTargetTexture"]);
+    expect(assetPickerAllowedTypes("RenderTarget", undefined)).toEqual(["RenderTarget"]);
+  });
   it("uses catalog typeClassIds so Mesh Get/Set can pick Mesh or Model", () => {
     expect(assetPickerAllowedTypes("Model", ["Mesh", "Model"])).toEqual([
       "Mesh",

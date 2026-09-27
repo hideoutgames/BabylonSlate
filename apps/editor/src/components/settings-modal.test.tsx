@@ -274,15 +274,20 @@ describe("SettingsModal project authoring", () => {
     expect(screen.queryByTestId("project-render-effects")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Post Processing" }));
     expect(screen.getByTestId("project-render-effects")).toBeTruthy();
+    expect(screen.queryByLabelText("Scene-Wide Fog Density")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Volumetric Steps"), { target: { value: "32" } });
+    fireEvent.blur(screen.getByLabelText("Volumetric Steps"));
     fireEvent.click(screen.getByTestId("project-effects-fxaa"));
     fireEvent.click(screen.getByTestId("project-effects-reflections"));
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
-    fireEvent.change(screen.getByLabelText("Fog Density"), { target: { value: "0.0085" } });
-    fireEvent.blur(screen.getByLabelText("Fog Density"));
+    fireEvent.change(screen.getByLabelText("Scene-Wide Fog Density"), { target: { value: "0.0085" } });
+    fireEvent.blur(screen.getByLabelText("Scene-Wide Fog Density"));
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
+    expect(screen.queryByLabelText("Scene-Wide Fog Density")).toBeNull();
+    expect(screen.getByLabelText("Volumetric Steps")).toHaveProperty("value", "32");
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);

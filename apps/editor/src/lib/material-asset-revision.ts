@@ -6,7 +6,8 @@ export function savedMaterialLibraryKey(assets: readonly IndexedAsset[]): string
     assets
       .filter(
         ({ header }) =>
-          header.type === "Material" || header.type === "MaterialFunction",
+          header.type === "Material" || header.type === "MaterialFunction" ||
+          header.type === "RenderTarget" || header.type === "RenderTargetTexture",
       )
       .sort((a, b) => a.header.guid.localeCompare(b.header.guid))
       .map(({ header }) => [

@@ -72,7 +72,7 @@ export function createNavDebugBlockerMesh(
   return mesh;
 }
 
-function volumeFillMaterial(scene: Scene): StandardMaterial {
+export function volumeFillMaterial(scene: Scene): StandardMaterial {
   const existing = volumeMaterials.get(scene);
   if (existing) return existing;
   const material = new StandardMaterial("editorVolumeFill", scene);

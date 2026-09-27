@@ -82,6 +82,8 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "particle-graph": primaryDockPanel("particle-graph"),
   "particle-system": primaryDockPanel("particle-system"),
   water: primaryDockPanel("water"),
+  "render-target": primaryDockPanel("render-target"),
+  "render-target-texture": primaryDockPanel("render-target-texture"),
   model: primaryDockPanel("model"),
   skeleton: primaryDockPanel("skeleton"),
   animation: primaryDockPanel("animation"),

@@ -153,6 +153,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 Add Component → Rendering → **Outline** uses the existing component PropertyGrid for Enabled, Color, Width and **Render Through Meshes**. It applies to an actor's eligible world meshes as one group; different actors sharing a model retain separate styles. It is excluded from SceneLayer component catalogs because world depth and SceneLayer ordering have different semantics. Discovery, inspector history, duplication and Class component inheritance use the normal component architecture.
 
+**Fog Volume** reuses Place Actors / Add Component catalogs and PropertyGrid for Enabled, Shape, Size, Density and Edge Falloff. Project **Volumetric Fog** controls keep shared quality settings available while **Scene-Wide Fog** is off, so local volumes can be tuned independently.
+
 `MultilineTextField` accepts optional `renderPreview` and `renderEditor` slots,
 retaining its draft/Done contract and viewport-bounded dialog. Material GLSL
 uses these slots for highlighted code. `GraphEditor.renderNodeBody` adds host
@@ -172,6 +174,7 @@ Document tabs and `DocumentSwitcher` share a visual resolver for each chrome ren
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **TraceCopyButton / TraceEmptyState** | Compact clipboard feedback and catalog Empty states for read-only trace inspection. | Trace Snapshot, Changes, Log and Timeline. |
+| **RenderTargetCaptureActorsField** | Compact Actor reference array editor using EntryListEditor, PropertyGrid and SearchDialog. | Scene Details and Prefab Inspector capture filters. |
 | **RenderPipelineFields** | Compact project Render Path/GPU Backend preferences. Play session requests use the `renderpath` console command. | Project Settings → Rendering. |
 | **AnimEditorModeBar** ([`anim-editor-mode-bar.tsx`](../../apps/editor/src/components/anim-editor-mode-bar.tsx)) | Chrome `ToolbarStrip` + **State Machine \| Animation Object** `ToggleGroup` `size="sm"`. `data-testid="anim-editor-mode-bar"`. Not a DockView tab. | Animation Graph document shell, above the stacked State Machine and Animation Object DockView surfaces. |
 | **HomepageProfileMenu** | Compact avatar DropdownMenu with an identity header, optional Account Settings, Manage Subscription, optional Application / Engine Settings, a Changelog section opening bundled release history, and Sign In or Sign Out; image failures fall back to the account icon. | Every launcher account: guests, Clerk web accounts (driven by `useUser` / `useClerk`), and native desktop/mobile sessions. |

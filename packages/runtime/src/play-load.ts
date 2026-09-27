@@ -39,6 +39,8 @@ export function runtimeOptionsFromLoadControl(
   | "loopCount"
   | "materialParameterCatalog"
   | "materialTextureAssetGuids"
+  | "renderTargets"
+  | "renderTargetTextures"
   | "audioAssetGuids"
   | "animClipCatalog"
   | "deferSceneModelsReady"
@@ -69,6 +71,8 @@ export function runtimeOptionsFromLoadControl(
     renderSettings: msg.renderSettings,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.materialTextureAssetGuids !== undefined ? { materialTextureAssetGuids: msg.materialTextureAssetGuids } : {}),
+    renderTargets: msg.renderTargets,
+    renderTargetTextures: msg.renderTargetTextures,
     ...(msg.project ? { project: msg.project } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     ...(msg.inputMappings !== undefined ? { inputMappings: normalizeInputMappings(msg.inputMappings) } : {}),
