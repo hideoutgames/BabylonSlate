@@ -1902,14 +1902,21 @@ function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPale
  * Rows that need a Target on another object (other-class Get/Set/Call, engine
  * component APIs, scene-placed components) are not reachable from the host
  * graph on their own, so Add Node hides them while Context Sensitive is on
- * and no pin is being dragged.
+ * and no pin is being dragged. Rows owned by the host's own ancestry stay in
+ * context: `self` is such an object even when the row keeps a Target pin.
  */
-function markOutOfContext(nodes: PaletteNode[]): PaletteNode[] {
-  return nodes.map((node) =>
-    node.defaultData?.implicitSelf === false
-      ? { ...node, outOfContext: true }
-      : node,
-  );
+function markOutOfContext(
+  nodes: PaletteNode[],
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  return nodes.map((node) => {
+    if (node.defaultData?.implicitSelf !== false) return node;
+    const owner = node.defaultData.classId;
+    if (typeof owner === "string" && callImplicitSelf(owner, options)) {
+      return node;
+    }
+    return { ...node, outOfContext: true };
+  });
 }
 
 function scriptPaletteInjectorNodes(
@@ -1917,18 +1924,24 @@ function scriptPaletteInjectorNodes(
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
   if (options?.animationGraphHost === "rule") {
-    return markOutOfContext(variableAccessPaletteNodes(nodeRegistry, options));
+    return markOutOfContext(
+      variableAccessPaletteNodes(nodeRegistry, options),
+      options,
+    );
   }
-  return markOutOfContext([
-    ...inputEventPaletteNodes(nodeRegistry, options),
-    ...callCustomEventPaletteNodes(nodeRegistry, options),
-    ...callFunctionPaletteNodes(nodeRegistry, options),
-    ...callInterfacePaletteNodes(nodeRegistry, options),
-    ...variableAccessPaletteNodes(nodeRegistry, options),
-    ...castPaletteNodes(nodeRegistry, options),
-    ...structPaletteNodes(nodeRegistry, options),
-    ...enumPaletteNodes(nodeRegistry, options),
-  ]);
+  return markOutOfContext(
+    [
+      ...inputEventPaletteNodes(nodeRegistry, options),
+      ...callCustomEventPaletteNodes(nodeRegistry, options),
+      ...callFunctionPaletteNodes(nodeRegistry, options),
+      ...callInterfacePaletteNodes(nodeRegistry, options),
+      ...variableAccessPaletteNodes(nodeRegistry, options),
+      ...castPaletteNodes(nodeRegistry, options),
+      ...structPaletteNodes(nodeRegistry, options),
+      ...enumPaletteNodes(nodeRegistry, options),
+    ],
+    options,
+  );
 }
 
 /** Palette rows for Class graphs (pins from the registry). */
