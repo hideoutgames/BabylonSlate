@@ -45,15 +45,6 @@ export function randomProjectName(
   }
 }
 
-/** Display name shown in the Create Project dialog. */
-export function defaultCreateProjectDisplayName(
-  testMode: boolean,
-  existingNames: readonly string[] = [],
-  random: () => number = Math.random,
-): string {
-  return testMode ? "TestProject" : randomProjectName(existingNames, random);
-}
-
 /** Folder name written to storage; empty when the display name is blank. */
 export function normalizeProjectFolderName(displayName: string): string {
   return displayProjectName(displayName.trim());
