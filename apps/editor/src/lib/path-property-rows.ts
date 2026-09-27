@@ -6,6 +6,7 @@ type PathPropertyRowsOptions = {
   curvature: number;
   curvatureDescription: string;
   pointsDescription: string;
+  minPoints?: 2 | 3;
   extraPointRows?: (index: number) => PropertyRow[];
   update: (property: string, value: unknown) => void;
 };
@@ -17,6 +18,7 @@ export function pathPropertyRows({
   curvature,
   curvatureDescription,
   pointsDescription,
+  minPoints = 2,
   extraPointRows,
   update,
 }: PathPropertyRowsOptions): PropertyRow[] {
@@ -37,12 +39,12 @@ export function pathPropertyRows({
       id: `${idPrefix}-pointCount`,
       label: "Path Point Count",
       value: points.length,
-      min: 2,
+      min: minPoints,
       max: 128,
       description: pointsDescription,
       onChange: (count) => {
         if (!Number.isFinite(count)) return;
-        const length = Math.max(2, Math.min(128, Math.round(count)));
+        const length = Math.max(minPoints, Math.min(128, Math.round(count)));
         const next = points.slice(0, length);
         while (next.length < length) {
           const last = next[next.length - 1]!;

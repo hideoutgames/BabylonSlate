@@ -118,13 +118,18 @@ it("bounds path point counts and preserves existing points when truncating", () 
 
 it("allows closing a spline only when at least three points are available", () => {
   const initial = rowsFor({ id: "spline", classId: "SplineComponent", properties: defaultPropertiesFor("SplineComponent") });
-  expect(initial.rows.find((row) => row.label === "Closed")).toMatchObject({ kind: "boolean", value: false, disabled: true });
+  expect(initial.rows.find((row) => row.label === "Closed Loop")).toMatchObject({ kind: "boolean", value: false, disabled: true });
   const { rows, update } = rowsFor({ id: "spline", classId: "SplineComponent", properties: { points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
-  const closed = rows.find((row) => row.label === "Closed");
+  const closed = rows.find((row) => row.label === "Closed Loop");
   if (closed?.kind !== "boolean") throw new Error("Spline loop control missing");
   expect(closed.disabled).toBe(false);
   closed.onChange(true);
   expect(update).toHaveBeenLastCalledWith("closed", true);
+  const loop = rowsFor({ id: "spline", classId: "SplineComponent", properties: { closed: true, points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const count = loop.rows.find((row) => row.label === "Path Point Count");
+  if (count?.kind !== "number") throw new Error("Loop point count missing");
+  count.onChange(2);
+  expect(loop.update).toHaveBeenLastCalledWith("points", [[0, 0, 0], [1, 2, 3], [4, 5, 6]]);
 });
 
 it("edits a Water Removal Volume with only the sizes its shape uses", () => {

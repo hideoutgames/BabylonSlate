@@ -484,7 +484,7 @@ export function componentPropertyRows(
       {
         kind: "boolean",
         id: rowId(actorId, component.id, "closed"),
-        label: "Closed",
+        label: "Closed Loop",
         value: spline.closed,
         disabled: spline.points.length < 3,
         description: "Connects the last point to the first. Requires at least three points.",
@@ -494,6 +494,7 @@ export function componentPropertyRows(
         idPrefix: `${actorId}-${component.id}`,
         points: spline.points,
         curvature: spline.curvature,
+        minPoints: spline.closed ? 3 : 2,
         curvatureDescription: "0 joins points with straight segments; 1 bends the spline smoothly through every point in 3D.",
         pointsDescription: "Points use local X, Y and Z coordinates. In the viewport, drag points, drag a midpoint to add a point, and double-click a point to remove it.",
         update,
