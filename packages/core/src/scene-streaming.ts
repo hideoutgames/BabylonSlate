@@ -67,11 +67,24 @@ export function remapSceneStreamingReferences(
 export function cloneSceneStreamingActors(
   source: readonly SerializedActor[],
   options: { instanceId: string; parentActorId: string },
-): {
+): SceneStreamingActorClone {
+  const steps = cloneSceneStreamingActorsSteps(source, options);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+export type SceneStreamingActorClone = {
   actors: SerializedActor[];
   idMap: Map<string, string>;
   componentIdMaps: Map<string, Map<string, string>>;
-} {
+};
+
+/** Runtime realization yields between actor work to keep async streaming responsive. */
+export function* cloneSceneStreamingActorsSteps(
+  source: readonly SerializedActor[],
+  options: { instanceId: string; parentActorId: string },
+): Generator<void, SceneStreamingActorClone, unknown> {
   const idMap = new Map<string, string>();
   const componentIdMaps = new Map<string, Map<string, string>>();
   const componentCounts = new Map<string, number>();
@@ -86,6 +99,7 @@ export function cloneSceneStreamingActors(
       components.set(component.id, `scene-stream:${JSON.stringify([options.instanceId, actor.id, component.id])}`);
       componentCounts.set(component.id, (componentCounts.get(component.id) ?? 0) + 1);
     }
+    yield;
   }
   // Globally unique component references remain available to scene scripts;
   // repeated local component ids resolve through their owning actor instead.
@@ -93,13 +107,15 @@ export function cloneSceneStreamingActors(
     for (const [id, liveId] of components) {
       if (componentCounts.get(id) === 1 && !idMap.has(id)) idMap.set(id, liveId);
     }
+    yield;
   }
   const actorIds = new Set(source.map((actor) => actor.id));
-  const actors = source.map((actor): SerializedActor => {
+  const actors: SerializedActor[] = [];
+  for (const actor of source) {
     const copy = structuredClone(actor);
     const componentIds = componentIdMaps.get(actor.id)!;
     const scopedIds = new Map([...idMap, ...componentIds]);
-    return {
+    actors.push({
       ...copy,
       id: idMap.get(actor.id)!,
       parentId: actor.parentId && actorIds.has(actor.parentId)
@@ -115,7 +131,8 @@ export function cloneSceneStreamingActors(
           : null,
         properties: remapSceneStreamingReferences(component.properties, scopedIds) as Record<string, unknown>,
       })),
-    };
-  });
+    });
+    yield;
+  }
   return { actors, idMap, componentIdMaps };
 }
