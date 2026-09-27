@@ -102,7 +102,6 @@ A scalar is **Constant** `{value}`, **Random Range** `{min, max}` or **Curve** `
 - Infinite emitters repeat their bursts every loop; Once emitters fire them once. Rate 0 gives a bursts-only emitter.
 - Babylon has no burst schedule. The emission driver (`packages/render/src/particle-emission-driver.ts`) counts the particles due in each frame's window of the cycle (`burstParticlesInWindow`) and writes `manualEmitCount` after the frame renders. Bursts therefore fire **one frame late** by design. Bursts are **not simulated during prewarm**: GPU prewarm runs inside the first ready render and would emit a queued burst, so a GPU emitter with Pre Warm advances its driver only after its first draw.
 - Babylon leaves `manualEmitCount = 0` after consuming it, which would mute rate emission forever, so the driver restores `-1` on the next frame. A manual frame also skips that frame's rate emission; the driver adds `round(rate × dt)` back only when nothing was pending (count `-1` or `0`).
-- `basicEmitterSlotNeed` estimates the live particles an emitter needs (rate × longest lifetime plus the peak burst particles in any lifetime-long window across loop wraps). Details does not show it yet.
 
 ## Particle Graph
 

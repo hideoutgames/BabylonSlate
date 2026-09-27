@@ -68,7 +68,7 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 - **Export Project** remains a full backup (includes disabled project plugins on disk).
 
 Game export resolves dependencies after project and export-preset overrides, reporting named plugin errors before packing and retaining version warnings in the successful artifact. Preview Build writes those warnings to Output Log without a popup; blocking preparation errors appear in **Preview Build Failed** with Retry and Close. A separate registry loads the resolved plugin roots, allowing preset-enabled plugins to export even when disabled in the editor without changing editor mounts.
-- `collectEnabledPluginAssets(registry, enabledGuids)` plus export-preset layer-3 overrides feed the P14 tree-shake. Disabled roots are absent from the itch zip / Preview pack. See [exporter.md](exporter.md).
+- `resolveExportPluginGraph` (project plus export-preset layer-3 overrides) yields the enabled plugin guids that `collectExportReachability` walks for the P14 tree-shake. Disabled roots are absent from the itch zip / Preview pack. See [exporter.md](exporter.md).
 
 ## Editor ScriptHost
 
