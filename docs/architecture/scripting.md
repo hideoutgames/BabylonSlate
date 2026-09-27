@@ -349,6 +349,21 @@ Normal Play includes compiled prefab components in resource discovery, so an unp
 
 `shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, `Scene`, and `Scene:{guid}` when handling explicit bridge spawn requests; loading their scripts never creates Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 
+### Scene streaming nodes
+
+All streaming nodes require a **Target** reference typed as `SceneStreamingActor`. The actor is a live object reference distinct from a Scene asset or the current world Scene.
+
+| Node | Result |
+| --- | --- |
+| Get Target Scene Name | Target Scene name as a String |
+| Load Scene Async / Unload Scene Async | Start the operation and continue the graph and gameplay |
+| Load Scene Blocking / Unload Scene Blocking | Pause gameplay simulation until the operation completes, then continue the graph |
+| Is Scene Loaded | Boolean; true only after the complete actor batch and its render resources are ready |
+| Get Scene Load Progress | Float from 0 to 1; 0 when unloaded, 1 only when fully loaded |
+| Get Scene State | Engine `SceneStreamingState` enum: Unloaded, Loading, Loaded, Unloading |
+
+Blocking operations keep asset I/O and resource preparation running. Their pause ownership is separate from manual Pause and other blocking operations. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance. These nodes have no editor streaming path.
+
 ### Actor component graph APIs
 
 Engine classes expose an optional script catalog in `@babylonslate/object-model` (`ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor`): variables, functions, and events. Not every component has all three. A property, Call, or event is listed only when the inspector already serializes it **and** Play can apply it (`setVariableOn` → `refreshComponent` for components, Scene **Gravity** → `setWorldGravity` on the physics backend, or `callNativeComponentFunction`). Authoring-only fields (`playOnStart`, collider `shape` blobs, Skybox face slots, Text3D `depth`, fog/IBL, `physicsWorld`, editor grid) stay off the catalog.

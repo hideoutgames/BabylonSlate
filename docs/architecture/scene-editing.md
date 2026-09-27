@@ -8,9 +8,17 @@ Shared-surface design note for viewport, outliner, details, and the edit layer. 
 
 SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world scene. See [scene-layers.md](scene-layers.md).
 
+Scene streaming places another Scene through a `SceneStreamingActor`; it does not open another world document. See [scene streaming](#scene-streaming).
+
 Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
 
 Place Actors and Class Add Component share the `CatalogResultRow` appearance: contiguous striped rows, type icons, names and muted secondary labels. Search, categories and project asset bindings remain available; actor/component results stay unwindowed.
+
+## Scene streaming
+
+Place **Scene Streaming** or a project Scene asset to add a `SceneStreamingActor`. Its **Scene** picker stores the target Scene asset on `SceneStreamingComponent`; the component's position is the target scene's local origin. The editor displays only the existing billboard and a camera-facing `Text3DComponent` with the selected scene name. It never realizes the target scene's actors. The label follows the Scene selection and is editor-only.
+
+NodeGraphs control each actor's independent instance during Play, Preview Build, and exported games. See [streaming nodes](scripting.md#scene-streaming-nodes) and [runtime ownership](render.md#additive-scene-streaming).
 
 ## SerializedScene v4
 

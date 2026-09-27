@@ -1,5 +1,7 @@
 # BabylonSlate Engine Plan
 
+**Scene streaming** adds independent Scene instances through `SceneStreamingActor` and target-required NodeGraph nodes. The streaming component defines the instance origin; editor viewports show only its billboard and scene-name `Text3DComponent`. Play, Preview Build and exported games support async operations and simulation-blocking operations with per-instance state, progress, readiness and teardown. See [scene streaming](architecture/scene-editing.md#scene-streaming).
+
 Scene authoring includes **Design**, **Landscape**, and **Foliage** modes with separate layouts and Focus settings. Landscape heightfields and painted material layers, plus Model-only instanced foliage strokes, persist as scene components and render in editor and Play/player. See [Scene modes](architecture/scene-editing.md#scene-modes) and [Landscape materials](architecture/shader-graph.md#landscape-materials).
 
 > **Status:** Living document — authoritative architecture and delivery plan for BabylonSlate.

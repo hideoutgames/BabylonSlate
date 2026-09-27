@@ -1,5 +1,14 @@
 # Render sync and resource cache (P4)
 
+## Additive scene streaming
+
+- `SceneStreamingActor` owns one independently loaded Scene instance. Actor and component identities are remapped per instance; local hierarchy is retained beneath the streaming origin. The parent world keeps its environment, physics backend, active camera and global settings.
+- Runtime realization and removal use bounded chunks. Async operations leave gameplay running; blocking operations hold a separate simulation pause until completion. The editor only builds the billboard and scene-name label.
+- Play and the packaged player share `createSceneStreamingReadiness`. A complete `sceneStreamRealized` batch identifies its actor slots; `prepareSceneStream` awaits only those model instances, owned textures, particle preparation and material consumers. It does not load another Babylon Scene or wait for unrelated streams. Loaded/progress 1 is acknowledged only after preparation succeeds.
+- Load identities and cancellation discard obsolete completions on unload, replacement, scene change or stop. Unload retires instance actors through the normal script, physics, audio, particle and render ownership paths; shared resource leases remain owned by other consumers.
+
+See [authoring](scene-editing.md#scene-streaming) and [NodeGraph API](scripting.md#scene-streaming-nodes).
+
 Registered Scene/Play views commit their visible canvas only after a coherent
 draw. Private-buffer resizing and shader preparation may continue while the
 previous visible image is held; unsuccessful draws neither copy nor advance
