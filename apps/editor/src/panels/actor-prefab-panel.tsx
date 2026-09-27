@@ -198,7 +198,6 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
             })
           }
           onReparent={reparentComponent}
-          reparentArm="immediate"
           onActivate={(id) => frameActor(id)}
           emptyLabel="No components"
           data-testid="prefab-tree"

@@ -115,15 +115,6 @@ export function chordFromEvent(
   return formatChord({ modifiers, key });
 }
 
-export function chordMatchesEvent(
-  chord: KeyChord,
-  event: KeybindEvent,
-  apple: boolean = isApplePlatform(),
-): boolean {
-  const pressed = chordFromEvent(event, apple);
-  return pressed !== null && pressed === normalizeChord(chord);
-}
-
 /** Whether the chord uses a command modifier, so it can fire from text fields. */
 export function chordHasCommandModifier(chord: KeyChord): boolean {
   const parsed = parseChord(chord);

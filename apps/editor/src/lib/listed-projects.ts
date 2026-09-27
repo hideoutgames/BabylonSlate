@@ -46,48 +46,12 @@ export function recentProjectsWithOpenedProject(
   ].slice(0, 20);
 }
 
-function storageTierLabel(tier: StorageTier): string {
-  return tier === "external" ? "Chosen folder" : "On this device";
-}
-
 /** Web OPFS has no user-visible folder; removing from the list deletes the project. */
 export function shouldDeleteOpfsOnRemove(
   platform: string,
   tier: StorageTier,
 ): boolean {
   return platform === "web" && tier === "opfs";
-}
-
-/** Human location for a recents row, or null when every row would read the same. */
-export function listedProjectLocationLabel(
-  projects: Array<{ tier: StorageTier }>,
-  project: { tier: StorageTier },
-): string | null {
-  const labels = new Set(projects.map((entry) => storageTierLabel(entry.tier)));
-  if (labels.size <= 1) return null;
-  return storageTierLabel(project.tier);
-}
-
-export function formatListedProjectDate(iso: string | undefined): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString();
-}
-
-/** Created / last opened / location for a recents row; empty when there is nothing to show. */
-export function listedProjectMetaParts(
-  projects: ListedProject[],
-  project: ListedProject,
-): string[] {
-  const parts: string[] = [];
-  const created = formatListedProjectDate(project.createdAt);
-  if (created) parts.push(`Created ${created}`);
-  const opened = formatListedProjectDate(project.lastOpenedAt);
-  if (opened) parts.push(`Last opened ${opened}`);
-  const location = listedProjectLocationLabel(projects, project);
-  if (location) parts.push(location);
-  return parts;
 }
 
 export function listedProjectsFromRecents(

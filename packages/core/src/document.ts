@@ -250,10 +250,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
   }
 }
 
-export function isLogicGraphAssetType(type: string): boolean {
-  return type === "Class" || type === "Graph";
-}
-
 export function documentKindLabel(kind: AssetDocumentKind): string {
   switch (kind) {
     case "scene":
@@ -370,10 +366,6 @@ export function migrateRestoredDocumentId(
 
 export function isContentBrowserId(id: string): boolean {
   return id === CONTENT_BROWSER_ID;
-}
-
-export function isClosableDocumentKind(kind: DocumentKind): boolean {
-  return kind !== "content-browser";
 }
 
 export type DockWindowDirection = "left" | "right" | "above" | "below" | "within";

@@ -1,6 +1,6 @@
 import type { LogicGraph } from "./ir";
 import type { Diagnostic } from "./diagnostics";
-import type { ClassHierarchy, PinType } from "./types";
+import type { ClassHierarchy } from "./types";
 
 export type ClassMemberSymbol = {
   id: string;
@@ -91,8 +91,6 @@ export type TypeContext = {
   >;
   /** Optional known class ids. */
   knownClassIds?: ReadonlySet<string>;
-  /** Optional BehaviourTree document payload for `bt.structural` rules. */
-  behaviourTree?: unknown;
   /** Optional Material asset domains keyed by guid (`surface` / `postProcess` / …). */
   materialDomains?: Readonly<Record<string, string>>;
   classId?: string;
@@ -132,16 +130,7 @@ export function listValidationRules(): readonly ValidationRule[] {
   return rules;
 }
 
-export type NodeTypeLookup = {
-  getPins?(
-    typeId: string,
-    properties: Record<string, unknown>,
-  ): { id: string; type: PinType; direction: "in" | "out"; kind: "exec" | "data"; optional?: boolean }[] | undefined;
-};
-
 export type ValidateOptions = {
-  extraRules?: readonly ValidationRule[];
-  nodeLookup?: NodeTypeLookup;
   /** Optional registry so structured-flow rules can read node metadata. */
   registry?: import("./node-registry").NodeRegistry;
 };

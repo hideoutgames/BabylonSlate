@@ -10,28 +10,22 @@ const key = (code: string, phase: "down" | "up" = "down"): RawInputEvent => ({
   tick: 0,
 });
 
-describe("runtime input bindings", () => {
-  it("captures a standalone modifier on release without requiring itself as a modifier", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    resolver.bindings.beginRebind("action", "Jump", 0);
-    resolver.resolve([key("ShiftLeft")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("listening");
-    resolver.resolve([key("ShiftLeft", "up")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("completed");
-    expect(resolver.bindings.getBinding("action", "Jump", 0)).toMatchObject({
-      code: "ShiftLeft",
-      shift: false,
-    });
-    expect(resolver.resolve([key("ShiftLeft")]).actions.Jump?.pressed).toBe(
-      true,
-    );
-    resolver.bindings.beginRebind("action", "Jump", 0);
-    resolver.resolve([key("ShiftLeft", "up")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("listening");
-    resolver.resolve([key("Escape")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("cancelled");
-  });
+/** Version 1 player saves store per-slot overrides of authored bindings. */
+const jumpOnJ = JSON.stringify({
+  version: 1,
+  overrides: [
+    {
+      kind: "action",
+      mapping: "Jump",
+      index: 0,
+      defaultBinding: { device: "key", code: "Space" },
+      device: "key",
+      code: "KeyJ",
+    },
+  ],
+});
 
+describe("runtime input bindings", () => {
   it("rejects reordered axis slots with the same key but different components", () => {
     const defaults = {
       actions: [],
@@ -46,9 +40,25 @@ describe("runtime input bindings", () => {
         },
       ],
     };
-    const resolver = new InputResolver(defaults);
-    resolver.bindings.setBinding("axis", "Diagonal", 0, "key", "KeyA");
-    const saved = resolver.bindings.exportBindings();
+    const saved = JSON.stringify({
+      version: 1,
+      overrides: [
+        {
+          kind: "axis",
+          mapping: "Diagonal",
+          index: 0,
+          defaultBinding: { device: "key", code: "KeyW", component: "x" },
+          device: "key",
+          code: "KeyA",
+        },
+      ],
+    });
+    const game = new InputResolver(defaults);
+    expect(game.bindings.importBindings(saved)).toBe(true);
+    expect(game.resolve([key("KeyA")]).axes2D.Diagonal).toEqual({
+      x: 1,
+      y: 0,
+    });
     defaults.axes[0]!.bindings.reverse();
     const updatedGame = new InputResolver(defaults);
     expect(updatedGame.bindings.importBindings(saved)).toBe(false);
@@ -62,81 +72,50 @@ describe("runtime input bindings", () => {
     });
   });
 
-  it("rebinds one action slot without mutating defaults or other devices", () => {
-    const defaults = createDefaultInputMappings();
-    const resolver = new InputResolver(defaults);
-    resolver.resolve([key("Space"), key("KeyW")]);
+  it("requires the modifier chord stored on an imported version 1 override", () => {
+    const resolver = new InputResolver({
+      actions: [
+        {
+          id: "jump",
+          name: "Jump",
+          bindings: [{ id: "keyboard", device: "key", code: "Space" }],
+        },
+      ],
+      axes: [],
+    });
+    const saved = JSON.stringify({
+      version: 1,
+      overrides: [
+        {
+          kind: "action",
+          mapping: "jump",
+          index: 0,
+          bindingId: "keyboard",
+          device: "key",
+          code: "KeyJ",
+          ctrl: true,
+        },
+      ],
+    });
+    expect(resolver.bindings.importBindings(saved)).toBe(true);
+    expect(resolver.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(false);
+    resolver.resolve([key("KeyJ", "up")]);
     expect(
-      resolver.bindings?.setBinding("action", "Jump", 0, "key", "KeyJ"),
+      resolver.resolve([key("ControlLeft"), key("KeyJ")]).actions.Jump?.pressed,
     ).toBe(true);
-    const changed = resolver.resolve([]);
-    expect(changed.actions.Jump).toEqual({
+    expect(resolver.resolve([key("ControlLeft", "up")]).actions.Jump).toEqual({
       pressed: false,
       released: true,
       held: false,
     });
-    expect(changed.axes2D.Move).toEqual({ x: 0, y: 1 });
-    expect(resolver.resolve([key("Space")]).actions.Jump?.held).toBe(false);
-    expect(resolver.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
-    expect(defaults.actions[0]?.bindings[0]?.code).toBe("Space");
-    expect(resolver.bindings.getBinding("action", "Jump", 1)?.code).toBe("0:0");
-    resolver.resolve([key("Space", "up"), key("KeyJ", "up")]);
-    expect(resolver.bindings.resetBindings("action", "Jump")).toBe(true);
-    expect(resolver.resolve([key("Space")]).actions.Jump?.pressed).toBe(true);
-  });
-
-  it("preserves axis direction and shaping when changing a control", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
     expect(
-      resolver.bindings?.setBinding("axis", "Move", 0, "key", "ArrowLeft"),
-    ).toBe(true);
-    expect(resolver.resolve([key("ArrowLeft")]).axes2D.Move).toEqual({
-      x: -1,
-      y: 0,
-    });
-    expect(resolver.bindings.getBinding("axis", "Move", 0)?.label).toBe("Left");
-    expect(
-      resolver.bindings.setBinding("axis", "Move", -1, "key", "KeyJ"),
-    ).toBe(false);
-    expect(
-      resolver.bindings.setBinding("action", "Missing", 0, "key", "KeyJ"),
-    ).toBe(false);
-    expect(
-      resolver.bindings.setBinding("action", "Jump", 0, "mouseButton", ""),
-    ).toBe(false);
-  });
-
-  it("captures a fresh keyboard chord and suppresses it until release", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    resolver.resolve([key("Enter")]);
-    expect(resolver.bindings?.beginRebind("action", "Jump", 0)).toBe(true);
-    resolver.resolve([key("Enter")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("listening");
-    const capture = resolver.resolve([key("ControlLeft"), key("KeyJ")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("completed");
-    expect(resolver.bindings.getBinding("action", "Jump", 0)).toMatchObject({
-      code: "KeyJ",
-      ctrl: true,
-    });
-    expect(capture.actions.Jump?.held).toBe(false);
-    expect(resolver.resolve([key("KeyJ")]).actions.Jump?.held).toBe(false);
-    resolver.resolve([key("KeyJ", "up"), key("ControlLeft", "up")]);
-    expect(
-      resolver.resolve([key("ControlLeft"), key("KeyJ")]).actions.Jump?.pressed,
-    ).toBe(true);
-    resolver.bindings.beginRebind("action", "Jump", 0);
-    resolver.resolve([key("Escape")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("cancelled");
-    expect(resolver.bindings.getBinding("action", "Jump", 0)?.code).toBe(
-      "KeyJ",
-    );
+      resolver.bindings.getInputBindings({ Name: "", Asset: "jump" }),
+    ).toMatchObject([{ Ctrl: true, Shift: false, Label: "Ctrl + J" }]);
   });
 
   it("round trips only overrides and rejects malformed imports atomically", () => {
     const original = new InputResolver(createDefaultInputMappings());
-    expect(
-      original.bindings?.setBinding("action", "Jump", 0, "key", "KeyJ"),
-    ).toBe(true);
+    expect(original.bindings.importBindings(jumpOnJ)).toBe(true);
     const saved = original.bindings.exportBindings();
     const next = new InputResolver(createDefaultInputMappings());
     expect(next.bindings.importBindings(saved)).toBe(true);
@@ -145,7 +124,7 @@ describe("runtime input bindings", () => {
     malformed.overrides[0].code = "KeyH";
     malformed.overrides.push({});
     expect(next.bindings.importBindings(JSON.stringify(malformed))).toBe(false);
-    expect(next.bindings.getBinding("action", "Jump", 0)?.code).toBe("KeyJ");
+    expect(next.bindings.exportBindings()).toBe(saved);
     expect(next.bindings.importBindings("not json")).toBe(false);
     expect(next.bindings.importBindings('{"version":3,"overrides":[]}')).toBe(
       false,
@@ -164,38 +143,6 @@ describe("runtime input bindings", () => {
     changedDefaults.actions[0]!.bindings.reverse();
     const updatedGame = new InputResolver(changedDefaults);
     expect(updatedGame.bindings.importBindings(saved)).toBe(false);
-    expect(updatedGame.bindings.getBinding("action", "Jump", 0)?.device).toBe(
-      "gamepadButton",
-    );
-  });
-
-  it("keeps gamepad state and cursor samples while listening for a keyboard binding", () => {
-    const resolver = new InputResolver(createDefaultInputMappings());
-    resolver.resolve([
-      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0.8], buttons: [1] },
-      {
-        kind: "pointer",
-        tick: 0,
-        pointerId: 1,
-        phase: "down",
-        x: 40,
-        y: 20,
-        button: 0,
-      },
-    ]);
-    resolver.bindings.beginRebind("action", "Jump", 0);
-    const listening = resolver.resolve([
-      { kind: "gamepad", tick: 1, gamepadIndex: 0, axes: [0.8], buttons: [1] },
-      key("KeyJ"),
-    ]);
-    expect(listening.gamepadConnections).toEqual([]);
-    expect(listening.cursor).toEqual({ x: 40, y: 20, pressed: true });
-    expect(listening.actions.Jump?.held).toBe(true);
-    expect(listening.axes2D.Move!.x).toBeGreaterThan(0.5);
-    resolver.reset();
-    expect(resolver.bindings.getRebindStatus()).toBe("idle");
-    resolver.bindings.beginRebind("action", "Jump", 0);
-    resolver.resolve([key("KeyJ")]);
-    expect(resolver.bindings.getRebindStatus()).toBe("completed");
+    expect(updatedGame.resolve([key("KeyJ")]).actions.Jump?.held).toBe(false);
   });
 });

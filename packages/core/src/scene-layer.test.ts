@@ -13,7 +13,6 @@ import {
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
   SCENE_LAYER_HIT_TESTS,
-  SCENE_LAYER_SCHEMA_VERSION,
 } from "./scene-layer";
 import { createActor, createDefaultSceneSettings } from "./scene";
 
@@ -41,11 +40,7 @@ describe("SceneLayer schema", () => {
     });
   });
 
-  it("stamps schema version 1 for new SceneLayer assets", () => {
-    expect(SCENE_LAYER_SCHEMA_VERSION).toBe(1);
-  });
-
-  it("normalizes a partial payload and drops unsupported 3D components", () => {
+  it("normalizes a partial payload and drops unsupported world-only components", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
       actors: [
@@ -64,6 +59,8 @@ describe("SceneLayer schema", () => {
             { id: "fog", classId: "FogVolumeComponent", properties: {} },
             { id: "outline", classId: "OutlineComponent", properties: {} },
             { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: true } },
+            { id: "landscape", classId: "LandscapeComponent", properties: {} },
+            { id: "foliage", classId: "FoliageComponent", properties: {} },
             ...["GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterBuoyancyComponent"].map((classId) => ({ id: classId, classId, properties: {} })),
             {
               id: "fill",

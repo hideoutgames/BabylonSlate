@@ -53,7 +53,6 @@ export type ConsoleCommandHost = {
   inspectActor?(query: string): string;
   possessActorCamera?(query: string): CommandResult;
   destroyActor?(query: string): CommandResult;
-  getInspectSelection?(): string | null;
   pause?(): void;
   resume?(): void;
   step?(): void;

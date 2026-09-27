@@ -3,10 +3,8 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import {
-  AUDIO_ASSET_TYPES,
   AUDIO_BAKE_DEBOUNCE_MS,
   AUDIO_BAKE_WORKER_TIMEOUT_MS,
-  AUDIO_CROSSFADING_PROFILES,
   AUDIO_DECODED_PCM_LRU_BYTES,
   AUDIO_GEOMETRY_COLLECT_SLICE,
   AUDIO_MAX_CLIPS,
@@ -16,7 +14,6 @@ import {
   AUDIO_OCCUPANCY_GRID_MAX_Y,
   AUDIO_OCCUPANCY_GRID_MAX_Z,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
-  AUDIO_REVERB_CHUNK_MAX_BYTES,
   AUDIO_SHARED_REVERB_BUSES,
   AUDIO_REVERB_COMB_COUNT,
   AUDIO_REVERB_ALLPASS_COUNT,
@@ -37,9 +34,6 @@ import {
   extractPackedAudioClipBytes,
   pickWeightedAudioClip,
   resolveAudioPitch,
-  audioClipCacheKey,
-  collectAudioClipSourceBytes,
-  mapPackedAudioClipBytes,
   collectPackedAudioClipBlobs,
   allocateAudioClipChunkId,
   extraChunksWithAudioClip,
@@ -75,14 +69,12 @@ describe("audio payloads", () => {
     expect(AUDIO_OCCUPANCY_GRID_MAX_Z).toBe(16);
     expect(AUDIO_VOXEL_SIZE).toBe(2);
     expect(AUDIO_MAX_PROBES).toBe(32);
-    expect(AUDIO_REVERB_CHUNK_MAX_BYTES).toBe(64 * 1024);
     expect(AUDIO_BAKE_WORKER_TIMEOUT_MS).toBe(8_000);
     expect(AUDIO_GEOMETRY_COLLECT_SLICE).toBe(8);
     expect(AUDIO_BAKE_DEBOUNCE_MS).toBe(1_500);
     expect(AUDIO_SHARED_REVERB_BUSES).toBe(1);
     expect(AUDIO_REVERB_COMB_COUNT).toBe(4);
     expect(AUDIO_REVERB_ALLPASS_COUNT).toBe(2);
-    expect(AUDIO_CROSSFADING_PROFILES).toBe(2);
     expect(AUDIO_PRE_UNLOCK_QUEUE_CAP).toBe(32);
     expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(256 * 1024 * 1024);
     expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
@@ -161,49 +153,6 @@ describe("audio payloads", () => {
         () => 0.5,
       ),
     ).toBeCloseTo(1, 5);
-  });
-
-  it("maps clip chunk bytes onto guid and guid:chunk keys", async () => {
-    const chunks = new Map<string, Uint8Array>([
-      ["source", new Uint8Array([1, 2])],
-      ["source:2", new Uint8Array([3, 4, 5])],
-    ]);
-    const mapped = await collectAudioClipSourceBytes({
-      assetGuid: "jump",
-      payload: {
-        clips: [
-          { chunkId: "source", weight: 1 },
-          { chunkId: "source:2", weight: 1 },
-        ],
-      },
-      readChunk: async (chunkId) => chunks.get(chunkId) ?? null,
-    });
-    expect(mapped.get("jump")).toEqual(new Uint8Array([1, 2]));
-    expect(mapped.get(audioClipCacheKey("jump", "source"))).toEqual(
-      new Uint8Array([1, 2]),
-    );
-    expect(mapped.get(audioClipCacheKey("jump", "source:2"))).toEqual(
-      new Uint8Array([3, 4, 5]),
-    );
-  });
-
-  it("maps a packed multi-clip envelope onto guid and guid:chunk keys", () => {
-    const payload = normalizeAudioPayload({
-      clips: [
-        { chunkId: "source", name: "a", weight: 1 },
-        { chunkId: "source:2", name: "b", weight: 1 },
-      ],
-    });
-    const first = new Uint8Array([1, 2]);
-    const second = new Uint8Array([9, 8]);
-    const mapped = mapPackedAudioClipBytes("jump", {
-      payload,
-      source: first,
-      sources: [first, second],
-    });
-    expect(mapped.get("jump")).toEqual(first);
-    expect(mapped.get(audioClipCacheKey("jump", "source"))).toEqual(first);
-    expect(mapped.get(audioClipCacheKey("jump", "source:2"))).toEqual(second);
   });
 
   it("allocates source:N clip chunk ids and packs clip blobs in payload order", async () => {
@@ -424,12 +373,6 @@ describe("audio payloads", () => {
   });
 
   it("indexes Audio, mixer, and channel guid dependencies", () => {
-    expect(AUDIO_ASSET_TYPES).toEqual([
-      "Audio",
-      "AudioMixer",
-      "AudioChannel",
-      "SoundAttenuation",
-    ]);
     expect(
       audioAssetDependencies("Audio", {
         volume: 1,

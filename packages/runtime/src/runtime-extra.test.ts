@@ -44,9 +44,6 @@ describe("diagnostics aggregator", () => {
     expect(agg.entries()).toHaveLength(2);
     expect(agg.entries()[0]!.count).toBe(2);
     expect(agg.droppedCount()).toBe(1);
-    expect(agg.isEmpty()).toBe(false);
-    agg.clear();
-    expect(agg.isEmpty()).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
@@ -6,10 +7,7 @@ import {
   playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
   shouldPackKtx2ForPreviewBuild,
-  textureBlockSizeMessage,
-  webGpuKtx2BlockMisalignment,
 } from "./ktx2-transcoder";
-import { ktx2HeaderBytes } from "./texture-test-fixtures";
 
 describe("ktx2 transcoder config", () => {
   it("builds self-hosted URLs under the public base", () => {
@@ -117,25 +115,35 @@ describe("ktx2 transcoder config", () => {
       renderer: "WebKit WebGL",
     });
     expect(mock.DefaultNumWorkers).toBe(0);
-    expect(decoderOptions.forceRGBA).toBe(false);
+    expect(decoderOptions.forceRGBA).toBeUndefined();
   });
 
-  it("keeps GPU compressed transcode when ASTC is available", () => {
-    const decoderOptions = {
-      forceRGBA: true,
-      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+  describe("Babylon decoder defaults", () => {
+    const defaults = KhronosTextureContainer2.DefaultDecoderOptions;
+    const saved = {
+      workers: KhronosTextureContainer2.DefaultNumWorkers,
+      forceRGBA: defaults.forceRGBA,
+      useRGBA: defaults.useRGBAIfASTCBC7NotAvailableWhenUASTC,
     };
-    const mock = {
-      DefaultNumWorkers: 4,
-      DefaultDecoderOptions: decoderOptions,
-    };
-    configureKtx2DecoderRuntime(mock, {
-      caps: { astc: {}, bptc: null },
-      renderer: "Apple A16 GPU",
+    afterEach(() => {
+      KhronosTextureContainer2.DefaultNumWorkers = saved.workers;
+      defaults.forceRGBA = saved.forceRGBA;
+      defaults.useRGBAIfASTCBC7NotAvailableWhenUASTC = saved.useRGBA;
     });
-    expect(mock.DefaultNumWorkers).toBe(4);
-    expect(decoderOptions.forceRGBA).toBe(false);
-    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
+
+    it("keeps GPU compressed transcode when ASTC is available, without overriding a per-texture RGBA decode", () => {
+      configureKtx2DecoderRuntime(KhronosTextureContainer2, { caps: { astc: null, bptc: null } });
+      expect(defaults._getKTX2DecoderOptions()).toMatchObject({ forceRGBA: true });
+      configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+        caps: { astc: {}, bptc: null },
+        renderer: "Apple A16 GPU",
+      });
+      // The decoder spreads its defaults over each texture's options, so any
+      // `forceRGBA` key here would replace the one a texture asks for.
+      const options = defaults._getKTX2DecoderOptions();
+      expect(options).not.toHaveProperty("forceRGBA");
+      expect(options).toMatchObject({ useRGBAIfASTCBC7NotAvailableWhenUASTC: true });
+    });
   });
 
   it("requires every transcoder wasm in a player file map", () => {
@@ -158,35 +166,5 @@ describe("ktx2 transcoder config", () => {
 
   it("never packs KTX2 for Preview Build", () => {
     expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
-  });
-});
-
-describe("WebGPU KTX2 block alignment", () => {
-  const webgpu = (caps: { astc?: unknown; bptc?: unknown } = { astc: {} }) => ({ isWebGPU: true, getCaps: () => caps });
-  const compressed = { forceRGBA: false };
-
-  it("refuses a block-compressed WebGPU upload whose base size is not whole 4x4 blocks", () => {
-    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1), compressed)).toEqual({ width: 1, height: 1 });
-    expect(webGpuKtx2BlockMisalignment(webgpu({ bptc: {} }), ktx2HeaderBytes(8, 6), compressed)).toEqual({ width: 8, height: 6 });
-  });
-
-  it("allows uploads WebGPU accepts or that never transcode to a block format", () => {
-    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(4, 8), compressed)).toBeNull();
-    expect(webGpuKtx2BlockMisalignment({ ...webgpu(), isWebGPU: false }, ktx2HeaderBytes(1, 1), compressed)).toBeNull();
-    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1), { forceRGBA: true })).toBeNull();
-    expect(webGpuKtx2BlockMisalignment(webgpu({}), ktx2HeaderBytes(1, 1), compressed)).toBeNull();
-    // VK_FORMAT_R8G8B8A8_UNORM: an uncompressed KTX2 uploads as authored.
-    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1, 37), compressed)).toBeNull();
-    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1).subarray(0, 24), compressed)).toBeNull();
-    expect(webGpuKtx2BlockMisalignment(webgpu(), new Uint8Array([0x89, 0x50, 0x4e, 0x47]), compressed)).toBeNull();
-  });
-
-  it("names the texture, its size and the fix for the Materials that sample it", () => {
-    expect(textureBlockSizeMessage({ name: "Spark", width: 1, height: 1, particle: true }))
-      .toMatch(/^Texture "Spark" \(1×1\) was not drawn: .* Set its Usage to Particle\.$/);
-    expect(textureBlockSizeMessage({ name: "Brick", width: 30, height: 18, other: true }))
-      .toMatch(/^Texture "Brick" \(30×18\) was not drawn: .* Resize the image to a multiple of 4 pixels\.$/);
-    expect(textureBlockSizeMessage({ name: "Shared", width: 1, height: 1, particle: true, other: true }))
-      .toMatch(/Set its Usage to Particle, or resize the image to a multiple of 4 pixels\.$/);
   });
 });

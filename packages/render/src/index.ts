@@ -16,7 +16,6 @@ export * from "./render-scheduler";
 export * from "./snapshot-sync";
 export * from "./snapshot-apply";
 export * from "./hardware-scaling";
-export * from "./play-console-apply";
 export * from "./play-free-cam";
 export * from "./play-console-viz";
 export * from "./play-debug-draw";
@@ -104,7 +103,7 @@ export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
-export { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { WaterField, distanceTransform, isWaterContactMesh } from "./water-field";
 export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";

@@ -15,13 +15,6 @@ export type MaterialValueType =
 
 export type MaterialNumericType = Exclude<MaterialValueType, "texture">;
 
-export const MATERIAL_NUMERIC_TYPES: readonly MaterialValueType[] = [
-  "float",
-  "vec2",
-  "vec3",
-  "vec4",
-];
-
 const COMPONENTS: Record<MaterialValueType, number> = {
   float: 1,
   vec2: 2,

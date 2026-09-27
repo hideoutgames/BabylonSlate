@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, QualityOverrides, RenderPath, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
@@ -169,7 +169,6 @@ export type ControlMessage =
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
-  | { type: "pause" }
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
@@ -665,21 +664,9 @@ export type CommandMessage =
       componentId?: string;
       playing: boolean;
     }
-  | {
-      type: "setRenderResolution";
-      width: number;
-      height: number;
-    }
   | { type: "sessionPaused"; paused: boolean }
-  | { type: "setRenderingQuality"; overrides: QualityOverrides }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
-  | {
-      /** Non-persistent game-wide session render path; null resumes the project path. */
-      type: "setRenderPath";
-      renderPath: RenderPath | null;
-    }
   | { type: "setLightsDebug"; enabled: boolean }
-  | { type: "setFrameCap"; fps: number }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }
@@ -717,12 +704,10 @@ export type CommandMessage =
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }
   | { channel: "input"; payload: ArrayBuffer | SharedArrayBuffer }
-  | { channel: "rpc"; payload: unknown }
   | { channel: "snapshotLayoutAck"; generation: number }
   /** Hands a consumed transferable snapshot buffer back for reuse (no per-frame alloc). */
   | { channel: "recycleSnapshot"; payload: ArrayBuffer };
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
-  | { channel: "snapshot"; payload: ArrayBuffer; generation: number; transferable?: true }
-  | { channel: "rpc"; payload: unknown };
+  | { channel: "snapshot"; payload: ArrayBuffer; generation: number };

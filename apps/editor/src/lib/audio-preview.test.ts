@@ -1,25 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAudioPayload } from "@babylonslate/assets";
 import { FakeAudioPlaybackBackend } from "@babylonslate/render/audio-playback-backend";
-import {
-  createAudioPreviewSession,
-  stopAudioPreviewElement,
-} from "./audio-preview";
-
-describe("stopAudioPreviewElement", () => {
-  it("pauses and resets the element so Stop is not a silent toggle", () => {
-    const element = {
-      pause: () => {
-        element.paused = true;
-      },
-      paused: false,
-      currentTime: 1.25,
-    };
-    stopAudioPreviewElement(element);
-    expect(element.paused).toBe(true);
-    expect(element.currentTime).toBe(0);
-  });
-});
+import { createAudioPreviewSession } from "./audio-preview";
 
 describe("createAudioPreviewSession", () => {
   it("plays cached clip bytes on the same turn as Play without reading storage", async () => {

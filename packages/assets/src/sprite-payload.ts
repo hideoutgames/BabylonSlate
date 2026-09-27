@@ -25,7 +25,7 @@ export interface SpriteFrame {
   pivot: { x: number; y: number };
   /** Normalized AABB; omitted documents parse as the full image. */
   collision?: SpriteCollision;
-  /** Pixel rect in the packed atlas, when packed from loose frames. */
+  /** Optional pixel rect of the frame in its atlas. */
   x?: number;
   y?: number;
   width?: number;
@@ -103,36 +103,6 @@ export function spriteFrameUvs(
     u1: frame.u + frame.uSize,
     v1: frame.v + frame.vSize,
   };
-}
-
-export function packedRectsToFrames(
-  pack: {
-    width: number;
-    height: number;
-    rects: Array<{
-      id: string;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    }>;
-  },
-  durationMs = 100,
-): SpriteFrame[] {
-  return pack.rects.map((rect) => ({
-    name: rect.id,
-    u: pack.width > 0 ? rect.x / pack.width : 0,
-    v: pack.height > 0 ? rect.y / pack.height : 0,
-    uSize: pack.width > 0 ? rect.width / pack.width : 1,
-    vSize: pack.height > 0 ? rect.height / pack.height : 1,
-    durationMs,
-    pivot: { x: 0.5, y: 0.5 },
-    collision: { ...DEFAULT_SPRITE_COLLISION },
-    x: rect.x,
-    y: rect.y,
-    width: rect.width,
-    height: rect.height,
-  }));
 }
 
 function clampUnit(value: number, fallback: number): number {

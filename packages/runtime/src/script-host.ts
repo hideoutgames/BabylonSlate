@@ -118,7 +118,6 @@ export interface ScriptHostServices {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number, owner?: BObject | null): Promise<void>;
   reportError(error: unknown): void;
-  reportCommand?(success: boolean, output: string): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
   /**
@@ -940,7 +939,6 @@ export class ScriptHost {
         this.flowStateFor(self, String(nodeId), flowNamespace),
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
-        services.reportCommand?.(Boolean(success), String(output));
       },
       formatValue: (value) => formatValue(value),
       checkInfiniteLoop: () => {

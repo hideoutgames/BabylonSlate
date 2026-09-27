@@ -208,8 +208,6 @@ export interface GraphEditorProps {
    * opens Add State; near tap/release cancels without breaking transitions).
    */
   connectEndMode?: ConnectEndMode;
-  /** Double-tap empty pane opens Add Node. Default true. */
-  emptyPaneDoubleTapAddsNode?: boolean;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
@@ -518,7 +516,6 @@ function GraphEditorCanvas({
   lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
-  emptyPaneDoubleTapAddsNode = true,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   canConnect,
@@ -1838,11 +1835,7 @@ function GraphEditorCanvas({
       }
       clearSelection();
       const now = Date.now();
-      if (
-        now - lastPaneTapRef.current < DOUBLE_TAP_MS &&
-        !readOnly &&
-        emptyPaneDoubleTapAddsNode
-      ) {
+      if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);
@@ -1854,7 +1847,6 @@ function GraphEditorCanvas({
     [
       clearSelection,
       connectEndMode,
-      emptyPaneDoubleTapAddsNode,
       readOnly,
       screenToFlowPosition,
     ],

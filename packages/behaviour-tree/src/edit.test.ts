@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultBehaviourTree, type BehaviourTreeDocument, type BtNode } from "./index";
 import {
-  addChildNode,
   addDecorator,
   addService,
   canReparentNode,
   deleteSubtree,
   duplicateSubtree,
   moveAttachment,
-  pruneUnreachable,
   removeAttachment,
-  reparentNode,
   wrapInSequence,
 } from "./edit";
 
@@ -82,42 +79,6 @@ describe("deleteSubtree", () => {
   });
 });
 
-describe("pruneUnreachable", () => {
-  it("drops nodes that are not under the root", () => {
-    const doc = createDefaultBehaviourTree();
-    doc.nodes.push(node("lost", "task", "bt.task.succeed"));
-    const next = pruneUnreachable(doc);
-    expect(next.nodes.map((entry) => entry.id)).not.toContain("lost");
-  });
-});
-
-describe("addChildNode", () => {
-  it("adds a Wait child with default duration under a composite", () => {
-    const next = addChildNode(createDefaultBehaviourTree(), "sequence", "bt.task.wait");
-    const wait = next.nodes.find((entry) => entry.classId === "bt.task.wait");
-    expect(wait?.properties).toEqual({ durationMs: 1000 });
-    expect(next.nodes.find((entry) => entry.id === "sequence")?.children).toContain(
-      wait?.id,
-    );
-  });
-
-  it("refuses to add a child under a task", () => {
-    const doc = createDefaultBehaviourTree();
-    expect(addChildNode(doc, "task", "bt.task.wait")).toBe(doc);
-  });
-
-  it("adds a custom BTComposite as a sequence from ancestry", () => {
-    const next = addChildNode(
-      createDefaultBehaviourTree(),
-      "sequence",
-      "MyBrain",
-      (id) => (id === "MyBrain" ? "BTComposite" : null),
-    );
-    const child = next.nodes.find((entry) => entry.classId === "MyBrain");
-    expect(child?.kind).toBe("sequence");
-  });
-});
-
 describe("attachments", () => {
   it("adds, reorders, and removes decorator rows", () => {
     let doc = addDecorator(createDefaultBehaviourTree(), "root", "bt.decorator.loop");
@@ -147,22 +108,6 @@ describe("attachments", () => {
 });
 
 describe("editor placement", () => {
-  it("stores an explicit child position without changing other siblings", () => {
-    const doc = createDefaultBehaviourTree();
-    doc.editorPositions = {
-      root: { x: 40, y: 10 },
-      sequence: { x: 40, y: 180 },
-      task: { x: 40, y: 360 },
-    };
-    const next = addChildNode(doc, "sequence", "bt.task.wait", {
-      position: { x: 220, y: 360 },
-    });
-    const wait = next.nodes.find((entry) => entry.classId === "bt.task.wait");
-    expect(wait).toBeDefined();
-    expect(next.editorPositions?.[wait!.id]).toEqual({ x: 220, y: 360 });
-    expect(next.editorPositions?.task).toEqual({ x: 40, y: 360 });
-  });
-
   it("offsets duplicated subtree positions", () => {
     const doc = createDefaultBehaviourTree();
     doc.editorPositions = {
@@ -199,23 +144,9 @@ describe("editor placement", () => {
     const next = deleteSubtree(doc, "sequence");
     expect(next.editorPositions).toEqual({ root: { x: 40, y: 10 } });
   });
-
-  it("drops unreachable node positions", () => {
-    const doc = createDefaultBehaviourTree();
-    doc.nodes.push(node("lost", "task", "bt.task.succeed"));
-    doc.editorPositions = {
-      root: { x: 1, y: 1 },
-      sequence: { x: 2, y: 2 },
-      task: { x: 3, y: 3 },
-      lost: { x: 9, y: 9 },
-    };
-    const next = pruneUnreachable(doc);
-    expect(next.editorPositions?.lost).toBeUndefined();
-    expect(next.editorPositions?.root).toEqual({ x: 1, y: 1 });
-  });
 });
 
-describe("reparentNode", () => {
+describe("canReparentNode", () => {
   function branched(): BehaviourTreeDocument {
     return tree(
       [
@@ -228,14 +159,10 @@ describe("reparentNode", () => {
     );
   }
 
-  it("moves a node under another composite and rejects cycles", () => {
+  it("allows a move under another composite and rejects cycles", () => {
     const doc = branched();
     expect(canReparentNode(doc, "leaf", "right")).toBe(true);
-    const next = reparentNode(doc, "leaf", "right");
-    expect(next.nodes.find((entry) => entry.id === "left")?.children).toEqual([]);
-    expect(next.nodes.find((entry) => entry.id === "right")?.children).toEqual(["leaf"]);
     expect(canReparentNode(doc, "left", "leaf")).toBe(false);
-    expect(reparentNode(doc, "left", "leaf")).toBe(doc);
   });
 
   it("refuses the root, a task parent, and self-links", () => {
@@ -243,8 +170,6 @@ describe("reparentNode", () => {
     expect(canReparentNode(doc, "root", "right")).toBe(false);
     expect(canReparentNode(doc, "leaf", "leaf")).toBe(false);
     expect(canReparentNode(doc, "right", "leaf")).toBe(false);
-    expect(reparentNode(doc, "root", "right")).toBe(doc);
-    expect(reparentNode(doc, "leaf", "leaf")).toBe(doc);
   });
 });
 

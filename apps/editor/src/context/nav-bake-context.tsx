@@ -210,14 +210,6 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useNavBake(): NavBakeContextValue {
-  const context = useContext(NavBakeContext);
-  if (!context) {
-    throw new Error("useNavBake must be used within NavBakeProvider");
-  }
-  return context;
-}
-
 export function useOptionalNavBake(): NavBakeContextValue | null {
   return useContext(NavBakeContext);
 }

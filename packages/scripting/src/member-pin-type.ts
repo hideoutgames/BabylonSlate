@@ -138,10 +138,6 @@ export function isClassConstraintTypeId(typeId: string | undefined): boolean {
   return typeId === "object" || typeId === "actor" || typeId === "class";
 }
 
-export function isAssetTypeId(typeId: string | undefined): boolean {
-  return typeId === "asset";
-}
-
 /** Map a live pin type back to a PinTypePicker id (unwraps one Array/Map level). */
 export function typeIdFromPinType(type: PinType): string {
   switch (type.kind) {

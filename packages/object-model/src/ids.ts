@@ -1,7 +1,7 @@
 import {
   ENGINE_COMPONENT_CLASS_IDS,
-  SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS,
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
+  isSceneLayerDeniedComponent,
   type EngineComponentClassId,
 } from "@babylonslate/core";
 
@@ -30,15 +30,8 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTComposite",
 ] as const;
 
-export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
-
-export type SceneLayerExclusiveComponentClassId =
-  (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
-
-const SCENE_LAYER_DENIED_COMPONENTS = new Set<string>(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS);
-
 export function isSceneLayerAllowedComponent(classId: string): boolean {
-  return !SCENE_LAYER_DENIED_COMPONENTS.has(classId);
+  return !isSceneLayerDeniedComponent(classId);
 }
 
 export function isSceneLayerExclusiveComponent(classId: string): boolean {

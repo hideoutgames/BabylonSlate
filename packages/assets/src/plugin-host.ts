@@ -10,7 +10,7 @@ import {
   PLUGIN_SETTINGS_TYPE,
   type PluginSettingsPayload,
 } from "./plugin-settings";
-import type { AssetRegistry, IndexedAsset } from "./registry";
+import type { AssetRegistry } from "./registry";
 
 export type PluginSource = "project" | "engine";
 
@@ -421,12 +421,4 @@ export function indexUnresolvedPlaceholders(
     if (found?.placeholder) continue;
     registry.indexPlaceholder(guid);
   }
-}
-
-export function collectEnabledPluginAssets(
-  registry: AssetRegistry,
-  enabledGuids: ReadonlySet<string>,
-): IndexedAsset[] {
-  const rootIds = new Set([...enabledGuids].map((guid) => `plugin:${guid}`));
-  return registry.list().filter((asset) => rootIds.has(asset.rootId));
 }

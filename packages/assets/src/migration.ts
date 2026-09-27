@@ -9,7 +9,6 @@ import {
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
   migrateLegacyShaderPayload,
-  normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import {
@@ -269,24 +268,3 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
 
 /** Current Material payload version (domain + graph + preview settings). */
 export const MATERIAL_PAYLOAD_VERSION = 2;
-
-/**
- * Migrate an asset payload whose header type is changing to `Material`.
- * Imported glTF stubs carry their albedo texture in `header.dependencies`,
- * which seeds the graph so the material is not blank after migration.
- */
-export function migrateMaterialPayload(
-  payload: Record<string, unknown>,
-  options: { textureGuids?: readonly string[] } = {},
-): Record<string, unknown> {
-  const hasGraph = Array.isArray(payload.nodes) && payload.nodes.length > 0;
-  if (hasGraph && payload.domain) {
-    return normalizeMaterialDocument(payload) as unknown as Record<
-      string,
-      unknown
-    >;
-  }
-  return migrateLegacyShaderPayload(payload, {
-    textureGuids: options.textureGuids,
-  }) as unknown as Record<string, unknown>;
-}

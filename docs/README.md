@@ -35,7 +35,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
 | [architecture/console-commands.md](architecture/console-commands.md) | Builtin catalog, apply audit, autocomplete |
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
-| [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
+| [architecture/sprites.md](architecture/sprites.md) | Sprite atlas frames, Sprite Animation, SpriteComponent quad |
 | [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData, painting, Rapier chains |
 | [architecture/anim-graph.md](architecture/anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
 | [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |

@@ -25,7 +25,7 @@ Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators
 - `facingYawFromVelocity`: Recast XZ yaw (`atan2(x, z)`), keep previous yaw below a min-length guard.
 - `syncAgentPosition(id, position)` projects a resolved physics position onto the crowd corridor without resetting its destination or accumulated velocity.
 - `solidBlockerMesh` / `recastWalkableQuadFromXy` / `recastWallsFromXyChains`: bake solids. Walls are thick boxes so Recast can voxelise them.
-- `navmeshChunk` / `navmeshBytesFromChunks` / `extraChunksWithNavmesh` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Not a Content Browser type.
+- `navmeshChunk` / `extraChunksWithNavmesh` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Readers load the bytes by chunk id (`readAssetChunk(path, NAVMESH_CHUNK_ID)`). Not a Content Browser type.
 
 Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/height/climb/radius, edge length, simplification error, region areas, verts per poly, detail sampling.
 

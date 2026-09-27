@@ -1,6 +1,6 @@
 /**
- * Node/Vitest Basis encode path using worker_threads + vendored wasm.
- * Browser editor uses createWorkerEncodeFn instead.
+ * Node/Vitest Basis encode path using worker_threads and the editor's vendored
+ * encoder in apps/editor/public/basis. Browser editor uses createWorkerEncodeFn instead.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,9 +10,9 @@ import type { EncodeFn } from "./encode-queue";
 import type { TextureEncodeSettings } from "./texture-compression";
 
 function basisDir(): string {
-  // packages/assets/public/basis relative to this source file
+  // apps/editor/public/basis relative to this source file (packages/assets/src)
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "../public/basis");
+  return join(here, "../../../apps/editor/public/basis");
 }
 
 /**

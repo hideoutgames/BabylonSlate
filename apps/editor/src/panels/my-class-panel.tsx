@@ -315,14 +315,6 @@ export function membersForGraph(
   return [...declared, ...componentRefs, ...events, ...inherited];
 }
 
-export function membersForSection(
-  members: MyClassMember[],
-  kind: MyClassMember["kind"] | null,
-): MyClassMember[] {
-  if (!kind) return [];
-  return members.filter((member) => member.kind === kind);
-}
-
 export function blueprintTreeNodes(
   members: MyClassMember[],
   collapsed: ReadonlySet<string>,

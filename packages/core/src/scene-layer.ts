@@ -15,12 +15,6 @@ import { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 export { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
-/** SceneLayer document schema (v1): overlay actors, folders, 2D gravity, post-process. */
-export const SCENE_LAYER_SCHEMA_VERSION = 1;
-
-export type SceneLayerDeniedComponentClassId =
-  (typeof SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS)[number];
-
 export const SCENE_LAYER_ANCHORS = [
   "topLeft",
   "topCenter",
@@ -201,7 +195,6 @@ export function parseSceneLayerHitTest(
 export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
 export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
   SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
-export const SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH = 16;
 
 const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
   topLeft: [-1, 1],

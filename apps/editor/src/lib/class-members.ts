@@ -92,10 +92,6 @@ const EDITOR_UTILITY_EVENT_TYPES = [
 
 const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
 
-export function nativeEventTitle(eventType: string): string {
-  return NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType);
-}
-
 export const OVERLAY_MOUSE_EVENT_TYPE_IDS = [
   "flow.event.onMouseEnter",
   "flow.event.onMouseLeave",

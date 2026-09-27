@@ -13,13 +13,11 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/test-kit"
   },
   "dependencies": {
-    "@babylonslate/bridge": "workspace:*",
-    "@babylonslate/core": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/runtime": "workspace:*",
-    "@babylonslate/vfs": "workspace:*"
+    "@babylonslate/runtime": "workspace:*"
   },
   "devDependencies": {
+    "@babylonslate/bridge": "workspace:*",
     "typescript": "~5.8.2"
   }
 }

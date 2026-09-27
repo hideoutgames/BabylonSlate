@@ -4,6 +4,7 @@ import {
   ENCODE_WORKER_DECODE_UNAVAILABLE,
   sourceEncodeTransferables,
   type EncodeWorkerReply,
+  type RgbaEncodeRequest,
   type SourceEncodeRequest,
 } from "./encode-worker-protocol";
 import type { TextureEncodeSettings } from "./texture-compression";
@@ -68,17 +69,15 @@ export function createWorkerEncodeFn(
     settings: TextureEncodeSettings,
   ) => {
     const rgbaCopy = decoded.rgba.slice();
-    worker!.postMessage(
-      {
-        type: "encode",
-        id,
-        rgba: rgbaCopy.buffer,
-        width: decoded.width,
-        height: decoded.height,
-        settings,
-      },
-      [rgbaCopy.buffer],
-    );
+    const message: RgbaEncodeRequest = {
+      type: "encode",
+      id,
+      rgba: rgbaCopy.buffer,
+      width: decoded.width,
+      height: decoded.height,
+      settings,
+    };
+    worker!.postMessage(message, [rgbaCopy.buffer]);
   };
 
   const fallbackDecode = (id: number, job: PendingEncode) => {

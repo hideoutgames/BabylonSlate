@@ -125,16 +125,6 @@ export function updateActiveViewportPrefs(
 
 type AppSettingsContextValue = AppSettingsSnapshot & {
   updateSettings: AppSettingsOwner["update"];
-  updateViewportPrefs: (
-    patch: Pick<
-      Partial<EngineSettings>,
-      | "viewportFlySpeed"
-      | "viewportGridSize"
-      | "viewportSnapTranslate"
-      | "viewportSnapRotateDeg"
-      | "viewportSnapScale"
-    >,
-  ) => Promise<void>;
   updateDebuggerDefaults: (
     patch: Partial<EngineSettings["debuggerDefaults"]>,
   ) => Promise<void>;
@@ -181,19 +171,6 @@ export function AppSettingsProvider({
     (mutate: (settings: EngineSettings) => void) => owner.update(mutate),
     [owner],
   );
-  const updateViewportPrefs = useCallback(
-    (
-      patch: Pick<
-        Partial<EngineSettings>,
-        | "viewportFlySpeed"
-        | "viewportGridSize"
-        | "viewportSnapTranslate"
-        | "viewportSnapRotateDeg"
-        | "viewportSnapScale"
-      >,
-    ) => owner.update((settings) => Object.assign(settings, patch)),
-    [owner],
-  );
   const updateDebuggerDefaults = useCallback(
     (patch: Partial<EngineSettings["debuggerDefaults"]>) =>
       owner.update((settings) =>
@@ -205,10 +182,9 @@ export function AppSettingsProvider({
     () => ({
       ...snapshot,
       updateSettings,
-      updateViewportPrefs,
       updateDebuggerDefaults,
     }),
-    [snapshot, updateSettings, updateViewportPrefs, updateDebuggerDefaults],
+    [snapshot, updateSettings, updateDebuggerDefaults],
   );
   return (
     <AppSettingsContext.Provider value={value}>
@@ -230,7 +206,6 @@ export function useAppSettings(): AppSettingsContextValue {
     value ?? {
       ...snapshot,
       updateSettings: (mutate) => activeOwner.update(mutate),
-      updateViewportPrefs: (patch) => updateActiveViewportPrefs(patch),
       updateDebuggerDefaults: (patch) =>
         activeOwner.update((settings) =>
           Object.assign(settings.debuggerDefaults, patch),

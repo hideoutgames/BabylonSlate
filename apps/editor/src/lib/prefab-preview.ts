@@ -110,23 +110,6 @@ export function mergePrefabComponents(
   return [...byId.values()];
 }
 
-/** Strip view-only inheritance flags before persisting local graph.components. */
-export function serializePrefabComponents(
-  views: readonly PrefabComponentView[],
-): SerializedComponent[] {
-  return views.map((component) => {
-    const { inheritedFrom: _ignored, ...rest } = component;
-    void _ignored;
-    return {
-      id: rest.id,
-      classId: rest.classId,
-      properties: { ...rest.properties },
-      parentId: rest.parentId ?? null,
-      ...(rest.transform ? { transform: rest.transform } : {}),
-    };
-  });
-}
-
 export function instantiatePrefabComponents(
   components: readonly SerializedComponent[],
   actorId: string,

@@ -249,3 +249,49 @@ describe("compiled runtime input rebinding", () => {
     restored.stop();
   });
 });
+
+describe("compiled gamepad connection events", () => {
+  it("runs On Gamepad Disconnected once with the index of the pad that disappeared", async () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    await load(
+      runtime,
+      [
+        node("connected", "input.onGamepadConnected"),
+        node("disconnected", "input.onGamepadDisconnected"),
+        node("logConnected", "debug.log", { category: "Connected" }),
+        node("logDisconnected", "debug.log", { category: "Disconnected" }),
+      ],
+      [
+        edge("connected", "execOut", "logConnected", "execIn"),
+        edge("connected", "index", "logConnected", "message"),
+        edge("disconnected", "execOut", "logDisconnected", "execIn"),
+        edge("disconnected", "index", "logDisconnected", "message"),
+      ],
+    );
+    runtime.start();
+    runtime.pushInputBuffer(
+      encodeInputEvents([
+        { kind: "gamepad", tick: 0, gamepadIndex: 2, axes: [], buttons: [] },
+      ]),
+    );
+    runtime.tick();
+    runtime.pushInputBuffer(
+      encodeInputEvents([
+        { kind: "gamepadDisconnect", tick: 1, gamepadIndex: 2 },
+      ]),
+    );
+    runtime.tick();
+    runtime.tick();
+    expect(
+      runtime
+        .getLogRing()
+        .entries()
+        .filter((entry) => entry.category !== "input")
+        .map((entry) => [entry.category, entry.message]),
+    ).toEqual([
+      ["Connected", "2"],
+      ["Disconnected", "2"],
+    ]);
+    runtime.stop();
+  });
+});

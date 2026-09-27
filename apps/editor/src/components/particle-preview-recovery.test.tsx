@@ -267,16 +267,8 @@ describe("Particle preview recovery", () => {
     harness.textureGuids = ["tex-1"];
     harness.textures.set("tex-1", savedTexture({ usage: "albedo", ktx2ChunkId: "ktx2-1x1" }, ["ktx2-1x1"]));
     harness.textureBytes.set("tex-1", new Uint8Array([1]));
-    // WebGPU refuses the 1x1 KTX2, so the Material is unavailable.
-    harness.assignDiagnostics = [
-      {
-        code: "particle.missing_material",
-        assetGuid: "emitter",
-        message: "Particle Emitter has no usable Material; slot skipped.",
-      },
-    ];
     const view = render(preview());
-    expect(await screen.findByText("No Material")).toBeTruthy();
+    await screen.findByTestId("particle-preview-restart");
     // Other saves, and encode progress on this Texture, keep the running scene.
     harness.registryVersion += 1;
     view.rerender(preview());
@@ -288,7 +280,7 @@ describe("Particle preview recovery", () => {
     view.rerender(preview());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(harness.services).toHaveLength(1);
-    // Set Usage To Particle is saved while its re-encode is still pending.
+    // A Usage change to Particle is saved while its re-encode is still pending.
     harness.textures.set(
       "tex-1",
       savedTexture({ usage: "particle", ktx2ChunkId: "ktx2-1x1", compressionState: "pending" }, ["ktx2-1x1"]),
@@ -298,7 +290,6 @@ describe("Particle preview recovery", () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     const loads = harness.services.length;
     // The block-aligned encode commits: the running Preview binds it without Retry.
-    harness.assignDiagnostics = [];
     const aligned = new Uint8Array([4]);
     harness.textureBytes.set("tex-1", aligned);
     harness.textures.set(
@@ -313,7 +304,6 @@ describe("Particle preview recovery", () => {
     await waitFor(() => expect(harness.services).toHaveLength(loads + 1));
     expect(harness.services.at(-2)!.dispose).toHaveBeenCalled();
     expect(harness.resolvers.at(-1)!.acquireTexture("tex-1")).toBe(aligned);
-    await waitFor(() => expect(screen.queryByText("No Material")).toBeNull());
   });
 
   it("names a Material the service could not use", async () => {

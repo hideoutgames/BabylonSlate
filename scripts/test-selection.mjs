@@ -30,7 +30,7 @@ const RELATED_TESTS = new Map([
     ["packages/test-kit/src/public-hygiene.test.ts"],
   ],
   ["scripts/run-tests.mjs", ["scripts/test-runner.test.mjs"]],
-  ["browser-timings.json", ["scripts/browser-partition.test.mjs"]],
+  ["scripts/browser-timings.json", ["scripts/browser-partition.test.mjs"]],
 ]);
 
 function isRepositoryMetadata(file) {
@@ -108,7 +108,6 @@ export function selectChecks(files, workspace, availableTests = []) {
       addTest("playwright.config.test.ts");
       continue;
     }
-    if (file === "browser-timings.json") continue;
     if (file.startsWith("scripts/")) continue;
     if (isRepositoryMetadata(file)) continue;
     if (ROOT_STATIC_INPUT.test(file)) {

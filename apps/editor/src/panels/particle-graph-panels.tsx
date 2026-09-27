@@ -59,7 +59,6 @@ import {
   type ParticleGraphBuildDiagnostic,
 } from "../context/particle-graph-editing-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import { useTextureUsageFix } from "../lib/use-particle-texture-usage";
 import {
   PARTICLE_BILLBOARD_LABELS,
   PARTICLE_BLEND_MODE_LABELS,
@@ -70,14 +69,10 @@ import {
   emitterPreviewLibrary,
 } from "../lib/play-particles";
 import { MessageDetails } from "../components/message-details";
-import {
-  DiagnosticResultRow,
-  type DiagnosticRowAction,
-} from "../components/diagnostic-result-row";
+import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
-import { TextureUsageNotifications } from "../components/texture-usage-notifications";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 
@@ -760,9 +755,6 @@ function diagnosticDetails(
   return lines.join("\n");
 }
 
-/** A Compiler Results row: a diagnostic plus an optional one-click fix. */
-type ParticleGraphDiagnosticRow = ParticleGraphDiagnostic & { action?: DiagnosticRowAction };
-
 function sameDiagnostic(a: ParticleGraphDiagnostic, b: ParticleGraphDiagnostic): boolean {
   return (
     a.code === b.code &&
@@ -779,10 +771,10 @@ export function ParticleGraphCompilerResults({
   onFocusNode,
 }: {
   document: ParticleGraphDocument;
-  rows: readonly ParticleGraphDiagnosticRow[];
+  rows: readonly ParticleGraphDiagnostic[];
   onFocusNode: (nodeId: string) => void;
 }) {
-  const [selectedRow, setSelectedRow] = useState<ParticleGraphDiagnosticRow | null>(null);
+  const [selectedRow, setSelectedRow] = useState<ParticleGraphDiagnostic | null>(null);
   const selected =
     selectedRow && rows.some((row) => sameDiagnostic(row, selectedRow)) ? selectedRow : null;
   return (
@@ -801,7 +793,6 @@ export function ParticleGraphCompilerResults({
                 <DiagnosticResultRow
                   severity={row.severity}
                   message={row.message}
-                  action={row.action}
                   onSelect={() => {
                     setSelectedRow(row);
                     if (row.nodeId) onFocusNode(row.nodeId);
@@ -930,17 +921,12 @@ export function ParticleGraphDetailsPanel(_props: IDockviewPanelProps) {
 export function ParticleGraphCompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const editing = useParticleGraphEditing();
-  const textureUsage = useTextureUsageFix(editing.textureUsageWarnings);
-  const rows = useMemo<ParticleGraphDiagnosticRow[]>(
-    () => [...editing.diagnostics, ...editing.buildDiagnostics, ...textureUsage.rows],
-    [editing.buildDiagnostics, editing.diagnostics, textureUsage.rows],
+  const rows = useMemo(
+    () => [...editing.diagnostics, ...editing.buildDiagnostics],
+    [editing.buildDiagnostics, editing.diagnostics],
   );
   return (
     <PanelFrame className="flex-1" data-testid="particle-graph-compiler-results">
-      <TextureUsageNotifications
-        notifications={textureUsage.notifications}
-        className="shrink-0 px-2 pt-2"
-      />
       <ParticleGraphCompilerResults
         document={editing.document}
         rows={rows}
