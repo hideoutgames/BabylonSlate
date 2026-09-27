@@ -3,6 +3,7 @@ import {
   Matrix,
   Mesh,
   RenderTargetTexture,
+  Vector3,
   type AbstractMesh,
   type Geometry,
   type Scene,
@@ -50,6 +51,8 @@ export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
   private readonly geometries = new Map<Geometry, GeometryWatch>();
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
+  /** Drawn level of each visible automatic-LOD caster for the scene camera. */
+  private readonly lodLevels = new Map<AbstractMesh, number>();
   private readonly sceneState = new Snapshot();
   private revision = 0;
   private continuous = false;
@@ -91,6 +94,7 @@ export class ShadowMapRefresh {
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
     let changed = false;
     let continuous = false;
+    this.lodLevels.clear();
     for (const [mesh, record] of this.casters) {
       if (meshes.has(mesh)) continue;
       if (record.geometry) this.unwatch(record.geometry);
@@ -170,9 +174,8 @@ export class ShadowMapRefresh {
       const safeMaterial = canCacheShadowMaterial(material, mesh);
       state.value(safeMaterial);
       // Automatic LOD levels are immutable index buffers that mirror this
-      // mesh's material; a map re-renders once when the drawn level changes.
+      // mesh's material. Only maps that can see this caster track its level.
       const autoLod = isAutoLodMaster(mesh);
-      state.value(autoLod ? peekAutoLodLevel(mesh, scene.activeCamera) : undefined);
       // Babylon 9.20 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
@@ -197,8 +200,10 @@ export class ShadowMapRefresh {
         changed = true;
         this.casterChanged(mesh);
       }
-      if (mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0)
+      if (mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0) {
         continuous ||= !safeMesh || !safeMaterial;
+        if (autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
+      }
     }
     const state = this.sceneState;
     state.begin();
@@ -264,6 +269,15 @@ export class ShadowMapRefresh {
     state.value(generator.transparencyShadow);
     state.value(generator.enableSoftTransparentShadow);
     state.value(generator.useOpacityTextureForTransparentShadow);
+    // A local map re-renders once when a caster within its range changes the
+    // level the camera draws, not when unrelated casters switch.
+    const range = "range" in light && Number.isFinite(light.range) ? light.range : Infinity;
+    for (const [mesh, level] of this.lodLevels) {
+      const sphere = mesh.getBoundingInfo().boundingSphere;
+      if (Vector3.Distance(sphere.centerWorld, position) > range + sphere.radiusWorld) continue;
+      state.value(mesh);
+      state.value(level);
+    }
     state.end();
     const continuous =
       this.continuous ||
@@ -284,5 +298,6 @@ export class ShadowMapRefresh {
     for (const record of this.casters.values())
       if (record.geometry) this.unwatch(record.geometry);
     this.casters.clear();
+    this.lodLevels.clear();
   }
 }

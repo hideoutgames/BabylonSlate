@@ -213,7 +213,7 @@ export function RenderQualityFields({
             checked={effective.geometry.autoLod}
             onCheckedChange={(autoLod) => edit("geometry", { autoLod })}
           />
-          <FieldDescription>Distant models draw simplified meshes. Each Model can opt out.</FieldDescription>
+          <FieldDescription>Distant models draw simplified meshes. Each Model&apos;s Auto LOD controls whether levels are generated.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-geometry-distance">

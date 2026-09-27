@@ -47,6 +47,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
+import { followAutoLodSettings } from "./model-lod";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
@@ -2640,7 +2641,9 @@ function initializeEngine(
         }
       }
       if (command.type === "sceneLayerCreate") {
-        sceneLayerCompositor?.create(command);
+        const layer = sceneLayerCompositor?.create(command);
+        // Layer models follow the world view's Geometry quality.
+        if (layer) followAutoLodSettings(layer.scene, scene);
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }

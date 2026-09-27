@@ -318,6 +318,23 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
   });
 
+  it("ignores level changes of automatic LOD casters outside a local light's range", async () => {
+    const { scene, camera, light, material, render } = await fixture();
+    light.range = 10;
+    const source = MeshBuilder.CreateSphere("lod source", { segments: 32 }, scene);
+    source.setEnabled(false);
+    const actor = new TransformNode("actor", scene);
+    actor.position.x = 100;
+    const part = source.clone("distant lod caster", actor);
+    part.setEnabled(true);
+    part.material = material;
+    expect(attachModelLods(actor, await generateModelLods({ meshes: [source] }))).toBe(1);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    camera.position.z -= 500;
+    expect(render()).toBe(0);
+  });
+
   it("refreshes local maps when the actual floating render origin moves", async () => {
     const { scene, camera, render } = await fixture(true);
     expect(render()).toBe(6);

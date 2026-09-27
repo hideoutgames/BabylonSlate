@@ -141,7 +141,7 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
   const savedProfiles = [source.resolution, source.textures, source.postprocessing, source.lighting]
     .map((group) => group?.profile)
     .filter(isQualityLevel);
-  const inheritedGeometry = !source.geometry && savedProfiles.length > 0 &&
+  const inheritedGeometry = !source.geometry && savedProfiles.length === 4 &&
     savedProfiles.every((profile) => profile === savedProfiles[0])
     ? { ...RENDER_QUALITY_PROFILES[savedProfiles[0]!].geometry, profile: savedProfiles[0] }
     : undefined;

@@ -221,7 +221,7 @@ export function ModelEditor({
   return (
     <div data-testid="model-editor">
       <PropertyGrid rows={slotRows} />
-      <PropertyGrid title="Level of Detail" rows={lodRows} />
+      <PropertyGrid title="Level Of Detail" rows={lodRows} />
       {clipRows.length > 0 ? (
         <PropertyGrid title="Clips" rows={clipRows} />
       ) : null}

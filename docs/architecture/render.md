@@ -463,15 +463,41 @@ Gameplay AnimationGraph state changes seek each paused clip within its authored 
 
 ### Automatic LOD
 
-Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture streaming is not implemented: Babylon 9.20 has no mip streaming or residency API, and swapping resolutions would need its internal texture fields.
+Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture streaming is not implemented. Babylon 9.20 has no mip streaming or residency API, and swapping resolutions would need its internal texture fields.
 
-- **Generation.** The first Auto LOD actor of a cached GLB container simplifies each eligible mesh with meshoptimizer (`meshoptimizer/simplifier`, loaded on demand only when a mesh qualifies). Eligible meshes are indexed triangle meshes with at least 1024 triangles, GPU skinning, and no glTF instances or thin instances. Up to three levels target 50%, 25% and 12.5% of the triangles. Each level's error stays within about 2 px of a 1080 px view at its switch point. Open borders are locked so separately switching parts do not crack. A level must remove at least 20% of the previous level's triangles. Generation runs at load on the main thread, yielding between meshes. Levels are not persisted or exported; the player generates them at boot.
-- **Index-only levels.** A level is a Babylon `Geometry` whose vertex buffers wrap the model's own GPU buffers (the glTF loader's shared-buffer pattern) plus its own index buffer. Skinning, morph targets, tangents, extra UV sets and material defines therefore match the master. Extra memory is index data only, and it counts toward the Scene's accounted geometry bytes. One level Geometry is shared by every actor. It is released with its last LOD mesh and rebuilt from retained indices for the next actor.
-- **Attachment.** `beginSlotModelAnimLoad` attaches levels after slot materials and before material preparation, so each level's variants are warmed. Each level is a child `Mesh` of its master. It is attached with `Mesh.addLODLevel`, uses `useLODScreenCoverage`, is unpickable, and is disposed with the actor. A Scene `onBeforeRender` pass mirrors the master's material, receive-shadows flag, rendering group, alpha index, visibility, layer mask, side orientation, skeleton and morph targets onto its levels.
-- **Selection.** A Scene `customLODSelector` runs on the classic path and in every ObjectRenderer pass (FrameGraph, shadow maps, outline masks). It uses Babylon's screen-coverage formula with the aspect normalized to 1, so a bound shadow-map target cannot change the choice. It applies 10% screen-size hysteresis per camera. Level thresholds are screen sizes (bounding-sphere diameter / view height) of 0.5, 0.25 and 0.125, scaled by **LOD Distance Scale**. Orthographic cameras use their vertical extent.
-- **Consumers.** Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), pickability writers, shadow-caster admission and water contact. Shadow maps draw the selected level through the master caster. Local shadow maps keep caching auto-LOD casters and re-render once when a caster's drawn level changes.
-- **Settings.** Per Model, **Auto LOD** (`ModelPayload.autoLod`, default on) controls generation; changing it re-realizes loaded actors. The project Scalability **Geometry** group has **Auto LOD** and **LOD Distance Scale** (Low 0.5, Medium 1, High 1.5, Ultra 2; range 0.25–4). Both apply live. A project saved before this group existed takes the tier its other groups share, otherwise Medium.
-- **Limits.** Model Preview, thumbnails and foliage batches stay at full detail. LOD reduces vertex and triangle work, not draw calls. Materials remain per actor. There is no cross-fade. The editor's landscape/foliage brush freeze keeps the current level until the scene next unfreezes.
+- **Generation.** The first Auto LOD actor of a model simplifies each eligible mesh with meshoptimizer. The work runs in a disposable module worker (`model-lod.worker.ts`), one job at a time, with a main-thread fallback when workers are unavailable. The simplification itself is Babylon-free (`model-lod-simplify.ts`).
+  - Eligible meshes are indexed triangle meshes with at least 1024 triangles, GPU skinning, and no glTF instances or thin instances.
+  - Up to three cascaded levels are error-driven: each stays within about 2 px of a 1080 px view at its switch point. Normals and UVs are weighted, and open borders are locked so separately switching parts do not crack.
+  - Static meshes can go down to 1% of their triangles. Skinned and morphing meshes keep 50/25/12.5% floors because their error is measured in bind pose.
+  - A level must remove at least 20% of the previous level's triangles.
+  - Generated indices are cached per model bytes, up to 32 models, so the editor viewport, Play, previews and SceneLayers share them. Levels are not persisted or exported; the player generates them at boot.
+- **Index-only levels.** A level is a Babylon `Geometry` that wraps the model's own GPU vertex buffers without owning them (on WebGPU, the aligned copy) and adds its own index buffer, using the source index width.
+  - Skinning, morph targets, tangents, extra UV sets and material defines therefore match the master.
+  - Extra memory is index data only, and it counts toward the Scene's accounted geometry bytes.
+  - One level Geometry per Scene is shared by every actor. It is released with its last LOD mesh and rebuilt from the cached indices; the model's vertex buffers are unaffected, including after a context restore.
+- **Attachment.** `beginSlotModelAnimLoad` attaches levels after slot materials and before material preparation, so each level's variants are warmed.
+  - Each level is a child `Mesh` of its master, attached with `Mesh.addLODLevel` and `useLODScreenCoverage`. It is unpickable and is disposed with the actor.
+  - Material changes reach levels through `onMaterialChangedObservable`.
+  - A Scene `onBeforeRender` pass mirrors receive-shadows, rendering group, alpha index, visibility, layer mask, side orientation, skeleton, morph targets and non-uniform scaling.
+- **Selection.** A Scene `customLODSelector` runs on the classic path and in every ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
+  - It uses Babylon's screen-coverage formula with the aspect normalized to 1, so a bound shadow-map target cannot change the choice. Orthographic cameras use their vertical extent.
+  - It applies 10% screen-size hysteresis per camera.
+  - Level thresholds are screen sizes (bounding-sphere diameter / view height) of 0.5, 0.25 and 0.125, scaled by **LOD Distance Scale**.
+  - While the editor freezes active meshes for brush tools, selection keeps full detail.
+- **Consumers.**
+  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), pickability writers, shadow-caster admission, shadow receiver warmup and water contact.
+  - Shadow maps draw the selected level through the master caster.
+  - Local shadow maps keep caching auto-LOD casters. A map re-renders once when a caster within its light's range changes its drawn level.
+  - `RenderDiagnostics.autoLod` and the stats HUD report visible auto-LOD meshes, how many draw a simplified level, and the triangles saved.
+- **Settings.**
+  - Per Model, **Auto LOD** (`ModelPayload.autoLod`, default on) controls whether levels are generated. Changing it re-realizes loaded actors.
+  - The project Scalability **Geometry** group has **Auto LOD** and **LOD Distance Scale** (Low 0.5, Medium 1, High 1.5, Ultra 2; range 0.25–4). Both apply live to selection. Off draws full detail but keeps generated levels loaded.
+  - SceneLayers follow the world Scene's Geometry settings.
+  - A project saved before this group existed takes the tier all its other groups share, otherwise Medium.
+- **Limits.**
+  - Model Preview, thumbnails and foliage batches stay at full detail.
+  - LOD reduces vertex and triangle work, not draw calls: materials remain per actor.
+  - There is no cross-fade.
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 

@@ -95,7 +95,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Texture LOD Bias", "quality-textures-lod"],
   ["rendering", "Texture Anisotropy", "quality-textures-anisotropy"],
   ["rendering", "Texture Budget MiB", "quality-textures-budget"],
-  ["rendering", "Auto LOD Level of Detail", "quality-geometry-lod"],
+  ["rendering", "Auto LOD Level Of Detail", "quality-geometry-lod"],
   ["rendering", "LOD Distance Scale", "quality-geometry-distance"],
   ["rendering", "Post Processing Resolution Scale", "quality-postprocessing-scale"],
   ["rendering", "Color Pipeline Legacy Scene Linear", "project-effects-pipeline"],

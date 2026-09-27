@@ -100,6 +100,14 @@ describe("runtime scalability session", () => {
     expect(settings.overrides).toMatchObject({ width: 1, effects: { bloom: { weight: 10 } }, quality: { textures: { anisotropy: 16 } } });
     expect(settings.overrides.effects?.bloom).not.toHaveProperty("enabled");
   });
+  it("applies Geometry quality live and clamps its distance scale", () => {
+    const { settings } = session();
+    const result = settings.request({ kind: "patch", render: { quality: { geometry: { autoLod: false, lodDistanceScale: 9 } } } });
+    expect(result.message).toContain("clamped");
+    expect(settings.requested.render.quality?.geometry).toMatchObject({ autoLod: false, lodDistanceScale: 4, preset: "custom" });
+    for (const field of ["autoLod", "lodDistanceScale"])
+      expect(renderingApplicationPolicy(`quality.geometry.${field}`)).toBe("live");
+  });
   it("requires restart for backend changes and does not partially apply their transaction", () => {
     const { settings, transactions } = session();
     expect(settings.request({ kind: "patch", render: { gpuBackend: "webgpu", mode: "pbr" }, frameCap: 50 }).status).toBe("restartRequired");

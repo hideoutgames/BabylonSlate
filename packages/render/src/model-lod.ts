@@ -10,30 +10,23 @@ import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
-import type { MeshoptSimplifier as Simplifier, Flags } from "meshoptimizer/simplifier";
+import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
+import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
+import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
 import { sceneRenderingSettings } from "./render-settings";
 
-/**
- * Screen size (projected bounding-sphere diameter / viewport height) below
- * which each generated level starts, before the quality distance scale.
- */
-export const AUTO_LOD_SCREEN_SIZES = [0.5, 0.25, 0.125] as const;
-/** Triangle budget of each level relative to the source mesh. */
-const AUTO_LOD_TRIANGLE_RATIOS = [0.5, 0.25, 0.125] as const;
+export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
+
 /** Smaller meshes are dominated by per-draw cost; simplifying them saves nothing. */
 export const AUTO_LOD_MIN_SOURCE_TRIANGLES = 1024;
-const AUTO_LOD_MIN_LEVEL_TRIANGLES = 64;
-/** A level must remove at least this fraction of the previous level's triangles. */
-const AUTO_LOD_MIN_REDUCTION = 0.2;
-/** Geometric error allowed at a level's switch point, in pixels of a 1080-pixel-high view. */
-const AUTO_LOD_ERROR_PIXELS = 2;
-const AUTO_LOD_REFERENCE_HEIGHT = 1080;
-/** Normals keep shading while collapsing; weight 1 would trade away more position quality. */
-const AUTO_LOD_NORMAL_WEIGHT = 0.5;
 /** Screen-size band that keeps a mesh on its current level near a threshold. */
 const AUTO_LOD_HYSTERESIS = 0.1;
-/** Keep each load step short so the editor keeps presenting frames. */
+/** Keep each main-thread fallback step short so views keep presenting frames. */
 const AUTO_LOD_YIELD_MS = 8;
+/** A stuck worker falls back to the main thread instead of holding model loads. */
+const AUTO_LOD_WORKER_TIMEOUT_MS = 30_000;
+/** Generated levels shared by every Scene of the Engine (editor, Play, previews). */
+const AUTO_LOD_CACHED_MODELS = 32;
 
 type LodSubMesh = {
   materialIndex: number;
@@ -43,19 +36,24 @@ type LodSubMesh = {
   indexCount: number;
 };
 
+/** CPU level data; identical for every Scene that loads the same model bytes. */
 type LodLevelData = {
   /** Babylon screen-coverage threshold with the viewport aspect normalized to 1. */
   coverage: number;
   indices: Uint16Array | Uint32Array;
   subMeshes: LodSubMesh[];
   triangles: number;
-  geometry?: Geometry;
 };
+type MeshLevels = { vertexCount: number; indexCount: number; levels: LodLevelData[] };
+type ModelLevels = Map<number, MeshLevels>;
 
-/** Generated index-only levels for one decoded model container. */
+/** A level as used by one Scene: shared CPU data plus that Scene's Geometry. */
+type SceneLevel = { data: LodLevelData; geometry?: Geometry };
+
+/** Generated index-only levels for one decoded model container in one Scene. */
 export interface ModelLodSet {
   /** Levels for a container mesh; actor clones resolve through `Mesh.source`. */
-  levelsFor(source: Mesh | null | undefined): readonly LodLevelData[] | undefined;
+  levelsFor(source: Mesh | null | undefined): readonly SceneLevel[] | undefined;
   /** Index bytes held by every generated level, for geometry accounting. */
   readonly indexBytes: number;
   dispose(): void;
@@ -99,98 +97,171 @@ function eligible(mesh: AbstractMesh): mesh is Mesh {
   return mesh.getTotalIndices() / 3 >= AUTO_LOD_MIN_SOURCE_TRIANGLES;
 }
 
-function simplifyMesh(simplifier: typeof Simplifier, mesh: Mesh): LodLevelData[] {
-  const positionData = mesh.getVerticesData(VertexBuffer.PositionKind);
-  const sourceIndices = mesh.getIndices();
+type PreparedMesh = {
+  index: number;
+  input: LodSimplifyInput;
+  vertexCount: number;
+  indexCount: number;
+  wideIndices: boolean;
+  subMeshes: Omit<LodSubMesh, "indexStart" | "indexCount">[];
+};
+
+/** Copy one mesh's vertex streams and submesh index ranges out of Babylon. */
+function prepareMesh(mesh: Mesh, index: number): PreparedMesh | null {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const indices = mesh.getIndices();
   const vertexCount = mesh.getTotalVertices();
-  if (!positionData || !sourceIndices || vertexCount === 0 || !mesh.subMeshes?.length) return [];
-  const positions = positionData instanceof Float32Array ? positionData : new Float32Array(positionData);
-  const normalData = mesh.getVerticesData(VertexBuffer.NormalKind);
-  const normals = normalData && normalData.length === vertexCount * 3
-    ? normalData instanceof Float32Array ? normalData : new Float32Array(normalData)
-    : null;
-  const flags: Flags[] = ["LockBorder", "ErrorAbsolute"];
-  // Deforming meshes keep better triangle shapes under skinning and morphs.
-  if (mesh.skeleton || mesh.morphTargetManager) flags.push("Regularize");
-  const scale = simplifier.getScale(positions, 3);
-  const ranges = mesh.subMeshes.map((subMesh) => ({
-    materialIndex: subMesh.materialIndex,
-    verticesStart: subMesh.verticesStart,
-    verticesCount: subMesh.verticesCount,
-    indices: Uint32Array.from(sourceIndices.slice(subMesh.indexStart, subMesh.indexStart + subMesh.indexCount)),
-  }));
-  const sourceTriangles = ranges.reduce((total, range) => total + range.indices.length / 3, 0);
-  const levels: LodLevelData[] = [];
-  let previousTriangles = sourceTriangles;
-  for (const [level, screenSize] of AUTO_LOD_SCREEN_SIZES.entries()) {
-    const ratio = AUTO_LOD_TRIANGLE_RATIOS[level]!;
-    const error = (AUTO_LOD_ERROR_PIXELS / (screenSize * AUTO_LOD_REFERENCE_HEIGHT)) * scale;
-    const parts = ranges.map((range) => {
-      const target = Math.max(3, Math.floor((range.indices.length * ratio) / 3) * 3);
-      return normals
-        ? simplifier.simplifyWithAttributes(range.indices, positions, 3, normals, 3,
-          [AUTO_LOD_NORMAL_WEIGHT, AUTO_LOD_NORMAL_WEIGHT, AUTO_LOD_NORMAL_WEIGHT], null, target, error, flags)[0]
-        : simplifier.simplify(range.indices, positions, 3, target, error, flags)[0];
-    });
-    const triangles = parts.reduce((total, part) => total + part.length / 3, 0);
-    if (triangles < AUTO_LOD_MIN_LEVEL_TRIANGLES) break;
-    // A later level has a larger error budget and may still reduce enough.
-    if (triangles > previousTriangles * (1 - AUTO_LOD_MIN_REDUCTION)) continue;
-    const indices = vertexCount <= 0xffff ? new Uint16Array(triangles * 3) : new Uint32Array(triangles * 3);
-    const subMeshes: LodSubMesh[] = [];
-    let indexStart = 0;
-    for (const [index, part] of parts.entries()) {
-      const range = ranges[index]!;
-      indices.set(part, indexStart);
-      subMeshes.push({
-        materialIndex: range.materialIndex,
-        verticesStart: range.verticesStart,
-        verticesCount: range.verticesCount,
-        indexStart,
-        indexCount: part.length,
-      });
-      indexStart += part.length;
-    }
-    levels.push({ coverage: autoLodCoverage(screenSize), indices, subMeshes, triangles });
-    previousTriangles = triangles;
+  if (!positions || !indices || vertexCount === 0 || !mesh.subMeshes?.length) return null;
+  const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
+  const uvs = mesh.getVerticesData(VertexBuffer.UVKind);
+  return {
+    index,
+    vertexCount,
+    indexCount: mesh.getTotalIndices(),
+    // Matching the source index width keeps material defines identical.
+    wideIndices: vertexCount > 0xffff || mesh.geometry!.getIndexBuffer()?.is32Bits === true,
+    subMeshes: mesh.subMeshes.map((subMesh) => ({
+      materialIndex: subMesh.materialIndex,
+      verticesStart: subMesh.verticesStart,
+      verticesCount: subMesh.verticesCount,
+    })),
+    input: {
+      positions: new Float32Array(positions),
+      normals: normals ? new Float32Array(normals) : null,
+      uvs: uvs ? new Float32Array(uvs) : null,
+      ranges: mesh.subMeshes.map((subMesh) =>
+        Uint32Array.from(indices.slice(subMesh.indexStart, subMesh.indexStart + subMesh.indexCount))),
+      deforming: Boolean(mesh.skeleton || mesh.morphTargetManager),
+    },
+  };
+}
+
+/** Concatenate a level's submesh ranges into one index buffer. */
+function levelData(prepared: PreparedMesh, level: LodLevelIndices): LodLevelData {
+  const count = level.ranges.reduce((total, range) => total + range.length, 0);
+  const indices = prepared.wideIndices ? new Uint32Array(count) : new Uint16Array(count);
+  const subMeshes: LodSubMesh[] = [];
+  let indexStart = 0;
+  for (const [part, range] of level.ranges.entries()) {
+    indices.set(range, indexStart);
+    subMeshes.push({ ...prepared.subMeshes[part]!, indexStart, indexCount: range.length });
+    indexStart += range.length;
   }
-  return levels;
+  return { coverage: autoLodCoverage(level.screenSize), indices, subMeshes, triangles: level.triangles };
+}
+
+let workerQueue: Promise<unknown> = Promise.resolve();
+
+/** One disposable worker at a time; terminating it returns the simplifier's heap. */
+function simplifyInWorker(meshes: LodSimplifyInput[]): Promise<LodLevelIndices[][]> {
+  const job = workerQueue.then(() => new Promise<LodLevelIndices[][]>((resolve, reject) => {
+    const worker = new Worker(new URL("./model-lod.worker.ts", import.meta.url), { type: "module" });
+    const finish = (settle: () => void) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      settle();
+    };
+    const timeout = setTimeout(() => finish(() => reject(new Error("timed out"))), AUTO_LOD_WORKER_TIMEOUT_MS);
+    worker.onmessage = (event: MessageEvent<ModelLodWorkerReply>) => {
+      const reply = event.data;
+      finish(() => "error" in reply ? reject(new Error(reply.error)) : resolve(reply.levels));
+    };
+    worker.onerror = (event) => finish(() => reject(new Error(event.message || "worker failed")));
+    worker.onmessageerror = () => finish(() => reject(new Error("invalid worker reply")));
+    // Structured cloning leaves these inputs intact for the main-thread fallback.
+    worker.postMessage({ meshes } satisfies ModelLodWorkerRequest);
+  }));
+  workerQueue = job.catch(() => {});
+  return job;
 }
 
 const yieldToFrames = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+async function simplifyMeshes(meshes: LodSimplifyInput[]): Promise<LodLevelIndices[][]> {
+  if (typeof Worker !== "undefined") {
+    try {
+      return await simplifyInWorker(meshes);
+    } catch (error) {
+      console.warn(`[render] Automatic LOD worker failed; simplifying on the main thread: ${String(error)}`);
+    }
+  }
+  const simplifier = await loadSimplifier();
+  if (!simplifier) return meshes.map(() => []);
+  const results: LodLevelIndices[][] = [];
+  let sliceStart = performance.now();
+  for (const mesh of meshes) {
+    if (performance.now() - sliceStart > AUTO_LOD_YIELD_MS) {
+      await yieldToFrames();
+      sliceStart = performance.now();
+    }
+    try {
+      results.push(simplifyLevels(simplifier, mesh));
+    } catch (error) {
+      console.warn(`[render] Automatic LOD skipped a mesh: ${String(error)}`);
+      results.push([]);
+    }
+  }
+  return results;
+}
+
+async function generateLevels(prepared: PreparedMesh[]): Promise<ModelLevels> {
+  const results = await simplifyMeshes(prepared.map((mesh) => mesh.input));
+  const models: ModelLevels = new Map();
+  for (const [position, mesh] of prepared.entries()) {
+    const levels = results[position] ?? [];
+    if (levels.length) models.set(mesh.index, {
+      vertexCount: mesh.vertexCount,
+      indexCount: mesh.indexCount,
+      levels: levels.map((level) => levelData(mesh, level)),
+    });
+  }
+  return models;
+}
+
+const generatedModels = new Map<string, Promise<ModelLevels>>();
+
+function rememberModel(key: string, levels: Promise<ModelLevels>): void {
+  generatedModels.delete(key);
+  generatedModels.set(key, levels);
+  while (generatedModels.size > AUTO_LOD_CACHED_MODELS) generatedModels.delete(generatedModels.keys().next().value!);
+  levels.catch(() => {
+    if (generatedModels.get(key) === levels) generatedModels.delete(key);
+  });
+}
+
 /**
- * Simplify every eligible mesh of a decoded model once. Levels are index
- * buffers over the source vertices, so skinning, morph targets, tangents and
- * extra UV sets stay valid.
+ * Simplify every eligible mesh of a decoded model. Levels are index buffers
+ * over the source vertices, so skinning, morph targets, tangents and extra UV
+ * sets stay valid. `cacheKey` identifies the model bytes, so other Scenes that
+ * load the same model reuse the generated indices.
  */
 export async function generateModelLods(
   container: Pick<AssetContainer, "meshes">,
   assertCurrent: () => void = () => {},
+  cacheKey?: string,
 ): Promise<ModelLodSet> {
-  const records = new Map<Mesh, LodLevelData[]>();
+  const candidates = container.meshes.flatMap((mesh, index) => eligible(mesh) ? [{ mesh, index }] : []);
+  let models: ModelLevels = new Map();
+  if (candidates.length) {
+    let pending = cacheKey ? generatedModels.get(cacheKey) : undefined;
+    if (pending) {
+      rememberModel(cacheKey!, pending);
+    } else {
+      // Low-poly models never load the simplifier.
+      pending = generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));
+      if (cacheKey) rememberModel(cacheKey, pending);
+    }
+    models = await pending;
+    assertCurrent();
+  }
+  const records = new Map<Mesh, SceneLevel[]>();
   let indexBytes = 0;
-  // Low-poly models never load the simplifier.
-  const candidates = container.meshes.filter(eligible);
-  const simplifier = candidates.length ? await loadSimplifier() : null;
-  assertCurrent();
-  let sliceStart = performance.now();
-  for (const mesh of candidates) {
-    if (!simplifier) break;
-    if (performance.now() - sliceStart > AUTO_LOD_YIELD_MS) {
-      await yieldToFrames();
-      assertCurrent();
-      sliceStart = performance.now();
-    }
-    let levels: LodLevelData[] = [];
-    try {
-      levels = simplifyMesh(simplifier, mesh);
-    } catch (error) {
-      console.warn(`[render] Automatic LOD skipped mesh "${mesh.name}": ${String(error)}`);
-    }
-    if (!levels.length) continue;
-    records.set(mesh, levels);
-    for (const level of levels) indexBytes += level.indices.byteLength;
+  for (const { mesh, index } of candidates) {
+    const model = models.get(index);
+    // A cached entry must describe this mesh's actual loaded buffers.
+    if (!model || model.vertexCount !== mesh.getTotalVertices() || model.indexCount !== mesh.getTotalIndices()) continue;
+    records.set(mesh, model.levels.map((data) => ({ data })));
+    for (const level of model.levels) indexBytes += level.indices.byteLength;
   }
   let disposed = false;
   return {
@@ -210,40 +281,47 @@ export async function generateModelLods(
   };
 }
 
-/** Wrap a source attribute over the same GPU buffer, as Babylon's glTF loader shares bufferViews. */
-function sharedVertexBuffer(source: VertexBuffer): VertexBuffer {
+type AlignedVertexBuffer = VertexBuffer & { effectiveByteStride?: number; effectiveByteOffset?: number };
+
+/**
+ * Wrap a source attribute's GPU buffer without owning it. The container keeps
+ * the only reference, so level Geometries can come and go (and survive a
+ * context restore) without releasing the model's vertex data.
+ */
+function sharedVertexBuffer(source: AlignedVertexBuffer): VertexBuffer {
   return new VertexBuffer(source.engine, source.getWrapperBuffer(), source.getKind(), {
-    stride: source.byteStride,
-    offset: source.byteOffset,
+    // WebGPU may substitute a 4-byte-aligned copy with its own layout.
+    stride: source.effectiveByteStride ?? source.byteStride,
+    offset: source.effectiveByteOffset ?? source.byteOffset,
     size: source.getSize(),
     type: source.type,
     normalized: source.normalized,
     useBytes: true,
     instanced: source.getIsInstanced(),
     divisor: source.getInstanceDivisor(),
-    takeBufferOwnership: true,
+    takeBufferOwnership: false,
   });
 }
 
 /**
- * One Geometry per level shared by every actor. It is released with its last
- * LOD mesh and rebuilt from the retained indices by the next actor.
+ * One Geometry per level shared by every actor in the Scene. It is released
+ * with its last LOD mesh and rebuilt from the retained indices by the next.
  */
-function levelGeometry(source: Mesh, level: LodLevelData, index: number): Geometry {
+function levelGeometry(source: Mesh, level: SceneLevel, index: number): Geometry {
   if (level.geometry && !level.geometry.isDisposed()) return level.geometry;
   const sourceGeometry = source.geometry!;
   const total = sourceGeometry.getTotalVertices();
   const geometry = new Geometry(`${source.name} LOD${index + 1}`, source.getScene(), undefined, false, null, total);
   const buffers = sourceGeometry.getVertexBuffers() ?? {};
   for (const kind of Object.keys(buffers)) geometry.setVerticesBuffer(sharedVertexBuffer(buffers[kind]!), total);
-  geometry.setIndices(level.indices, total, false);
+  geometry.setIndices(level.data.indices, total, false);
   level.geometry = geometry;
   return geometry;
 }
 
 type LodBinding = {
   master: Mesh;
-  levels: { mesh: Mesh; coverage: number }[];
+  levels: { mesh: Mesh; coverage: number; triangles: number }[];
   /** Level last selected per camera, for hysteresis. */
   current: WeakMap<Camera, number>;
 };
@@ -254,6 +332,10 @@ type SceneLods = {
 };
 
 const sceneLods = new WeakMap<Scene, SceneLods>();
+/** Frozen active-mesh queues keep full detail, as they did before automatic LOD. */
+const pinnedScenes = new WeakSet<Scene>();
+/** Scenes (such as SceneLayers) whose Geometry quality follows another Scene. */
+const settingsOwners = new WeakMap<Scene, Scene>();
 
 /** Render state Babylon reads from the drawn LOD mesh rather than its master. */
 function mirrorLodState(master: Mesh, lod: Mesh): void {
@@ -266,6 +348,9 @@ function mirrorLodState(master: Mesh, lod: Mesh): void {
   if (lod.sideOrientation !== master.sideOrientation) lod.sideOrientation = master.sideOrientation;
   if (lod.skeleton !== master.skeleton) lod.skeleton = master.skeleton;
   if (lod.morphTargetManager !== master.morphTargetManager) lod.morphTargetManager = master.morphTargetManager;
+  // Blocked meshes skip world-matrix evaluation; the NONUNIFORMSCALING define
+  // follows the master through the level's parent link.
+  if (lod.nonUniformScaling !== master.nonUniformScaling) lod.computeWorldMatrix(true);
 }
 
 /** Babylon screen coverage of a bounding sphere, independent of the bound render target. */
@@ -298,8 +383,9 @@ function levelForCoverage(binding: LodBinding, coverage: number, previous: numbe
 }
 
 function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): number {
-  const settings = sceneRenderingSettings(binding.master.getScene());
-  if (!settings.autoLod) {
+  const scene = binding.master.getScene();
+  const settings = sceneRenderingSettings(settingsOwners.get(scene) ?? scene);
+  if (!settings.autoLod || pinnedScenes.has(scene)) {
     if (commit) binding.current.delete(camera);
     return 0;
   }
@@ -323,7 +409,14 @@ function lodsFor(scene: Scene): SceneLods {
     const binding = state.masters.get(mesh);
     if (!binding) return mesh.getLOD(camera);
     const level = selectLevel(binding, camera, true);
-    return level === 0 ? binding.master : binding.levels[level - 1]!.mesh;
+    if (level === 0) return binding.master;
+    const lod = binding.levels[level - 1]!.mesh;
+    // Mesh.getLOD refreshes a level's submesh bounds for submesh culling.
+    if (lod.subMeshes.length > 1) {
+      const world = binding.master.getWorldMatrix();
+      for (const subMesh of lod.subMeshes) subMesh.updateBoundingInfo(world);
+    }
+    return lod;
   };
   const mirror = scene.onBeforeRenderObservable.add(() => {
     for (const binding of state.bindings) {
@@ -336,6 +429,17 @@ function lodsFor(scene: Scene): SceneLods {
     sceneLods.delete(scene);
   });
   return state;
+}
+
+/** Keep full detail while a Scene's active-mesh queue is frozen (editor brush tools). */
+export function setAutoLodPinned(scene: Scene, pinned: boolean): void {
+  if (pinned) pinnedScenes.add(scene);
+  else pinnedScenes.delete(scene);
+}
+
+/** Resolve a Scene's Geometry quality from another Scene, e.g. SceneLayers from the world. */
+export function followAutoLodSettings(scene: Scene, owner: Scene): void {
+  if (scene !== owner) settingsOwners.set(scene, owner);
 }
 
 /** Master meshes whose levels were attached by automatic LOD. */
@@ -351,6 +455,24 @@ export function peekAutoLodLevel(mesh: AbstractMesh, camera: Camera | null): num
   const binding = sceneLods.get(mesh.getScene())?.masters.get(mesh);
   if (!binding) return undefined;
   return camera ? selectLevel(binding, camera, false) : 0;
+}
+
+/** Automatic LOD summary for this Scene's active camera. */
+export function autoLodDiagnostics(scene: Scene): { meshes: number; reduced: number; trianglesSaved: number } {
+  const lods = sceneLods.get(scene);
+  let meshes = 0;
+  let reduced = 0;
+  let trianglesSaved = 0;
+  if (!lods) return { meshes, reduced, trianglesSaved };
+  for (const binding of lods.bindings) {
+    if (!binding.master.isEnabled() || !binding.master.isVisible) continue;
+    meshes++;
+    const level = peekAutoLodLevel(binding.master, scene.activeCamera) ?? 0;
+    if (level === 0) continue;
+    reduced++;
+    trianglesSaved += binding.master.getTotalIndices() / 3 - binding.levels[level - 1]!.triangles;
+  }
+  return { meshes, reduced, trianglesSaved };
 }
 
 /**
@@ -372,7 +494,7 @@ export function attachModelLods(root: TransformNode, lods: ModelLodSet): number 
       const lod = new Mesh(`${master.name} LOD${index + 1}`, scene);
       levelGeometry(master.source!, level, index).applyToMesh(lod);
       lod.subMeshes = [];
-      for (const part of level.subMeshes)
+      for (const part of level.data.subMeshes)
         new SubMesh(part.materialIndex, part.verticesStart, part.verticesCount, part.indexStart, part.indexCount, lod);
       lod.parent = master;
       lod.isPickable = false;
@@ -380,10 +502,11 @@ export function attachModelLods(root: TransformNode, lods: ModelLodSet): number 
       lod.useVertexColors = master.useVertexColors;
       lod.numBoneInfluencers = master.numBoneInfluencers;
       lod.computeBonesUsingShaders = master.computeBonesUsingShaders;
+      lod.computeWorldMatrix(true);
       mirrorLodState(master, lod);
       if (master.skeleton?.needInitialSkinMatrix) lod.updatePoseMatrix(master.getPoseMatrix());
-      master.addLODLevel(level.coverage, lod);
-      binding.levels.push({ mesh: lod, coverage: level.coverage });
+      master.addLODLevel(level.data.coverage, lod);
+      binding.levels.push({ mesh: lod, coverage: level.data.coverage, triangles: level.data.triangles });
     }
     // Material swaps reach every level before the next readiness probe.
     master.onMaterialChangedObservable.add(() => {

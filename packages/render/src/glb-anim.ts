@@ -66,6 +66,8 @@ type ModelPlaceholderMeta = {
 
 type CachedGlb = {
   key: string;
+  /** Model bytes identity; generated LOD indices are shared across Scenes by it. */
+  geometryKey: string;
   guid: string;
   references: number;
   retired: boolean;
@@ -273,7 +275,7 @@ function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet 
     const current = () => {
       if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
     };
-    const lods = await generateModelLods(container, current);
+    const lods = await generateModelLods(container, current, entry.geometryKey);
     current();
     entry.lodSet = lods;
     entry.accounted += lods.indexBytes;
@@ -304,7 +306,11 @@ export function acquireGlbContainer(
   cache.requested.set(guid, key);
   let entry = cache.entries.get(key);
   if (!entry) {
-    entry = { key, guid, references: 0, retired: false, accounted: 0, load: Promise.resolve(null as unknown as AssetContainer) };
+    entry = {
+      key, guid, references: 0, retired: false, accounted: 0,
+      geometryKey: `${guid}:${installedAssetIdentity(source)}`,
+      load: Promise.resolve(null as unknown as AssetContainer),
+    };
     cache.entries.set(key, entry);
     const created = entry;
     cache.loadCount += 1;
