@@ -20,6 +20,17 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places a fog volume at the requested position and keeps it out of SceneLayers", () => {
+  const entry = placeActorsForHost({ overlay: false }).find((item) => item.id === "fog-volume")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "fog", [3, 4, 5]);
+  expect(actor.transform.position).toEqual([3, 4, 5]);
+  expect(actor.components).toEqual([expect.objectContaining({
+    classId: "FogVolumeComponent",
+    properties: { enabled: true, shape: "box", size: [10, 10, 10], density: 0.1, edgeFalloff: 0.2 },
+  })]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.id === "fog-volume")).toBe(false);
+});
+
 it("places a Global Water Volume with usable water defaults", () => {
   const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-global")!;
   const actor = spawnPlacedActor(createDefaultScene(), entry, "global-water", [0, 5, 0]);

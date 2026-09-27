@@ -10,6 +10,7 @@ import {
   emptySkyboxFaces,
   parseText3DProperties,
   parseAreaRectLightProperties,
+  parseFogVolumeProperties,
   parseOutlineProperties,
   parseRagdollProperties,
   parseSpringArmProperties,
@@ -91,6 +92,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   ),
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
   engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
+  engineComponent("FogVolumeComponent", "Fog Volume", "Local box or sphere of volumetric fog with soft edges", "Rendering"),
   engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
   engineComponent(
     "HemisphericFillLightComponent",
@@ -260,6 +262,8 @@ export function defaultPropertiesFor(
       };
     case "AreaRectLightComponent":
       return { ...parseAreaRectLightProperties({}) };
+    case "FogVolumeComponent":
+      return { ...parseFogVolumeProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":
