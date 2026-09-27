@@ -42,7 +42,7 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
 
 async function realized(commands: CommandMessage[], actorGuid: string, afterId = 0) {
   await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneStreamRealized" && command.actorGuid === actorGuid && command.streamLoadId > afterId)).toBe(true));
-  return commands.findLast((command): command is Extract<CommandMessage, { type: "sceneStreamRealized" }> =>
+  return [...commands].reverse().find((command): command is Extract<CommandMessage, { type: "sceneStreamRealized" }> =>
     command.type === "sceneStreamRealized" && command.actorGuid === actorGuid && command.streamLoadId > afterId)!;
 }
 
