@@ -288,8 +288,8 @@ function placeholderField(scene: Scene): RawTexture {
 
 const linear = (c: WaterColor): [number, number, number] => [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2];
 
-/** Sun direction/color and a diffuse light estimate used to light the water body. */
-export function waterLighting(scene: Scene, environmentStrength: number, reflective: boolean) {
+/** Scene contribution before each material's environment strength and low-light floor. */
+function sceneWaterLighting(scene: Scene) {
   const ambient = new Color3(0, 0, 0);
   let sun: DirectionalLight | null = null;
   for (const light of scene.lights) {
@@ -302,13 +302,53 @@ export function waterLighting(scene: Scene, environmentStrength: number, reflect
   }
   const direction = sun ? sun.direction.normalizeToNew().scale(-1) : null;
   if (sun && direction) ambient.addInPlace(sun.diffuse.scale(sun.intensity * Math.max(0, direction.y) * 0.55));
-  if (reflective || scene.environmentTexture) ambient.addInPlace(new Color3(0.8, 0.9, 1).scale(0.45 * environmentStrength));
-  if (ambient.r + ambient.g + ambient.b < 0.25) ambient.set(Math.max(ambient.r, 0.08), Math.max(ambient.g, 0.08), Math.max(ambient.b, 0.08));
   return {
     ambient: [ambient.r, ambient.g, ambient.b] as const,
     sun: direction ? [direction.x, direction.y, direction.z, sun!.intensity] as const : [-0.4, 0.8, 0.45, 0] as const,
     sunColor: sun ? [sun.diffuse.r, sun.diffuse.g, sun.diffuse.b] as const : [1, 1, 1] as const,
   };
+}
+
+function withWaterEnvironment(light: ReturnType<typeof sceneWaterLighting>, environmentStrength: number, reflective: boolean) {
+  const ambient = Color3.FromArray(light.ambient);
+  if (reflective) ambient.addInPlace(new Color3(0.8, 0.9, 1).scale(0.45 * environmentStrength));
+  if (ambient.r + ambient.g + ambient.b < 0.25) ambient.set(Math.max(ambient.r, 0.08), Math.max(ambient.g, 0.08), Math.max(ambient.b, 0.08));
+  return { ...light, ambient: [ambient.r, ambient.g, ambient.b] as const };
+}
+
+/** Sun direction/color and a diffuse light estimate used to light the water body. */
+export function waterLighting(scene: Scene, environmentStrength: number, reflective: boolean) {
+  return withWaterEnvironment(sceneWaterLighting(scene), environmentStrength, reflective || scene.environmentTexture !== null);
+}
+
+type WaterRemovalCandidate = ReturnType<typeof sceneWaterRemovals>[number] & {
+  position: Vector3;
+  radius: number;
+  inverse?: Matrix;
+};
+type WaterBindingData = {
+  frame: number;
+  render: number;
+  lighting: ReturnType<typeof sceneWaterLighting>;
+  removals: WaterRemovalCandidate[];
+};
+const waterBindings = new WeakMap<Scene, WaterBindingData>();
+
+/** Lazy so animations and before-render updates settle before the first water draw. */
+function sceneWaterBindingData(scene: Scene): WaterBindingData {
+  const previous = waterBindings.get(scene);
+  const frame = scene.getFrameId(), render = scene.getRenderId();
+  if (previous?.frame === frame && previous.render === render) return previous;
+  const data = {
+    frame, render, lighting: sceneWaterLighting(scene),
+    removals: sceneWaterRemovals(scene).map((entry) => {
+      entry.mesh.computeWorldMatrix(true);
+      return { ...entry, position: entry.mesh.getAbsolutePosition().clone(), radius: waterRemovalWorldRadius(entry.mesh, entry.volume) };
+    }),
+  };
+  waterBindings.set(scene, data);
+  if (!previous) scene.onDisposeObservable.addOnce(() => waterBindings.delete(scene));
+  return data;
 }
 
 /** World-space water shading on native PBR; both backends use the same wave spectrum. */
@@ -320,6 +360,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   readonly body: WaterBodyProperties;
   /** The surface this material shades, for choosing nearby removal volumes. */
   mesh: AbstractMesh | null = null;
+  private bindingFrame = -1;
+  private bindingRender = -1;
+  private removalMesh: AbstractMesh | null = null;
+  private selectedRemovals: WaterRemovalCandidate[] = [];
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, { SLATE_WATER: true }, true, false);
     this.water = water;
@@ -346,7 +390,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
     const w = this.water, b = this.body;
     const material = this._material as PBRMaterial;
-    const light = waterLighting(scene, w.reflectionStrength, material.reflectionTexture !== null);
+    const data = sceneWaterBindingData(scene);
+    const light = withWaterEnvironment(data.lighting, w.reflectionStrength, material.reflectionTexture !== null || scene.environmentTexture !== null);
     buffer.updateFloat4("slateWaterShallow", ...linear(w.shallowColor), w.opacity);
     buffer.updateFloat4("slateWaterDeep", ...linear(w.deepColor), w.reflectionStrength);
     buffer.updateFloat4("slateWaterFoam", ...linear(w.foamColor), w.foamAmount);
@@ -366,16 +411,23 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, contactRange(w), ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
     // The nearest enabled removal volumes that can reach this surface.
     const mesh = this.mesh;
-    const center = mesh?.getBoundingInfo().boundingSphere;
-    const volumes = sceneWaterRemovals(scene)
-      .map((entry) => ({ ...entry, gap: center ? Vector3.Distance(center.centerWorld, entry.mesh.getAbsolutePosition()) - waterRemovalWorldRadius(entry.mesh, entry.volume) - center.radiusWorld : 0 }))
-      .filter((entry) => entry.gap <= 0)
-      .sort((a, b) => a.gap - b.gap);
+    if (this.bindingFrame !== data.frame || this.bindingRender !== data.render || this.removalMesh !== mesh) {
+      const center = mesh?.getBoundingInfo().boundingSphere;
+      this.selectedRemovals = data.removals
+        .map((entry) => ({ entry, gap: center ? Vector3.Distance(center.centerWorld, entry.position) - entry.radius - center.radiusWorld : 0 }))
+        .filter((entry) => entry.gap <= 0)
+        .sort((a, b) => a.gap - b.gap)
+        .slice(0, WATER_REMOVAL_SLOTS).map(({ entry }) => entry);
+      this.bindingFrame = data.frame;
+      this.bindingRender = data.render;
+      this.removalMesh = mesh;
+    }
     for (let i = 0; i < WATER_REMOVAL_SLOTS; i++) {
-      const entry = volumes[i];
+      const entry = this.selectedRemovals[i];
       if (!entry) { buffer.updateFloat4(`slateWaterRemovalShape${i}`, 0, 0, 0, 0); buffer.updateMatrix(`slateWaterRemoval${i}`, Matrix.IdentityReadOnly); continue; }
       buffer.updateFloat4(`slateWaterRemovalShape${i}`, ...waterRemovalShapeVector(entry.volume));
-      buffer.updateMatrix(`slateWaterRemoval${i}`, entry.mesh.computeWorldMatrix(true).clone().invert());
+      entry.inverse ??= entry.mesh.getWorldMatrix().clone().invert();
+      buffer.updateMatrix(`slateWaterRemoval${i}`, entry.inverse);
     }
   }
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {

@@ -568,6 +568,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await openAssetFromBrowser(page, PBR_MATERIAL_ASSET);
       await compileMaterialPreview(page);
       const materialCanvas = page.getByTestId("material-preview-canvas");
+      // Compilation completes before asynchronous GPU readback reaches the canvas.
+      await expect
+        .poll(async () => (await canvasEvidence(materialCanvas)).nonBlank, {
+          timeout: 30_000,
+          message: `material preview blank on ${backend}/${mode}`,
+        })
+        .toBeGreaterThan(200);
       const material = await canvasEvidence(materialCanvas);
       await materialCanvas.screenshot({
         path: testInfo.outputPath(`material-${mode}-${backend}.png`),

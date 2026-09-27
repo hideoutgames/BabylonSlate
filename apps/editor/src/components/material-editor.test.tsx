@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -18,6 +20,7 @@ const harness: {
   requestRender: ReturnType<typeof vi.fn>;
   focusNode: ReturnType<typeof vi.fn>;
   selectedNodeId: string | null;
+  registryVersion: number;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -29,7 +32,9 @@ const harness: {
   requestRender: vi.fn(),
   focusNode: vi.fn(),
   selectedNodeId: null,
+  registryVersion: 0,
 };
+let assetRegistry: AssetRegistry;
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.babasset" }),
@@ -45,25 +50,8 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applyAssetDocumentChange: harness.applyAssetDocumentChange,
-    assetRegistry: {
-      list: () => [
-        { header: { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } }, path: "assets/Studio.babasset" },
-        {
-          header: { guid: "tex-1", name: "Bark", type: "Texture" },
-          path: "assets/Bark.babasset",
-        },
-        {
-          header: { guid: "model-1", name: "Statue", type: "Model" },
-          path: "assets/Statue.babasset",
-        },
-      ],
-      getByGuid: (guid: string) =>
-        guid === "tex-1"
-          ? { header: { guid, name: "Bark", type: "Texture" } }
-          : guid === "model-1"
-            ? { header: { guid, name: "Statue", type: "Model" } }
-            : null,
-    },
+    assetRegistry,
+    registryVersion: harness.registryVersion,
   }),
 }));
 
@@ -93,7 +81,22 @@ const {
 
 const panelProps = {} as IDockviewPanelProps;
 
-beforeEach(() => {
+beforeEach(async () => {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("material-pickers.babproject");
+  assetRegistry = new AssetRegistry(storage);
+  await assetRegistry.mountRoot(projectContentRoot());
+  for (const asset of [
+    { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } },
+    { guid: "tex-1", name: "Bark", type: "Texture", payload: {} },
+    { guid: "model-1", name: "Statue", type: "Model", payload: {} },
+    { guid: "function-1", name: "Blend", type: "MaterialFunction", payload: {} },
+  ]) {
+    await assetRegistry.createAsset("project", `${asset.guid}.babasset`, {
+      ...asset, version: 1, dependencies: [], chunks: [],
+    });
+  }
+  harness.registryVersion = 0;
   harness.content = createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
     unknown
@@ -108,6 +111,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 function lastCommit(): MaterialDocument {
@@ -339,13 +343,71 @@ describe("Material details panel", () => {
     });
     harness.content = doc as unknown as Record<string, unknown>;
     harness.selectedNodeId = "sample";
-    render(<MaterialDetailsPanel {...panelProps} />);
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-node-texture").textContent).toContain(
       "Bark",
     );
     fireEvent.click(screen.getByTestId("material-node-texture"));
     expect(await screen.findByRole("option", { name: /Bark/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Studio Cube/ })).toBeNull();
+    assetRegistry.getByGuid("tex-1")!.header.payload = { dimension: "cube", container: "env" };
+    assetRegistry.getByGuid("env-1")!.header.payload = {};
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(await screen.findByRole("option", { name: /Studio Cube/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Bark/ })).toBeNull();
+  });
+
+  it.each([
+    { nodeType: "texture.sample", picker: "texture", type: "Texture", guid: "tex-1", name: "Bark", property: "textureGuid" },
+    { nodeType: "function.call", picker: "function", type: "MaterialFunction", guid: "function-1", name: "Blend", property: "functionGuid" },
+  ])("defers $type candidates during edits and refreshes an open picker on registry changes", async ({ nodeType, picker, type, guid, name, property }) => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "pick", type: nodeType, position: { x: 0, y: 0 }, properties: { [property]: guid } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "pick";
+    const list = vi.spyOn(assetRegistry, "list");
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(name);
+    for (const value of [0.25, 0.75]) {
+      harness.content = { ...harness.content, alphaCutoff: value };
+      harness.registryVersion += 1; // Document edits also bump this shared revision.
+      rerender(<MaterialDetailsPanel {...panelProps} />);
+    }
+    harness.selectedNodeId = "output";
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    harness.selectedNodeId = "pick";
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId(`material-node-${picker}`));
+    expect(await screen.findByRole("option", { name: new RegExp(name) })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Statue|Studio Cube/ })).toBeNull();
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).toHaveBeenCalledTimes(1);
+
+    const renamed = await assetRegistry.renameAsset(guid, "Renamed Asset");
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    const renamedOption = await screen.findByRole("option", { name: new RegExp(renamed.header.name) });
+    expect(renamedOption.textContent).toContain(renamed.path);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(renamed.header.name);
+    await assetRegistry.deleteAsset(guid);
+    await assetRegistry.createAsset("project", "new.babasset", {
+      guid: "new", name: "New Asset", type, version: 1, dependencies: [], payload: {}, chunks: [],
+    });
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(await screen.findByRole("option", { name: /New Asset/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: new RegExp(renamed.header.name) })).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-new"));
+    expect(lastCommit().nodes.find((node) => node.id === "pick")?.properties[property]).toBe("new");
+    const scans = list.mock.calls.length;
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).toHaveBeenCalledTimes(scans);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain("New Asset");
   });
 
   it("writes an authored pin default from Details", () => {
