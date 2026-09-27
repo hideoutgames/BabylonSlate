@@ -5,6 +5,7 @@ export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
+export * from "./create-null-engine";
 export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";

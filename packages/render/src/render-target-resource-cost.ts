@@ -1,4 +1,8 @@
-import { Constants, type InternalTexture } from "@babylonjs/core";
+import {
+  Constants,
+  type InternalTexture,
+  type RenderTargetWrapper,
+} from "@babylonjs/core";
 import type {
   ManagedRenderCategory,
   ManagedRenderResource,
@@ -16,6 +20,8 @@ export type RenderTargetStorage = {
   /** Include allocated levels even when automatic mip generation is disabled. */
   mipLevels?: number | "full";
   samples?: number;
+  /** Renderbuffers have no resolved texture or mip chain. */
+  renderbuffer?: boolean;
 };
 
 function positive(value: number): number {
@@ -111,10 +117,16 @@ export function renderTargetAllocationBytes(
   const full = 1 + Math.floor(Math.log2(Math.max(width, height, depth)));
   const levels =
     layout.mipLevels === "full" ? full : positive(layout.mipLevels ?? 1);
-  if (levels > full)
-    throw new Error("Invalid managed render-target mip layout.");
+  if (
+    levels > full ||
+    (layout.renderbuffer && (levels !== 1 || layers !== 1 || depth !== 1))
+  )
+    throw new Error(
+      "Invalid managed render-target mip or renderbuffer layout.",
+    );
   const pixelSize = pixelBytes(layout.format, layout.type);
   const base = checked(width * height * depth * layers * pixelSize);
+  if (layout.renderbuffer) return checked(base * samples);
   let bytes = base;
   for (let level = 1; level < levels; level++) {
     width = Math.max(1, Math.floor(width / 2));
@@ -158,7 +170,8 @@ function textureStorage(
 }
 
 /** Reconcile a graph-owned InternalTexture before lazy wrappers exist. Explicit
- * samples describe multisample storage owned alongside this texture. */
+ * samples describe multisample storage owned alongside this texture; a WebGL
+ * wrapper's separate depth renderbuffer is accounted by the wrapper collector. */
 export function managedRenderTextureResource(
   texture: InternalTexture,
   category: ManagedRenderCategory,
@@ -172,4 +185,74 @@ export function managedRenderTextureResource(
       textureStorage(texture, samples, options.allocatedMipLevels),
     ),
   };
+}
+
+/** Actual wrapper metadata reconciles the declared reservation. Returned texture
+ * identities are shared across graph imports; commit deduplicates aliases.
+ * Pass allocatedMipLevels when WebGL createMipMaps is true but generateMipMaps
+ * is false. This helper never allocates or queries/binds a GPU resource. */
+export function managedRenderTargetResources(
+  target: RenderTargetWrapper,
+  options: {
+    colorCategory: ManagedRenderCategory;
+    allocatedMipLevels?: number | "full";
+  },
+): ManagedRenderResource[] {
+  const result: ManagedRenderResource[] = [];
+  const depth = target.depthStencilTexture;
+  const textures = target.textures ?? (target.texture ? [target.texture] : []);
+  for (const texture of textures) {
+    if (!texture || texture === depth) continue;
+    const samples = Math.max(
+      positive(target.samples),
+      positive(texture.samples),
+    );
+    const layout = textureStorage(texture, samples, options.allocatedMipLevels);
+    // Pinned WebGL hardware can own multiple per-face/layer MSAA buffers. More
+    // buffers than the reserved image planes require a new qualified recipe.
+    const hardware = texture._hardwareTexture as {
+      _MSAARenderBuffers?: unknown[];
+    };
+    const planes = (layout.layers ?? layout.depth ?? 1) * (layout.cube ? 6 : 1);
+    if ((hardware._MSAARenderBuffers?.length ?? 0) > planes)
+      throw new Error("Unqualified additional managed MSAA attachments.");
+    result.push(
+      managedRenderTextureResource(texture, options.colorCategory, {
+        samples,
+        allocatedMipLevels: options.allocatedMipLevels,
+      }),
+    );
+  }
+  if (depth) {
+    const samples = depth.getEngine().isWebGPU
+      ? Math.max(positive(target.samples), positive(depth.samples))
+      : 1;
+    result.push(managedRenderTextureResource(depth, "depth", { samples }));
+  }
+  // Pinned WebGL 9.20: depth renderbuffers belong to the wrapper, separately
+  // from its sampleable texture. Preserve their own identity when wrappers share
+  // an attachment. WebGPU stores depth as an InternalTexture above.
+  const glTarget = target as RenderTargetWrapper & {
+    _depthStencilBuffer?: object | null;
+  };
+  if (glTarget._depthStencilBuffer) {
+    result.push({
+      handle: glTarget._depthStencilBuffer,
+      bytes: renderTargetAllocationBytes({
+        width: target.width,
+        height: target.height,
+        samples: positive(target.samples),
+        format:
+          depth?.format ??
+          (target._generateStencilBuffer
+            ? Constants.TEXTUREFORMAT_DEPTH24_STENCIL8
+            : Constants.TEXTUREFORMAT_DEPTH24),
+        renderbuffer: true,
+      }),
+      category: "depth",
+    });
+  }
+  if (!result.length)
+    throw new Error("Managed render target has no accounted attachments.");
+  return result;
 }

@@ -55,7 +55,7 @@ describe("listDockWindows", () => {
     expect(isDockviewDocumentKind(kind)).toBe(true);
     const primary = primaryDockPanel(kind);
     expect(listDockWindows(kind).map((window) => window.id)).toContain(primary);
-    expect(findDockWindow(kind, primary)).toMatchObject({ component: primary, title: "Details" });
+    expect(listDockWindows(kind).find((window) => window.id === primary)).toMatchObject({ component: primary, title: "Details" });
     expect(listDockWindows(kind, { sourceControl: true }).map((window) => window.id)).toContain("locks");
   });
   it("lists scene dock tabs with default positions and omits the retired assets dock", () => {
