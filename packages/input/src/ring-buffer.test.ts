@@ -26,12 +26,6 @@ describe("input ring buffer", () => {
         axes: [0.5, -0.25, 0, 0],
         buttons: [1, 0, 0, 0],
       },
-      {
-        kind: "gamepadConnection",
-        tick: 5,
-        gamepadIndex: 0,
-        connected: false,
-      },
       { kind: "touchAxis", tick: 5, controlId: "stick-x", value: 0.5 },
     ];
     const bytes = encodeInputEvents(events);

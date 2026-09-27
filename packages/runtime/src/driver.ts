@@ -158,8 +158,6 @@ import {
   type NavPoint,
 } from "@babylonslate/navigation";
 
-export type TransportMode = "in-process" | "sab" | "transferable";
-
 export interface RuntimeDriverOptions {
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
@@ -168,7 +166,6 @@ export interface RuntimeDriverOptions {
   seed: number;
   dt?: number;
   maxActors?: number;
-  maxCatchUpSteps?: number;
   onCommand?: (command: CommandMessage) => void;
   /** Project Settings input mappings; defaults when omitted. */
   inputAssets?: InputAssetDefinition[];
@@ -245,7 +242,6 @@ export interface RuntimeDriver {
   advance(elapsedSeconds: number): void;
   pushInput(events: readonly RawInputEvent[]): void;
   pushInputBuffer(buffer: ArrayBuffer): void;
-  setInputMappings(mappings: InputMappings): void;
   /** Most recent resolved input tick (empty before the first tick). */
   getResolvedInput(): ResolvedInputTick;
   copySnapshot(out: Float32Array): boolean;
@@ -371,7 +367,6 @@ export interface RuntimeDriver {
   addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
   removeNavObstacle(id: string): void;
   stopNavAgent(actorGuid: string): void;
-  readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
 }
@@ -379,7 +374,7 @@ export interface RuntimeDriver {
 export function createInProcessRuntime(
   options: RuntimeDriverOptions,
 ): RuntimeDriver {
-  return new InProcessRuntime(options, "in-process");
+  return new InProcessRuntime(options);
 }
 
 interface SceneDeparture {
@@ -404,7 +399,6 @@ interface SceneRealization {
 }
 
 class InProcessRuntime implements RuntimeDriver {
-  readonly transportMode: TransportMode;
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
@@ -426,7 +420,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly onCommand?: (command: CommandMessage) => void;
-  private readonly maxCatchUp: number;
+  private readonly maxCatchUp = 4;
   private readonly dt: number;
   private readonly physicsWorldKind: PhysicsWorldKind;
   private gravity: [number, number, number];
@@ -560,16 +554,14 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotCapacity(): number { return this.snapshots.maxActors; }
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
-  constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+  constructor(options: RuntimeDriverOptions) {
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
     this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
       (transaction) => this.emit({ type: "setScalability", transaction }));
-    this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
-    this.maxCatchUp = options.maxCatchUpSteps ?? 4;
     this.onCommand = options.onCommand;
     this.physicsWorldKind =
       options.physicsWorld ??
@@ -4535,10 +4527,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   pushInputBuffer(buffer: ArrayBuffer): void {
     this.pushInput(decodeInputEvents(buffer));
-  }
-
-  setInputMappings(mappings: InputMappings): void {
-    this.resolver.setMappings(normalizeInputMappings(mappings));
   }
 
   get inputBindings(): InputBindingControls { return this.resolver.bindings; }
