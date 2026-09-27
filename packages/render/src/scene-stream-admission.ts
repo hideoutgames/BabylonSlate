@@ -2,7 +2,7 @@ import type { AbstractMesh, BaseTexture, IParticleSystem, Light, Scene } from "@
 import type { CommandMessage } from "@babylonslate/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
-import type { SceneStreamIdentity } from "./scene-streaming-readiness";
+import { decodeSceneStreamEvent, type SceneStreamIdentity } from "./scene-stream-commands";
 
 type Scope = {
   binding: SnapshotSceneBinding;
@@ -196,13 +196,32 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         const scope = scopes.get(scene);
         if (scope) scope.cached = undefined;
       }
-      if (command.type === "sceneLoading" || command.type === "activeScene") { clear(); return; }
-      if (command.type === "sceneStreamLoading") {
-        const previous = streams.get(command.actorGuid);
-        if (previous && previous.loadId >= command.streamLoadId) return;
-        streams.set(command.actorGuid, { loadId: command.streamLoadId, loading: true });
-        ensureScope(); markSceneReadinessDirty(scene);
-      } else if (command.type === "spawn" && command.sceneStreamActorGuid) {
+      const event = decodeSceneStreamEvent(command);
+      if (event) switch (event.kind) {
+        case "reset":
+          clear();
+          return;
+        case "loading": {
+          const { actorGuid, streamLoadId } = event.identity;
+          const previous = streams.get(actorGuid);
+          if (previous && previous.loadId >= streamLoadId) return;
+          streams.set(actorGuid, { loadId: streamLoadId, loading: true });
+          ensureScope(); markSceneReadinessDirty(scene);
+          break;
+        }
+        case "removed": {
+          const { actorGuid, streamLoadId } = event.identity;
+          if (streams.get(actorGuid)?.loadId !== streamLoadId) return;
+          streams.delete(actorGuid);
+          const scope = scopes.get(scene);
+          if (scope) scope.cached = undefined;
+          prune();
+          break;
+        }
+        case "realized":
+          break;
+      }
+      if (command.type === "spawn" && command.sceneStreamActorGuid) {
         const owner = streams.get(command.sceneStreamActorGuid);
         if (owner?.loading && owner.loadId === command.streamLoadId)
           ensureScope().slots.set(command.slotId, {
@@ -214,12 +233,6 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         const scope = scopes.get(scene);
         if (scope?.slots.get(command.slotId)?.instanceActorGuid === command.actorGuid)
           scope.slots.delete(command.slotId);
-      } else if (command.type === "sceneStreamRemoved") {
-        if (streams.get(command.actorGuid)?.loadId !== command.streamLoadId) return;
-        streams.delete(command.actorGuid);
-        const scope = scopes.get(scene);
-        if (scope) scope.cached = undefined;
-        prune();
       }
     },
     publish(slotIds: readonly number[], identity?: SceneStreamIdentity): boolean {
