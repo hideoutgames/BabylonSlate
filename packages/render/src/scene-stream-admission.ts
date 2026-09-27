@@ -116,12 +116,18 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     if (scene.getWaitingItemsCount() > 0) return;
     const admitted = admittedSceneMeshes(scene)!;
     const textures = admittedSceneTextures(scene, admitted)!;
-    for (const texture of scene.textures) {
-      if (!textures.has(texture) && !texture.isRenderTarget && (texture.loadingError || !texture.isReady())) return;
-    }
-    const meshes = new Set(admitted);
-    for (const mesh of scene.meshes) {
-      if (!meshes.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
+    try {
+      for (const texture of scene.textures) {
+        if (!textures.has(texture) && !texture.isRenderTarget && (texture.loadingError || !texture.isReady())) return;
+      }
+      const meshes = new Set(admitted);
+      for (const mesh of scene.meshes) {
+        if (!meshes.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
+      }
+    } catch {
+      // A retired import's native failure must not become the parent's failure.
+      // Keep its exclusion until the resource leaves the Scene.
+      return;
     }
     restore(); scopes.delete(scene); markSceneReadinessDirty(scene);
   };
