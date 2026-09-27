@@ -20,15 +20,8 @@ export interface RgbaEncodeRequest {
   settings: TextureEncodeSettings;
 }
 
-export type EncodeWorkerHostMessage =
-  | { type: "init" }
-  | { type: "recycle" }
-  | SourceEncodeRequest
-  | RgbaEncodeRequest;
-
 export type EncodeWorkerReply =
   | { type: "loaded" }
-  | { type: "recycled" }
   | { type: "encoded"; id: number; ktx2: ArrayBuffer; wallMs: number }
   | { type: "error"; id?: number; error: string }
   | {
@@ -36,22 +29,6 @@ export type EncodeWorkerReply =
       id: number;
       error: string;
     };
-
-export function isSourceEncodeRequest(
-  message: unknown,
-): message is SourceEncodeRequest {
-  if (!message || typeof message !== "object") return false;
-  const value = message as Record<string, unknown>;
-  return value.type === "encode" && value.source instanceof ArrayBuffer;
-}
-
-export function isRgbaEncodeRequest(
-  message: unknown,
-): message is RgbaEncodeRequest {
-  if (!message || typeof message !== "object") return false;
-  const value = message as Record<string, unknown>;
-  return value.type === "encode" && value.rgba instanceof ArrayBuffer;
-}
 
 export function sourceEncodeTransferables(
   message: SourceEncodeRequest,
