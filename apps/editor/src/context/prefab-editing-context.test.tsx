@@ -195,11 +195,11 @@ it("persists a spline gesture in one graph edit while retaining its transform an
   render(<PrefabEditingProvider><ShapeEditProbe /></PrefabEditingProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Commit Shape" }));
   expect(applyGraphChange).toHaveBeenCalledOnce();
-  const next = applyGraphChange.mock.calls[0]![1] as { components: typeof path[] };
-  expect(next.components[1]).toEqual({ ...path, properties: {
+  const next = applyGraphChange.mock.calls[0]![1];
+  expect(next.components?.[1]).toEqual({ ...path, properties: {
     points: [[1, 2, 3], [4, 5, 6], [7, 8, 9]], closed: true, curvature: 0.5,
   } });
-  expect(next.components[0]).toMatchObject(mesh);
+  expect(next.components?.[0]).toMatchObject(mesh);
   expect(path.properties.points).toEqual([[0, 0, 0], [0, 0, 5]]);
 });
 

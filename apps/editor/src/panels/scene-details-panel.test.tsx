@@ -190,7 +190,7 @@ describe("scene shape editing", () => {
     harness.selectedActorIds = ["paths"];
     const panel = () => <SceneDetailsPanel {...({} as IDockviewPanelProps)} />;
     const view = render(panel());
-    const riverHeader = screen.getByRole("button", { name: "Water River", exact: true });
+    const riverHeader = screen.getByRole("button", { name: /^Water River$/ });
     fireEvent.click(riverHeader);
     expect(riverHeader.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getAllByRole("button", { name: /^Edit .* In Viewport$/ })).toHaveLength(2);
