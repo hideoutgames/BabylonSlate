@@ -634,6 +634,10 @@ Material Preview loads closed Material Functions from their `document` chunk,
 with unsaved open tabs taking precedence. Registry changes refresh saved bodies
 and texture bytes. Texture cache reuse compares content as well as GUID and
 sampling settings, preserving outstanding retains when bytes are replaced.
+Node Details builds Texture and Material Function candidate lists only while the
+corresponding picker is open. Open lists memoize by registry and published
+revision, keeping imports, renames, removals, and texture eligibility current;
+closed controls resolve their selected labels by GUID without listing assets.
 Preview texture references are retained once per byte revision and released on
 tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
 starts with exponent 1. New Time nodes expose elapsed seconds since the shared

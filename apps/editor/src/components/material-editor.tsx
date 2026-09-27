@@ -780,10 +780,24 @@ function MaterialNodeDetails({
   commit: (next: MaterialGraphDocument) => void;
   selectedNodeId: string | null;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, registryVersion } = useDocuments();
   const editing = useMaterialEditing();
   const [pickOpen, setPickOpen] = useState(false);
   const node = document.nodes.find((entry) => entry.id === selectedNodeId);
+  const isTextureNode = node?.type === "param.texture" ||
+    node?.type === "texture.sample" || node?.type === "texture.sampleLod";
+  const textureAssets = useMemo(() => {
+    void registryVersion; // Registry contents mutate without replacing its instance.
+    if (!pickOpen || !isTextureNode) return [];
+    return (assetRegistry?.list() ?? [])
+      .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+  }, [assetRegistry, registryVersion, pickOpen, isTextureNode]);
   if (!node) return null;
 
   const setProperties = (properties: Record<string, unknown>) => {
@@ -867,15 +881,6 @@ function MaterialNodeDetails({
     });
   }
 
-  const textureAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-    }));
-
   if (node.type === "vector.mask") {
     const selected = vectorMaskChannels(node.properties);
     for (const channel of VECTOR_MASK_CHANNELS) rows.push({ id: `mask-${channel}`, kind: "boolean", label: channel.toUpperCase(), value: selected.includes(channel), disabled: selected.length === 1 && selected.includes(channel), onChange: (value) => setProperties({ [channel]: value }) });
@@ -903,9 +908,7 @@ function MaterialNodeDetails({
       {node.type === "custom.glsl" ? (
         <MaterialCustomGlsl node={node} document={document} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
-      {node.type === "param.texture" ||
-      node.type === "texture.sample" ||
-      node.type === "texture.sampleLod" ? (
+      {isTextureNode ? (
         <div className="px-3">
           <AssetPickerControl
             value={
@@ -969,21 +972,25 @@ function MaterialFunctionPicker({
   document: MaterialGraphDocument;
   commit: (next: MaterialGraphDocument) => void;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, registryVersion } = useDocuments();
   const [open, setOpen] = useState(false);
   const current = document.nodes.find((entry) => entry.id === node);
   const guid =
     typeof current?.properties.functionGuid === "string"
       ? current.properties.functionGuid
       : "";
-  const functionAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "MaterialFunction")
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-    }));
+  const functionAssets = useMemo(() => {
+    void registryVersion; // Registry contents mutate without replacing its instance.
+    if (!open) return [];
+    return (assetRegistry?.list() ?? [])
+      .filter((asset) => asset.header.type === "MaterialFunction")
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+  }, [assetRegistry, registryVersion, open]);
   return (
     <div className="px-3">
       <AssetPickerControl value={guid}>
