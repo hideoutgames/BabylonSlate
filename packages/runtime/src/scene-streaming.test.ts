@@ -306,6 +306,57 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("cooperatively retires a nested subtree once while parent and sibling simulation continues", async () => {
+    let hold = false;
+    const releases: Array<() => void> = [];
+    const leafScript = logic("LeafActor");
+    leafScript.source += '\nexport function end(ctx) { ctx.setVariable("destroyedCount", Number(ctx.getVariable("destroyedCount") ?? 0) + 1); }';
+    leafScript.entryPoints.push({ name: "end", event: "onDestroyed", isAsync: false });
+    const child = { ...createDefaultScene(), actors: [marker("nested", 0, "leaf")] };
+    const { runtime, world, left, right } = await setup({ child, deferred: false,
+      scripts: [leafScript, logic("SiblingActor")],
+      scenes: {
+        leaf: { ...createDefaultScene(), actors: Array.from({ length: 96 }, (_, index) =>
+          createActor(`leaf-${index}`, "Leaf", { classId: "LeafActor" })) },
+        sibling: { ...createDefaultScene(), actors: [createActor("sibling", "Sibling", { classId: "SiblingActor" })] },
+      },
+      yieldControl: async () => { if (hold) await new Promise<void>((resolve) => { releases.push(resolve); }); } });
+    try {
+      await runtime.loadSceneStream(left);
+      const nested = world.getActors().find((actor) => actor.getVariable("parentId") === "left")!;
+      await runtime.loadSceneStream(nested);
+      right.components.find((component) => component.classId === "SceneStreamingComponent")!.setVariable("sceneGuid", "sibling");
+      await runtime.loadSceneStream(right);
+      const leaves = world.getActors().filter((actor) => actor.classId === "LeafActor");
+      const sibling = world.getActors().find((actor) => actor.classId === "SiblingActor")!;
+      runtime.tick();
+      hold = true;
+      const outerUnload = runtime.unloadSceneStream(left);
+      await vi.waitFor(() => expect(releases).toHaveLength(1));
+      const removed = leaves.filter((actor) => actor.destroyed).length;
+      expect(removed).toBeGreaterThan(0);
+      expect(removed).toBeLessThan(leaves.length);
+      const nestedUnload = runtime.unloadSceneStream(nested);
+      await vi.waitFor(() => expect(releases).toHaveLength(2));
+      runtime.tick();
+      expect(world.findActor("authored")!.getVariable("ticks")).toBe(2);
+      expect(sibling.getVariable("ticks")).toBe(2);
+      expect(leaves.filter((actor) => !actor.destroyed).every((actor) => actor.getVariable("ticks") === 1)).toBe(true);
+      hold = false;
+      releases.splice(0).forEach((release) => release());
+      await Promise.all([outerUnload, nestedUnload]);
+      expect(leaves.every((actor) => actor.destroyed && actor.getVariable("destroyedCount") === 1)).toBe(true);
+      expect(nested.destroyed).toBe(true);
+      expect(runtime.getSceneState(left)).toBe("Unloaded");
+      expect(runtime.getSceneState(right)).toBe("Loaded");
+      expect(world.getActors().filter((actor) => actor.classId === "LeafActor")).toHaveLength(0);
+    } finally {
+      hold = false;
+      releases.splice(0).forEach((release) => release());
+      runtime.stop();
+    }
+  });
+
   it("suspends loaded nested actors immediately while the containing async unload yields", async () => {
     let hold = false;
     let release: (() => void) | undefined;

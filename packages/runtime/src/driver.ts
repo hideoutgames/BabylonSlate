@@ -68,6 +68,7 @@ import {
   type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
+  type SceneStreamingState,
 } from "@babylonslate/core";
 import {
   InputRingBuffer,
@@ -286,7 +287,7 @@ export interface RuntimeDriver {
   loadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
   unloadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
   getTargetSceneName(target: unknown): string;
-  getSceneState(target: unknown): string;
+  getSceneState(target: unknown): SceneStreamingState;
   getSceneLoadProgress(target: unknown): number;
   notifySceneStreamReady(actorGuid: string, streamLoadId: number): void;
   notifySceneStreamProgress(actorGuid: string, streamLoadId: number, progress: number): void;
@@ -417,7 +418,7 @@ interface SceneStream {
   actor: Actor;
   loadId: number;
   assetGuid: string;
-  state: "Loading" | "Loaded" | "Unloading";
+  state: Exclude<SceneStreamingState, "Unloaded">;
   progress: number;
   actors: Set<Actor>;
   idMap: ReadonlyMap<string, string>;
@@ -1249,7 +1250,7 @@ class InProcessRuntime implements RuntimeDriver {
     return this.sceneLibrary.get(guid)?.name ?? String(component.getVariable("sceneName") ?? "");
   }
 
-  getSceneState(target: unknown): string {
+  getSceneState(target: unknown): SceneStreamingState {
     const actor = this.streamingActor(target);
     return actor ? this.sceneStreams.get(actor.guid)?.state ?? "Unloaded" : "Unloaded";
   }
@@ -1301,6 +1302,8 @@ class InProcessRuntime implements RuntimeDriver {
       return Promise.reject(new Error("Streamed scenes must use the parent scene's Physics World."));
     const guid = this.sceneGuidByKey.get(key) ?? key;
     for (let ancestor = this.actorStream.get(actor); ancestor; ancestor = this.actorStream.get(ancestor.actor)) {
+      if (ancestor.state === "Unloading" || this.sceneStreams.get(ancestor.actor.guid) !== ancestor)
+        return Promise.reject(new Error("The containing scene is unloading."));
       if (ancestor.assetGuid === guid) return Promise.reject(new Error("Recursive scene streaming is not supported."));
     }
     const loadId = ++this.streamLoadId;
@@ -1439,9 +1442,34 @@ class InProcessRuntime implements RuntimeDriver {
   private *removeSceneStreamActors(stream: SceneStream): Generator<void, void, unknown> {
     for (const child of stream.actors) {
       if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
-      this.removeOwnedActor(child);
+      const nested = this.sceneStreams.get(child.guid);
+      if (nested) {
+        nested.state = "Unloading";
+        nested.progress = 0;
+        nested.controller.abort(sceneRealizationCancelled());
+        yield* this.removeSceneStreamActors(nested);
+        this.retireSceneStream(nested);
+      }
+      // Another unload or Stop can drain this same subtree while we yield.
+      if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+      if (!stream.actors.has(child)) continue;
+      this.removeSceneStreamActor(stream, child);
       yield;
     }
+  }
+
+  private removeSceneStreamActor(stream: SceneStream, actor: Actor): void {
+    this.removeOwnedActor(actor);
+    const agent = this.navAgentByActor.get(actor.guid);
+    if (agent) this.nav?.removeAgent(agent);
+    this.navAgentByActor.delete(actor.guid);
+    this.navTargetByActor.delete(actor.guid);
+    this.navYawByActor.delete(actor.guid);
+    this.navSteeredActors.delete(actor.guid);
+    stream.actors.delete(actor);
+    // Destruction hooks belong to this actor's budget, not a final subtree batch.
+    // flushPending drains queues; it does not rescan the remaining world itself.
+    this.world.flushPending();
   }
 
   private retireSceneStream(stream: SceneStream, failure?: unknown): void {
@@ -1452,20 +1480,12 @@ class InProcessRuntime implements RuntimeDriver {
     stream.controller.abort(sceneRealizationCancelled());
     this.sceneStreams.delete(stream.actor.guid);
     this.emit({ type: "sceneStreamRemoved", actorGuid: stream.actor.guid, streamLoadId: stream.loadId });
-    for (const actor of stream.actors) this.removeOwnedActor(actor);
+    for (const actor of stream.actors) this.removeSceneStreamActor(stream, actor);
     this.world.flushPending();
     stream.scene.destroyed = true;
     stream.scene.callOnDestroyed();
     this.pendingOwnerActions.delete(stream.scene);
     for (const obstacle of stream.navObstacles) this.nav?.removeObstacle(obstacle);
-    for (const actor of stream.actors) {
-      const agent = this.navAgentByActor.get(actor.guid);
-      if (agent) this.nav?.removeAgent(agent);
-      this.navAgentByActor.delete(actor.guid);
-      this.navTargetByActor.delete(actor.guid);
-      this.navYawByActor.delete(actor.guid);
-      this.navSteeredActors.delete(actor.guid);
-    }
     // A graph may retain a destroyed actor reference. Its WeakMap ownership
     // must not retain the rest of the unloaded instance through this set.
     stream.actors.clear();
