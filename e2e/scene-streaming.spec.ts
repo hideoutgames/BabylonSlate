@@ -42,9 +42,15 @@ async function streamingProject() {
   const files = await minimalProjectFiles();
   const versions = createDefaultMigrationRegistry();
   const dependencies: string[] = [CHILD_GUID];
+  // Empty graphs have no script bundle, so give the fixture subclasses an entry point.
+  const streamingActorGraph: SerializedGraph = {
+    nodes: [{ id: "begin", type: "flow.event.beginPlay", data: {}, position: { x: 0, y: 0 } }],
+    edges: [],
+    components: [],
+  };
   const classes: Array<[string, string, SerializedGraph]> = [
-    ["LeftStreaming", "SceneStreamingActor", { nodes: [], edges: [], components: [] }],
-    ["RightStreaming", "SceneStreamingActor", { nodes: [], edges: [], components: [] }],
+    ["LeftStreaming", "SceneStreamingActor", streamingActorGraph],
+    ["RightStreaming", "SceneStreamingActor", streamingActorGraph],
     ["LoadLeft", "BDebugCommand", commandGraph("stream_left_load", "LeftStreaming", "loadSceneBlocking")],
     ["LoadRight", "BDebugCommand", commandGraph("stream_right_load", "RightStreaming", "loadSceneAsync")],
     ["UnloadLeft", "BDebugCommand", commandGraph("stream_left_unload", "LeftStreaming", "unloadSceneAsync")],
