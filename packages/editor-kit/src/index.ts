@@ -48,9 +48,7 @@ export {
 export { ShortcutKeys, type ShortcutKeysProps } from "./shortcut-keys";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
-  canScrollInDirection,
   isCoarsePointerEnvironment,
-  isScrollableAxis,
   shouldPreventDocumentOverscroll,
   type ScrollAxis,
 } from "./prevent-document-overscroll";
@@ -59,10 +57,8 @@ export {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
-  resolveHoldPointerPhase,
   type ContextMenuItem,
   type ContextMenuState,
-  type HoldPointerPhase,
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
@@ -93,7 +89,6 @@ export {
   FUNCTION_PIN_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerLabel,
-  isPinPickerType,
   pinPickerKeepsTypeClassId,
   ASSET_REF_PICKER_TYPES,
   type PinPickerType,

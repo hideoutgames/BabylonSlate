@@ -87,10 +87,6 @@ export function pinPickerLabel(type: string): string {
   return type;
 }
 
-export function isPinPickerType(value: string): value is PinPickerType {
-  return (PIN_PICKER_TYPES as readonly string[]).includes(value);
-}
-
 /** Object/class constraints and Structure/Enum guids share `typeClassId`. */
 export function pinPickerKeepsTypeClassId(type: string): boolean {
   return (
