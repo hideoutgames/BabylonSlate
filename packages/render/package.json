@@ -36,6 +36,7 @@
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "assimpjs": "0.0.10",
+    "meshoptimizer": "1.1.1",
     "earcut": "^3.2.3"
   },
   "devDependencies": {

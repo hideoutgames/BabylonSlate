@@ -6,7 +6,6 @@ import {
   ModuleStage,
   PanelFrame,
   PropertyGrid,
-  SelectableText,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
@@ -51,8 +50,6 @@ import {
   type ParticleGraphNode,
   type ParticleNumericType,
 } from "@babylonslate/particle-graph";
-import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { PARTICLE_STAGE_ROLE } from "@babylonslate/ui/lib/data-types";
@@ -62,6 +59,7 @@ import {
   type ParticleGraphBuildDiagnostic,
 } from "../context/particle-graph-editing-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
+import { useTextureUsageFix } from "../lib/use-particle-texture-usage";
 import {
   PARTICLE_BILLBOARD_LABELS,
   PARTICLE_BLEND_MODE_LABELS,
@@ -72,9 +70,14 @@ import {
   emitterPreviewLibrary,
 } from "../lib/play-particles";
 import { MessageDetails } from "../components/message-details";
+import {
+  DiagnosticResultRow,
+  type DiagnosticRowAction,
+} from "../components/diagnostic-result-row";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
+import { TextureUsageNotifications } from "../components/texture-usage-notifications";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 
@@ -757,6 +760,9 @@ function diagnosticDetails(
   return lines.join("\n");
 }
 
+/** A Compiler Results row: a diagnostic plus an optional one-click fix. */
+type ParticleGraphDiagnosticRow = ParticleGraphDiagnostic & { action?: DiagnosticRowAction };
+
 function sameDiagnostic(a: ParticleGraphDiagnostic, b: ParticleGraphDiagnostic): boolean {
   return (
     a.code === b.code &&
@@ -773,10 +779,10 @@ export function ParticleGraphCompilerResults({
   onFocusNode,
 }: {
   document: ParticleGraphDocument;
-  rows: readonly ParticleGraphDiagnostic[];
+  rows: readonly ParticleGraphDiagnosticRow[];
   onFocusNode: (nodeId: string) => void;
 }) {
-  const [selectedRow, setSelectedRow] = useState<ParticleGraphDiagnostic | null>(null);
+  const [selectedRow, setSelectedRow] = useState<ParticleGraphDiagnosticRow | null>(null);
   const selected =
     selectedRow && rows.some((row) => sameDiagnostic(row, selectedRow)) ? selectedRow : null;
   return (
@@ -792,23 +798,16 @@ export function ParticleGraphCompilerResults({
             {(index) => {
               const row = rows[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  action={row.action}
+                  onSelect={() => {
                     setSelectedRow(row);
                     if (row.nodeId) onFocusNode(row.nodeId);
                   }}
-                  data-testid={`particle-graph-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {row.severity}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`particle-graph-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>
@@ -931,12 +930,17 @@ export function ParticleGraphDetailsPanel(_props: IDockviewPanelProps) {
 export function ParticleGraphCompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const editing = useParticleGraphEditing();
-  const rows = useMemo(
-    () => [...editing.diagnostics, ...editing.buildDiagnostics],
-    [editing.buildDiagnostics, editing.diagnostics],
+  const textureUsage = useTextureUsageFix(editing.textureUsageWarnings);
+  const rows = useMemo<ParticleGraphDiagnosticRow[]>(
+    () => [...editing.diagnostics, ...editing.buildDiagnostics, ...textureUsage.rows],
+    [editing.buildDiagnostics, editing.diagnostics, textureUsage.rows],
   );
   return (
     <PanelFrame className="flex-1" data-testid="particle-graph-compiler-results">
+      <TextureUsageNotifications
+        notifications={textureUsage.notifications}
+        className="shrink-0 px-2 pt-2"
+      />
       <ParticleGraphCompilerResults
         document={editing.document}
         rows={rows}

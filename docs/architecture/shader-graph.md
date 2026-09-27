@@ -185,6 +185,14 @@ warning, not a blocker. `material.stageMismatch` is raised when a fragment-only
 node (derivatives, `texture.sampleLod`, Normal Map, …) reaches **World Position
 Offset**, including through a Material Function (`call/inner` node ids).
 
+For Particle-domain Materials the editor adds `particle.texture_block_align`
+warnings (Compiler Results only; the Graph rings errors, not warnings) for
+sampled Textures WebGPU would reject, each with a **Set Usage To Particle** row
+action. Selecting the row focuses the sampling node (or the Function call
+holding it). The check needs
+registry data, so it lives in `apps/editor/src/lib/particle-texture-usage.ts`,
+not in the pure validator. See [particles](particles.md#look).
+
 ## Lowering and compilation
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:
@@ -423,6 +431,15 @@ Details is selection-aware:
   also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
+
+Changing Domain (`setMaterialDomain`):
+
+- Drops the old terminal, the nodes the new domain does not allow, and their wires; normalizing adds the new
+  domain's terminal unwired.
+- **To Particle:** the Particle Output gets **Particle Color** wired into Color (an existing Particle Color node is
+  reused). Otherwise the output draws constant white and ignores every emitter colour. The new-Material Base Color
+  constant goes too when it is untouched and no longer wired; an edited constant stays. Shading Model and Blend Mode
+  are left as authored: Particle ignores them (emitters own blending), so a return to Surface keeps them.
 
 ## Custom GLSL
 

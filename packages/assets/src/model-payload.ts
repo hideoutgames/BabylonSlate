@@ -24,6 +24,11 @@ export interface ModelPayload {
   importScale: number;
   /** Authored / generated simple collision volumes in model local space. */
   simpleColliders: ModelSimpleCollider[];
+  /**
+   * Generate simplified levels of detail when the model loads. Missing values
+   * normalize to true so existing models gain automatic LOD.
+   */
+  autoLod: boolean;
 }
 
 export function normalizeModelImportScale(value: unknown): number {
@@ -87,6 +92,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
     skeletonGuid: nullableGuid(record.skeletonGuid),
     importScale: normalizeModelImportScale(record.importScale),
     simpleColliders: normalizeModelSimpleColliders(record.simpleColliders),
+    autoLod: record.autoLod !== false,
   };
 }
 

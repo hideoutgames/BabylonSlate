@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
@@ -9,7 +9,11 @@ import {
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
 } from "@babylonslate/particle-graph";
-import { ParticleGraphEditingProvider } from "../context/particle-graph-editing-context";
+import {
+  ParticleGraphEditingProvider,
+  useParticleGraphEditing,
+  type ParticleGraphEditingValue,
+} from "../context/particle-graph-editing-context";
 import {
   ParticleGraphCanvasPanel,
   ParticleGraphCompilerResultsPanel,
@@ -54,13 +58,32 @@ const store = vi.hoisted(() => {
       content = next;
       listeners.forEach((listener) => listener());
     },
+    setTextureUsage: vi.fn(async () => ({ previousUsage: "albedo" })),
   };
 });
 
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
 vi.mock("../context/document-context", async () => {
   const { useSyncExternalStore } = await import("react");
+  const { createDefaultMaterialDocument } = await import("@babylonslate/shader-graph");
+  // SparksMat samples a 30x30 Albedo Texture, which WebGPU rejects once compressed.
+  const sparks = createDefaultMaterialDocument("SparksMat", "particle");
+  sparks.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-spark" } });
+  sparks.edges = [
+    { id: "e-sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" },
+  ];
+  const collectPlayMaterialLibrary = async (_scene: unknown, _extra: unknown, guids: readonly string[]) => ({
+    documents: new Map(guids.includes("mat-particle") ? [["mat-particle", sparks]] : []),
+    functions: new Map(),
+    textureGuids: [],
+  });
+  const spark = {
+    path: "assets/Spark.babasset",
+    header: { guid: "tex-spark", name: "Spark", type: "Texture", payload: { usage: "albedo", width: 30, height: 30 } },
+  };
   const assetRegistry = {
+    textureEncodeMaxDimension: 2048,
+    getByGuid: (guid: string) => (guid === spark.header.guid ? spark : undefined),
     list: () => [
       {
         header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
@@ -86,6 +109,9 @@ vi.mock("../context/document-context", async () => {
         assetRegistry,
         registryVersion: 0,
         applyAssetDocumentChange: store.applyAssetDocumentChange,
+        collectPlayMaterialLibrary,
+        setTextureUsage: store.setTextureUsage,
+        textureUsageBlockedReason: () => null,
       };
     },
   };
@@ -97,6 +123,7 @@ afterEach(() => {
 
 beforeEach(() => {
   store.applyAssetDocumentChange.mockClear();
+  store.setTextureUsage.mockClear();
 });
 
 const panelProps = {} as IDockviewPanelProps;
@@ -320,6 +347,17 @@ describe("Particle Graph document panels", () => {
     );
   }
 
+  /** A canvas pin handle: inputs sit on the left, outputs on the right. */
+  function pinHandle(container: HTMLElement, nodeId: string, pinId: string, side: "left" | "right") {
+    return container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"][data-handlepos="${side}"]`);
+  }
+
+  function links(graph: ParticleGraphDocument) {
+    return graph.edges
+      .map((edge) => `${edge.sourceNodeId}.${edge.sourcePinId} > ${edge.targetNodeId}.${edge.targetPinId}`)
+      .sort();
+  }
+
   it("rings the pin a diagnostic names on the canvas", async () => {
     const { container } = renderPanels(withUnwiredPosition(), "canvas");
     await waitFor(() => {
@@ -333,11 +371,119 @@ describe("Particle Graph document panels", () => {
     ).toBeNull();
   });
 
+  it("rewires a linked Particle output with one tap-to-connect that one Undo reverts", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "fade", type: "update.basicColor", position: { x: 1280, y: 300 }, properties: {} });
+    const { container } = renderPanels(doc, "canvas");
+    await waitFor(() => expect(pinHandle(container, "fade", "particle", "left")).not.toBeNull());
+
+    fireEvent.click(pinHandle(container, "velocity", "out", "right")!);
+    fireEvent.click(pinHandle(container, "fade", "particle", "left")!);
+
+    // Replay each commit on a real undo stack, as the document context does.
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 1_000_000 });
+    let current = doc as unknown as Record<string, unknown>;
+    for (const [, next, mergeKey] of store.applyAssetDocumentChange.mock.calls) {
+      current = stack.apply(current, new SetAssetDocumentCommand(current, next, mergeKey)).doc;
+    }
+    expect(links(normalizeParticleGraphDocument(current))).toEqual([
+      "create.out > shape.particle",
+      "gradient.out > multiply.b",
+      "initialColor.out > multiply.a",
+      "multiply.out > updateColor.color",
+      "normalizedAge.out > gradient.ratio",
+      "shape.out > velocity.particle",
+      "updateColor.out > output.particle",
+      "velocity.out > fade.particle",
+    ]);
+    const undone = stack.undo(current)!.doc;
+    expect(links(normalizeParticleGraphDocument(undone))).toEqual(links(doc));
+  });
+
+  it("keeps a linked value output's wire when a tap-to-connect adds another", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "grow", type: "update.size", position: { x: 1280, y: 300 }, properties: {} });
+    const { container } = renderPanels(doc, "canvas");
+    await waitFor(() => expect(pinHandle(container, "grow", "size", "left")).not.toBeNull());
+
+    fireEvent.click(pinHandle(container, "normalizedAge", "out", "right")!);
+    fireEvent.click(pinHandle(container, "grow", "size", "left")!);
+
+    expect(links(normalizeParticleGraphDocument(store.getSnapshot()))).toEqual([
+      "create.out > shape.particle",
+      "gradient.out > multiply.b",
+      "initialColor.out > multiply.a",
+      "multiply.out > updateColor.color",
+      "normalizedAge.out > gradient.ratio",
+      "normalizedAge.out > grow.size",
+      "shape.out > velocity.particle",
+      "updateColor.out > output.particle",
+      "velocity.out > updateColor.particle",
+    ]);
+  });
+
   it("shows a diagnostic's node in Details when its row is tapped", () => {
     renderPanels(withUnwiredPosition(), "details");
     expect(screen.getByTestId("module-stage-emitter-output")).toBeTruthy();
     fireEvent.click(screen.getByTestId("particle-graph-diagnostic-particle.missingInput"));
     expect(screen.getByTestId("module-stage-node").textContent).toContain("Update Position");
+  });
+
+  it("warns when the Material samples a Texture WebGPU would reject, with a one-click fix", async () => {
+    renderPanels({ ...createDefaultParticleGraphDocument("Embers"), materialGuid: "mat-particle" }, "details");
+    const row = await screen.findByTestId("particle-graph-diagnostic-particle.texture_block_align");
+    expect(row.getAttribute("data-severity")).toBe("warning");
+    expect(row.textContent).toContain(
+      'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    expect(store.setTextureUsage).toHaveBeenCalledWith("tex-spark", "particle");
+    const results = screen.getByTestId("particle-graph-compiler-results");
+    expect(
+      (await within(results).findByTestId("texture-usage-notification-tex-spark")).textContent,
+    ).toContain('Texture "Spark" now uses Particle Usage.');
+  });
+
+  it("leaves the No Material of a Texture WebGPU refused to that Texture's warning", async () => {
+    let editing: ParticleGraphEditingValue | null = null;
+    function Probe() {
+      editing = useParticleGraphEditing();
+      return null;
+    }
+    store.reset({
+      ...createDefaultParticleGraphDocument("Embers"),
+      materialGuid: "mat-particle",
+    } as unknown as Record<string, unknown>);
+    render(
+      <ParticleGraphEditingProvider documentId={DOC_ID}>
+        <Probe />
+        <ParticleGraphCompilerResultsPanel {...panelProps} />
+      </ParticleGraphEditingProvider>,
+    );
+    const results = screen.getByTestId("particle-graph-compiler-results");
+    const warningId = "particle-graph-diagnostic-particle.texture_block_align";
+    await within(results).findByTestId(warningId);
+    const report = (textureGuid: string) =>
+      act(() => {
+        const current = editing!;
+        current.reportBuildDiagnostics(current.previewKey!, [
+          {
+            code: "particle.missing_material",
+            message: `Texture "${textureGuid}" (30×30) was not drawn.`,
+            textureGuid,
+          },
+        ]);
+      });
+    const noMaterial = () =>
+      within(results).queryByTestId("particle-graph-diagnostic-particle.missing_material");
+
+    // A refused Texture no warning names still explains the build's No Material.
+    report("tex-other");
+    expect(noMaterial()?.getAttribute("data-severity")).toBe("error");
+
+    report("tex-spark");
+    expect(noMaterial()).toBeNull();
+    expect(within(results).getByTestId(warningId).getAttribute("data-severity")).toBe("warning");
   });
 
   it("commits Details edits to the open document", () => {

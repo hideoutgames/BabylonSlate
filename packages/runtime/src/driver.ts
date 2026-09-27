@@ -3779,11 +3779,7 @@ class InProcessRuntime implements RuntimeDriver {
         ...(actor.sceneLayerId
           ? {
               sceneLayerId: actor.sceneLayerId,
-              hitTest: overlayHitTestOf(actor, this.world),
-              hasButton: overlayActorOrChildHasButton(actor, this.world),
-              ...(overlayButtonComponentId(actor, this.world)
-                ? { buttonComponentId: overlayButtonComponentId(actor, this.world) }
-                : {}),
+              ...overlayMeshInteraction(actor, this.world),
             }
           : {}),
         ...(skyboxComp
@@ -4925,14 +4921,6 @@ function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
   return parent ? overlayActorHasVisual(parent) : false;
 }
 
-function overlayActorOrChildHasButton(actor: Actor, world: World): boolean {
-  if (liveOverlayButtons(actor).length > 0) return true;
-  return world.getActors().some(
-    (child) =>
-      actorParentGuid(child) === actor.guid && liveOverlayButtons(child).length > 0,
-  );
-}
-
 function liveOverlayAnchor(actor: Actor): ActorComponent | undefined {
   return actor.components.find(
     (component) =>
@@ -4947,17 +4935,28 @@ function liveOverlayButtons(actor: Actor): ActorComponent[] {
   );
 }
 
-function overlayButtonComponentId(
+function overlayMeshInteraction(
   actor: Actor,
-  world?: World,
-): string | undefined {
+  world: World,
+): {
+  hitTest: "ignore" | "block" | "passThrough";
+  hasButton: boolean;
+  buttonComponentId?: string;
+} {
   const buttons = liveOverlayButtons(actor);
-  if (buttons.length === 1) return buttons[0]!.guid;
-  if (buttons.length > 1 || !world) return undefined;
-  const childButtons = world.getActors()
-    .filter((child) => actorParentGuid(child) === actor.guid)
-    .flatMap((child) => liveOverlayButtons(child));
-  return childButtons.length === 1 ? childButtons[0]!.guid : undefined;
+  // Own buttons take precedence. Share one child scan across all metadata.
+  if (buttons.length === 0) {
+    for (const child of world.getActors()) {
+      if (actorParentGuid(child) === actor.guid) {
+        buttons.push(...liveOverlayButtons(child));
+      }
+    }
+  }
+  return {
+    hitTest: overlayHitTestOf(actor, buttons[0]),
+    hasButton: buttons.length > 0,
+    ...(buttons.length === 1 ? { buttonComponentId: buttons[0]!.guid } : {}),
+  };
 }
 
 function findOverlayButton(
@@ -5080,23 +5079,10 @@ function playRenderablesOf(
 
 function overlayHitTestOf(
   actor: Actor,
-  world?: World,
+  button: ActorComponent | undefined,
 ): "ignore" | "block" | "passThrough" {
-  const button = liveOverlayButtons(actor)[0];
   if (button) {
     return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
-  }
-  if (world) {
-    const childButtons = world
-      .getActors()
-      .filter((child) => actorParentGuid(child) === actor.guid)
-      .flatMap((child) => liveOverlayButtons(child));
-    if (childButtons.length > 0) {
-      return parseSceneLayerHitTest(
-        childButtons[0]!.getVariable("hitTest"),
-        "block",
-      );
-    }
   }
   const visual = actor.components.find(
     (component) =>

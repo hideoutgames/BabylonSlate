@@ -7,6 +7,8 @@ import {
   applyProjectQualityPatch,
   qualitySettingPatch,
   QUALITY_TARGET_LABELS,
+  LOD_DISTANCE_SCALE_MAX,
+  LOD_DISTANCE_SCALE_MIN,
   resolveLocalLightBudget,
   type RenderProjectSettings,
   type QualityGroup,
@@ -36,6 +38,7 @@ const labels = {
   lighting: "Lighting",
   resolution: "Resolution",
   textures: "Textures",
+  geometry: "Geometry",
   postprocessing: "Post Processing",
 };
 export function RenderQualityFields({
@@ -202,6 +205,30 @@ export function RenderQualityFields({
             }
           />
           <FieldDescription>Unused textures are released above this budget.</FieldDescription>
+        </Field>
+        <Field className="settings-field">
+          <FieldLabel htmlFor="quality-geometry-lod">Auto LOD</FieldLabel>
+          <Switch
+            id="quality-geometry-lod"
+            checked={effective.geometry.autoLod}
+            onCheckedChange={(autoLod) => edit("geometry", { autoLod })}
+          />
+          <FieldDescription>Distant models draw simplified meshes. Each Model&apos;s Auto LOD controls whether levels are generated.</FieldDescription>
+        </Field>
+        <Field className="settings-field">
+          <FieldLabel htmlFor="quality-geometry-distance">
+            LOD Distance Scale
+          </FieldLabel>
+          <NumberField
+            id="quality-geometry-distance"
+            min={LOD_DISTANCE_SCALE_MIN}
+            max={LOD_DISTANCE_SCALE_MAX}
+            step={0.25}
+            value={effective.geometry.lodDistanceScale}
+            disabled={!effective.geometry.autoLod}
+            onChange={(lodDistanceScale) => edit("geometry", { lodDistanceScale })}
+          />
+          <FieldDescription>Higher values keep full detail farther away.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-postprocessing-scale">
