@@ -1898,14 +1898,28 @@ function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPale
   });
 }
 
+/**
+ * Rows that need a Target on another object (other-class Get/Set/Call, engine
+ * component APIs, scene-placed components) are not reachable from the host
+ * graph on their own, so Add Node hides them while Context Sensitive is on
+ * and no pin is being dragged.
+ */
+function markOutOfContext(nodes: PaletteNode[]): PaletteNode[] {
+  return nodes.map((node) =>
+    node.defaultData?.implicitSelf === false
+      ? { ...node, outOfContext: true }
+      : node,
+  );
+}
+
 function scriptPaletteInjectorNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
   if (options?.animationGraphHost === "rule") {
-    return variableAccessPaletteNodes(nodeRegistry, options);
+    return markOutOfContext(variableAccessPaletteNodes(nodeRegistry, options));
   }
-  return [
+  return markOutOfContext([
     ...inputEventPaletteNodes(nodeRegistry, options),
     ...callCustomEventPaletteNodes(nodeRegistry, options),
     ...callFunctionPaletteNodes(nodeRegistry, options),
@@ -1914,7 +1928,7 @@ function scriptPaletteInjectorNodes(
     ...castPaletteNodes(nodeRegistry, options),
     ...structPaletteNodes(nodeRegistry, options),
     ...enumPaletteNodes(nodeRegistry, options),
-  ];
+  ]);
 }
 
 /** Palette rows for Class graphs (pins from the registry). */
