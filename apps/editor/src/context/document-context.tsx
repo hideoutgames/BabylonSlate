@@ -1,4 +1,4 @@
-import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
+import { normalizeWaterDefinition, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
 import { isInputAssetType, normalizeInputAssetPayload, type InputAssetDefinition } from "@babylonslate/core";
@@ -525,6 +525,7 @@ interface DocumentContextValue {
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
+  collectPlayRenderTargets: () => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -2781,6 +2782,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "particle-graph"
         | "particle-system"
         | "water"
+        | "render-target"
+        | "render-target-texture"
         | "model"
         | "skeleton"
         | "animation"
@@ -2993,6 +2996,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
     }
     return waters;
+  }, [loadPlayAssetContent, projectService]);
+
+  const collectPlayRenderTargets = useCallback(async () => {
+    const renderTargets = new Map<string, RenderTargetPayload>();
+    const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
+    for (const asset of projectService.registry?.list() ?? []) {
+      if (asset.header.type === "RenderTarget") {
+        const content = await loadPlayAssetContent("render-target", asset.path);
+        if (content) renderTargets.set(asset.header.guid, normalizeRenderTargetPayload(content));
+      } else if (asset.header.type === "RenderTargetTexture") {
+        const content = await loadPlayAssetContent("render-target-texture", asset.path);
+        if (content) renderTargetTextures.set(asset.header.guid, normalizeRenderTargetTexturePayload(content));
+      }
+    }
+    return { renderTargets, renderTargetTextures };
   }, [loadPlayAssetContent, projectService]);
 
   const collectPlayTilemapContent = useCallback(
@@ -4382,6 +4400,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+      collectPlayRenderTargets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4449,6 +4468,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+      collectPlayRenderTargets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,

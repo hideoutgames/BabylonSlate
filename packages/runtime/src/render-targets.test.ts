@@ -27,7 +27,8 @@ describe("render target graph runtime", () => {
         type: "load", sceneAssetGuid: "scene",
         scene: { ...createDefaultScene(), actors: [
           createActor("capture", "Capture", { classId: "Monitor", components: [
-            { id: "lens", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: "depth", captureEveryFrame: false } },
+            { id: "arm", classId: "SpringArmComponent", properties: { armLength: 3 } },
+            { id: "lens", classId: "RenderTargetCaptureComponent", parentId: "arm", properties: { renderTargetGuid: "depth", captureEveryFrame: false } },
           ] }),
           createActor("subject", "Subject", { components: [createMeshComponent("subject-mesh")] }),
         ] },
@@ -57,7 +58,7 @@ describe("render target graph runtime", () => {
       const actor = runtime.getWorld().findActor("capture")!;
       const subject = runtime.getWorld().findActor("subject")!;
       expect(commands.filter((command) => command.type === "configureRenderTargetCapture").at(-1))
-        .toMatchObject({ settings: { captureOnlyActors: false, actorIds: [], captureEveryFrame: false } });
+        .toMatchObject({ settings: { captureOnlyActors: false, actorIds: [], captureEveryFrame: false }, transform: { position: { x: 0, y: 0, z: -3 } } });
       const meshCount = commands.filter((command) => command.type === "assignMesh").length;
       runtime.invokeScriptEvent("Monitor", "Update", actor);
       expect(actor.getVariable("mode")).toBe("DepthPass");

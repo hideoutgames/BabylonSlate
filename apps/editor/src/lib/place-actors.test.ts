@@ -20,6 +20,14 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places a typed capture actor with an optional actor filter and no main-camera component", () => {
+  const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "render-target-capture")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "capture", ORIGIN);
+  expect(actor.classId).toBe("RenderTargetCapture");
+  expect(actor.components).toEqual([expect.objectContaining({ classId: "RenderTargetCaptureComponent", properties: expect.objectContaining({ captureOnlyActors: false, actorIds: [], renderTargetGuid: null }) })]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.id === entry.id)).toBe(false);
+});
+
 it("places a Global Water Volume with usable water defaults", () => {
   const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-global")!;
   const actor = spawnPlacedActor(createDefaultScene(), entry, "global-water", [0, 5, 0]);

@@ -1,6 +1,7 @@
 import {
   createDefaultRenderTargetCaptureProperties,
   normalizeRenderTargetCaptureProperties,
+  springArmChildOffset,
   type RenderTargetCaptureProperties,
   type RenderTargetCaptureProperty,
   type Transform,
@@ -63,6 +64,8 @@ export function captureLocalTransform(component: ActorComponent): Transform {
     visited.add(parentId);
     const parent = component.owner?.components.find((candidate) => candidate.guid === parentId && !candidate.destroyed);
     if (!parent) break;
+    const offset = springArmChildOffset({ classId: parent.classId, properties: { armLength: parent.getVariable("armLength") } });
+    if (offset) result = { ...result, position: { x: result.position.x + offset[0], y: result.position.y + offset[1], z: result.position.z + offset[2] } };
     result = composeParentChildTransform(parent.transform, result);
     parentId = parent.parentId;
   }

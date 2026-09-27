@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
+  normalizeRenderTargetCaptureProperties,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   quaternionToEulerDegrees,
   isEditorGraphClass,
@@ -526,6 +527,25 @@ export function componentPropertyRows(
     ];
   }
   switch (component.classId) {
+    case "RenderTargetCaptureComponent": {
+      const capture = normalizeRenderTargetCaptureProperties(component.properties);
+      return [
+        assetRow(actorId, component, "renderTargetGuid", "Render Target", ["RenderTarget"], update, context, "Pick Render Target"),
+        ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
+          kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
+          defaultValue: key !== "captureOnlyActors",
+          ...(key === "captureEveryFrame" ? { description: "Disable to capture once, then request additional captures from a NodeGraph." } : {}),
+          ...(key === "captureOnlyActors" ? { description: "Capture only the actors in Capture Actors. An empty enabled list captures nothing." } : {}),
+          onChange: (value) => update(key, value),
+        })),
+        ...([
+          ["fieldOfView", "Field Of View", 1, 179], ["nearClip", "Near Clip", 0.001, 100000], ["farClip", "Far Clip", 0.002, 100000],
+        ] as const).map(([key, label, min, max]): PropertyRow => ({
+          kind: "number", id: rowId(actorId, component.id, key), label, value: capture[key], min, max,
+          onChange: (value) => update(key, value),
+        })),
+      ];
+    }
     case "PhysicsConstraintComponent":
       return physicsConstraintPropertyRows(actorId, component, update, context);
     case "RagdollComponent": {

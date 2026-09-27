@@ -222,6 +222,12 @@ function packedMaterialTextureWarnings(
       packedTextureGuids.add(asset.guid);
     }
   }
+  for (const asset of exportAssets) {
+    if (asset.type !== "RenderTargetTexture") continue;
+    const payload = payloadByGuid?.(asset.guid) ?? decodeJsonPayload(asset.bytes);
+    const targetGuid = payload && typeof payload === "object" ? (payload as Record<string, unknown>).renderTargetGuid : null;
+    if (typeof targetGuid === "string" && exportAssets.some((entry) => entry.guid === targetGuid && entry.type === "RenderTarget" && entry.bytes.byteLength > 0)) packedTextureGuids.add(asset.guid);
+  }
   const documents: Array<MaterialDocument | MaterialFunctionDocument> = [];
   for (const guid of closureGuids) {
     const asset = assets.find((entry) => entry.guid === guid);

@@ -1385,6 +1385,7 @@ function variableAccessPaletteNodes(
           typeId: variable.typeId,
           typeClassId: variable.typeClassId,
           typeClassIds: variable.typeClassIds,
+          container: variable.container,
           scope: "member",
           propertyKey: variable.propertyKey,
         },
@@ -2124,6 +2125,7 @@ export function classMemberSymbolsFromGraphs(
         typeId: variable.typeId,
         typeClassId: variable.typeClassId,
         propertyKey: variable.propertyKey,
+        container: variable.container,
       });
     }
     for (const fn of api.functions ?? []) {

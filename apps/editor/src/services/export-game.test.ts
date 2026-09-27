@@ -295,6 +295,26 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
+  it("packs a live render texture and its target without a missing-pixels warning", async () => {
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.materialGuid = "material";
+    const scene = { ...createDefaultScene(), actors: [createActor("screen", "Screen", { components: [mesh] })] };
+    const material = migrateLegacyShaderPayload({}, { textureGuids: ["live-texture"] });
+    const payloads: Record<string, unknown> = { scene, material, "live-texture": { renderTargetGuid: "target" }, target: { mode: "DepthPass", width: 128, height: 128 } };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene",
+      assets: [asset({ guid: "scene", type: "Scene", name: "Main" }), asset({ guid: "material", type: "Material", name: "Screen" }), asset({ guid: "live-texture", type: "RenderTargetTexture", name: "Depth" }), asset({ guid: "target", type: "RenderTarget", name: "Capture" })],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null, sceneByGuid: (guid) => guid === "scene" ? scene : null, graphByGuid: () => null,
+      payloadByGuid: (guid) => payloads[guid] ?? null,
+      bytesByGuid: (guid) => payloads[guid] ? new TextEncoder().encode(JSON.stringify(payloads[guid])) : null,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.manifest.assets.map((entry) => entry.guid)).toEqual(expect.arrayContaining(["target", "live-texture"]));
+    expect(result.value.warnings.some((warning) => warning.includes("live-texture"))).toBe(false);
+  });
+
   it("packs a project Game Instance when the startup scene omits one", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

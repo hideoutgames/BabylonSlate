@@ -15,6 +15,7 @@ import {
   parseSpringArmProperties,
   createRichText2DComponent,
   createText2DComponent,
+  createDefaultRenderTargetCaptureProperties,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -111,6 +112,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Rendering",
   ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
+  engineComponent("RenderTargetCaptureComponent", "Render Target Capture", "Captures a selected render pass into a Render Target", "Camera"),
   engineComponent(
     "SpringArmComponent",
     "Spring Arm",
@@ -260,6 +262,8 @@ export function defaultPropertiesFor(
       };
     case "AreaRectLightComponent":
       return { ...parseAreaRectLightProperties({}) };
+    case "RenderTargetCaptureComponent":
+      return { ...createDefaultRenderTargetCaptureProperties() };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":
