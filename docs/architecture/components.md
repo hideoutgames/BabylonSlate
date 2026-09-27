@@ -205,7 +205,7 @@ language completion with its pins and local declarations. Coarse pointers also
 get a Complete button and symbol keys. Execute JavaScript uses the same dialog
 and a static four-line node-body preview as Custom GLSL.
 
-Not kit (single call site): `BrandLogo` (docs / wordmark), `BrandIcon` (landing header and native account screen), `ParticleTextureUsageNotice` (Basic Particle Emitter Details `Alert` with **Set Usage To Particle** buttons, or why a Texture cannot take the fix, followed by `TextureUsageNotifications`).
+Not kit (single call site): `BrandIcon` (editor chrome bar project title), `ParticleTextureUsageNotice` (Basic Particle Emitter Details `Alert` with **Set Usage To Particle** buttons, or why a Texture cannot take the fix, followed by `TextureUsageNotifications`).
 
 ### Water asset editor
 

@@ -279,7 +279,7 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-auth
 | File | Ink | Use |
 | --- | --- | --- |
 | `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero |
-| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail (`BrandIcon`), docs nav, favicon source |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail and launcher (`brandIconSrc`), editor chrome bar (`BrandIcon`), docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 
