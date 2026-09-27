@@ -13,10 +13,13 @@ import {
   FONT_FACETYPE_CHUNK_ID,
   FONT_MSDF_CHUNK_ID,
   FONT_MSDF_PNG_CHUNK_ID,
+  isKtx2BlockAligned,
   normalizeAudioPayload,
   normalizeModelPayload,
   PARTICLE_ASSET_TYPES,
   selectTextureChunk,
+  shouldCompressTexture,
+  textureEncodeBlockAlign,
   type IndexedAsset,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -83,7 +86,21 @@ async function bytesForAsset(
   if (asset.header.type === "Texture") {
     try {
       const selected = selectTextureChunk(asset.header, { transcoderAvailable });
-      return await readAssetChunk(asset.path, selected.chunk.id);
+      const bytes = await readAssetChunk(asset.path, selected.chunk.id);
+      const usage = String(asset.header.payload.usage ?? "albedo");
+      const blockAlign = textureEncodeBlockAlign(usage);
+      if (
+        selected.kind !== "ktx2" ||
+        !bytes ||
+        (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
+      ) {
+        return bytes;
+      }
+      // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
+      // pixels, and WebGPU players reject a Particle KTX2 that is not
+      // block-aligned (its re-encode pending or failed). Ship the source pixels.
+      const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+      return (pixels ? await readAssetChunk(asset.path, pixels.id) : null) ?? bytes;
     } catch {
       return null;
     }
