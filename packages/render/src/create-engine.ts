@@ -1855,7 +1855,7 @@ function initializeEngine(
         debugOverlayInstance.sync(options);
         editorSync.setCollisionSelection(options);
         lastSelectedComponentIds = options.selectedComponentIds ?? [];
-        syncShapeHandles(options.selectedActorIds);
+        syncShapeHandles(lastSelectedActorIds);
         scheduler.invalidate("selection");
       },
       setPreviewCanvas: (canvas) => {
