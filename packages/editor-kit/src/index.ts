@@ -265,11 +265,6 @@ export {
   type BindingCodePickerProps,
 } from "./binding-code-picker";
 export {
-  InputMappingEditor,
-  INPUT_DEVICES,
-  type InputMappingEditorProps,
-} from "./input-mapping-editor";
-export {
   ColorField,
   colorFromHex,
   colorToHex,
