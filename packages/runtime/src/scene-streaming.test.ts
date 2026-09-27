@@ -20,7 +20,7 @@ function logic(classId: string, parentClassId = "Actor", begin = ""): CompiledSc
     entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }, { name: "tick", event: "onTick", isAsync: false }] };
 }
 
-async function setup(options: { child?: SerializedScene; deferred?: boolean; scripts?: CompiledScript[]; scenes?: Record<string, SerializedScene> } = {}) {
+async function setup(options: { child?: SerializedScene; deferred?: boolean; scripts?: CompiledScript[]; scenes?: Record<string, SerializedScene>; yieldControl?: (signal: AbortSignal) => Promise<void> } = {}) {
   const commands: CommandMessage[] = [];
   const scene = { ...createDefaultScene(), actors: [marker("left", 10), marker("right", 100),
     createActor("authored", "Parent", { classId: "Parent", components: [createMeshComponent("parent-mesh", "box")] })] };
@@ -32,6 +32,7 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
         { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } } ] })] };
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: "parent", sceneLibrary: { child, ...options.scenes }, deferSceneModelsReady: options.deferred ?? true,
+    ...(options.yieldControl ? { cooperativeSceneLoading: { yieldControl: options.yieldControl } } : {}),
     onCommand: (command) => commands.push(command) });
   await runtime.loadScripts([logic("Parent"), logic("ChildActor"), ...(options.scripts ?? [])]);
   await runtime.realizePlayWorld();
@@ -234,5 +235,61 @@ describe("additive scene streaming", () => {
       expect(world.findActor("authored")).toBeUndefined();
       expect(world.getActors().filter((actor) => actor.classId === "Spawned")).toHaveLength(1);
     } finally { runtime.stop(); }
+  });
+
+  it("holds nested scene publication and scripts until its containing stream is ready", async () => {
+    const child = { ...createDefaultScene(), actors: [marker("nested", 0, "leaf")] };
+    const { runtime, commands, world, left } = await setup({ child,
+      scenes: { leaf: { ...createDefaultScene(), actors: [createActor("leaf", "Leaf", { classId: "ChildActor" })] } } });
+    try {
+      const outerLoad = runtime.loadSceneStream(left);
+      const outerReady = await realized(commands, "left");
+      const nested = world.getActors().find((actor) => actor.getVariable("parentId") === "left")!;
+      const innerLoad = runtime.loadSceneStream(nested);
+      await vi.waitFor(() => expect(world.getActors().some((actor) => actor.classId === "ChildActor")).toBe(true));
+      expect(commands.some((command) => command.type === "sceneStreamRealized" && command.actorGuid === nested.guid)).toBe(false);
+      runtime.tick();
+      const leaf = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      expect(leaf.getVariable("began")).toBeUndefined();
+      expect(leaf.getVariable("ticks")).toBeUndefined();
+      acknowledge(runtime, outerReady);
+      await outerLoad;
+      acknowledge(runtime, await realized(commands, nested.guid));
+      await innerLoad;
+      runtime.tick();
+      expect(leaf.getVariable("began")).toBe(true);
+      expect(leaf.getVariable("ticks")).toBe(1);
+    } finally { runtime.stop(); }
+  });
+
+  it("suspends loaded nested actors immediately while the containing async unload yields", async () => {
+    let hold = false;
+    let release: (() => void) | undefined;
+    const child = { ...createDefaultScene(), actors: [
+      ...Array.from({ length: 40 }, (_, index) => createActor(`filler-${index}`, "Filler")),
+      marker("nested", 0, "leaf"),
+    ] };
+    const { runtime, world, left } = await setup({ child, deferred: false,
+      scenes: { leaf: { ...createDefaultScene(), actors: [createActor("leaf", "Leaf", { classId: "ChildActor" })] } },
+      yieldControl: async () => { if (hold) await new Promise<void>((resolve) => { release = resolve; }); } });
+    try {
+      await runtime.loadSceneStream(left);
+      const nested = world.getActors().find((actor) => actor.classId === "SceneStreamingActor" && actor.guid !== "left" && actor.guid !== "right")!;
+      await runtime.loadSceneStream(nested);
+      const leaf = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      runtime.tick();
+      expect(leaf.getVariable("ticks")).toBe(1);
+      hold = true;
+      const unloading = runtime.unloadSceneStream(left);
+      await vi.waitFor(() => expect(release).toBeDefined());
+      expect(nested.destroyed).toBe(false);
+      runtime.tick();
+      expect(world.findActor("authored")!.getVariable("ticks")).toBe(2);
+      expect(leaf.getVariable("ticks")).toBe(1);
+      hold = false;
+      release!();
+      await unloading;
+      expect(leaf.destroyed).toBe(true);
+    } finally { hold = false; release?.(); runtime.stop(); }
   });
 });
