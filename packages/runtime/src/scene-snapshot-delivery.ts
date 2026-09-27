@@ -1,6 +1,6 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 
-type SceneRealized = Extract<CommandMessage, { type: "sceneRealized" | "sceneLayerRealized" }>;
+type SceneRealized = Extract<CommandMessage, { type: "sceneRealized" | "sceneLayerRealized" | "sceneStreamRealized" }>;
 
 /** Hold the batch marker until the transport has sent its complete Actor pose. */
 export function createSceneSnapshotDelivery(options: {
@@ -23,12 +23,16 @@ export function createSceneSnapshotDelivery(options: {
   return {
     receive(command: CommandMessage): boolean {
       if (command.type === "sceneLoading" || command.type === "activeScene") pending.delete("world");
+      if (command.type === "sceneLoading" || command.type === "activeScene") {
+        for (const key of pending.keys()) if (key.startsWith("stream:")) pending.delete(key);
+      }
+      if (command.type === "sceneStreamLoading" || command.type === "sceneStreamRemoved") pending.delete(`stream:${command.actorGuid}`);
       if (command.type === "sceneLayerLoading" || command.type === "sceneLayerRemove") pending.delete(`layer:${command.layerId}`);
       if (command.type === "sceneLayerClear") {
         for (const key of pending.keys()) if (key.startsWith("layer:")) pending.delete(key);
       }
-      if (command.type !== "sceneRealized" && command.type !== "sceneLayerRealized") return false;
-      pending.set(command.type === "sceneRealized" ? "world" : `layer:${command.layerId}`, command);
+      if (command.type !== "sceneRealized" && command.type !== "sceneLayerRealized" && command.type !== "sceneStreamRealized") return false;
+      pending.set(command.type === "sceneRealized" ? "world" : command.type === "sceneStreamRealized" ? `stream:${command.actorGuid}` : `layer:${command.layerId}`, command);
       flush();
       return true;
     },

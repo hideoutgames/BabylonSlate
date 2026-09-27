@@ -1218,6 +1218,8 @@ export function componentPropertyRows(
         ),
       ];
     }
+    case "SceneStreamingComponent":
+      return [assetRow(actorId, component, "sceneGuid", "Target Scene", ["Scene"], update, context, "Pick Target Scene")];
     case "Text3DComponent": {
       const parsed = parseText3DProperties(component.properties);
       const hasFacetype = Boolean(
@@ -1282,7 +1284,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["text", "size", "depth", "color", "fontAssetGuid", "alignment"]),
+          new Set(["text", "size", "depth", "color", "fontAssetGuid", "alignment", "editorOnly"]),
         ),
       );
       return rows;

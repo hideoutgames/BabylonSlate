@@ -273,6 +273,15 @@ function handleControl(msg: ControlMessage): void {
     case "sceneModelsReady":
       runtime?.notifySceneModelsReady(msg.sceneAssetGuid, msg.sceneLoadId);
       return;
+    case "sceneStreamReady":
+      runtime?.notifySceneStreamReady(msg.actorGuid, msg.streamLoadId);
+      return;
+    case "sceneStreamProgress":
+      runtime?.notifySceneStreamProgress(msg.actorGuid, msg.streamLoadId, msg.progress);
+      return;
+    case "sceneStreamFailed":
+      runtime?.notifySceneStreamFailed(msg.actorGuid, msg.streamLoadId, msg.message);
+      return;
     case "sceneLayerLoadingPainted":
       runtime?.notifySceneLayerLoadingPainted(msg.layerId, msg.layerLoadId);
       return;

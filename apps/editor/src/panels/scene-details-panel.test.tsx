@@ -9,6 +9,7 @@ import {
   createRichText2DComponent,
   createText2DComponent,
   createText3DComponent,
+  createSceneStreamingActor,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   normalizeScene,
@@ -77,6 +78,10 @@ vi.mock("../context/document-context", () => ({
     },
     assetRegistry: {
       list: () => [
+        {
+          header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
+          path: "assets/Cave.scene.babasset",
+        },
         {
           header: {
             guid: "mesh-1",
@@ -505,6 +510,32 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
+  });
+
+  it("selects and clears a streaming scene and its read-only name in one document edit", async () => {
+    scene().actors = [createSceneStreamingActor("stream")];
+    harness.selectedActorIds = ["stream"];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const target = () => screen.getByTestId("property-stream-stream-scene-streaming-sceneGuid");
+    expect(screen.getByTestId("component-transform-grid-stream-scene-streaming")).toBeTruthy();
+    expect(screen.getByTestId("property-stream-stream-scene-streaming-position-x")).toBeTruthy();
+    expect(screen.getByTestId("text3d-text-stream-scene-name")).toHaveProperty("disabled", true);
+    fireEvent.click(target());
+    expect(await screen.findByTestId("search-item-scene-cave")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-mesh-1")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-scene-cave"));
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    const selected = harness.applySceneChange.mock.calls[0]![1];
+    expect(selected.actors[0]?.components[0]?.properties).toEqual({ sceneGuid: "scene-cave", sceneName: "Cave" });
+    expect(selected.actors[0]?.components[1]?.properties.text).toBe("Cave");
+    harness.scene = selected;
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(target());
+    fireEvent.click(await screen.findByTestId("search-item-__none__"));
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(2);
+    const cleared = harness.applySceneChange.mock.calls[1]![1];
+    expect(cleared.actors[0]?.components[0]?.properties).toEqual({ sceneGuid: "", sceneName: "" });
+    expect(cleared.actors[0]?.components[1]?.properties.text).toBe("No Scene");
   });
 
   it("edits collider shape kind as an enum instead of object text", () => {

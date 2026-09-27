@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { Mesh } from "@babylonjs/core";
+import {
+  applySceneToBabylonScene,
+  createTestEngine,
+  editorComponentMeshName,
+  editorMeshName,
+} from "@babylonslate/render";
 import {
   createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
+  createSceneStreamingActor,
   createSkyboxComponent,
 } from "@babylonslate/core";
 import {
@@ -194,6 +202,35 @@ describe("componentSubtreeIds", () => {
 });
 
 describe("previewSceneFor", () => {
+  it("renders one camera-facing streaming label attached to its preview origin", () => {
+    const components = createSceneStreamingActor("stream", "target-scene", "A").components;
+    const streaming = components[0]!;
+    const text = components[1]!;
+    streaming.transform!.position = [4, 0, 0];
+    text.properties.text = "Stale authored label";
+    const { scene, engine } = createTestEngine();
+    try {
+      applySceneToBabylonScene(scene, previewSceneFor(components));
+      const label = scene.getMeshByName(editorMeshName(text.id))!;
+      expect(label).not.toBeNull();
+      expect(label.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+      expect(label.parent).toBe(scene.getMeshByName(editorMeshName(streaming.id)));
+      label.computeWorldMatrix(true);
+      expect(label.absolutePosition.x).toBeCloseTo(4);
+      expect(label.absolutePosition.y).toBeCloseTo(0.8);
+      expect(scene.getMeshByName(editorComponentMeshName(streaming.id, `${streaming.id}:label`))).toBeNull();
+      const width = label.getBoundingInfo().boundingBox.extendSize.x;
+
+      streaming.properties.sceneName = "BBBBBBBB";
+      applySceneToBabylonScene(scene, previewSceneFor(components));
+      expect(scene.getMeshByName(editorMeshName(text.id))!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(width);
+      expect(text.properties.text).toBe("Stale authored label");
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it("builds a preview actor per component plus Prefab Root at the origin", () => {
     const mesh = {
       ...createMeshComponent("prefab-mesh", "box"),

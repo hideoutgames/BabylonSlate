@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
+import { createSceneStreamingActor } from "@babylonslate/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
@@ -75,6 +76,15 @@ import {
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("creates a Scene Streaming subclass with an authorable target and attached name marker", () => {
+  const result = buildNewAssetResult({ type: "Class", name: "Room", guid: "room-class", parentClass: "SceneStreamingActor" });
+  expect(result.parentClass).toBe("SceneStreamingActor");
+  expect(result.payload?.components).toEqual([
+    expect.objectContaining({ id: "prefab-scene-streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "", sceneName: "" } }),
+    expect.objectContaining({ classId: "Text3DComponent", parentId: "prefab-scene-streaming", properties: expect.objectContaining({ text: "No Scene", editorOnly: true }) }),
+  ]);
+});
 
 function asset(
   overrides: Partial<IndexedAsset["header"]> & {
@@ -1918,6 +1928,15 @@ describe("content-browser-helpers", () => {
         { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
       ],
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
+  });
+
+  it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {
+    const actor = createSceneStreamingActor("room", "scene-room", "Room");
+    const unassigned = createSceneStreamingActor("unassigned");
+    const payload = type === "Scene"
+      ? { actors: [actor, { ...actor, id: "room-copy" }, unassigned] }
+      : { nodes: [], edges: [], components: [...actor.components, ...unassigned.components] };
+    expect(assetHeaderDependencies(type, payload)).toEqual(["scene-room"]);
   });
 
   it("extracts Audio mixer and channel guids for header.dependencies", () => {
