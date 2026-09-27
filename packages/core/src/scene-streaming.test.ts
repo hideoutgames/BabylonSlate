@@ -6,16 +6,16 @@ describe("scene streaming instances", () => {
   it("isolates two copies, attaches roots to their own origin, and remaps local references without changing assets", () => {
     const source = [
       createActor("door", "Door", {
-        components: [{ id: "mesh", classId: "MeshComponent", sourceId: "prefab-mesh", properties: {
+        components: [{ id: "switch", classId: "MeshComponent", sourceId: "prefab-mesh", properties: {
           assetGuid: "switch",
           targetActorId: "switch",
           label: "switch",
-          nested: [{ guid: "switch", classId: "Actor" }],
+          nested: [{ guid: "switch", classId: "Actor" }, { guid: "switch", classId: "MeshComponent" }],
         } }],
       }),
       createActor("switch", "Switch", { parentId: "door", components: [
-        { id: "mesh", classId: "MeshComponent", properties: {} },
-        { id: "light", classId: "LightComponent", parentId: "mesh", properties: {} },
+        { id: "switch", classId: "MeshComponent", properties: {} },
+        { id: "light", classId: "LightComponent", parentId: "switch", properties: {} },
       ] }),
     ];
     const first = cloneSceneStreamingActors(source, { instanceId: "one", parentActorId: "origin-one" });
@@ -30,7 +30,7 @@ describe("scene streaming instances", () => {
       assetGuid: "switch",
       targetActorId: first.actors[1]?.id,
       label: "switch",
-      nested: [{ guid: first.actors[1]?.id, classId: "Actor" }],
+      nested: [{ guid: first.actors[1]?.id, classId: "Actor" }, { guid: first.actors[0]?.components[0]?.id, classId: "MeshComponent" }],
     });
     expect(first.actors[0]?.components[0]?.sourceId).toBe("prefab-mesh");
     first.actors[0]!.transform.position[0] = 42;

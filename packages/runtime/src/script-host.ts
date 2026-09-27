@@ -1,5 +1,5 @@
 import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
-import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState } from "@babylonslate/core";
+import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
 import {
   combineRotators,
   createSeededRng,
@@ -90,7 +90,7 @@ export interface ScriptHostServices {
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
   isSceneLoaded?(target: unknown): boolean;
   getSceneLoadProgress?(target: unknown): number;
-  getSceneState?(target: unknown): string;
+  getSceneState?(target: unknown): SceneStreamingState;
   resolveInstanceId?(owner: BObject | null, id: string): string;
   waitForSimulation?(owner: BObject | null): Promise<void>;
   /** Scene load progress in 0..1. */
@@ -382,7 +382,7 @@ export interface ScriptContext {
   unloadSceneBlocking(target: unknown): Promise<void>;
   isSceneLoaded(target: unknown): boolean;
   getSceneLoadProgress(target: unknown): number;
-  getSceneState(target: unknown): string;
+  getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
   getSceneReference(): Scene | null;
@@ -1180,13 +1180,19 @@ export class ScriptHost {
         componentsOfType(services, classId).next().value ?? null,
       getAllComponentsOfType: (classId) =>
         [...componentsOfType(services, classId)],
-      getComponentById: (actor, componentId) =>
-        findComponentByIdFromTarget(
-          actor ?? self,
-          services.resolveInstanceId?.(actor ?? self, componentId) ?? componentId,
+      getComponentById: (actor, componentId) => {
+        const target = actor ?? self;
+        // Spawned prefabs resolve their own sourceId before an authored scene
+        // component with the same id can claim the stream-wide translation.
+        const local = findComponentById(asActor(target), componentId);
+        if (local) return local;
+        return findComponentByIdFromTarget(
+          target,
+          services.resolveInstanceId?.(target, componentId) ?? componentId,
           services.getActors?.(),
-          services.getSceneReference?.(actor ?? self) ?? null,
-        ),
+          services.getSceneReference?.(target) ?? null,
+        );
+      },
       callComponentFunction: (target, name, args) =>
         this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
       addComponent: (actor, classId, transform) => {

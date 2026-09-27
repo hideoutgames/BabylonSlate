@@ -127,14 +127,24 @@ describe("additive scene streaming", () => {
 
   it("resolves component references in the explicit target's scene instance", async () => {
     const references: CompiledScript = { classId: "ChildActor", parentClassId: "Actor", assetGuid: "references", anchors: [],
+      components: [createMeshComponent("mesh", "box")],
       source: `export function tick(ctx) {
         const other = ctx.getAllActorsOfClass("ChildActor").find(actor => actor !== ctx.self);
         ctx.setVariable("ownMesh", ctx.getComponentById(ctx.self, "mesh"));
         ctx.setVariable("otherMesh", ctx.getComponentById(other, "mesh"));
         ctx.setVariable("sceneMesh", ctx.getComponentById(ctx.getSceneReference(), "mesh"));
+        if (!ctx.getVariable("didSpawn")) {
+          ctx.setVariable("didSpawn", true);
+          const spawned = ctx.spawnActor("ChildActor");
+          spawned.setVariable("didSpawn", true);
+          ctx.setVariable("spawnedMesh", ctx.getComponentById(spawned, "mesh"));
+        }
       }`,
       entryPoints: [{ name: "tick", event: "onTick", isAsync: false }] };
-    const { runtime, world, left, right } = await setup({ deferred: false, scripts: [references] });
+    const child = { ...createDefaultScene(), actors: [createActor("authored", "Child", {
+      classId: "ChildActor", components: [{ ...createMeshComponent("mesh", "box"), sourceId: "prefab-mesh" }],
+    })] };
+    const { runtime, world, left, right } = await setup({ child, deferred: false, scripts: [references] });
     try {
       await runtime.loadSceneStream(left);
       await runtime.loadSceneStream(right);
@@ -149,6 +159,12 @@ describe("additive scene streaming", () => {
       expect(second.getVariable("ownMesh")).toBe(secondMesh);
       expect(second.getVariable("otherMesh")).toBe(firstMesh);
       expect(second.getVariable("sceneMesh")).toBe(secondMesh);
+      const spawnedLeft = world.getActors().find((actor) => actor.classId === "ChildActor" && actor !== first && actor.getVariable("parentId") === "left")!;
+      const spawnedRight = world.getActors().find((actor) => actor.classId === "ChildActor" && actor !== second && actor.getVariable("parentId") === "right")!;
+      expect(spawnedLeft).toBeDefined();
+      expect(spawnedRight).toBeDefined();
+      expect(first.getVariable("spawnedMesh")).toBe(spawnedLeft.components[0]);
+      expect(second.getVariable("spawnedMesh")).toBe(spawnedRight.components[0]);
     } finally { runtime.stop(); }
   });
 

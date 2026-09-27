@@ -38,14 +38,15 @@ export function normalizeSceneStreamingProperties(value: unknown): SceneStreamin
 export function remapSceneStreamingReferences(
   value: unknown,
   idMap: Pick<ReadonlyMap<string, string>, "get">,
+  componentIds?: Pick<ReadonlyMap<string, string>, "get">,
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((entry) => remapSceneStreamingReferences(entry, idMap));
+    return value.map((entry) => remapSceneStreamingReferences(entry, idMap, componentIds));
   }
   if (value instanceof Map) {
     return new Map([...value].map(([key, entry]) => [
-      remapSceneStreamingReferences(key, idMap),
-      remapSceneStreamingReferences(entry, idMap),
+      remapSceneStreamingReferences(key, idMap, componentIds),
+      remapSceneStreamingReferences(entry, idMap, componentIds),
     ]));
   }
   if (!value || typeof value !== "object") return value;
@@ -53,13 +54,15 @@ export function remapSceneStreamingReferences(
   const typedReference = typeof source.classId === "string"
     || source.kind === "actorRef" || source.kind === "objectRef";
   return Object.fromEntries(Object.entries(source).map(([key, entry]) => {
-    const liveIdentity = /(?:Actor|Component)(?:Id|Guid)$/.test(key)
-      || key === "actorId" || key === "actorGuid"
+    const typedIdentity = typedReference && (key === "guid" || key === "id");
+    const componentIdentity = /Component(?:Id|Guid)$/.test(key)
       || key === "componentId" || key === "componentGuid"
-      || (typedReference && (key === "guid" || key === "id"));
+      || (typedIdentity && source.kind !== "actorRef" && typeof source.classId === "string" && source.classId.endsWith("Component"));
+    const liveIdentity = componentIdentity || /Actor(?:Id|Guid)$/.test(key)
+      || key === "actorId" || key === "actorGuid" || typedIdentity;
     return [key, liveIdentity && typeof entry === "string"
-      ? idMap.get(entry) ?? entry
-      : remapSceneStreamingReferences(entry, idMap)];
+      ? (componentIdentity ? componentIds?.get(entry) : undefined) ?? idMap.get(entry) ?? entry
+      : remapSceneStreamingReferences(entry, idMap, componentIds)];
   }));
 }
 
@@ -114,7 +117,6 @@ export function* cloneSceneStreamingActorsSteps(
   for (const actor of source) {
     const copy = structuredClone(actor);
     const componentIds = componentIdMaps.get(actor.id)!;
-    const scopedIds = { get: (id: string) => componentIds.get(id) ?? idMap.get(id) };
     actors.push({
       ...copy,
       id: idMap.get(actor.id)!,
@@ -129,7 +131,7 @@ export function* cloneSceneStreamingActorsSteps(
         parentId: component.parentId && componentIds.has(component.parentId)
           ? componentIds.get(component.parentId)!
           : null,
-        properties: remapSceneStreamingReferences(component.properties, scopedIds) as Record<string, unknown>,
+        properties: remapSceneStreamingReferences(component.properties, idMap, componentIds) as Record<string, unknown>,
       })),
     });
     yield;
