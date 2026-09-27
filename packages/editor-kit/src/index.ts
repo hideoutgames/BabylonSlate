@@ -49,7 +49,6 @@ export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll"
 export {
   isCoarsePointerEnvironment,
   shouldPreventDocumentOverscroll,
-  type ScrollAxis,
 } from "./prevent-document-overscroll";
 export {
   useContextMenu,

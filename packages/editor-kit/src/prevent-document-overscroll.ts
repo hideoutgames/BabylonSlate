@@ -1,6 +1,6 @@
 import { keepsNativeEditing } from "./ios-editing-gestures";
 
-export type ScrollAxis = "x" | "y";
+type ScrollAxis = "x" | "y";
 
 function allowsScrollOverflow(style: CSSStyleDeclaration, axis: ScrollAxis) {
   const overflow = axis === "y" ? style.overflowY : style.overflowX;
