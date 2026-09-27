@@ -1,6 +1,15 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { ATLAS_TEXTURES_META } from "../packages/assets/src/atlas-textures";
+import { encodeAssetDocument } from "../packages/assets/src/asset-document";
+import { importImage } from "../packages/assets/src/importers/image";
 import { sniffKtx2Size } from "../packages/assets/src/ktx2-info";
+import { createNodeBasisEncodeFn } from "../packages/assets/src/node-basis-encode";
+import { textureEncodeSettingsFor } from "../packages/assets/src/resolve-gpu-texture";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId } from "../packages/assets/src/texture-compression";
+import { createDefaultTilesetPayload } from "../packages/assets/src/tileset-payload";
 import { PROJECT_FILE } from "../packages/core/src/project";
 import type { EngineSceneDiagnostics } from "../apps/editor/src/testing/webgpu-previews-proof";
 import {
@@ -78,17 +87,60 @@ async function committedEncode(page: Page): Promise<{
   };
 }
 
-/** The minimal project seeded with `gpuBackend: "webgpu"`, its viewport Engine on WebGPU. */
-async function openWebGpuProject(page: Page): Promise<void> {
+/** The minimal project (plus `extraFiles`) seeded with `gpuBackend: "webgpu"`, its viewport Engine on WebGPU. */
+async function openWebGpuProject(page: Page, extraFiles: ReadonlyMap<string, Uint8Array> = new Map()): Promise<void> {
   await page.addInitScript(recordCompressedGpuTextures);
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.settings.render.gpuBackend = "webgpu";
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  for (const [filePath, bytes] of extraFiles) files.set(filePath, bytes);
   await openMinimalTestProject(page, files);
   // The viewport installs diagnostics for the Engine shared by previews.
   await openMainScene(page);
   await expect.poll(() => engineBackend(page)).toBe("webgpu");
+}
+
+const ATLAS_TEXTURE_GUID = "00000000-0000-4000-8000-000000000081";
+
+/**
+ * `albedo.png` (1×1 red) as a `compressed` Albedo Texture committed as a red
+ * 1×1 KTX2 under the id the registry computes, and a Tileset whose header
+ * lists it as an atlas: it stays off the 4×4 grid, so WebGPU decodes it to RGBA.
+ */
+async function atlasTextureFiles(): Promise<Map<string, Uint8Array>> {
+  const png = new Uint8Array(await readFile(path.join(process.cwd(), "e2e/fixtures/albedo.png")));
+  const [texture] = await importImage(png, { fileName: "albedo.png", existingGuids: new Set() });
+  const settings = textureEncodeSettingsFor(texture!.payload, DEFAULT_TEXTURE_ENCODE_SETTINGS, "albedo", { atlas: true });
+  const chunkId = await textureEncodeChunkId(settings, "albedo");
+  const encode = createNodeBasisEncodeFn(() => ({ rgba: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 }));
+  const { ktx2 } = await encode(new Uint8Array(0), settings);
+  expect(sniffKtx2Size(ktx2)).toEqual({ width: 1, height: 1 });
+  const payload = { ...texture!.payload, compressionState: "compressed", ktx2ChunkId: chunkId };
+  const tileset = { ...createDefaultTilesetPayload(), textureGuid: ATLAS_TEXTURE_GUID, atlasWidth: 1, atlasHeight: 1, tileWidth: 1, tileHeight: 1 };
+  return new Map([
+    [TEXTURE_PATH, await encodeAssetDocument(
+      { guid: ATLAS_TEXTURE_GUID, type: "Texture", name: "albedo", version: texture!.version, payload },
+      { headerPayload: payload, extraChunks: [...texture!.chunks, { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 }] },
+    )],
+    ["assets/Embers.tileset.babasset", await encodeAssetDocument(
+      { guid: "00000000-0000-4000-8000-000000000082", type: "Tileset", name: "Embers", version: 1, payload: tileset },
+      { headerMeta: { [ATLAS_TEXTURES_META]: [ATLAS_TEXTURE_GUID] } },
+    )],
+  ]);
+}
+
+/** Resolves once the editor's texture alignment pass ran and is idle, with the Textures it requeued. */
+async function settledAlignmentPass(page: Page): Promise<string[]> {
+  let requeued: string[] = [];
+  await expect.poll(async () => {
+    const state = await page.evaluate(() => (globalThis as {
+      __babylonslateTest?: { textureAlignment?: () => { runs: number; pending: number; requeued: string[] } };
+    }).__babylonslateTest?.textureAlignment?.() ?? null);
+    requeued = state?.requeued ?? [];
+    return state !== null && state.runs > 0 && state.pending === 0;
+  }, { timeout: 60_000 }).toBe(true);
+  return requeued;
 }
 
 /** A Particle-domain Material whose Texture Sample (unwired UV reads particle_uv) drives Color. */
@@ -132,26 +184,15 @@ async function chooseOption(page: Page, testId: string, option: string): Promise
   await expect(page.getByTestId(testId)).toContainText(option);
 }
 
-test("Particle Usage texture draws from its block-aligned KTX2 on WebGPU", async ({ page }, testInfo) => {
+test("An odd-sized Albedo import encodes 4x4 and draws block-compressed on WebGPU", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await openWebGpuProject(page);
 
-  // albedo.png is 1x1: it encodes unaligned until its Usage is Particle.
+  // albedo.png is 1x1: a compressed non-atlas encode rounds up to the 4x4 block grid.
   const textureGuid = await importAlbedoTexture(page);
-  await expect.poll(async () => (await committedEncode(page)).compressionState, {
-    timeout: 60_000,
-  }).toBe("compressed");
-  const importEncode = await committedEncode(page);
-  await openAssetFromBrowser(page, TEXTURE_PATH);
-  await expect(page.getByTestId("texture-details")).toBeVisible();
-  await chooseOption(page, "property-usage", "Particle");
-  // Save only after the Particle encode commits: the preview resolves the saved Usage.
-  const particleEncode = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
-  await expect.poll(() => committedEncode(page), { timeout: 60_000 }).toEqual(particleEncode);
-  await saveAllIfEnabled(page);
-  // The Texture tab opened before that encode; saving it must keep the 4x4 KTX2 export packs.
-  await expect.poll(() => committedEncode(page)).toEqual(particleEncode);
+  const importEncode = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
+  await expect.poll(() => committedEncode(page), { timeout: 60_000 }).toEqual(importEncode);
 
   const materialGuid = await createTextureParticleMaterial(page, "SparksMat", textureGuid);
   await compileMaterialPreview(page);
@@ -184,24 +225,21 @@ test("Particle Usage texture draws from its block-aligned KTX2 on WebGPU", async
 
   expect(Math.min(run.steady.matched, run.steady.moved)).toBeGreaterThan(200);
   expect(backend).toBe("webgpu");
-  // The Particle KTX2 reached the GPU as a 4x4 block-compressed texture, not the PNG fallback.
+  // The KTX2 reached the GPU as a 4x4 block-compressed texture, not the PNG fallback.
   expect(compressed).toContainEqual(expect.objectContaining({ width: 4, height: 4 }));
   expect(offBlockGrid(compressed!)).toEqual([]);
   expect(gpuFailures).toEqual([]);
 });
 
-test("A running emitter Preview draws a 1x1 Albedo KTX2 on WebGPU and rebinds its Particle re-encode without Retry", async ({ page }, testInfo) => {
+test("A running emitter Preview draws a 1x1 atlas KTX2 on WebGPU and rebinds its Particle re-encode without Retry", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
-  await openWebGpuProject(page);
+  await openWebGpuProject(page, await atlasTextureFiles());
 
-  // albedo.png is 1x1 with Albedo Usage: a compressed 1x1 KTX2, off the 4x4 block grid.
-  const textureGuid = await importAlbedoTexture(page);
-  await expect.poll(() => committedEncode(page), { timeout: 60_000 }).toEqual({
-    compressionState: "compressed",
-    ktx2: { width: 1, height: 1 },
-  });
-  const materialGuid = await createTextureParticleMaterial(page, "EmberMat", textureGuid);
+  // A Tileset uses the 1x1 Albedo Texture, so its compressed 1x1 KTX2 stays off the 4x4 block grid.
+  expect(await settledAlignmentPass(page)).not.toContain(ATLAS_TEXTURE_GUID);
+  expect(await committedEncode(page)).toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
+  const materialGuid = await createTextureParticleMaterial(page, "EmberMat", ATLAS_TEXTURE_GUID);
   await saveAllIfEnabled(page);
   // Mounted tabs keep their previews; only the emitter Preview may hold the texture.
   await closeDocumentTab(page, "material");
@@ -232,7 +270,7 @@ test("A running emitter Preview draws a 1x1 Albedo KTX2 on WebGPU and rebinds it
     albedoCompressed = await compressedGpuTextures(page);
     failuresBeforeRebind = [...gpuFailures];
 
-    // Particle Usage re-encodes block-aligned; the Preview keeps running meanwhile.
+    // Particle Usage always re-encodes block-aligned, atlas or not; the Preview keeps running meanwhile.
     await page.evaluate(() => {
       const host = globalThis as { __compressedGpuTextures?: unknown[] };
       host.__compressedGpuTextures?.splice(0);
