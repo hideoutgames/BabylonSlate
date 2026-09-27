@@ -255,6 +255,8 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
+  setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
   setRegisterViewEnabled: (enabled: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
@@ -2446,6 +2448,16 @@ function initializeEngine(
     void fontRegistry.registerAll(options.fontFaceEntries);
   }
 
+  let callerPaused = false;
+  let sceneStreamingPaused = false;
+  const applyPause = () => {
+    const paused = callerPaused || sceneStreamingPaused;
+    binding.paused = paused;
+    scheduler.setPaused(paused);
+    audioService?.setPaused(paused);
+    particleService?.setPaused(paused);
+  };
+
   return {
     engine,
     scene,
@@ -2868,10 +2880,12 @@ function initializeEngine(
       }
     },
     setPaused: (paused: boolean) => {
-      binding.paused = paused;
-      scheduler.setPaused(paused);
-      audioService?.setPaused(paused);
-      particleService?.setPaused(paused);
+      callerPaused = paused;
+      applyPause();
+    },
+    setSceneStreamingPaused: (paused: boolean) => {
+      sceneStreamingPaused = paused;
+      applyPause();
     },
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);

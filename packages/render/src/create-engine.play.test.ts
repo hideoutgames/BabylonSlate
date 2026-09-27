@@ -282,6 +282,21 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("keeps manual Pause and blocking streaming pauses independent", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+    handle.setSceneStreamingPaused(true);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setPaused(true);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(true);
+    handle.setPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(false);
+    handle.setSceneStreamingPaused(false);
+    expect(handle.scheduler.shouldRender(0)).toBe(true);
+  });
+
   function renderViews(engine: NullEngine) {
     if (!engine.getRenderingCanvas())
       vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new FakeCanvas() as unknown as HTMLCanvasElement);
