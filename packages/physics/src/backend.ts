@@ -1,5 +1,7 @@
 import type {
   CharacterControllerDesc,
+  BodyVelocity,
+  ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
   ColliderTuning,
@@ -23,6 +25,7 @@ import type { DebugColliderPrimitive } from "./debug-colliders";
  */
 export interface PhysicsBackend {
   readonly kind: PhysicsWorldKind;
+  readonly supportsConstraints: boolean;
 
   dispose(): void;
 
@@ -33,8 +36,11 @@ export interface PhysicsBackend {
   teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  getBodyVelocity(bodyId: string): BodyVelocity | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
+  /** Set a dynamic body's world angular velocity in radians/second. 2D uses only Z. */
+  setBodyAngularVelocity(bodyId: string, velocity: Vec3): void;
   setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],
@@ -42,12 +48,15 @@ export interface PhysicsBackend {
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
   /** World-space impulse at a point, preserving collision-driven linear and angular motion. */
   addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void;
-  getBodyVelocity(bodyId: string): { linear: Vec3; angular: Vec3 } | null;
   /** Read-only velocity change from a world impulse, including collider inertia. */
   getBodyImpulseResponse?(bodyId: string, impulse: Vec3, point: Vec3): {
     linear: Vec3; angular: Vec3; centerOfMass: Vec3;
   } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
+
+  /** Atomically creates/replaces one constraint, retaining the old one on failure. */
+  createConstraint(desc: ConstraintDesc): void;
+  destroyConstraint(id: string): void;
 
   createCollider(desc: ColliderDesc): void;
   applyColliderChanges(bodyId: string, changes: ColliderChanges): void;

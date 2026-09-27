@@ -88,6 +88,7 @@ import {
 } from "./engine-settings-form";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
+import { ProjectExtensionsSettings } from "./project-extensions-settings";
 import {
   ENGINE_SETTING_FIELDS,
   PROJECT_SETTING_FIELDS,
@@ -150,6 +151,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "plugins enable engine project starter content babplugin",
   },
   {
+    id: "extensions",
+    label: "Project Extensions",
+    keywords: "extensions editor code typescript javascript GLSL material converter babextension",
+  },
+  {
     id: "export",
     label: "Export",
     keywords:
@@ -174,6 +180,7 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
       "rendering",
       "textures",
       "plugins",
+      "extensions",
       "export",
       "sourceControl",
     ],
@@ -230,6 +237,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "plugins default enabled disabled export bundled library",
   },
   {
+    id: "extensions",
+    label: "Engine Extensions",
+    keywords: "extensions default enabled editor code GLSL material converter library",
+  },
+  {
     id: "focus",
     label: "Focus",
     keywords: "focus keep tabs panels layout",
@@ -263,7 +275,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "about",
     ],
   },
-  { label: "Projects", ids: ["templates", "plugins"] },
+  { label: "Projects", ids: ["templates", "plugins", "extensions"] },
 ];
 
 function matchesSearch(
@@ -1248,6 +1260,9 @@ export function SettingsModal({
         projectDocument &&
         activeCategoryId === "plugins" ? (
         <ProjectPluginsSettings />
+      ) : null}
+      {showProjectBody && projectDocument && activeCategoryId === "extensions" ? (
+        <ProjectExtensionsSettings />
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "export" ? (

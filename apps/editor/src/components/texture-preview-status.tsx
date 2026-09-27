@@ -11,9 +11,7 @@ import { useDocuments } from "../context/document-context";
 
 export function useTexturePreview(textureGuid: string | null | undefined) {
   const { assetRegistry, readAssetChunk } = useDocuments();
-  const asset = assetRegistry
-    ?.list()
-    .find((entry) => entry.header.guid === textureGuid);
+  const asset = textureGuid ? assetRegistry?.getByGuid(textureGuid) : undefined;
   const path = asset?.path;
   const revision =
     asset?.header.chunks?.find((chunk) => chunk.id === "pixels")?.sha256 ??

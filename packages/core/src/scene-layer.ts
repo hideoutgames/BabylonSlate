@@ -25,6 +25,7 @@ export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS = [
   "AreaRectLightComponent",
   "OutlineComponent",
   "HemisphericFillLightComponent",
+  "RagdollComponent",
 ] as const;
 
 export type SceneLayerDeniedComponentClassId =

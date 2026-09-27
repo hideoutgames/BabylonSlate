@@ -48,6 +48,8 @@ Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable ar
 
 Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the current phase (or end of tick) so destroying one actor never skips a sibling in the same phase.
 
+`World.findActor` uses an incrementally maintained GUID index, so navigation and contact dispatch lookups do not scan the actor array. The index changes when spawn/destroy commits, before lifecycle callbacks; queued spawns remain invisible and queued destroys remain visible until then. Temporary duplicate GUIDs resolve to the first actor in spawn order. Tick/snapshot iteration still uses the ordered array, and removing actors still maintains dense spawn indices.
+
 Preparation rollback uses `World.destroyActorInstance` to target the owned object rather than a reusable guid. An actor cancelled before spawn is removed from the pending queue without firing creation/destruction hooks; an already spawned actor follows normal deferred destruction. Repeated cleanup cannot destroy a later actor with the same guid. SceneLayer destruction removes the owned layer from the live registry before its destruction hooks and removes actors by identity, protecting layers/actors created reentrantly by those hooks.
 
 ## Snapshot (harness, not bridge)

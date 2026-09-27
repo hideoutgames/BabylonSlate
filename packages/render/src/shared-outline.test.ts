@@ -21,6 +21,35 @@ function setup() {
 const style = { kind: "component", color: [1, 0, 0], width: 2 } as const;
 
 describe("shared outline admission", () => {
+  it("bounds each mask search by surviving styles and restores wider styles when overrides leave", () => {
+    const { scene, view } = setup();
+    const target = { key: "actor", meshes: [MeshBuilder.CreateBox("actor", {}, scene)] };
+    const widths = () => (["strict", "through", "selection"] as const).map((group) => view.maximumWidthForGroup(group));
+    view.setContribution("global", { ...style, kind: "global", targets: [target], width: 8,
+      distanceFade: { start: 50, end: 100 } });
+    view.setContribution("component-a", { ...style, targets: [target], width: 1 });
+    view.setContribution("selection", { ...style, kind: "selection", targets: [target], width: 0.25 });
+    // Neither a replaced global width nor a targetless style enlarges any search.
+    view.setContribution("empty", { ...style, targets: [], width: 8 });
+    expect(widths()).toEqual([1, 0, 0.25]);
+    expect(view.maximumWidth).toBe(8);
+    expect(view.distanceFadeEnabled).toBe(false);
+
+    view.setContribution("component-z", { ...style, targets: [target], width: 4, throughMeshes: true });
+    expect(widths()).toEqual([0, 4, 0.25]);
+    expect(view.groupActive("strict")).toBe(false);
+    view.removeContribution("component-z");
+    expect(widths()).toEqual([1, 0, 0.25]);
+    view.removeContribution("component-a");
+    expect(widths()).toEqual([8, 0, 0.25]);
+    expect(view.distanceFadeEnabled).toBe(true);
+    view.removeContribution("global");
+    expect(widths()).toEqual([0, 0, 0.25]);
+    view.removeContribution("selection");
+    expect(widths()).toEqual([0, 0, 0]);
+    expect(view.maximumWidth).toBe(0);
+  });
+
   it("rejects collapsed GPU fade ranges without replacing the accepted global style", () => {
     const { view } = setup();
     const global: SharedOutlineContribution = { ...style, kind: "global", targets: [{ key: "actor", meshes: [] }], distanceFade: { start: 50, end: 100 } };

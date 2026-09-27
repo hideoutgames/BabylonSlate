@@ -8,6 +8,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
+import type { LiveBtState } from "../context/play-context";
 import {
   BehaviourTreeBlackboardPanel,
   BehaviourTreeCompilerResultsPanel,
@@ -205,12 +206,16 @@ vi.mock("../context/document-context", async () => {
   };
 });
 
+const livePlay = vi.hoisted(() => ({
+  playing: false,
+  snapshot: null as LiveBtState | null,
+}));
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({
-    playing: false,
-    liveBtState: null,
+    playing: livePlay.playing,
     focusedNodeId: null,
   }),
+  useLiveBtState: () => livePlay.snapshot,
 }));
 
 afterEach(() => {
@@ -220,6 +225,8 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  livePlay.playing = false;
+  livePlay.snapshot = null;
   store.applyAssetDocumentChange.mockClear();
   loadAssetDocument.mockResolvedValue(defaultBlackboard);
   store.reset(
@@ -231,7 +238,11 @@ const panelProps = {} as IDockviewPanelProps;
 
 function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree()) {
   store.reset(payload as unknown as Record<string, unknown>);
-  return render(
+  return render(<TreePanels />);
+}
+
+function TreePanels() {
+  return (
     <DocumentWorkspaceProvider documentId={DOC_ID}>
       <BehaviourTreeEditingProvider>
         <BehaviourTreeGraphPanel {...panelProps} />
@@ -239,7 +250,7 @@ function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree(
         <BehaviourTreeBlackboardPanel {...panelProps} />
         <BehaviourTreeCompilerResultsPanel {...panelProps} />
       </BehaviourTreeEditingProvider>
-    </DocumentWorkspaceProvider>,
+    </DocumentWorkspaceProvider>
   );
 }
 
@@ -294,6 +305,29 @@ function treeWithMisorderedSiblings(): BehaviourTreeDocument {
 }
 
 describe("BehaviourTreeEditor", () => {
+  it("updates live node results and blackboard watches, then clears them when Play stops", async () => {
+    livePlay.playing = true;
+    livePlay.snapshot = {
+      slotId: 1, status: "running", btNodeId: "task", lastResults: {},
+      blackboard: { hp: 3 }, stack: [{ nodeId: "sequence", childIndex: 0, opened: true }],
+    };
+    const view = renderTree(treeWithWait());
+    const task = () => view.container.querySelector('[data-id="task"] [data-bt-state]');
+    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("running"));
+    expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 3");
+
+    livePlay.snapshot = { ...livePlay.snapshot, btNodeId: null, lastResults: { task: "success" }, blackboard: { hp: 2 }, stack: [] };
+    view.rerender(<TreePanels />);
+    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("success"));
+    expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 2");
+
+    livePlay.playing = false;
+    livePlay.snapshot = null;
+    view.rerender(<TreePanels />);
+    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("idle"));
+    expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
+  });
+
   it("adds Move To Blackboard Key and offers only spatial linked keys", async () => {
     const doc = treeWithWait();
     renderTree(doc);

@@ -1,4 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   NamePromptDialog,
@@ -69,6 +70,7 @@ import { usePhoneLayout } from "../shell/use-platform-layout";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
+  duplicateSceneActors,
   nextActorId,
   prefabComponentsForGuid,
   projectPlaceActors,
@@ -310,6 +312,25 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const overlay = doc?.ref.kind === "scene-layer";
+
+  const actorById = useMemo(() => {
+    const actors = new Map<string, SerializedActor>();
+    for (const actor of scene?.actors ?? []) {
+      if (!actors.has(actor.id)) actors.set(actor.id, actor);
+    }
+    return actors;
+  }, [scene]);
+  const selectedActorIdSet = useMemo(
+    () => new Set(selectedActorIds),
+    [selectedActorIds],
+  );
+  // Registry entries can change without replacing the registry instance.
+  const classAssetById = new Map<string, IndexedAsset>();
+  for (const asset of assetRegistry?.list() ?? []) {
+    if (asset.header.type !== "Class") continue;
+    const classId = classIdFromClassAsset(asset);
+    if (!classAssetById.has(classId)) classAssetById.set(classId, asset);
+  }
 
   const parentOf = useMemo(
     () => classParentLookup(assetRegistry?.list() ?? []),
@@ -668,85 +689,78 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [scene, viewportDropApi],
   );
 
-  const actorMenuItems = useCallback(
-    (actorId: string): NestedMenuItem[] => {
-      const actor = scene?.actors.find((entry) => entry.id === actorId);
-      const classAsset = (assetRegistry?.list() ?? []).find(
-        (item) =>
-          item.header.type === "Class" &&
-          classIdFromClassAsset(item) === actor?.classId,
-      );
-      const items: NestedMenuItem[] = [];
-      if (classAsset) {
-        items.push({
-          id: "open-actor",
-          label: "Open Actor",
-          icon: <SquareArrowOutUpRightIcon />,
-          testId: `outliner-open-actor-${actorId}`,
-          onSelect: () => {
-            void openDocument({
-              kind: "graph",
-              path: classAsset.path,
-              label: classAsset.header.name,
-            });
-          },
-        });
-      }
-      items.push(
-        {
-          id: "select-actor",
-          label: selectedActorIds.includes(actorId) ? "Deselect" : "Select",
-          icon: <MousePointerClickIcon />,
-          testId: `outliner-select-${actorId}`,
-          onSelect: () => selectActor(actorId, true),
+  const actorMenuItems = (actorId: string): NestedMenuItem[] => {
+    const actor = actorById.get(actorId);
+    const classAsset = actor ? classAssetById.get(actor.classId) : undefined;
+    const items: NestedMenuItem[] = [];
+    if (classAsset) {
+      items.push({
+        id: "open-actor",
+        label: "Open Actor",
+        icon: <SquareArrowOutUpRightIcon />,
+        testId: `outliner-open-actor-${actorId}`,
+        onSelect: () => {
+          void openDocument({
+            kind: "graph",
+            path: classAsset.path,
+            label: classAsset.header.name,
+          });
         },
-        {
-          id: "frame-actor",
-          label: "Frame Selection",
-          icon: <FocusIcon />,
-          shortcut: keybinds.get("viewport.frameSelection")?.[0],
-          testId: `outliner-frame-${actorId}`,
-          onSelect: () => frameActor(actorId),
+      });
+    }
+    items.push(
+      {
+        id: "select-actor",
+        label: selectedActorIdSet.has(actorId) ? "Deselect" : "Select",
+        icon: <MousePointerClickIcon />,
+        testId: `outliner-select-${actorId}`,
+        onSelect: () => selectActor(actorId, true),
+      },
+      {
+        id: "frame-actor",
+        label: "Frame Selection",
+        icon: <FocusIcon />,
+        shortcut: keybinds.get("viewport.frameSelection")?.[0],
+        testId: `outliner-frame-${actorId}`,
+        onSelect: () => frameActor(actorId),
+      },
+      {
+        id: "duplicate-actor",
+        label: "Duplicate",
+        icon: <CopyPlusIcon />,
+        shortcut: keybinds.get("edit.duplicate")?.[0],
+        testId: `outliner-duplicate-${actorId}`,
+        onSelect: () => {
+          if (!scene) return;
+          const source = scene.actors.find((entry) => entry.id === actorId);
+          if (!source) return;
+          const copy = duplicateSceneActor(scene, source);
+          mutate({
+            ...scene,
+            actors: [...scene.actors, copy],
+          });
+          selectActor(copy.id);
         },
-        {
-          id: "duplicate-actor",
-          label: "Duplicate",
-          icon: <CopyPlusIcon />,
-          shortcut: keybinds.get("edit.duplicate")?.[0],
-          testId: `outliner-duplicate-${actorId}`,
-          onSelect: () => {
-            if (!scene) return;
-            const source = scene.actors.find((entry) => entry.id === actorId);
-            if (!source) return;
-            const copy = duplicateSceneActor(scene, source);
-            mutate({
-              ...scene,
-              actors: [...scene.actors, copy],
-            });
-            selectActor(copy.id);
-          },
+      },
+      { type: "separator", id: "delete-separator" },
+      {
+        id: "delete-actor",
+        label: "Delete",
+        icon: <Trash2Icon />,
+        variant: "destructive",
+        shortcut: keybinds.get("edit.delete")?.[0],
+        testId: `outliner-delete-${actorId}`,
+        onSelect: () => {
+          if (selectedActorIds.length > 1) {
+            setDeleteActorChoice({ actorId, selectedIds: [...selectedActorIds] });
+          } else {
+            removeActors([actorId]);
+          }
         },
-        { type: "separator", id: "delete-separator" },
-        {
-          id: "delete-actor",
-          label: "Delete",
-          icon: <Trash2Icon />,
-          variant: "destructive",
-          shortcut: keybinds.get("edit.delete")?.[0],
-          testId: `outliner-delete-${actorId}`,
-          onSelect: () => {
-            if (selectedActorIds.length > 1) {
-              setDeleteActorChoice({ actorId, selectedIds: [...selectedActorIds] });
-            } else {
-              removeActors([actorId]);
-            }
-          },
-        },
-      );
-      return items;
-    },
-    [assetRegistry, frameActor, keybinds, mutate, openDocument, removeActors, scene, selectActor, selectedActorIds],
-  );
+      },
+    );
+    return items;
+  };
 
   const folderMenuItems = useCallback(
     (folderId: string): NestedMenuItem[] => [
@@ -801,18 +815,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     "edit.duplicate",
     () => {
       if (!scene || selectedActorIds.length === 0) return;
-      let next = scene;
-      const copies: string[] = [];
-      for (const id of selectedActorIds) {
-        const source = scene.actors.find((entry) => entry.id === id);
-        if (!source) continue;
-        const copy = duplicateSceneActor(next, source);
-        next = { ...next, actors: [...next.actors, copy] };
-        copies.push(copy.id);
-      }
+      const copies = duplicateSceneActors(scene, selectedActorIds);
       if (copies.length === 0) return;
-      mutate(next);
-      setSelectedActorIds(copies);
+      mutate({ ...scene, actors: [...scene.actors, ...copies] });
+      setSelectedActorIds(copies.map((copy) => copy.id));
     },
     outlinerKeys,
   );
