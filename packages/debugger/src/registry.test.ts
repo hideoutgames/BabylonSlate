@@ -123,6 +123,8 @@ describe("createCommandRegistry", () => {
     expect(registry.execute("quality high", host).success).toBe(true);
     expect(registry.execute("quality shadows high", host).success).toBe(true);
     expect(registry.execute("quality resolution scale 0.75", host).success).toBe(true);
+    expect(registry.execute("quality geometry lod off", host).success).toBe(true);
+    expect(registry.execute("quality geometry distance 2", host).success).toBe(true);
     expect(registry.execute("framecap 30", host).success).toBe(true);
     expect(registry.execute("volume 0.5", host).success).toBe(true);
     expect(registry.execute("quit", host)).toEqual({
@@ -134,6 +136,8 @@ describe("createCommandRegistry", () => {
       "quality:all:high",
       "quality:shadows:high",
       "quality:resolution:scale:0.75",
+      "quality:geometry:lod:off",
+      "quality:geometry:distance:2",
       "framecap:30",
       "volume:0.5",
       "quit",

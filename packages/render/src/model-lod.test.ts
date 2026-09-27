@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Bone,
+  Camera,
   FreeCamera,
   Matrix,
   Mesh,
   MorphTarget,
   MorphTargetManager,
   Skeleton,
+  StandardMaterial,
+  TransformNode,
   Vector3,
   VertexBuffer,
   type Scene,
@@ -20,6 +23,7 @@ import {
   autoLodDiagnostics,
   followAutoLodSettings,
   generateModelLods,
+  isAutoLodMaster,
   setAutoLodPinned,
 } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -28,6 +32,8 @@ import { visualMeshes } from "./visual-meshes";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   for (const handle of handles.splice(0)) {
     handle.scene.dispose();
     handle.engine.dispose();
@@ -132,10 +138,14 @@ describe("automatic model LOD", () => {
     const geometry = first.levels[0]!.geometry!;
     const indices = first.levels[0]!.getTotalIndices();
     expect(second.levels[0]!.geometry).toBe(geometry);
+    expect(autoLodDiagnostics(scene).meshes).toBe(2);
     first.instance.dispose();
     expect(geometry.isDisposed()).toBe(false);
+    expect(isAutoLodMaster(first.master)).toBe(false);
+    expect(autoLodDiagnostics(scene).meshes).toBe(1);
     second.instance.dispose();
     expect(geometry.isDisposed()).toBe(true);
+    expect(autoLodDiagnostics(scene).meshes).toBe(0);
     expect(scene.geometries).not.toContain(geometry);
     // The model's own buffers survive their levels.
     const source = container.meshes.find((mesh) => mesh.getTotalIndices() > 0) as Mesh;
@@ -167,6 +177,81 @@ describe("automatic model LOD", () => {
       expect(lod.morphTargetManager).toBe(morphs);
       expect(lod.receiveShadows).toBe(true);
     }
+  });
+
+  it("hands a swapped actor material to every level before the next frame", async () => {
+    const { scene, instantiate } = await sphereModel();
+    const { master, levels } = instantiate();
+    const material = new StandardMaterial("swapped", scene);
+    master.material = material;
+    for (const lod of levels) expect(lod.material).toBe(material);
+  });
+
+  it("selects levels by orthographic extent, independent of camera distance", async () => {
+    const { scene, instantiate } = await sphereModel();
+    const { master, levels } = instantiate();
+    master.computeWorldMatrix(true);
+    const sphere = master.getBoundingInfo().boundingSphere;
+    const camera = new FreeCamera("ortho", Vector3.Zero(), scene);
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    const select = (screenSize: number, distance = 20) => {
+      const half = sphere.radiusWorld / screenSize;
+      camera.orthoTop = half;
+      camera.orthoBottom = -half;
+      camera.orthoLeft = -half;
+      camera.orthoRight = half;
+      camera.position.copyFrom(sphere.centerWorld.subtract(new Vector3(0, 0, distance)));
+      camera.setTarget(sphere.centerWorld);
+      camera.getViewMatrix(true);
+      return scene.customLODSelector!(master, camera);
+    };
+    expect(select(0.6)).toBe(master);
+    expect(select(0.44)).toBe(levels[0]);
+    expect(select(0.44, 200)).toBe(levels[0]);
+    expect(select(0.44, sphere.radiusWorld * 2)).toBe(levels[0]);
+    expect(select(0.02)).toBe(levels.at(-1));
+  });
+
+  it("keeps ratio floors for deforming meshes, whose levels are measured in bind pose", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const container = await loadModelContainer(handle.scene, encodeUvSphereGlb(96, 192), "sphere.glb");
+    const source = container.meshes.find((mesh) => mesh.getTotalIndices() > 0) as Mesh;
+    source.morphTargetManager = new MorphTargetManager(handle.scene);
+    const [first] = (await generateModelLods(container)).levelsFor(source)!;
+    // The same sphere without deformation drops below 15% at this level.
+    expect(first!.data.triangles).toBeGreaterThanOrEqual((0.45 * source.getTotalIndices()) / 3);
+  });
+
+  it("leaves CPU-skinned actors at full detail, since skinning rewrites their shared positions", async () => {
+    const { scene, container, lods } = await sphereModel();
+    const instance = container.instantiateModelsToScene((name) => name, false, { doNotInstantiate: true });
+    const root = new TransformNode("actor", scene);
+    for (const node of instance.rootNodes) node.parent = root;
+    const part = root.getChildMeshes().find((mesh) => mesh.getTotalIndices() > 0) as Mesh;
+    part.skeleton = new Skeleton("rig", "rig", scene);
+    part.computeBonesUsingShaders = false;
+    expect(attachModelLods(root, lods)).toBe(0);
+    expect(part.hasLODLevels).toBe(false);
+  });
+
+  it("simplifies on the main thread when the worker fails", async () => {
+    const terminate = vi.fn();
+    class FailingWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate = terminate;
+      postMessage() {
+        setTimeout(() => this.onmessage?.({ data: { error: "worker crashed" } }), 0);
+      }
+    }
+    vi.stubGlobal("Worker", FailingWorker);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { lods } = await sphereModel();
+    expect(lods.indexBytes).toBeGreaterThan(0);
+    expect(terminate).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("worker crashed"));
   });
 
   it("leaves low-poly models at full detail", async () => {

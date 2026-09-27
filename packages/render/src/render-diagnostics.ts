@@ -13,7 +13,7 @@ import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-cont
 import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
-import { autoLodDiagnostics } from "./model-lod";
+import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
@@ -154,7 +154,7 @@ export function createRenderDiagnostics(
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
       resources: {
-        meshes: scene.meshes.length,
+        meshes: liveMeshCount(scene),
         materials: scene.materials.length,
         textures: scene.textures.length,
         cachedTextures: engine.getLoadedTexturesCache().length,

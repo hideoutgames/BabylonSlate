@@ -32,7 +32,7 @@ import {
 import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-anim";
-import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvHierarchyGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,
@@ -1450,6 +1450,41 @@ describe("EditorSceneSync", () => {
     mesh.properties.materialSource = "model";
     sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
     expect(visible.every((child) => child.material === slotMat)).toBe(true);
+  });
+
+  it("keeps automatic LOD levels on their master's material through overrides and restores", async () => {
+    const { scene } = createHandle();
+    const override = new StandardMaterial("override", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "sphere-model";
+    mesh.properties.materialGuid = "mat-override";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-override" ? override : null),
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["sphere-model", encodeUvSphereGlb()]]),
+      modelPayloads: new Map([
+        [
+          "sphere-model",
+          { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true, materialSlots: [] },
+        ],
+      ]),
+    });
+    const apply = () => sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    apply();
+    let part: Mesh | undefined;
+    await vi.waitFor(() => {
+      part = visualMeshes(sync.meshForActor("a")!)[0] as Mesh | undefined;
+      expect(part?.getLODLevels().length).toBeGreaterThan(0);
+    });
+    // A material publication rebinds the override while the levels exist.
+    sync.refreshMaterials();
+    const levels = part!.getLODLevels().map((level) => level.mesh!);
+    for (const lod of levels) expect(lod.material).toBe(override);
+    mesh.properties.materialGuid = null;
+    apply();
+    expect(part!.material).not.toBe(override);
+    for (const lod of levels) expect(lod.material).toBe(part!.material);
   });
 
   it("adopts every UV'd glTF part and applies slot 0 to all of them", async () => {

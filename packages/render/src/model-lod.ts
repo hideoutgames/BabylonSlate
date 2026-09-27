@@ -510,6 +510,13 @@ export function peekAutoLodLevel(mesh: AbstractMesh, camera: Camera | null): num
   return camera ? selectLevel(binding, camera, false) : 0;
 }
 
+/** Scene meshes other than automatic LOD levels, which draw in place of their master. */
+export function liveMeshCount(scene: Scene): number {
+  let count = 0;
+  for (const mesh of scene.meshes) if (!mesh.isBlocked) count++;
+  return count;
+}
+
 /** Automatic LOD summary for this Scene's active camera. */
 export function autoLodDiagnostics(scene: Scene): { meshes: number; reduced: number; trianglesSaved: number } {
   const lods = sceneLods.get(scene);
