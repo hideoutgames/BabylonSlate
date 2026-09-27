@@ -114,6 +114,7 @@ describe("player startup and Stop ownership", () => {
     const before = worker.messages.length;
     worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: true } });
     worker.command({ channel: "command", payload: { type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 5 } });
+    expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 5 });
     worker.command({ channel: "command", payload: { type: "sceneStreamRealized", actorGuid: "left", streamLoadId: 5, slotIds: [7, 9] } });
     expect(handle.setSceneStreamingPaused).toHaveBeenCalledWith(true);
     expect(worker.messages.slice(before).some((message) => message.channel === "control" && message.payload.type === "setPaused")).toBe(false);
@@ -123,6 +124,8 @@ describe("player startup and Stop ownership", () => {
     expect(handle.loadScene).not.toHaveBeenCalled();
     worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: false } });
     expect(handle.setSceneStreamingPaused).toHaveBeenLastCalledWith(false);
+    worker.command({ channel: "command", payload: { type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 } });
+    expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 });
   });
   it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
     const { game, canvas } = await fixture(true);

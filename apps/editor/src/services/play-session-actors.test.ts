@@ -60,6 +60,7 @@ describe.each(["worker", "in-process"] as const)(
         onFatalDiagnostic?: () => void;
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
+        applyCommand?: (command: CommandMessage) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
@@ -69,7 +70,7 @@ describe.each(["worker", "in-process"] as const)(
         applySceneEnvironment() {},
         scheduler: { invalidate() {}, acquireObstruction: () => () => {} },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
-        applyCommand() {},
+        applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot() {},
         renderPathStatus: () => ({
           requested: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -173,13 +174,16 @@ describe.each(["worker", "in-process"] as const)(
     it("keeps stream readiness isolated while the host pauses and resumes a blocking graph load", async () => {
       let finish!: () => void;
       const prepare = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+      const applyCommand = vi.fn();
       const runtime = await play({ actors: [createActor("streamer", "Streamer", { classId: "SceneStreamingActor", components: [
         { id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "child", sceneName: "Child" } },
       ] })], scenes: [{ guid: "child", scene: { ...createDefaultScene(), actors: [createActor("child", "Child", { classId: "main" })] } }],
-      prepareSceneStream: prepare });
+      prepareSceneStream: prepare, applyCommand });
       const target = runtime.getWorld().findActor("streamer")!;
       const loading = runtime.loadSceneStream(target, true);
       await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+      const loadingCommand = applyCommand.mock.calls.map(([command]) => command as CommandMessage).find((command) => command.type === "sceneStreamLoading");
+      expect(loadingCommand).toEqual({ type: "sceneStreamLoading", actorGuid: "streamer", streamLoadId: expect.any(Number) });
       const before = runtime.getWorld().clock.tickIndex;
       runtime.tick();
       expect(runtime.getWorld().clock.tickIndex).toBe(before);
@@ -190,6 +194,7 @@ describe.each(["worker", "in-process"] as const)(
       runtime.tick();
       expect(runtime.getWorld().clock.tickIndex).toBe(before + 1);
       await runtime.unloadSceneStream(target);
+      expect(applyCommand).toHaveBeenCalledWith({ ...loadingCommand, type: "sceneStreamRemoved" });
       expect(runtime.getWorld().getActors().map((actor) => actor.guid)).toEqual(["streamer"]);
     });
 

@@ -43,6 +43,8 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "waterTime",
   "sceneLoading",
   "activeScene",
+  "sceneStreamLoading",
+  "sceneStreamRemoved",
   "sceneLayerLoading",
   "sceneLayerCreate",
   "sceneLayerRemove",
