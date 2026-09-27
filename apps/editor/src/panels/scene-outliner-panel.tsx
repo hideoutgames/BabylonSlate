@@ -964,7 +964,6 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDrop={dropActorRow}
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
-            reparentArm="immediate"
             emptyLabel={
               scene
                 ? search.trim()

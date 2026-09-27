@@ -643,7 +643,6 @@ function GalleryTreeExample({ touch = false }: { touch?: boolean }) {
           rowHeight={touch ? 44 : undefined}
           selectedId={`${prefix}${selectedId}`}
           onSelect={(id) => setSelectedId(id.slice(prefix.length))}
-          reparentArm={touch ? "immediate" : "hold"}
           onReparent={(dragId, targetId, placement = "into") => {
             const sourceId = dragId.slice(prefix.length);
             const destinationId = targetId?.slice(prefix.length) ?? null;
