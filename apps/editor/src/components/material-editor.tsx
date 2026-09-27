@@ -73,10 +73,7 @@ import {
 } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useMaterialEditing,
-  type MaterialEditingValue,
-} from "../context/material-editing-context";
+import { useMaterialEditing } from "../context/material-editing-context";
 import {
   useMaterialTextureUsageWarnings,
   useTextureUsageFix,
@@ -1242,5 +1239,3 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
     </PanelFrame>
   );
 }
-
-export type { MaterialEditingValue };

@@ -2,7 +2,6 @@ import type { DockWindowDirection } from "@babylonslate/core";
 import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 
-export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
   | "scene-layer"

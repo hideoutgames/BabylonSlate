@@ -4,7 +4,8 @@ import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import { EditSession, diffSceneCommands } from "@babylonslate/edit";
-import { SceneOutlinerPanel, actorRowId, applyOutlinerRowSelect, folderRowId } from "./scene-outliner-panel";
+import { actorRowId, applyOutlinerRowSelect, folderRowId } from "../lib/outliner-drop";
+import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
 /** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */
 function dispatchPointerEvent(
