@@ -117,6 +117,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   } = useDocuments();
   const {
     selectedActorIds,
+    shapeEditTarget,
     selectActor,
     setSelectedActorIds,
     gizmoTool,
@@ -880,12 +881,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);
+    const targetActor = shapeEditTarget && selectedActorIds.length === 1 && shapeEditTarget.actorId === selectedActorIds[0]
+      ? scene?.actors.find((actor) => actor.id === shapeEditTarget.actorId)
+      : undefined;
+    const selectedComponentIds = shapeEditTarget && targetActor?.components.some((component) => component.id === shapeEditTarget.componentId)
+      ? [shapeEditTarget.componentId]
+      : undefined;
     engineRef.current?.editor?.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds,
+      selectedComponentIds,
       audioLibrary,
     });
-  }, [scene, selectedActorIds, engineEpoch, audioLibrary, sceneMode]);
+  }, [scene, selectedActorIds, shapeEditTarget, engineEpoch, audioLibrary, sceneMode]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(sceneMode === "design" ? viewportMode : "3d");

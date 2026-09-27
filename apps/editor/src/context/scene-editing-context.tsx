@@ -26,11 +26,16 @@ export type ViewportDropApi = {
 
 export const FALLBACK_PLACE_POSITION: [number, number, number] = [0, 0, 0];
 
+export type SceneShapeEditTarget = { actorId: string; componentId: string };
+
 export interface SceneEditingContextValue {
   /** Actor ids selected in the viewport, outliner and details panel. */
   selectedActorIds: string[];
   selectActor: (actorId: string | null, additive?: boolean) => void;
   setSelectedActorIds: (actorIds: string[]) => void;
+  /** Session-only component whose shape handles override the selected actor's default. */
+  shapeEditTarget: SceneShapeEditTarget | null;
+  setShapeEditTarget: (target: SceneShapeEditTarget | null) => void;
   isSelected: (actorId: string) => boolean;
   gizmoTool: GizmoTool;
   setGizmoTool: (tool: GizmoTool) => void;
@@ -149,6 +154,7 @@ export function SceneEditingProvider({
   documentNavmeshVisible?: boolean;
 }) {
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
+  const [shapeEditTarget, setShapeEditTarget] = useState<SceneShapeEditTarget | null>(null);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
   const [snapEnabled, setSnapEnabled] = useState(
     documentSnapEnabled ?? false,
@@ -259,6 +265,8 @@ export function SceneEditingProvider({
       selectedActorIds,
       selectActor,
       setSelectedActorIds,
+      shapeEditTarget,
+      setShapeEditTarget,
       isSelected: (actorId: string) => selectedActorIds.includes(actorId),
       gizmoTool,
       setGizmoTool,
@@ -301,6 +309,7 @@ export function SceneEditingProvider({
       saveEditorCameraPose,
       selectActor,
       selectedActorIds,
+      shapeEditTarget,
       setFrameActorHandler,
       setViewportDropApi,
       snapEnabled,

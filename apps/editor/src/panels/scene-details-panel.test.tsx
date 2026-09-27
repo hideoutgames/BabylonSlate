@@ -16,6 +16,7 @@ import {
   quaternionToEulerDegrees,
 } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
 if (
   typeof window !== "undefined" &&
@@ -31,6 +32,8 @@ if (
 
 const harness = vi.hoisted(() => ({
   selectedActorIds: [] as string[],
+  shapeEditTarget: null as SceneShapeEditTarget | null,
+  setShapeEditTarget: vi.fn<(target: SceneShapeEditTarget | null) => void>(),
   scene: null as SerializedScene | null,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
@@ -48,6 +51,8 @@ vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     selectedActorIds: harness.selectedActorIds,
     setSelectedActorIds: vi.fn(),
+    shapeEditTarget: harness.shapeEditTarget,
+    setShapeEditTarget: harness.setShapeEditTarget,
   }),
   selectionAfterLockChange: (ids: string[]) => ids,
 }));
@@ -150,6 +155,8 @@ vi.mock("../context/document-context", () => ({
 
 beforeEach(() => {
   harness.selectedActorIds = [];
+  harness.shapeEditTarget = null;
+  harness.setShapeEditTarget.mockReset();
   harness.documentKind = "scene";
   harness.documentId = "scene:assets/Main.scene.babasset";
   harness.render.mode = "pbr";
@@ -167,6 +174,49 @@ function scene() {
   if (!harness.scene) throw new Error("scene fixture missing");
   return harness.scene;
 }
+
+describe("scene shape editing", () => {
+  it("targets a later spline independently of component disclosure without changing the scene", () => {
+    scene().actors = [createActor("paths", "Paths", { components: [
+      { id: "river", classId: "WaterRiverComponent", properties: {} },
+      { id: "curve", classId: "SplineComponent", properties: {} },
+      createMeshComponent("mesh", "box"),
+    ] })];
+    harness.selectedActorIds = ["paths"];
+    const panel = () => <SceneDetailsPanel {...({} as IDockviewPanelProps)} />;
+    const view = render(panel());
+    const riverHeader = screen.getByRole("button", { name: "Water River", exact: true });
+    fireEvent.click(riverHeader);
+    expect(riverHeader.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getAllByRole("button", { name: /^Edit .* In Viewport$/ })).toHaveLength(2);
+    expect(screen.getByTestId("component-shape-edit-river").getAttribute("aria-pressed")).toBe("true");
+    const curveTarget = screen.getByTestId("component-shape-edit-curve");
+    fireEvent.click(curveTarget);
+    expect(harness.setShapeEditTarget).toHaveBeenLastCalledWith({ actorId: "paths", componentId: "curve" });
+    harness.shapeEditTarget = harness.setShapeEditTarget.mock.lastCall![0];
+    view.rerender(panel());
+    expect(curveTarget.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("component-shape-edit-river").getAttribute("aria-pressed")).toBe("false");
+    expect(riverHeader.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByTestId("component-shape-edit-river"));
+    expect(harness.setShapeEditTarget).toHaveBeenLastCalledWith({ actorId: "paths", componentId: "river" });
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+  it("disables shape targeting for locked actors and multiple selected actors", () => {
+    const actor = createActor("path", "Path", { components: [{ id: "curve", classId: "SplineComponent", properties: {} }], locked: true });
+    scene().actors = [actor, createActor("other", "Other")];
+    harness.selectedActorIds = [actor.id];
+    const panel = () => <SceneDetailsPanel {...({} as IDockviewPanelProps)} />;
+    const view = render(panel());
+    expect(screen.getByTestId("component-shape-edit-curve").hasAttribute("disabled")).toBe(true);
+    actor.locked = false;
+    harness.selectedActorIds = [actor.id, "other"];
+    view.rerender(panel());
+    fireEvent.click(screen.getByTestId("component-shape-edit-curve"));
+    expect(harness.setShapeEditTarget).not.toHaveBeenCalled();
+  });
+});
 
 describe("constraint target authoring", () => {
   it("selects a physical actor by name and persists the target through the scene change path", async () => {
