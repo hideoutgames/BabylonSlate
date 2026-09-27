@@ -1155,10 +1155,7 @@ export class ScriptHost {
       getOwner: (actor) => readActorLink(services, actor, "ownerId"),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
-      delay: async (seconds) => {
-        await services.delay(seconds, self);
-        await services.waitForSimulation?.(self);
-      },
+      delay: (seconds) => services.delay(seconds, self),
       callInterface: (target, interfaceGuid, method, args) => {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;
