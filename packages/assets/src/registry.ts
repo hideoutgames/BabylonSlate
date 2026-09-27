@@ -25,16 +25,22 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import { stampDocumentChunkName } from "./asset-document";
-import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
+import { decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
+import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
+import { sniffImageSize, type ImageSize } from "./image-size";
+import { sniffKtx2Size } from "./ktx2-info";
+import { clampDimension,
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
+  TEXTURE_BLOCK_EDGE,
+  textureEncodeChunkId,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
+import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
@@ -96,6 +102,17 @@ export class AssetRegistry {
   };
   private thumbnailWriter: ThumbnailWriter | null = null;
   private readonly textureWriteChain = new Map<string, Promise<void>>();
+  /** Atlas referrer (Tileset, Sprite, Sprite Animation) guid -> textures it samples. */
+  private readonly atlasByReferrer = new Map<string, readonly string[]>();
+  /** Texture guid -> atlas referrers sampling it. */
+  private readonly atlasReferrers = new Map<string, Set<string>>();
+  /** Atlas referrers whose header predates the `atlasTextures` meta. */
+  private readonly legacyAtlasReferrers = new Set<string>();
+  private legacyAtlasResolution: Promise<void> = Promise.resolve();
+  private atlasStatusListener: ((textureGuids: string[]) => void) | null = null;
+  /** Texture guid -> atlas status before the changes not yet reported. */
+  private readonly atlasStatusBefore = new Map<string, boolean>();
+  private atlasFlushScheduled = false;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -773,9 +790,17 @@ export class AssetRegistry {
     });
   }
 
+  /**
+   * Store an encode under its chunk id and record what was committed:
+   * `ktx2Width` / `ktx2Height` from the KTX2 header, and `ktx2BlockAlign`
+   * when the encode was padded to the block grid. The alignment pass reads
+   * these instead of the chunk.
+   */
   async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
-    const hash = await encodeSettingsHash(result.settings);
-    const chunkId = ktx2ChunkId(hash);
+    const chunkId =
+      result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
+    const size = sniffKtx2Size(result.ktx2);
+    const blockAlign = result.settings.blockAlign;
     await this.enqueueTextureWrite(result.assetGuid, async () => {
       await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
         chunks.set(chunkId, {
@@ -791,6 +816,14 @@ export class AssetRegistry {
           ktx2ChunkId: chunkId,
         };
         delete payload.encodeError;
+        delete payload.ktx2Width;
+        delete payload.ktx2Height;
+        delete payload.ktx2BlockAlign;
+        if (size) {
+          payload.ktx2Width = size.width;
+          payload.ktx2Height = size.height;
+        }
+        if (blockAlign && blockAlign > 1) payload.ktx2BlockAlign = blockAlign;
         header.payload = payload;
         return { header, chunks };
       });
@@ -876,18 +909,23 @@ export class AssetRegistry {
     const latest = this.byGuid.get(guid) ?? asset;
     const source = await this.loadSourcePixels(latest);
     if (!source) return false;
-    const settings = this.encodeSettingsFor(latest, usage);
-    if (options && "maxDimension" in options && options.maxDimension) {
-      settings.maxDimension = effectiveTextureMaxDimension(
-        options.maxDimension,
-        this.encodeSettings.maxDimension,
-      );
-    }
-    this.encodeQueue.enqueue({
+    await this.resolveLegacyAtlasReferrers();
+    const settings = this.encodeSettingsFor(latest, usage, {
+      sourceSize: sniffImageSize(source.bytes),
+      ...(options?.maxDimension
+        ? { maxDimension: effectiveTextureMaxDimension(options.maxDimension, this.encodeSettings.maxDimension) }
+        : {}),
+    });
+    const chunkId = await textureEncodeChunkId(settings, usage);
+    const queue = this.encodeQueue;
+    if (!queue) return false;
+    queue.enqueue({
       assetGuid: guid,
       source: source.bytes,
       mime: source.mime,
       settings,
+      chunkId,
+      usage,
     });
     return true;
   }
@@ -941,19 +979,162 @@ export class AssetRegistry {
     if (asset.header.payload.compressionState !== "pending") return;
     const source = await this.loadSourcePixels(asset);
     if (!source) return;
-    this.encodeQueue.enqueue({
+    await this.resolveLegacyAtlasReferrers();
+    const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffImageSize(source.bytes) });
+    const chunkId = await textureEncodeChunkId(settings, usage);
+    this.encodeQueue?.enqueue({
       assetGuid: asset.header.guid,
       source: source.bytes,
       mime: source.mime,
-      settings: this.encodeSettingsFor(asset),
+      settings,
+      chunkId,
+      usage,
     });
   }
 
+  /** Encode settings with the texture's current atlas status. */
   private encodeSettingsFor(
     asset: IndexedAsset,
     usage = String(asset.header.payload.usage ?? "albedo"),
+    context: { sourceSize?: ImageSize | null; maxDimension?: number } = {},
   ): TextureEncodeSettings {
-    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage);
+    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage, {
+      ...context,
+      atlas: this.isAtlasTexture(asset.header.guid),
+    });
+  }
+
+  /** A Tileset, Sprite or Sprite Animation samples this texture as an atlas. */
+  isAtlasTexture(guid: string): boolean {
+    return (this.atlasReferrers.get(guid)?.size ?? 0) > 0;
+  }
+
+  /**
+   * Report textures whose atlas status changed (a referrer saved, deleted,
+   * duplicated, imported, or a plugin root mounted). Set after the initial
+   * scan; changes are reported once legacy referrers are decoded.
+   */
+  setAtlasStatusListener(listener: ((textureGuids: string[]) => void) | null): void {
+    this.atlasStatusListener = listener;
+    this.atlasStatusBefore.clear();
+  }
+
+  /**
+   * Decode referrers whose header has no `atlasTextures` meta (saved before
+   * it existed, or created and never saved) so their atlases are known.
+   * Serialized; the alignment pass and every enqueue await it.
+   */
+  resolveLegacyAtlasReferrers(): Promise<void> {
+    const run = async () => {
+      while (this.legacyAtlasReferrers.size > 0) {
+        const guid = this.legacyAtlasReferrers.values().next().value as string;
+        this.legacyAtlasReferrers.delete(guid);
+        const asset = this.byGuid.get(guid);
+        if (!asset || !ATLAS_REFERRER_TYPES.has(asset.header.type)) continue;
+        let textures: string[] = [];
+        try {
+          const bytes = await this.storageForAsset(asset).readBinary(asset.path);
+          const document = await decodeAssetDocument(bytes, { blobs: this.blobsForAsset(asset) });
+          textures = atlasTextureGuids(asset.header.type, document.payload);
+        } catch {
+          // Unreadable: it samples nothing we can see.
+        }
+        // Re-indexed or removed meanwhile: that entry owns its atlas state.
+        if (this.byGuid.get(guid) !== asset) continue;
+        this.setAtlasReferrer(guid, textures);
+      }
+    };
+    const next = this.legacyAtlasResolution.then(run, run);
+    this.legacyAtlasResolution = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Requeue `compressed` textures whose committed encode no longer matches
+   * the alignment policy: a non-atlas encode off the 4-texel grid, or an atlas
+   * encode that was padded. Particle is always aligned. Skips read-only roots
+   * and textures `canWrite` refuses (locks). An aligned texture is never
+   * requeued. Returns the requeued guids.
+   */
+  async reconcileTextureAlignment(options: {
+    guids?: Iterable<string>;
+    canWrite?: (guid: string) => boolean;
+    /** KTX2 base sizes by chunk sha256, kept across registry remounts. */
+    ktx2SizeCache?: Map<string, ImageSize | null>;
+  } = {}): Promise<string[]> {
+    if (!this.encodeQueue) return [];
+    await this.resolveLegacyAtlasReferrers();
+    const guids = options.guids
+      ? [...new Set(options.guids)]
+      : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
+    const requeued: string[] = [];
+    for (const guid of guids) {
+      const asset = this.byGuid.get(guid);
+      if (!asset || asset.placeholder || asset.header.type !== "Texture") continue;
+      const payload = asset.header.payload;
+      const usage = String(payload.usage ?? "albedo");
+      if (payload.compressionState !== "compressed") continue;
+      if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) continue;
+      if (this.roots.get(asset.rootId)?.readOnly) continue;
+      if (options.canWrite && !options.canWrite(guid)) continue;
+      try {
+        if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
+        if (await this.retryTextureEncoding(guid, { force: true })) requeued.push(guid);
+      } catch {
+        // One unreadable texture must not stop the pass.
+      }
+    }
+    return requeued;
+  }
+
+  private async isAlignmentStale(
+    asset: IndexedAsset,
+    usage: string,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<boolean> {
+    // Particle keys its alignment into the chunk id: always on the grid.
+    if (usage === "particle") return false;
+    const blockAlign = asset.header.payload.ktx2BlockAlign;
+    const padded = typeof blockAlign === "number" && blockAlign > 1;
+    if (this.isAtlasTexture(asset.header.guid)) return padded;
+    if (padded) return false;
+    const size = await this.committedKtx2Size(asset, usage, cache);
+    return size !== null && (size.width % TEXTURE_BLOCK_EDGE !== 0 || size.height % TEXTURE_BLOCK_EDGE !== 0);
+  }
+
+  /**
+   * Base size of the committed KTX2: the recorded size; else, for an encode
+   * committed under today's id before sizes were recorded, the clamped source
+   * size (unpadded encodes are exactly that); else the chunk's KTX2 header.
+   */
+  private async committedKtx2Size(
+    asset: IndexedAsset,
+    usage: string,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<ImageSize | null> {
+    const payload = asset.header.payload;
+    if (typeof payload.ktx2Width === "number" && typeof payload.ktx2Height === "number") {
+      return { width: payload.ktx2Width, height: payload.ktx2Height };
+    }
+    const committed = payload.ktx2ChunkId;
+    if (typeof committed !== "string") return null;
+    const source = payloadPixelSize(payload);
+    if (source) {
+      const settings = this.encodeSettingsFor(asset, usage);
+      if (committed === (await textureEncodeChunkId(settings, usage))) {
+        const clamped = clampDimension(source.width, source.height, settings.maxDimension);
+        return { width: clamped.width, height: clamped.height };
+      }
+    }
+    const entry = asset.header.chunks.find((chunk) => chunk.id === committed);
+    if (!entry) return null;
+    const cached = cache?.get(entry.sha256);
+    if (cached !== undefined) return cached;
+    const file = await this.storageForAsset(asset).readBinary(asset.path);
+    const bytes = await this.loader.loadChunk(file, entry, this.blobsForAsset(asset));
+    const size = bytes ? sniffKtx2Size(bytes) : null;
+    cache?.set(entry.sha256, size);
+    return size;
   }
 
   private async loadSourcePixels(
@@ -1178,7 +1359,67 @@ export class AssetRegistry {
       }
       set.add(header.guid);
     }
+    if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
+      const listed = headerAtlasTextureGuids(header.payload);
+      if (listed) {
+        this.setAtlasReferrer(header.guid, listed);
+      } else {
+        this.legacyAtlasReferrers.add(header.guid);
+        this.scheduleAtlasStatusFlush();
+      }
+    }
     return indexed;
+  }
+
+  private setAtlasReferrer(referrer: string, textures: readonly string[]): void {
+    const previous = this.atlasByReferrer.get(referrer) ?? [];
+    const next = [...new Set(textures)];
+    if (previous.length === 0 && next.length === 0) return;
+    this.noteAtlasStatus([...previous, ...next]);
+    for (const guid of previous) {
+      const set = this.atlasReferrers.get(guid);
+      set?.delete(referrer);
+      if (set && set.size === 0) this.atlasReferrers.delete(guid);
+    }
+    if (next.length > 0) this.atlasByReferrer.set(referrer, next);
+    else this.atlasByReferrer.delete(referrer);
+    for (const guid of next) {
+      let set = this.atlasReferrers.get(guid);
+      if (!set) {
+        set = new Set();
+        this.atlasReferrers.set(guid, set);
+      }
+      set.add(referrer);
+    }
+  }
+
+  /** Remember each texture's atlas status before a change, for the listener. */
+  private noteAtlasStatus(textureGuids: readonly string[]): void {
+    if (!this.atlasStatusListener) return;
+    for (const guid of textureGuids) {
+      if (!this.atlasStatusBefore.has(guid)) {
+        this.atlasStatusBefore.set(guid, this.isAtlasTexture(guid));
+      }
+    }
+    this.scheduleAtlasStatusFlush();
+  }
+
+  private scheduleAtlasStatusFlush(): void {
+    if (!this.atlasStatusListener || this.atlasFlushScheduled) return;
+    this.atlasFlushScheduled = true;
+    queueMicrotask(() => void this.flushAtlasStatus());
+  }
+
+  private async flushAtlasStatus(): Promise<void> {
+    await this.resolveLegacyAtlasReferrers();
+    this.atlasFlushScheduled = false;
+    const changed = [...this.atlasStatusBefore]
+      .filter(([guid, before]) => this.isAtlasTexture(guid) !== before)
+      .map(([guid]) => guid);
+    this.atlasStatusBefore.clear();
+    if (changed.length > 0) this.atlasStatusListener?.(changed);
+    // A legacy referrer indexed after the resolution finished.
+    if (this.legacyAtlasReferrers.size > 0) this.scheduleAtlasStatusFlush();
   }
 
   private removeFromIndex(asset: IndexedAsset): void {
@@ -1186,6 +1427,8 @@ export class AssetRegistry {
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
     }
+    this.legacyAtlasReferrers.delete(asset.header.guid);
+    this.setAtlasReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {
       const set = this.inbound.get(dep);
       set?.delete(asset.header.guid);

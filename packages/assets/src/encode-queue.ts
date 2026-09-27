@@ -9,6 +9,10 @@ export interface EncodeJob {
   source: Uint8Array;
   settings: TextureEncodeSettings;
   mime?: string;
+  /** Chunk id to commit under (`textureEncodeChunkId`); else the settings hash. */
+  chunkId?: string;
+  /** Usage the job encodes for, which an unsaved Details edit may override. */
+  usage?: string;
 }
 
 export interface EncodeJobResult {
@@ -16,6 +20,8 @@ export interface EncodeJobResult {
   ktx2: Uint8Array;
   wallMs: number;
   settings: TextureEncodeSettings;
+  chunkId?: string;
+  usage?: string;
 }
 
 export type EncodeFn = (
@@ -179,6 +185,8 @@ export class EncodeQueue {
         ktx2,
         wallMs,
         settings: job.settings,
+        ...(job.chunkId ? { chunkId: job.chunkId } : {}),
+        ...(job.usage ? { usage: job.usage } : {}),
       });
       this.completedSinceRecycle += 1;
       if (this.completedSinceRecycle >= this.recycleAfter) {
