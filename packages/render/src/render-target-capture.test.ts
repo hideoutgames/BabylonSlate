@@ -248,13 +248,13 @@ it.each(["WorldNormal", "DepthPass"] as const)("filters mixed %s slots per mesh 
   const sharedVariant = slots.subMaterials[1]!;
   let cutoutVariant = slots.subMaterials[2]!;
   const fadedSlots = faded.getMaterialForRenderPass(target.renderPassId) as MultiMaterial;
-  expect(slots.subMaterials).toEqual([firstVariant, sharedVariant, cutoutVariant, null]);
+  expect(Array.from(slots.subMaterials)).toEqual([firstVariant, sharedVariant, cutoutVariant, null]);
   expect(firstVariant).not.toBeNull();
   expect(sharedVariant).not.toBeNull();
   expect(cutoutVariant).not.toBeNull();
   expect(fadedSlots).not.toBe(slots);
-  expect(fadedSlots.subMaterials).toEqual([firstVariant, null, cutoutVariant, null]);
-  expect(source.subMaterials).toEqual([first, shared, cutout, blended]);
+  expect(Array.from(fadedSlots.subMaterials)).toEqual([firstVariant, null, cutoutVariant, null]);
+  expect(Array.from(source.subMaterials)).toEqual([first, shared, cutout, blended]);
   mask.coordinatesIndex = 1;
   captures.request("capture"); captures.render();
   expect(scene.materials).not.toContain(cutoutVariant);
