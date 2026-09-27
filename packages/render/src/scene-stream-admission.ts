@@ -31,7 +31,8 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
   const newestMesh = scene.meshes.at(-1);
   if (cached && cached.meshCount === scene.meshes.length && cached.slotCount === scope.binding.meshes.size && cached.newestMesh === newestMesh)
     return cached.meshes;
-  const meshes = new Set([...scope.baseline].filter((mesh) => !mesh.isDisposed()));
+  for (const mesh of scope.baseline) if (mesh.isDisposed()) scope.baseline.delete(mesh);
+  const meshes = new Set(scope.baseline);
   for (const [slot, root] of scope.binding.meshes) {
     if (scope.slots.has(slot) || root.isDisposed() || root.getScene() !== scene) continue;
     meshes.add(root);
@@ -45,6 +46,8 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
 export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
+  const live = new Set(scene.particleSystems);
+  for (const system of scope.particles) if (!live.has(system)) scope.particles.delete(system);
   return scene.particleSystems.filter((system) => {
     const slot = particleSlots.get(system);
     return slot === undefined ? scope.particles.has(system) : !scope.slots.has(slot);
@@ -55,7 +58,9 @@ export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefi
 export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMesh[]): Set<BaseTexture> | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  const textures = new Set([...scope.textures].filter((texture) => scene.textures.includes(texture)));
+  const live = new Set(scene.textures);
+  for (const texture of scope.textures) if (!live.has(texture)) scope.textures.delete(texture);
+  const textures = new Set(scope.textures);
   for (const mesh of meshes) for (const texture of (mesh.material ?? scene.defaultMaterial).getActiveTextures()) textures.add(texture);
   for (const system of admittedSceneParticles(scene) ?? []) {
     if (system.particleTexture) textures.add(system.particleTexture);
@@ -103,11 +108,29 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
   };
   const prune = () => {
     if ([...streams.values()].some((stream) => stream.loading)) return;
+    const scope = scopes.get(scene);
+    if (!scope) return;
+    // Native import/GPU work can outlive cancellation and its retired slot.
+    // Keep excluding those consumers until they settle or leave the Scene.
+    // Admitted parent consumers are still checked normally by scene-perf.
+    if (scene.getWaitingItemsCount() > 0) return;
+    const admitted = admittedSceneMeshes(scene)!;
+    const textures = admittedSceneTextures(scene, admitted)!;
+    for (const texture of scene.textures) {
+      if (!textures.has(texture) && !texture.isRenderTarget && (texture.loadingError || !texture.isReady())) return;
+    }
+    const meshes = new Set(admitted);
+    for (const mesh of scene.meshes) {
+      if (!meshes.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
+    }
     restore(); scopes.delete(scene); markSceneReadinessDirty(scene);
   };
   const sync = () => {
+    prune();
     const scope = scopes.get(scene);
     if (!scope) return;
+    for (const root of heldRoots.keys()) if (root.isDisposed()) heldRoots.delete(root);
+    for (const light of heldLights.keys()) if (light.isDisposed()) heldLights.delete(light);
     const meshes = admittedSceneMeshes(scene)!;
     if (syncedMeshes === meshes && syncedLightCount === scene.lights.length) return;
     syncedMeshes = meshes; syncedLightCount = scene.lights.length;

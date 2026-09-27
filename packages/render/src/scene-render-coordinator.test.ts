@@ -120,6 +120,40 @@ it("retains parent readiness failures and separates sibling publication includin
   admission.clear(); renderer.dispose();
 });
 
+it("keeps the parent drawing after cancel while native import and detached texture work retire", async () => {
+  const { scene, renderer } = host();
+  const binding = createSnapshotSceneBinding();
+  const parent = MeshBuilder.CreateBox("parent", {}, scene);
+  parent.material = new StandardMaterial("parent", scene);
+  binding.meshes.set(1, parent);
+  await renderer.prepare();
+  const admission = createSceneStreamAdmission(scene, binding);
+  admission.receive({ type: "sceneStreamLoading", actorGuid: "cancelled", streamLoadId: 1 });
+  // Native GLB loading owns Scene pending data independently of the slot's
+  // abortable promise. Texture GPU work can outlive that pending-data record.
+  const nativeImport = {};
+  scene.addPendingData(nativeImport);
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  vi.spyOn(texture, "isReady").mockReturnValue(false);
+  admission.receive({ type: "sceneStreamRemoved", actorGuid: "cancelled", streamLoadId: 1 });
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  scene.removePendingData(nativeImport);
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  // Sharing that same pending resource with a live parent must still block it.
+  parent.material.diffuseTexture = texture;
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(false);
+  parent.material.diffuseTexture = null;
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(true);
+  texture.dispose();
+  admission.sync();
+  expect(renderer.render().rendered).toBe(true);
+  admission.clear(); renderer.dispose();
+});
+
 it("draws editor gizmos once after native and graph frames, never during preparation or skipped frames", async () => {
   const { scene, camera, renderer } = host();
   const box = MeshBuilder.CreateBox("selected", {}, scene);
