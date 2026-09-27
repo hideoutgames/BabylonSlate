@@ -103,32 +103,38 @@ export function renderTargetAssetGuidsFromGraph(graph: SerializedGraph): string[
     if (typeof value === "string" && value.trim()) guids.add(value.trim());
   };
   const isTarget = (type?: string): boolean => type === "RenderTarget" || type === "RenderTargetTexture";
-  const members = (rows: readonly GraphClassMember[]): void => {
-    for (const row of rows) {
-      if (row.kind !== "variable") continue;
-      const valueRef = row.typeId === "asset" && isTarget(row.typeClassId);
-      if (row.container === "map") {
-        for (const entry of parseMapDefaultEntries(row.defaultValue)) {
-          if (row.keyTypeId === "asset" && isTarget(row.keyTypeClassId)) add(entry.key);
-          if (valueRef) add(entry.value);
-        }
-      } else if (valueRef && row.container === "array") {
-        if (Array.isArray(row.defaultValue)) row.defaultValue.forEach(add);
-      } else if (valueRef) add(row.defaultValue);
-    }
+  const collectDefault = (row: Partial<GraphClassMember>, value: unknown, includeTexture = false): void => {
+    const accepts = (type?: string): boolean => isTarget(type) || (includeTexture && type === "Texture");
+    const valueRef = row.typeId === "asset" && accepts(row.typeClassId);
+    if (row.container === "map") {
+      for (const entry of parseMapDefaultEntries(value)) {
+        if (row.keyTypeId === "asset" && accepts(row.keyTypeClassId)) add(entry.key);
+        if (valueRef) add(entry.value);
+      }
+    } else if (valueRef && row.container === "array") {
+      if (Array.isArray(value)) value.forEach(add);
+    } else if (valueRef) add(value);
   };
-  members(graph.members ?? []);
+  for (const row of graph.members ?? []) {
+    if (row.kind === "variable") collectDefault(row, row.defaultValue);
+  }
   for (const slice of [graph, ...Object.values(graph.functionGraphs ?? {})]) {
     for (const node of slice.nodes ?? []) {
-      const names = node.type === "render-target.getMode" ? ["target", "Render Target"]
-        : node.type === "render-target.getTextureTarget" ? ["texture", "Texture"]
-          : node.type === "render-target.setRenderTarget" ? ["value", "Render Target"] : null;
-      if (!names) continue;
       const nested = node.data?.properties;
       const props = nested && typeof nested === "object" && !Array.isArray(nested)
         ? nested as Record<string, unknown> : node.data ?? {};
-      add(names.flatMap((name) => [`default:${name}`, name])
-        .map((key) => props[key]).find((entry) => entry !== undefined));
+      const names = node.type === "render-target.getMode" ? ["target", "Render Target"]
+        : node.type === "render-target.getTextureTarget" ? ["texture", "Texture"]
+          : node.type === "render-target.setRenderTarget" ? ["value", "Render Target"]
+            : node.type === "variables.set" ? ["value", typeof props.variableName === "string" ? props.variableName : "Value"] : null;
+      if (!names) continue;
+      // Canonical cleared defaults mask legacy id/name values, as in codegen.
+      const value = names.flatMap((name) => [`default:${name}`, name])
+        .map((key) => props[key]).find((entry) => entry !== undefined);
+      if (node.type === "variables.set") {
+        // Texture pins can carry a RenderTargetTexture, including container entries.
+        collectDefault(props as Partial<GraphClassMember>, value, true);
+      } else add(value);
     }
   }
   return [...guids];

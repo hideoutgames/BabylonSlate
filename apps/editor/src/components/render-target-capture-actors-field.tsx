@@ -13,7 +13,8 @@ export function RenderTargetCaptureActorsField({ actorIds, actors, onChange }: {
   return <Field className="p-2" data-testid="capture-actors-field">
     <FieldLabel>Capture Actors</FieldLabel>
     <EntryListEditor items={actorIds} onChange={onChange} onAdd={() => setPicking(actorIds.length)} addLabel="Add Actor" countNoun={{ one: "actor", other: "actors" }}
-      renderItem={({ item: actorId, index, onChange: update }) => {
+      renderItem={() => null}
+      renderItemHeader={({ item: actorId, index, onChange: update }) => {
         const actor = actors.find((entry) => entry.id === actorId);
         return <PropertyGrid density="compact" hideLabels rows={[{
           id: `capture-actor-${index}`, kind: "asset", label: `Capture Actor ${index + 1}`, value: actorId,

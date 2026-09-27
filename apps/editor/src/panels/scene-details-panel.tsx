@@ -1110,9 +1110,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ? "Text"
             : component.classId === "2DPanelComponent"
               ? "Nine Slice"
-              : component.classId === "RagdollComponent"
-                ? "Bone Names"
-              : "";
+              : component.classId === "RenderTargetCaptureComponent"
+                ? "Capture Actors"
+                : component.classId === "RagdollComponent"
+                  ? "Bone Names"
+                  : "";
       return {
         component,
         index,
