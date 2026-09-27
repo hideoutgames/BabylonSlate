@@ -631,7 +631,9 @@ describe("SceneDetailsPanel authoring", () => {
       view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     };
     fireEvent.click(screen.getByTestId("property-scene-fog-mode"));
-    fireEvent.click(await screen.findByRole("option", { name: "Exponential", exact: true }));
+    const exponential = await screen.findByRole("option", { name: "Exponential", exact: true });
+    fireEvent.pointerDown(exponential);
+    fireEvent.click(exponential);
     applyChange();
     expect(scene().settings.fogMode).toBe("exponential");
     expect(screen.queryByTestId("property-scene-fog-start")).toBeNull();
@@ -645,7 +647,9 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-scene-fog-density")).toHaveProperty("value", "0.000125");
 
     fireEvent.click(screen.getByTestId("property-scene-fog-mode"));
-    fireEvent.click(await screen.findByRole("option", { name: "Exponential Squared" }));
+    const exponentialSquared = await screen.findByRole("option", { name: "Exponential Squared" });
+    fireEvent.pointerDown(exponentialSquared);
+    fireEvent.click(exponentialSquared);
     applyChange();
     expect(scene().settings).toMatchObject({
       fogMode: "exponentialSquared",
