@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { ENGINE_COMPONENT_CLASS_IDS } from "@babylonslate/core";
 import {
   ActivityIcon,
   CloudIcon,
@@ -286,6 +287,15 @@ describe("resolveTypeVisual", () => {
     expect(tree.colorVar).toBe("var(--asset-animation)");
     expect(tree.icon).not.toBe(FilmIcon);
     expect(component.icon).toBe(ListTreeIcon);
+  });
+
+  it("resolves every engine component to component chrome with a dedicated glyph", () => {
+    for (const classId of ENGINE_COMPONENT_CLASS_IDS) {
+      const visual = resolveTypeVisual({ classId });
+      expect(visual.family, classId).toBe("component");
+      expect(visual.iconKey, classId).toBe(classId);
+      expect(visual.icon, classId).not.toBe(FileIcon);
+    }
   });
 
   it("uses component color for engine components unless family is overridden", () => {

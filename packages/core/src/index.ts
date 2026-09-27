@@ -1,6 +1,14 @@
 export * from "./storage-port";
 export * from "./command-bus";
 export * from "./scene";
+export {
+  ENGINE_COMPONENT_DESCRIPTORS,
+  ENGINE_COMPONENT_CLASS_IDS,
+  SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
+  engineComponentPlacement,
+  type EngineComponentClassId,
+  type EngineComponentPlacement,
+} from "./engine-components";
 export * from "./scene-layer";
 export * from "./scene-streaming";
 export * from "./scene-streaming-actor";
