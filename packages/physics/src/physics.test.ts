@@ -46,7 +46,7 @@ it.each(["software", "rapier"] as const)("%s applies an off-centre impulse as tr
   } finally { backend.dispose(); }
 });
 
-it("keeps Rapier teleport/target rotation consistent in direct and batched readback", async () => {
+it("keeps Rapier teleport/target rotation consistent in body readback", async () => {
   const backend = await createPhysicsBackend({
     kind: "2d",
     gravity: { x: 0, y: 0, z: 0 },

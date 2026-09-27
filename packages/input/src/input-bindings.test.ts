@@ -72,6 +72,47 @@ describe("runtime input bindings", () => {
     });
   });
 
+  it("requires the modifier chord stored on an imported version 1 override", () => {
+    const resolver = new InputResolver({
+      actions: [
+        {
+          id: "jump",
+          name: "Jump",
+          bindings: [{ id: "keyboard", device: "key", code: "Space" }],
+        },
+      ],
+      axes: [],
+    });
+    const saved = JSON.stringify({
+      version: 1,
+      overrides: [
+        {
+          kind: "action",
+          mapping: "jump",
+          index: 0,
+          bindingId: "keyboard",
+          device: "key",
+          code: "KeyJ",
+          ctrl: true,
+        },
+      ],
+    });
+    expect(resolver.bindings.importBindings(saved)).toBe(true);
+    expect(resolver.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(false);
+    resolver.resolve([key("KeyJ", "up")]);
+    expect(
+      resolver.resolve([key("ControlLeft"), key("KeyJ")]).actions.Jump?.pressed,
+    ).toBe(true);
+    expect(resolver.resolve([key("ControlLeft", "up")]).actions.Jump).toEqual({
+      pressed: false,
+      released: true,
+      held: false,
+    });
+    expect(
+      resolver.bindings.getInputBindings({ Name: "", Asset: "jump" }),
+    ).toMatchObject([{ Ctrl: true, Shift: false, Label: "Ctrl + J" }]);
+  });
+
   it("round trips only overrides and rejects malformed imports atomically", () => {
     const original = new InputResolver(createDefaultInputMappings());
     expect(original.bindings.importBindings(jumpOnJ)).toBe(true);

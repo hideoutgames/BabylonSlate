@@ -976,7 +976,7 @@ One normalised stream, four source families, no multiplayer to complicate it.
 - **Script nodes**: dynamic per-asset events expose Started, Held, Released, typed Value, and hold durations. Native Input Type, Input Binding, Key, and Input Component types support asset dropdowns and typed Add/Remove/Set rebinding. Event Input Action/Axis accept bindings; On Any Key Pressed emits physical Key transitions. Make Structure and typed Make entries construct local values from any schema. Obsolete string/control/capture nodes are removed. There is no Set Input Mode / `engine:InputMode`.
 - **Touch axes**: there is no on-screen Play movement stick. `touchAxis` events reach the same P6 ring a gamepad stick uses only through the `injectTestTouchAxis` test hook today.
 - **Determinism**: every input event enters the ring buffer stamped with the tick it applies to, which is what makes the debug trace replay in section 9.5 reproducible. Input is therefore tested through the deterministic harness by feeding synthetic streams, not by driving a browser.
-- **iPad specifics**: pointer capture and `touch-action: none` on the game canvas, palm and accidental-touch rejection on virtual controls, and Apple's game controller support treated as an ordinary gamepad because Safari exposes it that way.
+- **iPad specifics**: pointer capture and `touch-action: none` on the game canvas, and Apple's game controller support treated as an ordinary gamepad because Safari exposes it that way.
 
 ### 11.2 Game HUD (removed)
 

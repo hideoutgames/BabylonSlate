@@ -250,6 +250,17 @@ describe("InputResolver", () => {
     expect(stick.gamepadConnections).toEqual([
       { gamepadIndex: 0, connected: true },
     ]);
+    const next = resolver.resolve([
+      {
+        kind: "gamepad",
+        tick: 2,
+        gamepadIndex: 0,
+        axes: [0.8, -0.6, 0, 0],
+        buttons: [],
+      },
+    ]);
+    expect(next.gamepadConnections).toEqual([]);
+    expect(next.axes2D.Move!.x).toBeGreaterThan(0.5);
   });
 
   it("applies dead zone, scale and inversion on a 1D axis", () => {
