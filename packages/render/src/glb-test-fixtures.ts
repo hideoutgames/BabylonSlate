@@ -579,3 +579,67 @@ export function encodeUvHierarchyGlb(
     bin,
   );
 }
+
+/**
+ * Indexed UV sphere with normals and a UV seam, dense enough for automatic
+ * LOD (2 × rings × segments triangles).
+ */
+export function encodeUvSphereGlb(rings = 32, segments = 64): Uint8Array {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  for (let ring = 0; ring <= rings; ring++) {
+    const theta = (ring / rings) * Math.PI;
+    for (let segment = 0; segment <= segments; segment++) {
+      const phi = (segment / segments) * Math.PI * 2;
+      const x = Math.sin(theta) * Math.cos(phi);
+      const y = Math.cos(theta);
+      const z = Math.sin(theta) * Math.sin(phi);
+      positions.push(x, y, z);
+      normals.push(x, y, z);
+      uvs.push(segment / segments, ring / rings);
+    }
+  }
+  const indices: number[] = [];
+  const row = segments + 1;
+  for (let ring = 0; ring < rings; ring++) {
+    for (let segment = 0; segment < segments; segment++) {
+      const a = ring * row + segment;
+      const b = a + row;
+      indices.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const views = [
+    new Float32Array(positions),
+    new Float32Array(normals),
+    new Float32Array(uvs),
+    new Uint16Array(indices),
+  ];
+  const bin = new Uint8Array(views.reduce((total, view) => total + Math.ceil(view.byteLength / 4) * 4, 0));
+  const bufferViews: Record<string, unknown>[] = [];
+  let offset = 0;
+  for (const view of views) {
+    bin.set(new Uint8Array(view.buffer), offset);
+    bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: view.byteLength });
+    offset += Math.ceil(view.byteLength / 4) * 4;
+  }
+  const count = positions.length / 3;
+  return encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 }, indices: 3 }] }],
+      accessors: [
+        { bufferView: 0, componentType: FLOAT, count, type: "VEC3", min: [-1, -1, -1], max: [1, 1, 1] },
+        { bufferView: 1, componentType: FLOAT, count, type: "VEC3" },
+        { bufferView: 2, componentType: FLOAT, count, type: "VEC2" },
+        { bufferView: 3, componentType: UNSIGNED_SHORT, count: indices.length, type: "SCALAR" },
+      ],
+      bufferViews,
+      buffers: [{ byteLength: bin.byteLength }],
+    },
+    bin,
+  );
+}

@@ -952,6 +952,7 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
               halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
             },
           ],
+          autoLod: true,
         },
       },
     });
@@ -979,6 +980,7 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
+          autoLod: true,
         },
       },
       complexMeshes: {

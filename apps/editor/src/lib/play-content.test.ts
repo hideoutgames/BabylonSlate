@@ -384,6 +384,7 @@ describe("scene-referenced Play content", () => {
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
+      autoLod: true,
     };
     const cooked = cookPlayComplexMeshes(
       new Map([["hero-model", buildBoxGlbFixture(1)]]),
@@ -544,6 +545,7 @@ describe("scene-referenced Play content", () => {
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
+          autoLod: true,
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
             { index: 1, name: "Eyes", materialGuid: null },
@@ -557,6 +559,7 @@ describe("scene-referenced Play content", () => {
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
+          autoLod: true,
           materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
         },
       ],

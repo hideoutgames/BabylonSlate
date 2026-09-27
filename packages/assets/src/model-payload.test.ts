@@ -30,6 +30,7 @@ describe("normalizeModelPayload", () => {
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
+      autoLod: true,
     });
     expect("materialCount" in payload).toBe(false);
     expect("textureCount" in payload).toBe(false);
@@ -110,6 +111,11 @@ describe("normalizeModelPayload", () => {
     expect(normalizeModelPayload({ clipNames: [] }).simpleColliders).toEqual([]);
   });
 
+  it("enables automatic LOD for legacy Models and keeps an explicit opt-out", () => {
+    expect(normalizeModelPayload({ clipNames: [] }).autoLod).toBe(true);
+    expect(normalizeModelPayload({ autoLod: false }).autoLod).toBe(false);
+  });
+
   it("keeps authored simple colliders on the payload header", () => {
     const payload = normalizeModelPayload({
       simpleColliders: [
@@ -139,6 +145,7 @@ describe("packed Model envelope", () => {
         clipNames: ["Walk"],
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
+        autoLod: false,
       },
       glb,
     );
@@ -148,6 +155,7 @@ describe("packed Model envelope", () => {
       materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
       skeletonGuid: "skel-1",
       simpleColliders: [],
+      autoLod: false,
     });
     expect(decodePackedModelAsset(packed)).toEqual({
       payload: {
@@ -156,6 +164,7 @@ describe("packed Model envelope", () => {
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
         simpleColliders: [],
+        autoLod: false,
       },
       source: glb,
     });

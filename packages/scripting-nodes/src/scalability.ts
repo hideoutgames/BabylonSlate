@@ -51,6 +51,7 @@ export const scalabilityNodes: NodeDefinition[] = [
   setting("setShadowQuality", "Set Shadow Quality", "Configure shadow maps, filtering, distance and local admission. Resource changes prepare at a frame boundary.", "ShadowQuality", ["shadows"]),
   setting("setLightingQuality", "Set Lighting Quality", "Choose automatic or explicit local-light admission within the current quality tier.", "LightingQuality", ["quality", "lighting"]),
   setting("setTextureQuality", "Set Texture Quality", "Set texture LOD bias, anisotropy and the managed byte budget. Device anisotropy limits appear in effective readback.", "TextureQuality", ["quality", "textures"]),
+  setting("setGeometryQuality", "Set Geometry Quality", "Enable automatic Model LOD and scale the distance at which simplified levels take over. Applies without reloading models.", "GeometryQuality", ["quality", "geometry"]),
   setting("setPostProcessingQuality", "Set Post Processing Quality", "Scale passes that opt into scalable resolution. Artistic effect enablement remains independent.", "PostProcessingQuality", ["quality", "postprocessing"]),
   setting("setEffects", "Set Rendering Effects", "Configure the supported color pipeline, tone mapping, exposure, bloom, vignette and FXAA for this session.", "RenderEffects", ["effects"]),
   setting("setCelShading", "Set CEL Shading", "Change CEL banding, specular, light mixing and outlines without changing project defaults.", "CelShading", ["cel"]),

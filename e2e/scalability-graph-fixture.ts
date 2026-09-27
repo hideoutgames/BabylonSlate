@@ -37,6 +37,7 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
       ["scalability.setShadowQuality", { settings: { distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filter: "pcf", filterQuality: "low", softness: 0.08, autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 } }],
       ["scalability.setLightingQuality", { settings: { localLightMode: "manual", maxLocalLights: 3 } }],
       ["scalability.setTextureQuality", { settings: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 } }],
+      ["scalability.setGeometryQuality", { settings: { autoLod: false, lodDistanceScale: 2 } }],
       ["scalability.setPostProcessingQuality", { settings: { resolutionScale: 0.5 } }],
       ["scalability.setEffects", { settings: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
       ["scalability.setVignetteColor", { color: { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],

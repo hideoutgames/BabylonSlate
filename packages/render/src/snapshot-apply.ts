@@ -977,6 +977,8 @@ function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
   };
   apply(mesh);
   for (const child of mesh.getChildMeshes()) {
+    // LOD levels draw in place of their master and are never pick targets.
+    if (child.isBlocked) continue;
     if ((child.metadata as { text2dGlyph?: boolean } | null)?.text2dGlyph) {
       child.isPickable = false;
       continue;

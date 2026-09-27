@@ -432,6 +432,15 @@ Details is selection-aware:
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
 
+Changing Domain (`setMaterialDomain`):
+
+- Drops the old terminal, the nodes the new domain does not allow, and their wires; normalizing adds the new
+  domain's terminal unwired.
+- **To Particle:** the Particle Output gets **Particle Color** wired into Color (an existing Particle Color node is
+  reused). Otherwise the output draws constant white and ignores every emitter colour. The new-Material Base Color
+  constant goes too when it is untouched and no longer wired; an edited constant stays. Shading Model and Blend Mode
+  are left as authored: Particle ignores them (emitters own blending), so a return to Surface keeps them.
+
 ## Custom GLSL
 
 `custom.glsl` uses a typed function body on new nodes. Define named numeric
