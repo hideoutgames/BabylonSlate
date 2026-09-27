@@ -49,6 +49,9 @@ const readAssetChunk = vi.hoisted(() =>
 );
 const documentApi = vi.hoisted(() => ({
   assetRegistry: {
+    getByGuid(guid: string) {
+      return this.list().find((asset) => asset.header.guid === guid);
+    },
     list: () => [
       {
         header: { guid: "ts-ground", name: "Ground", type: "Tileset" },
@@ -282,10 +285,59 @@ describe("TilemapPalette", () => {
       "2",
     );
     expect(loadAssetDocument).toHaveBeenCalledWith("tileset", GROUND_PATH);
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/Atlas.texture.babasset", "pixels");
   });
 });
 
 describe("TilemapPaint", () => {
+  it("keeps crossing brush and eraser paths complete across successive strokes", async () => {
+    const onChange = vi.fn();
+    render(
+      <TilemapHarness
+        initial={mapWithGround() as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    const pointer = (
+      type: "pointerdown" | "pointermove" | "pointerup",
+      x: number,
+      y: number,
+    ) =>
+      dispatchPointerEvent(canvas, type, {
+        pointerId: 1,
+        clientX: x * 32 + 16,
+        clientY: 240 - y * 32,
+      });
+    for (const [tool, expected] of [
+      ["brush", 1],
+      ["eraser", 0],
+      ["brush", 1],
+    ] as const) {
+      fireEvent.click(screen.getByTestId(`tilemap-tool-${tool}`));
+      pointer("pointerdown", 0, 0);
+      pointer("pointermove", 3, 0);
+      pointer("pointermove", 0, 0);
+      pointer("pointermove", 0, 2);
+      pointer("pointermove", 0, 0);
+      pointer("pointerup", 0, 0);
+      const painted = normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]);
+      // Sparse moves must fill both arms, including cells revisited by a new stroke.
+      expect([0, 1, 2, 3].map((x) => getTile(painted, "layer-1", x, 0))).toEqual([
+        expected,
+        expected,
+        expected,
+        expected,
+      ]);
+      expect([1, 2].map((y) => getTile(painted, "layer-1", 0, y))).toEqual([
+        expected,
+        expected,
+      ]);
+      expect(getTile(painted, "layer-1", 1, 1)).toBe(0);
+    }
+  });
+
   it("redraws layers in project sorting order when that order changes", async () => {
     const initial = mapWithGround();
     initial.layers = [

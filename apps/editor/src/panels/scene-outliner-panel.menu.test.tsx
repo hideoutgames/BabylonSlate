@@ -27,11 +27,19 @@ const openDocument = vi.hoisted(() => vi.fn());
 const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   phone: false,
+  assetListReads: 0,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
     header: { type: string; name: string; guid?: string };
   }>,
+}));
+
+const assetRegistry = vi.hoisted(() => ({
+  list: () => {
+    harness.assetListReads++;
+    return harness.assets;
+  },
 }));
 
 vi.mock("../shell/use-platform-layout", () => ({
@@ -68,7 +76,7 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applySceneChange,
-    assetRegistry: { list: () => harness.assets },
+    assetRegistry,
     loadGraphDocument: vi.fn(),
     openDocument,
   }),
@@ -81,9 +89,38 @@ afterEach(() => {
   frameActor.mockClear();
   harness.assets = [];
   harness.phone = false;
+  harness.assetListReads = 0;
 });
 
 describe("SceneOutlinerPanel menus", () => {
+  it("bounds actor and asset reads when selection rebuilds many row menus", async () => {
+    let actorIdReads = 0;
+    const scene = createDefaultScene();
+    scene.actors = Array.from({ length: 100 }, (_, index) => ({
+      ...createActor(`actor-${index}`, `Actor ${index}`),
+      get id() {
+        actorIdReads++;
+        return `actor-${index}`;
+      },
+    }));
+    harness.scene = scene;
+    render(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+    actorIdReads = 0;
+    harness.assetListReads = 0;
+
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-0"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-0"));
+
+    expect(screen.getByRole("menuitem", { name: "Deselect" })).toBeTruthy();
+    expect(actorIdReads).toBeLessThanOrEqual(10 * scene.actors.length);
+    expect(harness.assetListReads).toBeLessThanOrEqual(4);
+  });
   it("toggles an actor from the menu without replacing other selected actors", async () => {
     const scene = createDefaultScene();
     scene.actors = [
@@ -274,7 +311,7 @@ describe("SceneOutlinerPanel menus", () => {
     expect(screen.queryByTestId("outliner-open-actor-actor-1")).toBeNull();
   });
 
-  it("opens the project Class document from Open Actor", () => {
+  it("opens the current project Class after registry and actor changes", async () => {
     const scene = createDefaultScene();
     scene.actors = [createActor("actor-1", "Hero", { classId: "Hero" })];
     harness.scene = scene;
@@ -284,7 +321,7 @@ describe("SceneOutlinerPanel menus", () => {
         header: { type: "Class", name: "Hero", guid: "hero-guid" },
       },
     ];
-    render(
+    const { rerender } = render(
       <SceneEditingProvider>
         <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
       </SceneEditingProvider>,
@@ -296,5 +333,37 @@ describe("SceneOutlinerPanel menus", () => {
       path: "assets/Hero.class.babasset",
       label: "Hero",
     });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    // Registry identity stays stable when entries are replaced or moved.
+    harness.assets[0] = {
+      path: "assets/Characters/Hero.class.babasset",
+      header: { type: "Class", name: "Hero", guid: "hero-guid" },
+    };
+    rerender(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByTestId("outliner-open-actor-actor-1"));
+    expect(openDocument).toHaveBeenLastCalledWith({
+      kind: "graph",
+      path: "assets/Characters/Hero.class.babasset",
+      label: "Hero",
+    });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    harness.scene = {
+      ...scene,
+      actors: [createActor("actor-1", "Hero", { classId: "Actor" })],
+    };
+    rerender(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    expect(screen.queryByTestId("outliner-open-actor-actor-1")).toBeNull();
   });
 });

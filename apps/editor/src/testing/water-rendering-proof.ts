@@ -1,6 +1,7 @@
-import { DirectionalLight, Engine, Vector3 } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import { Camera, DirectionalLight, Engine, Vector3 } from "@babylonjs/core";
+import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateSceneWater } from "@babylonslate/render";
+import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
 
 /** Test-build-only captures of production water, including a fixed-world transform comparison. */
 export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
@@ -88,7 +89,41 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       camera.setTarget(Vector3.Zero(), false, false, true);
       camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
     }
-    return { evidence, differences, brightness, pan };
+    // A hidden landscape still supplies the water field. The visible crest must
+    // cross its elevated floor, while a trough reveals the unchanged background.
+    for (const mesh of scene.meshes) mesh.isVisible = false;
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 2.5; camera.orthoBottom = -2.5;
+    camera.beta = 0.01; camera.radius = 24;
+    camera.setTarget(Vector3.Zero(), false, false, true);
+    const terrain = createLandscapeMesh(scene, "wave-floor", { width: 20, depth: 20, subdivisions: 8, heights: Array(81).fill(0.6) });
+    for (const mesh of terrain.getChildMeshes()) mesh.isVisible = false;
+    const empty = await capture();
+    const definition = { ...createDefaultWaterDefinition("stylized"), waveHeight: 4, waveLength: 100, choppiness: 0,
+      foamAmount: 0, sparkles: 0, reflectionStrength: 0, opacity: 1 };
+    const body = normalizeWaterBody({ width: 20, length: 20 }, "ocean");
+    const samples = Array.from({ length: 80 }, (_, i) => ({ time: i * 0.25,
+      height: sampleWaterSurface(definition, body, { x: 0, y: 0, z: 0 }, i * 0.25).height }));
+    const crest = samples.reduce((a, b) => a.height > b.height ? a : b);
+    const trough = samples.reduce((a, b) => a.height < b.height ? a : b);
+    const water = createWaterMesh(scene, "wave-terrain", body, definition);
+    const difference = (pixels: number[]) => {
+      let sum = 0;
+      for (let y = 195; y < 205; y++) for (let x = 315; x < 325; x++) for (let c = 0; c < 3; c++) {
+        const i = (y * canvas.width + x) * 4 + c;
+        sum += Math.abs(pixels[i]! - empty.pixels[i]!);
+      }
+      return sum / 300;
+    };
+    setSceneWaterTime(scene, crest.time);
+    const high = await capture();
+    setSceneWaterTime(scene, trough.time);
+    const low = await capture();
+    evidence["terrain-crest"] = high.png; evidence["terrain-trough"] = low.png;
+    const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
+      crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
+    water.dispose(); terrain.dispose();
+    return { evidence, differences, brightness, pan, waveTerrain };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();

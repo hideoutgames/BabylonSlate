@@ -4,6 +4,7 @@ import {
   particleEmitterMaterialGuid,
   particleLibraryCompileKey,
   particleLibraryMaterialGuids,
+  type IndexedAsset,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
@@ -40,17 +41,6 @@ const PREVIEW_ACTOR = "preview";
 const PREVIEW_COMPONENT = "preview";
 
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
-
-/** Saved Usage and committed encode of each texture: what decides the bytes the Preview binds. */
-function textureEncodeKey(
-  registry: { getByGuid(guid: string): { header: { payload: Record<string, unknown> } } | undefined } | null,
-  guids: readonly string[],
-): string {
-  return guids.map((guid) => {
-    const payload = registry?.getByGuid(guid)?.header.payload;
-    return `${guid}:${String(payload?.usage ?? "")}:${String(payload?.ktx2ChunkId ?? "")}`;
-  }).join(",");
-}
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
 function graphErrorCount(entry: ParticleLibraryEmitter): number {
@@ -156,6 +146,30 @@ function blockingDiagnostic(
 
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
+/** Encode progress fields: rewriting them alone does not change the bytes a Texture uploads. */
+const TEXTURE_PROGRESS_FIELDS = new Set(["compressionState", "encodeWallMs", "encodeError"]);
+
+/**
+ * The saved Texture headers that decide which bytes the Preview uploads: the
+ * payload (Usage, Downsample, committed KTX2) and the chunks. It changes when a
+ * Usage fix is saved or an encode commits, not while an encode is running.
+ */
+function textureHeadersKey(
+  textureByGuid: ((guid: string) => IndexedAsset | undefined) | undefined,
+  guids: readonly string[],
+): string {
+  return JSON.stringify(
+    guids.map((guid) => {
+      const header = textureByGuid?.(guid)?.header;
+      if (!header) return [guid];
+      const payload = Object.entries(header.payload)
+        .filter(([field]) => !TEXTURE_PROGRESS_FIELDS.has(field))
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      return [guid, payload, header.chunks.map((chunk) => `${chunk.id}:${chunk.sha256}`)];
+    }),
+  );
+}
+
 function sameStats(
   a: ParticlePreviewStats | null,
   b: ParticlePreviewStats | null,
@@ -174,8 +188,8 @@ function sameStats(
 /**
  * Particle Preview on the shared Engine. The scene, presenter and service live
  * across edits: `live` changes apply at once, heavier ones after a 220ms pause, and
- * only a different Material set, skybox or Retry starts a new scene. A Particle
- * Graph with errors keeps playing its last valid build.
+ * only a different Material set, skybox, saved change to a sampled Texture or Retry
+ * starts a new scene. A Particle Graph with errors keeps playing its last valid build.
  */
 export function ParticlePreviewCanvas({
   library: incoming,
@@ -204,10 +218,15 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes, assetRegistry, registryVersion } = useDocuments();
-  const assetRegistryRef = useRef(assetRegistry);
-  assetRegistryRef.current = assetRegistry;
-  /** Textures the running Preview bound and their encode key when collected. */
+  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryVersion } =
+    useDocuments();
+  const textureByGuid = useCallback(
+    (guid: string) => assetRegistry?.getByGuid(guid),
+    [assetRegistry],
+  );
+  const textureByGuidRef = useRef(textureByGuid);
+  textureByGuidRef.current = textureByGuid;
+  /** The Textures the current scene uploads, and their saved headers when it collected them. */
   const loadedTexturesRef = useRef<{ guids: readonly string[]; key: string } | null>(null);
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [booted, setBooted] = useState(false);
@@ -343,14 +362,17 @@ export function ParticlePreviewCanvas({
       const docs = collectPlayMaterialLibrary
         ? await collectPlayMaterialLibrary(undefined, [], guids)
         : { documents: new Map(), functions: new Map(), textureGuids: [] };
-      // Keyed before collecting, so an encode that commits meanwhile reloads again.
-      const textureKey = textureEncodeKey(assetRegistryRef.current, docs.textureGuids);
+      if (cancelled) return;
+      // Keyed before the bytes load, so a header saved meanwhile still reloads.
+      loadedTexturesRef.current = {
+        guids: docs.textureGuids,
+        key: textureHeadersKey(textureByGuidRef.current, docs.textureGuids),
+      };
       // Emitters have no Texture; Texture Sample nodes read the Material's textures.
       const bytes = collectPlayTextureBytes
         ? await collectPlayTextureBytes(new Map(), new Map(), docs.textureGuids)
         : new Map<string, Uint8Array>();
       if (cancelled) return;
-      loadedTexturesRef.current = { guids: docs.textureGuids, key: textureKey };
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
@@ -364,7 +386,7 @@ export function ParticlePreviewCanvas({
         acquireTexture: (guid) => {
           const data = sources.get(guid);
           return data ? acquireMaterialTexture(cache, guid, engine, data, undefined, ({ width, height }) => {
-            const name = assetRegistryRef.current?.getByGuid(guid)?.header.name ?? guid;
+            const name = textureByGuidRef.current(guid)?.header.name ?? guid;
             refusedTexture = textureBlockSizeMessage({ name, width, height, particle: true });
           }) : null;
         },
@@ -431,16 +453,15 @@ export function ParticlePreviewCanvas({
     showSkybox,
   ]);
 
-  // Bytes are collected once per load: a saved Usage or committed re-encode
-  // (for example the Particle Usage fix for No Material) reloads the Preview.
+  // The scene keeps the bytes it uploaded. A saved Texture change (Set Usage to
+  // Particle, a finished encode) starts a new scene, the way Retry does.
   useEffect(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
     const loaded = loadedTexturesRef.current;
     if (!loaded || loaded.guids.length === 0) return;
-    if (textureEncodeKey(assetRegistry, loaded.guids) === loaded.key) return;
+    if (textureHeadersKey(textureByGuid, loaded.guids) === loaded.key) return;
     loadedTexturesRef.current = null;
     setAttempt((value) => value + 1);
-  }, [assetRegistry, registryVersion]);
+  }, [registryVersion, textureByGuid]);
 
   useEffect(() => {
     const service = serviceRef.current;

@@ -11,8 +11,7 @@ test("project settings keep descriptions below their controls and above separato
   await page.getByTestId("project-settings").click();
   for (const [category, controlId] of [
     ["general", "settings-infinite-loop-detection"],
-    ["twoD", "settings-pixel-perfect"],
-    ["twoD", "settings-integer-zoom"],
+    ["game", "settings-pixel-perfect"],
     ["audio", "settings-audio-occlusion"],
     ["rendering", "setting-render-custom"],
   ] as const) {

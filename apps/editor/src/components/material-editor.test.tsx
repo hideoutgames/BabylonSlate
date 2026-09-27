@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { TextureUsageChangedError } from "../lib/asset-settings";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -18,6 +21,10 @@ const harness: {
   requestRender: ReturnType<typeof vi.fn>;
   focusNode: ReturnType<typeof vi.fn>;
   selectedNodeId: string | null;
+  registryVersion: number;
+  setTextureUsage: ReturnType<typeof vi.fn>;
+  textureUsageBlockedReason: (guid: string) => string | null;
+  readAssetChunk: ReturnType<typeof vi.fn>;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -29,7 +36,12 @@ const harness: {
   requestRender: vi.fn(),
   focusNode: vi.fn(),
   selectedNodeId: null,
+  registryVersion: 0,
+  setTextureUsage: vi.fn(),
+  textureUsageBlockedReason: () => null,
+  readAssetChunk: vi.fn(),
 };
+let assetRegistry: AssetRegistry;
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.babasset" }),
@@ -45,25 +57,11 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applyAssetDocumentChange: harness.applyAssetDocumentChange,
-    assetRegistry: {
-      list: () => [
-        { header: { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } }, path: "assets/Studio.babasset" },
-        {
-          header: { guid: "tex-1", name: "Bark", type: "Texture" },
-          path: "assets/Bark.babasset",
-        },
-        {
-          header: { guid: "model-1", name: "Statue", type: "Model" },
-          path: "assets/Statue.babasset",
-        },
-      ],
-      getByGuid: (guid: string) =>
-        guid === "tex-1"
-          ? { header: { guid, name: "Bark", type: "Texture" } }
-          : guid === "model-1"
-            ? { header: { guid, name: "Statue", type: "Model" } }
-            : null,
-    },
+    assetRegistry,
+    registryVersion: harness.registryVersion,
+    setTextureUsage: harness.setTextureUsage,
+    textureUsageBlockedReason: (guid: string) => harness.textureUsageBlockedReason(guid),
+    readAssetChunk: harness.readAssetChunk,
   }),
 }));
 
@@ -93,7 +91,22 @@ const {
 
 const panelProps = {} as IDockviewPanelProps;
 
-beforeEach(() => {
+beforeEach(async () => {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("material-pickers.babproject");
+  assetRegistry = new AssetRegistry(storage);
+  await assetRegistry.mountRoot(projectContentRoot());
+  for (const asset of [
+    { guid: "env-1", name: "Studio Cube", type: "Texture", payload: { dimension: "cube", container: "env" } },
+    { guid: "tex-1", name: "Bark", type: "Texture", payload: {} },
+    { guid: "model-1", name: "Statue", type: "Model", payload: {} },
+    { guid: "function-1", name: "Blend", type: "MaterialFunction", payload: {} },
+  ]) {
+    await assetRegistry.createAsset("project", `${asset.guid}.babasset`, {
+      ...asset, version: 1, dependencies: [], chunks: [],
+    });
+  }
+  harness.registryVersion = 0;
   harness.content = createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
     unknown
@@ -104,10 +117,14 @@ beforeEach(() => {
   harness.applyAssetDocumentChange = vi.fn();
   harness.requestRender = vi.fn();
   harness.focusNode = vi.fn();
+  harness.setTextureUsage = vi.fn();
+  harness.textureUsageBlockedReason = () => null;
+  harness.readAssetChunk = vi.fn();
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 function lastCommit(): MaterialDocument {
@@ -330,13 +347,71 @@ describe("Material details panel", () => {
     });
     harness.content = doc as unknown as Record<string, unknown>;
     harness.selectedNodeId = "sample";
-    render(<MaterialDetailsPanel {...panelProps} />);
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-node-texture").textContent).toContain(
       "Bark",
     );
     fireEvent.click(screen.getByTestId("material-node-texture"));
     expect(await screen.findByRole("option", { name: /Bark/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Studio Cube/ })).toBeNull();
+    assetRegistry.getByGuid("tex-1")!.header.payload = { dimension: "cube", container: "env" };
+    assetRegistry.getByGuid("env-1")!.header.payload = {};
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(await screen.findByRole("option", { name: /Studio Cube/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Bark/ })).toBeNull();
+  });
+
+  it.each([
+    { nodeType: "texture.sample", picker: "texture", type: "Texture", guid: "tex-1", name: "Bark", property: "textureGuid" },
+    { nodeType: "function.call", picker: "function", type: "MaterialFunction", guid: "function-1", name: "Blend", property: "functionGuid" },
+  ])("defers $type candidates during edits and refreshes an open picker on registry changes", async ({ nodeType, picker, type, guid, name, property }) => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "pick", type: nodeType, position: { x: 0, y: 0 }, properties: { [property]: guid } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "pick";
+    const list = vi.spyOn(assetRegistry, "list");
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(name);
+    for (const value of [0.25, 0.75]) {
+      harness.content = { ...harness.content, alphaCutoff: value };
+      harness.registryVersion += 1; // Document edits also bump this shared revision.
+      rerender(<MaterialDetailsPanel {...panelProps} />);
+    }
+    harness.selectedNodeId = "output";
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    harness.selectedNodeId = "pick";
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId(`material-node-${picker}`));
+    expect(await screen.findByRole("option", { name: new RegExp(name) })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Statue|Studio Cube/ })).toBeNull();
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).toHaveBeenCalledTimes(1);
+
+    const renamed = await assetRegistry.renameAsset(guid, "Renamed Asset");
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    const renamedOption = await screen.findByRole("option", { name: new RegExp(renamed.header.name) });
+    expect(renamedOption.textContent).toContain(renamed.path);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(renamed.header.name);
+    await assetRegistry.deleteAsset(guid);
+    await assetRegistry.createAsset("project", "new.babasset", {
+      guid: "new", name: "New Asset", type, version: 1, dependencies: [], payload: {}, chunks: [],
+    });
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(await screen.findByRole("option", { name: /New Asset/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: new RegExp(renamed.header.name) })).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-new"));
+    expect(lastCommit().nodes.find((node) => node.id === "pick")?.properties[property]).toBe("new");
+    const scans = list.mock.calls.length;
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    harness.registryVersion += 1;
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(list).toHaveBeenCalledTimes(scans);
+    expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain("New Asset");
   });
 
   it("writes an authored pin default from Details", () => {
@@ -381,6 +456,167 @@ describe("Material compiler results", () => {
       "material-diagnostic-material.postProcessCost",
     );
     expect(row.getAttribute("data-severity")).toBe("warning");
+  });
+
+  // PNG signature and IHDR: a 30x30 source that the encoder keeps at 30x30.
+  const STATUE_ALBEDO_PNG = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+    0, 0, 0, 30, 0, 0, 0, 30,
+  ]);
+
+  // Only these tests sample them, so the pickers above list just their own fixtures.
+  beforeEach(async () => {
+    await assetRegistry.createAsset("project", "Spark.babasset", {
+      guid: "tex-spark", name: "Spark", type: "Texture", version: 1, dependencies: [],
+      payload: { usage: "albedo", width: 30, height: 30 }, chunks: [],
+    });
+    // Extracted from a Model: no header size, only the pixels chunk.
+    await assetRegistry.createAsset("project", "Statue_Albedo.babasset", {
+      guid: "tex-model", name: "Statue_Albedo", type: "Texture", version: 1, dependencies: [],
+      payload: { usage: "albedo", compressionState: "pending" },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: STATUE_ALBEDO_PNG }],
+    });
+  });
+
+  /** A Particle Material whose Texture Sample of `textureGuid` drives Color. */
+  function sampleParticleTexture(textureGuid: string): void {
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid },
+    });
+    doc.edges = [
+      { id: "e-sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" },
+    ];
+    harness.content = doc as unknown as Record<string, unknown>;
+  }
+
+  const SPARK_WARNING = 'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.';
+
+  it("warns about a particle Texture WebGPU would reject and sets its Usage to Particle", () => {
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const row = screen.getByTestId("material-diagnostic-particle.texture_block_align");
+    expect(row.getAttribute("data-severity")).toBe("warning");
+    expect(row.textContent).toContain(
+      'Texture "Spark" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    fireEvent.click(row);
+    expect(harness.focusNode).toHaveBeenCalledWith("sample");
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    expect(harness.setTextureUsage).toHaveBeenCalledWith("tex-spark", "particle");
+  });
+
+  it("confirms the fix with an Undo that restores the previous Usage", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => ({
+      previousUsage: usage === "particle" ? "normal" : "particle",
+    }));
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    expect(notification.textContent).toContain('Texture "Spark" now uses Particle Usage.');
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    // The Usage the fix replaced, not a default, and only over the fix's Particle.
+    expect(harness.setTextureUsage).toHaveBeenLastCalledWith("tex-spark", "normal", "particle");
+    await waitFor(() =>
+      expect(screen.queryByTestId("texture-usage-notification-tex-spark")).toBeNull(),
+    );
+  });
+
+  it("says why an Undo failed and keeps it for a retry", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => {
+      if (usage !== "particle") throw new Error("The Texture is locked by Ann.");
+      return { previousUsage: "albedo" };
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(notification.textContent).toContain(
+        'Texture "Spark" now uses Particle Usage. Undo failed: The Texture is locked by Ann.',
+      ),
+    );
+    const undo = within(notification).getByRole("button", { name: "Undo" }) as HTMLButtonElement;
+    expect(undo.disabled).toBe(false);
+  });
+
+  it("drops the Undo when the Usage has changed since the fix", async () => {
+    harness.setTextureUsage = vi.fn(async (_guid: string, usage: string) => {
+      if (usage !== "particle") throw new TextureUsageChangedError("albedo");
+      return { previousUsage: "normal" };
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    const notification = await screen.findByTestId("texture-usage-notification-tex-spark");
+    fireEvent.click(within(notification).getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(notification.textContent).toContain(
+        'Texture "Spark" Usage has changed since the fix, so it was not undone.',
+      ),
+    );
+    expect(within(notification).queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("disables the fix while it runs and adds no failure when the Texture already uses Particle", async () => {
+    let finish!: (change: null) => void;
+    harness.setTextureUsage = vi.fn(
+      () => new Promise<null>((resolve) => { finish = resolve; }),
+    );
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const fix = screen.getByRole("button", { name: "Set Usage To Particle" }) as HTMLButtonElement;
+    fireEvent.click(fix);
+    await waitFor(() => expect(fix.disabled).toBe(true));
+    fireEvent.click(fix);
+    expect(harness.setTextureUsage).toHaveBeenCalledOnce();
+    finish(null);
+    await waitFor(() => expect(fix.disabled).toBe(false));
+    expect(
+      screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+    ).not.toContain("could not be changed");
+  });
+
+  it("sizes a Texture extracted from a Model from its decoded pixels", async () => {
+    harness.readAssetChunk = vi.fn(async () => STATUE_ALBEDO_PNG);
+    sampleParticleTexture("tex-model");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    const row = await screen.findByTestId("material-diagnostic-particle.texture_block_align");
+    expect(row.textContent).toContain(
+      'Texture "Statue_Albedo" is 30×30; set its Usage to Particle so it loads on WebGPU.',
+    );
+    expect(harness.readAssetChunk).toHaveBeenCalledWith("assets/Statue_Albedo.babasset", "pixels");
+  });
+
+  it("says why a read-only or locked Texture cannot take the fix instead of offering it", () => {
+    harness.textureUsageBlockedReason = (guid) =>
+      guid === "tex-spark" ? "The Texture is locked by Ann." : null;
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    expect(
+      screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+    ).toContain(`${SPARK_WARNING} The Texture is locked by Ann.`);
+    expect(screen.queryByRole("button", { name: "Set Usage To Particle" })).toBeNull();
+  });
+
+  it("says why the fix failed and keeps it for a retry", async () => {
+    harness.setTextureUsage = vi.fn(async () => {
+      throw new Error("File not found");
+    });
+    sampleParticleTexture("tex-spark");
+    render(<MaterialCompilerResultsPanel {...panelProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set Usage To Particle" }));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("material-diagnostic-particle.texture_block_align").textContent,
+      ).toContain(`${SPARK_WARNING} Its Usage could not be changed: File not found`),
+    );
+    expect(screen.getByRole("button", { name: "Set Usage To Particle" })).toBeTruthy();
   });
 });
 

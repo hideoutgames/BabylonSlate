@@ -31,11 +31,10 @@ import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
-  textureEncodeBlockAlign,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { authoredEncodeMaxDimension } from "./resolve-gpu-texture";
+import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
@@ -112,6 +111,11 @@ export class AssetRegistry {
   ): void {
     this.encodeQueue = queue;
     this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
+  }
+
+  /** Project max encode edge, as bound by `setEncodePipeline`. */
+  get textureEncodeMaxDimension(): number {
+    return this.encodeSettings.maxDimension;
   }
 
   /** Write CB thumbnails into derived data (ProjectService supplies storage). */
@@ -954,22 +958,7 @@ export class AssetRegistry {
     asset: IndexedAsset,
     usage = String(asset.header.payload.usage ?? "albedo"),
   ): TextureEncodeSettings {
-    const payload = asset.header.payload;
-    const quality =
-      typeof payload.compressionQuality === "number" &&
-      Number.isFinite(payload.compressionQuality)
-        ? payload.compressionQuality
-        : this.encodeSettings.quality;
-    const blockAlign = textureEncodeBlockAlign(usage);
-    return {
-      ...this.encodeSettings,
-      quality,
-      maxDimension: authoredEncodeMaxDimension(
-        payload,
-        this.encodeSettings.maxDimension,
-      ),
-      ...(blockAlign ? { blockAlign } : {}),
-    };
+    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage);
   }
 
   private async loadSourcePixels(

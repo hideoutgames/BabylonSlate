@@ -20,7 +20,9 @@ import {
   readAssetDocumentHeader,
   clearDeletedAssetRefs,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  stubEncodeKtx2,
   writeTraceDocument,
+  type TextureEncodeSettings,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -30,6 +32,9 @@ import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
 import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { EditSession, SetAssetDocumentCommand } from "@babylonslate/edit";
+import { changeTextureUsage, type TextureUsageChangeHost } from "../lib/texture-usage-change";
+import { TextureUsageChangedError } from "../lib/asset-settings";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
@@ -40,6 +45,73 @@ async function scaffolded(authentic = false) {
   const service = new ProjectService(storage);
   const loaded = await service.loadCurrentProject();
   return { storage, service, loaded };
+}
+
+const EMBER_PATH = "assets/ember.babasset";
+
+/** A 1x1 compressed Albedo Texture in a scaffolded project whose encodes are recorded. */
+async function emberTexture() {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("Assets.babproject");
+  await installMinimalProject(storage);
+  const encoded: TextureEncodeSettings[] = [];
+  const service = new ProjectService(storage, {
+    encode: async (source, settings) => {
+      encoded.push(settings);
+      return stubEncodeKtx2(source, settings);
+    },
+  });
+  await service.loadCurrentProject();
+  const pixels = new Uint8Array([9, 8, 7]);
+  await storage.writeBinary(
+    EMBER_PATH,
+    await encodeBabasset({
+      header: {
+        guid: "tex-ember",
+        type: "Texture",
+        name: "ember",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { usage: "albedo", width: 1, height: 1, downsample: 2, compressionState: "compressed" },
+      },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: pixels }],
+    }),
+  );
+  expect(await service.registry!.reindexPath(EMBER_PATH)).not.toBeNull();
+  return { storage, service, encoded, pixels };
+}
+
+async function savedEmberPayload(storage: MemoryStorageAdapter): Promise<Record<string, unknown>> {
+  return (await decodeBabasset(await storage.readBinary(EMBER_PATH))).header.payload;
+}
+
+/** The Texture open in a tab whose edits go through a real undo stack, as DocumentContext applies them. */
+async function openEmberTab(service: ProjectService) {
+  const documents = new DocumentService();
+  const history = new EditSession();
+  const id = await documents.openDocument(service, { kind: "texture", path: EMBER_PATH, label: "ember" });
+  const content = () => documents.getDocument(id)!.content as Record<string, unknown>;
+  const edit = async (tabId: string, next: Record<string, unknown>) => {
+    const previous = documents.getDocument(tabId)!.content as Record<string, unknown>;
+    const result = history.apply(tabId, previous, new SetAssetDocumentCommand(previous, next));
+    documents.updateAssetDocument(tabId, result.doc);
+    return true;
+  };
+  const retryTextureEncoding = vi.fn((guid: string, options: { force: true; usage: string }) =>
+    service.retryTextureEncoding(guid, options),
+  );
+  const host: TextureUsageChangeHost & { afterTabSave: ReturnType<typeof vi.fn> } = {
+    projectService: service,
+    documentService: documents,
+    blockedReason: () => null,
+    applyAssetDocumentChange: edit,
+    retryTextureEncoding,
+    afterTabSave: vi.fn(async () => {}),
+  };
+  return { documents, history, id, content, edit, host, retryTextureEncoding };
 }
 
 describe("project documents as .babasset", () => {
@@ -639,6 +711,108 @@ describe("project documents as .babasset", () => {
     });
     expect(saved.header.payload).not.toHaveProperty("encodeError");
     expect(saved.chunks.get(committed)).toEqual(ktx2);
+  });
+
+  it("saves a closed Texture's Usage change at once, re-encoding it, and its Undo the same way", async () => {
+    const { storage, service, encoded, pixels } = await emberTexture();
+    const registry = service.registry!;
+
+    expect(await service.setTextureUsage("tex-ember", "particle")).toEqual({ previousUsage: "albedo" });
+
+    const saved = await decodeBabasset(await storage.readBinary(EMBER_PATH));
+    expect(saved.header.payload).toMatchObject({ usage: "particle", width: 1, height: 1, downsample: 2 });
+    expect(saved.chunks.get("pixels")).toEqual(pixels);
+    await vi.waitFor(() => {
+      expect(registry.getByGuid("tex-ember")!.header.payload.ktx2ChunkId).toEqual(expect.any(String));
+    });
+    expect(encoded.map((settings) => settings.blockAlign)).toEqual([4]);
+    expect(registry.getByGuid("tex-ember")!.header.payload).toMatchObject({
+      usage: "particle",
+      compressionState: "compressed",
+    });
+
+    // Undo: the previous Usage, saved and re-encoded unaligned again.
+    expect(await service.setTextureUsage("tex-ember", "albedo")).toEqual({ previousUsage: "particle" });
+    expect(await savedEmberPayload(storage)).toMatchObject({ usage: "albedo", downsample: 2 });
+    await vi.waitFor(() => expect(encoded).toHaveLength(2));
+    expect(encoded[1]!.blockAlign).toBeUndefined();
+    // Nothing left to restore.
+    expect(await service.setTextureUsage("tex-ember", "albedo")).toBeNull();
+    expect(encoded).toHaveLength(2);
+  });
+
+  it("applies the Usage change to an open Texture tab's history and saves the tab with its pending edits", async () => {
+    const { storage, service, encoded } = await emberTexture();
+    const tab = await openEmberTab(service);
+    // A pending Details edit the tab already holds is saved with the fix.
+    await tab.edit(tab.id, { ...tab.content(), compressionQuality: 3 });
+    expect(tab.documents.getDirtyDocuments().map((doc) => doc.id)).toEqual([tab.id]);
+
+    expect(await changeTextureUsage(tab.host, "tex-ember", "particle")).toEqual({ previousUsage: "albedo" });
+
+    expect(tab.documents.getDirtyDocuments()).toEqual([]);
+    expect(tab.content()).toMatchObject({ usage: "particle", compressionQuality: 3 });
+    expect(await savedEmberPayload(storage)).toMatchObject({ usage: "particle", compressionQuality: 3 });
+    expect(tab.host.afterTabSave).toHaveBeenCalledOnce();
+    expect(tab.retryTextureEncoding).toHaveBeenCalledWith("tex-ember", { force: true, usage: "particle" });
+    await vi.waitFor(() => expect(encoded.map((settings) => settings.blockAlign)).toEqual([4]));
+
+    // Undo in the Texture tab reverts only the Usage, as for any Details edit.
+    const undone = tab.history.undo(tab.id, tab.content())!;
+    expect(undone.doc).toMatchObject({ usage: "albedo", compressionQuality: 3 });
+  });
+
+  it("changes nothing when the Texture is blocked", async () => {
+    const { storage, service } = await emberTexture();
+    const tab = await openEmberTab(service);
+    const host = { ...tab.host, blockedReason: () => "The Texture is locked by Ann." };
+
+    await expect(changeTextureUsage(host, "tex-ember", "particle")).rejects.toThrow(
+      "The Texture is locked by Ann.",
+    );
+
+    expect(tab.content()).toMatchObject({ usage: "albedo" });
+    expect(tab.history.canUndo(tab.id)).toBe(false);
+    expect(tab.documents.getDirtyDocuments()).toEqual([]);
+    expect(await savedEmberPayload(storage)).toMatchObject({ usage: "albedo" });
+    expect(tab.retryTextureEncoding).not.toHaveBeenCalled();
+  });
+
+  it("refuses an Undo over a Usage changed since the fix, closed or open", async () => {
+    // The fix replaced Normal with Particle; the Texture has since become Albedo.
+    const { storage, service, encoded } = await emberTexture();
+
+    await expect(service.setTextureUsage("tex-ember", "normal", "particle")).rejects.toBeInstanceOf(
+      TextureUsageChangedError,
+    );
+    expect(await savedEmberPayload(storage)).toMatchObject({ usage: "albedo" });
+
+    const tab = await openEmberTab(service);
+    await expect(changeTextureUsage(tab.host, "tex-ember", "normal", "particle")).rejects.toBeInstanceOf(
+      TextureUsageChangedError,
+    );
+    expect(tab.content()).toMatchObject({ usage: "albedo" });
+    expect(tab.history.canUndo(tab.id)).toBe(false);
+    expect(tab.documents.getDirtyDocuments()).toEqual([]);
+    expect(await savedEmberPayload(storage)).toMatchObject({ usage: "albedo" });
+    expect(tab.retryTextureEncoding).not.toHaveBeenCalled();
+    expect(encoded).toEqual([]);
+  });
+
+  it("keeps an open tab's Usage edit and reports why the tab could not be saved", async () => {
+    const { storage, service } = await emberTexture();
+    const tab = await openEmberTab(service);
+    vi.spyOn(storage, "writeBinary").mockRejectedValueOnce(new Error("Disk full"));
+
+    expect(await changeTextureUsage(tab.host, "tex-ember", "particle")).toEqual({
+      previousUsage: "albedo",
+      saveError: "Disk full",
+    });
+
+    expect(tab.content()).toMatchObject({ usage: "particle" });
+    expect(tab.documents.getDirtyDocuments().map((doc) => doc.id)).toEqual([tab.id]);
+    expect(tab.history.canUndo(tab.id)).toBe(true);
+    expect(tab.retryTextureEncoding).toHaveBeenCalledWith("tex-ember", { force: true, usage: "particle" });
   });
 
   it("saves Model slots onto the header without replacing the source GLB", async () => {

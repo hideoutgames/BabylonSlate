@@ -665,3 +665,33 @@ export function duplicateSceneActor(
   }
   return copy;
 }
+
+/** Duplicate a selection as one group, preserving connections within the copy. */
+export function duplicateSceneActors(
+  scene: SerializedScene,
+  actorIds: readonly string[],
+): SerializedActor[] {
+  let next = scene;
+  const actorCopies = new Map<string, string>();
+  const copies: SerializedActor[] = [];
+  for (const id of new Set(actorIds)) {
+    const source = scene.actors.find((actor) => actor.id === id);
+    if (!source) continue;
+    const copy = duplicateSceneActor(next, source);
+    actorCopies.set(source.id, copy.id);
+    copies.push(copy);
+    next = { ...next, actors: [...next.actors, copy] };
+  }
+  return copies.map((copy) => ({
+    ...copy,
+    components: copy.components.map((component) => {
+      if (component.classId !== "PhysicsConstraintComponent") return component;
+      const target = component.properties.targetActorId;
+      if (typeof target !== "string" || !actorCopies.has(target)) return component;
+      return {
+        ...component,
+        properties: { ...component.properties, targetActorId: actorCopies.get(target)! },
+      };
+    }),
+  }));
+}

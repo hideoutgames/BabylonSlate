@@ -264,6 +264,9 @@ function handleControl(msg: ControlMessage): void {
     case "renderPathStatus":
       ensureRuntime().applyRenderPathStatus(msg);
       return;
+    case "ragdollPoseCaptured":
+      runtime?.applyRagdollPoseCaptured(msg);
+      return;
     case "sceneLoadingPainted":
       runtime?.notifySceneLoadingPainted(msg.sceneAssetGuid, msg.sceneLoadId);
       return;

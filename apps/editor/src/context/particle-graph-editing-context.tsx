@@ -10,6 +10,7 @@ import {
 } from "react";
 import { particleLibraryEmitterKey } from "@babylonslate/assets";
 import {
+  PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
   type ParticleGraphDiagnostic,
@@ -18,6 +19,8 @@ import {
 } from "@babylonslate/particle-graph";
 import { useDocuments } from "./document-context";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import type { ParticleTextureUsageWarning } from "../lib/particle-texture-usage";
+import { useParticleMaterialTextureUsageWarnings } from "../lib/use-particle-texture-usage";
 
 /** A preview build problem as `ParticleService` reports it (node-anchored when known). */
 export interface ParticleGraphBuildDiagnostic {
@@ -36,6 +39,11 @@ export interface ParticleGraphEditingValue {
   diagnostics: ParticleGraphDiagnostic[];
   /** Build problems of the Preview's current build; stale reports never appear. */
   buildDiagnostics: ParticleGraphDiagnostic[];
+  /**
+   * Textures the Material samples that need Particle Usage to load on WebGPU,
+   * anchored to the Emitter Output. Warnings: never counted in `errorCount`.
+   */
+  textureUsageWarnings: ParticleTextureUsageWarning[];
   errorCount: number;
   /**
    * What the Preview builds: `document` while it validates, else the last
@@ -201,6 +209,15 @@ export function ParticleGraphEditingProvider({
     [diagnostics, previewKey, report],
   );
 
+  const materialWarnings = useParticleMaterialTextureUsageWarnings(materialGuid);
+  const outputId =
+    document.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE)?.id ??
+    PARTICLE_OUTPUT_NODE_TYPE;
+  const textureUsageWarnings = useMemo(
+    () => materialWarnings.map((warning) => ({ ...warning, nodeId: outputId })),
+    [materialWarnings, outputId],
+  );
+
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const focusNode = useCallback((nodeId: string) => {
@@ -215,6 +232,7 @@ export function ParticleGraphEditingProvider({
       commit,
       diagnostics,
       buildDiagnostics,
+      textureUsageWarnings,
       errorCount,
       previewDocument,
       previewKey,
@@ -237,6 +255,7 @@ export function ParticleGraphEditingProvider({
       previewKey,
       reportBuildDiagnostics,
       selectedNodeId,
+      textureUsageWarnings,
     ],
   );
 

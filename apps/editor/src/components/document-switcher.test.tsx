@@ -7,7 +7,9 @@ import {
   createDocumentRef,
 } from "@babylonslate/core";
 import type { OpenDocument } from "../services/document-service";
-import type { IndexedAsset } from "@babylonslate/assets";
+import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createDocumentTypeVisualResolver } from "../lib/document-type-visual";
 import { DocumentSwitcher } from "./document-switcher";
 import { KeybindProvider } from "../context/keybind-context";
 
@@ -63,28 +65,28 @@ describe("DocumentSwitcher", () => {
     expect(closeAll).toHaveBeenCalledOnce();
   });
 
-  it("shows the inherited engine-class icon for a project Class", () => {
-    const assets: IndexedAsset[] = [
+  it("shows the inherited engine-class icon for a project Class", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("test.babproject");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    for (const { name, parentClass } of [
       { name: "Hero", parentClass: "BaseHero" },
       { name: "BaseHero", parentClass: "Actor" },
-    ].map(({ name, parentClass }) => ({
-      rootId: "project",
-      path: `assets/${name}.class.babasset`,
-      header: {
+    ]) {
+      await registry.createAsset("project", `${name}.class.babasset`, {
         guid: name,
         type: "Class",
         name,
-        engineVersion: "0.0.0",
         version: 1,
-        mode: "thin",
         dependencies: [],
         parentClass,
         payload: {},
         chunks: [],
-      },
-    }));
+      });
+    }
     const screen = render(
-      <DocumentSwitcher documents={documents} assets={assets} activeDocumentId="graph" onSelect={() => {}} onClose={() => {}} />,
+      <DocumentSwitcher documents={documents} resolveVisual={createDocumentTypeVisualResolver(registry)} activeDocumentId="graph" onSelect={() => {}} onClose={() => {}} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
     const hero = screen.getByRole("menuitemradio", { name: /Hero/i });

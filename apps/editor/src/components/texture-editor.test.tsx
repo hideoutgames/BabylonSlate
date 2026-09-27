@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { AreaEmissionProgress } from "@babylonslate/assets";
-import { TextureDetails, TexturePreview } from "./texture-editor";
+import type { IDockviewPanelProps } from "dockview-react";
+import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { TextureDetails, TextureDetailsPanel, TexturePreview } from "./texture-editor";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -18,13 +21,35 @@ const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
 }));
 const readAssetChunk = vi.hoisted(() => vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])));
+let assetRegistry: AssetRegistry;
+
+beforeAll(async () => {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("texture-details.babproject");
+  assetRegistry = new AssetRegistry(storage);
+  await assetRegistry.mountRoot(projectContentRoot());
+  for (const guid of ["tex-other", "tex-active"]) {
+    await assetRegistry.createAsset("project", `${guid}.babasset`, {
+      guid, type: "Texture", name: guid, version: 1,
+      dependencies: [], payload: {}, chunks: [],
+    });
+  }
+});
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     prepareAreaEmission,
     retryTextureEncoding,
     readAssetChunk,
-    assetRegistry: { getByGuid: () => undefined },
+    assetRegistry,
+    openDocuments: [
+      { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
+      {
+        id: "active",
+        ref: { path: "assets/tex-active.babasset" },
+        content: { usage: "albedo", compressionState: "encode_failed", encodeError: "Encoding failed" },
+      },
+    ],
   }),
 }));
 
@@ -38,6 +63,16 @@ afterEach(() => {
 });
 
 describe("Texture editor", () => {
+  it("retries encoding for the asset at the active document path", () => {
+    render(
+      <DocumentWorkspaceProvider documentId="active">
+        <TextureDetailsPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>,
+    );
+    fireEvent.click(screen.getByTestId("texture-retry-encode"));
+    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-active", { force: true, usage: "albedo" });
+  });
+
   it("shows cancellable emission preparation progress without editing the authored Texture", async () => {
     const onChange = vi.fn();
     render(<TextureDetails guid="tex-albedo" dependencies={[]} payload={{ usage: "albedo" }} onChange={onChange} />);

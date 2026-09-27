@@ -1,5 +1,5 @@
 import { DirectionalLight, Mesh, PointLight, StandardMaterial, Texture, TransformNode, Vector3 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, normalizeShadowSettings } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -21,6 +21,7 @@ describe("editor billboard", () => {
     [];
 
   afterEach(() => {
+    vi.restoreAllMocks();
     while (handles.length > 0) {
       const handle = handles.pop();
       handle?.scene.dispose();
@@ -180,6 +181,78 @@ describe("editor billboard", () => {
     expect(color()).toEqual([1, 0, 0]);
     expect(actor.components[0]!.properties.color).toEqual([0.2, 0.5, 1]);
     expect(second.diffuse.asArray()).toEqual([0.2, 0.5, 1]);
+  });
+
+  it("reuses its light across frames while updating live state and releasing replaced observers", async () => {
+    const { scene } = createHandle();
+    const light = new PointLight("authoredLight:lamp", Vector3.Zero(), scene);
+    const icon = createEditorBillboard(scene, "editorActor:lamp", "point_light");
+    const actor = createActor("lamp", "Lamp", { components: [
+      { id: "light", classId: "LightComponent", properties: { castShadows: false } },
+    ] });
+    const beforeRenderCount = scene.onBeforeRenderObservable.observers.length;
+    const removedCount = scene.onLightRemovedObservable.observers.length;
+    const resolve = vi.spyOn(scene, "getLightByName");
+    applyEditorBillboardFromActor(icon, actor);
+    const material = icon.material as StandardMaterial;
+    const writeColor = vi.spyOn(material.emissiveColor, "copyFrom");
+    const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
+    frame();
+    frame();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(writeColor).not.toHaveBeenCalled();
+    light.intensity = 0;
+    frame();
+    expect(material.emissiveColor.asArray()).toEqual([1, 0, 0]);
+    expect(icon.metadata.editorBillboardStatus).toContain("Disabled:");
+    frame();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(writeColor).toHaveBeenCalledTimes(1);
+
+    applyEditorBillboardFromActor(icon, actor);
+    await vi.waitFor(() => {
+      expect(scene.onBeforeRenderObservable.observers).toHaveLength(beforeRenderCount + 1);
+      expect(scene.onLightRemovedObservable.observers).toHaveLength(removedCount + 1);
+    });
+    light.intensity = 1;
+    frame();
+    expect(material.emissiveColor.asArray()).toEqual([1, 1, 1]);
+    expect(icon.metadata.editorBillboardStatus).toContain("Active:");
+    expect(resolve).toHaveBeenCalledTimes(2);
+    icon.dispose();
+    await vi.waitFor(() => {
+      expect(scene.onBeforeRenderObservable.observers).toHaveLength(beforeRenderCount);
+      expect(scene.onLightRemovedObservable.observers).toHaveLength(removedCount);
+    });
+  });
+
+  it.each(["dispose", "remove", "rename"] as const)("finds late-created lights and follows a replacement after %s", (retire) => {
+    const { scene } = createHandle();
+    const icon = createEditorBillboard(scene, "editorActor:lamp", "point_light");
+    const actor = createActor("lamp", "Lamp", { components: [
+      { id: "light", classId: "LightComponent", properties: { enabled: false } },
+    ] });
+    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
+    applyEditorBillboardFromActor(icon, actor);
+    expect(color()).toEqual([1, 0, 0]);
+    const original = new PointLight("authoredLight:lamp", Vector3.Zero(), scene);
+    frame();
+    expect(color()).toEqual([1, 1, 1]);
+    if (retire === "dispose") original.dispose();
+    else if (retire === "remove") scene.removeLight(original);
+    else original.name = "retired";
+    frame();
+    expect(color()).toEqual([1, 0, 0]);
+    expect(icon.metadata.editorBillboardStatus).toContain("Disabled:");
+    const replacement = new DirectionalLight("authoredLight:lamp", Vector3.Down(), scene);
+    frame();
+    expect(color()).toEqual([1, 1, 1]);
+    expect(icon.metadata.editorBillboardStatus).toContain("Active:");
+    replacement.intensity = 0;
+    frame();
+    expect(color()).toEqual([1, 0, 0]);
+    original.dispose();
   });
 
   it("stays square when parented under non-uniform actor scale", () => {

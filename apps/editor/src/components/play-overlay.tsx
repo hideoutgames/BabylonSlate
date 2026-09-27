@@ -699,6 +699,8 @@ export function PlayOverlay({
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
         tickIndex: () => number;
+        inspectWorld: PlaySession["inspectWorld"];
+        runtimeMode: () => PlaySession["runtimeMode"] | null;
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
@@ -724,6 +726,8 @@ export function PlayOverlay({
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
       modelLoadCount: () => sessionRef.current?.modelLoadCount() ?? 0,
       tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
+      inspectWorld: () => sessionRef.current?.inspectWorld() ?? Promise.resolve({ tickIndex: 0, nodes: [] }),
+      runtimeMode: () => sessionRef.current?.runtimeMode ?? null,
     };
     return () => {
       delete host.__babylonslatePlayTest;
