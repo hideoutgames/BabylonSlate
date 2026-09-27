@@ -1,4 +1,4 @@
-import { Color3, Color4, Engine, FreeCamera, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, Color4, Engine, FreeCamera, Material, Mesh, MeshBuilder, RawTexture, Scene, StandardMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@babylonslate/core";
 import { createAppWebGpuEngine, MaterialLibrary, RenderTargetCaptures } from "@babylonslate/render";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -101,6 +101,28 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     await capture("SceneColor", false, "Authored SceneColor");
     await sampleMaterial("Material Color After Mode Change");
     await capture("WorldNormal", true);
+    // Opposing constant UV channels isolate mask selection from interpolation.
+    plane.setVerticesData(VertexBuffer.UVKind, [0.25, 0.5, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5]);
+    plane.setVerticesData(VertexBuffer.UV2Kind, [0.75, 0.5, 0.75, 0.5, 0.75, 0.5, 0.75, 0.5]);
+    const mask = RawTexture.CreateRGBATexture(new Uint8Array(8), 2, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    mask.hasAlpha = true;
+    const cutout = new StandardMaterial("Numeric Cutout", scene);
+    cutout.transparencyMode = Material.MATERIAL_ALPHATEST;
+    cutout.diffuseTexture = mask;
+    plane.material = cutout;
+    for (const [label, uv, left, right, cutoff] of [
+      ["UV0 Opaque", 0, 255, 0, 0.5],
+      ["UV0 Discard", 0, 0, 255, 0.5],
+      ["UV1 Opaque", 1, 0, 255, 0.5],
+      ["UV1 Discard", 1, 255, 0, 0.5],
+      ["Cutoff Discard", 0, 115, 255, 0.5],
+      ["Cutoff Opaque", 0, 115, 0, 0.4],
+    ] as const) {
+      mask.coordinatesIndex = uv;
+      mask.update(new Uint8Array([255, 255, 255, left, 255, 255, 255, right]));
+      cutout.alphaCutOff = cutoff;
+      for (const mode of ["DepthPass", "WorldNormal"] as const) await capture(mode, false, `${label} ${mode}`);
+    }
     captures.clear();
     captures.dispose();
     return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved: scene.activeCamera === main };

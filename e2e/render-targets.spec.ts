@@ -35,5 +35,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);
     expect(normal.slice(2)).toEqual([0, 255]);
     expect(result.results.find((entry) => entry.mode === "Empty Filter")!.pixel).toEqual([0, 0, 0, 0]);
+    for (const label of ["UV0 Opaque", "UV1 Opaque", "Cutoff Opaque"]) {
+      expect(pixel(`${label} DepthPass`)[0]).toBeCloseTo(0.3, 2);
+      const normal = pixel(`${label} WorldNormal`);
+      expect(Math.abs(normal[0]! - 128)).toBeLessThanOrEqual(1);
+      expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);
+      expect(normal.slice(2)).toEqual([0, 255]);
+    }
+    for (const label of ["UV0 Discard", "UV1 Discard", "Cutoff Discard"]) {
+      expect(pixel(`${label} DepthPass`)).toEqual([1, 0, 0, 1]);
+      expect(pixel(`${label} WorldNormal`)).toEqual([0, 0, 0, 0]);
+    }
   });
 }

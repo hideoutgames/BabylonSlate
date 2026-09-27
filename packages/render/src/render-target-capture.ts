@@ -1,5 +1,5 @@
 import {
-  Color4, Constants, DepthRenderer, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
+  Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
   type AbstractMesh, type InternalTexture, type Mesh, type Node, type NodeMaterial, type Observer, type Scene,
 } from "@babylonjs/core";
@@ -12,10 +12,11 @@ import { authoredActorMatrices, authoredComponentActorTransform, authoredTransfo
 import { beginManagedRenderAllocation, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
-import { createRenderTargetNormalMaterial } from "./render-target-normal-material";
+import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
+import { particleMaterialForSystem } from "./node-material-particles";
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
@@ -73,9 +74,9 @@ type Target = {
   key: string;
   texture: CaptureRenderTarget;
   owner: string;
-  depth?: DepthRenderer;
+  depth?: NodeMaterial;
   normals?: NodeMaterial;
-  normalMaterials: Map<Material, Material>;
+  normalMaterials: Map<Material, { material: NodeMaterial; mask: Texture | null; uvIndex: number }>;
   normalSlots: Map<AbstractMesh, MultiMaterial>;
   usedNormalSources: Set<Material>;
   lease: ManagedRenderLease;
@@ -209,14 +210,17 @@ export class RenderTargetCaptures {
       target.texture.renderList = meshes;
       // Even with renderParticles=false Babylon probes particleSystemList
       // during readiness. Keep non-color passes independent of particles.
+      const attachment = target.texture.getInternalTexture();
       target.texture.particleSystemList = !target.depth && !target.normals
         ? this.scene.particleSystems.filter((system) => {
+          if (system.particleTexture?.getInternalTexture() === attachment ||
+              particleMaterialForSystem(system)?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return false;
           if (!capture.settings.captureOnlyActors) return true;
           const emitter = system.emitter;
           if (!emitter || !("parent" in emitter)) return false;
           return capture.settings.actorIds.includes(this.ownerOf(emitter as Node) ?? "");
         }) : [];
-      if (target.normals) {
+      if (target.normals || target.depth) {
         const current = new Set(meshes);
         target.usedNormalSources.clear();
         for (const mesh of target.overrides) if (!current.has(mesh) && !mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
@@ -228,7 +232,7 @@ export class RenderTargetCaptures {
         }
         for (const [source, material] of target.normalMaterials) if (!target.usedNormalSources.has(source)) {
           target.normalMaterials.delete(source);
-          material.dispose(false, false);
+          material.material.dispose(false, false);
         }
       }
       if (!this.draw(target)) continue;
@@ -267,6 +271,7 @@ export class RenderTargetCaptures {
     if (!lease) return undefined;
     let texture: RenderTargetTexture | undefined;
     let normals: NodeMaterial | undefined;
+    let depth: NodeMaterial | undefined;
     try {
       const captureTexture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
         generateMipMaps: false, doNotChangeAspectRatio: false, type, format,
@@ -282,14 +287,15 @@ export class RenderTargetCaptures {
       texture.particleSystemList = [];
       texture.renderSprites = false;
       texture.noPrePassRenderer = true;
-      texture.clearColor = mode === "SceneColor" ? this.scene.clearColor.clone() : new Color4(0, 0, 0, 0);
-      const depth = mode === "DepthPass" ? new DepthRenderer(this.scene, type, camera, false, Texture.NEAREST_SAMPLINGMODE, false, `captureDepth:${guid}`, texture) : undefined;
+      texture.clearColor = mode === "SceneColor" ? this.scene.clearColor.clone() : mode === "DepthPass" ? new Color4(1, 0, 0, 1) : new Color4(0, 0, 0, 0);
+      if (mode === "DepthPass") depth = createRenderTargetDepthMaterial(this.scene);
       if (mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
       const target: Target = { key, texture: captureTexture, owner, depth, normals, lease, normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
       this.targets.set(guid, target);
       return target;
     } catch (error) {
+      depth?.dispose();
       normals?.dispose();
       texture?.dispose();
       lease.release();
@@ -316,9 +322,10 @@ export class RenderTargetCaptures {
         const actorId = this.ownerOf(mesh);
         if (!actorId || !include.has(actorId)) return false;
       }
-      if (target.normals && mesh.material) {
+      if (target.depth && mesh.infiniteDistance) return false;
+      if ((target.normals || target.depth) && mesh.material) {
         const materials = mesh.material instanceof MultiMaterial ? mesh.material.subMaterials : [mesh.material];
-        if (!materials.some((material) => material && !material.needAlphaBlendingForMesh(mesh))) return false;
+        if (!materials.some((material) => material && !material.needAlphaBlendingForMesh(mesh) && (!target.depth || !material.disableDepthWrite))) return false;
       }
       // Scene color must never read the same attachment it is writing.
       if (!target.depth && !target.normals && mesh.material?.getActiveTextures().some((texture) => texture.getInternalTexture() === internal)) return false;
@@ -344,17 +351,25 @@ export class RenderTargetCaptures {
     // Slot eligibility depends on this mesh's visibility/vertex alpha. Keep
     // containers per mesh, while sharing the opaque/cutout shader variants.
     // Null slots are skipped by Babylon's submesh rendering dispatch.
-    const children = source.subMaterials.map((child) => child && !child.needAlphaBlendingForMesh(mesh) ? this.normalMaterial(target, child) : null);
+    const children = source.subMaterials.map((child) => child && !child.needAlphaBlendingForMesh(mesh) && (!target.depth || !child.disableDepthWrite) ? this.normalMaterial(target, child) : null);
     if (slots.subMaterials.length !== children.length || children.some((child, index) => child !== slots.subMaterials[index])) slots.subMaterials = children;
     return slots;
   }
   private normalMaterial(target: Target, source: Material | null): Material {
-    if (!source) return target.normals!;
+    if (!source) return (target.normals ?? target.depth)!;
     target.usedNormalSources.add(source);
+    const alpha = source.needAlphaTesting() ? source.getAlphaTestTexture() : null;
+    const mask = alpha instanceof Texture ? alpha : null;
+    const uvIndex = mask?.coordinatesIndex ?? 0;
     const existing = target.normalMaterials.get(source);
-    if (existing) return existing;
-    const material = createRenderTargetNormalMaterial(this.scene, source);
-    target.normalMaterials.set(source, material);
+    if (existing && existing.mask === mask && existing.uvIndex === uvIndex) {
+      existing.material.backFaceCulling = source.backFaceCulling;
+      existing.material.cullBackFaces = source.cullBackFaces;
+      return existing.material;
+    }
+    existing?.material.dispose(false, false);
+    const material = target.depth ? createRenderTargetDepthMaterial(this.scene, source) : createRenderTargetNormalMaterial(this.scene, source);
+    target.normalMaterials.set(source, { material, mask, uvIndex });
     return material;
   }
   private ownerOf(mesh: Node): string | undefined {
@@ -376,6 +391,11 @@ export class RenderTargetCaptures {
     const projection = scene.getProjectionMatrix() ?? camera?.getProjectionMatrix();
     const engine = scene.getEngine();
     const renderPass = engine.currentRenderPassId;
+    const viewport = engine.currentViewport ?? camera?.viewport;
+    const width = engine.getRenderWidth();
+    const height = engine.getRenderHeight();
+    const outlines = scene.getOutlineRenderer?.();
+    const outlinesEnabled = outlines?.enabled;
     const imageProcessing = scene.imageProcessingConfiguration;
     const applyByPostProcess = imageProcessing.applyByPostProcess;
     drawing.add(scene);
@@ -386,22 +406,30 @@ export class RenderTargetCaptures {
       if (!target.depth && !target.normals) imageProcessing._applyByPostProcess = false;
       return this.drawReady(target);
     } finally {
-      imageProcessing._applyByPostProcess = applyByPostProcess;
-      scene.activeCamera = camera;
-      scene.activeCameras = cameras;
-      scene.setSceneUniformBuffer(ubo);
-      if (view && projection) scene.setTransformMatrix(view, projection);
-      engine.currentRenderPassId = renderPass;
-      scene.resetCachedMaterial();
-      drawing.delete(scene);
+      try {
+        imageProcessing._applyByPostProcess = applyByPostProcess;
+        scene.activeCamera = camera;
+        scene.activeCameras = cameras;
+        scene.setSceneUniformBuffer(ubo);
+        if (view && projection) scene.setTransformMatrix(view, projection);
+        engine.currentRenderPassId = renderPass;
+        scene.resetCachedMaterial();
+        if (outlines) outlines.enabled = outlinesEnabled!;
+        if (viewport) engine.setViewport(viewport, width, height);
+      } finally { drawing.delete(scene); }
     }
   }
   private drawReady(target: Target): boolean {
-    if (!target.texture.isReadyForRendering()) return false;
-    drawBorrowedTarget(this.scene, target.texture, () => target.texture.renderPrepared(), {
+    let ready = false;
+    // Readiness initializes the native renderer and may draw clustered-light
+    // targets, so it needs the same framebuffer/state protection as the draw.
+    drawBorrowedTarget(this.scene, target.texture, () => {
+      ready = target.texture.isReadyForRendering();
+      if (ready) target.texture.renderPrepared();
+    }, {
       restoreAlpha: true, wrapDrawFailure: false, message: "Render target capture failed.",
     });
-    return true;
+    return ready;
   }
   private publishTextures(): void {
     if (!this.textures.size) return;
@@ -437,7 +465,7 @@ export class RenderTargetCaptures {
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
     for (const material of target.normalSlots.values()) material.dispose(false, false);
-    for (const material of target.normalMaterials.values()) material.dispose(false, false);
+    for (const variant of target.normalMaterials.values()) variant.material.dispose(false, false);
     target.normals?.dispose();
     target.texture.dispose();
     target.lease.release();

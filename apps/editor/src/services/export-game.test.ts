@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   createActor,
@@ -37,6 +37,11 @@ const playerFiles = new Map([
   ["index.html", new TextEncoder().encode("<html></html>")],
   ["player.js", new TextEncoder().encode("void 0")],
 ]);
+
+beforeAll(async () => {
+  // Load the real compiler before timing export behavior on a cold transform cache.
+  await import("./script-compiler");
+});
 
 describe("collectAndExportGame", () => {
   it("resolves plugins with version warnings while still rejecting missing dependencies", () => {

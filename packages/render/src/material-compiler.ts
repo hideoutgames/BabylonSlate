@@ -1206,6 +1206,7 @@ export function createSurfacePlumbing(
   plumbing.cameraPosition = cameraPosition.output;
   plumbing.viewDirection = viewDirection.output;
   plumbing.uv = morph.uvOutput;
+  plumbing.uv2 = morph.uv2Output;
   plumbing.view = view.output;
   return [vertexOutput];
 }
