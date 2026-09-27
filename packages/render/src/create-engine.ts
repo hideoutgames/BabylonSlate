@@ -12,7 +12,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -33,7 +33,7 @@ import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
-import { createSceneStreamAdmission } from "./scene-stream-admission";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -1502,7 +1502,7 @@ function initializeEngine(
       runtimeFogActorBySlot.delete(slotId);
     }
     if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
-    upsertFogVolumes(scene, authored.actorId, root, authored.bindings);
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
   const refreshRuntimeOutline = (slotId: number) => {
@@ -3240,7 +3240,29 @@ function initializeEngine(
       });
       signal.throwIfAborted();
       assertCurrent(generation);
-      streamAdmission?.publish(slotIds, owner);
+      if (streamAdmission?.publish(slotIds, owner) === false)
+        throw new Error("Scene streaming publication was superseded.");
+      if (slotIds.some((slot) => {
+        const fog = binding.fogVolumes.get(slot);
+        return fog && hasFogVolumes(scene, fog.actorId);
+      })) {
+        // Fog can introduce the shared effects pipeline. Its graph and actor
+        // geometry must be ready before the runtime acknowledges Loaded.
+        // Preparation belongs to the renderer, so one canceled stream cannot
+        // reject a sibling waiting for the same graph generation.
+        let cancel!: () => void;
+        const cancelled = new Promise<never>((_, reject) => {
+          cancel = () => reject(signal.reason);
+          signal.addEventListener("abort", cancel, { once: true });
+        });
+        try {
+          await Promise.race([worldRenderer.prepare(() => assertCurrent(generation)), cancelled]);
+        } finally {
+          signal.removeEventListener("abort", cancel);
+        }
+        signal.throwIfAborted();
+        assertCurrent(generation);
+      }
       particleService?.startPreparedSlots(slotIds);
       appliedSnapshotIdentity = null;
       scheduler.invalidate("snapshot");

@@ -3,10 +3,11 @@ import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
 import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { createSceneStreamAdmission } from "./scene-stream-admission";
+import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
-import { normalizeRenderingQuality } from "@babylonslate/core";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { fogVolumeBindings, normalizeRenderingQuality } from "@babylonslate/core";
+import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
+import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -55,8 +56,8 @@ function holdGraphInitialization() {
   return { started, release };
 }
 
-it("keeps parent graph frames rendering while a streamed instance waits, then admits only its ready resources", async () => {
-  const { scene, renderer } = host();
+it("keeps parent graph frames rendering while streamed resources and fog wait for publication", async () => {
+  const { scene, camera, renderer } = host();
   const binding = createSnapshotSceneBinding();
   const parent = MeshBuilder.CreateBox("parent", {}, scene);
   binding.meshes.set(1, parent);
@@ -73,8 +74,16 @@ it("keeps parent graph frames rendering while a streamed instance waits, then ad
   childMaterial.diffuseTexture = texture;
   const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
   binding.meshes.set(2, child);
+  const fog = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+  binding.onVisualChanged = (slot) => {
+    if (slot === 2) upsertFogVolumes(scene, "child", child, fog, !isSceneStreamSlotPending(scene, slot));
+  };
+  binding.onVisualChanged(2);
   admission.sync();
   expect(child.isEnabled()).toBe(false);
+  expect(hasFogVolumes(scene)).toBe(false);
+  expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
+  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(0);
   expect(renderer.render().rendered).toBe(true);
   // A normal parent-world spawn remains admitted while the stream is pending.
   const ordinary = MeshBuilder.CreateBox("normal-spawn", {}, scene);
@@ -85,8 +94,12 @@ it("keeps parent graph frames rendering while a streamed instance waits, then ad
   textureReady.mockReturnValue(true);
   admission.publish([2], identity);
   expect(child.isEnabled()).toBe(true);
+  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(1);
   await renderer.prepare();
   expect(renderer.render().rendered).toBe(true);
+  retirePlaySlot(binding, 2);
+  expect(hasFogVolumes(scene)).toBe(false);
+  expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
   admission.clear(); renderer.dispose();
 });
 

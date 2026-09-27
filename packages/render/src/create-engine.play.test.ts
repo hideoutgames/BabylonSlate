@@ -3746,6 +3746,57 @@ describe("Play createEngine view", () => {
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
   });
 
+  it("waits for shared fog rendering preparation without letting one canceled stream fail its sibling", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    for (const [slotId, actorGuid] of [[4, "left"], [5, "right"]] as const) {
+      handle.applyCommand({ type: "sceneStreamLoading", actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `${actorGuid}-fog`, classId: "Actor",
+        sceneStreamActorGuid: actorGuid, streamLoadId: 1 });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid: `${actorGuid}-fog`, meshAssetGuid: null, meshKind: null });
+      handle.applyCommand({ type: "setFogVolumes", slotId, actorId: `${actorGuid}-fog`, volumes });
+    }
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let reached!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => { reached = resolve; });
+    const prepare = SceneRenderCoordinator.prototype.prepare;
+    let shared: ReturnType<typeof prepare> | undefined;
+    let waiters = 0;
+    // Hold the renderer-owned asynchronous boundary, then use the real graph.
+    // Its first caller must not lend a per-stream cancellation to shared work.
+    vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockImplementation(function (this: SceneRenderCoordinator, assertCurrent = () => {}) {
+      shared ??= gate.then(() => prepare.call(this, assertCurrent));
+      if (++waiters === 2) reached();
+      return shared.then((result) => { assertCurrent(); return result; });
+    });
+    const leftAbort = new AbortController();
+    const left = handle.prepareSceneStream([4], leftAbort.signal, undefined, { actorGuid: "left", streamLoadId: 1 });
+    const leftRejected = expect(left).rejects.toThrow("cancel left");
+    let rightReady = false;
+    const right = handle.prepareSceneStream([5], new AbortController().signal, undefined, { actorGuid: "right", streamLoadId: 1 })
+      .then(() => { rightReady = true; });
+    await bothWaiting;
+    expect(rightReady).toBe(false);
+    leftAbort.abort(new Error("cancel left"));
+    handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 1 });
+    handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "left-fog" });
+    await leftRejected;
+    expect(hasFogVolumes(handle.scene, "left-fog")).toBe(false);
+    expect(hasFogVolumes(handle.scene, "right-fog")).toBe(true);
+    expect(rightReady).toBe(false);
+    release();
+    await right;
+    expect(rightReady).toBe(true);
+    handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "right", streamLoadId: 1 });
+    handle.applyCommand({ type: "despawn", slotId: 5, actorGuid: "right-fog" });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);

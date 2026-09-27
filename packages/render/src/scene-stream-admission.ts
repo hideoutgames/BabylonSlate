@@ -193,10 +193,10 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         prune();
       }
     },
-    publish(slotIds: readonly number[], identity?: SceneStreamIdentity): void {
+    publish(slotIds: readonly number[], identity?: SceneStreamIdentity): boolean {
+      if (identity && streams.get(identity.actorGuid)?.loadId !== identity.streamLoadId) return false;
       const scope = scopes.get(scene);
-      if (!scope) return;
-      if (identity && streams.get(identity.actorGuid)?.loadId !== identity.streamLoadId) return;
+      if (!scope) return true;
       scope.cached = undefined;
       const owners = new Set(identity ? [identity.actorGuid] : []);
       for (const slot of slotIds) {
@@ -209,6 +209,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         if (root && heldRoots.has(root)) { root.setEnabled(heldRoots.get(root)!); heldRoots.delete(root); }
         const light = binding.lights.get(slot);
         if (light && heldLights.has(light)) { light.setEnabled(heldLights.get(light)!); heldLights.delete(light); }
+        binding.onVisualChanged?.(slot);
       }
       for (const owner of owners) {
         const stream = streams.get(owner);
@@ -217,6 +218,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
       sync();
       markSceneReadinessDirty(scene);
       prune();
+      return true;
     },
   };
 }
