@@ -11,7 +11,7 @@ function deferred() {
 
 describe("streamed render resource preparation", () => {
   const engines: NullEngine[] = [];
-  afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
   function fixture() {
     const engine = new NullEngine(); engines.push(engine);
     const scene = new Scene(engine);
@@ -79,5 +79,21 @@ describe("streamed render resource preparation", () => {
     const other = fixture();
     other.compile.mockRejectedValue(new Error("shader failed"));
     await expect(prepareSceneStream(other.scene, other.binding, [1], other.options)).rejects.toThrow("shader failed");
+  });
+
+  it("fails a stalled native import and ignores a late successful completion", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const model = deferred();
+    f.binding.slotAnimLoads!.set(1, model.promise);
+    const progress = vi.fn();
+    const work = prepareSceneStream(f.scene, f.binding, [1], { ...f.options, onProgress: progress });
+    const rejected = expect(work).rejects.toThrow("made no progress");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+    model.resolve();
+    await Promise.resolve();
+    expect(progress).not.toHaveBeenCalled();
+    expect(f.compile).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import { MultiMaterial, NodeMaterial, type AbstractMesh, type Material, type Scene } from "@babylonjs/core";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { ownedVisualTexturePreparation } from "./mesh-assets";
-import { prewarmMeshMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { createStallDeadline, prewarmMeshMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 /** Prepare an additive actor batch; parent and sibling resources are not load dependencies. */
@@ -17,8 +17,10 @@ export async function prepareSceneStream(
   },
 ): Promise<void> {
   const slots = new Set(slotIds);
+  let active = true;
   const assignments = new Map([...slots].map((slot) => [slot, binding.meshSorting.get(slot)]));
   const check = () => {
+    if (!active) throw new Error("Scene streaming preparation has ended.");
     options.signal.throwIfAborted();
     options.assertCurrent();
     for (const slot of slots) {
@@ -33,24 +35,29 @@ export async function prepareSceneStream(
     options.signal.addEventListener("abort", abort, { once: true });
   });
   const wait = <T>(work: Promise<T>) => Promise.race([work, cancelled]);
+  const waitAssets = async (loads: readonly (Promise<void> | undefined)[], phase: string, progress?: (completed: number) => void) => {
+    const deadline = createStallDeadline(() => `Streamed scene ${phase} made no progress for 30 seconds.`, 30_000);
+    let completed = 0;
+    await deadline.race(wait(Promise.all(loads.map(async (load) => {
+      await load;
+      check();
+      deadline.advance(phase);
+      progress?.(++completed);
+    })).then(() => {})));
+  };
   try {
     // Model work includes deferred visual replacement and its owned texture leases.
     const loads = [...slots].flatMap((slot) => {
       const load = binding.slotAnimLoads?.get(slot);
       return load ? [load] : [];
     });
-    let completed = 0;
-    await wait(Promise.all(loads.map(async (load) => {
-      await load;
-      check();
-      options.onProgress?.(0.45 + 0.15 * ++completed / loads.length);
-    })));
+    await waitAssets(loads, "models", (completed) => options.onProgress?.(0.45 + 0.15 * completed / loads.length));
     check();
     const roots = [...slots].flatMap((slot) => {
       const root = binding.meshes.get(slot);
       return root ? [root] : [];
     });
-    await wait(Promise.all(roots.map((root) => ownedVisualTexturePreparation(root))));
+    await waitAssets(roots.map((root) => ownedVisualTexturePreparation(root)), "textures");
     check();
     const meshes = new Set<AbstractMesh>();
     const materials = new Set<Material>();
@@ -92,6 +99,7 @@ export async function prepareSceneStream(
     check();
     options.onProgress?.(0.95);
   } finally {
+    active = false;
     options.signal.removeEventListener("abort", abort);
   }
 }
