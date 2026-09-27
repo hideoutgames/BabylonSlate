@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
 import {
   createActor,
   createDefaultWaterDefinition,
@@ -37,6 +37,30 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 }
 
 describe("component script API", () => {
+  it("sends attached fog volumes to both Play hosts and updates density without rebuilding actor meshes", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneOf([createActor("mist", "Mist", { classId: "Hero", components: [
+        { id: "offset", classId: "SceneComponent", properties: {}, transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+        { id: "fog", classId: "FogVolumeComponent", parentId: "offset", properties: { shape: "sphere", size: [4, 6, 8] } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "fog"); ctx.setVariableOn(c, "density", 0.4); ctx.setVariableOn(c, "size", { x: 2, y: 4, z: 6 }); ctx.setVariableOn(c, "enabled", false); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const initial = commands.filter((command) => command.type === "setFogVolumes").at(-1)!;
+      expect(isPlayEngineCommandType(initial.type)).toBe(true);
+      expect(initial).toMatchObject({ actorId: "mist", volumes: [{ id: "fog", properties: { shape: "sphere", size: [4, 6, 8] },
+        transforms: [{ position: [0, 0, 0] }, { position: [3, 0, 0] }] }] });
+      const assigns = commands.filter((command) => command.type === "assignMesh").length;
+      runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("mist")!);
+      expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(assigns);
+      expect(commands.filter((command) => command.type === "setFogVolumes").at(-1)).toMatchObject({
+        volumes: [{ properties: { shape: "sphere", enabled: false, density: 0.4, size: [2, 4, 6] } }],
+      });
+    } finally { runtime.stop(); }
+  });
   it.each(["WaterLakeComponent", "WaterOceanComponent"])("updates %s dimensions through normal component variables and queries the changed footprint", async (classId) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,

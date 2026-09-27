@@ -12,6 +12,7 @@ import {
 import {
   createActor,
   areaRectLightBindings,
+  fogVolumeBindings,
   outlineBindings,
   createDefaultScene,
   createMeshComponent,
@@ -38,6 +39,8 @@ import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
 import { SnapshotInterpolator } from "./snapshot-sync";
+import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
+import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -3611,6 +3614,49 @@ describe("Play createEngine view", () => {
     expect(handle.scene.pointerX).toBeCloseTo(400);
     expect(handle.scene.pointerY).toBeCloseTo(200);
     expect(down).toHaveBeenCalled();
+  });
+
+  it("keeps editor fog volumes in sync through hide, undo, and scene replacement", () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), editor: true });
+    handles.push(handle);
+    const actor = createActor("fog-bank", "Fog Bank", { components: [{ id: "fog", classId: "FogVolumeComponent", properties: {} }] });
+    const data = { ...createDefaultScene(), actors: [actor] };
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
+    handle.loadScene({ ...data, actors: [{ ...actor, visible: false }] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.loadScene(data);
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    handle.loadScene({ ...data, actors: [] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("retains Play fog volumes across visual replacement and releases their pass on removal", () => {
+    const { handle } = playHandle(sharedEngine());
+    const camera = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
+    camera.setTarget(Vector3.Zero());
+    const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "mist", meshAssetGuid: null, meshKind: null };
+    handle.applyCommand(assign);
+    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
+    handle.applyCommand({ ...assign, meshKind: "box" });
+    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    setSceneEffectsEnabled(handle.scene, false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+    setSceneEffectsEnabled(handle.scene, true);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting).not.toBeNull();
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes: [] });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    expect(hasFogVolumes(handle.scene)).toBe(true);
+    handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
   });
 
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
