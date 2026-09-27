@@ -1,7 +1,4 @@
-export type {
-  PhysicsBackend,
-  CreatePhysicsBackend,
-} from "./backend";
+export type { PhysicsBackend } from "./backend";
 export type {
   PhysicsWorldKind,
   MotionType,
@@ -25,7 +22,6 @@ export type {
   PhysicsContactEvent,
   PhysicsBackendOptions,
   RigidBodyTuning,
-  ColliderTuning,
 } from "./types";
 export type {
   DebugColliderPrimitive,
@@ -35,7 +31,7 @@ export {
   debugColliderFromDesc,
   listDebugCollidersFromRecords,
 } from "./debug-colliders";
-export { SoftwarePhysicsBackend, createNullPhysicsBackend } from "./software-backend";
+export { SoftwarePhysicsBackend } from "./software-backend";
 export {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
@@ -61,7 +57,6 @@ export {
   rotateQuatVec,
   multiplyQuat,
   quatToPlanarAngle,
-  identityQuat,
   isIdentityQuat,
   type ColliderLocalTransform,
 } from "./collider-bake";
