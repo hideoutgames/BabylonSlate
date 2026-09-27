@@ -579,18 +579,6 @@ export function engineScriptApiFor(
   return BY_CLASS_ID.get(classId);
 }
 
-export function engineScriptVariablesFor(
-  classId: string,
-): readonly EngineScriptVariable[] {
-  return engineScriptApiFor(classId)?.variables ?? [];
-}
-
-export function engineScriptFunctionsFor(
-  classId: string,
-): readonly EngineScriptFunction[] {
-  return engineScriptApiFor(classId)?.functions ?? [];
-}
-
 export function engineScriptEventsFor(
   classId: string,
 ): readonly EngineScriptEvent[] {

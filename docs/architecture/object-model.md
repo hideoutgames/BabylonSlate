@@ -21,8 +21,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables (incl. `typeClassIds`), functions, events (Get/Set/Call and Add Event). Overlay 2D classes are in the catalog; Animation Graph / BT / nav bake helpers stay ref-only. Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
-| `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play. Skips `SceneLayerActor` (and subclasses); those belong on overlay documents. |
-| `createActorsFromSerializedSceneLayer` | Overlay actors from a `SerializedSceneLayer` (stamped `sceneLayerId`). Drops Skybox / Camera / Light. |
+| `createActorFromSerialized` | Build one unspawned World actor from a scene or SceneLayer document row for Play. Skips `SceneLayerActor` (and subclasses) unless given a `sceneLayerId`; overlay actors are stamped with it and drop SceneLayer-denied components. |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
 
@@ -80,7 +79,7 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 
 `GameInstance` catalog functions are **Get Scene Loading Progress** (`0..1`) and **Get Scene Reference** (`objectRef("Scene")`). Play registers a child type `Scene:{guid}` per library scene so Cast / `isA` walk to engine `Scene`. Scene variables: **Scene Name** and **Asset Guid** (Get-only), **Gravity** (`vec3`, Get/Set — Play applies `setWorldGravity` onto the physics backend). `ctx.getComponentById` on a live current `Scene` searches world actors by authored component id / `sourceId` and returns null when the scene is inactive or the id is missing.
 
-`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon. Overlay classes (`SceneLayerActor` and subclasses) are skipped here; `createActorsFromSerializedSceneLayer` stamps `sceneLayerId` and strips the overlay denylist (Skybox / Camera / Light).
+`createActorFromSerialized` (same package) builds one unspawned World actor per document row — id, actor transform, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon, yielding between rows. Without a `sceneLayerId`, overlay classes (`SceneLayerActor` and subclasses) are skipped; with one, the actor is stamped with `sceneLayerId` and the SceneLayer denylist ([scene-layers.md](scene-layers.md)) is stripped.
 
 ## ScriptInterface dispatch
 

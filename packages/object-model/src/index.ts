@@ -16,8 +16,6 @@ export {
   engineEventTypeClassIds,
   engineScriptApiFor,
   engineScriptEventsFor,
-  engineScriptFunctionsFor,
-  engineScriptVariablesFor,
   type EngineClassScriptApi,
   type EngineScriptEvent,
   type EngineScriptFunction,
@@ -66,8 +64,6 @@ export {
 } from "./tick";
 export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
-  createActorsFromSerializedScene,
-  createActorsFromSerializedSceneLayer,
   attachSerializedComponents,
   runtimeTransformFromSerialized,
   type SceneActorHooks,
