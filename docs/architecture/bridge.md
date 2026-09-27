@@ -92,13 +92,9 @@ subsequent reloads of the same asset.
 
 `loadScripts` registers classes without creating Actors when `spawn` is omitted or empty. Editor Play and the player send an empty list; actors come from the authored scene or explicit Spawn Actor calls. Explicit `loadScripts.spawn` requests are filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, and `Scene` never become Actors.
 
-## Typed RPC
+## Transport parity
 
-Hand-rolled request/response over the control channel (`id`, `method`, `params` / `result` / `error`). No Comlink on the hot path.
-
-## In-process host
-
-`createInProcessBridge()` runs the same protocols on the calling thread for the deterministic harness. Transport choice is a host option; scenario results must match across in-process, SAB (when available), and transferables.
+Transport choice is a host option; scenario results must match across the in-process runtime (`createInProcessRuntime`), SAB (when available), and transferables. There is no RPC channel or Comlink: hosts use the typed control / command / input / snapshot messages above.
 
 ## Play game Worker
 

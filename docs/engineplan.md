@@ -186,7 +186,7 @@ packages/
   runtime/         worker entry, module loader, world driver, snapshot writer, input
   physics/         body and shape protocol hosted inside the game worker, with a Havok 3D backend
                    and a Rapier 2D backend behind the same interface (see section 13.4)
-  bridge/          transport (SAB + transferable), channel protocols, typed RPC
+  bridge/          transport (SAB + transferable), channel protocols
   render/          Babylon view: snapshot apply, resource cache, gizmos, picking  [was engine]
   ui/              shadcn primitives + touch tokens
   editor-kit/      reusable editor components (property grid, tree view, asset picker, sheets)
@@ -1281,7 +1281,7 @@ The project is built by autonomous agents working in parallel, which is a failur
 - Add `recast-navigation` (`@recast-navigation/core`, `@recast-navigation/generators`, and `@recast-navigation/babylon` for editor-side mesh input and debug draw) as the single navigation library for both editor baking and worker queries. Babylon's built-in `RecastJSPlugin` is deliberately unused: it is `Scene`-coupled and therefore main-thread-only, and mixing it with a second wrapper would stake the navmesh format on two libraries agreeing byte-for-byte. Loaded only for scenes that have a navmesh.
 - Add `d3-hierarchy` for behaviour tree auto-layout. It is a few kilobytes and a strict tree is precisely what its `tree()` layout is for; `elkjs` is the wrong trade at roughly two orders of magnitude more weight for generality this case does not need.
 - Add CodeMirror 6 (`@codemirror/state`, `@codemirror/view`, `@codemirror/lang-javascript`) for the ExecuteJavaScript body editor and the console input. It was rewritten specifically for touch and leans on native `contenteditable`, which is why it works on iPad where Monaco explicitly does not, and it is 50 to 200kB against Monaco's several megabytes. It loads lazily so it never lands in the editor's initial bundle.
-- Deliberately not adding Comlink to the hot path: `bridge` gets a hand-rolled typed RPC so per-frame traffic avoids proxy overhead.
+- Deliberately not adding Comlink to the hot path: `bridge` uses plain typed control/command messages so per-frame traffic avoids proxy overhead.
 
 ## 18. Roadmap
 
@@ -1400,7 +1400,7 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 
 ### P4
 
-- [x] **p4-bridge** — P4: bridge package with SAB seq-lock and transferable ping-pong transports, recyclable slots, geometric capacity growth, ordered layout-generation replacement handshakes, reliable control and command channels, typed RPC; coi-serviceworker wired into the Pages build
+- [x] **p4-bridge** — P4: bridge package with SAB seq-lock and transferable ping-pong transports, recyclable slots, geometric capacity growth, ordered layout-generation replacement handshakes, reliable control and command channels; coi-serviceworker wired into the Pages build
 - [x] **p4-runtime-worker** — P4: runtime package as game worker, also runnable in-process, with scene instantiation, fixed-step loop with catch-up cap, and input ring buffer; the tick scheduler reserves a physics phase slot from the start since P7 hosts physics in this same worker rather than a separate one, and reports script and physics time separately because they share one budget
 - [x] **p4-input-capture** — P4: Raw input capture into a tick-stamped ring buffer - pointer and touch on the game canvas with touch-action none, keyboard, mouse, and Gamepad API polling once per frame since axes have no events; synthetic streams replayable through the deterministic harness
 - [x] **p4-render-sync** — P4: render package rework: replace the demo rotation and box-only loader with snapshot-driven scene sync, resource cache, interpolation and picking; replaceable capacity-sized scratch/index storage with stale-generation rejection; Vector3/Quaternion/Matrix reuse with no per-actor per-frame allocation in the sync path; bulk apply and bulk despawn wrapped in blockMaterialDirtyMechanism and blockfreeActiveMeshesAndRenderingGroups

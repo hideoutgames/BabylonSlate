@@ -21,7 +21,7 @@ packages/source-control/ Git LFS locking client behind LockProvider (P15)
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
-packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
+packages/bridge/      SAB + transferable transports, snapshot layout, typed channel messages
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/debugger/    Command registry, parser, BDebugCommand helpers, stats budget, trace recorder (P8)
 packages/anim-graph/  AnimationGraph evaluator in the game worker (P9)
