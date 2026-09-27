@@ -12,7 +12,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached script instance with independent variables/interfaces; Begin Play after owner spawn, own Tick, Destroyed on owner destruction or Play stop. |
-| `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. `onSceneLoaded` still aliases finish. |
+| `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
@@ -33,7 +33,7 @@ Order is fixed and named from the first commit:
 2. `actors` — Actors in **spawn order**
 3. `components` — Each actor’s components in **attach order**
 4. `physics` — Backend `step(dt)` + transform write-back (see [physics.md](physics.md))
-5. `postPhysics` — Post-physics fixups
+5. `postPhysics` — Phase boundary after the physics write-back (`onPhase` timing, deferred flush); no built-in work
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
 

@@ -328,8 +328,4 @@ export class ClassRegistry {
       invalidatedMembers,
     });
   }
-
-  listClassIds(): string[] {
-    return [...this.classes.keys()].sort();
-  }
 }

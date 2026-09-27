@@ -277,9 +277,7 @@ export class MaterialObject extends BObject {
 }
 
 export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
-  onGameStart?: (self: GameInstance) => void;
   onGameEnd?: (self: GameInstance) => void;
-  onSceneLoaded?: (self: GameInstance, sceneName: string) => void;
   onSceneStartLoading?: (self: GameInstance, sceneName: string) => void;
   onSceneFinishLoading?: (self: GameInstance, sceneName: string) => void;
   onFirstSceneLoaded?: (self: GameInstance, sceneName: string) => void;
@@ -423,16 +421,8 @@ export class GameInstance extends BObject {
     this.gameHooks = options.hooks ?? {};
   }
 
-  callOnGameStart(): void {
-    this.gameHooks.onGameStart?.(this);
-  }
-
   callOnGameEnd(): void {
     this.gameHooks.onGameEnd?.(this);
-  }
-
-  callOnSceneLoaded(sceneName: string): void {
-    this.gameHooks.onSceneLoaded?.(this, sceneName);
   }
 
   callOnSceneStartLoading(sceneName: string): void {
@@ -441,7 +431,6 @@ export class GameInstance extends BObject {
 
   callOnSceneFinishLoading(sceneName: string): void {
     this.gameHooks.onSceneFinishLoading?.(this, sceneName);
-    this.gameHooks.onSceneLoaded?.(this, sceneName);
   }
 
   callOnFirstSceneLoaded(sceneName: string): void {
