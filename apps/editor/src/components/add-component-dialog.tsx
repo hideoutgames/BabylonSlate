@@ -18,6 +18,7 @@ export function AddComponentDialog({
   onSelect,
   projectItems = [],
   overlay = false,
+  physicsWorld = "3d",
   "data-testid": testId = "add-component-catalog",
 }: {
   open: boolean;
@@ -25,14 +26,15 @@ export function AddComponentDialog({
   onSelect: (selection: AddComponentSelection) => void;
   projectItems?: readonly AddComponentItem[];
   overlay?: boolean;
+  physicsWorld?: "2d" | "3d";
   "data-testid"?: string;
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
   const items = useMemo(
-    () => [...addableComponentsForHost({ overlay }), ...projectItems],
-    [overlay, projectItems],
+    () => [...addableComponentsForHost({ overlay, physicsWorld }), ...projectItems],
+    [overlay, physicsWorld, projectItems],
   );
 
   const categories = useMemo(() => {

@@ -70,7 +70,7 @@ import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
-import { usePlay } from "../context/play-context";
+import { useLiveBtState, usePlay } from "../context/play-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
@@ -118,6 +118,7 @@ function useBehaviourTreeDocument() {
     loadAssetDocument,
   } = useDocuments();
   const play = usePlay();
+  const liveBtState = useLiveBtState();
   const entry = openDocuments.find((item) => item.id === workspaceDocumentId);
   const doc = useMemo(
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
@@ -130,17 +131,17 @@ function useBehaviourTreeDocument() {
     );
   };
   const overlay = useMemo((): BtGraphOverlay | undefined => {
-    if (!play.playing || !play.liveBtState) return undefined;
+    if (!play.playing || !liveBtState) return undefined;
     return {
-      lastResults: play.liveBtState.lastResults as Record<string, BtResult>,
-      btNodeId: play.liveBtState.btNodeId,
-      stack: (play.liveBtState.stack ?? []).map((frame) => ({
+      lastResults: liveBtState.lastResults as Record<string, BtResult>,
+      btNodeId: liveBtState.btNodeId,
+      stack: (liveBtState.stack ?? []).map((frame) => ({
         nodeId: frame.nodeId,
         childIndex: frame.childIndex,
         opened: frame.opened,
       })),
     };
-  }, [play.playing, play.liveBtState]);
+  }, [play.playing, liveBtState]);
   const initialGraph = useMemo(
     () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
     [doc, overlay],
@@ -281,6 +282,7 @@ function useBehaviourTreeDocument() {
     doc,
     commit,
     play,
+    liveBtState,
     initialGraph,
     paletteNodes,
     decoratorCatalog,
@@ -504,13 +506,13 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
   const {
     doc,
     commit,
-    play,
+    liveBtState,
     assets,
     blackboardAsset,
     blackboardDocument,
   } = useBehaviourTreeDocument();
   const [blackboardPick, setBlackboardPick] = useState(false);
-  const blackboardWatch = play.liveBtState?.blackboard ?? null;
+  const blackboardWatch = liveBtState?.blackboard ?? null;
   const keys = blackboardDocument?.keys ?? [];
 
   return (

@@ -1269,7 +1269,7 @@ function useLoadedTilesets(
   const loadPayloads = useCallback(async () => {
     const next = new Map<string, TilesetPayload>();
     for (const guid of guids.split(",").filter(Boolean)) {
-      const asset = assetRegistry?.list().find((entry) => entry.header.guid === guid);
+      const asset = assetRegistry?.getByGuid(guid);
       if (!asset) continue;
       const open = openDocuments.find((doc) => doc.ref.path === asset.path);
       const raw = open?.content ?? (loadAssetDocument ? await loadAssetDocument("tileset", asset.path) : null);
@@ -1316,9 +1316,9 @@ function useTilesetAtlases(
     void (async () => {
       const next = new Map<string, HTMLImageElement>();
       for (const [guid, tileset] of payloads) {
-        const texture = (assetRegistry?.list() ?? []).find(
-          (asset) => asset.header.guid === tileset.textureGuid,
-        );
+        const texture = tileset.textureGuid
+          ? assetRegistry?.getByGuid(tileset.textureGuid)
+          : undefined;
         if (!texture || !readAssetChunk) continue;
         const bytes = await readAssetChunk(texture.path, "pixels");
         if (!bytes || bytes.byteLength === 0) continue;

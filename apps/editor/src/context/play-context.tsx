@@ -171,17 +171,51 @@ interface PlayContextValue {
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
-  logLines: string[];
-  liveBtState: LiveBtState | null;
   reportBtState: (state: LiveBtState | null) => void;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
+const LiveBtStateContext = createContext<LiveBtState | null>(null);
+const PlayDiagnosticsActionsContext = createContext<Pick<
+  PlayContextValue, "appendLog" | "reportBtState"
+> | null>(null);
 /** Isolated from PlayContext so DocumentWorkspace does not rerender on logs. */
 const OverlayPlayingContext = createContext(false);
 
+/** High-frequency updates must not rerender the session owner or its overlays. */
+function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
+  const appendLog = useCallback((line: string) => {
+    setLogLines((previous) => appendOutputLogLine(previous, line));
+  }, []);
+  const actions = useMemo(
+    () => ({ appendLog, reportBtState: setLiveBtState }),
+    [appendLog],
+  );
+  const outputLog = useMemo(() => ({ lines: logLines }), [logLines]);
+  return (
+    <PlayDiagnosticsActionsContext.Provider value={actions}>
+      <OutputLogContext.Provider value={outputLog}>
+        <LiveBtStateContext.Provider value={liveBtState}>
+          {children}
+        </LiveBtStateContext.Provider>
+      </OutputLogContext.Provider>
+    </PlayDiagnosticsActionsContext.Provider>
+  );
+}
+
 export function PlayProvider({ children }: { children: ReactNode }) {
+  return (
+    <PlayDiagnosticsProvider>
+      <PlaySessionProvider>{children}</PlaySessionProvider>
+    </PlayDiagnosticsProvider>
+  );
+}
+
+function PlaySessionProvider({ children }: { children: ReactNode }) {
+  const { appendLog, reportBtState } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const ownedEngineRef = useRef<AbstractEngine | null>(null);
@@ -208,8 +242,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
   const [dropped, setDropped] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
-  const [logLines, setLogLines] = useState<string[]>([]);
   const [sharedEngineGeneration, setSharedEngineGeneration] = useState(0);
   const [lastRuntimeMode, setLastRuntimeMode] = useState<
     "worker" | "in-process" | null
@@ -505,10 +537,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setPauseOnPlayState(value);
     void persistDebuggerDefaults({ pauseOnPlay: value });
   }, [persistDebuggerDefaults]);
-
-  const appendLog = useCallback((line: string) => {
-    setLogLines((prev) => appendOutputLogLine(prev, line));
-  }, []);
 
   useEffect(
     () => onSessionDiagnostic(appendLog),
@@ -1328,7 +1356,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setPlaying(false);
       setSessionPlayScene(null);
       setEncodeQueuePauseReason("play", false);
-      setLiveBtState(null);
+      reportBtState(null);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
       setLastRuntimeMode(result.runtimeMode);
@@ -1352,7 +1380,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace],
+    [appendLog, openRecordedTrace, reportBtState],
   );
 
   const value = useMemo<PlayContextValue>(
@@ -1392,9 +1420,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
-      logLines,
-      liveBtState,
-      reportBtState: setLiveBtState,
+      reportBtState,
     }),
     [
       playing,
@@ -1423,8 +1449,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       registerScheduler,
       focusedNodeId,
       appendLog,
-      logLines,
-      liveBtState,
+      reportBtState,
       closePreview,
       previewOpen,
     ],
@@ -1440,7 +1465,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         deferredUntilStop: (playing || previewOpen) && projectEngineState.session?.requestedBackend !== requestedBackend,
       }}>
       <OverlayPlayingContext.Provider value={playing && !previewOpen}>
-      <OutputLogContext.Provider value={{ lines: logLines }}>
         {children}
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
           (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
@@ -1643,7 +1667,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             {lastRuntimeMode}
           </span>
         ) : null}
-      </OutputLogContext.Provider>
       </OverlayPlayingContext.Provider>
       </ProjectRenderingContext.Provider>
     </PlayContext.Provider>
@@ -1669,4 +1692,9 @@ export function useOverlayPlaying(): boolean {
 
 export function useOutputLog(): { lines: string[] } {
   return useContext(OutputLogContext);
+}
+
+/** Subscribe only the behaviour-tree debugger to live snapshots. */
+export function useLiveBtState(): LiveBtState | null {
+  return useContext(LiveBtStateContext);
 }

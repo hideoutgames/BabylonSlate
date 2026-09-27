@@ -32,6 +32,9 @@ const readAssetChunk = vi.hoisted(() =>
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     assetRegistry: {
+      getByGuid(guid: string) {
+        return this.list().find((asset) => asset.header.guid === guid);
+      },
       list: () => [
         {
           header: { guid: "tex-1", name: "GroundAtlas", type: "Texture" },

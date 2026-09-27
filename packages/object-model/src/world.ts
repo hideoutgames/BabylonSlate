@@ -72,6 +72,8 @@ export class World {
   currentScene: Scene | null = null;
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
+  /** Preserve first-spawned lookup while replacement actors share a guid. */
+  private readonly actorsByGuid = new Map<Guid, Actor[]>();
   private readonly sceneLayers: SceneLayer[] = [];
   private readonly pendingSpawn: Actor[] = [];
   private readonly pendingDestroy: Array<Guid | Actor> = [];
@@ -264,7 +266,7 @@ export class World {
   }
 
   findActor(guid: Guid): Actor | undefined {
-    return this.actors.find((a) => a.guid === guid);
+    return this.actorsByGuid.get(guid)?.[0];
   }
 
   private commitSpawn(actor: Actor): void {
@@ -272,6 +274,9 @@ export class World {
     actor.world = this;
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);
+    const sameGuid = this.actorsByGuid.get(actor.guid);
+    if (sameGuid) sameGuid.push(actor);
+    else this.actorsByGuid.set(actor.guid, [actor]);
     actor.callOnCreation();
     for (const component of actor.components) component.callOnCreation();
   }
@@ -290,12 +295,14 @@ export class World {
   }
 
   private commitDestroy(target: Guid | Actor): void {
-    const index = typeof target === "string"
-      ? this.actors.findIndex((actor) => actor.guid === target)
-      : this.actors.indexOf(target);
+    const actor = typeof target === "string" ? this.findActor(target) : target;
+    if (!actor) return;
+    const index = this.actors.indexOf(actor);
     if (index < 0) return;
-    const actor = this.actors[index]!;
     this.actors.splice(index, 1);
+    const sameGuid = this.actorsByGuid.get(actor.guid)!;
+    sameGuid.splice(sameGuid.indexOf(actor), 1);
+    if (sameGuid.length === 0) this.actorsByGuid.delete(actor.guid);
     actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
       if (!component.destroyed) {

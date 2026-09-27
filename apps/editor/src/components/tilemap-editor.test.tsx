@@ -49,6 +49,9 @@ const readAssetChunk = vi.hoisted(() =>
 );
 const documentApi = vi.hoisted(() => ({
   assetRegistry: {
+    getByGuid(guid: string) {
+      return this.list().find((asset) => asset.header.guid === guid);
+    },
     list: () => [
       {
         header: { guid: "ts-ground", name: "Ground", type: "Tileset" },
@@ -282,6 +285,7 @@ describe("TilemapPalette", () => {
       "2",
     );
     expect(loadAssetDocument).toHaveBeenCalledWith("tileset", GROUND_PATH);
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/Atlas.texture.babasset", "pixels");
   });
 });
 

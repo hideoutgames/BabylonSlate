@@ -31,7 +31,7 @@ import {
   Maximize2Icon,
   EllipsisIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -88,21 +88,24 @@ import {
   playChromeLaunchLabel,
 } from "../lib/play-chrome-label";
 import { canFocusLayout } from "../shell/layout-ops";
-import type { IndexedAsset } from "@babylonslate/assets";
-import { documentTypeVisual } from "../lib/document-type-visual";
+import {
+  createDocumentTypeVisualResolver,
+  type DocumentTypeVisualResolver,
+} from "../lib/document-type-visual";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import "../shell/editor-chrome.css";
 
-function kindIcon(ref: DocumentRef, assets: readonly IndexedAsset[]) {
+function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
   if (ref.kind === "content-browser") {
     return <LayoutGridIcon className="size-4 shrink-0" />;
   }
-  const visual = documentTypeVisual(ref, assets);
+  const visual = resolveVisual(ref);
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
 }
 
 interface SortableTabProps {
   doc: OpenDocument;
+  icon: ReactNode;
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
@@ -110,11 +113,11 @@ interface SortableTabProps {
 
 function SortableDocumentTab({
   doc,
+  icon,
   active,
   onSelect,
   onClose,
 }: SortableTabProps) {
-  const { assetRegistry } = useDocuments();
   const {
     attributes,
     listeners,
@@ -154,7 +157,7 @@ function SortableDocumentTab({
         aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
-        {kindIcon(doc.ref, assetRegistry?.list() ?? [])}
+        {icon}
         <span>
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
@@ -177,17 +180,17 @@ function SortableDocumentTab({
 
 function PinnedDocumentTab({
   doc,
+  icon,
   active,
   onSelect,
   onClose,
 }: {
   doc: OpenDocument;
+  icon: ReactNode;
   active: boolean;
   onSelect: () => void;
   onClose?: () => void;
 }) {
-  const { assetRegistry } = useDocuments();
-
   return (
     <div
       data-testid="document-tab"
@@ -207,7 +210,7 @@ function PinnedDocumentTab({
         aria-current={active ? "page" : undefined}
         onClick={onSelect}
       >
-        {kindIcon(doc.ref, assetRegistry?.list() ?? [])}
+        {icon}
         <span>
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
@@ -291,6 +294,7 @@ export function EditorChromeBar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const phone = usePhoneLayout();
+  const resolveDocumentVisual = createDocumentTypeVisualResolver(assetRegistry);
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -530,7 +534,7 @@ export function EditorChromeBar({
             </Button>
             <DocumentSwitcher
               documents={openDocuments}
-              assets={assetRegistry?.list()}
+              resolveVisual={resolveDocumentVisual}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
@@ -547,6 +551,7 @@ export function EditorChromeBar({
               {contentBrowserDoc ? (
                 <PinnedDocumentTab
                   doc={contentBrowserDoc}
+                  icon={kindIcon(contentBrowserDoc.ref, resolveDocumentVisual)}
                   active={activeDocumentId === CONTENT_BROWSER_ID}
                   onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
                 />
@@ -554,6 +559,7 @@ export function EditorChromeBar({
               {pinnedSceneDoc ? (
                 <PinnedDocumentTab
                   doc={pinnedSceneDoc}
+                  icon={kindIcon(pinnedSceneDoc.ref, resolveDocumentVisual)}
                   active={activeDocumentId === pinnedSceneDoc.id}
                   onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
                   onClose={() =>
@@ -582,6 +588,7 @@ export function EditorChromeBar({
                     <SortableDocumentTab
                       key={doc.id}
                       doc={doc}
+                      icon={kindIcon(doc.ref, resolveDocumentVisual)}
                       active={doc.id === activeDocumentId}
                       onSelect={() => setActiveDocument(doc.id)}
                       onClose={() =>
@@ -596,7 +603,7 @@ export function EditorChromeBar({
             </div>
             <DocumentSwitcher
               documents={openDocuments}
-              assets={assetRegistry?.list()}
+              resolveVisual={resolveDocumentVisual}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}

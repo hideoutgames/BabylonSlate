@@ -116,3 +116,4 @@ export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
 
 export { buildMaterialParameterCatalog, materialParameterDefaults } from "./material-parameter-catalog";
+export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";

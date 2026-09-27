@@ -116,7 +116,13 @@ Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppres
 
 Reusable by script, shader, animation, behaviour-tree and particle graphs, and the Content Browser read-only References dialog.
 
+Edge styling indexes source nodes once per pass, giving O(nodes + edges) node lookup work instead of a node scan per edge. Source-pin lookup remains local to each source node, and resolved display types still take precedence over authored pin types. Position-only updates retain the existing stable pin-node inputs.
+
+Pin connection visuals and input-default visibility share a wired-pin index per immutable React Flow edge array. Updates retaining that array reuse it, so each pin checks membership without scanning edges. Replacing the array builds one new index, including when virtualization creates a filtered edge snapshot during a drag. Weak references let unused snapshots be collected, and separate graph canvases remain independent.
+
 `GraphEditor` waits for its requested focus node to be measured before framing it; programmatic selection remains available in read-only mode without accepting topology or position edits.
+
+Pin display types and styled edges are reused while only node positions, selection, or measurements change. Pin edits and connection changes still refresh the full graph, including external Inspector and undo/redo updates. Edge selection and custom edge properties remain live; connection-assistant previews continue to validate proposed links separately.
 
 Repeated toolbar Add Node insertions stagger when their insertion points coincide, keeping earlier nodes independently selectable without moving them. Pin-drag, right-click, and double-tap additions retain the chosen drop position.
 
@@ -134,6 +140,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 
 
 ## App wrappers
+
+`RagdollBoneNamesEditor` composes `NamedListEditor` with validation feedback for Scene Details and Class/Prefab Inspector. Empty uses the complete model skeleton; exact names select a connected subtree. Invalid or duplicate drafts stay editable without changing persisted component properties. Physics Constraint Details reuse PropertyGrid and SearchDialog for a searchable scene actor target, local anchors, frame rotations, and degree-based hinge limits.
 
 `ProgressDialogHeader` and `ProgressStepList` (`apps/editor/src/components/progress-dialog-parts.tsx`) are the shared chrome for blocking progress dialogs. The header pairs a bordered Lucide icon tile with the Title Case title, a muted description and an optional trailing slot; `failed` switches the tile and title to destructive tokens with a warning icon. The step list is an ordered list whose earlier steps show a filled check, the running step a spinning loader (`aria-current="step"`, static under reduced motion), and later steps an empty ring; each step may carry detail content. **Preparing Preview** wraps the five pack phases in its Progress with an `n / m` chip in the header; **Preparing Play** lists Save Documents (dirty document chips) and Compile Graphs; `SceneLoadingDialog` takes its `steps` from the caller, because editor and runtime scene phases differ: viewport loads and **Updating Rendering** (Aperture icon) default to `VIEWPORT_SCENE_LOAD_STEPS`, Play passes `PLAY_SCENE_LOAD_STEPS` (phases a load skips, such as Removing Previous Scene, render complete), and the header shows a percentage chip. A phase outside the list, such as the document read's **Loading Document**, shows a single spinner row with the phase and percentage instead. The phase stays in `ProgressLabel` (visually hidden beside the list) for assistive technology and the loading observers in e2e.
 
@@ -157,6 +165,8 @@ multiple input/output lists can share a Details panel without label collisions.
 
 Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
+Document tabs and `DocumentSwitcher` share a visual resolver for each chrome render. It uses indexed asset paths and builds the class-parent lookup at most once, only when Class icons need it. A fresh resolver on the next render observes updates to the mutable registry, keeping inherited icons current without per-tab registry scans.
+
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **TraceCopyButton / TraceEmptyState** | Compact clipboard feedback and catalog Empty states for read-only trace inspection. | Trace Snapshot, Changes, Log and Timeline. |
@@ -174,7 +184,7 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **MessageDetails** ([`message-details.tsx`](../../apps/editor/src/components/message-details.tsx)) | Selectable, wrapping selected-message details with Copy feedback and Close. | Compiler Results, Material and Behaviour Tree diagnostics, Output Log. Trace Log uses the dedicated trace inspection controls. |
 | **ParticlePreviewSurface** ([`particle-preview-surface.tsx`](../../apps/editor/src/components/particle-preview-surface.tsx)) | Particle Preview chrome around a canvas: compact **Restart** and **Play / Pause** (`aria-pressed`) icon buttons, a GPU / CPU / GPU + CPU backend badge and an active-count badge (`~` when approximate, with Tooltips), plus the empty, loading (**Loading Preview**), error (with an optional action and **Retry**, drawn over the kept canvas), notice and **Updating** states. Test ids `particle-preview-*`. `ParticlePreviewCanvas` drives it from a `ParticleService`. | Basic Particle Emitter, Particle Graph and Particle System Previews (including **No Emitters** and **Graph Has Errors**). `backendHint` overrides the backend badge tooltip (Particle Graphs simulate on the CPU). |
 | **ParticleMaterialPicker** ([`particle-material-picker.tsx`](../../apps/editor/src/components/particle-material-picker.tsx)) | AssetPicker limited to particle-domain Materials (an open Material tab's domain wins over its saved header), with a None row; closes on pick. | Basic Particle Emitter and Particle Graph **Material** rows and their Preview **No Material** action. |
-| **TexturePreviewStatus** ([`texture-preview-status.tsx`](../../apps/editor/src/components/texture-preview-status.tsx)) | Empty/loading/missing/failed texture feedback with Retry; `useTexturePreview` owns read cancellation, source changes, and object URL cleanup. | Sprite, Tileset, Sprite Animation previews. |
+| **TexturePreviewStatus** ([`texture-preview-status.tsx`](../../apps/editor/src/components/texture-preview-status.tsx)) | Empty/loading/missing/failed texture feedback with Retry; `useTexturePreview` uses indexed GUID lookups during playback and owns read cancellation, source changes, and object URL cleanup. | Sprite, Tileset, Sprite Animation previews. |
 | **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Fixed 144 by 196px asset card matching folders, with encoding/compile badges at the padded top left and Git lock status at the padded top right (bounded owner text with full accessible labels/tooltips). `--card` thumb well (or image) with a 2px type-colored border on an `absolute inset-0.5` accent box so the bottom stroke stays visible, `--card` text panel, exclusive tap select, paint-select via grid drag, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
 | **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Fixed 144 by 196px uncolored folder card matching assets (`--card` well, muted glyph); optional icon override for base plugin folders, with ordinary folders retaining the folder glyph. Tap selects exclusively, double-click navigates. | Content Browser grid (child folders first). |
 | **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. Move or copy of one or many selected items. | Content Browser **Move…** / **Copy to Folder…** for the current tile selection. |
@@ -183,6 +193,8 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **MemberAccessChooser** ([`member-access-chooser.tsx`](../../apps/editor/src/components/member-access-chooser.tsx)) | Small Dialog asking **Get**, optional **Validated Get** (single object/actor instance variables), and optional **Set** after dropping a Class variable onto the graph. Prefab component refs pass `showSet={false}` so only Get / Validated Get appear. `data-testid="member-access-chooser"`; Validated Get uses `member-access-validated-get`. | Class panel `onExternalDrop` for variables, function locals, and Get-only component refs. |
 | **SpriteCollisionOverlay** ([`sprite-collision-overlay.tsx`](../../apps/editor/src/components/sprite-collision-overlay.tsx)) | Dashed normalized AABB with 8 resize handles (`Resize Collision East`, …) and interior drag-to-move. Sprite Animation Preview hosts it on the `object-contain` image box so pivot/AABB match non-square textures. | Sprite Preview and Sprite Animation Preview. |
 | **NineSlicePreview** ([`nine-slice-preview.tsx`](../../apps/editor/src/components/nine-slice-preview.tsx)) | Read-only still frame of a 2D Panel Texture (or first Material Texture Sample) on a checkerboard, with dashed `--pin-transform` margin lines and orange intersection dots on the `object-contain` image box. Margins stay on PropertyGrid 0–1 sliders (`0.5` = 50% of the source edge; values above 1 stay legacy pixels). `data-testid="panel-nine-slice-preview"`. | Scene Details and Prefab Inspector `2DPanelComponent`. |
+
+The shared code editor also accepts an `ariaLabel` for extension entry sources and command inputs; existing function-body labels remain the default.
 
 The shared code editor uses a compact desktop dialog with edge-to-edge code,
 line gutters, syntax colors, and Ctrl+Space completion. GLSL suggests numeric
@@ -219,6 +231,8 @@ EngineSettingsForm gates local resolution, texture budget and post-processing fi
 Post-process entry controls keep Enabled and Scalable Resolution in one compact desktop row, wrapping for coarse pointers without overlapping touch targets. A compact Entry ID action beside the Material picker opens a Dialog with a selectable read-only PropertyGrid field, keeping IDs available for native copy without expanding every pass row.
 
 Scene Details places a labeled **Add Component** button after actor properties and immediately before the component list. The Class/Prefab Components toolbar uses the same visible label. Both actions keep the islands' compact 28px height on desktop and tablets. Outliner actor-menu **Delete** with multiple actors selected asks for **Delete Selected**, **Delete This Object**, or **Cancel**, preserving the menu-opening selection.
+
+Outliner row menus share actor, class-asset, and selection indexes instead of scanning those collections per actor. Menu lookup work is O(actors + assets + selection) per render; this does not describe hierarchy flattening or other panel work. The class-asset index refreshes each render because registry contents can change without replacing the registry instance.
 
 The project composer centers `New <TemplateName>` independently of its left-aligned Back button, using the selected built-in or imported template name.
 
