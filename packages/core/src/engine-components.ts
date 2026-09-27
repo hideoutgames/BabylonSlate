@@ -11,6 +11,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "CameraComponent", placement: "world" },
   { classId: "RenderTargetCaptureComponent", placement: "world" },
   { classId: "SpringArmComponent", placement: "world" },
+  { classId: "SplineComponent", placement: "world" },
   { classId: "LightComponent", placement: "world" },
   { classId: "AreaRectLightComponent", placement: "world" },
   { classId: "FogVolumeComponent", placement: "world" },
