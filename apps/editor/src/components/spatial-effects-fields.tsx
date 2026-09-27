@@ -179,7 +179,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.spatialResolutionScale,
             (resolutionScale) => patchVolume({ resolutionScale }),
             0.25,
-            "0.5 renders fog at half width and height. Lower values reduce cost and soften detail.",
+            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum. Lower values reduce cost and soften detail.",
           )}
           {number(
             "Volumetric Steps",
