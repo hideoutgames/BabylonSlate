@@ -1,5 +1,5 @@
 import {
-  Constants, FreeCamera, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ParticleSystem, RenderTargetTexture,
+  Constants, FreeCamera, HemisphericLight, LightConstants, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
@@ -55,6 +55,54 @@ it("manual capture allocates only on demand, coalesces requests and preserves th
   expect(output.isRenderTarget).toBe(false);
   expect(scene.customRenderTargets).toEqual([]);
   expect(scene.activeCamera).toBe(camera);
+});
+
+it("keeps color and data sampling distinct while sharing the uncaptured fallback", () => {
+  const { captures } = host();
+  const textures = new Map([["color", { renderTargetGuid: "colorTarget" }], ["data", { renderTargetGuid: "dataTarget" }]]);
+  captures.setAssets(new Map([
+    ["colorTarget", { mode: "SceneColor", width: 16, height: 8 }],
+    ["dataTarget", { mode: "DepthPass", width: 16, height: 8 }],
+  ]), textures);
+  const color = captures.acquireTexture("color")!.resource;
+  const data = captures.acquireTexture("data")!.resource;
+  expect(color.getInternalTexture()).toBe(data.getInternalTexture());
+  expect(color.gammaSpace).toBe(true);
+  expect(data.gammaSpace).toBe(false);
+  captures.setAssets(new Map([
+    ["colorTarget", { mode: "WorldNormal", width: 16, height: 8 }],
+    ["dataTarget", { mode: "SceneColor", width: 16, height: 8 }],
+  ]), textures);
+  expect(color.gammaSpace).toBe(false);
+  expect(data.gammaSpace).toBe(true);
+});
+
+it("prepares clustered lighting once per requested color capture while retrying deferred readiness", () => {
+  const { captures, scene } = host();
+  vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockRestore();
+  vi.mocked(RenderTargetTexture.prototype.render).mockRestore();
+  // Keep native readiness/init/draw lifecycle; replace only shader readiness
+  // and the GPU clustered-light batch draw unavailable in NullEngine.
+  vi.spyOn(ObjectRenderer.prototype, "_checkReadiness").mockReturnValueOnce(false).mockReturnValue(true);
+  const light = new HemisphericLight("Cluster Boundary", Vector3.Up(), scene);
+  vi.spyOn(light, "getTypeID").mockReturnValue(LightConstants.LIGHTTYPEID_CLUSTERED_CONTAINER);
+  const batchDraw = vi.fn();
+  const update = vi.fn((_camera: { name: string } | null) => ({ render: batchDraw }));
+  Object.assign(light, { isSupported: true, _updateBatches: update });
+  const output = captures.acquireTexture("texture")!.resource;
+  captures.request("capture"); captures.render();
+  expect(output.getSize().width).toBe(1);
+  expect(batchDraw).toHaveBeenCalledTimes(1);
+  captures.render();
+  expect(output.getSize().width).toBe(16);
+  expect(batchDraw).toHaveBeenCalledTimes(2);
+  expect(update.mock.calls.every(([camera]) => camera?.name === "renderTargetCapture:capture")).toBe(true);
+  captures.render();
+  expect(batchDraw).toHaveBeenCalledTimes(2);
+  vi.spyOn(normalMaterial, "createRenderTargetNormalMaterial").mockImplementation((scene) => new NodeMaterial("Capture Variant", scene));
+  captures.setAssets(new Map([["target", { mode: "WorldNormal", width: 16, height: 8 }]]));
+  captures.request("capture"); captures.render();
+  expect(batchDraw).toHaveBeenCalledTimes(2);
 });
 
 it("actor filtering is opt-in, includes component descendants, and an empty list clears the output", () => {
@@ -182,6 +230,7 @@ it("restores camera, render pass and the borrowed target when a capture draw thr
   const { captures, scene, engine, camera } = host();
   const renderPass = engine.currentRenderPassId;
   const target = engine._currentRenderTarget;
+  scene.imageProcessingConfiguration.applyByPostProcess = true;
   vi.mocked(RenderTargetTexture.prototype.render).mockImplementation(function (this: RenderTargetTexture) {
     scene.activeCamera = this.activeCamera;
     engine.currentRenderPassId = 47;
@@ -192,4 +241,5 @@ it("restores camera, render pass and the borrowed target when a capture draw thr
   expect(scene.activeCamera).toBe(camera);
   expect(engine.currentRenderPassId).toBe(renderPass);
   expect(engine._currentRenderTarget).toBe(target);
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
 });

@@ -13,18 +13,23 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
   const scene = new Scene(engine);
   const captures = new RenderTargetCaptures(scene);
   const materialScene = new Scene(engine);
-  const library = new MaterialLibrary({ acquireTexture: (guid) => captures.acquireTexture(guid) });
+  const library = new MaterialLibrary({ acquireTexture: (guid, consumerScene) => captures.acquireTexture(guid, consumerScene) });
   try {
     engine.setSize(32, 32);
     scene.clearColor = new Color4(0, 0, 0, 0);
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
     const main = new FreeCamera("Main View", new Vector3(5, 0, -5), scene);
     main.setTarget(Vector3.Zero()); scene.activeCamera = main;
     const root = new Mesh("Capture Actor", scene); root.position.z = -4;
     const plane = MeshBuilder.CreatePlane("Numeric Plane", { size: 4 }, scene);
-    const material = new StandardMaterial("Numeric Red", scene);
+    const material = new StandardMaterial("Numeric Midtone", scene);
     material.disableLighting = true;
-    material.emissiveColor = Color3.Red(); material.diffuseColor = Color3.Black();
+    material.emissiveColor = new Color3(0.25, 0.5, 0.125); material.diffuseColor = Color3.Black();
     plane.material = material;
+    // Compile/freeze the source under the main camera's linear-output setting
+    // before a separate capture pass needs gamma-encoded surface output.
+    await material.forceCompilationAsync(plane);
+    material.freeze();
     captures.registerActor("plane", () => plane);
     const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target", captureEveryFrame: false, nearClip: 1, farClip: 11 };
     captures.configure("capture", settings, () => root);
@@ -42,14 +47,22 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     const diagnostics = await acquired.ready;
     if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));
     screen.material = acquired.material;
+    acquired.material.allowShaderHotSwapping = false;
     await acquired.material.forceCompilationAsync(screen);
+    acquired.material.freeze();
     const results: Array<{ mode: string; pixel: number[] }> = [];
     const sampleMaterial = async (mode: string) => {
-      engine.beginFrame(); materialScene.render(); engine.endFrame();
+      const deadline = performance.now() + 10000;
+      do {
+        engine.beginFrame(); materialScene.render(); engine.endFrame();
+        if (acquired.material.isReadyForSubMesh(screen, screen.subMeshes![0]!)) break;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      } while (performance.now() < deadline);
+      if (!acquired.material.isReadyForSubMesh(screen, screen.subMeshes![0]!)) throw new Error("Material sampler did not become ready.");
       const pixels = await engine.readPixels(16, 16, 1, 1);
       results.push({ mode, pixel: Array.from(pixels) });
     };
-    const capture = async (mode: RenderTargetMode, onlyActors = false) => {
+    const capture = async (mode: RenderTargetMode, onlyActors = false, label: string = mode) => {
       captures.setAssets(new Map([["target", { mode, width: 32, height: 32 }]]), textures);
       captures.configure("capture", { ...settings, captureOnlyActors: onlyActors, actorIds: [] }, () => root);
       const texture = captures.acquireTexture("texture")!.resource;
@@ -58,6 +71,7 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       do {
         engine.beginFrame(); captures.render(); engine.endFrame();
         if (scene.activeCamera !== main) throw new Error("Capture replaced the main camera.");
+        if (!scene.imageProcessingConfiguration.applyByPostProcess) throw new Error("Capture changed the main image-processing configuration.");
         if (texture.getSize().width === 32) break;
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       } while (performance.now() < deadline);
@@ -65,14 +79,27 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       const pixels = await texture.readPixels(0, 0, null, true, false, 16, 16, 1, 1);
       if (!pixels) throw new Error("Capture returned no pixels.");
       const values = Array.from(pixels as Uint8Array | Float32Array);
-      results.push({ mode: onlyActors ? "Empty Filter" : mode, pixel: values });
+      results.push({ mode: onlyActors ? "Empty Filter" : label, pixel: values });
     };
     await capture("SceneColor");
-    await sampleMaterial("Material Red");
-    for (const mode of ["DepthPass", "WorldNormal"] as const) await capture(mode);
-    material.emissiveColor = Color3.Green();
-    await capture("SceneColor");
-    await sampleMaterial("Material Green After Mode Change");
+    await sampleMaterial("Material Color");
+    for (const mode of ["DepthPass", "WorldNormal"] as const) {
+      await capture(mode);
+      await sampleMaterial(`Material ${mode}`);
+    }
+    const sourceGraph = createDefaultMaterialDocument("Authored Midtone");
+    sourceGraph.shadingModel = "unlit";
+    sourceGraph.nodes.push({ id: "color", type: "const.vec3", properties: { value: [0.125, 0.25, 0.5] }, position: { x: 0, y: 0 } });
+    sourceGraph.edges = [{ id: "source-color", sourceNodeId: "color", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" }];
+    const source = library.acquire(scene, "authored-source", sourceGraph);
+    if (source.ok === false) throw new Error(JSON.stringify(source.diagnostics));
+    const sourceDiagnostics = await source.ready;
+    if (sourceDiagnostics.length) throw new Error(JSON.stringify(sourceDiagnostics));
+    plane.material = source.material;
+    await source.material.forceCompilationAsync(plane);
+    source.material.freeze();
+    await capture("SceneColor", false, "Authored SceneColor");
+    await sampleMaterial("Material Color After Mode Change");
     await capture("WorldNormal", true);
     captures.clear();
     captures.dispose();

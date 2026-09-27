@@ -1179,9 +1179,9 @@ function initializeEngine(
   const materialLibrary: MaterialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
-    acquireTexture: (guid) => {
+    acquireTexture: (guid, consumerScene) => {
       if (binding.renderTargetTextures?.has(guid)) {
-        return renderTargetCaptures.acquireTexture(guid);
+        return renderTargetCaptures.acquireTexture(guid, consumerScene);
       }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;

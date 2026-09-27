@@ -18,9 +18,17 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(result.mainCameraPreserved).toBe(true);
     expect(result.retainedBytes).toBe(0);
-    expect(result.results.find((entry) => entry.mode === "SceneColor")!.pixel).toEqual([255, 0, 0, 255]);
-    expect(result.results.find((entry) => entry.mode === "Material Red")!.pixel).toEqual([255, 0, 0, 255]);
-    expect(result.results.find((entry) => entry.mode === "Material Green After Mode Change")!.pixel).toEqual([0, 255, 0, 255]);
+    const pixel = (mode: string) => result.results.find((entry) => entry.mode === mode)!.pixel;
+    // Native StandardMaterial colors are already display values; authored
+    // graph colors are linear. Midtones expose missing/double conversions.
+    for (const [mode, expected] of [
+      ["SceneColor", [64, 128, 32, 255]],
+      ["Authored SceneColor", [99, 136, 186, 255]],
+      ["Material DepthPass", [148, 0, 0, 255]],
+      ["Material WorldNormal", [186, 186, 0, 255]],
+    ] as const) for (const [channel, value] of expected.entries()) expect(Math.abs(pixel(mode)[channel]! - value)).toBeLessThanOrEqual(2);
+    for (const [source, consumer] of [["SceneColor", "Material Color"], ["Authored SceneColor", "Material Color After Mode Change"]])
+      for (let channel = 0; channel < 4; channel++) expect(Math.abs(pixel(source!)[channel]! - pixel(consumer!)[channel]!)).toBeLessThanOrEqual(1);
     expect(result.results.find((entry) => entry.mode === "DepthPass")!.pixel[0]).toBeCloseTo(0.3, 2);
     const normal = result.results.find((entry) => entry.mode === "WorldNormal")!.pixel;
     expect(Math.abs(normal[0]! - 128)).toBeLessThanOrEqual(1);

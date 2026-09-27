@@ -27,18 +27,37 @@ class CaptureTexture extends Texture {
     this.gammaSpace = false;
     this.wrapU = this.wrapV = Texture.CLAMP_ADDRESSMODE;
   }
-  bind(texture: InternalTexture): void {
-    if (this._texture === texture) return;
-    texture.incrementReferences();
-    this._texture?.dispose();
-    this._texture = texture;
+  // Gamma belongs to this asset, not its InternalTexture: color and data
+  // aliases share the transparent fallback before their first capture.
+  override get gammaSpace(): boolean { return this._gammaSpace; }
+  override set gammaSpace(value: boolean) { this._gammaSpace = value; }
+  bind(texture: InternalTexture, gammaSpace: boolean): boolean {
+    const changed = this._texture !== texture || this.gammaSpace !== gammaSpace;
+    if (this._texture !== texture) {
+      texture.incrementReferences();
+      this._texture?.dispose();
+      this._texture = texture;
+    }
+    this.gammaSpace = gammaSpace;
+    return changed;
   }
 }
 
 class CaptureRenderTarget extends RenderTargetTexture {
+  private drawingPrepared = false;
   configurePass(): void {
     this._objectRenderer.enableOutlineRendering = false;
     this._objectRenderer.disableDepthPrePass = true;
+    // Babylon 9.20 installs only its clustered-light preparation observer on
+    // this privately owned renderer. Readiness already runs that GPU work;
+    // skip the same observer on the immediately following prepared draw.
+    this._objectRenderer.onInitRenderingObservable.add((_renderer, state) => {
+      if (this.drawingPrepared) state.skipNextObservers = true;
+    }, -1, true);
+  }
+  renderPrepared(): void {
+    this.drawingPrepared = true;
+    try { this.render(false); } finally { this.drawingPrepared = false; }
   }
 }
 
@@ -52,7 +71,7 @@ type Capture = {
 };
 type Target = {
   key: string;
-  texture: RenderTargetTexture;
+  texture: CaptureRenderTarget;
   owner: string;
   depth?: DepthRenderer;
   normals?: NodeMaterial;
@@ -77,6 +96,7 @@ export class RenderTargetCaptures {
   private readonly removedMesh: Observer<AbstractMesh>;
   private readonly targets = new Map<string, Target>();
   private readonly textures = new Map<string, CaptureTexture>();
+  private readonly consumerScenes = new Map<Scene, Observer<Scene>>();
   private fallback: RawTexture | undefined;
   private fallbackLease: ManagedRenderLease | undefined;
   private readonly beforeRender: Observer<Scene>;
@@ -148,8 +168,11 @@ export class RenderTargetCaptures {
     const capture = this.captures.get(actorId);
     if (capture) capture.requested = true;
   }
-  acquireTexture(guid: string): ResourceLease<Texture> | null {
-    if (!this.textureDefinitions.has(guid) || this.disposed) return null;
+  acquireTexture(guid: string, consumerScene: Scene = this.scene): ResourceLease<Texture> | null {
+    if (!this.textureDefinitions.has(guid) || this.disposed || consumerScene.isDisposed || consumerScene.getEngine() !== this.scene.getEngine()) return null;
+    if (!this.consumerScenes.has(consumerScene)) {
+      this.consumerScenes.set(consumerScene, consumerScene.onDisposeObservable.addOnce(() => this.consumerScenes.delete(consumerScene))!);
+    }
     let texture = this.textures.get(guid);
     if (!texture) {
       texture = new CaptureTexture(this.scene, `renderTargetTexture:${guid}`);
@@ -243,7 +266,7 @@ export class RenderTargetCaptures {
       const captureTexture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
         generateMipMaps: false, doNotChangeAspectRatio: false, type, format,
         samplingMode: Texture.NEAREST_SAMPLINGMODE, generateDepthBuffer: true, generateStencilBuffer: false,
-        gammaSpace: false, enableClusteredLights: mode === "SceneColor",
+        gammaSpace: mode === "SceneColor", enableClusteredLights: mode === "SceneColor",
       });
       captureTexture.configurePass();
       texture = captureTexture;
@@ -258,7 +281,7 @@ export class RenderTargetCaptures {
       const depth = mode === "DepthPass" ? new DepthRenderer(this.scene, type, camera, false, Texture.NEAREST_SAMPLINGMODE, false, `captureDepth:${guid}`, texture) : undefined;
       if (mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
-      const target: Target = { key, texture, owner, depth, normals, lease, normalMaterials: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
+      const target: Target = { key, texture: captureTexture, owner, depth, normals, lease, normalMaterials: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
       this.targets.set(guid, target);
       return target;
     } catch (error) {
@@ -335,10 +358,17 @@ export class RenderTargetCaptures {
     const projection = scene.getProjectionMatrix();
     const engine = scene.getEngine();
     const renderPass = engine.currentRenderPassId;
+    const imageProcessing = scene.imageProcessingConfiguration;
+    const applyByPostProcess = imageProcessing.applyByPostProcess;
     drawing.add(scene);
     try {
+      // Match authored unlit surfaces: Scene Color is display/gamma encoded.
+      // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
+      // invalidation; the capture has its own material render-pass defines.
+      if (!target.depth && !target.normals) imageProcessing._applyByPostProcess = false;
       return this.drawReady(target);
     } finally {
+      imageProcessing._applyByPostProcess = applyByPostProcess;
       scene.activeCamera = camera;
       scene.activeCameras = cameras;
       scene.setSceneUniformBuffer(ubo);
@@ -350,7 +380,7 @@ export class RenderTargetCaptures {
   }
   private drawReady(target: Target): boolean {
     if (!target.texture.isReadyForRendering()) return false;
-    drawBorrowedTarget(this.scene, target.texture, () => target.texture.render(false), {
+    drawBorrowedTarget(this.scene, target.texture, () => target.texture.renderPrepared(), {
       restoreAlpha: true, wrapDrawFailure: false, message: "Render target capture failed.",
     });
     return true;
@@ -368,12 +398,18 @@ export class RenderTargetCaptures {
       } catch (error) { this.fallback?.dispose(); this.fallback = undefined; lease.release(); throw error; }
     }
     const fallback = this.fallback.getInternalTexture()!;
+    const changed = new Set<CaptureTexture>();
     for (const [guid, texture] of this.textures) {
       const source = this.textureDefinitions.get(guid)?.renderTargetGuid;
       const target = source ? this.targets.get(source) : undefined;
-      texture.bind(target?.published ? target.texture.getInternalTexture()! : fallback);
+      const gammaSpace = !!source && this.definitions.get(source)?.mode === "SceneColor";
+      if (texture.bind(target?.published ? target.texture.getInternalTexture()! : fallback, gammaSpace)) changed.add(texture);
     }
-    for (const material of this.scene.materials) material.markAsDirty(Material.TextureDirtyFlag);
+    if (!changed.size) return;
+    // SceneLayer materials share the world's output. Invalidate their defines
+    // and frozen bindings when the attachment or its color/data contract changes.
+    for (const scene of this.consumerScenes.keys()) for (const material of scene.materials)
+      if (material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) material.markDirty(true);
   }
   private retire(guid: string): void {
     const target = this.targets.get(guid);
@@ -402,6 +438,8 @@ export class RenderTargetCaptures {
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);
     this.scene.onMeshRemovedObservable.remove(this.removedMesh);
     this.clear();
+    for (const [scene, observer] of this.consumerScenes) scene.onDisposeObservable.remove(observer);
+    this.consumerScenes.clear();
     for (const texture of this.textures.values()) texture.dispose();
     this.textures.clear();
     this.fallback?.dispose();
