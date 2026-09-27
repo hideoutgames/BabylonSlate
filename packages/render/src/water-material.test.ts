@@ -93,7 +93,7 @@ describe("Water material binding", () => {
         expect(selected(b.plugin)).toEqual([100, 101, 102, null]);
       };
       scene.render();
-      const added = createWaterRemovalMesh(scene, "added", { shape: "sphere", width: 2 }, { editor: false });
+      const added = createWaterRemovalMesh(scene, "added", { shape: "sphere", width: 2, height: 2, length: 2 }, { editor: false });
       added.position.x = -1;
       scene.customRenderFunction = () => {
         expect(selected(a.plugin)).toEqual([4, -1, null, null]);

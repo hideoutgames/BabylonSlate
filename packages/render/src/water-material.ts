@@ -360,7 +360,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   readonly body: WaterBodyProperties;
   /** The surface this material shades, for choosing nearby removal volumes. */
   mesh: AbstractMesh | null = null;
-  private bindingData: WaterBindingData | null = null;
+  private bindingFrame = -1;
+  private bindingRender = -1;
   private removalMesh: AbstractMesh | null = null;
   private selectedRemovals: WaterRemovalCandidate[] = [];
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
@@ -410,14 +411,15 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, contactRange(w), ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
     // The nearest enabled removal volumes that can reach this surface.
     const mesh = this.mesh;
-    if (this.bindingData !== data || this.removalMesh !== mesh) {
+    if (this.bindingFrame !== data.frame || this.bindingRender !== data.render || this.removalMesh !== mesh) {
       const center = mesh?.getBoundingInfo().boundingSphere;
       this.selectedRemovals = data.removals
         .map((entry) => ({ entry, gap: center ? Vector3.Distance(center.centerWorld, entry.position) - entry.radius - center.radiusWorld : 0 }))
         .filter((entry) => entry.gap <= 0)
         .sort((a, b) => a.gap - b.gap)
         .slice(0, WATER_REMOVAL_SLOTS).map(({ entry }) => entry);
-      this.bindingData = data;
+      this.bindingFrame = data.frame;
+      this.bindingRender = data.render;
       this.removalMesh = mesh;
     }
     for (let i = 0; i < WATER_REMOVAL_SLOTS; i++) {
