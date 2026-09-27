@@ -3,6 +3,7 @@ import {
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { createDefaultRenderTargetCaptureProperties } from "@babylonslate/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
@@ -14,8 +15,9 @@ import { bindParticleMaterial } from "./particle-system-factory";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
-function host() {
+function host(floatingOrigin = false) {
   const engine = new NullEngine();
+  if (floatingOrigin) vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
   engines.push(engine);
   // NullEngine does not record the GPU allocator's format metadata.
   const allocate = engine.createRenderTargetTexture.bind(engine);
@@ -24,7 +26,7 @@ function host() {
     target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
     return target;
   });
-  const scene = new Scene(engine);
+  const scene = new Scene(engine, { useFloatingOrigin: floatingOrigin });
   const camera = new FreeCamera("Main Camera", new Vector3(0, 0, -5), scene);
   const captures = new RenderTargetCaptures(scene);
   captures.setAssets(new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]),
@@ -287,7 +289,12 @@ it("admits no GPU target or draw when the shared rendering ceiling cannot fit it
 });
 
 it.each(["readiness", "draw"] as const)("restores rendering state and can retry when native capture %s throws", (stage) => {
-  const { captures, scene, engine, camera } = host();
+  const { captures, scene, engine, camera } = host(true);
+  camera.position.x = 1000;
+  const sibling = new Scene(engine, { useFloatingOrigin: true });
+  new FreeCamera("Sibling Camera", new Vector3(-2000, 0, -5), sibling);
+  const previousScene = FloatingOriginCurrentScene.getScene;
+  FloatingOriginCurrentScene.eyeAtCamera = false;
   vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockRestore();
   vi.mocked(RenderTargetTexture.prototype.render).mockRestore();
   const borrowed = engine.createRenderTargetTexture(8, {});
@@ -302,6 +309,10 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
   const outlines = scene.getOutlineRenderer(); outlines.enabled = true;
   const output = captures.acquireTexture("texture")!.resource;
   const fail = () => {
+    expect(FloatingOriginCurrentScene.getScene()).toBe(scene);
+    expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(true);
+    expect(scene.activeCamera).not.toBe(camera);
+    expect(scene.floatingOriginOffset.asArray()).toEqual([0, 0, 0]);
     engine.bindFramebuffer(interrupted);
     engine.setDepthBuffer(false); engine.setDepthWrite(false);
     engine.setAlphaMode(Constants.ALPHA_ADD);
@@ -329,9 +340,13 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
   expect(engine.getAlphaMode()).toBe(Constants.ALPHA_DISABLE);
   expect(outlines.enabled).toBe(true);
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
+  expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
+  expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(false);
   initialization.mockRestore();
   for (const remove of cleanup) remove();
   captures.render();
   expect(output.getSize().width).toBe(16);
+  expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
+  expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(false);
   borrowed.dispose(); interrupted.dispose();
 });

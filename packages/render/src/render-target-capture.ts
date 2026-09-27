@@ -3,6 +3,7 @@ import {
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
   type AbstractMesh, type InternalTexture, type Mesh, type Node, type NodeMaterial, type Observer, type Scene,
 } from "@babylonjs/core";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
   normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload,
   type RenderTargetCaptureProperties, type RenderTargetPayload,
@@ -400,6 +401,12 @@ export class RenderTargetCaptures {
     const outlinesEnabled = outlines?.enabled;
     const imageProcessing = scene.imageProcessingConfiguration;
     const applyByPostProcess = imageProcessing.applyByPostProcess;
+    const previousScene = FloatingOriginCurrentScene.getScene;
+    const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
+    // Manual RTT draws bypass Scene.render(), which normally selects this
+    // global context. A sibling scene may still own it (or have no matrices).
+    FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
+    FloatingOriginCurrentScene.eyeAtCamera = true;
     drawing.add(scene);
     try {
       // Match authored unlit surfaces: Scene Color is display/gamma encoded.
@@ -412,13 +419,18 @@ export class RenderTargetCaptures {
         imageProcessing._applyByPostProcess = applyByPostProcess;
         scene.activeCamera = camera;
         scene.activeCameras = cameras;
+        FloatingOriginCurrentScene.eyeAtCamera = true;
         scene.setSceneUniformBuffer(ubo);
         if (view && projection) scene.setTransformMatrix(view, projection);
         engine.currentRenderPassId = renderPass;
         scene.resetCachedMaterial();
         if (outlines) outlines.enabled = outlinesEnabled!;
         if (viewport) engine.setViewport(viewport, width, height);
-      } finally { drawing.delete(scene); }
+      } finally {
+        FloatingOriginCurrentScene.getScene = previousScene;
+        FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
+        drawing.delete(scene);
+      }
     }
   }
   private drawReady(target: Target): boolean {
