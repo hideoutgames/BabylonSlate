@@ -125,3 +125,17 @@ it("separates local illumination cost from shadow budgeting", async () => {
   await select("Lighting Quality", "Medium");
   expect(screen.getByText(/16 local lights requested/)).toBeTruthy();
 });
+
+it("switches automatic LOD and scales its distances within the Geometry tier", async () => {
+  render(<Fields />);
+  expect(selected("Geometry Quality")).toBe("High");
+  expect(screen.getByLabelText("LOD Distance Scale")).toHaveProperty("value", "1.5");
+  fireEvent.click(screen.getByRole("switch", { name: "Auto LOD" }));
+  expect(selected("Geometry Quality")).toBe("Custom");
+  expect(selected("Overall Quality")).toBe("Custom");
+  expect(screen.getByLabelText("LOD Distance Scale")).toHaveProperty("disabled", true);
+  await select("Geometry Quality", "Low");
+  expect(screen.getByRole("switch", { name: "Auto LOD" }).getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByLabelText("LOD Distance Scale")).toHaveProperty("value", "0.5");
+  expect(selected("Textures Quality")).toBe("High");
+});

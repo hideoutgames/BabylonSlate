@@ -11,6 +11,12 @@ type NativeParticleBinder = (
 type ParticleMaterialInternals = { _createEffectForParticles: NativeParticleBinder };
 type Binding = { effect: Effect; observer: Observer<Effect>; wrapper: DrawWrapper };
 const adapted = new WeakSet<NodeMaterial>();
+const boundMaterials = new WeakMap<IParticleSystem, NodeMaterial>();
+
+/** The live authored material, shared with capture feedback checks. */
+export function particleMaterialForSystem(system: IParticleSystem): NodeMaterial | undefined {
+  return boundMaterials.get(system);
+}
 
 /**
  * Babylon 9.20's recursive particle binder passes its original empty defines
@@ -34,6 +40,7 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     const owned = systems.get(system);
     if (!owned) return;
     systems.delete(system);
+    if (boundMaterials.get(system) === material) boundMaterials.delete(system);
     for (const { effect, observer, wrapper } of owned.bindings.values()) {
       effect.onBindObservable.remove(observer);
       // Native particle disposal omits custom wrappers. Release only the
@@ -75,6 +82,7 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     // default GPU effect path. GPU particle attributes advance per particle.
     if (system instanceof GPUParticleSystem && wrapper.drawContext) wrapper.drawContext.useInstancing = true;
     owned.bindings.set(blend, { effect: currentEffect, observer, wrapper });
+    boundMaterials.set(system, material);
     // DrawWrapper.dispose delays the Effect, but destroys its draw context
     // immediately. A define change occurs inside onBind, before the current
     // WebGPU draw consumes that context: retire the whole wrapper after frame.

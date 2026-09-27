@@ -1001,6 +1001,87 @@ describe("SceneLayer runtime compositor", () => {
     ).toBe(true);
   });
 
+  it("refreshes overlay button precedence and ambiguity as live components change", async () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          components: [
+            { id: "tex", classId: "2DTextureComponent", properties: { hitTest: "passThrough" } },
+            { id: "own-a", classId: "2DButtonComponent", properties: {} },
+            { id: "own-b", classId: "2DButtonComponent", properties: { hitTest: "ignore" } },
+          ],
+        }),
+        createActor("child-a", "First Child", {
+          classId: "SceneLayerActor",
+          parentId: "banner",
+          components: [
+            { id: "child-button-a", classId: "2DButtonComponent", properties: { hitTest: "passThrough" } },
+          ],
+        }),
+        createActor("child-b", "Second Child", {
+          classId: "SceneLayerActor",
+          parentId: "banner",
+          components: [
+            { id: "child-button-b", classId: "2DButtonComponent", properties: {} },
+          ],
+        }),
+        createActor("grandchild", "Grandchild", {
+          classId: "SceneLayerActor",
+          parentId: "child-a",
+          components: [
+            { id: "nested-button", classId: "2DButtonComponent", properties: {} },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([{
+        assetGuid: "refresh-overlay",
+        classId: "SceneLayerActor",
+        parentClassId: "Actor",
+        source: 'export function Refresh(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "tex"), "hitTest", "passThrough"); }',
+        anchors: [],
+        entryPoints: [{ name: "Refresh", event: "Refresh", isAsync: false }],
+      }]);
+      runtime.realizePlayWorld();
+      runtime.createSceneLayer("hud", 0);
+      const world = runtime.getWorld();
+      const banner = world.findActor("banner")!;
+      const assignment = () => commands.filter(
+        (command) => command.type === "assignMesh" && command.actorGuid === "banner",
+      ).at(-1);
+      expect(assignment()).toMatchObject({ hasButton: true, hitTest: "block" });
+      expect(assignment()).not.toHaveProperty("buttonComponentId");
+
+      for (const [actorId, componentId, hasButton, hitTest, buttonComponentId] of [
+        ["banner", "own-a", true, "ignore", "own-b"],
+        ["banner", "own-b", true, "passThrough", undefined],
+        ["child-a", "child-button-a", true, "block", "child-button-b"],
+        ["child-b", "child-button-b", false, "passThrough", undefined],
+      ] as const) {
+        world.findActor(actorId)!.components.find((component) => component.guid === componentId)!.destroyed = true;
+        commands.length = 0;
+        runtime.invokeScriptEvent("SceneLayerActor", "Refresh", banner);
+        const next = assignment();
+        expect(next).toMatchObject({ hasButton, hitTest });
+        if (buttonComponentId) expect(next).toHaveProperty("buttonComponentId", buttonComponentId);
+        else expect(next).not.toHaveProperty("buttonComponentId");
+      }
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("emits a 2DPanel mesh with 9-slice margins", () => {
     const commands: CommandMessage[] = [];
     const hud: SerializedSceneLayer = {

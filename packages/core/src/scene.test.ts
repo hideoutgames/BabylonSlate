@@ -356,6 +356,8 @@ describe("scene schema", () => {
 
   it("fills additive lighting settings when keys are missing", () => {
     const settings = normalizeScene({}).settings;
+    expect(settings.fogMode).toBe("linear");
+    expect(settings.fogDensity).toBe(0.01);
     expect(settings.fogColor).toEqual([0.5, 0.5, 0.5]);
     expect(settings.fogStart).toBe(0);
     expect(settings.fogEnd).toBe(100);
@@ -367,6 +369,7 @@ describe("scene schema", () => {
   it("keeps authored fog, IBL, and Default Camera ids", () => {
     const settings = normalizeScene({
       settings: {
+        fogEnabled: true,
         fogColor: [0.1, 0.2, 0.3],
         fogStart: 4,
         fogEnd: 40,
@@ -375,12 +378,64 @@ describe("scene schema", () => {
         mainCameraComponentId: "cam-comp",
       },
     }).settings;
+    expect(settings.fogEnabled).toBe(true);
+    expect(settings.fogMode).toBe("linear");
     expect(settings.fogColor).toEqual([0.1, 0.2, 0.3]);
     expect(settings.fogStart).toBe(4);
     expect(settings.fogEnd).toBe(40);
     expect(settings.environmentTextureGuid).toBe("env-1");
     expect(settings.mainCameraActorId).toBe("cam-actor");
     expect(settings.mainCameraComponentId).toBe("cam-comp");
+  });
+
+  it.each(["exponential", "exponentialSquared"])(
+    "preserves authored %s fog and inactive linear distances through save/load",
+    (fogMode) => {
+      const authored = normalizeScene({
+        settings: {
+          fogEnabled: true,
+          fogMode,
+          fogDensity: 0.025,
+          fogStart: 12,
+          fogEnd: 450,
+        },
+      });
+      const restored = normalizeScene(JSON.parse(JSON.stringify(authored)));
+      expect(restored.settings).toMatchObject({
+        fogEnabled: true,
+        fogMode,
+        fogDensity: 0.025,
+        fogStart: 12,
+        fogEnd: 450,
+      });
+    },
+  );
+
+  it.each([
+    {
+      input: { fogMode: "unknown", fogDensity: Number.NaN, fogStart: Infinity, fogEnd: Number.NaN },
+      expected: { fogMode: "linear", fogDensity: 0.01, fogStart: 0, fogEnd: 100 },
+    },
+    {
+      input: { fogDensity: -0.5, fogStart: 20, fogEnd: 10 },
+      expected: { fogDensity: 0, fogStart: 20, fogEnd: 20.01 },
+    },
+    {
+      input: { fogDensity: Infinity, fogStart: 150, fogEnd: 150 },
+      expected: { fogDensity: 0.01, fogStart: 150, fogEnd: 150.01 },
+    },
+    {
+      input: { fogStart: Number.MAX_VALUE, fogEnd: Number.MAX_VALUE },
+      expected: { fogStart: 0, fogEnd: 100 },
+    },
+    {
+      input: { fogDensity: 0, fogStart: -20, fogEnd: 1_000_000 },
+      expected: { fogDensity: 0, fogStart: -20, fogEnd: 1_000_000 },
+    },
+  ])("keeps loaded fog values finite and its linear interval valid: $input", ({ input, expected }) => {
+    const settings = normalizeScene({ settings: input }).settings;
+    expect(settings).toMatchObject(expected);
+    expect(settings.fogEnd).toBeGreaterThan(settings.fogStart);
   });
 
   it("drops a Default Camera pick unless both actor and component ids are strings", () => {

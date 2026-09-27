@@ -1,5 +1,6 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
-import { INPUT_KEYS } from "@babylonslate/core";
+import { INPUT_KEYS, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES } from "@babylonslate/core";
+export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -37,6 +38,11 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  {
+    id: ENGINE_RENDER_TARGET_MODE_ENUM_ID,
+    name: "Render Target Mode",
+    members: RENDER_TARGET_MODES.map((name, value) => ({ name, value })),
+  },
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",

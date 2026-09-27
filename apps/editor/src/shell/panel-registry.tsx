@@ -1,4 +1,5 @@
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
+import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
@@ -232,6 +233,8 @@ export const panelComponents = {
   ),
   "water-preview": (props: IDockviewPanelProps) => <WaterPreviewPanel {...props} />,
   "water-details": (props: IDockviewPanelProps) => <WaterDetailsPanel {...props} />,
+  "render-target-details": (props: IDockviewPanelProps) => <RenderTargetDetailsPanel {...props} />,
+  "render-target-texture-details": (props: IDockviewPanelProps) => <RenderTargetTextureDetailsPanel {...props} />,
   "particle-system-preview": (props: IDockviewPanelProps) => (
     <ParticleSystemPreviewPanel {...props} />
   ),

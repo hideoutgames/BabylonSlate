@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { BabassetHeader } from "./babasset";
-import { resolveGpuTexture } from "./resolve-gpu-texture";
+import {
+  resolveGpuTexture,
+  textureEncodeBaseSize,
+  textureNeedsParticleUsage,
+} from "./resolve-gpu-texture";
+
+function ktx2Header(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(32);
+  bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(20, width, true);
+  view.setUint32(24, height, true);
+  return bytes;
+}
+
+function chunk(id: string, kind: string): BabassetHeader["chunks"][number] {
+  return { id, kind, mime: kind === "ktx2" ? "image/ktx2" : "image/png", sha256: id, locator: { inline: { offset: 0, length: 1 } } };
+}
 
 function header(chunks: BabassetHeader["chunks"], payload: Record<string, unknown> = {}): BabassetHeader {
   return {
@@ -72,6 +89,58 @@ describe("resolveGpuTexture", () => {
     expect(pixelArt?.missingPreferred).toBe(false);
   });
 
+  it("never binds a block-misaligned KTX2 for a Particle Texture", async () => {
+    const pixels = new Uint8Array([1, 2, 3, 4]);
+    const byId: Record<string, Uint8Array> = {
+      pixels,
+      "ktx2:albedo": ktx2Header(1, 1),
+    };
+    const particle = header([chunk("pixels", "pixels"), chunk("ktx2:albedo", "ktx2")], {
+      usage: "particle",
+      width: 1,
+      height: 1,
+      ktx2ChunkId: "ktx2:albedo",
+    });
+    const readChunk = async (id: string) => byId[id] ?? null;
+
+    // Only the retained encode from the earlier Albedo Usage exists.
+    const stale = await resolveGpuTexture({ header: particle, readChunk, editorLod: { enabled: false, quality: 1 } });
+    expect(stale?.kind).toBe("source");
+    expect(stale?.bytes).toBe(pixels);
+    expect(stale?.missingPreferred).toBe(true);
+
+    // The Particle re-encode lands under the preferred id and is bound.
+    const preferred = stale!.preferredChunkId!;
+    byId[preferred] = ktx2Header(4, 4);
+    particle.chunks.push(chunk(preferred, "ktx2"));
+    const aligned = await resolveGpuTexture({ header: particle, readChunk, editorLod: { enabled: true, quality: 0.5 } });
+    expect(aligned?.kind).toBe("ktx2");
+    expect(aligned?.chunkId).toBe(preferred);
+    expect(aligned?.missingPreferred).toBe(false);
+  });
+
+  it("falls back to the committed Particle encode when the preferred id drifts", async () => {
+    // e.g. a project max dimension other than the default: the preferred id
+    // misses, and the oldest (misaligned) KTX2 would otherwise be selected.
+    const byId: Record<string, Uint8Array> = {
+      pixels: new Uint8Array([1]),
+      "ktx2:albedo": ktx2Header(1000, 750),
+      "ktx2:particle": ktx2Header(1000, 752),
+    };
+    const particle = header(
+      [chunk("pixels", "pixels"), chunk("ktx2:albedo", "ktx2"), chunk("ktx2:particle", "ktx2")],
+      { usage: "particle", width: 1000, height: 750, ktx2ChunkId: "ktx2:particle" },
+    );
+    const resolved = await resolveGpuTexture({
+      header: particle,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: false, quality: 1 },
+    });
+    expect(resolved?.kind).toBe("ktx2");
+    expect(resolved?.chunkId).toBe("ktx2:particle");
+    expect(resolved?.missingPreferred).toBe(true);
+  });
+
   it("does not bind a full-size KTX2 when editor LOD wants a smaller variant", async () => {
     const pixels = new Uint8Array([1, 2, 3, 4]);
     const asset = header(
@@ -112,5 +181,54 @@ describe("resolveGpuTexture", () => {
     expect(resolved?.chunkId).toBe("pixels");
     expect(resolved?.targetEdge).toBe(2048);
     expect(resolved?.missingPreferred).toBe(true);
+  });
+});
+
+describe("textureNeedsParticleUsage", () => {
+  it("flags compressed Usages whose encode is not whole 4x4 blocks", () => {
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 1, height: 1 }, 2048)).toEqual({ width: 1, height: 1 });
+    // Usage defaults to Albedo.
+    expect(textureNeedsParticleUsage({ width: 30, height: 64 }, 2048)).toEqual({ width: 30, height: 64 });
+    expect(textureNeedsParticleUsage({ usage: "normal", width: 64, height: 30 }, 2048)).toEqual({ width: 64, height: 30 });
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 64, height: 32 }, 2048)).toBeNull();
+  });
+
+  it("leaves Particle, uncompressed Usages, environment cubes and unknown sizes alone", () => {
+    expect(textureNeedsParticleUsage({ usage: "particle", width: 1, height: 1 }, 2048)).toBeNull();
+    for (const usage of ["pixelArt", "ui", "sprite", "font", "skybox"]) {
+      expect(textureNeedsParticleUsage({ usage, width: 1, height: 1 }, 2048)).toBeNull();
+    }
+    expect(
+      textureNeedsParticleUsage({ usage: "albedo", dimension: "cube", container: "dds", width: 6, height: 6 }, 2048),
+    ).toBeNull();
+    // Textures extracted from a Model have no header size.
+    expect(textureNeedsParticleUsage({ usage: "albedo" }, 2048)).toBeNull();
+  });
+
+  it("sizes a header without a size from its decoded source, as the encoder does", () => {
+    // A Model-extracted Texture: the encoder decodes the pixels chunk at 30x30.
+    expect(textureNeedsParticleUsage({ usage: "albedo" }, 2048, { width: 30, height: 30 })).toEqual({ width: 30, height: 30 });
+    expect(textureNeedsParticleUsage({ usage: "albedo" }, 2048, { width: 32, height: 16 })).toBeNull();
+    expect(textureNeedsParticleUsage({ usage: "particle" }, 2048, { width: 30, height: 30 })).toBeNull();
+    expect(textureNeedsParticleUsage({ usage: "albedo" }, 1024, { width: 3000, height: 1001 })).toEqual({ width: 1024, height: 342 });
+    // A header size wins over the decoded one.
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 64, height: 32 }, 2048, { width: 30, height: 30 })).toBeNull();
+  });
+
+  it("checks the size the encoder produces after Downsample and the project clamp", () => {
+    // An aligned source can encode unaligned: 1000x752 at 1/8 encodes at 125x94.
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 1000, height: 752 }, 2048)).toBeNull();
+    expect(
+      textureNeedsParticleUsage({ usage: "albedo", width: 1000, height: 752, downsample: 8 }, 2048),
+    ).toEqual({ width: 125, height: 94 });
+    // An unaligned source the project max clamps to 1024x512 loads.
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 4098, height: 2050 }, 1024)).toBeNull();
+    expect(textureNeedsParticleUsage({ usage: "albedo", width: 3000, height: 1001 }, 1024)).toEqual({ width: 1024, height: 342 });
+  });
+
+  it("sizes the Particle encode block-aligned", () => {
+    expect(
+      textureEncodeBaseSize({ usage: "albedo", width: 1000, height: 752, downsample: 8 }, 2048, "particle"),
+    ).toEqual({ width: 128, height: 96 });
   });
 });

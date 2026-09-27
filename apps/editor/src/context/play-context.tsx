@@ -301,6 +301,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
     Map<string, SpriteAnimationPayload>
   >(() => new Map());
+  const [playRenderTargets, setPlayRenderTargets] = useState<{ renderTargets: Map<string, import("@babylonslate/core").RenderTargetPayload>; renderTargetTextures: Map<string, import("@babylonslate/core").RenderTargetTexturePayload> }>({ renderTargets: new Map(), renderTargetTextures: new Map() });
   const [playWaters, setPlayWaters] = useState<Map<string, import("@babylonslate/core").WaterDefinition>>(new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
@@ -382,6 +383,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     collectPlaySpritePayloads,
     collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayTexturePixelSizes,
@@ -1086,6 +1088,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
 
         try {
+          setPlayRenderTargets(await collectPlayRenderTargets());
           const waters = await collectPlayWaterContent();
           setPlayWaters(waters);
           const particles = await collectPlayParticles();
@@ -1137,6 +1140,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayWaters(new Map());
+          setPlayRenderTargets({ renderTargets: new Map(), renderTargetTextures: new Map() });
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           setPlayParticleLibrary(emptyParticleLibrary());
@@ -1291,6 +1295,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       collectPlaySpritePayloads,
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
+    collectPlayRenderTargets,
     collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -1555,6 +1560,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             spritePayloads={playSpritePayloads}
             spriteAnimationPayloads={playSpriteAnimationPayloads}
             waterPayloads={playWaters}
+            renderTargets={playRenderTargets.renderTargets}
+            renderTargetTextures={playRenderTargets.renderTargetTextures}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
@@ -1576,6 +1583,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
+            textureName={(guid) => assetRegistry?.getByGuid(guid)?.header.name}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

@@ -4,6 +4,7 @@ import { newAssetGuid } from "../guid";
 import { remapModelPayloadGuids } from "../model-payload";
 import { remapParticlePayloadGuids } from "../particle-payload";
 import { remapSkeletonPayloadGuids } from "../skeleton-payload";
+import { remapRenderTargetPayloadGuids } from "../render-target-payload";
 import type { ImportResult } from "./types";
 
 /**
@@ -34,11 +35,11 @@ export function remapImportResultGuids(
     chunks: result.chunks.map((chunk) => {
       if (chunk.id !== "document") return chunk;
       try {
-        const body = JSON.parse(new TextDecoder().decode(chunk.data));
+        const body = remapRenderTargetPayloadGuids(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap);
         return { ...chunk, data: new TextEncoder().encode(JSON.stringify(remapInputReferences(body, remap))) };
       } catch { return chunk; }
     }),
-    payload: remapInputReferences(remapAnimationPayloadGuids(
+    payload: remapInputReferences(remapRenderTargetPayloadGuids(result.type, remapAnimationPayloadGuids(
       result.type,
       remapSkeletonPayloadGuids(
         result.type,
@@ -54,7 +55,7 @@ export function remapImportResultGuids(
         remap,
       ),
       remap,
-    ), remap) as Record<string, unknown>,
+    ), remap), remap) as Record<string, unknown>,
     attachToGuid: result.attachToGuid
       ? remap.get(result.attachToGuid) ?? result.attachToGuid
       : result.attachToGuid,

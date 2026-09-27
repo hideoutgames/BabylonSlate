@@ -36,6 +36,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("SkyboxComponent");
     expect(ids).toContain("HemisphericFillLightComponent");
     expect(ids).toContain("OutlineComponent");
+    expect(ids).toContain("FogVolumeComponent");
     expect(ids).toContain("Text3DComponent");
     expect(ids).toContain("ParticleComponent");
   });
@@ -54,9 +55,11 @@ describe("Add Component catalog", () => {
     expect(overlay).not.toContain("HemisphericFillLightComponent");
     expect(overlay).not.toContain("OutlineComponent");
     expect(overlay).not.toContain("SplineComponent");
+    expect(overlay).not.toContain("FogVolumeComponent");
     const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
     expect(world).toContain("SkyboxComponent");
     expect(world).toContain("OutlineComponent");
+    expect(world).toContain("FogVolumeComponent");
     expect(world).toContain("SplineComponent");
     expect(world).not.toContain("2DButtonComponent");
     expect(world).not.toContain("2DTextComponent");
@@ -90,6 +93,7 @@ describe("Add Component catalog", () => {
       "TilemapComponent",
       "LightComponent",
       "AreaRectLightComponent",
+      "FogVolumeComponent",
       "OutlineComponent",
       "HemisphericFillLightComponent",
       "SkyboxComponent",
@@ -101,7 +105,7 @@ describe("Add Component catalog", () => {
       "BehaviourTreeComponent",
       "NavAgentComponent",
     ]);
-    expect(byCategory.get("Camera")).toEqual(["CameraComponent", "SpringArmComponent"]);
+    expect(byCategory.get("Camera")).toEqual(["CameraComponent", "RenderTargetCaptureComponent", "SpringArmComponent"]);
     expect(byCategory.get("Audio")).toEqual(["AudioComponent"]);
     expect(byCategory.get("Particles")).toEqual(["ParticleComponent"]);
     expect(byCategory.get("Physics")).toEqual([

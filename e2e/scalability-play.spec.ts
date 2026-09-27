@@ -113,7 +113,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
   const custom = await read(page);
   expect(custom.rendering).toMatchObject({ width: 300, height: 180 });
-  expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, postprocessing: { resolutionScale: 0.5 } }, effects: { fxaa: false, vignette: { color: [0.2, 0.1, 0.3] } } } });
+  expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } }, effects: { fxaa: false, vignette: { color: [0.2, 0.1, 0.3] } } } });
   expect(custom.tasks.some((name) => /FXAA/.test(name))).toBe(false);
   const transcript = page.getByTestId("debug-console-transcript");
   await expect(transcript.getByText(`[log] ${custom.scalability!.revision}`, { exact: true })).toHaveCount(2);

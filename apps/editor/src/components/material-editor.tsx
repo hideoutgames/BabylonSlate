@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import { MessageDetails } from "./message-details";
+import { DiagnosticResultRow, type DiagnosticRowAction } from "./diagnostic-result-row";
+import { TextureUsageNotifications } from "./texture-usage-notifications";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { GlslCodePreview } from "./glsl-code-preview";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -20,7 +22,6 @@ import {
   type PinListRow,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
@@ -55,6 +56,7 @@ import {
   parseMaterialDomain,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
+  type MaterialDiagnostic,
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialFunctionPin,
@@ -75,6 +77,12 @@ import {
   useMaterialEditing,
   type MaterialEditingValue,
 } from "../context/material-editing-context";
+import {
+  useMaterialTextureUsageWarnings,
+  useTextureUsageFix,
+} from "../lib/use-particle-texture-usage";
+
+type MaterialDiagnosticRow = MaterialDiagnostic & { action?: DiagnosticRowAction };
 
 const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   cube: "Cube",
@@ -247,7 +255,7 @@ function useTextureExists(): (guid: string) => boolean {
   return useCallback(
     (guid: string) => {
       const header = assetRegistry?.getByGuid(guid)?.header;
-      return header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload);
+      return header?.type === "RenderTargetTexture" || (header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload));
     },
     [assetRegistry],
   );
@@ -782,7 +790,7 @@ function MaterialNodeDetails({
     void registryVersion; // Registry contents mutate without replacing its instance.
     if (!pickOpen || !isTextureNode) return [];
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload))
+      .filter((asset) => asset.header.type === "RenderTargetTexture" || (asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload)))
       .map((asset) => ({
         guid: asset.header.guid,
         name: asset.header.name,
@@ -937,7 +945,7 @@ function MaterialNodeDetails({
             open={pickOpen}
             onOpenChange={setPickOpen}
             assets={textureAssets}
-            allowedTypes={["Texture"]}
+            allowedTypes={["Texture", "RenderTargetTexture"]}
             title="Pick Texture"
             allowNone
             onPick={(guid) => {
@@ -1162,28 +1170,45 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   const textureExists = useTextureExists();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const isFunction = doc?.ref.kind === "material-function";
+  const material = useMemo(
+    () =>
+      isFunction
+        ? null
+        : normalizeMaterialDocument((doc?.content ?? {}) as Record<string, unknown>),
+    [doc?.content, isFunction],
+  );
 
   const diagnostics = useMemo(() => {
-    const payload = (doc?.content ?? {}) as Record<string, unknown>;
-    if (isFunction) {
+    if (!material) {
       return validateMaterialFunctionDocument(
-        normalizeMaterialFunctionDocument(payload),
+        normalizeMaterialFunctionDocument((doc?.content ?? {}) as Record<string, unknown>),
         { functions: editing.functions, textureExists },
       );
     }
-    return validateMaterialDocument(normalizeMaterialDocument(payload), {
+    return validateMaterialDocument(material, {
       functions: editing.functions,
       textureExists,
       warnPostProcessCost: true,
     });
-  }, [doc?.content, editing.functions, isFunction, textureExists]);
+  }, [doc?.content, editing.functions, material, textureExists]);
+  const textureUsage = useTextureUsageFix(
+    useMaterialTextureUsageWarnings(material, editing.functions),
+  );
 
-  const rows = [...diagnostics, ...editing.compileDiagnostics];
-  const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof rows)[number] | null>(null);
+  const rows: MaterialDiagnosticRow[] = [
+    ...diagnostics,
+    ...editing.compileDiagnostics,
+    ...textureUsage.rows,
+  ];
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<MaterialDiagnosticRow | null>(null);
   const selected = selectedDiagnostic && rows.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
 
   return (
     <PanelFrame className="flex-1" data-testid="material-compiler-results">
+      <TextureUsageNotifications
+        notifications={textureUsage.notifications}
+        className="shrink-0 px-2 pt-2"
+      />
       {rows.length === 0 ? (
         <Empty>
           <EmptyTitle>No Issues</EmptyTitle>
@@ -1198,23 +1223,16 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
             {(index) => {
               const row = rows[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  action={row.action}
+                  onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);
                   }}
-                  data-testid={`material-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {row.severity}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`material-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>

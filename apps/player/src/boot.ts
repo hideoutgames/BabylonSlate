@@ -24,6 +24,7 @@ import {
   createSceneLoadReadiness,
   navDebugBlockersFromActors,
   particleStats,
+  textureBlockSizeMessage,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -247,6 +248,8 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
+    renderTargets: content.renderTargets,
+    renderTargetTextures: content.renderTargetTextures,
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
@@ -312,6 +315,13 @@ function initializePlayer(
         code: diagnostic.code,
         nodeId: diagnostic.nodeId,
       });
+      options.onDiagnostic?.(diagnostics);
+    },
+    onTextureDiagnostic: (diagnostic) => {
+      // Packed games carry no asset names; the guid identifies the Texture.
+      const message = textureBlockSizeMessage({ ...diagnostic, name: diagnostic.assetGuid });
+      options.onConsoleEvent?.({ type: "log", message, severity: "error" });
+      diagnostics.push({ message, severity: "error", code: diagnostic.code, assetGuid: diagnostic.assetGuid });
       options.onDiagnostic?.(diagnostics);
     },
     onSceneLayerPointer: (event) => {
@@ -438,7 +448,9 @@ function initializePlayer(
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
+    renderTargets: Object.fromEntries(content.renderTargets),
+    renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
     animClipCatalog: content.animClipCatalog,
     deferSceneModelsReady: true,
     deferSceneLoadingPaint: true,

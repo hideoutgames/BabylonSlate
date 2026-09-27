@@ -30,7 +30,9 @@ export type PlaceActorKind =
   | { type: "light"; lightKind: string }
   | { type: "hemispheric-fill" }
   | { type: "camera" }
+  | { type: "render-target-capture" }
   | { type: "skybox" }
+  | { type: "fog-volume" }
   | { type: "text3d" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
@@ -71,6 +73,7 @@ const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
 export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
+  { id: "render-target-capture", title: "Render Target Capture", category: "Camera", kind: { type: "render-target-capture" } },
   ...(["Ocean", "Lake", "River", "Puddle"] as const).map((kind) => ({ id: "water-" + kind.toLowerCase(), title: "Water " + kind, category: "Water", kind: { type: "water" as const, classId: "Water" + kind + "Component" } })),
   { id: "water-global", title: "Global Water Volume", category: "Water", kind: { type: "water", classId: "GlobalWaterVolumeComponent" } },
   { id: "water-removal", title: "Water Removal Volume", category: "Water", kind: { type: "water", classId: "WaterRemovalVolumeComponent" } },
@@ -103,6 +106,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Skybox",
     category: "Environment",
     kind: { type: "skybox" },
+  },
+  {
+    id: "fog-volume",
+    title: "Fog Volume",
+    category: "Environment",
+    kind: { type: "fog-volume" },
   },
   {
     id: "text3d",
@@ -207,7 +216,8 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "light" &&
         item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
-        item.kind.type !== "skybox" && item.kind.type !== "water",
+        item.kind.type !== "skybox" && item.kind.type !== "water" &&
+        item.kind.type !== "fog-volume" && item.kind.type !== "render-target-capture",
     ),
     ...OVERLAY_PLACE_ACTORS,
   ];
@@ -342,6 +352,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "skybox") {
     return resolveTypeVisual({ classId: "SkyboxComponent", family: "class" });
   }
+  if (kind.type === "fog-volume") {
+    return resolveTypeVisual({ classId: "FogVolumeComponent", family: "class" });
+  }
   if (kind.type === "text3d") {
     return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
   }
@@ -364,6 +377,7 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
     return resolveTypeVisual({ classId: "AudioComponent", family: "class" });
   }
   if (kind.type === "water") return resolveTypeVisual({ classId: kind.classId, family: "class" });
+  if (kind.type === "render-target-capture") return resolveTypeVisual({ classId: "RenderTargetCaptureComponent", family: "class" });
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
@@ -461,6 +475,16 @@ export function spawnPlacedActor(
       components: [createSkyboxComponent(`${id}-skybox`)],
     }));
   }
+  if (kind.type === "fog-volume") {
+    return finish(createActor(id, "Fog Volume", {
+      transform,
+      components: [{
+        id: `${id}-fog`,
+        classId: "FogVolumeComponent",
+        properties: defaultPropertiesFor("FogVolumeComponent"),
+      }],
+    }));
+  }
   if (kind.type === "text3d") {
     return finish(createActor(id, "3D Text", {
       transform,
@@ -529,6 +553,9 @@ export function spawnPlacedActor(
   }
   if (kind.type === "water") {
     return finish(createActor(id, item.title, { transform, components: [{ id: id + "-water", classId: kind.classId, properties: defaultPropertiesFor(kind.classId) }] }));
+  }
+  if (kind.type === "render-target-capture") {
+    return finish(createActor(id, item.title, { classId: "RenderTargetCapture", transform, components: [{ id: `${id}-capture`, classId: "RenderTargetCaptureComponent", properties: defaultPropertiesFor("RenderTargetCaptureComponent") }] }));
   }
   if (kind.type === "overlay-2d") {
     return finish(createActor(id, item.title, {
@@ -685,6 +712,9 @@ export function duplicateSceneActors(
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
+      if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
+        return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };
+      }
       if (component.classId !== "PhysicsConstraintComponent") return component;
       const target = component.properties.targetActorId;
       if (typeof target !== "string" || !actorCopies.has(target)) return component;

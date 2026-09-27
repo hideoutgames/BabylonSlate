@@ -31,6 +31,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     anisotropy: "textures",
     byteBudget: "textures",
   },
+  geometry: { autoLod: "geometry", lodDistanceScale: "geometry" },
   postprocessing: { resolutionScale: "postprocessing" },
   lighting: { localLightMode: "lighting", maxLocalLights: "lighting" },
 } as const satisfies {
@@ -65,7 +66,9 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   celShading: "independent",
   environmentColor: "independent",
   fogEnabled: "independent",
+  fogMode: "independent",
   fogColor: "independent",
+  fogDensity: "independent",
   fogStart: "independent",
   fogEnd: "independent",
   environmentTextureGuid: "independent",

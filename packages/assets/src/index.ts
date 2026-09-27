@@ -70,3 +70,4 @@ export * from "./environment-texture";
 
 export { materialParameterTextureAssetGuids } from "./material-parameter-textures";
 export * from "./area-emission";
+export * from "./render-target-payload";

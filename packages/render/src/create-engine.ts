@@ -1,4 +1,5 @@
 import { PostProcessRetirement } from "./post-process-retirement";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
@@ -12,11 +13,13 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
+import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -49,6 +52,7 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
+import { followAutoLodSettings, liveMeshCount } from "./model-lod";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
@@ -102,7 +106,9 @@ import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCo
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
+  TEXTURE_BLOCK_SIZE_DIAGNOSTIC,
   type Ktx2DecoderRuntimeOptions,
+  type TextureBlockSizeDiagnostic,
 } from "./ktx2-transcoder";
 import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
@@ -141,6 +147,7 @@ import {
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
   type TextureResources,
+  type TextureUploadRefusedError,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
@@ -438,6 +445,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  renderTargets?: MeshAssetContext["renderTargets"];
+  renderTargetTextures?: MeshAssetContext["renderTargetTextures"];
   areaEmissions?: MeshAssetContext["areaEmissions"];
   /** Authored Texture source pixels for overlay 2DTexture world size. */
   texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
@@ -534,6 +543,13 @@ export interface CreateEngineOptions {
     severity?: string;
     nodeId?: string;
   }) => void;
+  /**
+   * A texture was not uploaded because WebGPU would reject it: its Materials
+   * are unavailable (default mesh material, skipped particle slot) and a
+   * Sprite, Tilemap or 2D texture draws without it. Reported once per texture
+   * content. Format with `textureBlockSizeMessage`.
+   */
+  onTextureDiagnostic?: (diagnostic: TextureBlockSizeDiagnostic) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
@@ -1078,6 +1094,11 @@ function initializeEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
+  binding.renderTargets = options.renderTargets;
+  binding.renderTargetTextures = options.renderTargetTextures;
+  const renderTargetCaptures = sceneRenderTargetCaptures(scene);
+  renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
+  const captureActorSlots = new Map<number, string>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
@@ -1141,13 +1162,37 @@ function initializeEngine(
     if (options.playMode) return;
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
-  const materialLibrary = new MaterialLibrary({
+  const refusedTextures = new Set<string>();
+  /** `direct`: a Sprite, Tilemap or 2D texture binds it without a Material. */
+  const reportRefusedTexture = (refused: TextureUploadRefusedError, direct: boolean): void => {
+    const guid = refused.assetGuid;
+    const bytes = binding.textureBytes?.get(guid);
+    // Every apply compiles or binds again and refuses again; a re-encode reports anew.
+    const key = `${guid}\0${bytes ? assetByteFingerprint(bytes) : ""}`;
+    if (refusedTextures.has(key)) return;
+    refusedTextures.add(key);
+    let particle = false;
+    let other = direct;
+    for (const document of materialDocuments.values()) {
+      const lowered = materialLibrary.planFor(document);
+      if (!lowered.ok || !lowered.plan.textures.some((texture) => texture.textureGuid === guid)) continue;
+      if (lowered.plan.domain === "particle") particle = true;
+      else other = true;
+    }
+    const { width, height } = refused;
+    options.onTextureDiagnostic?.({ code: TEXTURE_BLOCK_SIZE_DIAGNOSTIC, assetGuid: guid, width, height, particle, other });
+  };
+  binding.onTextureRefused = (refused) => reportRefusedTexture(refused, true);
+  const materialLibrary: MaterialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
-    acquireTexture: (guid) => {
+    acquireTexture: (guid, consumerScene) => {
+      if (binding.renderTargetTextures?.has(guid)) {
+        return renderTargetCaptures.acquireTexture(guid, consumerScene);
+      }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes, undefined, (refused) => reportRefusedTexture(refused, false));
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
@@ -1422,7 +1467,7 @@ function initializeEngine(
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
-        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); },
+        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
   onRollback(() => editorSync?.dispose());
@@ -1434,6 +1479,37 @@ function initializeEngine(
     outlineHost.refreshSettings();
   };
   const outlineActorBySlot = new Map<number, string>();
+  const editorFogActors = new Set<string>();
+  const syncEditorFogVolumes = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    const retained = new Set<string>();
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      const volumes = actor.visible ? fogVolumeBindings(actor.components) : [];
+      if (root && volumes.length) {
+        upsertFogVolumes(scene, actor.id, root, volumes);
+        retained.add(actor.id);
+      }
+    }
+    for (const id of editorFogActors) if (!retained.has(id)) removeFogVolumes(scene, id);
+    editorFogActors.clear();
+    for (const id of retained) editorFogActors.add(id);
+  };
+  const runtimeFogActorBySlot = new Map<number, string>();
+  const refreshRuntimeFogVolumes = (slotId: number) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = binding.fogVolumes.get(slotId);
+    const previous = runtimeFogActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      removeFogVolumes(scene, previous);
+      runtimeFogActorBySlot.delete(slotId);
+    }
+    if (!authored || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    upsertFogVolumes(scene, authored.actorId, root, authored.bindings);
+    runtimeFogActorBySlot.set(slotId, authored.actorId);
+  };
   const refreshRuntimeOutline = (slotId: number) => {
     if (options.editor) return;
     const root = binding.meshes.get(slotId);
@@ -1451,13 +1527,19 @@ function initializeEngine(
     outlineHost.setActor(actorId, meshes, authored?.bindings ?? [], previous);
     outlineActorBySlot.set(slotId, actorId);
   };
-  binding.onVisualChanged = refreshRuntimeOutline;
+  binding.onVisualChanged = (slotId) => {
+    refreshRuntimeOutline(slotId);
+    refreshRuntimeFogVolumes(slotId);
+  };
 
   let lastSceneAssetGuid: string | undefined;
   let lastRenderedSnapshotFrame: number | null = null;
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
+      binding.renderTargets = assets.renderTargets;
+      binding.renderTargetTextures = assets.renderTargetTextures;
+      renderTargetCaptures.setAssets(assets.renderTargets, assets.renderTargetTextures);
       binding.areaEmissions = assets.areaEmissions;
       let emissionChanged = false;
       for (const group of binding.areaLights.values())
@@ -1490,7 +1572,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids, onTextureRefused: binding.onTextureRefused };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -1546,7 +1628,8 @@ function initializeEngine(
   ) => {
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
-      isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+        isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
     }
@@ -2610,6 +2693,8 @@ function initializeEngine(
         playCursor?.setVisible(command.visible);
       }
       if (command.type === "spawn") {
+        captureActorSlots.set(command.slotId, command.actorGuid);
+        renderTargetCaptures.registerActor(command.actorGuid, () => binding.meshes.get(command.slotId) ?? null);
         appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
         if (command.sceneLayerId) {
@@ -2635,6 +2720,9 @@ function initializeEngine(
         }
       }
       if (command.type === "despawn") {
+        const actorGuid = captureActorSlots.get(command.slotId);
+        if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
+        captureActorSlots.delete(command.slotId);
         appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
@@ -2645,6 +2733,8 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        renderTargetCaptures.clear();
+        captureActorSlots.clear();
         particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         worldLoadId = command.sceneLoadId;
@@ -2663,7 +2753,9 @@ function initializeEngine(
         }
       }
       if (command.type === "sceneLayerCreate") {
-        sceneLayerCompositor?.create(command);
+        const layer = sceneLayerCompositor?.create(command);
+        // Layer models follow the world view's Geometry quality.
+        if (layer) followAutoLodSettings(layer.scene, scene);
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
@@ -2690,6 +2782,20 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
+      if (command.type === "configureRenderTargetCapture") {
+        const transform = command.transform;
+        renderTargetCaptures.configure(command.actorGuid, command.settings,
+          () => binding.meshes.get(command.slotId) ?? null, transform ? {
+            position: [transform.position.x, transform.position.y, transform.position.z],
+            rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
+            scale: [transform.scale.x, transform.scale.y, transform.scale.z],
+          } : undefined);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "captureRenderTarget") {
+        renderTargetCaptures.request(command.actorGuid);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setActorOutlines") {
         const previous = binding.outlines.get(command.slotId);
         binding.outlines.set(command.slotId, { actorId: command.actorId, bindings: command.outlines });
@@ -2699,6 +2805,12 @@ function initializeEngine(
           else binding.outlines.delete(command.slotId);
           throw error;
         }
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setFogVolumes") {
+        appliedSnapshotIdentity = null;
+        binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
+        refreshRuntimeFogVolumes(command.slotId);
         scheduler.invalidate("asset");
       }
       if (command.type === "setAreaLights") {
@@ -2887,7 +2999,7 @@ function initializeEngine(
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
     },
     liveObjectCounts: () => ({
-      meshes: scene.meshes.length,
+      meshes: liveMeshCount(scene),
       textures: engine.getLoadedTexturesCache().length,
     }),
     drawCalls: () => lastDrawCalls,

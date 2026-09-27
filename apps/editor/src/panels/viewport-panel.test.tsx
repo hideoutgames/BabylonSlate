@@ -83,6 +83,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         content: unknown;
       }>,
       collectPlayWaterContent: vi.fn(async () => new Map()),
+      collectPlayRenderTargets: vi.fn(async () => ({ renderTargets: new Map(), renderTargetTextures: new Map() })),
       collectPlaySpritePayloads: vi.fn(async () => []),
       collectPlayTilemapContent: vi.fn(async () => ({
         tilesets: [],
@@ -146,6 +147,7 @@ vi.mock("../context/document-context", () => ({
     projectDocument: documents.projectDocument,
     collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
     collectPlayWaterContent: documents.collectPlayWaterContent,
+    collectPlayRenderTargets: documents.collectPlayRenderTargets,
     collectPlayTilemapContent: documents.collectPlayTilemapContent,
     collectPlayTextureBytes: documents.collectPlayTextureBytes,
     collectPlayTexturePixelSizes: documents.collectPlayTexturePixelSizes,
@@ -236,6 +238,7 @@ describe("ViewportPanel engine", () => {
     receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000 });
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
+    handle.editor.gizmos.setSnap.mockClear();
     play.registerSharedEngine.mockClear();
     play.playing = false;
     play.preparing = false;
@@ -376,6 +379,9 @@ describe("ViewportPanel engine", () => {
       parameters: { Mask: { kind: "texture", textureAssetGuid: "entry-mask" } },
     }];
     const maskBytes = new Uint8Array([1, 2, 3, 4]);
+    const renderTargets = new Map([["capture", { mode: "DepthPass", width: 256, height: 128 }]]);
+    const renderTargetTextures = new Map([["capture-texture", { renderTargetGuid: "capture" }]]);
+    documents.collectPlayRenderTargets.mockResolvedValueOnce({ renderTargets, renderTargetTextures });
     documents.collectPlayTextureBytes.mockImplementationOnce(async (_sprites, _tilesets, guids) =>
       new Map(guids?.includes("entry-mask") ? [["entry-mask", maskBytes]] : []));
     documents.openDocuments = [{
@@ -393,7 +399,7 @@ describe("ViewportPanel engine", () => {
     expect(handle.loadScene).not.toHaveBeenCalled();
     await waitFor(() => expect(handle.presentFirstFrame).toHaveBeenCalledOnce());
     expect(handle.loadSceneAsync).toHaveBeenCalledWith(scene, expect.objectContaining({
-      assets: expect.objectContaining({ textureBytes: new Map([["entry-mask", maskBytes]]) }),
+      assets: expect.objectContaining({ textureBytes: new Map([["entry-mask", maskBytes]]), renderTargets, renderTargetTextures }),
     }));
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
@@ -754,10 +760,11 @@ describe("ViewportPanel engine", () => {
           cameraBounds2D: { width: 32, height: 18 },
         }),
       );
+      // Grid is applied during construction; snap follows the engineEpoch effect.
+      expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith(
+        expect.objectContaining({ translate: 0.5 }),
+      );
     });
-    expect(handle.editor.gizmos.setSnap).toHaveBeenLastCalledWith(
-      expect.objectContaining({ translate: 0.5 }),
-    );
     selection.mode = "3d";
   });
 

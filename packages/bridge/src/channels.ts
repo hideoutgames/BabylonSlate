@@ -107,6 +107,8 @@ export type ControlMessage =
       materialParameterCatalog?: MaterialParameterCatalog;
       /** Loaded 2D Texture assets; environment containers are excluded. */
       materialTextureAssetGuids?: string[];
+      renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
+      renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
       /** Animation / Sprite Animation clip metadata for BT Play Animation. */
       animClipCatalog?: Array<{
         guid: string;
@@ -296,11 +298,20 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "captureRenderTarget"; actorGuid: string }
+  | {
+      type: "configureRenderTargetCapture";
+      actorGuid: string;
+      slotId: number;
+      settings: import("@babylonslate/core").RenderTargetCaptureProperties | null;
+      transform?: import("@babylonslate/core").Transform;
+    }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }
   | { type: "waterTime"; seconds: number }
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@babylonslate/core").OutlineBinding[] }
+  | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@babylonslate/core").FogVolumeBinding[] }
   | { type: "setAreaLights"; slotId: number; lights: import("@babylonslate/core").AreaRectLightBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
