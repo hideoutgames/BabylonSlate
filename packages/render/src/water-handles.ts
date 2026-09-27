@@ -139,13 +139,23 @@ export type WaterHandlesHost = ShapeHandlesHost<WaterHandleTarget>;
 
 const POINT_COLOR = new Color3(0.95, 0.97, 1);
 const WIDTH_COLOR = new Color3(0.98, 0.62, 0.2);
+const BODY_KEYS = ["kind", "assetGuid", "enabled", "width", "length", "depth", "waveScale", "flowSpeed", "flowDirection", "points", "widthScales", "curvature", "resolution"] as const;
 
 /** Water-specific geometry and constraints use the shared component shape editor. */
 export function createWaterHandles(layer: UtilityLayerRenderer, scene: Scene, options: WaterHandlesOptions = {}): WaterHandlesHost {
+  let lastRead: WaterBodyProperties | null = null;
   return createShapeHandles<WaterBodyProperties, WaterHandle, WaterHandleTarget>(layer, scene, {
     name: "water",
     parse: (properties, target) => normalizeWaterBody(properties, target.kind),
-    read: (mesh) => waterMeshBody(mesh) as WaterBodyProperties | null,
+    read: (mesh) => {
+      const live = waterMeshBody(mesh);
+      if (!live) { lastRead = null; return null; }
+      // Water's renderer mutates its body in place; give the shared host a stable snapshot per edit.
+      let changed = lastRead === null;
+      if (lastRead) for (const key of BODY_KEYS) if (live[key] !== lastRead[key]) { changed = true; break; }
+      if (changed) lastRead = { ...live };
+      return lastRead;
+    },
     update: (mesh, body) => { updateWaterMeshBody(mesh, body); },
     handles: waterHandles,
     outline: (body) => {

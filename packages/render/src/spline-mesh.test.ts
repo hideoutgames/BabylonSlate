@@ -27,7 +27,7 @@ describe("Spline editor visual", () => {
       sync.apply(document);
       const updated = scene.getMeshByName(editorComponentMeshName("a", "path"))!;
       expect(mesh.isDisposed()).toBe(true);
-      expect(updated.getVerticesData(VertexBuffer.PositionKind)).toEqual([0, 0, 0, 2, 5, 8]);
+      expect(Array.from(updated.getVerticesData(VertexBuffer.PositionKind)!)).toEqual([0, 0, 0, 2, 5, 8]);
       expect(splineMeshBody(updated as LinesMesh)?.points[1]).toEqual([2, 5, 8]);
       expect(updated.parent).toBe(sync.meshForActor("a"));
       sync.apply({ ...document, actors: [] });
