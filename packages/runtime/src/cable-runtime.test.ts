@@ -31,7 +31,8 @@ function records(data: Float32Array): Map<number, number[]> {
 
 describe("CableComponent runtime", () => {
   it("batches hundreds of active cables and does no collision work by default", () => {
-    const { runtime, commands, frames } = setup(Array.from({ length: 200 }, (_, index) => createActor(`a${index}`, "Cable", { components: [cable(`c${index}`)] })));
+    // Match the endpoint distance so first-tick motion reflects gravity without initial slack settling.
+    const { runtime, commands, frames } = setup(Array.from({ length: 200 }, (_, index) => createActor(`a${index}`, "Cable", { components: [cable(`c${index}`, { cableLength: 3 })] })));
     try {
       runtime.realizePlayWorld();
       runtime.start();

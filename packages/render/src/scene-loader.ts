@@ -76,7 +76,6 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
-import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
 import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
