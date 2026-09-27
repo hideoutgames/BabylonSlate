@@ -359,6 +359,42 @@ describe("beginSlotModelAnimLoad", () => {
     expect(root.getChildMeshes().some((mesh) => mesh.isBlocked)).toBe(false);
   });
 
+  it("publishes Auto LOD models at full detail while their levels generate", async () => {
+    const replies: Array<() => void> = [];
+    class HeldWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate() {}
+      // An error reply releases the job to the main-thread simplifier.
+      postMessage() {
+        replies.push(() => this.onmessage?.({ data: { error: "released" } }));
+      }
+    }
+    vi.stubGlobal("Worker", HeldWorker);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      binding.modelPayloads = new Map([["held-model", {
+        materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+      }]]);
+      const root = createModelActorRoot(scene, "actor-3");
+      await beginSlotModelAnimLoad(scene, binding, 3, "held-model", installAssetBytes(encodeUvSphereGlb()), root);
+      const [part] = visualMeshes(root) as Mesh[];
+      expect(part).toBeDefined();
+      expect(part!.getLODLevels()).toHaveLength(0);
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      replies[0]!();
+      await vi.waitFor(() => expect(part!.getLODLevels().length).toBeGreaterThan(0));
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("logs a loader failure and leaves the empty named root", async () => {
     const handle = createTestEngine();
     handles.push(handle);
