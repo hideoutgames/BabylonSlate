@@ -182,6 +182,15 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 Overlay Play collects Texture literals from **Set Material Texture Parameter** nodes and typed Texture defaults from class/local variables, including Array/Map entries. It uses the same project Class/Graph set as Play compilation, including classes spawned later, so parameter swaps can select a texture that no Material samples at startup. These textures use the existing GPU texture resolver and editor LOD settings; editor viewport loads stay scoped to their authored content.
 
+## Render targets
+
+- **Render Target** stores `mode`, `width`, and `height` (default 512 × 512; authored dimensions clamp to 1–4096). The engine enum `engine:RenderTargetMode` exposes **Scene Color**, **Depth Pass**, and **World Normal**.
+- **Render Target Texture** stores a `renderTargetGuid`. Select it in a Material Texture Sample, Texture Parameter, or Set Material Texture Parameter node. It references scene-local GPU output; it has no imported image bytes or compression job.
+- Place **Render Target Capture** and assign its target. It reuses the normal Camera's existing editor model, with independent field of view and near/far clipping. It does not become the gameplay camera.
+- **Capture Every Frame** defaults on. Turn it off and call **Capture Render Target** from a NodeGraph for explicit updates. **Enabled** gates capture. **Capture Only Actors** defaults off; enabling it limits capture to **Actors**, with an empty list capturing nothing. Graph Get/Set Actors exchanges live Actor references; scenes persist IDs.
+- Capture settings use the command bridge; changing a filter or lens does not rebuild the actor's meshes. Component-relative transforms follow the authored parent chain. Play and the exported player receive the same asset definitions before scene realization.
+- Each mode renders only its required pass. Depth avoids surface lighting and post-processing. World Normal records geometric world normals encoded from −1…1 to 0…1; it does not evaluate material normal maps. Scene Color uses surface shading without camera post-processing. Captures exclude editor helpers.
+
 ## Runtime Material Parameters
 
 Compiler block names remove numeric-ID separator artifacts before Babylon allocates unique shader symbols. Editor-generated Texture Sample IDs therefore produce legal GLSL samplers; distinct operations retain separate texture bindings even when their sanitized names coincide. Custom GLSL function names encode the complete operation identity, including legacy expressions, so sanitizing block names cannot merge different function bodies. Authored graph IDs and public parameter names remain unchanged.

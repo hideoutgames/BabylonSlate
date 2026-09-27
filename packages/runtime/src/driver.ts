@@ -1,4 +1,6 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
+import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
 import { areaRectLightBindings, outlineBindings } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
@@ -203,6 +205,8 @@ export interface RuntimeDriverOptions {
   audioAssetGuids?: readonly string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: readonly string[];
+  renderTargets?: Readonly<Record<string, RenderTargetPayload>>;
+  renderTargetTextures?: Readonly<Record<string, RenderTargetTexturePayload>>;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -447,6 +451,7 @@ class InProcessRuntime implements RuntimeDriver {
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
   private outlineSlots = new Set<number>();
+  private captureSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
@@ -1068,6 +1073,16 @@ class InProcessRuntime implements RuntimeDriver {
       possessCamera: (target) => {
         this.possessCamera(target);
       },
+      getRenderTargetMode: (guid) => normalizeRenderTargetPayload(
+        options.renderTargets && Object.hasOwn(options.renderTargets, guid) ? options.renderTargets[guid] : null,
+      ).mode,
+      getRenderTargetTextureTarget: (guid) => normalizeRenderTargetTexturePayload(
+        options.renderTargetTextures && Object.hasOwn(options.renderTargetTextures, guid) ? options.renderTargetTextures[guid] : null,
+      ).renderTargetGuid,
+      captureRenderTarget: (target) => {
+        if (!(target instanceof Actor) || !this.canRunOwner(target) || !captureComponent(target)) return;
+        this.emit({ type: "captureRenderTarget", actorGuid: target.guid });
+      },
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
@@ -1077,7 +1092,8 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
-          if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+          if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
+          else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
@@ -1765,7 +1781,8 @@ class InProcessRuntime implements RuntimeDriver {
     transform?: Transform;
   }): Actor | null {
     if (!this.canSpawnActorClass(options.classId)) return null;
-    const hooks = this.scriptHost.hooksFor(options.classId);
+    const hooks = this.scriptHost.hooksFor(options.classId) ??
+      (this.world.classRegistry.isA(options.classId, "RenderTargetCapture") ? {} : undefined);
     if (!hooks) return null;
     const actor = this.world.createActor({
       classId: options.classId,
@@ -3656,7 +3673,19 @@ class InProcessRuntime implements RuntimeDriver {
     };
   }
 
+  private emitRenderTargetCapture(actor: Actor, slotId: number): void {
+    const component = captureComponent(actor);
+    if (!component && !this.captureSlots.has(slotId)) return;
+    this.emit({
+      type: "configureRenderTargetCapture", actorGuid: actor.guid, slotId,
+      settings: component ? captureProperties(component) : null,
+      ...(component ? { transform: captureLocalTransform(component) } : {}),
+    });
+    if (component) this.captureSlots.add(slotId); else this.captureSlots.delete(slotId);
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
+    this.emitRenderTargetCapture(actor, slotId);
     this.emitActorOutlines(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
@@ -3828,6 +3857,11 @@ class InProcessRuntime implements RuntimeDriver {
       });
       return;
     }
+    const capture = captureComponent(actor);
+    if (capture) {
+      this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
+      return;
+    }
     const camera = actor.components.find(
       (component) =>
         component.classId === "CameraComponent" && !component.destroyed,
@@ -3985,6 +4019,11 @@ class InProcessRuntime implements RuntimeDriver {
 
   private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
+    if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
+      attachSerializedComponents(this.world, actor, [{
+        id: `${actor.guid}:capture`, classId: "RenderTargetCaptureComponent", properties: createDefaultRenderTargetCaptureProperties(),
+      }]);
+    }
     this.applyActorDefaults(actor);
     const slotId = this.assignSlot(actor);
     checkpoint();
@@ -4340,6 +4379,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (owner) this.ragdolls.retire(owner);
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
+    this.captureSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);
@@ -5114,6 +5154,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
     return `light:${typeof kind === "string" ? kind : "point"}`;
   }
   if (component.classId === "CameraComponent") return "camera";
+  if (component.classId === "RenderTargetCaptureComponent") return "renderTargetCapture";
   if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return "springarm";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";

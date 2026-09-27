@@ -28,6 +28,31 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
+  it("packs capture targets through material samplers and typed graph references", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("screen", "Screen", {
+      classId: "Monitor", components: [{ ...createMeshComponent("mesh"), properties: { materialGuid: "material" } }],
+    })] };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      assets: [
+        asset({ guid: "scene", type: "Scene", name: "Scene" }),
+        asset({ guid: "class", type: "Class", name: "Monitor" }),
+        asset({ guid: "material", type: "Material", name: "Screen" }),
+        asset({ guid: "image", type: "RenderTargetTexture", name: "Image" }),
+        asset({ guid: "depth", type: "RenderTarget", name: "Depth" }),
+        asset({ guid: "normals", type: "RenderTarget", name: "Normals" }),
+        asset({ guid: "unused", type: "RenderTarget", name: "Unused" }),
+      ],
+      sceneByGuid: (guid) => guid === "scene" ? scene : null,
+      graphByGuid: (guid) => guid === "class" ? { nodes: [
+        { id: "mode", type: "render-target.getMode", data: { properties: { "default:target": "normals" } } },
+      ], edges: [], members: [{ id: "name", kind: "variable", name: "Label", typeId: "string", defaultValue: "unused" }] } : null,
+      payloadByGuid: (guid) => guid === "material" ? { nodes: [{ type: "texture.sample", properties: { textureGuid: "image" } }] }
+        : guid === "image" ? { renderTargetGuid: "depth" } : null,
+    });
+    expect(result).toEqual({ ok: true, value: ["class", "depth", "image", "material", "normals", "scene"] });
+  });
+
   it("packs Class variable constraints and defaults without scanning ordinary strings", () => {
     const graph: SerializedGraph = {
       nodes: [],

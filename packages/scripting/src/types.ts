@@ -154,7 +154,8 @@ export function isAssignable(
     return (
       from.assetType.trim() === "" ||
       to.assetType.trim() === "" ||
-      from.assetType === to.assetType
+      from.assetType === to.assetType ||
+      (from.assetType === "RenderTargetTexture" && to.assetType === "Texture")
     );
   }
 

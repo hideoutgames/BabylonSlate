@@ -107,6 +107,8 @@ export type ControlMessage =
       materialParameterCatalog?: MaterialParameterCatalog;
       /** Loaded 2D Texture assets; environment containers are excluded. */
       materialTextureAssetGuids?: string[];
+      renderTargets?: Record<string, import("@babylonslate/core").RenderTargetPayload>;
+      renderTargetTextures?: Record<string, import("@babylonslate/core").RenderTargetTexturePayload>;
       /** Animation / Sprite Animation clip metadata for BT Play Animation. */
       animClipCatalog?: Array<{
         guid: string;
@@ -296,6 +298,14 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "captureRenderTarget"; actorGuid: string }
+  | {
+      type: "configureRenderTargetCapture";
+      actorGuid: string;
+      slotId: number;
+      settings: import("@babylonslate/core").RenderTargetCaptureProperties | null;
+      transform?: import("@babylonslate/core").Transform;
+    }
   | { type: "captureRagdollPose"; slotId: number; requestId: string; boneNames: string[] }
   | { type: "setRagdollPose"; slotId: number; requestId: string; bones: import("@babylonslate/core").RagdollBonePose[] }
   | { type: "clearRagdollPose"; slotId: number; requestId: string }

@@ -574,6 +574,8 @@ Tests, not hope:
 
 ## 4. Asset type catalog
 
+**Render Target** stores capture mode (Scene Color, Depth Pass, World Normal) and resolution. **Render Target Texture** references its live output for material samplers. Place a **Render Target Capture** actor, assign its target, and optionally enable an actor-only filter. NodeGraphs expose the mode enum, capture controls and Actor-reference array. See [render targets](architecture/render.md#render-targets).
+
 The spec's list, plus one addition flagged below:
 - **Scene** for levels. Singleton: opening a scene replaces the current Scene tab.
 - **Object** with variables, functions, interfaces and an event graph. Lives in memory.
