@@ -125,7 +125,7 @@ A node-graph emitter for custom per-particle logic. Package `packages/particle-g
 - No Space (the Particle System owns it) and no backend: graphs always simulate on the CPU, and a document never records it.
 - An unconnected pin's value is the node property `default:<pinId>`; without one the catalog default applies, and a pin with neither stays unconnected in Babylon.
 - `normalizeParticleGraphDocument` keeps unknown node types (validation reports them), drops edges without endpoints, sanitizes node properties and injects a missing Emitter Output (id `output`).
-- **Default graph** (New Asset): Create Particle (Lifetime 1.5 s, Size 0.3) → Sphere Shape (Radius 0.5) → Apply Velocity → Update Color, fed by a white-to-transparent Gradient over Normalized Age → Emitter Output (Emit Rate 30 /s). It validates with only the `missingMaterial` warning.
+- **Default graph** (New Asset): Create Particle (Lifetime 1.5 s, Size 0.3) → Sphere Shape (Radius 0.5) → Apply Velocity → Update Color → Emitter Output (Emit Rate 30 /s). Update Color's Color is Initial Color × a Gradient over Normalized Age from white to transparent black, so Create Particle's Color shows and fades out. It validates with only the `missingMaterial` warning. Saved graphs keep their own wiring; nothing is migrated.
 
 ### Catalog
 
@@ -157,6 +157,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 - A Float splats into a vector or color (Babylon's `adapt` rule). Other width changes use Split and Combine. A generic node resolves from the non-Float types wired into it; two different ones report `genericConflict`. Until then its canvas pins keep their accepted types, so an unwired Split (which lowers as Color) still takes a Vector 2 or Vector 3.
 - **Spine:** Particle pins carry the system from Create Particle through Shapes and Updates to Emitter Output, which is Babylon's update order. They are circles in the first pin row and take one link. A Particle output also feeds one input: `particleConnectionIsAllowed` refuses a second one and any loop.
 - **Evaluation:** Create Particle inputs are read once per new particle, before the Shape sets position and direction. Update inputs are read every frame for each particle. Emit Rate is read without a particle, so particle reads there give no value. Attractor inputs are also read without a particle, so particle reads there are stale.
+- **Colour:** Create Particle's Color sets both Particle Color and Initial Color at birth. Every Update Color replaces Particle Color each frame, so one whose input reads neither Initial Color nor Particle Color discards Create Particle's Color until a later one reads Initial Color (`colorOverridden`). Multiply Initial Color into Update Color to tint over life.
 - **Random Lock Mode:** **Per Particle** rolls once per particle evaluation, so it is fixed in Create Particle inputs but re-rolled every frame in Update inputs. **Every Read** rolls on every read.
 - **Time** restarts at each Play and includes Pre Warm. Delta Time is the seconds simulated this frame.
 
@@ -184,6 +185,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | `attractorParticleInput` | Warning | The Attractor is the first update on the spine and a particle-dependent input reads the previous particle |
 | `shapeDirectionPair` | Warning | Only one of Direction 1 / Direction 2 is set on Sphere, Cone or Cylinder |
 | `multipleShapes` | Warning | An earlier Shape on the spine is overridden |
+| `colorOverridden` | Warning | Anchored on Create Particle's Color: an Update Color on the spine reads neither Initial Color nor Particle Color, and no later one reads Initial Color, so Create Particle's Color never shows |
 | `noMotion` | Warning | The spine starts at Create Particle but has neither Apply Velocity nor Update Position |
 | `unreachable` | Warning | A Create, Shape or Update node is not on the spine |
 
@@ -418,6 +420,7 @@ That version boundary also prepares native update/gradient resources before crea
 - Render, Particle Graph:
   - `particle-graph-realize.test.ts`:
     - the default graph builds a CPU system at 1/60 that owns exactly one readiness texture, released with the set;
+    - the default graph fades from Create Particle's Color, not white;
     - settings map to Babylon's named constants;
     - a shared value node builds once;
     - a failed build is node-anchored and leaves nothing behind;
@@ -434,7 +437,7 @@ That version boundary also prepares native update/gradient resources before crea
 - Shader graph: `validate.test.ts` (an old Particle Texture node reports `material.unknownNode`).
 - Editor: `particle-emitter-panels.test.tsx`, `particle-system-panels.test.tsx` (both kinds in the slot picker, Graph Has Errors, last-valid hold), `particle-preview-recovery.test.tsx`, `particle-value-modes.test.ts`, `play-particles.test.ts` (graph kinds in preview and Play loading), `particle-graph-panels.test.tsx`, `particle-graph-editing-context.test.tsx` (position-only edits never rebuild, stale build reports are ignored), plus the window-catalog, panel-registry, layout-ops, content-browser-helpers and type-visuals cases. Player: `hydrate.test.ts` (Basic and graph payloads). Exporter: `closure.test.ts` (Component → System → Emitter or Graph → Material → Texture).
 - NullEngine tests do not prove GPU output. The readiness texture never reports ready on NullEngine, so CPU behaviour tests step `animate` directly.
-- The browser lifecycle proof (`apps/editor/src/testing/particle-lifecycle-proof.ts`, `e2e/particle-lifecycle.spec.ts`; WebGL2/WebGPU × CPU/GPU in CI) draws red and blue emitters through two Particle Color × tint Materials, balances Material lease acquisitions and releases, runs 100 lifecycle cycles, and captures blend cases over mid-grey and overlapping bursts that need the ring claim. A Texture Sample Material whose texture loads after the first build must draw in Additive and, after a live switch into Multiply, darken the grey, with no "not found in the material context" message. Its graph cases draw a mixed System (blue Basic plus the red default Particle Graph, `mixed-graph`) that must drain to nothing (`mixed-retired`), and run 20 graph build-and-retire cycles inside the leak baseline. With `e2e/particle-graph.spec.ts` they are the browser proof of Node Particle blocks in the bundled editor and of NodeMaterial binding on graph-built CPU systems; the lifecycle proof covers both WebGL2 and WebGPU. `e2e/p17-particles.spec.ts` covers Basic authoring through Play, and `e2e/particle-graph.spec.ts` covers Particle Graph authoring, the CPU preview, a mixed Basic + Graph System in Play and save/reopen ([testing](testing.md)).
+- The browser lifecycle proof (`apps/editor/src/testing/particle-lifecycle-proof.ts`, `e2e/particle-lifecycle.spec.ts`; WebGL2/WebGPU × CPU/GPU in CI) draws red and blue emitters through two Particle Color × tint Materials, balances Material lease acquisitions and releases, runs 100 lifecycle cycles, and captures blend cases over mid-grey and overlapping bursts that need the ring claim. A Texture Sample Material whose texture loads after the first build must draw in Additive and, after a live switch into Multiply, darken the grey, with no "not found in the material context" message. Its graph cases draw a mixed System (blue Basic plus the red default Particle Graph, `mixed-graph`) that must drain to nothing (`mixed-retired`), and run 20 graph build-and-retire cycles inside the leak baseline. With `e2e/particle-graph.spec.ts` they are the browser proof of Node Particle blocks in the bundled editor and of NodeMaterial binding on graph-built CPU systems; the lifecycle proof covers both WebGL2 and WebGPU. `e2e/p17-particles.spec.ts` covers Basic authoring through Play, and `e2e/particle-graph.spec.ts` covers Particle Graph authoring, the CPU preview (Create Particle's Color reaching the pixels through a Domain-switched Material), a mixed Basic + Graph System in Play and save/reopen ([testing](testing.md)).
 - The P17 follow-up cases recorded as unexecuted in [renderer qualification](../design/renderer-qualification.md) row F were not run. This slice rewrote those fixtures and does not convert that status into a pass.
 
 ## Out of scope
