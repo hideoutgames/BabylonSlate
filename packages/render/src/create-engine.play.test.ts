@@ -3634,7 +3634,9 @@ describe("Play createEngine view", () => {
   });
 
   it("retains Play fog volumes across visual replacement and releases their pass on removal", () => {
-    const { handle } = playHandle(sharedEngine());
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
     const camera = new UniversalCamera("fog-probe", new Vector3(0, 0, -15), handle.scene);
     camera.setTarget(Vector3.Zero());
     const volumes = fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]);
@@ -3654,6 +3656,17 @@ describe("Play createEngine view", () => {
     expect(hasFogVolumes(handle.scene)).toBe(false);
     handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
     expect(hasFogVolumes(handle.scene)).toBe(true);
+    const hidden = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(hidden, { frameId: 1, tickIndex: 1, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    writeActorSlot(hidden, 0, { slotId: 4, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 }, flags: 0 });
+    handle.pushSnapshot(hidden);
+    loop.mock.calls[0]![0]!();
+    expect(hasFogVolumes(handle.scene)).toBe(false);
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes: [] });
+    handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "mist", volumes });
+    loop.mock.calls[0]![0]!();
+    expect(hasFogVolumes(handle.scene)).toBe(false);
     handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
     expect(hasFogVolumes(handle.scene)).toBe(false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();

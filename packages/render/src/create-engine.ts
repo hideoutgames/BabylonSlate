@@ -2758,6 +2758,7 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setFogVolumes") {
+        appliedSnapshotIdentity = null;
         binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
         refreshRuntimeFogVolumes(command.slotId);
         scheduler.invalidate("asset");
