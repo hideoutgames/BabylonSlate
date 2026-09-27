@@ -370,6 +370,10 @@ All streaming nodes require a **Target** reference typed as `SceneStreamingActor
 
 Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
 
+- **Spawn Actor** from a streamed graph creates an instance-owned actor parented to the `SceneStreamingActor`, interprets its transform in the streamed instance's space at the streaming origin, and destroys it with that instance.
+- **Get Scene Reference** from a streamed owner returns that instance's Scene. Setting its Gravity still writes the session's single world physics gravity.
+- A failed or cancelled **Load Scene Blocking** / **Unload Scene Blocking** reports an error, stops that graph at the node, and does not fire **Then**. Async variants report the error and continue immediately.
+
 The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
 
 ### Actor component graph APIs

@@ -357,7 +357,7 @@ Place Actors and Duplicate allocate unused scene names (`Camera`, `Camera 2`; `C
 
 **Later spatial effects.** Project post-processing supports optional half-resolution PBR screen-space reflections with environment fallback and bounded, shadow-aware volumetric fog from directional, point and spot lights. Placeable **Fog Volumes** add box/ellipsoid density with soft edges, independently of Scene-Wide Fog, using the same pass and quality budget. Up to eight nearby visible volumes contribute at once; ray clipping skips empty space. Settings and components persist into Play/export; existing scenes retain their prior defaults. See [render architecture](architecture/render.md) for quality controls, capability limits and ownership.
 
-**Out of v1:** area lights, multiple shadow casters, Cinemachine-style follow or virtual cameras, extra viewports, render-target cameras, camera stacking, post-process as lighting. **Possess Camera is in v1** (global active-camera switch only). The skybox **mesh** is in v1 (`SkyboxComponent`); IBL remains the optional guid.
+**Out of v1:** area lights, multiple shadow casters, Cinemachine-style follow or virtual cameras, extra viewports, camera stacking, post-process as lighting. **Possess Camera is in v1** (global active-camera switch only). The skybox **mesh** is in v1 (`SkyboxComponent`); IBL remains the optional guid. Render Target Capture actors (section 4) are offscreen captures, not gameplay cameras.
 
 ### 2.6 Audio, mixing and environmental acoustics
 
