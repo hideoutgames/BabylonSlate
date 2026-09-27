@@ -495,6 +495,13 @@ export class ResourceCache {
     const uploadKey = uploadSamplingKey(options);
     const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
     const ktx2 = ktx2LoaderHints(bytes);
+    // Babylon 9.20 uploads a block-compressed KTX2 without invertY (WebGPU
+    // passes false, WebGL2 sets no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
+    // sets no _invertVScale for it. Upload a 2D KTX2 unflipped whatever the
+    // request, and flip V on the wrapper instead, so it reads the same way up
+    // as its PNG whether the decoder picks a block format or RGBA. Upload keys
+    // keep the requested invertY: flipped and unflipped wrappers stay distinct.
+    const flipV = !options.isCube && ktx2.mimeType !== undefined && options.invertY !== false;
     const raw = asUint8Array(bytes);
     const preparation = this.preparing(entry);
     let texture: Texture | CubeTexture;
@@ -510,7 +517,7 @@ export class ResourceCache {
         })
       : new Texture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
-          invertY: options.invertY !== false,
+          invertY: options.invertY !== false && !flipV,
           samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
           mimeType: ktx2.mimeType,
@@ -523,6 +530,12 @@ export class ResourceCache {
       this.release(entry.key);
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
       throw error;
+    }
+    // Before any material binds it: engine-owned wrappers have no Scene to
+    // dirty materials on a later identity/non-identity matrix change.
+    if (flipV && texture instanceof Texture) {
+      texture.vScale = -1;
+      texture.vOffset = 1;
     }
     texture.hasAlpha = options.hasAlpha === true;
     texture.anisotropicFilteringLevel = options.anisotropicFilteringLevel ?? 4;
@@ -877,7 +890,7 @@ export function bindResourceCacheToHandle(inner: ResourceCache): {
   return { cache, dispose: () => cache.dispose() };
 }
 
-/** Sprite / tilemap albedo: nearest, no mips, invertY (Babylon 2D). */
+/** Sprite / tilemap albedo: nearest, no mips, invertY (Babylon 2D; a KTX2 flips V on its wrapper instead). */
 export const PIXEL_ART_TEXTURE_SAMPLING: TextureSamplingOptions = {
   noMipmap: true,
   samplingMode: Texture.NEAREST_SAMPLINGMODE,

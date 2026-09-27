@@ -305,15 +305,16 @@ async function twoTonePng(page: Page, width: number, height: number, top: Rgb, b
 }
 
 /**
- * A 2D scene whose Tilemap fills one chunk with the top tile of a one-column,
- * two-tile atlas (`tile`×`2·tile`, green over red): drawn upright the map
- * reads green, upside down it reads red. A `ktx2` atlas carries a grey PNG, so
- * its green or red can only come from the KTX2.
+ * Adds the `width`×`height` Texture `TEXTURE_GUID`, green over red. A `ktx2`
+ * Texture carries a grey PNG, so its green or red can only come from the KTX2.
  */
-async function atlasScene(page: Page, tile: number, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles("webgpu");
-  const width = tile;
-  const height = tile * 2;
+async function addTwoToneTexture(
+  page: Page,
+  files: Map<string, Uint8Array>,
+  width: number,
+  height: number,
+  source: "png" | "ktx2",
+): Promise<void> {
   const pixels = source === "png"
     ? await twoTonePng(page, width, height, TOP, BOTTOM)
     : await twoTonePng(page, width, height, GREY, GREY);
@@ -336,6 +337,18 @@ async function atlasScene(page: Page, tile: number, source: "png" | "ktx2"): Pro
     { guid: TEXTURE_GUID, type: "Texture", name: "Atlas", version: 1, payload: texture },
     { headerPayload: texture, extraChunks },
   ));
+}
+
+/**
+ * A 2D scene whose Tilemap fills one chunk with the top tile of a one-column,
+ * two-tile atlas (`tile`×`2·tile`, green over red): drawn upright the map
+ * reads green, upside down it reads red.
+ */
+async function atlasScene(page: Page, tile: number, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles("webgpu");
+  const width = tile;
+  const height = tile * 2;
+  await addTwoToneTexture(page, files, width, height, source);
   files.set("assets/ground.tileset.babasset", await encodeAssetDocument({
     guid: TILESET_GUID, type: "Tileset", name: "Ground", version: 1,
     payload: { ...createDefaultTilesetPayload(), textureGuid: TEXTURE_GUID, atlasWidth: width, atlasHeight: height, tileWidth: tile, tileHeight: tile },
@@ -361,7 +374,7 @@ async function atlasScene(page: Page, tile: number, source: "png" | "ktx2"): Pro
   return files;
 }
 
-/** A 9×9 grid of viewport samples; those on the Tilemap read its top tile's colour. */
+/** A 9×9 grid of viewport samples over the 2D scene. */
 const GRID_POINTS: ViewportProofSamplePoint[] = Array.from({ length: 81 }, (_, index) => ({
   x: 0.1 + (index % 9) * 0.1,
   y: 0.1 + Math.floor(index / 9) * 0.1,
@@ -381,7 +394,7 @@ function tileReading(proof: ViewportProofResult): TileReading {
   return { green, red, reads };
 }
 
-test("WebGPU draws an off-grid Tilemap atlas decoded to RGBA the same way up as its PNG", async ({ page }, testInfo) => {
+test("WebGPU draws a Tilemap atlas the same way up as its PNG, decoded to RGBA off the block grid or block-compressed on it", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
   const { gpuFailures } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
@@ -410,14 +423,77 @@ test("WebGPU draws an off-grid Tilemap atlas decoded to RGBA the same way up as 
   const { png, rgba, compressed } = readings as Record<"png" | "rgba" | "compressed", TileReading & { compressed: CompressedTexture[] }>;
   const blockCompressed = compressed.compressed.some((texture) => texture.width === 12 && texture.height === 24);
   await testInfo.attach("tilemap-orientation", { body: JSON.stringify({ readings, blockCompressed, gpuFailures }), contentType: "application/json" });
-  // Recorded, not asserted: WebGPU's compressed upload ignores invertY, so it may read the other way up.
-  testInfo.annotations.push({
-    type: "orientation",
-    description: `PNG ${png.reads}; RGBA-decoded KTX2 ${rgba.reads}; ${blockCompressed ? "block-compressed" : "RGBA"} 12x24 KTX2 ${compressed.reads}`,
-  });
   expect(png.reads).toBe("upright");
-  expect(rgba.reads).toBe(png.reads);
+  expect(rgba.reads, "RGBA-decoded 10x20 KTX2").toBe(png.reads);
+  // The block-compressed upload ignores invertY; the ResourceCache wrapper flips V instead.
+  expect(blockCompressed, "12x24 KTX2 reached the GPU block-compressed").toBe(true);
+  expect(compressed.reads, "block-compressed 12x24 KTX2").toBe(png.reads);
   // The 10×20 KTX2 was drawn, and never block-compressed.
   expect(offBlockGrid(rgba.compressed)).toEqual([]);
+  expect(gpuFailures).toEqual([]);
+});
+
+/**
+ * A 2D scene with one 2D Texture showing the whole 12×24 Texture, green over
+ * red, scaled to span several viewport samples: drawn upright its green
+ * samples all sit above its red ones.
+ */
+async function textureQuadScene(page: Page, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles("webgpu");
+  await addTwoToneTexture(page, files, 12, 24, source);
+  const scene = createDefaultScene("2d");
+  scene.actors.push(createActor("picture", "Picture", {
+    // 0.12×0.24 world units at 100 pixels per unit, scaled to 6×6 and centred on the origin.
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [50, 25, 1] },
+    components: [{ id: "picture-texture", classId: "2DTextureComponent", properties: { textureGuid: TEXTURE_GUID } }],
+  }));
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({
+    guid: startupSceneGuid, type: "Scene", name: "Main",
+    version: createDefaultMigrationRegistry().currentVersion("Scene"), payload: scene as unknown as Record<string, unknown>,
+  }, { dependencies: [TEXTURE_GUID] }));
+  return files;
+}
+
+/** Sample y grows downward: upright when every green sample is above every red one. */
+function quadReading(proof: ViewportProofResult): TileReading {
+  const green: number[] = [];
+  const red: number[] = [];
+  for (const sample of proof.skybox) {
+    const [r = 0, g = 0, b = 0] = sample.pixels.at(-1) ?? [];
+    if (g >= 80 && g > 2 * Math.max(r, b)) green.push(sample.point.y);
+    if (r >= 80 && r > 2 * Math.max(g, b)) red.push(sample.point.y);
+  }
+  const reads = !green.length || !red.length ? "mixed"
+    : Math.max(...green) < Math.min(...red) ? "upright"
+      : Math.max(...red) < Math.min(...green) ? "upside down" : "mixed";
+  return { green: green.length, red: red.length, reads };
+}
+
+test("WebGPU draws a block-compressed KTX2 on a 2D Texture the same way up as its PNG", async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
+  const { gpuFailures } = watchGpuFailures(page);
+  await page.addInitScript(recordCompressedGpuTextures);
+  const readings: Record<string, TileReading & { compressed: CompressedTexture[] }> = {};
+  for (const source of ["png", "ktx2"] as const) {
+    await openMinimalTestProject(page, await textureQuadScene(page, source));
+    await openMainScene(page);
+    let proof: ViewportProofResult | undefined;
+    let reading: TileReading | undefined;
+    await expect(async () => {
+      proof = await viewportProof(page, testInfo, `texture2d-${source}`, { skyboxPoints: GRID_POINTS });
+      reading = quadReading(proof);
+      expect(Math.min(reading.green, reading.red), source).toBeGreaterThan(0);
+    }).toPass({ timeout: 60_000 });
+    expect(proof!.backend, source).toBe("webgpu");
+    const recorded = await compressedGpuTextures(page);
+    expect(recorded, source).not.toBeNull();
+    readings[source] = { ...reading!, compressed: recorded! };
+  }
+  const { png, ktx2 } = readings as Record<"png" | "ktx2", TileReading & { compressed: CompressedTexture[] }>;
+  const blockCompressed = ktx2.compressed.some((texture) => texture.width === 12 && texture.height === 24);
+  await testInfo.attach("texture2d-orientation", { body: JSON.stringify({ readings, blockCompressed, gpuFailures }), contentType: "application/json" });
+  expect(png.reads).toBe("upright");
+  expect(blockCompressed, "12x24 KTX2 reached the GPU block-compressed").toBe(true);
+  expect(ktx2.reads, "block-compressed 12x24 KTX2").toBe(png.reads);
   expect(gpuFailures).toEqual([]);
 });
