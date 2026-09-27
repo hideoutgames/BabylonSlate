@@ -51,6 +51,7 @@ import {
 import {
   createEngine,
   createSceneLoadReadiness,
+  createSceneStreamingReadiness,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -754,6 +755,22 @@ export function startPlaySession(options: {
       finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
+  const streamReadiness = createSceneStreamingReadiness({
+    handle,
+    onProgress: ({ actorGuid, streamLoadId }, progress) => {
+      worker?.postControl({ type: "sceneStreamProgress", actorGuid, streamLoadId, progress });
+      runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
+    },
+    onReady: ({ actorGuid, streamLoadId }) => {
+      worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
+      runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
+    },
+    onFailed: ({ actorGuid, streamLoadId }, error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
+      runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
+    },
+  });
   const consoleWaiters: Array<
     (result: { success: boolean; output: string }) => void
   > = [];
@@ -795,11 +812,12 @@ export function startPlaySession(options: {
     ) {
       handle.applyCommand(command);
     }
-    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized") && runtime) {
+    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
       if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
       handle.pushSnapshot(snapBuf);
     }
     sceneReadiness.receive(command);
+    streamReadiness.receive(command);
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
@@ -1194,6 +1212,7 @@ export function startPlaySession(options: {
       resetBoot();
       pauseGate?.reset();
       sceneReadiness.dispose();
+      streamReadiness.dispose();
       stopped = true;
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);

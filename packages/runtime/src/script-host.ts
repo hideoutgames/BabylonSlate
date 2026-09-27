@@ -84,7 +84,14 @@ export interface ScriptHostServices {
   /** World actors in deterministic spawn order for class queries. */
   getActors?(): readonly Actor[];
   /** Live Scene instance for the active Play scene, if any. */
-  getSceneReference?(): Scene | null;
+  getSceneReference?(owner?: BObject | null): Scene | null;
+  getTargetSceneName?(target: unknown): string;
+  loadScene?(target: unknown, blocking: boolean): Promise<void>;
+  unloadScene?(target: unknown, blocking: boolean): Promise<void>;
+  isSceneLoaded?(target: unknown): boolean;
+  getSceneLoadProgress?(target: unknown): number;
+  getSceneState?(target: unknown): string;
+  resolveInstanceId?(owner: BObject | null, id: string): string;
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -94,7 +101,7 @@ export interface ScriptHostServices {
     transform?: unknown,
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
-  spawnActor?(classId: string, transform?: unknown): Actor | null;
+  spawnActor?(classId: string, transform?: unknown, owner?: BObject | null): Actor | null;
   attachToBone?(actor: Actor, target: Actor | null, boneName: string): void;
   print(
     message: string,
@@ -367,6 +374,14 @@ export interface ScriptContext {
   spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;
+  getTargetSceneName(target: unknown): string;
+  loadSceneAsync(target: unknown): void;
+  unloadSceneAsync(target: unknown): void;
+  loadSceneBlocking(target: unknown): Promise<void>;
+  unloadSceneBlocking(target: unknown): Promise<void>;
+  isSceneLoaded(target: unknown): boolean;
+  getSceneLoadProgress(target: unknown): number;
+  getSceneState(target: unknown): string;
   getProjectName(): string;
   getProjectVersion(): string;
   getSceneReference(): Scene | null;
@@ -1167,7 +1182,7 @@ export class ScriptHost {
       getComponentById: (actor, componentId) =>
         findComponentByIdFromTarget(
           actor ?? self,
-          componentId,
+          services.resolveInstanceId?.(self, componentId) ?? componentId,
           services.getActors?.(),
           services.getSceneReference?.() ?? null,
         ),
@@ -1179,13 +1194,21 @@ export class ScriptHost {
         return services.addComponent?.(target, classId, transform) ?? null;
       },
       spawnActor: (classId, transform) =>
-        services.spawnActor?.(String(classId), transform) ?? null,
+        services.spawnActor?.(String(classId), transform, self) ?? null,
       getSceneLoadingProgress: () =>
         clamp01(services.getSceneLoadingProgress?.() ?? 1),
+      getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
+      loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
+      unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
+      loadSceneBlocking: (target) => services.loadScene?.(target, true) ?? Promise.resolve(),
+      unloadSceneBlocking: (target) => services.unloadScene?.(target, true) ?? Promise.resolve(),
+      isSceneLoaded: (target) => services.isSceneLoaded?.(target) ?? false,
+      getSceneLoadProgress: (target) => clamp01(services.getSceneLoadProgress?.(target) ?? 0),
+      getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
       getProjectName: () => services.getProjectName?.() ?? "",
       getProjectVersion: () => services.getProjectVersion?.() ?? "",
       getSceneReference: () => {
-        const scene = services.getSceneReference?.() ?? null;
+        const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
       },
       isA: (instance, classId) => {
