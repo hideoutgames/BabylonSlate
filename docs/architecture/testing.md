@@ -179,7 +179,7 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 ## Golden files
 
-`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, sprite rectangle packing). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
+`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, tilemap chunks, 2D projection). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
 
 ## Deterministic runtime harness (P3 / P4)
 

@@ -125,7 +125,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | Any dependency cycle returned `order: []`, unmounting independent plugins | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | `pluginOverrides` guids were always indexed as Unresolved, including discovered plugins (PluginSettings lives outside the mounted `assets/` root) | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Open / Export / Delete plugin row buttons were `size="sm"` without a 44px min touch target | Resolved |
-| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin / p13-plugin-settings-ui | Spec | Game-export packing and export-preset layer-3 consumption deferred to P14 (`collectEnabledPluginAssets` + empty `exportPresets` only) | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin / p13-plugin-settings-ui | Spec | Game-export packing and export-preset layer-3 consumption deferred to P14 (`collectEnabledPluginAssets` + empty `exportPresets` only) | Resolved in P14 (`resolveExportPluginGraph` + `collectExportReachability`); `collectEnabledPluginAssets` removed 2026-09-27 |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-engine-plugin | Spec | Missing-plugin e2e seeds an override on an open project rather than cold-loading a project whose plugin folder is absent; unit tests cover remount replacing placeholders | Accepted |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Import e2e asserts the class guid in Place Actors after discard, not a scene actor edge (the scene lives in the project, not the `.babplugin`) | Accepted |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Same guid + different version updates in place; Keep/Replace is same guid+version (locked design). Spec §10.5 “version conflict” prompt is the identical-version case | Accepted |
@@ -414,7 +414,7 @@ P9 content systems have landed (`p9-fonts`, `p9-sprite`, `p9-anim-graph`, `p9-sh
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
 | Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `apps/editor` | Design notes |
-| Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
+| Sprite asset + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
 | AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `scripting`, `apps/editor` | Dual-mode State Machine / Animation Object host, typed variables, compiled transition rules |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
