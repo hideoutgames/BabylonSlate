@@ -14,6 +14,7 @@ import {
   parseOutlineProperties,
   parseRagdollProperties,
   parseSpringArmProperties,
+  parseCableProperties,
   parseSplineProperties,
   createRichText2DComponent,
   createText2DComponent,
@@ -195,6 +196,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Physics body",
     "Physics",
   ),
+  engineComponent("CableComponent", "Cable", "Simulated cable with optional scene collision", "Physics"),
   engineComponent(
     "ColliderComponent",
     "Collider",
@@ -279,6 +281,8 @@ export function defaultPropertiesFor(
       return { ...parseOutlineProperties({}) };
     case "SpringArmComponent":
       return { ...parseSpringArmProperties({}) };
+    case "CableComponent":
+      return { ...parseCableProperties({}) };
     case "SplineComponent":
       return { ...parseSplineProperties({}) };
     case "HemisphericFillLightComponent":

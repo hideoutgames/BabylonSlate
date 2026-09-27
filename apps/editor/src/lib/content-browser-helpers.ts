@@ -1826,7 +1826,7 @@ export function assetHeaderDependencies(
           const guid = component.properties?.renderTargetGuid;
           if (typeof guid === "string" && guid) unique.add(guid);
         }
-        if (component.classId !== "MeshComponent") continue;
+        if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
         for (const key of ["materialGuid", "assetGuid"]) {
           const guid = component.properties?.[key];
           if (typeof guid === "string" && guid.length > 0) unique.add(guid);

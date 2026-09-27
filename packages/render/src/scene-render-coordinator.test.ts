@@ -2,7 +2,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { fogVolumeBindings, normalizeRenderingQuality } from "@babylonslate/core";
@@ -15,6 +15,7 @@ import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphT
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
+import { applyCableFrame, createCableMesh } from "./cable-mesh";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -55,6 +56,27 @@ function holdGraphInitialization() {
   });
   return { started, release };
 }
+
+it("coalesces cable uploads at render admission and preserves held frames during preparation", async () => {
+  const { scene, renderer } = host();
+  const cable = createCableMesh(scene, "cable", { numSegments: 2, numSides: 4, cableWidth: 0.4 }, 1);
+  const upload = vi.spyOn(cable, "updateVerticesData");
+  let ready = false;
+  scene.addIsReadyCheck({ isReady: () => ready });
+  applyCableFrame(scene, new Float32Array([1, 3, -1, -1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 2, 1, 0]), 1);
+  expect(renderer.render().rendered).toBe(false);
+  expect(upload).not.toHaveBeenCalled();
+  ready = true;
+  await renderer.prepare();
+  expect(upload).not.toHaveBeenCalled();
+  applyCableFrame(scene, new Float32Array([1, 3, -1, -1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 2, 0, 2, 2, 0]), 2);
+  expect(renderer.render().rendered).toBe(true);
+  expect(cable.getBoundingInfo().boundingBox.minimumWorld.y).toBeCloseTo(1.8);
+  expect(upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind)).toHaveLength(1);
+  expect(renderer.render().rendered).toBe(true);
+  expect(upload.mock.calls.filter(([kind]) => kind === VertexBuffer.PositionKind)).toHaveLength(1);
+  renderer.dispose();
+});
 
 it("keeps parent graph frames rendering while streamed resources and fog wait for publication", async () => {
   const { scene, camera, renderer } = host();

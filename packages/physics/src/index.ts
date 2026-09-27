@@ -1,4 +1,7 @@
-export type { PhysicsBackend } from "./backend";
+export type {
+  PhysicsBackend,
+  SphereSweepQuery,
+} from "./backend";
 export type {
   PhysicsWorldKind,
   MotionType,

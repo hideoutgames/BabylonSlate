@@ -224,6 +224,20 @@ describe("scene shape editing", () => {
 });
 
 describe("constraint target authoring", () => {
+  it("allows cable attachment to an actor without physics and clears the previous component target", async () => {
+    const owner = createActor("cable-owner", "Cable", { components: [
+      { id: "cable", classId: "CableComponent", properties: { targetActorId: null, targetComponentId: "old-hook" } },
+    ] });
+    scene().actors = [owner, createActor("attachment", "Empty Hook")];
+    harness.selectedActorIds = [owner.id];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("property-cable-owner-cable-targetActorId"));
+    fireEvent.click(screen.getByRole("option", { name: /Empty Hook/ }));
+    await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalled());
+    const saved = normalizeScene(JSON.parse(JSON.stringify(harness.applySceneChange.mock.calls.at(-1)![1])));
+    expect(saved.actors[0]!.components[0]!.properties).toMatchObject({ targetActorId: "attachment", targetComponentId: null });
+  });
+
   it("selects a physical actor by name and persists the target through the scene change path", async () => {
     const owner = createActor("joint-owner", "Pendulum", { components: [
       { id: "body", classId: "RigidBodyComponent", properties: {} },

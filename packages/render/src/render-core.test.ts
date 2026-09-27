@@ -331,6 +331,8 @@ describe("snapshot interpolator", () => {
     interp.push(b);
     const out = interp.sample(0.5);
     expect(out).not.toBeNull();
+    expect(out!.previousFrameId).toBe(1);
+    expect(out!.frameId).toBe(2);
     expect(out!.actorCount).toBe(1);
     expect(out!.actors[0]!.position.x).toBeCloseTo(5);
   });

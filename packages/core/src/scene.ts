@@ -338,6 +338,7 @@ function normalizeComponent(
     classId:
       typeof source.classId === "string" ? source.classId : "MeshComponent",
     properties:
+      source.classId === "CableComponent" ? { ...parseCableProperties(source.properties) } :
       source.classId === SPLINE_COMPONENT_CLASS_ID ? { ...parseSplineProperties(source.properties) } :
       source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
@@ -774,3 +775,4 @@ import { parseAreaRectLightProperties } from "./area-rect-light";
 import { parseFogVolumeProperties } from "./fog-volume";
 import { parseOutlineProperties } from "./outline-component";
 import { parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID } from "./spring-arm-component";
+import { parseCableProperties } from "./cable-component";

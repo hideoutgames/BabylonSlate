@@ -83,6 +83,7 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { applyCableFrame } from "./cable-mesh";
 import { calculateEditorDropTransforms, type EditorDropTransform } from "./editor-drop";
 import { createPreviewLighting } from "./preview-lighting";
 import {
@@ -2923,6 +2924,10 @@ function initializeEngine(
       }
       if (command.type === "waterTime") {
         setSceneWaterTime(scene, command.seconds);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "cableFrame") {
+        applyCableFrame(scene, command.data, command.frameId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {

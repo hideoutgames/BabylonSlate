@@ -158,6 +158,48 @@ it("edits a Water Removal Volume with only the sizes its shape uses", () => {
 });
 
 describe("componentPropertyRows", () => {
+  it("authors cable endpoints and bounded work while collision stays opt-in", () => {
+    const properties = defaultPropertiesFor("CableComponent");
+    const cable = { id: "cable", classId: "CableComponent", properties };
+    const onPickActor = vi.fn();
+    const actorComponents = vi.fn(() => [cable, { id: "hook", classId: "ActorComponent", properties: {} }]);
+    const { rows, update, onPickAsset } = rowsFor(cable, { onPickActor, actorComponents });
+    const target = rows.find((row) => row.label === "Target Actor");
+    const component = rows.find((row) => row.label === "Target Component");
+    const end = rows.find((row) => row.label === "End Position");
+    const segments = rows.find((row) => row.label === "Segments");
+    const collision = rows.find((row) => row.label === "Enable Collision");
+    const material = rows.find((row) => row.label === "Material");
+    if (target?.kind !== "asset" || component?.kind !== "enum" || end?.kind !== "vector3" || segments?.kind !== "number" || collision?.kind !== "boolean" || material?.kind !== "asset") throw new Error("Missing Cable controls");
+    expect(actorComponents).toHaveBeenCalledWith("actor-1");
+    expect(component.options.map((option) => option.value)).toEqual(["", "hook"]);
+    target.onPick();
+    component.onChange("hook");
+    end.onChange([2, 1, -1]);
+    segments.onChange(200);
+    collision.onChange(true);
+    material.onPick();
+    expect(onPickActor).toHaveBeenCalledWith("cable");
+    expect(update.mock.calls).toEqual([["targetComponentId", "hook"], ["endPosition", [2, 1, -1]], ["numSegments", 64], ["enableCollision", true]]);
+    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material"] }));
+    expect(rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(true);
+    expect(rowsFor({ ...cable, properties: { ...properties, enableCollision: true } }).rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(false);
+    expect(properties.targetComponentId).toBeNull();
+  });
+
+  it("resolves a prefab cable target by source ID and clears the component when its actor changes", () => {
+    const cable = { id: "cable", classId: "CableComponent", properties: { targetActorId: "hook-actor", targetComponentId: "prefab-hook" } };
+    const actorComponents = vi.fn(() => [{ id: "instance-hook", sourceId: "prefab-hook", classId: "MeshComponent", properties: {} }]);
+    const { rows, update } = rowsFor(cable, { actorComponents });
+    expect(actorComponents).toHaveBeenCalledWith("hook-actor");
+    const target = rows.find((row) => row.label === "Target Component");
+    if (target?.kind !== "enum") throw new Error("Missing component picker");
+    expect(target.value).toBe("instance-hook");
+    target.onChange("");
+    expect(update).toHaveBeenCalledWith("targetComponentId", null);
+    expect(patchInspectorComponentProperty(cable, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null });
+  });
+
   it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {
     const { rows, onPickAsset, update } = rowsFor({ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "cave", sceneName: "Cave" } }, { assetLabel: () => "Cave", assetType: () => "Scene" });
     expect(rows).toHaveLength(1);

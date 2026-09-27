@@ -26,7 +26,8 @@ import {
   PhysicsShapeSphere,
 } from "@babylonjs/core/Physics/v2/physicsShape";
 import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
-import type { PhysicsBackend } from "./backend";
+import { ProximityCastResult } from "@babylonjs/core/Physics/proximityCastResult";
+import type { PhysicsBackend, SphereSweepQuery } from "./backend";
 import type {
   CharacterControllerDesc,
   BodyVelocity,
@@ -138,6 +139,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly bodies = new Map<string, BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
+  private readonly sphereSweeps = new Set<SphereSweepQuery>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
   private readonly tmpFrom = new Vector3();
@@ -194,6 +196,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       return;
     }
     this.disposed = true;
+    for (const query of this.sphereSweeps) query.dispose();
     for (const remove of this.removeCollisionObservers) remove();
     this.removeCollisionObservers.length = 0;
     for (const character of this.characters.values()) {
@@ -801,6 +804,72 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     } finally {
       queryShape.dispose();
     }
+  }
+
+  createSphereSweep(radius: number): SphereSweepQuery {
+    this.flushMutations();
+    if (this.disposed) throw new Error("Cannot create a sphere sweep on a disposed physics backend");
+    if (!Number.isFinite(radius) || radius <= 0) throw new Error("Sphere sweep radius must be finite and positive");
+    const shape = new PhysicsShapeSphere(Vector3.Zero(), radius, this.scene);
+    const start = new Vector3();
+    const end = new Vector3();
+    const rotation = Quaternion.Identity();
+    const cast = { shape, rotation, startPosition: start, endPosition: end, shouldHitTriggers: false };
+    const proximity = { shape, rotation, position: start, maxDistance: 0, shouldHitTriggers: false };
+    const input = new ShapeCastResult();
+    const hit = new ShapeCastResult();
+    const proximityInput = new ProximityCastResult();
+    const proximityHit = new ProximityCastResult();
+    const result = miss();
+    const location = { x: 0, y: 0, z: 0 };
+    const normal = { x: 0, y: 0, z: 0 };
+    let disposed = false;
+    const clear = (): HitResult => {
+      result.hit = false;
+      result.location = null;
+      result.normal = null;
+      result.distance = 0;
+      result.actorId = null;
+      result.bodyId = null;
+      return result;
+    };
+    const copyHit = (native: ShapeCastResult | ProximityCastResult, distance: number): HitResult => {
+      location.x = native.hitPoint.x; location.y = native.hitPoint.y; location.z = native.hitPoint.z;
+      normal.x = native.hitNormal.x; normal.y = native.hitNormal.y; normal.z = native.hitNormal.z;
+      result.hit = true;
+      result.location = location;
+      result.normal = normal;
+      result.distance = distance;
+      result.bodyId = native.body ? this.bodyIdByPhysicsBody.get(native.body) ?? null : null;
+      result.actorId = result.bodyId ? this.bodies.get(result.bodyId)?.desc.actorId ?? null : null;
+      return result;
+    };
+    const query: SphereSweepQuery = {
+      sweep: (sx, sy, sz, ex, ey, ez) => {
+        if (disposed || this.disposed) return clear();
+        this.flushMutations();
+        if (disposed || this.disposed || !Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
+          !Number.isFinite(ex) || !Number.isFinite(ey) || !Number.isFinite(ez)) return clear();
+        start.set(sx, sy, sz);
+        end.set(ex, ey, ez);
+        // Casts alone can miss shapes already penetrating at the start, including
+        // a stationary particle overlapped by a moving collider.
+        this.plugin.shapeProximity(proximity, proximityInput, proximityHit);
+        if (proximityHit.hasHit && proximityHit.hitDistance < -1e-6) return copyHit(proximityHit, 0);
+        this.plugin.shapeCast(cast, input, hit);
+        if (!hit.hasHit) return clear();
+        return copyHit(hit, Math.hypot(ex - sx, ey - sy, ez - sz) * hit.hitFraction);
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        shape.dispose();
+        this.sphereSweeps.delete(query);
+        clear();
+      },
+    };
+    this.sphereSweeps.add(query);
+    return query;
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
