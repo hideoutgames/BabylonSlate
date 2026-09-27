@@ -84,6 +84,9 @@ import {
 } from "./viewport-shading-mode";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
+import { createSplineHandles } from "./spline-handles";
+import { selectedShapeComponent } from "./shape-edit-target";
+import type { ComponentShapeEdit } from "./shape-handles";
 import {
   applyGizmoMultiSelectDrag,
   beginGizmoMultiSelectDrag,
@@ -395,8 +398,10 @@ export interface CreateEngineOptions {
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
-  /** A water shape handle was released; merge `properties` into that component as one change. */
-  onWaterShapeEdit?: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
+  /** A component shape handle was released; merge properties as one undoable change. */
+  onComponentShapeEdit?: (edit: ComponentShapeEdit) => void;
+  /** Legacy water-only callback; used when onComponentShapeEdit is absent. */
+  onWaterShapeEdit?: (edit: ComponentShapeEdit) => void;
   /**
    * SceneLayer / overlay-prefab viewports: 2D transform box instead of
    * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
@@ -1594,6 +1599,7 @@ function initializeEngine(
 
   let editor: EditorTools | null = null;
   let lastSelectedActorIds: string[] = [];
+  let lastSelectedComponentIds: readonly string[] = [];
   let debugOverlay: EditorDebugOverlay | null = null;
   let disposeGestures: (() => void) | null = null;
   if (options.editor && editorSync) {
@@ -1705,22 +1711,26 @@ function initializeEngine(
     onRollback(() => gizmos.dispose());
     const waterHandles = createWaterHandles(gizmos.layer, scene, {
       scheduler,
-      onCommit: (edit) => options.onWaterShapeEdit?.(edit),
+      onCommit: (edit) => (options.onComponentShapeEdit ?? options.onWaterShapeEdit)?.(edit),
     });
     onRollback(() => waterHandles.dispose());
-    /** Shape handles follow a single selected, unlocked actor's first water component. */
-    const syncWaterHandles = (actorIds: readonly string[]) => {
-      const actor = actorIds.length === 1
-        ? editorSync.serializedScene()?.actors.find((entry) => entry.id === actorIds[0])
-        : undefined;
-      const component = actor && !actor.locked
-        ? actor.components.find((entry) => waterKindForClass(entry.classId) !== null)
-        : undefined;
+    const splineHandles = createSplineHandles(gizmos.layer, scene, {
+      scheduler,
+      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
+    });
+    onRollback(() => splineHandles.dispose());
+    const syncShapeHandles = (actorIds: readonly string[]) => {
+      const selected = selectedShapeComponent(editorSync.serializedScene(), actorIds, lastSelectedComponentIds);
+      const { actor, component } = selected ?? {};
       const kind = component ? waterKindForClass(component.classId) : null;
       waterHandles.attach(actor && component && kind ? {
         actorId: actor.id, componentId: component.id, kind,
         meshName: editorComponentMeshName(actor.id, component.id),
         properties: component.properties,
+      } : null);
+      splineHandles.attach(actor && component?.classId === "SplineComponent" ? {
+        actorId: actor.id, componentId: component.id,
+        meshName: editorComponentMeshName(actor.id, component.id), properties: component.properties,
       } : null);
     };
 
@@ -1728,7 +1738,7 @@ function initializeEngine(
       scheduler,
       editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
-        gizmos.isDragging() || waterHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
+        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
       onPointer:
         options.sharedEngine || presentRtt
@@ -1819,6 +1829,7 @@ function initializeEngine(
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
+        if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
         lastSelectedActorIds = [...actorIds];
         outlineHost.setSelection(actorIds);
         // Locked actors are not pickable; keep the gizmo off them so lock is
@@ -1837,12 +1848,14 @@ function initializeEngine(
           attachId ? editorSync.meshForActor(attachId) : null,
           attachId ? editorSync.visualMeshesForActor(attachId) : [],
         );
-        syncWaterHandles(actorIds);
+        syncShapeHandles(actorIds);
         scheduler.invalidate("selection");
       },
       syncSelectionDebug: (options) => {
         debugOverlayInstance.sync(options);
         editorSync.setCollisionSelection(options);
+        lastSelectedComponentIds = options.selectedComponentIds ?? [];
+        syncShapeHandles(options.selectedActorIds);
         scheduler.invalidate("selection");
       },
       setPreviewCanvas: (canvas) => {

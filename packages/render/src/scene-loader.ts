@@ -1,6 +1,7 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { createWaterMesh } from "./water-mesh";
+import { createSplineMesh } from "./spline-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
@@ -220,6 +221,7 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
@@ -248,6 +250,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
@@ -378,7 +381,7 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
-    visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
+    visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -398,6 +401,7 @@ function componentVisualKind(
   actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
@@ -649,6 +653,7 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  if (component.classId === "SplineComponent") return createSplineMesh(scene, name, component.properties);
   const waterKind = waterKindForClass(component.classId);
   if (waterKind) {
     const body = normalizeWaterBody(component.properties, waterKind);

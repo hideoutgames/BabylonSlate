@@ -53,7 +53,12 @@ describe("Water shape handles", () => {
       expect(commits).toEqual([]);
       drag.onDragEndObservable.notifyObservers(event(27) as never);
       expect(commits).toEqual([{ actorId: "actor", componentId: "lake", properties: { width: 14, length: 6, assetGuid: "water" } }]);
+      drag.onDragStartObservable.notifyObservers(event(27) as never);
+      drag.onDragObservable.notifyObservers(event(30) as never);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(10);
       handles.attach(null);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(7);
+      expect(commits).toHaveLength(1);
       expect(handles.handleIds()).toEqual([]);
       handles.dispose();
     } finally { vi.restoreAllMocks(); layer.dispose(); scene.dispose(); engine.dispose(); }
