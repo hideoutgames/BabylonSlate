@@ -114,7 +114,7 @@ describe("bounded texture preparation ownership", () => {
     }
   });
 
-  it("settles native-ready header work when GPU wrappers are retired for restoration", async () => {
+  it("settles native-ready header work when a leased wrapper is disposed", async () => {
     const engine = textureEngine();
     const cache = new ResourceCache();
     const source = new Blob([new Uint8Array([4, 5, 6])]);
@@ -126,16 +126,17 @@ describe("bounded texture preparation ownership", () => {
     try {
       const pending = cache.acquireTexture("pending", engine, source);
       expect(pending.resource.isReady()).toBe(true);
-      cache.releaseGpuTextures();
+      pending.resource.dispose();
       await expect(pending.ready).rejects.toThrow("retired during preparation");
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 0, leases: 1, pending: 0 });
       finish(new ArrayBuffer(0));
-      const restored = cache.acquireTexture("pending", engine, source);
-      await restored.ready;
+      const rebuilt = cache.acquireTexture("pending", engine, source);
+      await rebuilt.ready;
       pending.release();
-      expect(restored.resource.isReady()).toBe(true);
+      expect(rebuilt.resource).not.toBe(pending.resource);
+      expect(rebuilt.resource.isReady()).toBe(true);
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
-      restored.release();
+      rebuilt.release();
       cache.flushUnreferenced();
       expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
     } finally { finish(new ArrayBuffer(0)); read.mockRestore(); slice.mockRestore(); cache.dispose(); engine.dispose(); }
@@ -216,21 +217,6 @@ describe("resource cache getTexture", () => {
     bLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
-    cache.dispose();
-    engine.dispose();
-  });
-
-  it("rebuilds after releaseGpuTextures keeps the blob URL", () => {
-    const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const bytes = new Uint8Array([1, 2, 3, 4]);
-    const firstLease = cache.acquireTexture("tex", engine, bytes);
-    const first = firstLease.resource;
-    cache.releaseGpuTextures();
-    const secondLease = cache.acquireTexture("tex", engine, bytes);
-    const second = secondLease.resource;
-    expect(second).not.toBe(first);
-    expect(second.getInternalTexture()).not.toBeNull();
     cache.dispose();
     engine.dispose();
   });

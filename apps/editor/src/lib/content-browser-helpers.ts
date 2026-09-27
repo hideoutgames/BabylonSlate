@@ -1744,15 +1744,6 @@ export function newAssetFileName(
   return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
 }
 
-/** Relative path next to an existing asset (`assets/HUD.class.babasset` → `Chip.class.babasset`). */
-export function siblingAssetRelativePath(hostPath: string, fileName: string): string {
-  const slash = hostPath.lastIndexOf("/");
-  const dir = slash >= 0 ? hostPath.slice(0, slash) : "";
-  const relativeDir =
-    dir === "assets" || dir === "" ? "" : dir.replace(/^assets\//, "");
-  return relativeDir ? `${relativeDir}/${fileName}` : fileName;
-}
-
 /**
  * Textures, called functions and the preview mesh a material references.
  * Saving writes these into `header.dependencies[]` so Show References, delete
@@ -2043,16 +2034,6 @@ function documentAsset(
       },
     ],
   };
-}
-
-export function folderRelativePath(
-  selectedFolderPath: string,
-  assetsRoot: string,
-): string {
-  if (selectedFolderPath === assetsRoot) return "";
-  return selectedFolderPath.startsWith(`${assetsRoot}/`)
-    ? selectedFolderPath.slice(assetsRoot.length + 1)
-    : "";
 }
 
 export function joinAssetFolderPath(folderPath: string, fileName: string): string {

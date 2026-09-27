@@ -6,37 +6,20 @@ export const AUDIO_OCCUPANCY_GRID_MAX_Y = 24;
 export const AUDIO_OCCUPANCY_GRID_MAX_Z = 16;
 export const AUDIO_VOXEL_SIZE = 2;
 export const AUDIO_MAX_PROBES = 32;
-export const AUDIO_REVERB_CHUNK_MAX_BYTES = 64 * 1024;
 export const AUDIO_BAKE_WORKER_TIMEOUT_MS = 8_000;
 export const AUDIO_GEOMETRY_COLLECT_SLICE = 8;
 export const AUDIO_BAKE_DEBOUNCE_MS = 1_500;
 export const AUDIO_SHARED_REVERB_BUSES = 1;
 export const AUDIO_REVERB_COMB_COUNT = 4;
 export const AUDIO_REVERB_ALLPASS_COUNT = 2;
-export const AUDIO_CROSSFADING_PROFILES = 2;
 export const AUDIO_SPEED_OF_SOUND = 343;
 export const AUDIO_PRE_UNLOCK_QUEUE_CAP = 32;
 export const AUDIO_DECODED_PCM_LRU_BYTES = 256 * 1024 * 1024;
-/** Documented iPad suggestion — not the runtime default. */
-export const IPAD_AUDIO_PCM_SUGGESTION = 64 * 1024 * 1024;
-export const AUDIO_PCM_BYTE_CEILING_MIN = 32 * 1024 * 1024;
-export const AUDIO_PCM_BYTE_CEILING_MAX = 2 * 1024 * 1024 * 1024;
 export const AUDIO_MAX_CONCURRENT_VOICES = 32;
-export const AUDIO_MAX_VOICES_MIN = 8;
-export const AUDIO_MAX_VOICES_MAX = 128;
 export const AUDIO_MAX_CLIPS = 8;
 export const AUDIO_PITCH_MIN = 0.25;
 export const AUDIO_PITCH_MAX = 4;
 export const AUDIO_DEFAULT_SOURCE_CHUNK = "source";
-
-export const AUDIO_ASSET_TYPES = [
-  "Audio",
-  "AudioMixer",
-  "AudioChannel",
-  "SoundAttenuation",
-] as const;
-
-export type AudioAssetType = (typeof AUDIO_ASSET_TYPES)[number];
 
 export type AudioDiagnostic = {
   code: string;
@@ -287,41 +270,6 @@ export function resolveAudioPitch(
 
 export function audioClipCacheKey(assetGuid: string, chunkId: string): string {
   return `${assetGuid}:${chunkId}`;
-}
-
-export async function collectAudioClipSourceBytes(options: {
-  assetGuid: string;
-  payload: unknown;
-  readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
-}): Promise<Map<string, Uint8Array>> {
-  const audio = normalizeAudioPayload(options.payload);
-  const out = new Map<string, Uint8Array>();
-  for (const clip of audio.clips) {
-    const bytes = await options.readChunk(clip.chunkId);
-    if (!bytes || bytes.byteLength === 0) continue;
-    out.set(audioClipCacheKey(options.assetGuid, clip.chunkId), bytes);
-    if (clip.chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
-      out.set(options.assetGuid, bytes);
-    }
-  }
-  return out;
-}
-
-export function mapPackedAudioClipBytes(
-  assetGuid: string,
-  packed: { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] },
-): Map<string, Uint8Array> {
-  const out = new Map<string, Uint8Array>();
-  const sources =
-    packed.sources.length > 0 ? packed.sources : [packed.source];
-  const first = sources[0] ?? packed.source;
-  if (first.byteLength > 0) out.set(assetGuid, first);
-  packed.payload.clips.forEach((clip, index) => {
-    const bytes = sources[index];
-    if (!bytes || bytes.byteLength === 0) return;
-    out.set(audioClipCacheKey(assetGuid, clip.chunkId), bytes);
-  });
-  return out;
 }
 
 export async function collectPackedAudioClipBlobs(options: {

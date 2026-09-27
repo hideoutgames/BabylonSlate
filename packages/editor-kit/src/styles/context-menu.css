@@ -133,13 +133,6 @@
   width: auto;
 }
 
-.context-menu-label {
-  padding: 6px 8px 2px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--muted-foreground);
-}
-
 /* Shortcuts are for keyboards; touch-only devices skip the keycaps. */
 @media (hover: none) and (pointer: coarse) {
   .context-menu-item-shortcut {

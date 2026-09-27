@@ -4,12 +4,10 @@ import type {
   CommandMessage,
   ControlMessage,
 } from "@babylonslate/bridge";
-import { snapshotFloatCount } from "@babylonslate/bridge";
 import type { RawInputEvent } from "@babylonslate/input";
 import { encodeInputEvents } from "@babylonslate/input";
 
 export interface GameWorkerHost {
-  mode: "worker";
   postControl: (message: ControlMessage) => void;
   pushInput: (events: readonly RawInputEvent[]) => void;
   onCommand: (handler: (command: CommandMessage) => void) => void;
@@ -64,7 +62,6 @@ export function createGameWorkerHost(): GameWorkerHost {
   };
 
   return {
-    mode: "worker",
     postControl: (message) => post({ channel: "control", payload: message }),
     pushInput: (events) => {
       const buffer = encodeInputEvents(events);
@@ -78,8 +75,4 @@ export function createGameWorkerHost(): GameWorkerHost {
     },
     terminate: () => worker.terminate(),
   };
-}
-
-export function workerSnapshotScratch(maxActors = 256): Float32Array {
-  return new Float32Array(snapshotFloatCount(maxActors));
 }

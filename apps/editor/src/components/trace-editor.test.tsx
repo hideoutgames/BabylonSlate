@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -6,8 +6,47 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import type { IDockviewPanelProps } from "dockview-react";
 import type { TracePayload } from "@babylonslate/debugger";
-import { TracePlayback } from "./trace-playback";
+import {
+  TraceLogPanel,
+  TracePlaybackProvider,
+  TraceSnapshotPanel,
+  TraceTimelinePanel,
+} from "./trace-editor";
+
+const traceDocument = vi.hoisted(() => ({
+  id: "trace:traces/session.babtrace",
+  content: null as unknown,
+}));
+
+vi.mock("../context/document-context", () => ({
+  useDocuments: () => ({ openDocuments: [traceDocument] }),
+}));
+
+const panelProps = {} as IDockviewPanelProps;
+
+function TraceDocument() {
+  return (
+    <TracePlaybackProvider documentId={traceDocument.id}>
+      <TraceTimelinePanel {...panelProps} />
+      <TraceSnapshotPanel {...panelProps} />
+      <TraceLogPanel {...panelProps} />
+    </TracePlaybackProvider>
+  );
+}
+
+function renderTrace(payload: TracePayload) {
+  traceDocument.content = payload;
+  const result = render(<TraceDocument />);
+  return {
+    ...result,
+    rerenderTrace(next: TracePayload) {
+      traceDocument.content = next;
+      result.rerender(<TraceDocument />);
+    },
+  };
+}
 
 const actor = (guid: string, health: number) => ({
   guid,
@@ -72,11 +111,11 @@ const payload: TracePayload = {
   ],
 };
 
-describe("TracePlayback", () => {
+describe("Trace document panels", () => {
   afterEach(cleanup);
 
   it("expands and collapses the selected actor with the keyboard", () => {
-    render(<TracePlayback payload={payload} />);
+    renderTrace(payload);
     const tree = screen.getByRole("tree", { name: "Snapshot" });
     fireEvent.keyDown(tree, { key: "Home" });
     fireEvent.keyDown(tree, { key: "ArrowDown" });
@@ -96,7 +135,7 @@ describe("TracePlayback", () => {
   });
 
   it("shows the recorded tick and rejects fractional frame selection", () => {
-    render(<TracePlayback payload={payload} />);
+    renderTrace(payload);
     expect(screen.getByTestId("trace-frame-summary").textContent).toContain(
       "Tick 502",
     );
@@ -129,7 +168,7 @@ describe("TracePlayback", () => {
   });
 
   it("searches nested values and preserves selection across reordered actors", () => {
-    render(<TracePlayback payload={payload} />);
+    renderTrace(payload);
     fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), {
       target: { value: "health" },
     });
@@ -160,7 +199,7 @@ describe("TracePlayback", () => {
   });
 
   it("compares actor identities and exposes additions, removals and changed values", () => {
-    render(<TracePlayback payload={payload} />);
+    renderTrace(payload);
     fireEvent.click(
       screen.getByRole("button", { name: "Changes" }),
     );
@@ -175,14 +214,10 @@ describe("TracePlayback", () => {
   });
 
   it("shows recorded inputs and behaviour trees even without a world snapshot", () => {
-    render(
-      <TracePlayback
-        payload={{
-          ...payload,
-          frames: [{ ...payload.frames[1]!, snapshotText: undefined }],
-        }}
-      />,
-    );
+    renderTrace({
+      ...payload,
+      frames: [{ ...payload.frames[1]!, snapshotText: undefined }],
+    });
     expect(screen.getByText("No Snapshot Recorded")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "Search Snapshot" }), {
       target: { value: "Space" },
@@ -199,14 +234,10 @@ describe("TracePlayback", () => {
   });
 
   it("retains legacy text and reports empty recordings", () => {
-    const { rerender } = render(
-      <TracePlayback
-        payload={{
-          ...payload,
-          frames: [{ ...payload.frames[0]!, snapshotText: "tick=501" }],
-        }}
-      />,
-    );
+    const { rerenderTrace } = renderTrace({
+      ...payload,
+      frames: [{ ...payload.frames[0]!, snapshotText: "tick=501" }],
+    });
     expect(screen.getByText("Snapshot Could Not Be Parsed")).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Raw Snapshot" }),
@@ -214,7 +245,7 @@ describe("TracePlayback", () => {
     expect(screen.getByTestId("trace-snapshot-raw").textContent).toBe(
       "tick=501",
     );
-    rerender(<TracePlayback payload={{ ...payload, frames: [] }} />);
+    rerenderTrace({ ...payload, frames: [] });
     expect(screen.getAllByText("No Recorded Frames").length).toBeGreaterThan(0);
     expect(
       screen
@@ -224,7 +255,7 @@ describe("TracePlayback", () => {
   });
 
   it("filters log metadata, reveals full messages and navigates to their frame", () => {
-    render(<TracePlayback payload={payload} />);
+    renderTrace(payload);
     expect(screen.getByTestId("trace-log-scope").textContent).toContain("30");
     fireEvent.change(screen.getByRole("textbox", { name: "Search Log" }), {
       target: { value: "warn" },
@@ -249,7 +280,7 @@ describe("TracePlayback", () => {
       logs: [],
       prints: [],
     }));
-    render(<TracePlayback payload={{ ...payload, frames }} />);
+    renderTrace({ ...payload, frames });
     const graph = screen.getByTestId("trace-playback-graph");
     expect(within(graph).getAllByRole("button").length).toBeLessThanOrEqual(
       200,

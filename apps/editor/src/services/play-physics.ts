@@ -227,15 +227,3 @@ export function playLoadControl(options: {
     deferSceneLoadingPaint: true,
   };
 }
-
-export function inProcessPlayRuntimeOptions(physics: PlayPhysicsSettings): {
-  physicsWorld: PhysicsWorldKind;
-  gravity: [number, number, number];
-  havokWasmUrl: string;
-} {
-  return {
-    physicsWorld: physics.physicsWorld,
-    gravity: physics.gravity,
-    havokWasmUrl: editorHavokWasmUrl(),
-  };
-}

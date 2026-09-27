@@ -11,7 +11,6 @@ import {
 import { createDefaultNodeRegistry } from "./index";
 import {
   FORMAT_ARG_PIN_PREFIX,
-  formatArgNameFromPinId,
   formatArgPinId,
   parseFormatPlaceholders,
   parseFormatTokens,
@@ -67,9 +66,6 @@ describe("format placeholder parsing", () => {
     expect(formatArgPinId("input pin")).toBe(
       `${FORMAT_ARG_PIN_PREFIX}${encodeURIComponent("input pin")}`,
     );
-    expect(formatArgNameFromPinId(formatArgPinId("#"))).toBe("#");
-    expect(formatArgNameFromPinId(formatArgPinId("0"))).toBe("0");
-    expect(formatArgNameFromPinId("format")).toBeUndefined();
   });
 });
 

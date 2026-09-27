@@ -138,6 +138,31 @@ describe.each([
     expect(handle.ring.drain()).toEqual([]);
   });
 
+  it("reports each pad that stops being returned as disconnected once", () => {
+    const { handle } = fixture();
+    const second = { index: 1, axes: [0.25], buttons: [{ value: 0 }] };
+    let pads: unknown[] = [
+      { index: 0, axes: [0.5], buttons: [{ value: 1 }] },
+      second,
+    ];
+    Object.assign(navigator, { getGamepads: () => pads });
+    handle.pollGamepads();
+    handle.ring.drain();
+    pads = [null, second];
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([
+      { kind: "gamepad", tick: 7, gamepadIndex: 1, axes: [0.25], buttons: [0] },
+      { kind: "gamepadDisconnect", tick: 7, gamepadIndex: 0 },
+    ]);
+    pads = [null, { ...second, connected: false }];
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([
+      { kind: "gamepadDisconnect", tick: 7, gamepadIndex: 1 },
+    ]);
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([]);
+  });
+
   it("removes the old listeners when a session restarts", () => {
     const { canvas, handle } = fixture();
     handle.dispose();

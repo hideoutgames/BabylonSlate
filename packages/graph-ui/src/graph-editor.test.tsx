@@ -4112,21 +4112,6 @@ describe("GraphEditor", () => {
     expect(queryByTestId("node-palette")).toBeNull();
   });
 
-  it("skips empty-pane double-tap when emptyPaneDoubleTapAddsNode is false", () => {
-    const { container, queryByTestId } = render(
-      <GraphEditor
-        initialGraph={graphWithPins()}
-        emptyPaneDoubleTapAddsNode={false}
-        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
-      />,
-    );
-    const pane = container.querySelector(".react-flow__pane");
-    expect(pane).not.toBeNull();
-    fireEvent.click(pane!);
-    fireEvent.click(pane!);
-    expect(queryByTestId("node-palette")).toBeNull();
-  });
-
   it("hides Break Links and Format when listed in hiddenToolbarActions", () => {
     const { queryByTestId, getByTestId } = render(
       <GraphEditor

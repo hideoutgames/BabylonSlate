@@ -24,10 +24,8 @@ export interface NumericDragFieldProps {
   min?: number;
   max?: number;
   disabled?: boolean;
-  /** Fired once when a scrub starts, so callers can open one undo entry. */
-  onDragBegin?: () => void;
   onChange: (value: number) => void;
-  /** Fired once when a scrub ends, so callers can close the undo entry. */
+  /** Fired once when a scrub ends, so callers can commit one undo entry. */
   onDragEnd?: (value: number) => void;
   /** Axis color token: X red, Y green, Z blue. */
   accent?: "x" | "y" | "z";
@@ -43,7 +41,7 @@ function clamp(value: number, min?: number, max?: number): number {
 
 /**
  * Touch-first numeric entry: drag the label to scrub, tap the field to type.
- * Scrubs report begin/end so one gesture coalesces into one undo entry.
+ * Scrubs report their end so one gesture coalesces into one undo entry.
  */
 export function NumericDragField({
   label,
@@ -56,7 +54,6 @@ export function NumericDragField({
   min,
   max,
   disabled = false,
-  onDragBegin,
   onChange,
   onDragEnd,
   accent,
@@ -86,10 +83,9 @@ export function NumericDragField({
         latest: value,
       };
       setDragging(true);
-      onDragBegin?.();
       event.currentTarget.setPointerCapture?.(event.pointerId);
     },
-    [disabled, onDragBegin, value],
+    [disabled, value],
   );
 
   const onPointerMove = useCallback(

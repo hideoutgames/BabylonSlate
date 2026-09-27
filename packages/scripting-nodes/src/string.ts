@@ -21,15 +21,6 @@ export function formatArgPinId(name: string): string {
   return `${FORMAT_ARG_PIN_PREFIX}${encodeURIComponent(name)}`;
 }
 
-export function formatArgNameFromPinId(pinId: string): string | undefined {
-  if (!pinId.startsWith(FORMAT_ARG_PIN_PREFIX)) return undefined;
-  try {
-    return decodeURIComponent(pinId.slice(FORMAT_ARG_PIN_PREFIX.length));
-  } catch {
-    return undefined;
-  }
-}
-
 /** Unique nonempty placeholder names in first-appearance order. */
 export function parseFormatPlaceholders(format: string): string[] {
   const names: string[] = [];

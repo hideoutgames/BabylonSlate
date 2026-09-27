@@ -18,14 +18,6 @@ export type RawInputEvent =
       phase: KeyPhase;
     }
   | {
-      kind: "mouse";
-      tick: number;
-      phase: PointerPhase;
-      x: number;
-      y: number;
-      button: number;
-    }
-  | {
       kind: "gamepad";
       tick: number;
       gamepadIndex: number;
@@ -33,26 +25,26 @@ export type RawInputEvent =
       buttons: number[];
     }
   | {
-      kind: "gamepadConnection";
-      tick: number;
-      gamepadIndex: number;
-      connected: boolean;
-    }
-  | {
       /** Touch control (joystick / button) contributing a normalised axis. */
       kind: "touchAxis";
       tick: number;
       controlId: string;
       value: number;
+    }
+  | {
+      /** A pad sampled on the previous poll is no longer reported. */
+      kind: "gamepadDisconnect";
+      tick: number;
+      gamepadIndex: number;
     };
 
+// Bytes 3 and 5 belonged to retired raw kinds; never reuse or renumber them.
 const KIND = {
   pointer: 1,
   key: 2,
-  mouse: 3,
   gamepad: 4,
-  gamepadConnection: 5,
   touchAxis: 6,
+  gamepadDisconnect: 7,
 } as const;
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
@@ -88,11 +80,9 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
     o += 1;
     view.setUint32(o, event.tick >>> 0, true);
     o += 4;
-    if (event.kind === "pointer" || event.kind === "mouse") {
-      if (event.kind === "pointer") {
-        view.setUint16(o, event.pointerId, true);
-        o += 2;
-      }
+    if (event.kind === "pointer") {
+      view.setUint16(o, event.pointerId, true);
+      o += 2;
       view.setUint8(o, PHASE[event.phase]);
       o += 1;
       view.setFloat32(o, event.x, true);
@@ -120,15 +110,13 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
         view.setFloat32(o, button, true);
         o += 4;
       }
-    } else if (event.kind === "gamepadConnection") {
-      view.setUint8(o, event.gamepadIndex);
-      o += 1;
-      view.setUint8(o, event.connected ? 1 : 0);
-      o += 1;
-    } else {
+    } else if (event.kind === "touchAxis") {
       o += writeString(view, o, event.controlId);
       view.setFloat32(o, event.value, true);
       o += 4;
+    } else {
+      view.setUint8(o, event.gamepadIndex);
+      o += 1;
     }
   }
   return scratch.slice(0, o);
@@ -162,16 +150,6 @@ export function decodeInputEvents(
       const button = view.getUint8(o);
       o += 1;
       events.push({ kind: "pointer", tick, pointerId, phase, x, y, button });
-    } else if (kindByte === KIND.mouse) {
-      const phase = PHASE_NAME[view.getUint8(o)] as PointerPhase;
-      o += 1;
-      const x = view.getFloat32(o, true);
-      o += 4;
-      const y = view.getFloat32(o, true);
-      o += 4;
-      const button = view.getUint8(o);
-      o += 1;
-      events.push({ kind: "mouse", tick, phase, x, y, button });
     } else if (kindByte === KIND.key) {
       const phase = PHASE_NAME[view.getUint8(o)] as KeyPhase;
       o += 1;
@@ -196,12 +174,6 @@ export function decodeInputEvents(
         o += 4;
       }
       events.push({ kind: "gamepad", tick, gamepadIndex, axes, buttons });
-    } else if (kindByte === KIND.gamepadConnection) {
-      const gamepadIndex = view.getUint8(o);
-      o += 1;
-      const connected = view.getUint8(o) === 1;
-      o += 1;
-      events.push({ kind: "gamepadConnection", tick, gamepadIndex, connected });
     } else if (kindByte === KIND.touchAxis) {
       const controlId = readString(view, o);
       o += controlId.size;
@@ -213,6 +185,10 @@ export function decodeInputEvents(
         controlId: controlId.value,
         value,
       });
+    } else if (kindByte === KIND.gamepadDisconnect) {
+      const gamepadIndex = view.getUint8(o);
+      o += 1;
+      events.push({ kind: "gamepadDisconnect", tick, gamepadIndex });
     } else {
       throw new Error(`Unknown input event kind ${kindByte}`);
     }
@@ -238,13 +214,5 @@ export class InputRingBuffer {
 
   drain(): RawInputEvent[] {
     return this.events.splice(0, this.events.length);
-  }
-
-  peek(): readonly RawInputEvent[] {
-    return this.events;
-  }
-
-  clear(): void {
-    this.events.length = 0;
   }
 }

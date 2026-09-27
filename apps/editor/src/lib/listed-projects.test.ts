@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   filterListedProjects,
   HOMEPAGE_PROJECT_SORT_OPTIONS,
-  listedProjectLocationLabel,
-  listedProjectMetaParts,
   listedProjectsFromRecents,
   recentProjectsWithOpenedProject,
   shouldDeleteOpfsOnRemove,
@@ -114,74 +112,6 @@ describe("recentProjectsWithOpenedProject", () => {
       name: "Original", label: "Edited Name", appearance: { icon: "mountain", color: "mint" },
       sourceControl: true,
     });
-  });
-});
-
-describe("listedProjectLocationLabel", () => {
-  it("hides the location when every row would read the same", () => {
-    const opfs = [
-      { tier: "opfs" as const },
-      { tier: "opfs" as const },
-    ];
-    expect(listedProjectLocationLabel(opfs, opfs[0]!)).toBeNull();
-    expect(
-      listedProjectLocationLabel(
-        [{ tier: "documents" }, { tier: "opfs" }],
-        { tier: "opfs" },
-      ),
-    ).toBeNull();
-  });
-
-  it("labels a picked folder apart from on-device storage", () => {
-    const projects = [{ tier: "opfs" as const }, { tier: "external" as const }];
-    expect(listedProjectLocationLabel(projects, projects[0]!)).toBe(
-      "On this device",
-    );
-    expect(listedProjectLocationLabel(projects, projects[1]!)).toBe(
-      "Chosen folder",
-    );
-    expect(listedProjectLocationLabel(projects, projects[0]!)).not.toMatch(
-      /opfs|idb|documents|external/i,
-    );
-  });
-});
-
-describe("listedProjectMetaParts", () => {
-  it("joins created, last opened, and mixed location", () => {
-    const projects = [
-      {
-        id: "opfs:Game.babproject",
-        name: "Game.babproject",
-        tier: "opfs" as const,
-        label: "Game",
-        createdAt: "2026-03-15T12:00:00.000Z",
-        lastOpenedAt: "2026-08-18T12:00:00.000Z",
-      },
-      {
-        id: "ext-1",
-        name: "Studio.babproject",
-        tier: "external" as const,
-        label: "Studio",
-      },
-    ];
-    expect(listedProjectMetaParts(projects, projects[0]!)).toEqual([
-      `Created ${new Date("2026-03-15T12:00:00.000Z").toLocaleDateString()}`,
-      `Last opened ${new Date("2026-08-18T12:00:00.000Z").toLocaleDateString()}`,
-      "On this device",
-    ]);
-  });
-
-  it("omits Created when createdAt is missing", () => {
-    const project = {
-      id: "opfs:Game.babproject",
-      name: "Game.babproject",
-      tier: "opfs" as const,
-      label: "Game",
-      lastOpenedAt: "2026-08-18T12:00:00.000Z",
-    };
-    expect(listedProjectMetaParts([project], project)).toEqual([
-      `Last opened ${new Date("2026-08-18T12:00:00.000Z").toLocaleDateString()}`,
-    ]);
   });
 });
 

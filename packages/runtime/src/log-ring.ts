@@ -26,8 +26,4 @@ export class LogRingBuffer {
   entries(): readonly LogEntry[] {
     return this.items;
   }
-
-  clear(): void {
-    this.items.length = 0;
-  }
 }

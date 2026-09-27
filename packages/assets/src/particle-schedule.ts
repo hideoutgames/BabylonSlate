@@ -62,20 +62,3 @@ export function burstParticlesInWindow(
   }
   return total;
 }
-
-/** Fire times within one cycle, in order, capped at `limit` events. */
-export function burstFireTimes(
-  burst: ParticleBurst,
-  duration: number,
-  limit: number,
-): number[] {
-  const times: number[] = [];
-  if (!(burst.time < duration)) return times;
-  const count = singleFire(burst) ? 1 : burst.cycles > 0 ? burst.cycles : Infinity;
-  for (let k = 0; k < count && times.length < limit; k += 1) {
-    const time = k === 0 ? burst.time : burst.time + k * burst.interval;
-    if (!(time < duration)) break;
-    times.push(time);
-  }
-  return times;
-}

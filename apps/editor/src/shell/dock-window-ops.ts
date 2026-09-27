@@ -6,8 +6,6 @@ import {
   type DockWindowDirection,
 } from "./window-catalog";
 
-export type { PanelPlacement };
-
 export interface DockWindowPanel {
   id: string;
   group?: { id: string; panels?: Array<{ id: string }> };

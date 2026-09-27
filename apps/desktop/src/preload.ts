@@ -27,7 +27,6 @@ contextBridge.exposeInMainWorld("babylonslate", {
     openKnownFolder: (handle: unknown) =>
       ipcRenderer.invoke("project:openKnown", handle),
     listProjects: () => ipcRenderer.invoke("project:list"),
-    getCurrentFolder: () => ipcRenderer.invoke("project:current"),
     releaseFolder: () => ipcRenderer.invoke("project:release"),
     readBinary: (path: string) => ipcRenderer.invoke("project:readBinary", path),
     writeBinary: (path: string, data: ArrayBuffer) =>

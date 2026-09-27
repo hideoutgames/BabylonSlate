@@ -8,7 +8,6 @@ import {
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
-  compileGraphDocumentsForExport,
   GraphScriptCompileCache,
   graphCompileSignature,
   graphsNeedCompile,
@@ -802,9 +801,10 @@ describe("script compiler service", () => {
     ]);
     expect(preview[0]?.source).toContain("ctx.print");
     expect(preview[0]?.source).toContain("ctx.checkInfiniteLoop();");
-    const exported = compileGraphDocumentsForExport([
-      { path: "assets/main.class.babasset", content: tickToPrint },
-    ]);
+    const exported = compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToPrint }],
+      { stripDevelopmentOnly: true },
+    );
     expect(exported[0]?.source).not.toContain("ctx.print");
     expect(exported[0]?.source).toContain("ctx.log");
     expect(exported[0]?.source).not.toContain("checkInfiniteLoop");

@@ -414,7 +414,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("settings-modal-category-input")).toHaveCount(0);
   });
 
-  test("Play overlay stick drives the same Move.x as the gamepad path", async ({
+  test("touch-axis input drives the same Move.x as the gamepad path", async ({
     page,
   }) => {
     await openTestProject(page);

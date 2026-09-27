@@ -153,7 +153,3 @@ export function readActorSlotInto(buf: Float32Array, slotIndex: number, out: Act
   out.flags = buf[o + 11]!;
   return out;
 }
-
-export function clearSnapshot(buf: Float32Array): void {
-  buf.fill(0);
-}

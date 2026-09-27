@@ -46,7 +46,7 @@ it.each(["software", "rapier"] as const)("%s applies an off-centre impulse as tr
   } finally { backend.dispose(); }
 });
 
-it("keeps Rapier teleport/target rotation consistent in direct and batched readback", async () => {
+it("keeps Rapier teleport/target rotation consistent in body readback", async () => {
   const backend = await createPhysicsBackend({
     kind: "2d",
     gravity: { x: 0, y: 0, z: 0 },
@@ -88,14 +88,14 @@ it("keeps Rapier teleport/target rotation consistent in direct and batched readb
     expect(
       backend.lineTrace({ x: 0, y: 2, z: 0 }, { x: 0, y: -2, z: 0 }).hit,
     ).toBe(false);
-    expect(backend.readTransforms().get("planar")!.rotation.w).toBeCloseTo(1);
+    expect(backend.getBodyTransform("planar")!.rotation.w).toBeCloseTo(1);
     backend.setBodyTargetTransform("planar", {
       position: { x: 4, y: 1, z: 0 },
       rotation: quarterTurn,
     });
     backend.step(1 / 60);
     expect(backend.getBodyTransform("planar")!.position.x).toBeCloseTo(4);
-    expect(backend.readTransforms().get("planar")!.rotation.z).toBeCloseTo(
+    expect(backend.getBodyTransform("planar")!.rotation.z).toBeCloseTo(
       Math.SQRT1_2,
     );
   } finally {
@@ -279,7 +279,7 @@ describe("@babylonslate/physics", () => {
         const after = backend.getBodyTransform("moving")!.position;
         expect(after.x - before.x).toBeCloseTo(0.5, 2);
         expect(after.y).toBeLessThan(before.y - 0.7);
-        backend.setBodyMotionType("moving", "static");
+        backend.updateBody("moving", { motionType: "static" });
         backend.setBodyLinearVelocity("moving", { x: 100 });
         backend.step(1 / 60);
         expect(backend.getBodyTransform("moving")!.position).toEqual(after);
@@ -682,7 +682,7 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
-  it("updateCollider flips a blocking overlap to a trigger begin", () => {
+  it("applyColliderChanges flips a blocking overlap to a trigger begin", () => {
     const backend = createSoftwarePhysicsBackend("3d", {
       x: 0,
       y: 0,
@@ -717,7 +717,21 @@ describe("@babylonslate/physics", () => {
       });
     }
     expect(backend.pollContacts().map((event) => event.kind)).toEqual(["hit"]);
-    backend.updateCollider("a-col", { isTrigger: true });
+    backend.applyColliderChanges("a", {
+      upsert: [
+        {
+          id: "a-col",
+          bodyId: "a",
+          shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+          friction: 0.5,
+          restitution: 0,
+          isTrigger: true,
+          layer: 1,
+          mask: 0xffffffff,
+        },
+      ],
+      remove: [],
+    });
     expect(backend.pollContacts().map((event) => event.kind)).toEqual([
       "overlapBegin",
     ]);

@@ -23,8 +23,6 @@ describe("InputResolver event transitions", () => {
     expect(resolver.resolve([pad([0], [0, 0.7]), pad([1], [0, 0.7])]).pressedKeys)
       .toEqual(["Gamepad2Axis1", "Gamepad2Button0"]);
     expect(resolver.resolve([]).pressedKeys).toEqual([]);
-    resolver.reset();
-    expect(resolver.resolve([key(0, "KeyW", "down")]).pressedKeys).toEqual(["KeyW"]);
   });
 
   it("lets a primary touch activate mouse bindings without a second finger releasing or moving it", () => {
@@ -237,7 +235,7 @@ describe("InputResolver", () => {
     ]);
     expect(keyboard.axes2D.Move).toEqual({ x: 1, y: 1 });
 
-    resolver.reset();
+    resolver.resolve([key(1, "KeyW", "up"), key(1, "KeyD", "up")]);
     const stick = resolver.resolve([
       {
         kind: "gamepad",
@@ -252,6 +250,65 @@ describe("InputResolver", () => {
     expect(stick.gamepadConnections).toEqual([
       { gamepadIndex: 0, connected: true },
     ]);
+    const next = resolver.resolve([
+      {
+        kind: "gamepad",
+        tick: 2,
+        gamepadIndex: 0,
+        axes: [0.8, -0.6, 0, 0],
+        buttons: [],
+      },
+    ]);
+    expect(next.gamepadConnections).toEqual([]);
+    expect(next.axes2D.Move!.x).toBeGreaterThan(0.5);
+  });
+
+  it("reports a disconnected pad once and drops only its held buttons and stick", () => {
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Jump", bindings: [{ device: "gamepadButton", code: "0:0" }] },
+        { name: "Fire", bindings: [{ device: "gamepadButton", code: "1:0" }] },
+      ],
+      axes: [
+        {
+          name: "Move",
+          kind: "2d",
+          bindings: [{ device: "gamepadAxis", code: "0:0", component: "x" }],
+        },
+      ],
+    });
+    const pad = (tick: number, gamepadIndex: number): RawInputEvent => ({
+      kind: "gamepad",
+      tick,
+      gamepadIndex,
+      axes: [0.8],
+      buttons: [1],
+    });
+    const disconnect = (tick: number): RawInputEvent => ({
+      kind: "gamepadDisconnect",
+      tick,
+      gamepadIndex: 0,
+    });
+    resolver.resolve([pad(1, 0), pad(1, 1)]);
+
+    const lost = resolver.resolve([disconnect(2)]);
+    expect(lost.gamepadConnections).toEqual([
+      { gamepadIndex: 0, connected: false },
+    ]);
+    expect(lost.actions.Jump).toEqual({
+      pressed: false,
+      released: true,
+      held: false,
+    });
+    expect(lost.actions.Fire?.held).toBe(true);
+    expect(lost.axes2D.Move).toEqual({ x: 0, y: 0 });
+    expect(resolver.resolve([disconnect(3)]).gamepadConnections).toEqual([]);
+
+    const back = resolver.resolve([pad(4, 0)]);
+    expect(back.gamepadConnections).toEqual([
+      { gamepadIndex: 0, connected: true },
+    ]);
+    expect(back.actions.Jump?.pressed).toBe(true);
   });
 
   it("applies dead zone, scale and inversion on a 1D axis", () => {
@@ -298,33 +355,6 @@ describe("InputResolver", () => {
     expect(outside.axes.Look).toBeCloseTo(-1, 10);
   });
 
-  it("emits gamepad disconnect and clears that pad's button state", () => {
-    const resolver = new InputResolver(mappings);
-    resolver.resolve([
-      {
-        kind: "gamepad",
-        tick: 1,
-        gamepadIndex: 0,
-        axes: [],
-        buttons: [1, 0],
-      },
-    ]);
-    expect(resolver.resolve([]).actions.Jump?.held).toBe(true);
-
-    const disconnect = resolver.resolve([
-      {
-        kind: "gamepadConnection",
-        tick: 2,
-        gamepadIndex: 0,
-        connected: false,
-      },
-    ]);
-    expect(disconnect.gamepadConnections).toEqual([
-      { gamepadIndex: 0, connected: false },
-    ]);
-    expect(disconnect.actions.Jump?.held).toBe(false);
-  });
-
   it("reads a touch control as an axis contribution", () => {
     const resolver = new InputResolver({
       actions: [],
@@ -357,7 +387,15 @@ describe("InputResolver", () => {
       axes: [],
     });
     const tick = resolver.resolve([
-      { kind: "mouse", tick: 1, phase: "down", x: 0, y: 0, button: 0 },
+      {
+        kind: "pointer",
+        tick: 1,
+        pointerId: 1,
+        phase: "down",
+        x: 0,
+        y: 0,
+        button: 0,
+      },
     ]);
     expect(tick.actions.Fire).toEqual({
       pressed: false,
@@ -418,17 +456,5 @@ describe("InputResolver", () => {
 
     const idle = resolver.resolve([]);
     expect(idle.cursor).toEqual({ x: 131, y: 51, pressed: false });
-  });
-
-  it("treats mouse samples as the cursor when no pointer is primary", () => {
-    const resolver = new InputResolver(mappings);
-    const tick = resolver.resolve([
-      { kind: "mouse", tick: 1, phase: "move", x: 10, y: 20, button: 0 },
-    ]);
-    expect(tick.cursor).toEqual({ x: 10, y: 20, pressed: false });
-    const down = resolver.resolve([
-      { kind: "mouse", tick: 2, phase: "down", x: 11, y: 21, button: 0 },
-    ]);
-    expect(down.cursor).toEqual({ x: 11, y: 21, pressed: true });
   });
 });

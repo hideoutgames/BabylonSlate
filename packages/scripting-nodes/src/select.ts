@@ -24,17 +24,6 @@ export function selectOptionPinId(memberName: string): string {
   return `${SELECT_OPTION_PIN_PREFIX}${encodeURIComponent(memberName)}`;
 }
 
-export function selectOptionMemberFromPinId(
-  pinId: string,
-): string | undefined {
-  if (!pinId.startsWith(SELECT_OPTION_PIN_PREFIX)) return undefined;
-  try {
-    return decodeURIComponent(pinId.slice(SELECT_OPTION_PIN_PREFIX.length));
-  } catch {
-    return undefined;
-  }
-}
-
 export function titleCaseSelectMember(name: string): string {
   return titleCaseEnumMember(name);
 }

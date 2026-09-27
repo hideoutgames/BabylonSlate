@@ -2,8 +2,6 @@ import type { NavBakeMeshPart } from "./geometry";
 import { worldToRecast } from "./remap";
 import type { NavObstacleKind, NavPoint } from "./types";
 
-export type NavBlockerArea = "unwalkable" | "cost";
-
 export type SolidBlockerInput = {
   kind: NavObstacleKind;
   pose: NavPoint;

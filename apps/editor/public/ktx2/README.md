@@ -14,3 +14,6 @@ Vendored Babylon `KhronosTextureContainer2` decoder assets (never a CDN):
 
 Configured via `@babylonslate/render` `configureKtx2Transcoder` in `createEngine`.
 Encode uses a separate Basis encoder under `/basis/` (`encode-worker.js`).
+
+To refresh, fetch the npm releases matching `@babylonjs/core` ad hoc (`npm pack`; neither is a workspace dependency):
+`babylon.ktx2Decoder.js` from `babylonjs-ktx2decoder`, and `msc_basis_transcoder.js` plus the `.wasm` files from `wasm/` in `@babylonjs/ktx2decoder`.

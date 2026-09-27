@@ -11,7 +11,6 @@ import {
   decodeProjectZip,
   encodeProjectZip,
   exportProjectZip,
-  importProjectZip,
   readProjectTree,
   rewriteProjectIdentity,
   writeProjectTree,
@@ -78,22 +77,6 @@ describe("babproject codec", () => {
     });
   });
 
-  it("exports and re-imports through ProjectStorage", async () => {
-    const a = new MemoryStorageAdapter();
-    await a.openDocumentsProject("A.babproject");
-    await writeProjectTree(
-      a,
-      createEmptyProjectFiles({ guid: "g", name: "A" }),
-    );
-    const zip = await exportProjectZip(a);
-
-    const b = new MemoryStorageAdapter();
-    await b.openDocumentsProject("B.babproject");
-    await importProjectZip(b, zip);
-    const tree = await readProjectTree(b);
-    expect(tree.some((f) => f.path === "project.json")).toBe(true);
-  });
-
   it("preserves requested renderer axes and shading in an exported project snapshot", async () => {
     const source = new MemoryStorageAdapter();
     await source.openDocumentsProject("Rendering.babproject");
@@ -104,10 +87,7 @@ describe("babproject codec", () => {
     const snapshot = createEmptyProject("Rendering", {
       render: { renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" },
     });
-    const destination = new MemoryStorageAdapter();
-    await destination.openDocumentsProject("Reopened.babproject");
-    await importProjectZip(destination, await exportProjectZip(source, snapshot));
-    const manifest = (await readProjectTree(destination)).find(
+    const manifest = decodeProjectZip(await exportProjectZip(source, snapshot)).find(
       (file) => file.path === "project.json",
     )!;
     const reopened = JSON.parse(new TextDecoder().decode(manifest.data));

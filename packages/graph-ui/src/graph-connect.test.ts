@@ -8,8 +8,6 @@ import {
   displayNodeTitle,
   edgesAfterConnect,
   edgesTouchingNodes,
-  edgesTouchingPin,
-  edgeTouchesNode,
   edgeTouchesPin,
   filterPaletteForPin,
   isClientPointOverGraphNode,
@@ -1042,60 +1040,6 @@ describe("edgeTouchesPin", () => {
   });
 });
 
-describe("edgesTouchingPin", () => {
-  const exec = {
-    id: "e:begin:execOut:log:execIn",
-    source: "begin",
-    target: "log",
-    sourceHandle: "execOut",
-    targetHandle: "execIn",
-  };
-  const data = {
-    id: "e:begin:value:log:message",
-    source: "begin",
-    target: "log",
-    sourceHandle: "value",
-    targetHandle: "message",
-  };
-  const fanOut = {
-    id: "e:begin:execOut:print:execIn",
-    source: "begin",
-    target: "print",
-    sourceHandle: "execOut",
-    targetHandle: "execIn",
-  };
-
-  it("returns every incident edge on a fan-out pin", () => {
-    expect(edgesTouchingPin([exec, data, fanOut], "begin", "execOut")).toEqual([
-      exec,
-      fanOut,
-    ]);
-  });
-
-  it("returns an empty list when the pin has no wires", () => {
-    expect(edgesTouchingPin([exec], "begin", "value")).toEqual([]);
-  });
-});
-
-describe("edgeTouchesNode", () => {
-  const exec = {
-    id: "e:begin:execOut:log:execIn",
-    source: "begin",
-    target: "log",
-    sourceHandle: "execOut",
-    targetHandle: "execIn",
-  };
-
-  it("is true when the node is the source or the target", () => {
-    expect(edgeTouchesNode(exec, "begin")).toBe(true);
-    expect(edgeTouchesNode(exec, "log")).toBe(true);
-  });
-
-  it("is false when the node is neither endpoint", () => {
-    expect(edgeTouchesNode(exec, "print")).toBe(false);
-  });
-});
-
 describe("edgesTouchingNodes", () => {
   const exec = {
     id: "e:begin:execOut:log:execIn",
@@ -1356,11 +1300,6 @@ describe("connectEndAction", () => {
     expect(
       connectEndAction({ ...far, hasTargetHandle: true }, "add-node"),
     ).toBe("none");
-  });
-
-  it("disables connect-end side effects", () => {
-    expect(connectEndAction(far, "disabled")).toBe("none");
-    expect(connectEndAction(near, "disabled")).toBe("none");
   });
 
   it("opens Add Node from a far drop in zone-add-node mode and never breaks wires", () => {

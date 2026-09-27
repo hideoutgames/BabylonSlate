@@ -46,7 +46,7 @@ import {
   WorkflowIcon,
 } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { ASSET_COLOR_TOKENS, assetColorVar } from "@babylonslate/ui/lib/data-types";
+import { assetColorVar } from "@babylonslate/ui/lib/data-types";
 
 export type AssetVisualFamily =
   | "scene"
@@ -328,8 +328,6 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };
-
-export { ASSET_COLOR_TOKENS };
 
 const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   scene: assetColorVar("scene"),

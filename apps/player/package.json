@@ -20,14 +20,13 @@
     "@babylonslate/exporter": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/particle-graph": "workspace:*",
-    "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",
     "@babylonslate/runtime": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "@babylonslate/vfs": "workspace:*"
   },
   "devDependencies": {
+    "@babylonslate/particle-graph": "workspace:*",
     "@types/node": "^22.13.10",
     "typescript": "~5.8.2",
     "vite": "^8.2.0"

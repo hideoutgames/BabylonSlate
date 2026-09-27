@@ -11,7 +11,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import {
-  ALL_NODE_CATEGORIES,
   createDefaultNodeRegistry,
   literalNodes,
 } from "./index";
@@ -35,7 +34,6 @@ function node(
 
 describe("literal nodes", () => {
   it("registers Make Bool, Int, Float, String, and Class on the literal palette", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("literal");
     expect(literalNodes.map((entry) => entry.id)).toEqual(
       expect.arrayContaining([
         "literal.makeBool",

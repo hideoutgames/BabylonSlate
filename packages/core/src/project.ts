@@ -10,7 +10,6 @@ import {
   createActor,
   createDefaultSceneSettings,
   identitySerializedTransform,
-  normalizeTransform,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -110,14 +109,6 @@ export interface AudioProjectSettings {
   /** Multiplies interpolated environment-reverb damping. */
   reverbDampingScale: number;
 }
-
-export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
-  audioMixerGuid: null,
-  occlusionEnabled: true,
-  reverbWetScale: 1,
-  reverbDecayScale: 1,
-  reverbDampingScale: 1,
-};
 
 export interface RenderProjectSettings {
   /** Missing legacy values normalize to Forward. Independent of PBR/CEL. */
@@ -425,10 +416,6 @@ export interface PhysicsProjectSettings {
    */
   collisionLayers: string[];
 }
-
-export const DEFAULT_PHYSICS_PROJECT_SETTINGS: PhysicsProjectSettings = {
-  collisionLayers: [...DEFAULT_COLLISION_LAYERS],
-};
 
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
@@ -934,161 +921,6 @@ export function createDefaultScene(
     folders: [],
     actors,
   };
-}
-
-const MEMBER_KINDS = new Set<GraphClassMemberKind>([
-  "function",
-  "variable",
-  "event",
-  "interface",
-]);
-
-function normalizeImplementsInterface(
-  value: unknown,
-): GraphClassMemberImplementsInterface | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const row = value as Record<string, unknown>;
-  const assetGuid =
-    typeof row.assetGuid === "string" ? row.assetGuid.trim() : "";
-  const methodName =
-    typeof row.methodName === "string" ? row.methodName.trim() : "";
-  if (!assetGuid || !methodName) return undefined;
-  return { assetGuid, methodName };
-}
-
-function normalizeOverrides(
-  value: unknown,
-): GraphClassMemberOverrides | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const row = value as Record<string, unknown>;
-  const classId = typeof row.classId === "string" ? row.classId.trim() : "";
-  const name = typeof row.name === "string" ? row.name.trim() : "";
-  if (!classId || !name) return undefined;
-  return { classId, name };
-}
-
-function optionalTypeClassId(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function optionalVariableContainer(
-  value: unknown,
-): "array" | "map" | undefined {
-  return value === "array" || value === "map" ? value : undefined;
-}
-
-function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
-  if (!Array.isArray(value)) return [];
-  const pins: GraphClassMemberPin[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as Record<string, unknown>;
-    const name = typeof row.name === "string" ? row.name.trim() : "";
-    if (!name) continue;
-    const pin: GraphClassMemberPin = {
-      name,
-      typeId: typeof row.typeId === "string" && row.typeId.trim()
-        ? row.typeId.trim()
-        : "float",
-      direction: row.direction === "out" ? "out" : "in",
-    };
-    const typeClassId = optionalTypeClassId(row.typeClassId);
-    if (typeClassId) pin.typeClassId = typeClassId;
-    pins.push(pin);
-  }
-  return pins;
-}
-
-export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
-  if (!Array.isArray(value)) return [];
-  const members: GraphClassMember[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as Record<string, unknown>;
-    const id = typeof row.id === "string" ? row.id.trim() : "";
-    const name = typeof row.name === "string" ? row.name.trim() : "";
-    const kind = row.kind;
-    if (!id || !name) continue;
-    if (
-      kind !== "function" &&
-      kind !== "variable" &&
-      kind !== "event" &&
-      kind !== "interface"
-    ) {
-      continue;
-    }
-    if (!MEMBER_KINDS.has(kind)) continue;
-    const member: GraphClassMember = { id, kind, name };
-    if (kind === "variable") {
-      member.typeId =
-        typeof row.typeId === "string" && row.typeId.trim()
-          ? row.typeId.trim()
-          : "float";
-      const typeClassId = optionalTypeClassId(row.typeClassId);
-      if (typeClassId) member.typeClassId = typeClassId;
-      const container = optionalVariableContainer(row.container);
-      if (container) member.container = container;
-      const keyTypeId =
-        typeof row.keyTypeId === "string" && row.keyTypeId.trim()
-          ? row.keyTypeId.trim()
-          : undefined;
-      if (container === "map") {
-        member.keyTypeId = keyTypeId ?? "string";
-        const keyTypeClassId = optionalTypeClassId(row.keyTypeClassId);
-        if (keyTypeClassId) member.keyTypeClassId = keyTypeClassId;
-      }
-      if (member.typeId === "class" && !container) {
-        member.defaultValue = typeClassId ?? "BObject";
-      } else if ("defaultValue" in row) {
-        member.defaultValue = row.defaultValue;
-      }
-      if (typeof row.functionId === "string" && row.functionId.trim()) {
-        member.functionId = row.functionId.trim();
-      }
-    } else if (kind === "function" || kind === "event") {
-      member.pins = normalizeMemberPins(row.pins);
-      if (kind === "function") {
-        if (row.overridable === true) member.overridable = true;
-        const implementsInterface = normalizeImplementsInterface(
-          row.implementsInterface,
-        );
-        if (implementsInterface) member.implementsInterface = implementsInterface;
-        const overrides = normalizeOverrides(row.overrides);
-        if (overrides) member.overrides = overrides;
-      }
-    } else if (kind === "interface") {
-      member.assetGuid =
-        typeof row.assetGuid === "string" ? row.assetGuid.trim() : "";
-    }
-    members.push(member);
-  }
-  return members;
-}
-
-export function normalizeGraphComponents(value: unknown): SerializedComponent[] {
-  if (!Array.isArray(value)) return [];
-  const components: SerializedComponent[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as Record<string, unknown>;
-    const id = typeof row.id === "string" ? row.id.trim() : "";
-    const classId = typeof row.classId === "string" ? row.classId.trim() : "";
-    if (!id || !classId) continue;
-    const properties =
-      row.properties && typeof row.properties === "object"
-        ? { ...(row.properties as Record<string, unknown>) }
-        : {};
-    components.push({
-      id,
-      classId,
-      properties,
-      parentId: typeof row.parentId === "string" ? row.parentId : null,
-      transform: normalizeTransform(row.transform),
-    });
-  }
-  return components;
 }
 
 export function createDefaultGraph(): SerializedGraph {

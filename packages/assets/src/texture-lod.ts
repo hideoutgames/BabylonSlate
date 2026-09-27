@@ -1,7 +1,6 @@
 export const TEXTURE_LOD_FLOOR = 256;
 export const TEXTURE_LOD_QUALITY_MIN = 0.25;
 export const TEXTURE_LOD_QUALITY_MAX = 1;
-export const TEXTURE_LOD_QUALITY_DEFAULT = 0.5;
 
 export const TEXTURE_DOWNSAMPLE_OPTIONS = [1, 2, 4, 8, 16] as const;
 export type TextureDownsample = (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number];

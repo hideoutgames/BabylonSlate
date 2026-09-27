@@ -1135,14 +1135,6 @@
   font-size: 12px;
   margin-top: 2px;
 }
-.homepage-profile-subscription {
-  justify-content: space-between;
-}
-.homepage-profile-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
 .homepage-subscription {
   display: flex;
   flex-direction: column;
