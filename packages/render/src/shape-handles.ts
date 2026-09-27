@@ -57,8 +57,12 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   let target: Target | null = null;
   let body: Body | null = null;
   let handles: Handle[] = [];
+  let handlesBody: Body | null = null;
+  let localOutline: ShapePoint[][] = [];
+  let meshesDirty = true;
   let outline: LinesMesh | null = null;
-  let outlineKey = "";
+  let outlineBody: Body | null = null;
+  let outlineWorld: Matrix | null = null;
   let drag: { handle: Handle; meshId: string; start: Body; properties: Record<string, unknown>; removed: boolean } | null = null;
   let release: (() => void) | null = null;
   const lastTap = { id: "", time: -Infinity };
@@ -69,7 +73,8 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   const clear = () => {
     for (const mesh of meshes.values()) mesh.dispose(false, false);
     meshes.clear();
-    outline?.dispose(); outline = null; outlineKey = "";
+    outline?.dispose(); outline = null; outlineBody = null; outlineWorld = null;
+    handlesBody = null; localOutline = []; meshesDirty = true;
   };
   const apply = (properties: Record<string, unknown>) => {
     if (!body || !target) return;
@@ -81,6 +86,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   const finish = (cancelled = false) => {
     const current = drag;
     drag = null;
+    meshesDirty = true;
     release?.(); release = null;
     if (cancelled && current) {
       body = current.start;
@@ -166,28 +172,34 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
     }
     if (!drag) body = adapter.read(source) ?? body;
     if (!body) return;
-    handles = adapter.handles(body); syncMeshes();
+    if (body !== handlesBody) {
+      handles = adapter.handles(body);
+      localOutline = adapter.outline(body);
+      handlesBody = body;
+      meshesDirty = true;
+    }
+    if (meshesDirty) { syncMeshes(); meshesDirty = false; }
     const matrix = source.computeWorldMatrix(true), camera = layer.getRenderCamera();
     for (const handle of handles) {
       const pick = meshes.get(handle.id)!;
       pick.setEnabled(true);
-      const position = Vector3.TransformCoordinates(Vector3.FromArray(handle.position), matrix);
-      pick.position.copyFrom(position);
-      const distance = camera ? Vector3.Distance(camera.globalPosition, position) : 10;
+      Vector3.TransformCoordinatesFromFloatsToRef(handle.position[0], handle.position[1], handle.position[2], matrix, pick.position);
+      const distance = camera ? Vector3.Distance(camera.globalPosition, pick.position) : 10;
       const ortho = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA ? (camera.orthoTop ?? 1) - (camera.orthoBottom ?? -1) : 0;
       pick.scaling.setAll(Math.max(0.01, (ortho || distance) * 0.045 * (options.handleScale ?? 1)));
       const behavior = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior | null;
       if (behavior && !drag) behavior.options = adapter.constraint(handle, matrix, camera);
     }
-    const key = JSON.stringify(body) + Array.from(matrix.m).join(",");
-    if (key !== outlineKey) {
+    if (body !== outlineBody || !outlineWorld?.equals(matrix)) {
       outline?.dispose(); outline = null;
-      const lines = adapter.outline(body).map((line) => line.map((point) => Vector3.TransformCoordinates(Vector3.FromArray(point), matrix)));
+      const lines = localOutline.map((line) => line.map((point) => Vector3.TransformCoordinates(Vector3.FromArray(point), matrix)));
       if (lines.length) {
         outline = CreateLineSystem(`${adapter.name}-handle-outline`, { lines }, util);
         outline.color = OUTLINE_COLOR; outline.isPickable = false;
       }
-      outlineKey = key;
+      outlineBody = body;
+      if (outlineWorld) outlineWorld.copyFrom(matrix);
+      else outlineWorld = matrix.clone();
     }
     outline?.setEnabled(true);
   };
