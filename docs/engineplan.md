@@ -502,7 +502,7 @@ The reason this has to sit in the import pipeline and not in the exporter is tha
 - Normal maps compress to UASTC and never to ETC1S, which handles them badly.
 - Sprites and tilesets flagged as pixel art stay uncompressed. They are usually small enough that it does not matter, and correctness beats the saving.
 - UI textures and fonts stay uncompressed by default, for the same crisp-edge reason.
-- Particle textures compress to UASTC at a base size rounded up to a multiple of 4 (after the clamp and downsample), because WebGPU rejects ASTC/BC7 textures that are not block-aligned and the invalid upload blanks every frame.
+- Particle textures compress to UASTC at a base size rounded up to a multiple of 4 (after the clamp and downsample), because WebGPU rejects ASTC/BC7 textures that are not block-aligned and the invalid upload blanks every frame. Other compressed textures off the 4×4 grid are refused at WebGPU upload instead: their Materials are unavailable (default mesh material, particle **No Material**), Sprites, Tilemaps and 2D textures draw without them, and Play reports the texture, its size and the fix, so the frame keeps presenting.
 - Anything with a nonzero-alpha cutout mask is checked, since alpha in block formats is where artifacts concentrate.
 
 Every one of these is a per-texture override in the asset's details panel, with the policy default shown so a user can see what was chosen for them and why.
@@ -865,6 +865,7 @@ When Preview ends, whether the user taps X or the session crashes, the editor sh
 - `Log` calls at Error severity.
 - Runtime assertions the engine emits deliberately, such as calling a method on a destroyed actor or reading a null component, tagged with the same diagnostic codes as edit-time validation where possible.
 - Behaviour-tree nodes that **throw**, which is distinct from a task returning Failure. Failure is ordinary control flow that Selectors depend on, so it is never reported as an error.
+- Renderer problems the main thread detects, such as a WebGPU texture refused for being block-compressed off the 4×4 grid (`texture.webgpuBlockSize`: texture name, size and fix; Play keeps running and the row opens the Texture).
 
 Each event is **deduplicated by `(code, assetGuid, nodeId)`**, keeping the first message and a count rather than keying on the message text, since messages routinely embed varying values and would otherwise defeat dedup. An error thrown every tick is one row with a count of 3600, not 3600 rows. The reporter also caps distinct entries per session, dropping the tail with a "and N more" note, so a runaway failure cannot exhaust worker memory. Each entry carries first and last timestamp and frame id, so the trace recorder can jump to the moment if one was armed.
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  KhronosTextureContainer2,
   Material,
   MeshBuilder,
   NullEngine,
@@ -7,7 +8,8 @@ import {
   StandardMaterial,
   Texture,
 } from "@babylonjs/core";
-import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
+import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint, ownedVisualTexturePreparation } from "./mesh-assets";
+import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
@@ -349,6 +351,30 @@ describe("applyAlbedoTexture", () => {
       expect(mesh.material).toBe(material);
       winner.release();
     } finally { create.mockRestore(); report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose(); }
+  });
+  it("draws without a texture WebGPU refuses, reports it and leaves no failed preparation for staging", () => {
+    const forceRGBA = KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA;
+    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
+    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
+    KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA = false;
+    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+    const onTextureRefused = vi.fn();
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      applyAlbedoTexture(mesh, scene, "odd", {
+        resourceCache: cache, textureBytes: installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]])), onTextureRefused,
+      });
+      expect(onTextureRefused).toHaveBeenCalledOnce();
+      expect(onTextureRefused.mock.calls[0]![0]).toMatchObject({ assetGuid: "odd", width: 1, height: 1 });
+      expect(mesh.material).toBeNull();
+      // A rejected preparation would fail a staged multi-part Play visual and abort Play.
+      expect(ownedVisualTexturePreparation(mesh)).toBeUndefined();
+      expect(report).not.toHaveBeenCalled();
+    } finally {
+      KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA = forceRGBA;
+      report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose();
+    }
   });
   it("reapplies equal installed content without acquiring and clears its exact binding", () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();

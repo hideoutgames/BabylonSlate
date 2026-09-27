@@ -1,4 +1,4 @@
-import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
+import { ktx2HeaderBytes, mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
@@ -23,9 +23,9 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, createDefaultSpritePayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
-import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
+import { ResourceCache, resourceCacheForEngine, TextureUploadRefusedError } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
@@ -2803,6 +2803,89 @@ describe("Play createEngine view", () => {
     expect(handle.playMeshMaterialNames()).toEqual(
       expect.arrayContaining([expect.stringContaining("mat-1")]),
     );
+  });
+
+  it("keeps a mesh's default material and reports once when WebGPU refuses its Material texture", () => {
+    const sampling = (domain: "surface" | "particle") => {
+      const doc = createDefaultMaterialDocument(domain, domain);
+      doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "odd" } });
+      doc.edges = [{ id: "sample-output", sourceNodeId: "sample", sourcePinId: domain === "particle" ? "rgba" : "rgb",
+        targetNodeId: "output", targetPinId: domain === "particle" ? "color" : "baseColor" }];
+      return doc;
+    };
+    const onTextureDiagnostic = vi.fn();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      textureBytes: new Map([["odd", ktx2HeaderBytes(1, 1)]]),
+      materialDocuments: new Map([["surface", sampling("surface")], ["tinted", sampling("surface")], ["sparks", sampling("particle")]]),
+      onTextureDiagnostic,
+    });
+    handles.push(handle);
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: null });
+    const mesh = handle.scene.getMeshByName("actor-1")!;
+    const initial = mesh.material;
+    // The cache refuses on WebGPU only (resource-cache-texture.test.ts); NullEngine is not WebGPU.
+    const acquireTexture = ResourceCache.prototype.acquireTexture;
+    let refusals = 0;
+    const refuse = vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, guid, ...rest) {
+      if (guid !== "odd") return acquireTexture.call(this, guid, ...rest);
+      refusals += 1;
+      throw new TextureUploadRefusedError(guid, { width: 1, height: 1 });
+    });
+    try {
+      // A second Material compiles and is refused again; the report stays single.
+      handle.applyCommand({ type: "assignMaterial", slotId: 1, materialAssetGuid: "surface" });
+      handle.applyCommand({ type: "assignMaterial", slotId: 1, materialAssetGuid: "tinted" });
+    } finally { refuse.mockRestore(); }
+    expect(refusals).toBe(2);
+    expect(mesh.isDisposed()).toBe(false);
+    expect(mesh.material).toBe(initial);
+    expect(handle.scene.materials.some((material) => /surface|tinted/.test(material.name))).toBe(false);
+    expect(onTextureDiagnostic).toHaveBeenCalledOnce();
+    expect(onTextureDiagnostic).toHaveBeenCalledWith({
+      code: "texture.webgpuBlockSize", assetGuid: "odd", width: 1, height: 1, particle: true, other: true,
+    });
+  });
+
+  it("adopts a staged Model + Sprite actor without its refused sprite texture and reports it once", async () => {
+    const onTextureDiagnostic = vi.fn();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      onTextureDiagnostic,
+    });
+    handles.push(handle);
+    const sprite = createDefaultSpritePayload();
+    sprite.textureGuid = "odd";
+    handle.setMeshAssets({
+      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
+      spritePayloads: new Map([["badge", sprite]]),
+      textureBytes: new Map([["odd", ktx2HeaderBytes(1, 1)]]),
+    });
+    // The cache refuses on WebGPU only (resource-cache-texture.test.ts); NullEngine is not WebGPU.
+    const acquireTexture = ResourceCache.prototype.acquireTexture;
+    const refuse = vi.spyOn(ResourceCache.prototype, "acquireTexture").mockImplementation(function (this: ResourceCache, guid, ...rest) {
+      if (guid !== "odd") return acquireTexture.call(this, guid, ...rest);
+      throw new TextureUploadRefusedError(guid, { width: 1, height: 1 });
+    });
+    const part = (componentId: string, meshKind: string, meshAssetGuid: string, y: number) => ({
+      componentId, parentId: null, meshKind, meshAssetGuid, position: [0, y, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number],
+    });
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 2, actorGuid: "hero", meshKind: "box", meshAssetGuid: null,
+        parts: [part("body", "box", "hero", 0), part("badge", "sprite", "badge", 2)] });
+      // A refused sprite texture must not fail the staged Model load (Play would abort).
+      await handle.whenEditorModelsReady();
+    } finally { refuse.mockRestore(); }
+    const root = handle.scene.getMeshByName("actor-2")!;
+    expect(visualMeshes(root).some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
+    expect(handle.scene.materials.some((material) => material.name.startsWith("albedo:"))).toBe(false);
+    expect(onTextureDiagnostic).toHaveBeenCalledOnce();
+    expect(onTextureDiagnostic).toHaveBeenCalledWith({
+      code: "texture.webgpuBlockSize", assetGuid: "odd", width: 1, height: 1, particle: false, other: true,
+    });
   });
 
   it("records a mesh material after a possessing Default Camera is assigned", () => {

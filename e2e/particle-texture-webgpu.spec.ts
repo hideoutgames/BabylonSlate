@@ -339,6 +339,8 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await openWebGpuProject(page);
   const warning = 'Texture "albedo" is 1×1; set its Usage to Particle so it loads on WebGPU.';
+  // WebGPU refuses that KTX2, so a Preview that samples it shows No Material with the fix.
+  const refused = 'Texture "albedo" (1×1) was not drawn: WebGPU needs compressed textures in multiples of 4 pixels. Set its Usage to Particle.';
 
   // albedo.png is 1x1 with Albedo Usage: a compressed 1x1 KTX2 that WebGPU rejects.
   const textureGuid = await importAlbedoTexture(page);
@@ -372,8 +374,13 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   await expect(graphResults.getByTestId("particle-graph-diagnostic-particle.texture_block_align-action")).toHaveText(
     "Set Usage To Particle",
   );
-  // A warning, not an error: the graph still builds and runs its Preview.
-  await expect(graphPreview.getByTestId("particle-preview-backend")).toHaveText("CPU", { timeout: 30_000 });
+  // A warning, not an error: the graph still builds, but its Preview has no usable Material yet.
+  const graphEmpty = graphPreview.getByTestId("particle-preview-empty");
+  await expect(graphEmpty).toContainText("No Material", { timeout: 30_000 });
+  await expect(graphEmpty).toContainText(refused);
+  // The build's No Material is that warning's cause, so Compiler Results does not repeat it as an error.
+  await expect(graphResults.getByTestId("particle-graph-diagnostic-particle.missing_material")).toHaveCount(0);
+  await expect(graphRow).toBeVisible();
   await saveAllIfEnabled(page);
   await closeDocumentTab(page, "particle-graph");
 
@@ -389,10 +396,10 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   await expect(fix).toHaveText("Set Usage To Particle");
   const preview = page.getByTestId("particle-emitter-preview");
   const canvas = page.getByTestId("particle-emitter-preview-canvas");
-  // Let the Preview load the 1x1 texture first, so the fix must reach a running Preview.
-  await expect(
-    preview.getByTestId("particle-preview-backend").or(preview.getByTestId("particle-preview-failed")),
-  ).toBeVisible({ timeout: 30_000 });
+  // Let the Preview load (and refuse) the 1x1 texture first, so the fix must reach a running Preview.
+  const emitterEmpty = preview.getByTestId("particle-preview-empty");
+  await expect(emitterEmpty).toContainText("No Material", { timeout: 30_000 });
+  await expect(emitterEmpty).toContainText(refused);
   await saveAllIfEnabled(page);
 
   // One click: the Texture tab is closed, so the Usage saves at once and re-encodes.
@@ -411,7 +418,7 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
   });
 
   const run: PreviewDraw = { retries: 0, drawMs: null, firstDraw: { red: 0, moved: 0 }, steady: { red: 0, moved: 0 } };
-  let failuresBeforeDraw = 0;
+  let failuresBeforeDraw: string[] = [];
   let failuresWhileDrawing: string[] = [];
   let compressed: CompressedTexture[] | null = null;
   try {
@@ -419,11 +426,12 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
     await expect
       .poll(() => compressedGpuTextures(page), { timeout: 30_000 })
       .toContainEqual(expect.objectContaining({ width: 4, height: 4 }));
-    // Frames bound to the 1x1 texture fail until the Preview rebinds; count from the first good draw.
+    // No GPU failure at any point: WebGPU never uploads the refused 1x1 KTX2, the Usage save
+    // binds source pixels, and the commit binds the 4x4 KTX2. Split at the first good draw.
     await expectPreviewDraws(preview, canvas, run, () => {
-      failuresBeforeDraw = gpuFailures.splice(0).length;
+      failuresBeforeDraw = [...gpuFailures];
     });
-    failuresWhileDrawing = [...gpuFailures];
+    failuresWhileDrawing = gpuFailures.slice(failuresBeforeDraw.length);
   } finally {
     await canvas.screenshot({ path: testInfo.outputPath("particle-texture-usage-fix.png") }).catch(() => undefined);
     compressed = await compressedGpuTextures(page).catch(() => null);
@@ -436,6 +444,7 @@ test("Set Usage To Particle from a Basic emitter clears the warning on every sur
     });
   }
   expect(Math.min(run.steady.red, run.steady.moved)).toBeGreaterThan(200);
+  expect(failuresBeforeDraw).toEqual([]);
   expect(failuresWhileDrawing).toEqual([]);
   // After the click the texture reached the GPU as 4x4 blocks, never off the 4-texel grid.
   expect(compressed).toContainEqual(expect.objectContaining({ width: 4, height: 4 }));

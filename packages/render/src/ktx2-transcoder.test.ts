@@ -6,7 +6,10 @@ import {
   playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
   shouldPackKtx2ForPreviewBuild,
+  textureBlockSizeMessage,
+  webGpuKtx2BlockMisalignment,
 } from "./ktx2-transcoder";
+import { ktx2HeaderBytes } from "./texture-test-fixtures";
 
 describe("ktx2 transcoder config", () => {
   it("builds self-hosted URLs under the public base", () => {
@@ -155,5 +158,35 @@ describe("ktx2 transcoder config", () => {
 
   it("never packs KTX2 for Preview Build", () => {
     expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
+  });
+});
+
+describe("WebGPU KTX2 block alignment", () => {
+  const webgpu = (caps: { astc?: unknown; bptc?: unknown } = { astc: {} }) => ({ isWebGPU: true, getCaps: () => caps });
+  const compressed = { forceRGBA: false };
+
+  it("refuses a block-compressed WebGPU upload whose base size is not whole 4x4 blocks", () => {
+    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1), compressed)).toEqual({ width: 1, height: 1 });
+    expect(webGpuKtx2BlockMisalignment(webgpu({ bptc: {} }), ktx2HeaderBytes(8, 6), compressed)).toEqual({ width: 8, height: 6 });
+  });
+
+  it("allows uploads WebGPU accepts or that never transcode to a block format", () => {
+    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(4, 8), compressed)).toBeNull();
+    expect(webGpuKtx2BlockMisalignment({ ...webgpu(), isWebGPU: false }, ktx2HeaderBytes(1, 1), compressed)).toBeNull();
+    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1), { forceRGBA: true })).toBeNull();
+    expect(webGpuKtx2BlockMisalignment(webgpu({}), ktx2HeaderBytes(1, 1), compressed)).toBeNull();
+    // VK_FORMAT_R8G8B8A8_UNORM: an uncompressed KTX2 uploads as authored.
+    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1, 37), compressed)).toBeNull();
+    expect(webGpuKtx2BlockMisalignment(webgpu(), ktx2HeaderBytes(1, 1).subarray(0, 24), compressed)).toBeNull();
+    expect(webGpuKtx2BlockMisalignment(webgpu(), new Uint8Array([0x89, 0x50, 0x4e, 0x47]), compressed)).toBeNull();
+  });
+
+  it("names the texture, its size and the fix for the Materials that sample it", () => {
+    expect(textureBlockSizeMessage({ name: "Spark", width: 1, height: 1, particle: true }))
+      .toMatch(/^Texture "Spark" \(1×1\) was not drawn: .* Set its Usage to Particle\.$/);
+    expect(textureBlockSizeMessage({ name: "Brick", width: 30, height: 18, other: true }))
+      .toMatch(/^Texture "Brick" \(30×18\) was not drawn: .* Resize the image to a multiple of 4 pixels\.$/);
+    expect(textureBlockSizeMessage({ name: "Shared", width: 1, height: 1, particle: true, other: true }))
+      .toMatch(/Set its Usage to Particle, or resize the image to a multiple of 4 pixels\.$/);
   });
 });

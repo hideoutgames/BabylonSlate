@@ -20,6 +20,7 @@ import {
   createParticlePreviewScene,
   installTextureBytes,
   resourceCacheForEngine,
+  textureBlockSizeMessage,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ParticlePreviewStats,
@@ -39,6 +40,11 @@ const STATS_POLL_MS = 250;
 const PREVIEW_ACTOR = "preview";
 const PREVIEW_COMPONENT = "preview";
 
+/**
+ * A service diagnostic; a `particle.missing_material` caused by a texture WebGPU
+ * refused names that Texture in `textureGuid` (and its message).
+ */
+export type ParticlePreviewDiagnostic = ParticleServiceDiagnostic & { textureGuid?: string };
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
@@ -211,7 +217,7 @@ export function ParticlePreviewCanvas({
    * while a debounced edit waits.
    */
   onDiagnostics?: (
-    diagnostics: readonly ParticleServiceDiagnostic[],
+    diagnostics: readonly ParticlePreviewDiagnostic[],
     applied: ParticleLibrary,
   ) => void;
 }) {
@@ -252,7 +258,7 @@ export function ParticlePreviewCanvas({
   const pausedRef = useRef(paused);
   const serviceRef = useRef<ParticleService | null>(null);
   const appliedRef = useRef<ParticleLibrary | null>(null);
-  const diagnosticsRef = useRef<ParticleServiceDiagnostic[]>([]);
+  const diagnosticsRef = useRef<ParticlePreviewDiagnostic[]>([]);
   /** True while a service call reports synchronously; the caller evaluates after it. */
   const syncRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -376,20 +382,37 @@ export function ParticlePreviewCanvas({
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
       presenter = createMaterialPreviewPresenter(host, canvas);
-      materials = createParticleMaterialResolver({
+      // A refused texture explains the No Material its slot reports right after.
+      let refusedTexture: { guid: string; message: string } | null = null;
+      const resolver = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,
         functions: docs.functions,
         acquireTexture: (guid) => {
           const data = sources.get(guid);
-          return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
+          return data ? acquireMaterialTexture(cache, guid, engine, data, undefined, ({ width, height }) => {
+            const name = textureByGuidRef.current(guid)?.header.name ?? guid;
+            refusedTexture = {
+              guid,
+              message: textureBlockSizeMessage({ name, width, height, particle: true }),
+            };
+          }) : null;
         },
       });
+      materials = resolver;
       const service = new ParticleService({
         scene: host.scene,
-        acquireMaterial: materials.acquire,
+        acquireMaterial: (guid, owner) => {
+          refusedTexture = null;
+          return resolver.acquire(guid, owner);
+        },
         statsScope: "local",
-        onDiagnostic: (diagnostic) => {
+        onDiagnostic: (next) => {
+          const refused = next.code === "particle.missing_material" ? refusedTexture : null;
+          refusedTexture = null;
+          const diagnostic: ParticlePreviewDiagnostic = refused
+            ? { ...next, message: refused.message, textureGuid: refused.guid }
+            : next;
           diagnosticsRef.current.push(diagnostic);
           // Async Material failures arrive after the assign returned.
           if (!syncRef.current && !cancelled) evaluate();
