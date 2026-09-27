@@ -298,7 +298,14 @@ function visualComponentsOf(
   const streaming = actor.components.find((component) => component.classId === "SceneStreamingComponent");
   if (streaming) {
     const text = actor.components.find((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true);
-    return [{ ...streaming, parentId: null, transform: authoredComponentActorTransform(actor, streaming) }, {
+    const marker = { ...streaming, parentId: null, transform: authoredComponentActorTransform(actor, streaming) };
+    // Prefab previews represent each component as an actor. Its authored label
+    // already exists on a child actor, so it must not gain a synthetic sibling.
+    const childLabel = !text && allActors?.some((entry) => entry.parentId === actor.id && entry.components.some(
+      (component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true,
+    ));
+    if (childLabel) return [marker];
+    return [marker, {
       ...(text ?? { id: `${streaming.id}:label`, classId: "Text3DComponent",
         transform: { ...identitySerializedTransform(), position: [0, 0.8, 0] } }),
       parentId: streaming.id,
@@ -306,6 +313,7 @@ function visualComponentsOf(
         text: stringProp(streaming.properties.sceneName) ?? "Unassigned Scene", editorOnly: true },
     }];
   }
+  const parentStreaming = parentStreamingComponentOf(actor, allActors);
   return actor.components.filter((component) => {
     if (!VISUAL_COMPONENT_CLASS_IDS.has(component.classId)) return false;
     if (
@@ -315,7 +323,19 @@ function visualComponentsOf(
       return false;
     }
     return true;
-  });
+  }).map((component) => parentStreaming && component.classId === "Text3DComponent" && component.properties.editorOnly === true
+    ? { ...component, properties: { ...component.properties, text: stringProp(parentStreaming.properties.sceneName) ?? "Unassigned Scene" } }
+    : component);
+}
+
+function parentStreamingComponentOf(
+  actor: SerializedActor,
+  allActors?: readonly SerializedActor[],
+): SerializedComponent | undefined {
+  if (!actor.parentId || !actor.components.some((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true)) return undefined;
+  return allActors?.find((entry) => entry.id === actor.parentId)?.components.find(
+    (component) => component.classId === "SceneStreamingComponent",
+  );
 }
 
 export function isIdentitySerializedTransform(
@@ -663,6 +683,7 @@ export function createMeshForComponent(
   actor: SerializedActor,
   component: SerializedComponent,
   assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
 ): Mesh {
   if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
@@ -718,7 +739,7 @@ export function createMeshForComponent(
   }
   if (component.classId === "Text3DComponent") {
     const mesh = createText3DMesh(scene, name, component.properties, assets);
-    if (component.properties.editorOnly === true && actor.components.some((entry) => entry.classId === "SceneStreamingComponent")) {
+    if (component.properties.editorOnly === true && (actor.components.some((entry) => entry.classId === "SceneStreamingComponent") || parentStreamingComponentOf(actor, allActors))) {
       mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
       applyEditorBillboardPass(mesh);
     }
@@ -961,6 +982,7 @@ function createActorOriginHierarchy(
         actor,
         component,
         { ...assets, retainedTextBitmapBytes: retainedBitmapBytes },
+        allActors,
       );
       mesh.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(mesh);
@@ -1022,7 +1044,7 @@ export function createActorMesh(
   const skyboxComponent = actor.components.find(
     (component) => component.classId === "SkyboxComponent",
   );
-  const text3dComponent = actor.components.find(
+  const text3dComponent = visualComponentsOf(actor, allActors).find(
     (component) => component.classId === "Text3DComponent",
   );
   const text2dComponent = actor.components.find(
@@ -1048,7 +1070,7 @@ export function createActorMesh(
       return createMeshForComponent(scene, name, actor, skyboxComponent, assets);
     }
     if (text3dComponent) {
-      return createMeshForComponent(scene, name, actor, text3dComponent, assets);
+      return createMeshForComponent(scene, name, actor, text3dComponent, assets, allActors);
     }
     if (text2dComponent) {
       return createMeshForComponent(scene, name, actor, text2dComponent, assets);
