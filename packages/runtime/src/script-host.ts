@@ -92,6 +92,7 @@ export interface ScriptHostServices {
   getSceneLoadProgress?(target: unknown): number;
   getSceneState?(target: unknown): string;
   resolveInstanceId?(owner: BObject | null, id: string): string;
+  waitForSimulation?(owner: BObject | null): Promise<void>;
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -1154,7 +1155,10 @@ export class ScriptHost {
       getOwner: (actor) => readActorLink(services, actor, "ownerId"),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
-      delay: (seconds) => services.delay(seconds, self),
+      delay: async (seconds) => {
+        await services.delay(seconds, self);
+        await services.waitForSimulation?.(self);
+      },
       callInterface: (target, interfaceGuid, method, args) => {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;
@@ -1200,8 +1204,16 @@ export class ScriptHost {
       getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
       loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
       unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
-      loadSceneBlocking: (target) => services.loadScene?.(target, true) ?? Promise.resolve(),
-      unloadSceneBlocking: (target) => services.unloadScene?.(target, true) ?? Promise.resolve(),
+      loadSceneBlocking: async (target) => {
+        await services.loadScene?.(target, true);
+        await services.waitForSimulation?.(self);
+        if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+      },
+      unloadSceneBlocking: async (target) => {
+        await services.unloadScene?.(target, true);
+        await services.waitForSimulation?.(self);
+        if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+      },
       isSceneLoaded: (target) => services.isSceneLoaded?.(target) ?? false,
       getSceneLoadProgress: (target) => clamp01(services.getSceneLoadProgress?.(target) ?? 0),
       getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",

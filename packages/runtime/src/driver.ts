@@ -429,6 +429,7 @@ interface SceneStream {
   reject: (error: unknown) => void;
   unloadPromise?: Promise<void>;
   navObstacles: string[];
+  origin?: Transform;
 }
 
 class InProcessRuntime implements RuntimeDriver {
@@ -467,6 +468,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sceneStreams = new Map<string, SceneStream>();
   private readonly actorStream = new WeakMap<Actor, SceneStream>();
   private readonly streamScenes = new WeakMap<Scene, SceneStream>();
+  private readonly simulationWaiters = new Set<() => void>();
   private readonly scalability: ScalabilitySession;
   private lastRenderPathStatus: RenderPathStatus | null = null;
   private readonly scalabilityProjectRenderPath: RenderPath;
@@ -1016,6 +1018,7 @@ class InProcessRuntime implements RuntimeDriver {
       getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
       getSceneState: (target) => this.getSceneState(target),
       resolveInstanceId: (owner, id) => this.streamForOwner(owner)?.idMap.get(id) ?? id,
+      waitForSimulation: (owner) => this.waitForSimulation(owner),
       getProjectName: () => options.project?.name ?? "",
       getProjectVersion: () => options.project?.version ?? "",
       setWorldGravity: (gravity) => {
@@ -1258,7 +1261,20 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.streamBlockingCount === 0 && !this.stopped) this.emit({ type: "sceneStreamBlocking", blocking: false });
       this.accumulator = 0;
       this.flushOwnerActions();
+      if (this.streamBlockingCount === 0) {
+        const waiters = [...this.simulationWaiters];
+        this.simulationWaiters.clear();
+        for (const resume of waiters) resume();
+      }
     });
+  }
+
+  private async waitForSimulation(owner: BObject | null): Promise<void> {
+    while (this.streamBlockingCount > 0 && !this.stopped && !owner?.destroyed)
+      await new Promise<void>((resolve) => this.simulationWaiters.add(resolve));
+    const stream = this.streamForOwner(owner);
+    if (this.stopped || owner?.destroyed || (stream && this.sceneStreams.get(stream.actor.guid) !== stream))
+      throw sceneRealizationCancelled();
   }
 
   loadSceneStream(target: unknown, blocking = false): Promise<void> {
@@ -1327,6 +1343,7 @@ class InProcessRuntime implements RuntimeDriver {
       origin = composeParentChildTransform(parent.transform, origin);
       parentId = parent.parentId;
     }
+    stream.origin = origin;
     for (const serialized of cloned.actors) {
       checkpoint();
       const actor = createActorFromSerialized(this.world, serialized, this.sceneActorHooks);
@@ -2029,6 +2046,9 @@ class InProcessRuntime implements RuntimeDriver {
     transform?: Transform;
     streamOwner?: BObject | null;
   }): Actor | null {
+    if (options.streamOwner?.destroyed || this.stopped) return null;
+    const stream = this.streamForOwner(options.streamOwner);
+    if (stream && (stream.state !== "Loaded" || this.sceneStreams.get(stream.actor.guid) !== stream)) return null;
     if (!this.canSpawnActorClass(options.classId)) return null;
     const hooks = this.scriptHost.hooksFor(options.classId);
     if (!hooks) return null;
@@ -2045,11 +2065,11 @@ class InProcessRuntime implements RuntimeDriver {
           this.runOwnerDestroyed(self, () => hooks.onDestroyed?.(self)),
       },
     });
-    const stream = this.streamForOwner(options.streamOwner);
     if (stream) {
       stream.actors.add(actor);
       this.actorStream.set(actor, stream);
       actor.setVariable("parentId", stream.actor.guid);
+      if (stream.origin) actor.transform = composeParentChildTransform(stream.origin, actor.transform);
     }
     this.scriptHost.bindInterfaceHandlers(actor);
     const components = this.scriptHost.scriptsFor(options.classId)
@@ -2837,7 +2857,7 @@ class InProcessRuntime implements RuntimeDriver {
     actor: Actor,
     transforms?: ReadonlyMap<string, Transform>,
   ): void {
-    if (!this.nav || actor.destroyed) return;
+    if (!this.nav || actor.destroyed || !this.streamActorReady(actor)) return;
     if (this.navAgentByActor.has(actor.guid)) return;
     const component = actor.components.find(
       (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
@@ -2972,7 +2992,7 @@ class InProcessRuntime implements RuntimeDriver {
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = actors.get(actorGuid);
-      if (!actor || actor.destroyed || !actor.components.some((component) =>
+      if (!actor || actor.destroyed || !this.streamActorReady(actor) || !actor.components.some((component) =>
         component.classId === "NavAgentComponent" && !component.destroyed)) {
         this.stopNavAgent(actorGuid);
         this.nav.removeAgent(agentId);
@@ -4776,6 +4796,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
+    for (const resume of this.simulationWaiters) resume();
+    this.simulationWaiters.clear();
     for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
     for (const work of [...this.independentLayerWork.values()]) {
       work.controller.abort(sceneRealizationCancelled());

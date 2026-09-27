@@ -29,7 +29,7 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
       transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [createMeshComponent("mesh", "box"),
         { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
-        { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } ] })] };
+        { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } } ] })] };
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: "parent", sceneLibrary: { child, ...options.scenes }, deferSceneModelsReady: options.deferred ?? true,
     onCommand: (command) => commands.push(command) });
@@ -174,6 +174,33 @@ describe("additive scene streaming", () => {
       await expect(runtime.loadSceneStream(left)).rejects.toThrow("Physics World");
       expect(runtime.getSceneState(left)).toBe("Unloaded");
       expect(world.getActors()).toHaveLength(3);
+    } finally { runtime.stop(); }
+  });
+
+  it("does not resume or spawn from a destroyed caller after a sibling blocking load completes", async () => {
+    const caller: CompiledScript = { classId: "ChildActor", parentClassId: "Actor", assetGuid: "caller", anchors: [],
+      source: `export async function begin(ctx) {
+        if (ctx.self.getVariable("parentId") !== "left") return;
+        const target = ctx.getAllActorsOfClass("SceneStreamingActor").find(actor => actor.guid === "right");
+        await ctx.loadSceneBlocking(target);
+        ctx.setVariable("continued", true);
+        ctx.spawnActor("Spawned");
+      }
+      export function end(ctx) { ctx.spawnActor("Spawned"); }`,
+      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }, { name: "end", event: "onDestroyed", isAsync: false }] };
+    const { runtime, commands, world, left } = await setup({ scripts: [logic("Spawned"), caller] });
+    try {
+      const first = runtime.loadSceneStream(left);
+      acknowledge(runtime, await realized(commands, "left"));
+      await first;
+      const waiting = world.getActors().find((actor) => actor.classId === "ChildActor" && actor.getVariable("parentId") === "left")!;
+      const sibling = await realized(commands, "right");
+      await runtime.unloadSceneStream(left);
+      expect(waiting.destroyed).toBe(true);
+      acknowledge(runtime, sibling);
+      await vi.waitFor(() => expect(runtime.getDiagnostics().entries().some((entry) => entry.message.includes("cancelled"))).toBe(true));
+      expect(waiting.getVariable("continued")).toBeUndefined();
+      expect(world.getActors().some((actor) => actor.classId === "Spawned")).toBe(false);
     } finally { runtime.stop(); }
   });
 });
