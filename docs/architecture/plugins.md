@@ -43,7 +43,7 @@ Later wins:
 
 1. PluginSettings `enabledByDefault`
 2. `project.json` `pluginOverrides[guid].enabled` (editor uses 1–2)
-3. Export-preset `pluginOverrides` (export / Preview Build only; consumed by `collectExportClosure` in `@babylonslate/exporter`)
+3. Export-preset `pluginOverrides` (export / Preview Build only; resolved by the editor's `resolveExportPluginGraph`, then walked by `collectExportReachability` in `@babylonslate/exporter`)
 
 Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** is a Project Settings → Plugins **Switch** (`settings-show-plugin-content`, persisted in `layout.json`, default off). **New Plugin** turns it on automatically. Turning the switch off while the Content Browser is inside a plugin folder resets the grid to project `assets` (path-prefix check, not `rootId`). AssetPicker / Play / search still see enabled plugin assets when the tree is hidden. Extra tree roots appear when shown; only each base plugin folder uses its selected icon, while descendant folders retain the folder glyph. Unknown/unset keys fall back to the folder glyph. Engine roots show a Read Only badge and skip New / Import / Delete.
 
