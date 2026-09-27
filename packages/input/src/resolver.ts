@@ -380,6 +380,20 @@ export class InputResolver {
           }
           break;
         }
+        case "gamepadDisconnect": {
+          const pad = event.gamepadIndex;
+          if (!this.state.connectedPads.delete(pad)) break;
+          connections.push({ gamepadIndex: pad, connected: false });
+          // The pad's last sample must not keep actions held or sticks deflected.
+          for (const key of [...this.state.heldGamepadButtons]) {
+            if (key.startsWith(`${pad}:`))
+              this.state.heldGamepadButtons.delete(key);
+          }
+          for (const key of [...this.state.gamepadAxes.keys()]) {
+            if (key.startsWith(`${pad}:`)) this.state.gamepadAxes.delete(key);
+          }
+          break;
+        }
         case "touchAxis": {
           this.state.touchAxes.set(event.controlId, event.value);
           break;

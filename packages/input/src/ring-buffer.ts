@@ -30,14 +30,21 @@ export type RawInputEvent =
       tick: number;
       controlId: string;
       value: number;
+    }
+  | {
+      /** A pad sampled on the previous poll is no longer reported. */
+      kind: "gamepadDisconnect";
+      tick: number;
+      gamepadIndex: number;
     };
 
-// Bytes 3 and 5 belonged to retired raw kinds; keep the remaining values stable.
+// Bytes 3 and 5 belonged to retired raw kinds; never reuse or renumber them.
 const KIND = {
   pointer: 1,
   key: 2,
   gamepad: 4,
   touchAxis: 6,
+  gamepadDisconnect: 7,
 } as const;
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
@@ -103,10 +110,13 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
         view.setFloat32(o, button, true);
         o += 4;
       }
-    } else {
+    } else if (event.kind === "touchAxis") {
       o += writeString(view, o, event.controlId);
       view.setFloat32(o, event.value, true);
       o += 4;
+    } else {
+      view.setUint8(o, event.gamepadIndex);
+      o += 1;
     }
   }
   return scratch.slice(0, o);
@@ -175,6 +185,10 @@ export function decodeInputEvents(
         controlId: controlId.value,
         value,
       });
+    } else if (kindByte === KIND.gamepadDisconnect) {
+      const gamepadIndex = view.getUint8(o);
+      o += 1;
+      events.push({ kind: "gamepadDisconnect", tick, gamepadIndex });
     } else {
       throw new Error(`Unknown input event kind ${kindByte}`);
     }

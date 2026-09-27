@@ -263,6 +263,54 @@ describe("InputResolver", () => {
     expect(next.axes2D.Move!.x).toBeGreaterThan(0.5);
   });
 
+  it("reports a disconnected pad once and drops only its held buttons and stick", () => {
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Jump", bindings: [{ device: "gamepadButton", code: "0:0" }] },
+        { name: "Fire", bindings: [{ device: "gamepadButton", code: "1:0" }] },
+      ],
+      axes: [
+        {
+          name: "Move",
+          kind: "2d",
+          bindings: [{ device: "gamepadAxis", code: "0:0", component: "x" }],
+        },
+      ],
+    });
+    const pad = (tick: number, gamepadIndex: number): RawInputEvent => ({
+      kind: "gamepad",
+      tick,
+      gamepadIndex,
+      axes: [0.8],
+      buttons: [1],
+    });
+    const disconnect = (tick: number): RawInputEvent => ({
+      kind: "gamepadDisconnect",
+      tick,
+      gamepadIndex: 0,
+    });
+    resolver.resolve([pad(1, 0), pad(1, 1)]);
+
+    const lost = resolver.resolve([disconnect(2)]);
+    expect(lost.gamepadConnections).toEqual([
+      { gamepadIndex: 0, connected: false },
+    ]);
+    expect(lost.actions.Jump).toEqual({
+      pressed: false,
+      released: true,
+      held: false,
+    });
+    expect(lost.actions.Fire?.held).toBe(true);
+    expect(lost.axes2D.Move).toEqual({ x: 0, y: 0 });
+    expect(resolver.resolve([disconnect(3)]).gamepadConnections).toEqual([]);
+
+    const back = resolver.resolve([pad(4, 0)]);
+    expect(back.gamepadConnections).toEqual([
+      { gamepadIndex: 0, connected: true },
+    ]);
+    expect(back.actions.Jump?.pressed).toBe(true);
+  });
+
   it("applies dead zone, scale and inversion on a 1D axis", () => {
     const resolver = new InputResolver({
       actions: [],

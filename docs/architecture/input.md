@@ -84,9 +84,9 @@ interface ResolvedInputTick {
 
 - **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
-- **Raw kinds.** `pointer` (mouse and touch arrive as Pointer Events), `key`, polled `gamepad` samples, and `touchAxis`.
+- **Raw kinds.** `pointer` (mouse and touch arrive as Pointer Events), `key`, polled `gamepad` samples, `gamepadDisconnect`, and `touchAxis`.
 - **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. Touch uses the same cursor sample as mouse.
-- **Gamepad connections.** A pad reports `connected: true` on its first sample. Hosts do not report disconnects, so **On Gamepad Disconnected** does not fire.
+- **Gamepad connections.** A pad reports `connected: true` on its first sample. Play and the exported player compare each gamepad poll with the previous one and push `gamepadDisconnect` for a pad that is no longer returned (empty slot or `connected: false`). The resolver then reports `connected: false` once and drops that pad's held buttons and stick values; a later sample reconnects it. **On Gamepad Connected** and **On Gamepad Disconnected** run once per transition with the pad index.
 
 Pure with respect to the browser — feed synthetic streams from the deterministic harness.
 
@@ -101,7 +101,7 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `wasActionReleased(action)` | `actions[action].released` |
 | `getAxis(axis)` | `axes[axis]` |
 | `getAxis2D(axis)` | `axes2D[axis]` |
-| `gamepadConnections` | pads first sampled this tick |
+| `gamepadConnections` | pads first sampled or disconnected this tick |
 | `getPressedKeys()` | ordered physical Key rising edges this tick |
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
