@@ -547,7 +547,7 @@ emission and no editor guides/selection:
 [packed WebGL2](../assets/renderer-qualification/2026-09-23-computer-use/animated-packed-webgl2.png),
 [loose WebGPU](../assets/renderer-qualification/2026-09-23-computer-use/animated-loose-webgpu.png).
 [Archive identities](../assets/renderer-qualification/2026-09-23-computer-use/final-exports.json)
-and adjacent DOM diagnostics identify these captures. Build ZIPs remain local;
+identify these captures. Build ZIPs remain local;
 the source fixture is the portable reproduction. Earlier Chrome packed/loose
 reset/reload captures and native automated external-request/transition assertions
 remain valid for unchanged player behavior.
@@ -590,8 +590,7 @@ off and Black Bars on, Play presented
 [240×135 at 0.5](../assets/renderer-qualification/2026-09-23-computer-use/play-scale-05-ready.png)
 and [480×270 after reset](../assets/renderer-qualification/2026-09-23-computer-use/play-reset-ready.png).
 The changed-event readback printed true; CEL bands and outlines survived Low.
-Stopping left Save All disabled. Matching canvas/HUD JSON accompanies each
-capture. The [UI-authored project](../assets/renderer-qualification/2026-09-23-computer-use/authored-project.zip)
+Stopping left Save All disabled. The [UI-authored project](../assets/renderer-qualification/2026-09-23-computer-use/authored-project.zip)
 retains the 0.5 version with a 60-second delay for reproducible observation.
 An initial capture taken during loading was excluded; dimensions alone did not
 establish a presented frame.
@@ -645,7 +644,7 @@ its saved scale remained 1. Play now restores its borrowed Engine scale before
 readmitting editor views. Focused two-cycle coverage also exercises synchronous
 resize notifications; the compiled graph browser cases check actual editor
 buffer restoration. The `5d0f9a91` checks and hands-on rerun above supersede
-that failure; its original capture remains retained. Physical A16 remains deferred.
+that failure; its capture is not kept in the repository. Physical A16 remains deferred.
 
 ## Earlier continuation checkpoints — 22 September 2026
 
@@ -890,8 +889,8 @@ printed software launch arguments for native runs. The actual native project
 used `--use-angle=d3d11 --ignore-gpu-blocklist --enable-gpu-rasterization
 --disable-background-timer-throttling --disable-renderer-backgrounding`.
 Effective API/adapter fields came from the running engines and remain valid.
-Retained JSON is left unchanged; its `graphicsArguments` field is superseded by
-this correction for `f39b1803`, `cb5fba6e` and `f61ff565` native runs. The
+Retained `f39b1803` and `cb5fba6e` native JSON is left unchanged; this correction
+supersedes its `graphicsArguments` field. The
 successful cost reports already overrode that field correctly. The helper now
 uses the selected native project's flags; cost failure reports also use the
 actual flags. A single native receiver case will check the corrected report;
@@ -1193,8 +1192,8 @@ The initial three-consumer captures
 and strict/through overlap captures
 ([WebGL2](../assets/renderer-qualification/2026-09-22-shared-outline/webgl2-through-component-keeps-global-strict.png),
 [WebGPU](../assets/renderer-qualification/2026-09-22-shared-outline/webgpu-through-component-keeps-global-strict.png))
-were visually inspected and agree across APIs. Additional removal, overlap,
-close-occluder, high-ID and disabled captures are retained beside those files.
+were visually inspected and agree across APIs. The removal, overlap,
+close-occluder, high-ID and disabled states are recorded in the diagnostics above.
 
 Four selected ownership/coordinator unit cases passed at `c512b76d`; the render
 package typecheck passed at `49c45f10`; the twelve changed TypeScript files passed
