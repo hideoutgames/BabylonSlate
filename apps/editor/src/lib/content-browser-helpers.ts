@@ -23,6 +23,7 @@ import {
   animationAssetGuids,
   normalizeAnimationPayload,
   spriteAnimationTextureGuids,
+  isEnvironmentTexturePayload,
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
@@ -33,6 +34,7 @@ import {
   isInputAssetType,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
+  isMaterialTextureAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
@@ -1906,6 +1908,11 @@ export function materialHeaderMeta(
   return {
     domain: parseMaterialDomain(payload.domain),
   };
+}
+
+export function isMaterialSamplerTextureAsset(header: { type: string; payload?: unknown }): boolean {
+  return isMaterialTextureAssetType(header.type) &&
+    (header.type !== "Texture" || !isEnvironmentTexturePayload(header.payload));
 }
 
 export function isPostProcessMaterialAsset(asset: {

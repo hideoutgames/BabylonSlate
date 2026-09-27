@@ -55,6 +55,7 @@ import {
   materialAssetDependencies,
   assetHeaderDependencies,
   materialHeaderMeta,
+  isMaterialSamplerTextureAsset,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
   isParticleMaterialAsset,
@@ -76,6 +77,12 @@ import {
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("admits material sampler textures without admitting environment cubes", () => {
+  expect(isMaterialSamplerTextureAsset({ type: "RenderTargetTexture" })).toBe(true);
+  expect(isMaterialSamplerTextureAsset({ type: "Texture", payload: { dimension: "cube", container: "env" } })).toBe(false);
+  expect(isMaterialSamplerTextureAsset({ type: "Texture", payload: {} })).toBe(true);
+});
 
 it("creates a Scene Streaming subclass with an authorable target and attached name marker", () => {
   const result = buildNewAssetResult({ type: "Class", name: "Room", guid: "room-class", parentClass: "SceneStreamingActor" });
