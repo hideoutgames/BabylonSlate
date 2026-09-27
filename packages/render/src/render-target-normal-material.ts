@@ -1,7 +1,7 @@
 import {
-  DiscardBlock, FragmentOutputBlock, InputBlock, MultiplyBlock, NodeMaterial, NodeMaterialBlockConnectionPointTypes,
+  Constants, DiscardBlock, FragmentOutputBlock, InputBlock, Material, MultiplyBlock, NodeMaterial, NodeMaterialBlockConnectionPointTypes,
   NodeMaterialSystemValues, NormalizeBlock, RemapBlock, ShaderLanguage, Texture, TextureBlock, TransformBlock, VectorMergerBlock, VectorSplitterBlock,
-  type Material, type NodeMaterialBlock, type Scene,
+  type NodeMaterialBlock, type Scene,
 } from "@babylonjs/core";
 import { createSurfacePlumbing } from "./material-compiler";
 import type { MaterialPlumbing } from "./material-block-registry";
@@ -13,6 +13,9 @@ function createGeometryMaterial(scene: Scene, depth: boolean, source?: Material)
   const material = new NodeMaterial(depth ? "renderTarget:depth" : "renderTarget:worldNormal", scene, {
     shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
   });
+  // Fragment alpha is data, not a request to blend or disable depth writes.
+  material.transparencyMode = Material.MATERIAL_OPAQUE;
+  material.alphaMode = Constants.ALPHA_DISABLE;
   if (source) {
     material.backFaceCulling = source.backFaceCulling;
     material.cullBackFaces = source.cullBackFaces;

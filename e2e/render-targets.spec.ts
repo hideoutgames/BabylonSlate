@@ -30,6 +30,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const [source, consumer] of [["SceneColor", "Material Color"], ["Authored SceneColor", "Material Color After Mode Change"]])
       for (let channel = 0; channel < 4; channel++) expect(Math.abs(pixel(source!)[channel]! - pixel(consumer!)[channel]!)).toBeLessThanOrEqual(1);
     expect(result.results.find((entry) => entry.mode === "DepthPass")!.pixel[0]).toBeCloseTo(0.3, 2);
+    expect(pixel("DepthPass").slice(1)).toEqual([0, 0, 1]);
     const normal = result.results.find((entry) => entry.mode === "WorldNormal")!.pixel;
     expect(Math.abs(normal[0]! - 128)).toBeLessThanOrEqual(1);
     expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);
@@ -37,6 +38,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.results.find((entry) => entry.mode === "Empty Filter")!.pixel).toEqual([0, 0, 0, 0]);
     for (const label of ["UV0 Opaque", "UV1 Opaque", "Cutoff Opaque"]) {
       expect(pixel(`${label} DepthPass`)[0]).toBeCloseTo(0.3, 2);
+      expect(pixel(`${label} DepthPass`).slice(1)).toEqual([0, 0, 1]);
       const normal = pixel(`${label} WorldNormal`);
       expect(Math.abs(normal[0]! - 128)).toBeLessThanOrEqual(1);
       expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);

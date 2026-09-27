@@ -394,6 +394,7 @@ export class RenderTargetCaptures {
     const projection = scene.getProjectionMatrix() ?? camera?.getProjectionMatrix();
     const engine = scene.getEngine();
     const renderPass = engine.currentRenderPassId;
+    const colorWrite = engine.getColorWrite();
     const viewport = engine.currentViewport ?? camera?.viewport;
     const width = engine.getRenderWidth();
     const height = engine.getRenderHeight();
@@ -423,6 +424,7 @@ export class RenderTargetCaptures {
         scene.setSceneUniformBuffer(ubo);
         if (view && projection) scene.setTransformMatrix(view, projection);
         engine.currentRenderPassId = renderPass;
+        engine.setColorWrite(colorWrite);
         scene.resetCachedMaterial();
         if (outlines) outlines.enabled = outlinesEnabled!;
         if (viewport) engine.setViewport(viewport, width, height);
@@ -438,6 +440,11 @@ export class RenderTargetCaptures {
     // Readiness initializes the native renderer and may draw clustered-light
     // targets, so it needs the same framebuffer/state protection as the draw.
     drawBorrowedTarget(this.scene, target.texture, () => {
+      const engine = this.scene.getEngine();
+      engine.setAlphaMode(Constants.ALPHA_DISABLE);
+      engine.setDepthBuffer(true);
+      engine.setDepthWrite(true);
+      engine.setColorWrite(true);
       ready = target.texture.isReadyForRendering();
       if (ready) target.texture.renderPrepared();
     }, {

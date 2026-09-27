@@ -302,8 +302,9 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
   engine.bindFramebuffer(borrowed);
   const viewport = { x: 0.2, y: 0.1, width: 0.6, height: 0.7 };
   engine.setViewport(viewport, 8, 8);
-  engine.setDepthBuffer(true); engine.setDepthWrite(true);
-  engine.setAlphaMode(Constants.ALPHA_DISABLE);
+  engine.setAlphaMode(Constants.ALPHA_ADD);
+  engine.setDepthBuffer(false); engine.setDepthWrite(false);
+  engine.setColorWrite(false);
   const renderPass = engine.currentRenderPassId;
   scene.imageProcessingConfiguration.applyByPostProcess = true;
   const outlines = scene.getOutlineRenderer(); outlines.enabled = true;
@@ -313,6 +314,10 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
     expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(true);
     expect(scene.activeCamera).not.toBe(camera);
     expect(scene.floatingOriginOffset.equals(Vector3.ZeroReadOnly)).toBe(true);
+    expect(engine.getDepthBuffer()).toBe(true);
+    expect(engine.getDepthWrite()).toBe(true);
+    expect(engine.getAlphaMode()).toBe(Constants.ALPHA_DISABLE);
+    expect(engine.getColorWrite()).toBe(true);
     engine.bindFramebuffer(interrupted);
     engine.setDepthBuffer(false); engine.setDepthWrite(false);
     engine.setAlphaMode(Constants.ALPHA_ADD);
@@ -335,9 +340,10 @@ it.each(["readiness", "draw"] as const)("restores rendering state and can retry 
   expect(engine.currentRenderPassId).toBe(renderPass);
   expect(engine._currentRenderTarget).toBe(borrowed);
   expect(engine.currentViewport).toEqual(viewport);
-  expect(engine.getDepthBuffer()).toBe(true);
-  expect(engine.getDepthWrite()).toBe(true);
-  expect(engine.getAlphaMode()).toBe(Constants.ALPHA_DISABLE);
+  expect(engine.getDepthBuffer()).toBe(false);
+  expect(engine.getDepthWrite()).toBe(false);
+  expect(engine.getAlphaMode()).toBe(Constants.ALPHA_ADD);
+  expect(engine.getColorWrite()).toBe(false);
   expect(outlines.enabled).toBe(true);
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
   expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
