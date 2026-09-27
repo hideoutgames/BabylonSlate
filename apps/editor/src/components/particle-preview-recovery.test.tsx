@@ -26,6 +26,11 @@ const harness = vi.hoisted(() => ({
   assignDiagnostics: [] as ParticleServiceDiagnostic[],
   /** The tier the service reports for the next library edit. */
   tier: "live",
+  /** Textures the Material library samples, and their registry payloads. */
+  textureGuids: [] as string[],
+  payloads: new Map<string, Record<string, unknown>>(),
+  registryVersion: 0,
+  collectTextureBytes: vi.fn(async () => new Map<string, Uint8Array>()),
 }));
 
 vi.mock("@babylonslate/render", () => {
@@ -75,15 +80,26 @@ vi.mock("../context/play-context", () => {
   return { useOptionalPlay: () => play };
 });
 vi.mock("../context/document-context", () => {
-  const documents = {
-    collectPlayMaterialLibrary: async () => ({
-      documents: new Map(),
-      functions: new Map(),
-      textureGuids: [],
-    }),
-    collectPlayTextureBytes: async () => new Map(),
+  const collectPlayMaterialLibrary = async () => ({
+    documents: new Map(),
+    functions: new Map(),
+    textureGuids: harness.textureGuids,
+  });
+  const collectPlayTextureBytes = () => harness.collectTextureBytes();
+  const assetRegistry = {
+    getByGuid: (guid: string) => {
+      const payload = harness.payloads.get(guid);
+      return payload ? { header: { payload } } : undefined;
+    },
   };
-  return { useDocuments: () => documents };
+  return {
+    useDocuments: () => ({
+      collectPlayMaterialLibrary,
+      collectPlayTextureBytes,
+      assetRegistry,
+      registryVersion: harness.registryVersion,
+    }),
+  };
 });
 
 beforeEach(() => {
@@ -96,6 +112,10 @@ afterEach(() => {
   harness.services.length = 0;
   harness.assignDiagnostics = [];
   harness.tier = "live";
+  harness.textureGuids = [];
+  harness.payloads.clear();
+  harness.registryVersion = 0;
+  harness.collectTextureBytes.mockClear();
 });
 
 const base = createDefaultParticleEmitterPayload();
@@ -231,5 +251,31 @@ describe("Particle preview recovery", () => {
     render(preview());
     expect(await screen.findByText("No Material")).toBeTruthy();
     expect(screen.getByTestId("particle-canvas")).toBeTruthy();
+  });
+
+  it("reloads a sampled Texture after its Usage fix commits a new encode", async () => {
+    harness.textureGuids = ["tex"];
+    harness.payloads.set("tex", { usage: "albedo", ktx2ChunkId: "ktx2-albedo" });
+    harness.assignDiagnostics = [
+      {
+        code: "particle.missing_material",
+        assetGuid: "emitter",
+        message: "Particle Emitter has no usable Material; slot skipped.",
+      },
+    ];
+    const view = render(preview());
+    expect(await screen.findByText("No Material")).toBeTruthy();
+    expect(harness.collectTextureBytes).toHaveBeenCalledTimes(1);
+    // Other saves bump the registry without changing this Texture.
+    harness.registryVersion = 1;
+    view.rerender(preview());
+    expect(harness.collectTextureBytes).toHaveBeenCalledTimes(1);
+    harness.assignDiagnostics = [];
+    harness.payloads.set("tex", { usage: "particle", ktx2ChunkId: "ktx2-particle" });
+    harness.registryVersion = 2;
+    view.rerender(preview());
+    await waitFor(() => expect(screen.queryByText("No Material")).toBeNull());
+    expect(harness.collectTextureBytes).toHaveBeenCalledTimes(2);
+    expect(harness.services).toHaveLength(2);
   });
 });

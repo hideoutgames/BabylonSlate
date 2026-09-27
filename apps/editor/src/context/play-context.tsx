@@ -1552,6 +1552,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
+            textureName={(guid) => assetRegistry?.getByGuid(guid)?.header.name}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

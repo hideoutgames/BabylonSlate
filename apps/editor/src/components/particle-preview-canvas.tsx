@@ -19,6 +19,7 @@ import {
   createParticlePreviewScene,
   installTextureBytes,
   resourceCacheForEngine,
+  textureBlockSizeMessage,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ParticlePreviewStats,
@@ -39,6 +40,17 @@ const PREVIEW_ACTOR = "preview";
 const PREVIEW_COMPONENT = "preview";
 
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
+
+/** Saved Usage and committed encode of each texture: what decides the bytes the Preview binds. */
+function textureEncodeKey(
+  registry: { getByGuid(guid: string): { header: { payload: Record<string, unknown> } } | undefined } | null,
+  guids: readonly string[],
+): string {
+  return guids.map((guid) => {
+    const payload = registry?.getByGuid(guid)?.header.payload;
+    return `${guid}:${String(payload?.usage ?? "")}:${String(payload?.ktx2ChunkId ?? "")}`;
+  }).join(",");
+}
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
 function graphErrorCount(entry: ParticleLibraryEmitter): number {
@@ -192,7 +204,11 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes, assetRegistry, registryVersion } = useDocuments();
+  const assetRegistryRef = useRef(assetRegistry);
+  assetRegistryRef.current = assetRegistry;
+  /** Textures the running Preview bound and their encode key when collected. */
+  const loadedTexturesRef = useRef<{ guids: readonly string[]; key: string } | null>(null);
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [booted, setBooted] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -321,34 +337,50 @@ export function ParticlePreviewCanvas({
     setFailure(null);
     setNotice(null);
     setUpdating(true);
+    loadedTexturesRef.current = null;
     void (async () => {
       const guids = materialKey ? materialKey.split(",") : [];
       const docs = collectPlayMaterialLibrary
         ? await collectPlayMaterialLibrary(undefined, [], guids)
         : { documents: new Map(), functions: new Map(), textureGuids: [] };
+      // Keyed before collecting, so an encode that commits meanwhile reloads again.
+      const textureKey = textureEncodeKey(assetRegistryRef.current, docs.textureGuids);
       // Emitters have no Texture; Texture Sample nodes read the Material's textures.
       const bytes = collectPlayTextureBytes
         ? await collectPlayTextureBytes(new Map(), new Map(), docs.textureGuids)
         : new Map<string, Uint8Array>();
       if (cancelled) return;
+      loadedTexturesRef.current = { guids: docs.textureGuids, key: textureKey };
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
       presenter = createMaterialPreviewPresenter(host, canvas);
-      materials = createParticleMaterialResolver({
+      // A refused texture explains the No Material its slot reports right after.
+      let refusedTexture: string | null = null;
+      const resolver = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,
         functions: docs.functions,
         acquireTexture: (guid) => {
           const data = sources.get(guid);
-          return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
+          return data ? acquireMaterialTexture(cache, guid, engine, data, undefined, ({ width, height }) => {
+            const name = assetRegistryRef.current?.getByGuid(guid)?.header.name ?? guid;
+            refusedTexture = textureBlockSizeMessage({ name, width, height, particle: true });
+          }) : null;
         },
       });
+      materials = resolver;
       const service = new ParticleService({
         scene: host.scene,
-        acquireMaterial: materials.acquire,
+        acquireMaterial: (guid, owner) => {
+          refusedTexture = null;
+          return resolver.acquire(guid, owner);
+        },
         statsScope: "local",
-        onDiagnostic: (diagnostic) => {
+        onDiagnostic: (next) => {
+          const refused = next.code === "particle.missing_material" ? refusedTexture : null;
+          refusedTexture = null;
+          const diagnostic = refused ? { ...next, message: refused } : next;
           diagnosticsRef.current.push(diagnostic);
           // Async Material failures arrive after the assign returned.
           if (!syncRef.current && !cancelled) evaluate();
@@ -398,6 +430,17 @@ export function ParticlePreviewCanvas({
     materialKey,
     showSkybox,
   ]);
+
+  // Bytes are collected once per load: a saved Usage or committed re-encode
+  // (for example the Particle Usage fix for No Material) reloads the Preview.
+  useEffect(() => {
+    void registryVersion; // Registry contents mutate without replacing its instance.
+    const loaded = loadedTexturesRef.current;
+    if (!loaded || loaded.guids.length === 0) return;
+    if (textureEncodeKey(assetRegistry, loaded.guids) === loaded.key) return;
+    loadedTexturesRef.current = null;
+    setAttempt((value) => value + 1);
+  }, [assetRegistry, registryVersion]);
 
   useEffect(() => {
     const service = serviceRef.current;

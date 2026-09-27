@@ -6,6 +6,8 @@
 import {
   KTX2_TRANSCODER_RELATIVE_FILES,
   playerFilesHaveKtx2Transcoder,
+  sniffKtx2Size,
+  TEXTURE_BLOCK_EDGE,
 } from "@babylonslate/assets";
 
 export {
@@ -111,6 +113,60 @@ export function shouldForceKtx2Rgba(
 ): boolean {
   if (isSoftwareGlRenderer(renderer ?? "")) return true;
   return !caps?.astc && !caps?.bptc;
+}
+
+/**
+ * Base size of a KTX2 that WebGPU would reject, else null. Unless RGBA is
+ * forced, Babylon transcodes Basis KTX2 (vkFormat 0) to a 4x4 block format
+ * when ASTC or BC7 is available, and WebGPU requires such a texture's base
+ * size in whole blocks (the decoder pads mip data, not `pixelWidth`). WebGL2
+ * uploads the same texture, so only WebGPU refuses it.
+ */
+export function webGpuKtx2BlockMisalignment(
+  engine: { isWebGPU: boolean; getCaps(): { astc?: unknown; bptc?: unknown } },
+  header: Uint8Array,
+  decoder: { forceRGBA?: boolean },
+): { width: number; height: number } | null {
+  if (!engine.isWebGPU || decoder.forceRGBA) return null;
+  const size = sniffKtx2Size(header);
+  if (!size || (size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0)) return null;
+  const vkFormat = new DataView(header.buffer, header.byteOffset, header.byteLength).getUint32(12, true);
+  const caps = engine.getCaps();
+  return vkFormat === 0 && (caps.astc || caps.bptc) ? size : null;
+}
+
+/** Diagnostic code for a texture skipped by {@link webGpuKtx2BlockMisalignment}. */
+export const TEXTURE_BLOCK_SIZE_DIAGNOSTIC = "texture.webgpuBlockSize";
+
+export interface TextureBlockSizeDiagnostic {
+  code: typeof TEXTURE_BLOCK_SIZE_DIAGNOSTIC;
+  assetGuid: string;
+  /** KTX2 base size WebGPU rejected. */
+  width: number;
+  height: number;
+  /** A particle-domain Material samples it. */
+  particle: boolean;
+  /** A Material of another domain samples it, or a Sprite, Tilemap or 2D texture binds it. */
+  other: boolean;
+}
+
+/**
+ * User-facing explanation and fix for a skipped texture. `particle`: a
+ * particle-domain Material samples it (Particle Usage block-aligns the
+ * encode); `other`: another Material samples it or a Sprite, Tilemap or 2D
+ * texture binds it, which only resizing fixes.
+ */
+export function textureBlockSizeMessage(texture: {
+  name: string;
+  width: number;
+  height: number;
+  particle?: boolean;
+  other?: boolean;
+}): string {
+  const fix = !texture.particle ? "Resize the image to a multiple of 4 pixels."
+    : texture.other ? "Set its Usage to Particle, or resize the image to a multiple of 4 pixels."
+    : "Set its Usage to Particle.";
+  return `Texture "${texture.name}" (${texture.width}×${texture.height}) was not drawn: WebGPU needs compressed textures in multiples of 4 pixels. ${fix}`;
 }
 
 /**

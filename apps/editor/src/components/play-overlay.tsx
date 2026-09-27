@@ -140,6 +140,8 @@ export interface PlayOverlayProps {
   particleLibrary?: ParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** Texture display names for session report entries. */
+  textureName?: (guid: string) => string | undefined;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -222,6 +224,7 @@ export function PlayOverlay({
   particleLibrary,
   materialDocuments,
   materialFunctions,
+  textureName,
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
@@ -354,6 +357,8 @@ export function PlayOverlay({
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
+  const textureNameRef = useRef(textureName);
+  textureNameRef.current = textureName;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -506,6 +511,7 @@ export function PlayOverlay({
       particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
+      textureName: (guid) => textureNameRef.current?.(guid),
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
       consoleRenderSettings: initialConsoleRenderRef.current,
