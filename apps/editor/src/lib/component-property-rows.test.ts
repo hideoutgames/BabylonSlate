@@ -76,21 +76,55 @@ it("edits Global Water Volume settings without exposing finite bounds", () => {
   expect(update).toHaveBeenLastCalledWith("depth", 42);
 });
 
-it("edits a river path through typed vector rows and extends from its last point", () => {
+it.each(["WaterRiverComponent", "SplineComponent"])("edits %s through typed XYZ rows and extends from its last point", (classId) => {
   const properties = { points: [[0, 3, 0], [4, 2, 8]] };
-  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties });
+  const { rows, update } = rowsFor({ id: "path", classId, properties });
   const point = rows.find((row) => row.label === "Path Point 2");
   const count = rows.find((row) => row.label === "Path Point Count");
-  if (point?.kind !== "vector3" || count?.kind !== "number") throw new Error("River path controls missing");
+  const curvature = rows.find((row) => row.label === "Curvature");
+  if (point?.kind !== "vector3" || count?.kind !== "number" || curvature?.kind !== "number") throw new Error("Path controls missing");
   point.onChange([4, 1, 9]);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 1, 9]]);
   count.onChange(3);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
+  curvature.onChange(0.25);
+  expect(update).toHaveBeenLastCalledWith("curvature", 0.25);
   expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+});
+
+it("keeps per-point river width editing alongside the shared path controls", () => {
+  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties: { points: [[0, 3, 0], [4, 2, 8]], widthScales: [0.75, 1.5] } });
   const width = rows.find((row) => row.label === "Path Point 2 Width Scale");
   if (width?.kind !== "number") throw new Error("River width control missing");
   width.onChange(2.5);
-  expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
+  expect(update).toHaveBeenLastCalledWith("widthScales", [0.75, 2.5]);
+});
+
+it("bounds path point counts and preserves existing points when truncating", () => {
+  const { rows, update } = rowsFor({ id: "spline", classId: "SplineComponent", properties: { points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const count = rows.find((row) => row.label === "Path Point Count");
+  if (count?.kind !== "number") throw new Error("Path count missing");
+  count.onChange(0);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 0, 0], [1, 2, 3]]);
+  count.onChange(129);
+  const extended = update.mock.lastCall?.[1] as number[][];
+  expect(extended).toHaveLength(128);
+  expect(extended.slice(0, 3)).toEqual([[0, 0, 0], [1, 2, 3], [4, 5, 6]]);
+  expect(extended.at(-1)).toEqual([4, 5, 631]);
+  update.mockClear();
+  count.onChange(Number.POSITIVE_INFINITY);
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("allows closing a spline only when at least three points are available", () => {
+  const initial = rowsFor({ id: "spline", classId: "SplineComponent", properties: defaultPropertiesFor("SplineComponent") });
+  expect(initial.rows.find((row) => row.label === "Closed")).toMatchObject({ kind: "boolean", value: false, disabled: true });
+  const { rows, update } = rowsFor({ id: "spline", classId: "SplineComponent", properties: { points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const closed = rows.find((row) => row.label === "Closed");
+  if (closed?.kind !== "boolean") throw new Error("Spline loop control missing");
+  expect(closed.disabled).toBe(false);
+  closed.onChange(true);
+  expect(update).toHaveBeenLastCalledWith("closed", true);
 });
 
 it("edits a Water Removal Volume with only the sizes its shape uses", () => {
