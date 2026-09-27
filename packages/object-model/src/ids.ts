@@ -29,6 +29,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "TilemapComponent",
   "CameraComponent",
   "SpringArmComponent",
+  "SplineComponent",
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",
@@ -79,6 +80,7 @@ export type SceneLayerExclusiveComponentClassId =
   (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "SplineComponent",
   "RagdollComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent",
   "WaterLakeComponent",
