@@ -69,6 +69,27 @@ describe("scene-loader", () => {
     expect(countSceneMeshes(scene)).toBeGreaterThan(1);
   });
 
+  it("shows a streaming origin as only a billboard and its selected scene name", () => {
+    const { scene } = createHandle();
+    const actor = createActor("stream", "Streaming", {
+      classId: "SceneStreamingActor",
+      components: [
+        { id: "streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "other", sceneName: "A" } },
+        { id: "label", classId: "Text3DComponent", properties: { text: "Stale label", editorOnly: true, size: 0.25 } },
+        createMeshComponent("unwanted", "box"),
+      ],
+    });
+    applySceneToBabylonScene(scene, sceneWithActors([actor]));
+    const label = scene.getMeshByName(editorComponentMeshName("stream", "label"))!;
+    const width = label.getBoundingInfo().boundingBox.extendSize.x;
+    expect(label.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(scene.getMeshByName(editorComponentMeshName("stream", "streaming"))).not.toBeNull();
+    expect(scene.getMeshByName(editorComponentMeshName("stream", "unwanted"))).toBeNull();
+    actor.components[0]!.properties.sceneName = "BBBBBBBB";
+    applySceneToBabylonScene(scene, sceneWithActors([actor]));
+    expect(scene.getMeshByName(editorComponentMeshName("stream", "label"))!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(width);
+  });
+
   it("replaces meshes when loading a new scene", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());

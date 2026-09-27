@@ -29,6 +29,7 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import { prepareSceneStream } from "./scene-stream-preparation";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -350,6 +351,8 @@ export interface EngineHandle {
   whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
   whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** Additive runtime readiness, restricted to the streamed instance's actor slots. */
+  prepareSceneStream: (slotIds: readonly number[], signal: AbortSignal, onProgress?: (progress: number) => void) => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -3125,6 +3128,15 @@ function initializeEngine(
         .map(([, pending]) => pending);
       await Promise.all(playLoads);
       scope.assert();
+    },
+    prepareSceneStream: (slotIds, signal, onProgress) => {
+      if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
+      const generation = loadGeneration;
+      return prepareSceneStream(scene, binding, slotIds, {
+        signal, onProgress,
+        assertCurrent: () => assertCurrent(generation),
+        pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+      });
     },
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +

@@ -94,6 +94,7 @@ export type { RenderDiagnostics } from "./render-diagnostics";
 export { lightsDebugText } from "./render-diagnostics";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";
 export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
+export { createSceneStreamingReadiness, type SceneStreamIdentity } from "./scene-streaming-readiness";
 export { createAppWebGpuEngine } from "./webgpu-engine";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";

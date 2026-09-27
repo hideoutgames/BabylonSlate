@@ -294,6 +294,17 @@ function visualComponentsOf(
   actor: SerializedActor,
   allActors?: readonly SerializedActor[],
 ): SerializedComponent[] {
+  const streaming = actor.components.find((component) => component.classId === "SceneStreamingComponent");
+  if (streaming) {
+    const text = actor.components.find((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true);
+    return [streaming, {
+      ...(text ?? { id: `${streaming.id}:label`, classId: "Text3DComponent",
+        transform: { ...identitySerializedTransform(), position: [0, 0.8, 0] } }),
+      parentId: streaming.id,
+      properties: { size: 0.25, alignment: "center", ...text?.properties,
+        text: stringProp(streaming.properties.sceneName) ?? "Unassigned Scene", editorOnly: true },
+    }];
+  }
   return actor.components.filter((component) => {
     if (!VISUAL_COMPONENT_CLASS_IDS.has(component.classId)) return false;
     if (
@@ -326,6 +337,7 @@ export function isIdentitySerializedTransform(
 
 function isBillboardComponent(component: SerializedComponent): boolean {
   return (
+    component.classId === "SceneStreamingComponent" ||
     isAuthoredLightClassId(component.classId) ||
     component.classId === "CameraComponent" ||
     component.classId === "AudioComponent" ||
@@ -343,6 +355,7 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 export function helperBillboardIconOf(
   actor: SerializedActor,
 ): EditorBillboardIcon | null {
+  if (actor.components.some((component) => component.classId === "SceneStreamingComponent")) return "default";
   if (hasSurfaceVisual(actor)) return null;
   const fill = actor.components.find(
     (component) => component.classId === "HemisphericFillLightComponent",
@@ -397,6 +410,7 @@ function componentVisualKind(
   assets?: MeshAssetContext,
   actor?: SerializedActor,
 ): string {
+  if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
@@ -649,6 +663,7 @@ export function createMeshForComponent(
   component: SerializedComponent,
   assets?: MeshAssetContext,
 ): Mesh {
+  if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
   if (waterKind) {
     const body = normalizeWaterBody(component.properties, waterKind);
@@ -701,7 +716,12 @@ export function createMeshForComponent(
     );
   }
   if (component.classId === "Text3DComponent") {
-    return createText3DMesh(scene, name, component.properties, assets);
+    const mesh = createText3DMesh(scene, name, component.properties, assets);
+    if (component.properties.editorOnly === true && actor.components.some((entry) => entry.classId === "SceneStreamingComponent")) {
+      mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      applyEditorBillboardPass(mesh);
+    }
+    return mesh;
   }
   if (
     component.classId === "2DTextComponent" ||

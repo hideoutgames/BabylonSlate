@@ -258,6 +258,18 @@ export class ParticleService {
     return state && state !== "retired" ? state : null;
   }
 
+  /** Instance-scoped loading readiness; other streams cannot hold this batch. */
+  pendingSlotPreparation(slots: ReadonlySet<number>): string[] {
+    const pending: string[] = [];
+    for (const entry of this.live.values()) {
+      if (!slots.has(entry.command.slotId)) continue;
+      if (entry.state === "failed") throw new Error(`Streamed particle component ${entry.key} failed to load.`);
+      if (entry.state === "preparing" || entry.systems.some((record) => !record.system.isReady()))
+        pending.push(`particle ${entry.key}`);
+    }
+    return pending;
+  }
+
   bindSlot(slotId: number, mesh: AbstractMesh | null): void {
     this.slotMeshes.set(slotId, mesh);
     for (const entry of this.live.values()) {

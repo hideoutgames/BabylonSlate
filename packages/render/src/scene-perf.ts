@@ -162,6 +162,15 @@ function describeShaderStall(stalled: string | null, completed: number): string 
 }
 
 export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => void): Promise<void> {
+  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent);
+}
+
+/** Warm only an additive instance's consumers, without waiting on sibling loads. */
+export async function prewarmMeshMaterials(
+  scene: Scene,
+  meshes: Iterable<AbstractMesh>,
+  assertCurrent?: () => void,
+): Promise<void> {
   let finished = false;
   const check = () => {
     if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
@@ -172,7 +181,7 @@ export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => 
   const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS);
   try {
     await deadline.race((async () => {
-      for (const mesh of scene.meshes) {
+      for (const mesh of meshes) {
         check();
         if (!(mesh instanceof Mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
