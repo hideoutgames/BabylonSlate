@@ -88,7 +88,7 @@ describe("tilemap rendering", () => {
       parentMesh.properties.assetGuid = "model";
       assets.modelPayloads = new Map([["model", {
         materialSlots: [{ index: 0, name: "slot", materialGuid: "lit-material" }],
-        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [],
+        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
       }]]);
     }
     actor.components = [parentMesh, { ...actor.components[0]!, parentId: "mesh" }];

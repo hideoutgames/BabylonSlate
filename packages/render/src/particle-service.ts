@@ -1,9 +1,8 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
-  MeshBuilder,
+  Mesh,
   type AbstractMesh,
   type IParticleSystem,
-  type Mesh,
   type NodeMaterial,
   type NodeParticleSystemSet,
   type ParticleSystem,
@@ -151,6 +150,8 @@ type LiveComponent = {
   building: boolean;
   timer?: ReturnType<typeof setTimeout>;
   preparationCheck?: () => void;
+  /** Native/resource failure, distinct from a bundle whose authored slots were skipped. */
+  preparationFailed?: boolean;
 };
 /** An edit's tier, and whether it needs the whole bundle prepared again. */
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
@@ -264,7 +265,8 @@ export class ParticleService {
     const pending: string[] = [];
     for (const entry of this.live.values()) {
       if (!slots.has(entry.command.slotId)) continue;
-      if (entry.state === "failed") throw new Error(`Streamed particle component ${entry.key} failed to load.`);
+      if (entry.state === "failed" && entry.preparationFailed)
+        throw new Error(`Streamed particle component ${entry.key} failed to load.`);
       if (entry.state === "preparing" || entry.systems.some((record) => !record.system.isReady()))
         pending.push(`particle ${entry.key}`);
     }
@@ -419,19 +421,23 @@ export class ParticleService {
   private prepare(entry: LiveComponent): void {
     const host = this.hostFor(entry);
     entry.state = "preparing";
+    entry.preparationFailed = false;
     if (!host || host.isDisposed) return;
     const payload = this.library.systems.get(entry.command.particleSystemGuid!) ?? null;
     const source: BundleSource = { system: payload, emitters: new Map(), skipped: new Set() };
     entry.source = source;
-    if (!payload) { entry.state = "failed"; return; }
+    if (!payload) { entry.preparationFailed = true; entry.state = "failed"; return; }
     entry.scene = host;
     entry.generation = ++this.generation;
     entry.building = true;
     const generation = entry.generation;
     try {
-      const node = MeshBuilder.CreateBox(`particleEmitter:${entry.key}`, { size: 0.01 }, host);
+      // A particle system draws only while its emitter survives FrameGraph culling, which drops
+      // `visibility = 0` meshes. A geometry-less Mesh stays visible, is always ready and draws nothing;
+      // `alwaysSelectAsActiveMesh` keeps it past the frustum test while only its particles are on screen.
+      const node = new Mesh(`particleEmitter:${entry.key}`, host);
       entry.node = node;
-      node.isVisible = true; node.visibility = 0; node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
+      node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
       const parent = this.slotMeshes.get(entry.command.slotId) ?? this.resolveEmitter?.(entry.command.slotId);
       if (parent?.getScene() === host) node.parent = parent;
       const context = this.slotContext(entry, host, node, payload.space);
@@ -583,6 +589,7 @@ export class ParticleService {
       if (created.buildReady) this.waitFor(entry, record, generation, created.buildReady);
       return record;
     } catch (error) {
+      entry.preparationFailed = true;
       if (record) this.disposeSlots([record]);
       lease.release();
       this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: guid, message: describeParticleThrow(error) });
@@ -716,6 +723,7 @@ export class ParticleService {
   /** Bundle-level failure: preparation timeout or a native throw outside one slot. */
   private fail(entry: LiveComponent, generation: number, error: unknown): void {
     if (!this.current(entry, generation)) return;
+    entry.preparationFailed = true;
     this.releaseBundle(entry);
     entry.state = "failed";
     this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
@@ -726,6 +734,7 @@ export class ParticleService {
   /** An async Material failure retires only its slot; the other slots may start. */
   private failSlot(entry: LiveComponent, record: SlotRecord, generation: number, error: unknown): void {
     if (!this.current(entry, generation) || !entry.systems.includes(record)) return;
+    entry.preparationFailed = true;
     this.removeSlot(entry, record, { code: "particle.apply_failed", assetGuid: record.emitterGuid, message: describeParticleThrow(error) });
     this.publishStats();
   }

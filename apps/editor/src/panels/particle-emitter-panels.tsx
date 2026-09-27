@@ -63,6 +63,8 @@ import {
 } from "../lib/particle-value-modes";
 import { PREVIEW_SYSTEM_GUID, emitterPreviewLibrary } from "../lib/play-particles";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
+import { ParticleTextureUsageNotice } from "../components/particle-texture-usage-notice";
+import { useParticleMaterialTextureUsageWarnings } from "../lib/use-particle-texture-usage";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -703,6 +705,7 @@ export function ParticleEmitterEditor({
   };
   const { emitter: settings, spawn, initialize, overLife, forces, render } = emitter;
   const material = findAsset(assets, render.materialGuid);
+  const textureUsageWarnings = useParticleMaterialTextureUsageWarnings(render.materialGuid);
   const materialIdentity = assetRowIdentity(
     material ? { name: material.header.name, type: material.header.type } : undefined,
   );
@@ -1030,6 +1033,8 @@ export function ParticleEmitterEditor({
 
   return (
     <>
+      {/* Above the stack, so a collapsed Emitter card cannot hide it. */}
+      <ParticleTextureUsageNotice warnings={textureUsageWarnings} />
       <ModuleStack data-testid="particle-emitter-modules">
         {stages.map((stage) => (
           <ModuleStage

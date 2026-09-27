@@ -255,7 +255,8 @@ describe("SettingsModal project authoring", () => {
     ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
-    ["volumetric", /Volumetric Lighting/, "Post Processing", "project-effects-volumetric"],
+    ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
+    ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: query } });
@@ -276,12 +277,12 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("project-effects-fxaa"));
     fireEvent.click(screen.getByTestId("project-effects-reflections"));
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
-    fireEvent.change(screen.getByLabelText("Fog Density"), { target: { value: "0.08" } });
+    fireEvent.change(screen.getByLabelText("Fog Density"), { target: { value: "0.0085" } });
     fireEvent.blur(screen.getByLabelText("Fog Density"));
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.08 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
@@ -370,7 +371,7 @@ describe("SettingsModal project authoring", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
-    fireEvent.click(screen.getByTestId("settings-modal-category-twoD"));
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
     fireEvent.change(screen.getByTestId("settings-sorting-layers-0-value"), {
       target: { value: "Far" },
     });
@@ -404,7 +405,7 @@ describe("SettingsModal project authoring", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
-    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
     fireEvent.click(screen.getByTestId("settings-startup-scene"));
     expect(await screen.findByTestId("search-item-scene-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-font-1")).toBeNull();
@@ -414,11 +415,32 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("picks Game Instance from a ClassPicker on the Export category", async () => {
+  it("groups Startup Scene, Game Instance and the 2D settings under Game", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    expect(screen.queryByTestId("settings-modal-category-twoD")).toBeNull();
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
+    expect(screen.getByTestId("settings-startup-scene")).toBeTruthy();
+    expect(screen.getByTestId("settings-game-instance")).toBeTruthy();
+    expect(screen.getByTestId("settings-pixels-per-unit")).toBeTruthy();
+    expect(screen.getByTestId("settings-pixel-perfect")).toBeTruthy();
+    expect(screen.getByTestId("settings-sorting-layers")).toBeTruthy();
+    // The stored `twoD.integerZoomSteps` flag is applied nowhere, so it is not offered.
+    expect(screen.queryByTestId("settings-integer-zoom")).toBeNull();
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    expect(screen.queryByTestId("settings-startup-scene")).toBeNull();
+    expect(screen.queryByTestId("settings-game-instance")).toBeNull();
+    expect(screen.getByTestId("export-game")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), {
+      target: { value: "startup scene" },
+    });
+    expect(screen.getByRole("button", { name: /Startup Scene/ }).textContent).toContain("Game");
+  });
+
+  it("picks Game Instance from a ClassPicker on the Game category", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
-    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
     fireEvent.click(screen.getByTestId("settings-game-instance"));
     const gameInstance = await screen.findByTestId("search-item-GameInstance");
     const myGame = screen.getByTestId("search-item-MyGame");
@@ -529,8 +551,7 @@ describe("SettingsModal project authoring", () => {
 
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
-    ["twoD", "settings-pixel-perfect", /Keeps pixels sharp/, null],
-    ["twoD", "settings-integer-zoom", /Game cameras only/, null],
+    ["game", "settings-pixel-perfect", /nearest sampling/, null],
     ["audio", "settings-audio-occlusion", /Wall muffling/, null],
     ["rendering", "setting-render-custom", /Sets the design size/, "Resolution"],
     ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "Resolution"],
@@ -741,7 +762,7 @@ describe("SettingsModal project authoring", () => {
     const close = screen.getByRole("button", { name: "Close Project" });
     const done = screen.getByRole("button", { name: "Done" });
     expect(close.parentElement).toBe(done.parentElement);
-    fireEvent.click(screen.getByTestId("settings-modal-category-twoD"));
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
     expect(screen.getByRole("button", { name: "Close Project" })).toBe(close);
     fireEvent.change(screen.getByPlaceholderText("Search settings"), {
       target: { value: "no-such-setting" },

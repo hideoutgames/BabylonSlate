@@ -1139,7 +1139,8 @@ export function isEditorActorOrigin(mesh: Mesh): boolean {
 function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): void {
   hideModelPlaceholder(mesh);
   for (const child of mesh.getChildMeshes()) {
-    if (!(child instanceof Mesh)) continue;
+    // LOD levels stay unpickable; their master owns visibility and picking.
+    if (!(child instanceof Mesh) || child.isBlocked) continue;
     child.isVisible = actor.visible;
     child.isPickable = visualIsPickable(child, actor.locked);
   }

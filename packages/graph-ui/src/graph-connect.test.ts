@@ -1916,6 +1916,69 @@ describe("edgesAfterConnect", () => {
     expect(connected).toHaveLength(2);
   });
 
+  describe("single-link outputs", () => {
+    const spineOut: SerializedPin = {
+      id: "out",
+      name: "Particle",
+      kind: "data",
+      direction: "out",
+      type: { kind: "particle" },
+      singleLink: true,
+    };
+    const spineIn: SerializedPin = {
+      id: "particle",
+      name: "Particle",
+      kind: "data",
+      direction: "in",
+      type: { kind: "particle" },
+    };
+    const spinePinFor = (_nodeId: string, pinId: string) =>
+      pinId === "out" ? spineOut : pinId === "particle" ? spineIn : undefined;
+    const link = (source: string, target: string) => ({
+      id: `${source}-${target}`,
+      source,
+      target,
+      sourceHandle: "out",
+      targetHandle: "particle",
+    });
+
+    it("moves a linked output's wire to the new input", () => {
+      const connected = edgesAfterConnect(
+        [link("velocity", "color"), link("color", "output")],
+        link("velocity", "size"),
+        spinePinFor,
+      );
+      expect(connected).toEqual([
+        link("color", "output"),
+        link("velocity", "size"),
+      ]);
+    });
+
+    it("drops the output's and the input's old wires on an input-first connect", () => {
+      // Skipping Shape: create → shape → velocity becomes create → velocity.
+      const connected = edgesAfterConnect(
+        [link("create", "shape"), link("shape", "velocity")],
+        {
+          id: "e:velocity:particle:create:out",
+          source: "velocity",
+          target: "create",
+          sourceHandle: "particle",
+          targetHandle: "out",
+        },
+        spinePinFor,
+      );
+      expect(connected).toEqual([
+        {
+          id: "e:create:out:velocity:particle",
+          source: "create",
+          target: "velocity",
+          sourceHandle: "out",
+          targetHandle: "particle",
+        },
+      ]);
+    });
+  });
+
   it("does not strip existing wires when the target pin is unknown", () => {
     const existingUnknown = [
       {

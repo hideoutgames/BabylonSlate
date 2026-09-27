@@ -495,6 +495,72 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.fogColor.r).toBeCloseTo(0.4);
   });
 
+  it.each([
+    ["exponential", Scene.FOGMODE_EXP],
+    ["exponentialSquared", Scene.FOGMODE_EXP2],
+  ] as const)("applies Babylon %s fog and live density changes", (fogMode, babylonMode) => {
+    const { scene } = createHandle();
+    const data = sceneWith([], {
+      fogEnabled: true,
+      fogMode,
+      fogDensity: 0.025,
+      fogColor: [0.3, 0.4, 0.5],
+    });
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    expect(scene.fogMode).toBe(babylonMode);
+    expect(scene.fogDensity).toBe(0.025);
+    expect(scene.fogColor.asArray()).toEqual([0.3, 0.4, 0.5]);
+
+    data.settings.fogDensity = 0;
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    expect(scene.fogDensity).toBe(0);
+  });
+
+  it("disables fog and restores the selected falloff without rebuilding the scene", () => {
+    const { scene } = createHandle();
+    const data = sceneWith([], {
+      fogEnabled: true,
+      fogMode: "exponentialSquared",
+      fogDensity: 0.04,
+      fogStart: 4,
+      fogEnd: 60,
+    });
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    data.settings.fogEnabled = false;
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    expect(scene.fogEnabled).toBe(false);
+    expect(scene.fogMode).toBe(Scene.FOGMODE_NONE);
+
+    data.settings.fogEnabled = true;
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    expect(scene.fogEnabled).toBe(true);
+    expect(scene.fogMode).toBe(Scene.FOGMODE_EXP2);
+    expect(scene.fogDensity).toBe(0.04);
+
+    data.settings.fogMode = "linear";
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    expect(scene.fogMode).toBe(Scene.FOGMODE_LINEAR);
+    expect(scene.fogStart).toBe(4);
+    expect(scene.fogEnd).toBe(60);
+  });
+
+  it("repairs invalid live fog values before sending them to Babylon", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([], {
+        fogEnabled: true,
+        fogDensity: Number.NaN,
+        fogStart: 50,
+        fogEnd: 20,
+      }),
+      { stealActiveCamera: false },
+    );
+    expect(scene.fogDensity).toBe(0.01);
+    expect(scene.fogStart).toBe(50);
+    expect(scene.fogEnd).toBe(50.01);
+  });
+
   it("keeps chrome clearColor for a 2D editor when applyClearColor is false", () => {
     const { scene } = createHandle();
     const r = scene.clearColor.r;

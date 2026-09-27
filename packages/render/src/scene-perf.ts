@@ -12,6 +12,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedScene } from "@babylonslate/core";
 import { prewarmMaterial } from "./material-compiler";
+import { setAutoLodPinned } from "./model-lod";
 import { isEngineDefaultMaterial } from "./default-material";
 import { actorVisualFingerprint } from "./scene-loader";
 import { syncSceneLighting } from "./scene-lighting";
@@ -84,6 +85,8 @@ function beginSkipFrustumForFreeze(scene: Scene): () => void {
 
 export function freezeEditorActiveMeshes(scene: Scene): void {
   unfreezeEditorActiveMeshes(scene);
+  // A frozen queue cannot re-select levels as the camera moves; keep full detail.
+  setAutoLodPinned(scene, true);
   const engine = scene.getEngine();
   if (!(engine instanceof NullEngine) || engine.supportsUniformBuffers) {
     // Babylon's executeWhenReady callback can run between scenes, including
@@ -122,6 +125,7 @@ export function freezeEditorActiveMeshes(scene: Scene): void {
 export function unfreezeEditorActiveMeshes(scene: Scene): void {
   pendingFrameFreezes.get(scene)?.();
   scene.unfreezeActiveMeshes();
+  setAutoLodPinned(scene, false);
 }
 
 /** True while an active-mesh freeze is in place or waiting for a ready frame. */

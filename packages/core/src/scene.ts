@@ -24,10 +24,13 @@ import { normalizeSceneStreamingProperties } from "./scene-streaming";
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
  * component ids). v4 distinguishes automatic shadow capacity from a saved
- * manual local-light limit.
+ * manual local-light limit. Fog mode/density are additive on v4; missing mode
+ * preserves linear fog in existing scenes.
  */
 
 export type ViewportMode = "3d" | "2d";
+
+export type SceneFogMode = "linear" | "exponential" | "exponentialSquared";
 
 /** Which physics backend a scene uses — never both (engineplan §13.4). */
 export type PhysicsWorldKind = "3d" | "2d";
@@ -114,8 +117,13 @@ export interface SceneSettings {
   /** Clear colour as [r, g, b] in 0..1. */
   environmentColor: [number, number, number];
   fogEnabled: boolean;
-  /** Linear fog colour as [r, g, b] in 0..1. */
+  /** Babylon distance-fog falloff; older scenes retain linear fog. */
+  fogMode: SceneFogMode;
+  /** Fog colour as [r, g, b] in 0..1. */
   fogColor: [number, number, number];
+  /** Nonnegative density for exponential and exponential-squared fog. */
+  fogDensity: number;
+  /** Linear fog distances in world units; end must be greater than start. */
   fogStart: number;
   fogEnd: number;
   /** Optional IBL cube texture asset guid. */
@@ -204,7 +212,9 @@ export function createDefaultSceneSettings(
     shadowOverrides: {},
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
+    fogMode: "linear",
     fogColor: [0.5, 0.5, 0.5],
+    fogDensity: 0.01,
     fogStart: 0,
     fogEnd: 100,
     environmentTextureGuid: null,
@@ -457,6 +467,35 @@ function normalizeMainCamera(
   return { mainCameraActorId, mainCameraComponentId };
 }
 
+/** Keep authored fog safe for both document loading and live viewport edits. */
+export function normalizeSceneFogSettings(
+  value: unknown,
+): Pick<SceneSettings, "fogMode" | "fogDensity" | "fogStart" | "fogEnd"> {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const defaults = createDefaultSceneSettings();
+  const finite = (value: unknown, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  let fogStart = finite(source.fogStart, defaults.fogStart);
+  let fogEnd = finite(source.fogEnd, defaults.fogEnd);
+  if (fogEnd <= fogStart) {
+    // The relative increment stays representable for large authored distances.
+    fogEnd = fogStart + Math.max(0.01, Math.abs(fogStart) * Number.EPSILON);
+    if (!Number.isFinite(fogEnd)) {
+      fogStart = defaults.fogStart;
+      fogEnd = defaults.fogEnd;
+    }
+  }
+  return {
+    fogMode:
+      source.fogMode === "exponential" || source.fogMode === "exponentialSquared"
+        ? source.fogMode
+        : "linear",
+    fogDensity: Math.max(0, finite(source.fogDensity, defaults.fogDensity)),
+    fogStart,
+    fogEnd,
+  };
+}
+
 export function normalizeSceneSettings(
   value: unknown,
   viewportMode: ViewportMode = "3d",
@@ -478,9 +517,7 @@ export function normalizeSceneSettings(
     ),
     fogEnabled: source.fogEnabled === true,
     fogColor: asNumberTuple3(source.fogColor, defaults.fogColor),
-    fogStart:
-      typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
-    fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
+    ...normalizeSceneFogSettings(source),
     environmentTextureGuid: asNullableString(source.environmentTextureGuid),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
     ...normalizeMainCamera(

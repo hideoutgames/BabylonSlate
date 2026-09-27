@@ -145,6 +145,45 @@ function particleContextHazard(
   return null;
 }
 
+/** Node types feeding `startNodeId`, including its own. */
+function upstreamTypes(graph: GraphLike, startNodeId: string): Set<string> {
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const types = new Set<string>();
+  const seen = new Set<string>();
+  const stack = [startNodeId];
+  while (stack.length > 0) {
+    const nodeId = stack.pop()!;
+    if (seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    const type = nodesById.get(nodeId)?.type;
+    if (type) types.add(type);
+    for (const edge of graph.edges) {
+      if (edge.targetNodeId === nodeId) stack.push(edge.sourceNodeId);
+    }
+  }
+  return types;
+}
+
+/**
+ * The last Update Color on the spine that leaves Create Particle's Color
+ * behind, or null while that Color still reaches the particle. Babylon copies
+ * Create Particle's Color into Initial Color, and each Update Color replaces
+ * Particle Color, so an update that reads neither discards it until a later
+ * one reads Initial Color again.
+ */
+function createColorOverwrittenBy(graph: GraphLike, spine: readonly string[]): string | null {
+  let overwrittenBy: string | null = null;
+  for (const nodeId of spine) {
+    const node = graph.nodes.find((entry) => entry.id === nodeId);
+    if (node?.type !== "update.color" || !isPinSet(graph, node, "color")) continue;
+    const edge = graph.edges.find((entry) => entry.targetNodeId === nodeId && entry.targetPinId === "color");
+    const reads = edge ? upstreamTypes(graph, edge.sourceNodeId) : new Set<string>();
+    if (reads.has("input.contextual.initialColor")) overwrittenBy = null;
+    else if (!reads.has("input.contextual.color")) overwrittenBy = nodeId;
+  }
+  return overwrittenBy;
+}
+
 /** Wired, or (for value pins) given an authored default. A Particle pin needs a wire. */
 function isPinSet(
   graph: GraphLike,
@@ -409,6 +448,16 @@ function validateSpine(
     });
   }
   const first = spine[0] ? definitions.get(spine[0]) : undefined;
+  const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, spine) : null;
+  if (overwrittenBy) {
+    diagnostics.push({
+      code: "particle.colorOverridden",
+      message: `"${first!.title}" Color is overwritten every frame by "${definitions.get(overwrittenBy)?.title ?? overwrittenBy}"; read Initial Color or Particle Color there to keep it`,
+      severity: "warning",
+      nodeId: spine[0],
+      pinId: "color",
+    });
+  }
   if (first?.role === "create" && !moves) {
     diagnostics.push({
       code: "particle.noMotion",

@@ -12,6 +12,7 @@ import { ParticleService, particleStats, type ParticleMaterialOwner, type Partic
 import type { ResourceLease } from "./resource-cache";
 import { admittedSceneParticles, createSceneStreamAdmission } from "./scene-stream-admission";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
+import { participatesInShadows } from "./shadow-mesh-policy";
 
 /** A Basic emitter using the "mat" Material unless the payload names another. */
 function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
@@ -144,16 +145,18 @@ describe("ParticleService", () => {
     expect(service.stats().systems).toBe(0);
   });
 
-  it("keeps the Play emitter enabled at zero visibility", () => {
+  it("keeps the visible Play emitter undrawable, unpickable and out of shadows", () => {
     const { scene, service, assign } = host();
     service.setLibrary(library({ "em-1": basic() }));
     assign();
     const emitter = scene.particleSystems[0]!.emitter as Mesh;
-    expect(emitter.isEnabled()).toBe(true);
-    expect(emitter.isVisible).toBe(true);
-    expect(emitter.visibility).toBe(0);
-    expect(emitter.alwaysSelectAsActiveMesh).toBe(true);
+    // FrameGraph Cull Objects keeps only these meshes, and particles draw only beside their emitter.
+    expect(emitter.isEnabled() && emitter.isVisible && emitter.visibility > 0 && emitter.alwaysSelectAsActiveMesh).toBe(true);
+    expect(emitter.getTotalVertices()).toBe(0);
+    expect(emitter.subMeshes ?? []).toHaveLength(0);
     expect(emitter.isPickable).toBe(false);
+    // A visible caster without static geometry would refresh shadow maps every frame.
+    expect(participatesInShadows(emitter)).toBe(false);
     service.dispose();
   });
 
@@ -183,30 +186,38 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
-  it("creates no native system when the only slot has no Material", () => {
+  it.each([null, "unavailable"])("allows streamed preparation when the only slot's Material is %s", (materialGuid) => {
     const { scene, service, diagnostics, assign, state } = host();
-    service.setLibrary(library({ "em-1": basic({ render: { materialGuid: null } }) }));
+    service.setLibrary(library({ "em-1": basic({ render: { materialGuid } }) }));
     assign();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().systems).toBe(0);
     expect(state()).toBe("failed");
+    expect(service.pendingSlotPreparation(new Set([1]))).toEqual([]);
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["particle.missing_material"]);
     service.dispose();
   });
 
-  it("retires only the slot whose Material fails to compile", async () => {
-    const { scene, service, diagnostics, leases, assign } = host({
+  it.each([false, true])("retires the slot whose Material fails to compile (surviving slot: %s)", async (hasSurvivor) => {
+    const { scene, service, diagnostics, leases, assign, state } = host({
       ready: (guid) => guid === "mat-broken" ? Promise.reject(new Error("controlled compile failure")) : undefined,
     });
-    service.setLibrary(library({ broken: basic({ render: { materialGuid: "mat-broken" } }), "em-1": basic() }));
+    service.setLibrary(library({ broken: basic({ render: { materialGuid: "mat-broken" } }), "em-1": basic() },
+      hasSurvivor ? ["broken", "em-1"] : ["broken"]));
     assign();
     await vi.waitFor(() => expect(diagnostics).toEqual([
       { code: "particle.apply_failed", assetGuid: "broken", message: "controlled compile failure" },
     ]));
-    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
-    expect(scene.particleSystems).toHaveLength(1);
+    if (hasSurvivor) {
+      await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+      expect(scene.particleSystems).toHaveLength(1);
+      expect(service.stats()).toMatchObject({ systems: 1, playing: 1 });
+    } else {
+      expect(state()).toBe("failed");
+      expect(scene.particleSystems).toHaveLength(0);
+      expect(() => service.pendingSlotPreparation(new Set([1]))).toThrow("failed to load");
+    }
     expect(leases.released).toBe(1);
-    expect(service.stats()).toMatchObject({ systems: 1, playing: 1 });
     service.dispose();
     expect(leases.released).toBe(leases.acquired);
   });

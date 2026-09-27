@@ -25,6 +25,7 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
   areaRectLightBindings,
+  normalizeSceneFogSettings,
 } from "@babylonslate/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -531,11 +532,18 @@ export function applySceneEnvironment(
   const settings = sceneData.settings;
   if (options.applyClearColor) scene.clearColor = sceneClearColor(settings.environmentColor);
   if (settings.fogEnabled) {
-    scene.fogMode = Scene.FOGMODE_LINEAR;
+    const fog = normalizeSceneFogSettings(settings);
+    scene.fogMode =
+      fog.fogMode === "exponential"
+        ? Scene.FOGMODE_EXP
+        : fog.fogMode === "exponentialSquared"
+          ? Scene.FOGMODE_EXP2
+          : Scene.FOGMODE_LINEAR;
     scene.fogEnabled = true;
     scene.fogColor = asRgb(settings.fogColor);
-    scene.fogStart = settings.fogStart;
-    scene.fogEnd = settings.fogEnd;
+    scene.fogDensity = fog.fogDensity;
+    scene.fogStart = fog.fogStart;
+    scene.fogEnd = fog.fogEnd;
   } else {
     scene.fogMode = Scene.FOGMODE_NONE;
     scene.fogEnabled = false;

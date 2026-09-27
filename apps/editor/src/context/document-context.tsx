@@ -109,6 +109,7 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
+import { changeTextureUsage, type TextureUsageChange } from "../lib/texture-usage-change";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import {
@@ -320,8 +321,30 @@ interface DocumentContextValue {
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
   retryTextureEncoding: (
     guid: string,
-    options?: { maxDimension?: number; force?: boolean },
+    options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
+  /**
+   * Texture Details' Usage change from outside the Texture tab, saved at
+   * once (`changeTextureUsage`): an open tab takes it as an undoable edit and
+   * is saved with its other pending edits; a closed Texture is saved
+   * directly. Either way it re-encodes with the new Usage when needed.
+   * Returns the replaced Usage for an Undo; null when the Texture is missing
+   * or unchanged. Rejects with `textureUsageBlockedReason` when blocked, or
+   * when a closed Texture cannot be read or saved. An Undo passes
+   * `expectedUsage` (the Usage its fix set) and rejects with
+   * `TextureUsageChangedError`, writing nothing, when the Usage has changed.
+   */
+  setTextureUsage: (
+    guid: string,
+    usage: string,
+    expectedUsage?: string,
+  ) => Promise<TextureUsageChange | null>;
+  /**
+   * Why `setTextureUsage` cannot change this Texture, as a sentence (a
+   * read-only root or plugin, or another user's lock); null when it can.
+   * Reads live lock and tab state, so call it while rendering.
+   */
+  textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
@@ -1200,7 +1223,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const retryTextureEncoding = useCallback(
     async (
       guid: string,
-      options?: { maxDimension?: number; force?: boolean },
+      options?: { maxDimension?: number; force?: boolean; usage?: string },
     ) => {
       const ok = await projectService.retryTextureEncoding(guid, options);
       bump();
@@ -2495,6 +2518,74 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, notifyAppliedCommand, projectService],
   );
 
+  const textureUsageBlockedReason = useCallback(
+    (guid: string): string | null => {
+      const registry = projectService.registry;
+      const asset = registry?.getByGuid(guid);
+      if (!asset || asset.header.type !== "Texture") return null;
+      if (
+        registry?.getRoot(asset.rootId)?.readOnly ||
+        isPluginDocumentReadOnly(projectService.plugins, asset.path)
+      ) {
+        return "The Texture is read-only.";
+      }
+      const sourceControl = sourceControlRef.current;
+      const open = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
+      // An open tab follows its lock banner (Edit Anyway lifts it); a closed
+      // Texture refuses another user's lock, as Content Browser moves do.
+      if (
+        sourceControl.isDocumentReadOnly(asset.path) ||
+        (!open?.content && sourceControl.refuseIfTheirs(asset.path))
+      ) {
+        const owner = sourceControl.lockForPath(asset.path)?.ownerName;
+        return owner ? `The Texture is locked by ${owner}.` : "The Texture is locked.";
+      }
+      return null;
+    },
+    [documentService, projectService],
+  );
+
+  const setTextureUsage = useCallback(
+    async (
+      guid: string,
+      usage: string,
+      expectedUsage?: string,
+    ): Promise<TextureUsageChange | null> => {
+      try {
+        const change = await changeTextureUsage(
+          {
+            projectService,
+            documentService,
+            blockedReason: textureUsageBlockedReason,
+            applyAssetDocumentChange,
+            retryTextureEncoding,
+            afterTabSave: () => refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot),
+          },
+          guid,
+          usage,
+          expectedUsage,
+        );
+        const path = projectService.registry?.getByGuid(guid)?.path;
+        // An open tab's edit already took the lock; a closed save takes it here.
+        if (change && path) void afterMutatingApply(sourceControlRef.current, path);
+        return change;
+      } finally {
+        bump();
+      }
+    },
+    [
+      applyAssetDocumentChange,
+      bump,
+      captureMtimeSnapshot,
+      documentService,
+      projectService,
+      retryTextureEncoding,
+      textureUsageBlockedReason,
+    ],
+  );
+
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
@@ -3583,6 +3674,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           compressionState: string | null;
           encodeError: string | null;
           hasPixels: boolean;
+          /** Committed encode (`payload.ktx2ChunkId`) for reading its KTX2 header. */
+          ktx2ChunkId: string | null;
         } | null;
       };
       __babylonslateSourceControl?: SourceControlService;
@@ -3779,12 +3872,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!asset) return null;
         const state = asset.header.payload.compressionState;
         const encodeError = asset.header.payload.encodeError;
+        const ktx2ChunkId = asset.header.payload.ktx2ChunkId;
         return {
           compressionState: typeof state === "string" ? state : null,
           encodeError: typeof encodeError === "string" ? encodeError : null,
           hasPixels: asset.header.chunks.some(
             (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
           ),
+          ktx2ChunkId: typeof ktx2ChunkId === "string" ? ktx2ChunkId : null,
         };
       },
       projectStartupSceneGuid: () =>
@@ -4366,6 +4461,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      setTextureUsage,
+      textureUsageBlockedReason,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
@@ -4434,6 +4531,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      setTextureUsage,
+      textureUsageBlockedReason,
       onSessionDiagnostic,
       loadAssetThumbnail,
       writeAssetThumbnail,

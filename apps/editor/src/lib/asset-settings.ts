@@ -20,6 +20,7 @@ export const TEXTURE_USAGE_OPTIONS = [
   "pixelArt",
   "ui",
   "skybox",
+  "particle",
 ] as const;
 
 export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];
@@ -219,6 +220,40 @@ export function patchTextureUsage(
   usage: string,
 ): Record<string, unknown> {
   return { ...payload, usage };
+}
+
+/**
+ * Usage edit. Entering or leaving Particle changes the encode size (block
+ * alignment), so a compressible result re-encodes with the new Usage.
+ */
+export function applyTextureUsageChange(
+  payload: Record<string, unknown>,
+  usage: string,
+): {
+  payload: Record<string, unknown>;
+  shouldRequeue: boolean;
+} {
+  const previous = String(payload.usage ?? "albedo");
+  return {
+    payload: patchTextureUsage(payload, usage),
+    shouldRequeue:
+      shouldCompressTexture(usage) &&
+      (previous === "particle") !== (usage === "particle"),
+  };
+}
+
+/**
+ * A Usage change was refused because the Texture no longer uses the Usage
+ * the caller expected (someone changed it since), so nothing was written.
+ */
+export class TextureUsageChangedError extends Error {
+  readonly currentUsage: string;
+
+  constructor(currentUsage: string) {
+    super("Its Usage has changed since.");
+    this.name = "TextureUsageChangedError";
+    this.currentUsage = currentUsage;
+  }
 }
 
 export function patchTextureDownsample(
