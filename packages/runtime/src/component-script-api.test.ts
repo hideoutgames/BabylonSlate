@@ -41,7 +41,7 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("mist", "Mist", { classId: "Hero", components: [
-        { id: "offset", classId: "SceneComponent", properties: {}, transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+        { id: "offset", classId: "ActorComponent", properties: {}, transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
         { id: "fog", classId: "FogVolumeComponent", parentId: "offset", properties: { shape: "sphere", size: [4, 6, 8] } },
       ] })]), onCommand: (command) => commands.push(command),
     });
