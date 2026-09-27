@@ -5,7 +5,6 @@ import {
   collectFontFacetypeBytes,
   collectFontMsdfPair,
   fontAssetHasMsdfJson,
-  fontAssetHasMsdfPair,
   fontAssetHasMsdfPng,
 } from "./play-fonts";
 
@@ -154,17 +153,11 @@ describe("collectFontCssStacks", () => {
 });
 
 describe("font MSDF representation flags", () => {
-  it("reads JSON and PNG flags independently and only pairs when both are set", () => {
+  it("reads JSON and PNG flags independently", () => {
     const payload = {
       representations: { msdfJson: true, msdfPng: false },
     };
     expect(fontAssetHasMsdfJson(payload)).toBe(true);
     expect(fontAssetHasMsdfPng(payload)).toBe(false);
-    expect(fontAssetHasMsdfPair(payload)).toBe(false);
-    expect(
-      fontAssetHasMsdfPair({
-        representations: { msdfJson: true, msdfPng: true },
-      }),
-    ).toBe(true);
   });
 });

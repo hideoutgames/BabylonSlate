@@ -43,7 +43,7 @@ File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope 
 
 1. **Default (iPad / Capacitor, Electron):** app Documents (Electron: `userData/projects`) — Create Project writes here with no picker until the user taps **Choose Location…**. Cold reopen of Documents projects needs no picker. The Create Project Name field starts **empty** on live (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose Location…** is a required full-width `Button` (not a ToggleGroup) that arms `pickProjectFolder` at Create; **App Documents** / **Projects Folder** returns to the default. Web omits the Location line (internal OPFS). A colliding name warns **Name already exists.** instead of loading that folder. Capacitor and Electron never fall through to the OPFS adapter.
 2. **Opt-in external:** iCloud / Working Copy / any folder via picker; bookmarks persist in app settings.
-3. **Web:** OPFS only; Export Project to get bytes out. Removing a listed OPFS project deletes its directory (and OPFS meta), not just the recents row. Recents never show the `opfs` API name: hide the location when every listed project is the same tier; mixed lists (Documents vs a picked folder) use **On this device** and **Chosen folder**.
+3. **Web:** OPFS only; Export Project to get bytes out. Removing a listed OPFS project deletes its directory (and OPFS meta), not just the recents row. Recents show no storage location, so the `opfs` API name never appears.
 
 ## App settings port
 

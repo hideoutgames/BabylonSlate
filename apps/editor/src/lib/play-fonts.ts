@@ -73,10 +73,6 @@ export function fontAssetHasMsdfPng(payload: unknown): boolean {
   return normalizeFontPayload(payload, "").representations.msdfPng === true;
 }
 
-export function fontAssetHasMsdfPair(payload: unknown): boolean {
-  return normalizeFontPayload(payload, "").representations.msdf === true;
-}
-
 /** Load facetype JSON for 3D Text, keyed by Font asset guid. */
 export async function collectFontFacetypeBytes(
   assets: readonly FontAssetSource[],
