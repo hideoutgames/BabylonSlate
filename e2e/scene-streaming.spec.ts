@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import {
   createActor,
   createDefaultScene,
@@ -9,10 +9,8 @@ import {
   type SerializedGraph,
 } from "../packages/core/src/index";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
-import { readBabassetHeader } from "../packages/assets/src/babasset";
 import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { PREVIEW_CONSOLE_CATALOG_MESSAGE } from "../packages/exporter/src/preview-protocol";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
@@ -43,16 +41,20 @@ function commandGraph(commandName: string, actorClass: string, method: string): 
 async function streamingProject() {
   const files = await minimalProjectFiles();
   const versions = createDefaultMigrationRegistry();
-  const dependencies: string[] = [CHILD_GUID];
   // Empty graphs have no script bundle, so give the fixture subclasses an entry point.
-  const streamingActorGraph: SerializedGraph = {
+  const streamingActorGraph = (commands: string[]): SerializedGraph => ({
     nodes: [{ id: "begin", type: "flow.event.beginPlay", data: {}, position: { x: 0, y: 0 } }],
     edges: [],
     components: [],
-  };
+    // Authored references keep the test controls reachable when Preview saves the Scene.
+    members: commands.map((command) => ({
+      id: command, kind: "variable", name: command,
+      typeId: "class", typeClassId: "BDebugCommand", defaultValue: command,
+    })),
+  });
   const classes: Array<[string, string, SerializedGraph]> = [
-    ["LeftStreaming", "SceneStreamingActor", streamingActorGraph],
-    ["RightStreaming", "SceneStreamingActor", streamingActorGraph],
+    ["LeftStreaming", "SceneStreamingActor", streamingActorGraph(["LoadLeft", "UnloadLeft"])],
+    ["RightStreaming", "SceneStreamingActor", streamingActorGraph(["LoadRight", "UnloadRight"])],
     ["LoadLeft", "BDebugCommand", commandGraph("stream_left_load", "LeftStreaming", "loadSceneBlocking")],
     ["LoadRight", "BDebugCommand", commandGraph("stream_right_load", "RightStreaming", "loadSceneAsync")],
     ["UnloadLeft", "BDebugCommand", commandGraph("stream_left_unload", "LeftStreaming", "unloadSceneAsync")],
@@ -60,7 +62,6 @@ async function streamingProject() {
   ];
   for (const [index, [name, parentClass, graph]] of classes.entries()) {
     const guid = `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
-    dependencies.push(guid);
     files.set(`assets/${name}.class.babasset`, await encodeAssetDocument({
       guid, type: "Class", name, version: versions.currentVersion("Class"),
       payload: graph as unknown as Record<string, unknown>,
@@ -105,7 +106,7 @@ async function streamingProject() {
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument({
     guid: MAIN_GUID, type: "Scene", name: "Main", version: versions.currentVersion("Scene"),
     payload: scene as unknown as Record<string, unknown>,
-  }, { dependencies }));
+  }));
   return files;
 }
 
@@ -120,31 +121,8 @@ async function visiblePositions(host: Locator) {
   });
 }
 
-async function previewExportState(page: Page) {
-  const state = await page.evaluate(async (scenePath) => {
-    const root = await navigator.storage.getDirectory();
-    let directory = await root.getDirectoryHandle("opfs:TestProject");
-    const parts = scenePath.split("/");
-    for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
-    const file = await (await directory.getFileHandle(parts.at(-1)!)).getFile();
-    const hooks = (globalThis as unknown as { __babylonslateTest?: {
-      dirtyDocuments: () => unknown;
-      documentDirtyTrace: () => unknown;
-      saveAllTrace: () => unknown;
-    } }).__babylonslateTest;
-    return {
-      bytes: [...new Uint8Array(await file.arrayBuffer())],
-      dirty: hooks?.dirtyDocuments(),
-      dirtyTrace: hooks?.documentDirtyTrace(),
-      saveTrace: hooks?.saveAllTrace(),
-    };
-  }, MAIN_SCENE_FILE);
-  const { bytes, ...traces } = state;
-  return { dependencies: readBabassetHeader(new Uint8Array(bytes)).dependencies, ...traces };
-}
-
 for (const mode of ["Play", "Preview Build"] as const) {
-  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }, testInfo) => {
+  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -158,26 +136,10 @@ for (const mode of ["Play", "Preview Build"] as const) {
     expect(editorActors.some((id) => id === "room" || id === "room-child" || id.startsWith("scene-stream:"))).toBe(false);
 
     if (mode === "Preview Build") {
-      const before = await previewExportState(page);
-      await page.evaluate((messageType) => {
-        const host = globalThis as unknown as { __sceneStreamingCommandCatalog?: string[] };
-        host.__sceneStreamingCommandCatalog = [];
-        window.addEventListener("message", (event) => {
-          if (event.origin !== window.location.origin || event.data?.type !== messageType || !Array.isArray(event.data.commands)) return;
-          host.__sceneStreamingCommandCatalog = event.data.commands.map((command: { name: string }) => command.name);
-        });
-      }, PREVIEW_CONSOLE_CATALOG_MESSAGE);
       await page.getByTestId("debug-menu").click();
       await page.getByTestId("preview-build-toggle").click();
       await page.getByTestId("play-preview").click();
       await waitForPreviewBuildBoot(page);
-      const after = await previewExportState(page);
-      const catalog = await page.evaluate(() => (globalThis as unknown as { __sceneStreamingCommandCatalog?: string[] }).__sceneStreamingCommandCatalog ?? []);
-      const diagnostic = { before, after, catalog };
-      await testInfo.attach("preview-command-export", { body: JSON.stringify(diagnostic, null, 2), contentType: "application/json" });
-      expect(catalog, JSON.stringify(diagnostic)).toEqual(expect.arrayContaining([
-        "stream_left_load", "stream_right_load", "stream_left_unload", "stream_right_unload",
-      ]));
       await page.getByRole("button", { name: "Console", exact: true }).click();
     } else {
       await clickPlayAndWaitForOverlay(page);
