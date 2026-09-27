@@ -200,9 +200,6 @@ importers:
       '@capacitor/app':
         specifier: ^8.0.0
         version: 8.1.1(@capacitor/core@8.5.0)
-      '@capacitor/cli':
-        specifier: ^8.0.0
-        version: 8.5.0
       '@capacitor/core':
         specifier: ^8.0.0
         version: 8.5.0
@@ -254,9 +251,6 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
-      '@tailwindcss/vite':
-        specifier: ^4.0.14
-        version: 4.3.3(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       dockview-react:
         specifier: ^8.0.0
         version: 8.0.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -269,9 +263,6 @@ importers:
       react-dom:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
-      tailwindcss:
-        specifier: ^4.0.14
-        version: 4.3.3
       three:
         specifier: ^0.186.0
         version: 0.186.0
@@ -279,6 +270,12 @@ importers:
       '@babylonslate/test-kit':
         specifier: workspace:*
         version: link:../../packages/test-kit
+      '@capacitor/cli':
+        specifier: ^8.0.0
+        version: 8.5.0
+      '@tailwindcss/vite':
+        specifier: ^4.0.14
+        version: 4.3.3(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       '@types/node':
         specifier: ^22.13.10
         version: 22.20.1
@@ -297,9 +294,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
-      jsdom:
-        specifier: ^26.0.0
-        version: 26.1.0
+      tailwindcss:
+        specifier: ^4.0.14
+        version: 4.3.3
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
@@ -339,12 +336,6 @@ importers:
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../../packages/object-model
-      '@babylonslate/particle-graph':
-        specifier: workspace:*
-        version: link:../../packages/particle-graph
-      '@babylonslate/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
       '@babylonslate/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -358,6 +349,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vfs
     devDependencies:
+      '@babylonslate/particle-graph':
+        specifier: workspace:*
+        version: link:../../packages/particle-graph
       '@types/node':
         specifier: ^22.13.10
         version: 22.20.1
@@ -395,9 +389,6 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
-      ktx-parse:
-        specifier: ^1.1.0
-        version: 1.1.0
       zod:
         specifier: ^4.0.0
         version: 4.4.3
@@ -408,6 +399,9 @@ importers:
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../vfs
+      ktx-parse:
+        specifier: ^1.1.0
+        version: 1.1.0
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
@@ -618,9 +612,6 @@ importers:
       '@babylonjs/core':
         specifier: 9.20.0
         version: 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
-      '@babylonjs/ktx2decoder':
-        specifier: 9.20.0
-        version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))
       '@babylonjs/loaders':
         specifier: 9.20.0
         version: 9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)
@@ -661,9 +652,6 @@ importers:
       '@babylonslate/test-kit':
         specifier: workspace:*
         version: link:../test-kit
-      '@babylonslate/vfs':
-        specifier: workspace:*
-        version: link:../vfs
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
@@ -720,9 +708,6 @@ importers:
         specifier: workspace:*
         version: link:../debugger
     devDependencies:
-      fast-check:
-        specifier: ^4.3.0
-        version: 4.9.0
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
@@ -762,22 +747,16 @@ importers:
 
   packages/test-kit:
     dependencies:
-      '@babylonslate/bridge':
-        specifier: workspace:*
-        version: link:../bridge
-      '@babylonslate/core':
-        specifier: workspace:*
-        version: link:../core
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../object-model
       '@babylonslate/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@babylonslate/vfs':
-        specifier: workspace:*
-        version: link:../vfs
     devDependencies:
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
@@ -1072,11 +1051,6 @@ packages:
 
   '@babylonjs/havok@1.3.14':
     resolution: {integrity: sha512-+j2FDwLtkh5Gb//KizE8Ks3GIB/3vH8Yx9cQsMvZQpsKkH5gn089wIlJ9Yt8dJxbwBmWKGpMTIXxZE7YdOHUnQ==}
-
-  '@babylonjs/ktx2decoder@9.20.0':
-    resolution: {integrity: sha512-hMafgr6KbFsl5rm2l4eQDzk8SeX0TQRV78/qthgTPInR+hSG+JCTaWaXD9ejryqW+FehGZUnQ6VRqHfKfKJqSQ==}
-    peerDependencies:
-      '@babylonjs/core': ^9.0.0
 
   '@babylonjs/loaders@9.20.0':
     resolution: {integrity: sha512-zGu6SRvN4uzk5KF0exoSjBZbBcvkEz6iteSvgCn4EP4nQD60W2D4WCtF8m2usZ/yALUOQE5EQON6Tuq1I4LWXg==}
@@ -6202,10 +6176,6 @@ snapshots:
   '@babylonjs/havok@1.3.14':
     dependencies:
       '@types/emscripten': 1.41.5
-
-  '@babylonjs/ktx2decoder@9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))':
-    dependencies:
-      '@babylonjs/core': 9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa)
 
   '@babylonjs/loaders@9.20.0(@babylonjs/core@9.20.0(patch_hash=913716e697793c49a4704b38c11d2351196b74f0bb0787340c24a2d3cb9082aa))(babylonjs-gltf2interface@9.21.2)':
     dependencies:
