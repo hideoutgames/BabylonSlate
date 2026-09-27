@@ -1075,6 +1075,8 @@ export class AssetRegistry {
       const usage = String(payload.usage ?? "albedo");
       if (payload.compressionState !== "compressed") continue;
       if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) continue;
+      // Without source pixels a forced retry would strand it `pending`.
+      if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) continue;
       if (this.roots.get(asset.rootId)?.readOnly) continue;
       if (options.canWrite && !options.canWrite(guid)) continue;
       try {

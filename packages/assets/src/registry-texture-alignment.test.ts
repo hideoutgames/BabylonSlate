@@ -39,7 +39,7 @@ async function writeTexture(
   storage: MemoryStorageAdapter,
   path: string,
   guid: string,
-  options: { usage?: string; source: [number, number]; sized?: boolean; committed: { id: string; size: [number, number] } },
+  options: { usage?: string; source: [number, number]; sized?: boolean; pixels?: boolean; committed: { id: string; size: [number, number] } },
 ): Promise<void> {
   const [width, height] = options.source;
   const payload: Record<string, unknown> = {
@@ -51,7 +51,7 @@ async function writeTexture(
   await storage.writeBinary(path, await encodeBabasset({
     header: { guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
     chunks: [
-      { id: "pixels", kind: "pixels", mime: "image/png", data: png(width, height) },
+      ...(options.pixels === false ? [] : [{ id: "pixels", kind: "pixels", mime: "image/png", data: png(width, height) }]),
       { id: options.committed.id, kind: "ktx2", mime: "image/ktx2", data: ktx2(...options.committed.size) },
     ],
   }));
@@ -122,6 +122,10 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/unsized-even.babasset", "unsized-even", {
       source: [32, 32], sized: false, committed: { id: KEY_MAX_2048, size: [32, 32] },
     });
+    // Nothing to re-encode from: it keeps drawing its committed encode.
+    await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {
+      source: [1, 1], pixels: false, committed: { id: KEY_MAX_1, size: [1, 1] },
+    });
     // A Tileset saved before atlas meta existed: only its document names the texture.
     await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
@@ -150,5 +154,6 @@ describe("texture encode alignment", () => {
     expect(registry.getByGuid("unsized-odd")!.header.payload).toMatchObject({ ktx2ChunkId: KEY_MAX_2048, ktx2Width: 32, ktx2Height: 32 });
     // Once committed, the recorded encode satisfies the check.
     expect(await registry.reconcileTextureAlignment({ canWrite })).toEqual([]);
+    expect(registry.getByGuid("sourceless-odd")!.header.payload.compressionState).toBe("compressed");
   });
 });
