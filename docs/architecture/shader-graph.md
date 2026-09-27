@@ -426,16 +426,18 @@ defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
-- **No node selected:** Domain (Surface / Post Process / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
-  Cutoff when masked) plus the cost line. Non-surface domains hide Shading Model and Two Sided; the Particle domain
+- **No node selected:** Domain (Surface / Landscape / Post Process / Particle), Shading Model, Blend Mode, Two Sided
+  (and Alpha Cutoff when masked) plus the cost line. Post Process and Particle hide Shading Model and Two Sided; Particle
   also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
 
 Changing Domain (`setMaterialDomain`):
 
-- Drops the old terminal, the nodes the new domain does not allow, and their wires; normalizing adds the new
-  domain's terminal unwired.
+- Drops the nodes the new domain does not allow and their wires.
+- **Surface ↔ Landscape:** both draw through the same Material Output, so it stays with its position, pin defaults
+  and every wire whose source survives (Landscape-only nodes and their wires go when returning to Surface).
+- **Any other switch:** drops the old terminal and its wires; normalizing adds the new domain's terminal unwired.
 - **To Particle:** the Particle Output gets **Particle Color** wired into Color (an existing Particle Color node is
   reused). Otherwise the output draws constant white and ignores every emitter colour. The new-Material Base Color
   constant goes too when it is untouched and no longer wired; an edited constant stays. Shading Model and Blend Mode
