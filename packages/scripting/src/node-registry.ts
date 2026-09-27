@@ -15,9 +15,9 @@ export type CodegenContext = {
   /** Resolved expression text for an input data pin (or default). */
   input(pinName: string): string;
   /**
-   * Static type of the source pin wired into an input data pin, after
-   * wildcard resolution. Undefined when the input is disconnected or its
-   * source is stripped from this build.
+   * Static type of the source pin wired into an input data pin (resolved in
+   * compileGraph; declared in transition-rule graphs). Undefined when the
+   * input is disconnected or its source is stripped from this build.
    */
   inputType?(pinName: string): PinType | undefined;
   /** Temp var name for an output data pin. */

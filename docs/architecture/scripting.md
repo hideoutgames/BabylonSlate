@@ -121,7 +121,7 @@ Generated conversion family (`WildcardToString`, `WildcardToFloat`, …, `Wildca
 Values are not boxed on the wire, so Print, Format String and Set Blackboard receive raw values. The conversion nodes pick the tag themselves:
 
 - **Typed source** (the wired output has a concrete type after resolution): its `pinTypeTag` is used at compile time. A whole-number Float stays `float`.
-- **Untyped source** (a boxed wildcard such as Get Blackboard or Get Anim Graph Variable, an unresolved generic, or a disconnected pin): the tag comes from the runtime value. A `{ tag, value }` box keeps its tag and is unwrapped. Otherwise whole numbers read as `int` and fractions as `float`; `{ x, y, z, w }` reads as `vec4` (Quat and Color share that shape); live objects read as `actorRef:<class>` when `ctx.isA(value, "Actor")`, else `objectRef:<class>`; arrays, maps and structs read as `unknown`; null reads as `null`.
+- **Untyped source** (a boxed wildcard such as Get Blackboard or Get Anim Graph Variable, an unresolved generic, or a disconnected pin): the tag comes from the runtime value. A `{ tag, value }` box keeps its tag and is unwrapped. Otherwise whole numbers read as `int` and fractions as `float`; `{ x, y, z, w }` reads as `vec4` (Quat and Color share that shape); live objects read as `actorRef:<class>` when `ctx.isA(value, "Actor")`, else `objectRef:<class>`; arrays, maps and other structs read as `unknown`; null reads as `null`. Enum, Class and Asset values are strings at runtime and read as `string`, and a struct whose fields match a vector, rotator or transform shape reads as that type; use a typed source when Type Of / Is must report those types.
 - **Wildcard To T** succeeds when the tag is T's tag, Int into Float, or any class into Object / Actor (any actor class into Actor). Untyped Quat and Color values therefore need a typed source or a tagged box.
 - **Wildcard Type Of** returns the tag; **Wildcard Is** compares it exactly with the Tag input.
 
@@ -151,7 +151,7 @@ type Diagnostic = {
 
 **Rule registration hook:** `registerValidationRule(rule)` adds package rules to `validateGraphs`; `createDefaultNodeRegistry()` registers the physics and SceneLayer rules. Behaviour Trees use `validateBehaviourTree` instead ([behaviour-tree.md](behaviour-tree.md#validation)).
 
-**Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse, BT (later).
+**Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse.
 
 **When it runs:**
 
