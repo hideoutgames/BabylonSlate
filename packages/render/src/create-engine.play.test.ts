@@ -913,7 +913,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
+    const shared = resourceCacheForEngine(engine).acquireTexture("shared", engine, new Uint8Array([1, 2, 3, 4]));
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
@@ -921,9 +921,10 @@ describe("Play createEngine view", () => {
     first.dispose();
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(release).not.toHaveBeenCalled();
+    expect(shared.resource.getInternalTexture()).not.toBeNull();
     expect(live.scene.isDisposed).toBe(false);
     expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    shared.release();
     unsubscribe();
   });
 
@@ -1827,7 +1828,7 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.dropTier();
+    handle.scaling.setLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);

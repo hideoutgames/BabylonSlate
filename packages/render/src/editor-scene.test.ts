@@ -1670,9 +1670,8 @@ describe("editor grid", () => {
 
   it("writes planar edge fade and view fade uniforms on sync", () => {
     const { scene } = createHandle();
-    const twoD = createEditorCamera(scene, { mode: "2d" });
+    const twoD = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 0.25 });
     twoD.camera.getViewMatrix();
-    twoD.setOrthoHalfHeight(0.25);
     const closeGrid = createEditorGrid(scene, {
       mode: "2d",
       camera: twoD.camera,

@@ -316,8 +316,6 @@ export interface EngineHandle {
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
-  /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
-  postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Explicit local quality preferences; runtime commands take precedence. */
@@ -396,7 +394,6 @@ export interface CreateEngineOptions {
   onDragSelectEnd?: () => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
-  onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
   /** A water shape handle was released; merge `properties` into that component as one change. */
   onWaterShapeEdit?: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
@@ -1262,7 +1259,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     const camera = scene.activeCamera;
@@ -1273,7 +1269,6 @@ function initializeEngine(
     retireAttachedStack();
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
-    lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled || !camera) return;
     attachedStack = worldRenderer.attachPostProcess({
       scene,
@@ -1282,10 +1277,7 @@ function initializeEngine(
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      onDiagnostic: (diagnostic) => {
-        lastPostProcessDiagnostics.push(diagnostic);
-        options.onPostProcessDiagnostic?.(diagnostic);
-      },
+      onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
 
@@ -1347,10 +1339,8 @@ function initializeEngine(
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            onDiagnostic: (diagnostic) => {
-              lastPostProcessDiagnostics.push(diagnostic);
-              options.onPostProcessDiagnostic?.(diagnostic);
-            },
+            onDiagnostic: (diagnostic) =>
+              options.onPostProcessDiagnostic?.(diagnostic),
           });
         },
       })
@@ -1715,7 +1705,6 @@ function initializeEngine(
           );
         }
         debugOverlayInstance.followLivePose();
-        options.onGizmoDrag?.();
       },
       onDragEnd: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
@@ -3028,7 +3017,6 @@ function initializeEngine(
         zOrder: layer.zOrder,
       })),
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
-    postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       setSceneEffectsEnabled(scene, enabled);

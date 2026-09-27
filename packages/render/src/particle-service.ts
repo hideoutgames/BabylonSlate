@@ -171,7 +171,7 @@ export class ParticleService {
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
   private sceneForSlot?: (slotId: number) => Scene | null;
-  private onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+  private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
   private readonly slotMeshes = new Map<number, AbstractMesh | null>();
@@ -208,7 +208,6 @@ export class ParticleService {
     this.publishStats();
   }
 
-  setOnDiagnostic(handler: ((diagnostic: ParticleServiceDiagnostic) => void) | undefined): void { this.onDiagnostic = handler; }
   /** Play: replaces the library for later preparations and leaves running bundles alone. */
   setLibrary(library: ParticleLibrary): void { this.library = library; }
   setSceneForSlot(resolver: ((slotId: number) => Scene | null) | undefined): void {
