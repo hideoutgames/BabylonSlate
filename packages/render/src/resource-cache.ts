@@ -3,10 +3,8 @@ import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { webGpuKtx2BlockMisalignment } from "./ktx2-transcoder";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
@@ -53,23 +51,6 @@ interface CacheEntry {
 
 // Match the existing owner-scoped readiness deadline; no upload may pin forever.
 const TEXTURE_PREPARATION_TIMEOUT_MS = 30_000;
-
-/**
- * WebGPU would reject this texture's upload and invalidate every frame that
- * binds it (see `webGpuKtx2BlockMisalignment`). Thrown before any allocation.
- */
-export class TextureUploadRefusedError extends Error {
-  readonly assetGuid: string;
-  readonly width: number;
-  readonly height: number;
-  constructor(assetGuid: string, size: { width: number; height: number }) {
-    super(`Texture ${assetGuid} (${size.width}×${size.height}) is block-compressed at a size WebGPU rejects`);
-    this.name = "TextureUploadRefusedError";
-    this.assetGuid = assetGuid;
-    this.width = size.width;
-    this.height = size.height;
-  }
-}
 
 /**
  * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
@@ -509,12 +490,6 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    if (engine.isWebGPU) {
-      // An installed Blob keeps its header; an external one cannot be decided synchronously.
-      const header = bytes instanceof Blob ? installedAssetHeader(bytes) : bytes;
-      const misaligned = header && webGpuKtx2BlockMisalignment(engine, header, KhronosTextureContainer2.DefaultDecoderOptions);
-      if (misaligned) throw new TextureUploadRefusedError(assetGuid, misaligned);
-    }
     this.prepareBlobUrl(assetGuid, bytes, identity);
     const entry = this.entries.get(variantKey)!;
     const uploadKey = uploadSamplingKey(options);
@@ -914,29 +889,20 @@ export const MATERIAL_TEXTURE_SAMPLING: TextureSamplingOptions = {
   invertY: false,
 };
 
-/** Null for environment/cube sources and for a refused upload (reported through `onRefused`). */
 export function acquireMaterialTexture(
   cache: TextureResources,
   assetGuid: string,
   engine: AbstractEngine,
   bytes: Uint8Array | Blob,
   options: TextureSamplingOptions = {},
-  onRefused?: (refused: TextureUploadRefusedError) => void,
 ): ResourceLease<Texture> | null {
   if (environmentContainer(bytes)) return null;
-  let lease: ResourceLease<Texture | CubeTexture>;
-  try {
-    lease = cache.acquireTexture(
-      assetGuid,
-      engine,
-      bytes,
-      { ...MATERIAL_TEXTURE_SAMPLING, ...options },
-    );
-  } catch (error) {
-    if (!(error instanceof TextureUploadRefusedError)) throw error;
-    onRefused?.(error);
-    return null;
-  }
+  const lease = cache.acquireTexture(
+    assetGuid,
+    engine,
+    bytes,
+    { ...MATERIAL_TEXTURE_SAMPLING, ...options },
+  );
   if (lease.resource.isCube) { lease.release(); return null; }
   return lease as ResourceLease<Texture>;
 }

@@ -1,6 +1,6 @@
 import type { BabassetHeader } from "./babasset";
 import { isEnvironmentTexturePayload, readEnvironmentTextureInfo } from "./environment-texture";
-import { longestEdge, sniffImageSize, type ImageSize } from "./image-size";
+import { longestEdge, sniffImageSize } from "./image-size";
 import {
   authoredTextureMaxDimension,
   isTextureLodExemptUsage,
@@ -10,12 +10,9 @@ import {
 import { isKtx2BlockAligned } from "./ktx2-info";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
-  TEXTURE_BLOCK_EDGE,
   encodeSettingsHash,
   ktx2ChunkId,
-  shouldCompressTexture,
   textureEncodeBlockAlign,
-  textureEncodeSize,
   type TextureEncodeSettings,
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
@@ -229,67 +226,4 @@ export function textureEncodeSettingsFor(
     maxDimension: authoredEncodeMaxDimension(payload, project.maxDimension),
     ...(blockAlign ? { blockAlign } : {}),
   };
-}
-
-/**
- * Base size of this Texture's KTX2 encode under `usage` (its own by default),
- * from the header's source size, else `sourceSize` (the decoded size of its
- * `pixels` chunk: Textures extracted from a Model store no header size). The
- * settings still come from the payload, as the encoder builds them. Null when
- * neither size is known.
- */
-export function textureEncodeBaseSize(
-  payload: Record<string, unknown>,
-  projectMax: number,
-  usage: string = String(payload.usage ?? "albedo"),
-  sourceSize?: ImageSize | null,
-): { width: number; height: number } | null {
-  const source =
-    positiveSize(payload.width, payload.height) ??
-    (sourceSize ? positiveSize(sourceSize.width, sourceSize.height) : null);
-  if (!source) return null;
-  const settings = textureEncodeSettingsFor(
-    payload,
-    { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, maxDimension: projectMax },
-    usage,
-  );
-  const size = textureEncodeSize(source.width, source.height, settings);
-  return { width: size.width, height: size.height };
-}
-
-function positiveSize(width: unknown, height: unknown): ImageSize | null {
-  return typeof width === "number" &&
-    typeof height === "number" &&
-    width > 0 &&
-    height > 0
-    ? { width, height }
-    : null;
-}
-
-/**
- * The encoded base size when a compressed Texture would not load on WebGPU
- * (ASTC / BC7 need whole 4x4 blocks), so Particle Usage is needed; null when
- * it loads (Particle, uncompressed Usages, environment cubes, aligned sizes)
- * or its size is unknown. `sourceSize` sizes a header without one
- * (`textureEncodeBaseSize`).
- */
-export function textureNeedsParticleUsage(
-  payload: Record<string, unknown>,
-  projectMax: number,
-  sourceSize?: ImageSize | null,
-): { width: number; height: number } | null {
-  const usage = String(payload.usage ?? "albedo");
-  if (
-    usage === "particle" ||
-    !shouldCompressTexture(usage) ||
-    isEnvironmentTexturePayload(payload)
-  ) {
-    return null;
-  }
-  const size = textureEncodeBaseSize(payload, projectMax, usage, sourceSize);
-  if (!size) return null;
-  const aligned =
-    size.width % TEXTURE_BLOCK_EDGE === 0 &&
-    size.height % TEXTURE_BLOCK_EDGE === 0;
-  return aligned ? null : size;
 }

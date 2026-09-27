@@ -23,7 +23,6 @@ import {
   previewFixtureThrowHint,
   resolvePlayFrameCap,
   applyPlayActiveScene,
-  textureBlockSizeReportEntry,
 } from "./play-session";
 
 describe("diagnosticFromCommand", () => {
@@ -101,21 +100,6 @@ describe("diagnosticFromCommand", () => {
     expect(isFatalPlayDiagnostic("runtime.uncaught")).toBe(false);
     expect(isFatalPlayDiagnostic("preview")).toBe(false);
     expect(isFatalPlayDiagnostic(undefined)).toBe(false);
-  });
-});
-
-describe("textureBlockSizeReportEntry", () => {
-  const refused = { code: "texture.webgpuBlockSize" as const, assetGuid: "tex-1", width: 1, height: 1, particle: true, other: false };
-
-  it("names the texture, its size and fix in an error entry that opens the Texture", () => {
-    const entry = textureBlockSizeReportEntry(refused, "Spark");
-    expect(entry).toMatchObject({ code: "texture.webgpuBlockSize", severity: "error", assetGuid: "tex-1", frameId: 0 });
-    expect(entry.message).toMatch(/^Texture "Spark" \(1×1\) was not drawn: .* Set its Usage to Particle\.$/);
-  });
-
-  it("falls back to the guid when the Texture has no name", () => {
-    const entry = textureBlockSizeReportEntry({ ...refused, width: 30, height: 18, particle: false, other: true });
-    expect(entry.message).toMatch(/^Texture "tex-1" \(30×18\) .* Resize the image to a multiple of 4 pixels\.$/);
   });
 });
 

@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { KhronosTextureContainer2, NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
+import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
   ResourceCache,
   resourceCacheForEngine,
   releaseResourceCacheForEngine,
-  TextureUploadRefusedError,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { installTextureBytes } from "./mesh-assets";
@@ -758,44 +757,18 @@ describe("bindResourceCacheToHandle", () => {
   });
 });
 
-describe("WebGPU block-size upload admission", () => {
-  const forceRGBA = KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA;
-  afterEach(() => { KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA = forceRGBA; });
-
-  /** ASTC-capable engine whose KTX2 decoder keeps block compression. */
-  function compressingEngine(webgpu: boolean) {
-    const engine = textureEngine();
-    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(webgpu);
-    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
-    KhronosTextureContainer2.DefaultDecoderOptions.forceRGBA = false;
-    return engine;
-  }
-
+describe("WebGPU KTX2 off the 4x4 block grid", () => {
   it.each([
     ["raw bytes", () => ktx2HeaderBytes(1, 1)],
     ["an installed Blob", () => installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]]))!.get("odd")!],
-  ])("refuses a misaligned compressed texture from %s before allocating anything", (_source, bytes) => {
-    const engine = compressingEngine(true);
+  ])("uploads it from %s as a KTX2 texture; the Babylon patch decodes it to RGBA", (_source, bytes) => {
+    const engine = textureEngine();
+    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
     const cache = new ResourceCache();
-    const nativeBaseline = engine.getLoadedTexturesCache().length;
-    const onRefused = vi.fn();
-    expect(acquireMaterialTexture(cache, "odd", engine, bytes(), {}, onRefused)).toBeNull();
-    expect(onRefused).toHaveBeenCalledOnce();
-    expect(onRefused.mock.calls[0]![0]).toMatchObject({ assetGuid: "odd", width: 1, height: 1 });
-    expect(() => cache.acquireTexture("odd", engine, bytes())).toThrow(TextureUploadRefusedError);
-    expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
-    expect(engine.getLoadedTexturesCache()).toHaveLength(nativeBaseline);
-    cache.dispose();
-    engine.dispose();
-  });
-
-  it("keeps uploading the same texture on WebGL2", () => {
-    const engine = compressingEngine(false);
-    const cache = new ResourceCache();
-    const onRefused = vi.fn();
-    const lease = acquireMaterialTexture(cache, "odd", engine, ktx2HeaderBytes(1, 1), {}, onRefused);
+    const lease = acquireMaterialTexture(cache, "odd", engine, bytes());
     expect(lease?.resource).toBeInstanceOf(Texture);
-    expect(onRefused).not.toHaveBeenCalled();
+    expect(lease!.resource.mimeType).toBe("image/ktx2");
     lease!.release();
     cache.dispose();
     engine.dispose();

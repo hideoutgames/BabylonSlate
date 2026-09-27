@@ -103,9 +103,7 @@ import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCo
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
-  TEXTURE_BLOCK_SIZE_DIAGNOSTIC,
   type Ktx2DecoderRuntimeOptions,
-  type TextureBlockSizeDiagnostic,
 } from "./ktx2-transcoder";
 import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
@@ -144,7 +142,6 @@ import {
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
   type TextureResources,
-  type TextureUploadRefusedError,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
@@ -538,13 +535,6 @@ export interface CreateEngineOptions {
     severity?: string;
     nodeId?: string;
   }) => void;
-  /**
-   * A texture was not uploaded because WebGPU would reject it: its Materials
-   * are unavailable (default mesh material, skipped particle slot) and a
-   * Sprite, Tilemap or 2D texture draws without it. Reported once per texture
-   * content. Format with `textureBlockSizeMessage`.
-   */
-  onTextureDiagnostic?: (diagnostic: TextureBlockSizeDiagnostic) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
@@ -1157,28 +1147,7 @@ function initializeEngine(
     if (options.playMode) return;
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
-  const refusedTextures = new Set<string>();
-  /** `direct`: a Sprite, Tilemap or 2D texture binds it without a Material. */
-  const reportRefusedTexture = (refused: TextureUploadRefusedError, direct: boolean): void => {
-    const guid = refused.assetGuid;
-    const bytes = binding.textureBytes?.get(guid);
-    // Every apply compiles or binds again and refuses again; a re-encode reports anew.
-    const key = `${guid}\0${bytes ? assetByteFingerprint(bytes) : ""}`;
-    if (refusedTextures.has(key)) return;
-    refusedTextures.add(key);
-    let particle = false;
-    let other = direct;
-    for (const document of materialDocuments.values()) {
-      const lowered = materialLibrary.planFor(document);
-      if (!lowered.ok || !lowered.plan.textures.some((texture) => texture.textureGuid === guid)) continue;
-      if (lowered.plan.domain === "particle") particle = true;
-      else other = true;
-    }
-    const { width, height } = refused;
-    options.onTextureDiagnostic?.({ code: TEXTURE_BLOCK_SIZE_DIAGNOSTIC, assetGuid: guid, width, height, particle, other });
-  };
-  binding.onTextureRefused = (refused) => reportRefusedTexture(refused, true);
-  const materialLibrary: MaterialLibrary = new MaterialLibrary({
+  const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
     acquireTexture: (guid, consumerScene) => {
@@ -1187,7 +1156,7 @@ function initializeEngine(
       }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return acquireMaterialTexture(resourceCache, guid, engine, bytes, undefined, (refused) => reportRefusedTexture(refused, false));
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
@@ -1567,7 +1536,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids, onTextureRefused: binding.onTextureRefused };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
