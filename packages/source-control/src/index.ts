@@ -13,8 +13,6 @@ export type {
   UnlockOptions,
 } from "./types";
 export {
-  DEFAULT_LOCK_POLL_INTERVAL_MS,
-  DEFAULT_SOURCE_CONTROL_BRANCH,
   LFS_JSON,
   SOURCE_CONTROL_SECRET_PREFIX,
   isSourceControlHost,
