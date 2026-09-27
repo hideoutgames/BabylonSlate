@@ -37,7 +37,7 @@ export function normalizeSceneStreamingProperties(value: unknown): SceneStreamin
  */
 export function remapSceneStreamingReferences(
   value: unknown,
-  idMap: ReadonlyMap<string, string>,
+  idMap: Pick<ReadonlyMap<string, string>, "get">,
 ): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => remapSceneStreamingReferences(entry, idMap));
@@ -114,7 +114,7 @@ export function* cloneSceneStreamingActorsSteps(
   for (const actor of source) {
     const copy = structuredClone(actor);
     const componentIds = componentIdMaps.get(actor.id)!;
-    const scopedIds = new Map([...idMap, ...componentIds]);
+    const scopedIds = { get: (id: string) => componentIds.get(id) ?? idMap.get(id) };
     actors.push({
       ...copy,
       id: idMap.get(actor.id)!,
