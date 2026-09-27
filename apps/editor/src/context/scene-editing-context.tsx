@@ -31,7 +31,6 @@ export interface SceneEditingContextValue {
   selectedActorIds: string[];
   selectActor: (actorId: string | null, additive?: boolean) => void;
   setSelectedActorIds: (actorIds: string[]) => void;
-  isSelected: (actorId: string) => boolean;
   gizmoTool: GizmoTool;
   setGizmoTool: (tool: GizmoTool) => void;
   snapEnabled: boolean;
@@ -259,7 +258,6 @@ export function SceneEditingProvider({
       selectedActorIds,
       selectActor,
       setSelectedActorIds,
-      isSelected: (actorId: string) => selectedActorIds.includes(actorId),
       gizmoTool,
       setGizmoTool,
       snapEnabled,

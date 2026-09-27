@@ -110,15 +110,6 @@ export type ColliderChanges = {
   remove: readonly string[];
 };
 
-/** Mid-Play collider knobs (trigger, material, filters). */
-export type ColliderTuning = {
-  isTrigger?: boolean;
-  friction?: number;
-  restitution?: number;
-  layer?: number;
-  mask?: number;
-};
-
 export type LineTraceOptions = {
   /** Exclude every collider owned by these actors before selecting a hit. */
   ignoreActorIds?: readonly string[];

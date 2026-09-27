@@ -60,7 +60,6 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     },
     dumpActors: () => "actor-dump",
     inspectActor: (query) => `inspect:${query || "(selection)"}`,
-    getInspectSelection: () => null,
     pause: () => {
       calls.push("pause");
     },

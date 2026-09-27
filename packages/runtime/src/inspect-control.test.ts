@@ -52,7 +52,7 @@ describe("applyInspectControl", () => {
     expect(
       applyInspectControl(
         { inspectWorld: () => ({ tickIndex: 0, nodes: [] }) },
-        { type: "pause" },
+        { type: "step" },
         (command) => {
           commands.push(command);
         },

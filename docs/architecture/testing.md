@@ -179,11 +179,11 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 ## Golden files
 
-`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, sprite rectangle packing). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
+`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, tilemap chunks, 2D projection). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
 
 ## Deterministic runtime harness (P3 / P4)
 
-`runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs. Fake VFS fixtures use `MemoryStorageAdapter` via `installHarnessProjectFixtures`.
+`runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs.
 
 P4 adds multi-transport comparison: the same scenario must agree **in-process**, over **transferable** ping-pong, and over **SAB** when `SharedArrayBuffer` / `crossOriginIsolated` is available. SAB is never required for CI green — transferables are mandatory. Today `transport-parity.test.ts` runs one in-process scenario and republishes that buffer through SAB and transferable (payload fidelity). It does not spin three independent hosts. Live Play always uses transferable ping-pong (`worker-entry.ts`); true zero-copy SAB is a [P4 follow-up](../agents/issue-tracker.md#p4-follow-ups--open-deferrals). `e2e/p4-play.spec.ts` covers overlay + session-report navigation plus labeled Pause / Stop / Console chrome with stats collapsed on open, then opens Stats and asserts Play HUD `stats-hud-draws` `data-draws` is greater than 0 on the default Empty scene (Kenney Mannequin); it does not claim A16 60fps (CI tick budget is `p14-perf-smoke`; on-device 60fps stays `p1-device-spikes`). The same spec also installs a Tick → ExecuteJavaScript `while (true) {}` graph with a low Project Settings **Loop Count** and asserts the overlay closes without tapping Stop, with the session report showing **Infinite loop detected**.
 
@@ -195,7 +195,7 @@ P4 adds multi-transport comparison: the same scenario must agree **in-process**,
 
 ## Property tests
 
-`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, and graph serialization round-tripping.
+`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, `.babasset` chunk round-tripping, edit command apply-then-invert, and navigation coordinate remapping.
 
 ## Test cost policy
 
@@ -271,7 +271,7 @@ Testing uses only standard GitHub-hosted runners in this public repository. `scr
 - Loop/container arithmetic runs in compiler tests; retained scripting browser journeys still prove editor authoring and actual player transport. Gallery checks share one navigation. The OPFS reopen journey retains both warm and cold reopen assertions.
 - Resource sampling skips ticks while an OS query is pending, so slow sampling cannot accumulate a post-run queue. Process start identities and parent/child creation order prevent PID reuse from attributing unrelated work; cleanup allows bounded normal shutdown before reporting surviving descendants. Ordering-only waits use controlled clocks or flushed React updates; the encode-timeout integration still exercises real scheduling.
 
-Trace inspection's targeted regression set is `apps/editor/src/lib/trace-snapshot.test.ts`, `apps/editor/src/lib/trace-view.test.ts`, `apps/editor/src/components/trace-playback.test.tsx`, `packages/editor-kit/src/tree-view.test.tsx`, and the directly affected `apps/editor/src/components/debug-inspect-dialog.test.tsx`. It covers exact nested values, GUID-based comparison/selection, search ancestry, missing/legacy snapshots, recorded Inputs/Behaviour Trees, frame normalization, log metadata/navigation, peak-preserving graph grouping, and tree keyboard navigation. The existing `e2e/p8-trace.spec.ts` also checks real-recording tree inspection, synchronized ticks, orange selection in both themes, resizing, and state retention after reopening Snapshot. Local agents select these explicit files; no broader local sweep is implied.
+Trace inspection's targeted regression set is `apps/editor/src/lib/trace-snapshot.test.ts`, `apps/editor/src/lib/trace-view.test.ts`, `apps/editor/src/components/trace-editor.test.tsx`, `packages/editor-kit/src/tree-view.test.tsx`, and the directly affected `apps/editor/src/components/debug-inspect-dialog.test.tsx`. It covers exact nested values, GUID-based comparison/selection, search ancestry, missing/legacy snapshots, recorded Inputs/Behaviour Trees, frame normalization, log metadata/navigation, peak-preserving graph grouping, and tree keyboard navigation. The existing `e2e/p8-trace.spec.ts` also checks real-recording tree inspection, synchronized ticks, orange selection in both themes, resizing, and state retention after reopening Snapshot. Local agents select these explicit files; no broader local sweep is implied.
 
 ### Safety rollout and rollback
 

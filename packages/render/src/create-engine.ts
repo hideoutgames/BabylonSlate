@@ -147,7 +147,6 @@ import {
   type TextureResources,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
-import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -322,8 +321,6 @@ export interface EngineHandle {
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
-  /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
-  postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Explicit local quality preferences; runtime commands take precedence. */
@@ -404,7 +401,6 @@ export interface CreateEngineOptions {
   onDragSelectEnd?: () => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
-  onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
   /** A water shape handle was released; merge `properties` into that component as one change. */
   onWaterShapeEdit?: (edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => void;
@@ -1256,7 +1252,6 @@ function initializeEngine(
     }
   };
   onRollback(retireAttachedStack);
-  let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     const camera = scene.activeCamera;
@@ -1267,7 +1262,6 @@ function initializeEngine(
     retireAttachedStack();
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
-    lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled || !camera) return;
     attachedStack = worldRenderer.attachPostProcess({
       scene,
@@ -1276,10 +1270,7 @@ function initializeEngine(
       stack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
       resolutionScale,
-      onDiagnostic: (diagnostic) => {
-        lastPostProcessDiagnostics.push(diagnostic);
-        options.onPostProcessDiagnostic?.(diagnostic);
-      },
+      onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
 
@@ -1341,10 +1332,8 @@ function initializeEngine(
             stack: normalizePostProcessStack(stack),
             resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
-            onDiagnostic: (diagnostic) => {
-              lastPostProcessDiagnostics.push(diagnostic);
-              options.onPostProcessDiagnostic?.(diagnostic);
-            },
+            onDiagnostic: (diagnostic) =>
+              options.onPostProcessDiagnostic?.(diagnostic),
           });
         },
       })
@@ -1747,7 +1736,6 @@ function initializeEngine(
           );
         }
         debugOverlayInstance.followLivePose();
-        options.onGizmoDrag?.();
       },
       onDragEnd: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
@@ -2663,9 +2651,6 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
         return;
       }
-      if (options.playMode) {
-        applyPlayConsoleRenderCommand({ scheduler }, command);
-      }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
@@ -2917,18 +2902,6 @@ function initializeEngine(
         scheduler.invalidate("camera");
       }
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
-      if (command.type === "setRenderingQuality" && options.playMode) {
-        sceneRenderingSettings(scene).qualityOverrides = command.overrides;
-        setSceneRenderSettings(scene);
-        applyRenderingQuality();
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setRenderPath" && options.playMode) {
-        requestRenderPath(
-          engine,
-          command.renderPath ? { renderPath: command.renderPath } : {},
-        );
-      }
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "tilemapAnimationTime") {
@@ -3118,7 +3091,6 @@ function initializeEngine(
         zOrder: layer.zOrder,
       })),
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
-    postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       setSceneEffectsEnabled(scene, enabled);

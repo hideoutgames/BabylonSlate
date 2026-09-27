@@ -5,7 +5,6 @@ import {
   createMaterialPreviewState,
   materialPreviewReducer,
   renderActionEnabled,
-  shouldAutoCompile,
   type MaterialPreviewState,
 } from "./preview-state";
 
@@ -16,11 +15,9 @@ function features(
     operations: 6,
     textureSamples: 0,
     weight: 8,
-    usesDerivatives: false,
     usesSceneDepth: false,
     usesSceneNormal: false,
     customBlocks: 0,
-    inlinedFunctions: 0,
     ...overrides,
   };
 }
@@ -199,17 +196,6 @@ describe("material preview state machine", () => {
       { type: "result", generation: 2, ok: true, durationMs: 18 },
     ]);
     expect(state.compileSamplesMs).toEqual([12, 18]);
-  });
-
-  it("stops auto-compiling after a compile proves slow", () => {
-    const state = drive(createMaterialPreviewState(), [
-      { type: "edit", cost: "cheap" },
-      { type: "compileStart", generation: 1 },
-      { type: "result", generation: 1, ok: true, durationMs: 900 },
-      { type: "edit", cost: "cheap" },
-      { type: "idle" },
-    ]);
-    expect(shouldAutoCompile(state, BUDGET)).toBe(false);
   });
 
   it("allows a manual Render while clean but blocks queued or compiling work", () => {

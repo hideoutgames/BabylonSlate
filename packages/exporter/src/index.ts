@@ -29,7 +29,7 @@ export {
   fontGuidFromFontMsdfExport,
   fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
-export { collectExportClosure, collectExportReachability } from "./closure";
+export { collectExportReachability } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";
 export { encodeBabpack, decodeBabpack, decodeBabpackIndex } from "./babpack";
 export { createHttpPackSource, createMemoryPackSource } from "./pack-source";
@@ -43,7 +43,6 @@ export {
   PREVIEW_PACK_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
   PREVIEW_READY_MESSAGE,
-  PREVIEW_STATS_MESSAGE,
   PREVIEW_DIAGNOSTICS_MESSAGE,
   PREVIEW_ERROR_MESSAGE,
   PREVIEW_STOP_MESSAGE,
@@ -57,8 +56,6 @@ export {
 export type {
   PreviewPackMessage,
   PreviewRequestPackMessage,
-  PreviewReadyMessage,
-  PreviewStatsMessage,
   PreviewDiagnosticsMessage,
   PreviewErrorMessage,
 } from "./preview-protocol";

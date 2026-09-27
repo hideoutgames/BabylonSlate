@@ -285,44 +285,6 @@ export async function applyPluginImport(
   return imported;
 }
 
-export interface EnginePluginIndexEntry {
-  id: string;
-  file: string;
-}
-
-export async function packEnginePluginFiles(
-  files: ProjectTreeFile[],
-  options: { id: string },
-): Promise<{ zip: Uint8Array; indexEntry: EnginePluginIndexEntry }> {
-  const settingsFile = await findPluginSettingsFile(files);
-  if (!settingsFile) {
-    throw new Error(`Engine plugin ${options.id} is missing PluginSettings`);
-  }
-  const document = await decodeAssetDocument(settingsFile.data);
-  const settings = normalizePluginSettings(document.payload, {
-    pluginGuid: document.guid,
-    displayName: document.name,
-  });
-  const packed: ProjectTreeFile[] = files.filter(
-    (file) => !isPluginManifestPath(file.path),
-  );
-  const manifest: BabprojectManifest = {
-    kind: "plugin",
-    guid: settings.pluginGuid,
-    name: settings.displayName,
-    engineVersion: ENGINE_VERSION,
-    version: 1,
-  };
-  packed.push({
-    path: PLUGIN_MANIFEST_FILE,
-    data: new TextEncoder().encode(stableStringify(manifest)),
-  });
-  return {
-    zip: encodeProjectZip(packed),
-    indexEntry: { id: options.id, file: `${options.id}.babplugin` },
-  };
-}
-
 export async function unpackEnginePluginZip(
   storage: ProjectStorage,
   zip: Uint8Array,

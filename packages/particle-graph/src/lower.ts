@@ -1,7 +1,6 @@
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   isParticleSpineRole,
-  particleNodeDefinition,
   particleNodeValueType,
 } from "./catalog";
 import type {
@@ -24,7 +23,6 @@ import {
   type ParticleValueType,
 } from "./types";
 import {
-  particleSpine,
   validateParticleGraphDocument,
   type ParticleGraphDiagnostic,
   type ParticleGraphValidationContext,
@@ -61,16 +59,6 @@ export interface ParticleBuildPlan {
   settings: ParticleGraphSettings;
   /** Topological: every operand references an earlier operation. Emitter Output is last. */
   operations: ParticleOperation[];
-  /** Operation ids Create → … → Emitter Output, which is the update-queue order. */
-  spine: string[];
-  /** Not part of the hash: a Material change rebinds without rebuilding. */
-  materialGuid: string | null;
-  dependencies: { materials: string[] };
-  cost: {
-    operations: number;
-    /** Distinct value operations feeding update inputs (evaluated per particle per frame). */
-    perParticleUpdateOperations: number;
-  };
   hash: string;
 }
 
@@ -177,38 +165,9 @@ export function lowerParticleGraphDocument(
     plan: {
       settings: { ...doc.settings },
       operations,
-      spine: particleSpine(doc),
-      materialGuid: doc.materialGuid,
-      dependencies: { materials: doc.materialGuid ? [doc.materialGuid] : [] },
-      cost: {
-        operations: operations.length,
-        perParticleUpdateOperations: perParticleUpdateOperations(operations, emitted),
-      },
       hash: hashParticlePlan(doc.settings, operations),
     },
   };
-}
-
-function perParticleUpdateOperations(
-  operations: readonly ParticleOperation[],
-  byId: ReadonlyMap<string, ParticleOperation>,
-): number {
-  const counted = new Set<string>();
-  const visit = (operationId: string) => {
-    const operation = byId.get(operationId);
-    if (!operation || operation.resolvedType === "particle" || counted.has(operationId)) return;
-    counted.add(operationId);
-    for (const operand of Object.values(operation.inputs)) {
-      if (operand.kind === "operation") visit(operand.operationId);
-    }
-  };
-  for (const operation of operations) {
-    if (particleNodeDefinition(operation.nodeType)?.role !== "update") continue;
-    for (const operand of Object.values(operation.inputs)) {
-      if (operand.kind === "operation") visit(operand.operationId);
-    }
-  }
-  return counted.size;
 }
 
 /**

@@ -1,8 +1,6 @@
 import type { Result } from "@babylonslate/core";
 
 export const LFS_JSON = "application/vnd.git-lfs+json";
-export const DEFAULT_LOCK_POLL_INTERVAL_MS = 60_000;
-export const DEFAULT_SOURCE_CONTROL_BRANCH = "main";
 
 export interface FileLock {
   id: string;

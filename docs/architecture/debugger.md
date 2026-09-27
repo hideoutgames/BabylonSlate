@@ -63,8 +63,8 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits `setRenderingQuality` with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. |
-| `volume` / `framecap` | Typed setters emit `setGlobalVolume` / `setFrameCap`; optional arguments query current values. |
+| `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits a `setScalability` transaction with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. |
+| `volume` / `framecap` | Typed setters emit `setGlobalVolume` / a `setScalability` frame-cap patch; optional arguments query current values. |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
 | `pause` / `resume` / `unpause` / `step` | `pause` / `resume` / overlay-style `resume`→`tick`→`pause`. Console pause/resume emit `{ type: "sessionPaused" }` so overlay chrome matches |
@@ -96,7 +96,7 @@ Editor Output Log lines and live behaviour-tree snapshots live in an isolated di
 
 Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. **Stats** and **Inspector** stay filled in both states; the primary outline marks their pressed state. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples completed renders per elapsed second; the shared Console button also controls Preview Build; the separate Pause / Inspector buttons remain in overlay Play). When Preview Build is on, the chrome launch control reads **Preview**.
 
-**Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
+**Debug menu** (next to Play) uses the same content-sized, minimum 14rem width as the viewport settings island so labels stay on one line. It persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Retired `showFps` / `logLevel` keys in older saved settings are dropped on load; do not reuse those names.
 
 Stats keeps the measured timings and **Over Budget** warning; normal ticks no longer add a **Tick OK** label.
 
@@ -140,7 +140,7 @@ Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }
 
 ## Export settings (P14)
 
-Project Settings **Export Game** preset: **Bundle Debugger** (off for release). Release export compiles with `compileGraphDocumentsForExport` (Print / Print String / Draw Debug default on; Inspector **Development Only** nodes are omitted). A non-debug player still links `@babylonslate/debugger` **core** commands; debug-tier implementations are not registered (`includeDebug: false`). Opted-in Print and Draw Debug still render. **Preview Build** always bundles the debugger and keeps Development Only nodes. Draw-call ceilings (`DRAW_CALL_WARN_CEILING`) and geometry (`GEOMETRY_BYTE_CEILING`) surface as HUD warnings. See [exporter.md](exporter.md).
+Project Settings **Export Game** preset: **Bundle Debugger** (off for release). Release export compiles with `compileGraphDocuments` and `stripDevelopmentOnly` (Print / Print String / Draw Debug default on; Inspector **Development Only** nodes are omitted). A non-debug player still links `@babylonslate/debugger` **core** commands; debug-tier implementations are not registered (`includeDebug: false`). Opted-in Print and Draw Debug still render. **Preview Build** always bundles the debugger and keeps Development Only nodes. Draw-call ceilings (`DRAW_CALL_WARN_CEILING`) and geometry (`GEOMETRY_BYTE_CEILING`) surface as HUD warnings. See [exporter.md](exporter.md).
 
 ### Trace Inspection
 

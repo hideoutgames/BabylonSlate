@@ -1,4 +1,3 @@
-import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
@@ -99,7 +98,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     activeDocumentId,
     applySceneChange,
     projectDocument,
-    projectGuid,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
     collectPlayRenderTargets,
@@ -453,11 +451,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
-        const pipeline = registerScenePipelineStatus(scenePipelineKey(projectGuid, documentId));
-        disposers.push(() => pipeline.dispose());
         const handle = createEngine(canvas, {
           editor: true,
-          onRenderPathChanged: pipeline.publish,
           renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,

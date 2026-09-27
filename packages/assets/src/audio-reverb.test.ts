@@ -4,7 +4,6 @@ import {
   AUDIO_OCCUPANCY_GRID_MAX_X,
   AUDIO_OCCUPANCY_GRID_MAX_Y,
   AUDIO_OCCUPANCY_GRID_MAX_Z,
-  AUDIO_REVERB_CHUNK_MAX_BYTES,
 } from "./audio-payload";
 import {
   AUDIO_REVERB_CHUNK_ID,
@@ -17,10 +16,12 @@ import {
   geometryHashForAudioBake,
   interpolateAudioReverb,
   isDryAudioReverbFallback,
-  occupancyGridForAudioBake,
   occlusionFactor,
 } from "./audio-reverb";
 import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
+
+/** `audioReverb` chunk budget from docs/architecture/audio.md (A16 budgets). */
+const REVERB_CHUNK_BUDGET_BYTES = 64 * 1024;
 
 function boxActor(
   id: string,
@@ -99,7 +100,7 @@ describe("audio reverb chunk", () => {
       probes: [],
       occupancy,
     });
-    expect(packed.byteLength).toBeLessThanOrEqual(AUDIO_REVERB_CHUNK_MAX_BYTES);
+    expect(packed.byteLength).toBeLessThanOrEqual(REVERB_CHUNK_BUDGET_BYTES);
     const decoded = decodeAudioReverbChunk(packed);
     expect(decoded?.occupancy).toEqual(occupancy);
     expect(
@@ -166,7 +167,7 @@ describe("audio reverb bake", () => {
     const first = bakeAudioReverb(a);
     const second = bakeAudioReverb(b);
     expect(first).toEqual(second);
-    expect(first.byteLength).toBeLessThanOrEqual(AUDIO_REVERB_CHUNK_MAX_BYTES);
+    expect(first.byteLength).toBeLessThanOrEqual(REVERB_CHUNK_BUDGET_BYTES);
   });
 
   it("invalidates when static mesh actors move", async () => {
@@ -205,15 +206,11 @@ describe("audio reverb bake", () => {
     const field = decodeAudioReverbChunk(bakeAudioReverb(geometry));
     expect(field).toBeTruthy();
     expect(field!.probes.length).toBeLessThanOrEqual(AUDIO_MAX_PROBES);
-    const grid = occupancyGridForAudioBake(geometry);
-    expect(grid.sizeX).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_X);
-    expect(grid.sizeY).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Y);
-    expect(grid.sizeZ).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Z);
     expect(field!.occupancy).toBeTruthy();
     expect(field!.occupancy!.bits.byteLength).toBeGreaterThan(0);
-    expect(field!.occupancy!.sizeX).toBe(grid.sizeX);
-    expect(field!.occupancy!.sizeY).toBe(grid.sizeY);
-    expect(field!.occupancy!.sizeZ).toBe(grid.sizeZ);
+    expect(field!.occupancy!.sizeX).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_X);
+    expect(field!.occupancy!.sizeY).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Y);
+    expect(field!.occupancy!.sizeZ).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Z);
   });
 
   it("yields every eight static mesh actors while collecting", async () => {

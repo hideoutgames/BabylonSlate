@@ -9,8 +9,6 @@ export class VisualBundle {
   private readonly textures = new Set<BaseTexture>();
   private readonly releases = new Set<() => void>();
 
-  get isRetired(): boolean { return this.retired; }
-
   ownRenderUser<T extends { dispose(): void }>(user: T): T {
     this.renderUsers.add(user);
     return user;

@@ -17,7 +17,6 @@ const surfaceByMesh = new WeakMap<Mesh, Surface>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
 const reflections = new WeakMap<Scene, WaterReflection>();
 
-export function sceneHasWater(scene: Scene): boolean { return (surfaces.get(scene)?.size ?? 0) > 0; }
 export function setSceneWaterTime(scene: Scene, seconds: number): void {
   if (Number.isFinite(seconds)) clocks.set(scene, { time: seconds, runtime: true });
 }

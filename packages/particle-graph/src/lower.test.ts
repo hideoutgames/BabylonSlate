@@ -32,7 +32,7 @@ function operation(result: ParticleBuildPlan, id: string) {
 }
 
 describe("particle graph lowering", () => {
-  it("orders operations topologically and lists the spine in update-queue order", () => {
+  it("orders operations topologically and ends with Emitter Output", () => {
     const result = plan(createDefaultParticleGraphDocument());
     const seen = new Set<string>();
     for (const entry of result.operations) {
@@ -41,7 +41,6 @@ describe("particle graph lowering", () => {
       }
       seen.add(entry.id);
     }
-    expect(result.spine).toEqual(["create", "shape", "velocity", "updateColor", "output"]);
     expect(result.operations.at(-1)?.id).toBe("output");
     expect(operation(result, "velocity").resolvedType).toBe("particle");
   });

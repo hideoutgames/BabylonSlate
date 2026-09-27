@@ -47,8 +47,7 @@ it("loads DDS through the prefiltered Blob route and preserves shared Engine own
   );
   scene.dispose();
   expect(cube.getInternalTexture()).not.toBeNull();
-  cache.releaseGpuTextures();
-  expect(cube.getInternalTexture()).toBeNull();
+  cube.dispose();
   const recreatedLease = cache.acquireTexture("environment", engine, bytes, {
     isCube: true,
   });

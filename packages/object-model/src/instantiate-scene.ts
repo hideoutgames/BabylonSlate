@@ -1,8 +1,6 @@
 import type {
   SerializedActor,
   SerializedComponent,
-  SerializedScene,
-  SerializedSceneLayer,
   SerializedTransform,
   Transform,
 } from "@babylonslate/core";
@@ -67,40 +65,9 @@ function componentAssetGuid(component: SerializedComponent): string | null {
 }
 
 /**
- * Build World actors from a scene document without spawning them.
- * Caller attaches script hooks (optional) then `spawnActorNow`.
+ * Build one unspawned Actor from a scene or SceneLayer document row so callers
+ * can yield between owned preparations. Caller then `spawnActorNow`s it.
  */
-export function createActorsFromSerializedScene(
-  world: World,
-  scene: SerializedScene,
-  hooksFor?: SceneActorHooks,
-): Actor[] {
-  const actors: Actor[] = [];
-  for (const serialized of scene.actors) {
-    const actor = createActorFromSerialized(world, serialized, hooksFor);
-    if (actor) actors.push(actor);
-  }
-  return actors;
-}
-
-export function createActorsFromSerializedSceneLayer(
-  world: World,
-  layer: SerializedSceneLayer,
-  sceneLayerId: string,
-  hooksFor?: SceneActorHooks,
-): Actor[] {
-  return layer.actors.flatMap((serialized) => {
-    const actor = createActorFromSerialized(
-      world,
-      serialized,
-      hooksFor,
-      sceneLayerId,
-    );
-    return actor ? [actor] : [];
-  });
-}
-
-/** Build one unspawned Actor so callers can yield between owned preparations. */
 export function createActorFromSerialized(
   world: World,
   serialized: SerializedActor,

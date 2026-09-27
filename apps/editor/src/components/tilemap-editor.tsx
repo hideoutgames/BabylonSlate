@@ -91,10 +91,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useOptionalTilemapEditing,
-  TilemapEditingProvider,
-} from "../context/tilemap-editing-context";
+import { useOptionalTilemapEditing } from "../context/tilemap-editing-context";
 
 const TOOLS: Array<{
   id: TilemapPaintTool;
@@ -165,24 +162,6 @@ export function TilemapDetailsPanel(_props: IDockviewPanelProps) {
         }}
       />
     </PanelFrame>
-  );
-}
-
-export function TilemapEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
-}) {
-  return (
-    <TilemapEditingProvider>
-      <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <TilemapDetails payload={payload} onChange={onChange} />
-        <TilemapPalette payload={payload} onChange={onChange} />
-        <TilemapPaint payload={payload} onChange={onChange} />
-      </div>
-    </TilemapEditingProvider>
   );
 }
 

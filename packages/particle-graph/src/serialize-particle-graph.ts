@@ -1,10 +1,8 @@
 import type { SerializedGraph } from "@babylonslate/core";
 import {
   PARTICLE_UNSUPPORTED_V1_TYPES,
-  particleNodeDefinition,
   particleNodeDefinitionFor,
   particlePaletteEntries,
-  type ParticleNodeRole,
   type ParticlePinDefinition,
 } from "./catalog";
 import {
@@ -252,11 +250,6 @@ export function hydrateParticleGraphForEditor(graph: SerializedGraph): Serialize
       };
     }),
   };
-}
-
-/** Header role for a canvas node or palette entry, if it is a particle node. */
-export function particleNodeRole(type: string): ParticleNodeRole | undefined {
-  return particleNodeDefinition(type)?.role;
 }
 
 type CanvasPin = { type: { kind: string; accepts?: unknown } };

@@ -2,7 +2,6 @@ export const PREVIEW_PACK_MESSAGE = "babylonslate-preview-pack";
 /** Player → editor: the pack listener is installed, send (or resend) the pack. */
 export const PREVIEW_REQUEST_PACK_MESSAGE = "babylonslate-preview-request-pack";
 export const PREVIEW_READY_MESSAGE = "babylonslate-preview-ready";
-export const PREVIEW_STATS_MESSAGE = "babylonslate-preview-stats";
 export const PREVIEW_DIAGNOSTICS_MESSAGE = "babylonslate-preview-diagnostics";
 /** Player → editor: boot failed, so the overlay can explain the black canvas. */
 export const PREVIEW_ERROR_MESSAGE = "babylonslate-preview-error";
@@ -46,21 +45,9 @@ export type PreviewRequestPackMessage = {
   type: typeof PREVIEW_REQUEST_PACK_MESSAGE;
 };
 
-export type PreviewReadyMessage = {
-  type: typeof PREVIEW_READY_MESSAGE;
-  startupSceneGuid: string;
-};
-
 export type PreviewErrorMessage = {
   type: typeof PREVIEW_ERROR_MESSAGE;
   message: string;
-};
-
-export type PreviewStatsMessage = {
-  type: typeof PREVIEW_STATS_MESSAGE;
-  ticks: number;
-  scriptMs: number;
-  physicsMs: number;
 };
 
 export type PreviewDiagnosticsMessage = {

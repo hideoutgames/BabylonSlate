@@ -120,11 +120,9 @@ describe("Havok attachment transactions", () => {
       physicsBody.setLinearVelocity(new Vector3(3, -2, 1));
       const initialShape = physicsBody.shape;
       const init = vi.spyOn(backend.plugin, "initShape");
-      backend.updateCollider("collider", {
-        layer: 2,
-        mask: 4,
-        friction: 0.8,
-        isTrigger: true,
+      backend.applyColliderChanges("body", {
+        upsert: [{ ...box(), layer: 2, mask: 4, friction: 0.8, isTrigger: true }],
+        remove: [],
       });
       expect(init).not.toHaveBeenCalled();
       expect(physicsBody.shape).toBe(initialShape);

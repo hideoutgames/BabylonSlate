@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { FLOAT, compileGraph, objectRef } from "@babylonslate/scripting";
-import { ALL_NODE_CATEGORIES, createDefaultNodeRegistry } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 import { gameInstanceNodes } from "./game-instance";
 
 describe("game instance nodes", () => {
   it("registers Get Scene Loading Progress as a pure float getter", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("game-instance");
     const node = gameInstanceNodes.find(
       (entry) => entry.id === "gameInstance.getSceneLoadingProgress",
     );

@@ -117,7 +117,7 @@ Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spat
 
 ## A16 budgets
 
-Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in `audio-waveform.ts`):
+Most are named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in `audio-waveform.ts`). Bake tests check the `audioReverb` chunk budget; `interpolateAudioReverb` blends at most two probe profiles.
 
 | Constant | Value |
 | --- | --- |

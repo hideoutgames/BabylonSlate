@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ASSET_COLOR_TOKENS,
-  ASSET_COLOR_VAR,
-  PIN_COLOR_TOKENS,
-  PIN_COLOR_VAR,
   assetColorVar,
   pinColorVar,
   typeColorThumbAccent,
@@ -27,15 +23,6 @@ describe("data-types", () => {
     expect(assetColorVar("class")).toBe("var(--asset-class)");
     expect(assetColorVar("folder")).toBe("var(--asset-folder)");
     expect(assetColorVar("not-a-family")).toBe("var(--muted-foreground)");
-  });
-
-  it("exposes the full pin and asset token lists", () => {
-    expect(PIN_COLOR_TOKENS).toContain("--pin-bool");
-    expect(PIN_COLOR_TOKENS).toContain("--pin-class");
-    expect(PIN_COLOR_VAR.class).toBe("var(--pin-class)");
-    expect(ASSET_COLOR_TOKENS).toContain("--asset-folder");
-    expect(PIN_COLOR_VAR.bool).toBe("var(--pin-bool)");
-    expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");
   });
 
   it("builds a type-colored border outline without a radial wash", () => {

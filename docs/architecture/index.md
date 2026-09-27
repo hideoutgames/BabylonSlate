@@ -21,7 +21,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Debugger](debugger.md) | Command registry, console, stats HUD |
 | [Console commands](console-commands.md) | Builtin catalog, apply audit, autocomplete |
 | [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
-| [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
+| [Sprites](sprites.md) | Sprite atlas frames, Sprite Animation, SpriteComponent quad |
 | [Animation graph](anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
 | [Behaviour tree](behaviour-tree.md) | Tree IR, blackboard, explicit-stack evaluator |
 | [Navigation](navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |

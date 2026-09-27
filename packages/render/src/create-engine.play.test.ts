@@ -8,6 +8,7 @@ import {
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
+  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   createActor,
@@ -21,6 +22,7 @@ import {
   normalizeRenderProjectSettings,
   engineCommandBus,
   requestEditorDrop,
+  type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
@@ -168,6 +170,14 @@ function pointerAt(
     button: 0,
     pointerType: "touch",
     ...extras,
+  };
+}
+
+/** A live session render change, as the runtime's ScalabilitySession emits it. */
+function scalabilityCommand(overrides: RenderSettingsPatch): CommandMessage {
+  return {
+    type: "setScalability",
+    transaction: { revision: 1, settings: { render: normalizeRenderProjectSettings({}), frameCap: 60 }, overrides },
   };
 }
 
@@ -923,7 +933,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle: first } = editorHandle(engine);
     const { handle: live } = editorHandle(engine);
-    const release = vi.spyOn(resourceCacheForEngine(engine), "releaseGpuTextures");
+    const shared = resourceCacheForEngine(engine).acquireTexture("shared", engine, new Uint8Array([1, 2, 3, 4]));
     const logs: string[] = [];
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
@@ -931,9 +941,10 @@ describe("Play createEngine view", () => {
     first.dispose();
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(release).not.toHaveBeenCalled();
+    expect(shared.resource.getInternalTexture()).not.toBeNull();
     expect(live.scene.isDisposed).toBe(false);
     expect(logs.filter((message) => /context restored/i.test(message))).toHaveLength(1);
+    shared.release();
     unsubscribe();
   });
 
@@ -1202,8 +1213,8 @@ describe("Play createEngine view", () => {
       now += 4;
     });
     for (const [second, cap] of [30, 60, 15, 30].entries()) {
-      // The first second must use the configured cap before any console setter.
-      if (second > 0) handle.applyCommand({ type: "setFrameCap", fps: cap });
+      // The first second must use the configured cap before any live change.
+      if (second > 0) handle.scheduler.setFrameCap(cap);
       const before = renders;
       for (let frame = 0; frame < 60; frame += 1) {
         now = second * 1000 + frame * (1000 / 60);
@@ -1837,7 +1848,7 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.dropTier();
+    handle.scaling.setLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
@@ -3237,11 +3248,19 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("applies setRenderingQuality on Play views only, not the editor viewport", () => {
-    const play = playHandle(sharedEngine());
-    const editor = editorHandle(sharedEngine());
-    play.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
-    editor.handle.applyCommand({ type: "setRenderingQuality", overrides: { resolution: { scale: 0.5, minScale: 0.5 } } });
+  it("applies setScalability quality on Play views only, not the editor viewport", () => {
+    const playEngine = sharedEngine();
+    const playLoop = vi.spyOn(playEngine, "runRenderLoop");
+    const play = playHandle(playEngine);
+    const editorEngine = sharedEngine();
+    const editorLoop = vi.spyOn(editorEngine, "runRenderLoop");
+    const editor = editorHandle(editorEngine);
+    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    play.handle.applyCommand(command);
+    editor.handle.applyCommand(command);
+    // Transactions apply at the next frame boundary of the owning view.
+    playLoop.mock.calls[0]![0]();
+    editorLoop.mock.calls[0]![0]();
     expect(play.handle.scaling.getLevel()).toBe(2);
     expect(editor.handle.scaling.getLevel()).toBe(1);
   });
@@ -4167,9 +4186,8 @@ describe("Play createEngine view", () => {
     expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
   });
 
-  it("applies a setRenderPath command game-wide and reports the session status", () => {
+  it("applies a setScalability render path game-wide and reports the session status", () => {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
     const { handle: sibling } = playHandle(engine);
     const statuses: string[] = [];
     const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -4178,8 +4196,12 @@ describe("Play createEngine view", () => {
       onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
     });
     handles.push(withStatus);
+    // The newest Play view owns the shared framebuffer and applies the transaction.
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loops.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(sibling.renderPathStatus().requested.renderPath).toBe("clusteredForward");
     expect(statuses).toContain("clusteredForward");
@@ -4188,10 +4210,12 @@ describe("Play createEngine view", () => {
     expect(statuses.at(-1)).toBe("forward");
   });
 
-  it("ignores setRenderPath on non-Play handles", () => {
+  it("ignores setScalability on non-Play handles", () => {
     const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = editorHandle(engine);
-    handle.applyCommand({ type: "setRenderPath", renderPath: "clusteredForward" });
+    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    loop.mock.calls[0]![0]();
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
     // The Engine-level API still applies to shared scenes on the same Engine.
     handle.setRenderPath("clusteredForward");
