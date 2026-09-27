@@ -97,7 +97,7 @@ Single module `packages/scripting/src/types.ts`; `types.test.ts` covers assignab
 | Kind | Role | Runtime |
 | --- | --- | --- |
 | Resolving | Compile-time generic for container nodes (Get, Append, Map Find) | None — pins adopt concrete type of first connection; group must agree |
-| Boxed | Tagged any for Print and user wildcard params | `{ tag, value }` |
+| Boxed | Any value for Print and user wildcard params | The raw value; conversion nodes supply the tag (below) |
 
 **Resolution** (`packages/scripting/src/wildcard-resolve.ts`): `resolveWildcardPinTypes` is a view over declared pins + edges. It does not rewrite stored `__pins`.
 
@@ -117,6 +117,13 @@ Inspector property rows write literal defaults using the stable pin ID (`default
 - Boxed pins stay `boxedWildcard` for typing. **Display** type follows the connected peer so Print’s value pin uses that peer’s `--pin-*` color. Disconnecting restores the unbound wildcard color.
 
 Generated conversion family (`WildcardToString`, `WildcardToFloat`, …, `WildcardTypeOf`, `WildcardIs`) from the type table. Test: every registered concrete type has a converter. Failures expose success + fallback outputs (except `WildcardToString`, which always succeeds via `formatValue`).
+
+Values are not boxed on the wire, so Print, Format String and Set Blackboard receive raw values. The conversion nodes pick the tag themselves:
+
+- **Typed source** (the wired output has a concrete type after resolution): its `pinTypeTag` is used at compile time. A whole-number Float stays `float`.
+- **Untyped source** (a boxed wildcard such as Get Blackboard or Get Anim Graph Variable, an unresolved generic, or a disconnected pin): the tag comes from the runtime value. A `{ tag, value }` box keeps its tag and is unwrapped. Otherwise whole numbers read as `int` and fractions as `float`; `{ x, y, z, w }` reads as `vec4` (Quat and Color share that shape); live objects read as `actorRef:<class>` when `ctx.isA(value, "Actor")`, else `objectRef:<class>`; arrays, maps and structs read as `unknown`; null reads as `null`.
+- **Wildcard To T** succeeds when the tag is T's tag, Int into Float, or any class into Object / Actor (any actor class into Actor). Untyped Quat and Color values therefore need a typed source or a tagged box.
+- **Wildcard Type Of** returns the tag; **Wildcard Is** compares it exactly with the Tag input.
 
 ### `formatValue` (`@babylonslate/core`)
 
