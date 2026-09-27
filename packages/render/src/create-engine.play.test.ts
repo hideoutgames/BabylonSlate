@@ -4040,8 +4040,6 @@ describe("Play createEngine view", () => {
 
   it("applies a setScalability render path game-wide and reports the session status", () => {
     const engine = sharedEngine();
-    const loops = vi.spyOn(engine, "runRenderLoop");
-    const { handle } = playHandle(engine);
     const { handle: sibling } = playHandle(engine);
     const statuses: string[] = [];
     const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -4050,6 +4048,9 @@ describe("Play createEngine view", () => {
       onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
     });
     handles.push(withStatus);
+    // The newest Play view owns the shared framebuffer and applies the transaction.
+    const loops = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
     expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
     handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
     loops.mock.calls[0]![0]();
