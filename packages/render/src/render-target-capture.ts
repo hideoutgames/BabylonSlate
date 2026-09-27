@@ -369,8 +369,11 @@ export class RenderTargetCaptures {
     const camera = scene.activeCamera;
     const cameras = scene.activeCameras;
     const ubo = scene.getSceneUniformBuffer();
-    const view = scene.getViewMatrix();
-    const projection = scene.getProjectionMatrix();
+    // Manual captures can precede the scene's first main-camera render, when
+    // its cached matrices are still unset. Restore the camera's valid matrices
+    // in that case instead of handing undefined to setTransformMatrix.
+    const view = scene.getViewMatrix() ?? camera?.getViewMatrix();
+    const projection = scene.getProjectionMatrix() ?? camera?.getProjectionMatrix();
     const engine = scene.getEngine();
     const renderPass = engine.currentRenderPassId;
     const imageProcessing = scene.imageProcessingConfiguration;
@@ -387,7 +390,7 @@ export class RenderTargetCaptures {
       scene.activeCamera = camera;
       scene.activeCameras = cameras;
       scene.setSceneUniformBuffer(ubo);
-      scene.setTransformMatrix(view, projection);
+      if (view && projection) scene.setTransformMatrix(view, projection);
       engine.currentRenderPassId = renderPass;
       scene.resetCachedMaterial();
       drawing.delete(scene);

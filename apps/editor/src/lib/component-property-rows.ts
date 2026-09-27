@@ -534,7 +534,7 @@ export function componentPropertyRows(
         ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
           kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
           defaultValue: key !== "captureOnlyActors",
-          ...(key === "captureEveryFrame" ? { description: "Disable to capture once, then request additional captures from a NodeGraph." } : {}),
+          ...(key === "captureEveryFrame" ? { description: "Disable automatic captures and request captures from a NodeGraph." } : {}),
           ...(key === "captureOnlyActors" ? { description: "Capture only the actors in Capture Actors. An empty enabled list captures nothing." } : {}),
           onChange: (value) => update(key, value),
         })),
