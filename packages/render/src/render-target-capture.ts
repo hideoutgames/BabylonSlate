@@ -76,6 +76,7 @@ type Target = {
   depth?: DepthRenderer;
   normals?: NodeMaterial;
   normalMaterials: Map<Material, Material>;
+  normalSlots: Map<AbstractMesh, MultiMaterial>;
   usedNormalSources: Set<Material>;
   lease: ManagedRenderLease;
   overrides: Set<AbstractMesh>;
@@ -219,8 +220,12 @@ export class RenderTargetCaptures {
         const current = new Set(meshes);
         target.usedNormalSources.clear();
         for (const mesh of target.overrides) if (!current.has(mesh) && !mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
-        for (const mesh of meshes) target.texture.setMaterialForRendering(mesh, this.normalMaterial(target, mesh.material));
+        for (const mesh of meshes) target.texture.setMaterialForRendering(mesh, this.normalMeshMaterial(target, mesh));
         target.overrides = current;
+        for (const [mesh, material] of target.normalSlots) if (!current.has(mesh) || !(mesh.material instanceof MultiMaterial)) {
+          target.normalSlots.delete(mesh);
+          material.dispose(false, false);
+        }
         for (const [source, material] of target.normalMaterials) if (!target.usedNormalSources.has(source)) {
           target.normalMaterials.delete(source);
           material.dispose(false, false);
@@ -281,7 +286,7 @@ export class RenderTargetCaptures {
       const depth = mode === "DepthPass" ? new DepthRenderer(this.scene, type, camera, false, Texture.NEAREST_SAMPLINGMODE, false, `captureDepth:${guid}`, texture) : undefined;
       if (mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
-      const target: Target = { key, texture: captureTexture, owner, depth, normals, lease, normalMaterials: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
+      const target: Target = { key, texture: captureTexture, owner, depth, normals, lease, normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
       this.targets.set(guid, target);
       return target;
     } catch (error) {
@@ -311,7 +316,10 @@ export class RenderTargetCaptures {
         const actorId = this.ownerOf(mesh);
         if (!actorId || !include.has(actorId)) return false;
       }
-      if (target.normals && mesh.material?.needAlphaBlendingForMesh(mesh) && !mesh.material.needAlphaTesting()) return false;
+      if (target.normals && mesh.material) {
+        const materials = mesh.material instanceof MultiMaterial ? mesh.material.subMaterials : [mesh.material];
+        if (!materials.some((material) => material && !material.needAlphaBlendingForMesh(mesh))) return false;
+      }
       // Scene color must never read the same attachment it is writing.
       if (!target.depth && !target.normals && mesh.material?.getActiveTextures().some((texture) => texture.getInternalTexture() === internal)) return false;
       return true;
@@ -325,20 +333,27 @@ export class RenderTargetCaptures {
     target.meshes.length = count;
     return target.meshes;
   }
+  private normalMeshMaterial(target: Target, mesh: AbstractMesh): Material {
+    const source = mesh.material;
+    if (!(source instanceof MultiMaterial)) return this.normalMaterial(target, source);
+    let slots = target.normalSlots.get(mesh);
+    if (!slots) {
+      slots = new MultiMaterial("renderTarget:worldNormalSlots", this.scene);
+      target.normalSlots.set(mesh, slots);
+    }
+    // Slot eligibility depends on this mesh's visibility/vertex alpha. Keep
+    // containers per mesh, while sharing the opaque/cutout shader variants.
+    // Null slots are skipped by Babylon's submesh rendering dispatch.
+    const children = source.subMaterials.map((child) => child && !child.needAlphaBlendingForMesh(mesh) ? this.normalMaterial(target, child) : null);
+    if (slots.subMaterials.length !== children.length || children.some((child, index) => child !== slots.subMaterials[index])) slots.subMaterials = children;
+    return slots;
+  }
   private normalMaterial(target: Target, source: Material | null): Material {
     if (!source) return target.normals!;
     target.usedNormalSources.add(source);
     const existing = target.normalMaterials.get(source);
-    let material: Material;
-    if (source instanceof MultiMaterial) {
-      const multi = existing instanceof MultiMaterial ? existing : new MultiMaterial("renderTarget:worldNormalSlots", this.scene);
-      const children = source.subMaterials.map((child) => child ? this.normalMaterial(target, child) : null);
-      if (multi.subMaterials.length !== children.length || children.some((child, index) => child !== multi.subMaterials[index])) multi.subMaterials = children;
-      material = multi;
-    } else {
-      if (existing) return existing;
-      material = createRenderTargetNormalMaterial(this.scene, source);
-    }
+    if (existing) return existing;
+    const material = createRenderTargetNormalMaterial(this.scene, source);
     target.normalMaterials.set(source, material);
     return material;
   }
@@ -418,6 +433,7 @@ export class RenderTargetCaptures {
     this.publishTextures();
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
+    for (const material of target.normalSlots.values()) material.dispose(false, false);
     for (const material of target.normalMaterials.values()) material.dispose(false, false);
     target.normals?.dispose();
     target.texture.dispose();

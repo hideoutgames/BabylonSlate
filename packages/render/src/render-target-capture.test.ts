@@ -1,5 +1,5 @@
 import {
-  Constants, FreeCamera, HemisphericLight, LightConstants, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RenderTargetTexture,
+  Constants, FreeCamera, HemisphericLight, LightConstants, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
@@ -191,31 +191,48 @@ it("Scene Color particle selection follows emitter actor ownership", () => {
   expect(particleDraws[1]).toEqual([included]);
 });
 
-it("retires unused normal variants while preserving shared material slots still captured", () => {
+it("filters mixed normal slots per mesh and retires variants no longer captured", () => {
   const { scene, captures } = host();
   // Shader output is covered in the real-browser proof; retain real material
   // ownership here without starting asynchronous shader compilation.
   vi.spyOn(normalMaterial, "createRenderTargetNormalMaterial").mockImplementation((scene) => new NodeMaterial("Capture Variant", scene));
   captures.setAssets(new Map([["target", { mode: "WorldNormal", width: 16, height: 8 }]]));
-  const first = new StandardMaterial("First", scene);
+  const first = new StandardMaterial("First", scene); first.transparencyMode = Material.MATERIAL_OPAQUE;
   const shared = new StandardMaterial("Shared", scene);
-  const source = new MultiMaterial("Source Slots", scene); source.subMaterials = [first, shared];
+  const cutout = new StandardMaterial("Cutout", scene); cutout.transparencyMode = Material.MATERIAL_ALPHATEST;
+  const blended = new StandardMaterial("Blended", scene); blended.alpha = 0.5;
+  const source = new MultiMaterial("Source Slots", scene); source.subMaterials = [first, shared, cutout, blended];
   const mesh = MeshBuilder.CreateBox("Model", {}, scene); mesh.material = source;
+  const faded = MeshBuilder.CreateBox("Model With Vertex Alpha", {}, scene); faded.material = source; faded.hasVertexAlpha = true;
   const sibling = MeshBuilder.CreateBox("Sibling", {}, scene); sibling.material = shared;
   captures.request("capture"); captures.render();
   const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
   const slots = mesh.getMaterialForRenderPass(target.renderPassId) as MultiMaterial;
   const firstVariant = slots.subMaterials[0]!;
   const sharedVariant = slots.subMaterials[1]!;
+  const cutoutVariant = slots.subMaterials[2]!;
+  const fadedSlots = faded.getMaterialForRenderPass(target.renderPassId) as MultiMaterial;
+  expect(slots.subMaterials).toEqual([firstVariant, sharedVariant, cutoutVariant, null]);
+  expect(firstVariant).not.toBeNull();
+  expect(sharedVariant).not.toBeNull();
+  expect(cutoutVariant).not.toBeNull();
+  expect(fadedSlots).not.toBe(slots);
+  expect(fadedSlots.subMaterials).toEqual([firstVariant, null, cutoutVariant, null]);
+  expect(source.subMaterials).toEqual([first, shared, cutout, blended]);
   source.subMaterials = [new StandardMaterial("Replacement", scene)];
   captures.request("capture"); captures.render();
   expect(scene.materials).not.toContain(firstVariant);
+  expect(scene.materials).not.toContain(cutoutVariant);
   expect(scene.materials).toContain(sharedVariant);
+  expect(scene.multiMaterials).not.toContain(fadedSlots);
+  expect(faded.getMaterialForRenderPass(target.renderPassId)).toBeUndefined();
   expect(slots.subMaterials).toHaveLength(1);
   expect(slots.subMaterials[0]).not.toBe(firstVariant);
   sibling.dispose();
   captures.request("capture"); captures.render();
   expect(scene.materials).not.toContain(sharedVariant);
+  captures.clear();
+  expect(scene.multiMaterials).not.toContain(slots);
 });
 
 it("admits no GPU target or draw when the shared rendering ceiling cannot fit it", () => {
