@@ -57,6 +57,7 @@ type Target = {
   depth?: DepthRenderer;
   normals?: NodeMaterial;
   normalMaterials: Map<Material, Material>;
+  usedNormalSources: Set<Material>;
   lease: ManagedRenderLease;
   overrides: Set<AbstractMesh>;
   meshes: AbstractMesh[];
@@ -193,9 +194,14 @@ export class RenderTargetCaptures {
         }) : [];
       if (target.normals) {
         const current = new Set(meshes);
-        for (const mesh of target.overrides) if (!current.has(mesh)) target.texture.setMaterialForRendering(mesh, undefined);
+        target.usedNormalSources.clear();
+        for (const mesh of target.overrides) if (!current.has(mesh) && !mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
         for (const mesh of meshes) target.texture.setMaterialForRendering(mesh, this.normalMaterial(target, mesh.material));
         target.overrides = current;
+        for (const [source, material] of target.normalMaterials) if (!target.usedNormalSources.has(source)) {
+          target.normalMaterials.delete(source);
+          material.dispose(false, false);
+        }
       }
       if (!this.draw(target)) continue;
       capture.requested = false;
@@ -252,7 +258,7 @@ export class RenderTargetCaptures {
       const depth = mode === "DepthPass" ? new DepthRenderer(this.scene, type, camera, false, Texture.NEAREST_SAMPLINGMODE, false, `captureDepth:${guid}`, texture) : undefined;
       if (mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
-      const target: Target = { key, texture, owner, depth, normals, lease, normalMaterials: new Map(), overrides: new Set(), meshes: [], published: false };
+      const target: Target = { key, texture, owner, depth, normals, lease, normalMaterials: new Map(), usedNormalSources: new Set(), overrides: new Set(), meshes: [], published: false };
       this.targets.set(guid, target);
       return target;
     } catch (error) {
@@ -298,14 +304,18 @@ export class RenderTargetCaptures {
   }
   private normalMaterial(target: Target, source: Material | null): Material {
     if (!source) return target.normals!;
+    target.usedNormalSources.add(source);
     const existing = target.normalMaterials.get(source);
-    if (existing) return existing;
     let material: Material;
     if (source instanceof MultiMaterial) {
-      const multi = new MultiMaterial("renderTarget:worldNormalSlots", this.scene);
-      multi.subMaterials = source.subMaterials.map((child) => child ? this.normalMaterial(target, child) : null);
+      const multi = existing instanceof MultiMaterial ? existing : new MultiMaterial("renderTarget:worldNormalSlots", this.scene);
+      const children = source.subMaterials.map((child) => child ? this.normalMaterial(target, child) : null);
+      if (multi.subMaterials.length !== children.length || children.some((child, index) => child !== multi.subMaterials[index])) multi.subMaterials = children;
       material = multi;
-    } else material = createRenderTargetNormalMaterial(this.scene, source);
+    } else {
+      if (existing) return existing;
+      material = createRenderTargetNormalMaterial(this.scene, source);
+    }
     target.normalMaterials.set(source, material);
     return material;
   }

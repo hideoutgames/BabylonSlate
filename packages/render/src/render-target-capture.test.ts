@@ -1,5 +1,5 @@
 import {
-  Constants, FreeCamera, Mesh, MeshBuilder, NullEngine, ParticleSystem, RenderTargetTexture,
+  Constants, FreeCamera, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ParticleSystem, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { createDefaultRenderTargetCaptureProperties } from "@babylonslate/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
+import * as normalMaterial from "./render-target-normal-material";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -140,6 +141,33 @@ it("Scene Color particle selection follows emitter actor ownership", () => {
   captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["selected"] }, () => root);
   captures.request("capture"); captures.render();
   expect(particleDraws[1]).toEqual([included]);
+});
+
+it("retires unused normal variants while preserving shared material slots still captured", () => {
+  const { scene, captures } = host();
+  // Shader output is covered in the real-browser proof; retain real material
+  // ownership here without starting asynchronous shader compilation.
+  vi.spyOn(normalMaterial, "createRenderTargetNormalMaterial").mockImplementation((scene) => new NodeMaterial("Capture Variant", scene));
+  captures.setAssets(new Map([["target", { mode: "WorldNormal", width: 16, height: 8 }]]));
+  const first = new StandardMaterial("First", scene);
+  const shared = new StandardMaterial("Shared", scene);
+  const source = new MultiMaterial("Source Slots", scene); source.subMaterials = [first, shared];
+  const mesh = MeshBuilder.CreateBox("Model", {}, scene); mesh.material = source;
+  const sibling = MeshBuilder.CreateBox("Sibling", {}, scene); sibling.material = shared;
+  captures.request("capture"); captures.render();
+  const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
+  const slots = mesh.getMaterialForRenderPass(target.renderPassId) as MultiMaterial;
+  const firstVariant = slots.subMaterials[0]!;
+  const sharedVariant = slots.subMaterials[1]!;
+  source.subMaterials = [new StandardMaterial("Replacement", scene)];
+  captures.request("capture"); captures.render();
+  expect(scene.materials).not.toContain(firstVariant);
+  expect(scene.materials).toContain(sharedVariant);
+  expect(slots.subMaterials).toHaveLength(1);
+  expect(slots.subMaterials[0]).not.toBe(firstVariant);
+  sibling.dispose();
+  captures.request("capture"); captures.render();
+  expect(scene.materials).not.toContain(sharedVariant);
 });
 
 it("admits no GPU target or draw when the shared rendering ceiling cannot fit it", () => {
