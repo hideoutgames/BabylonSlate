@@ -434,12 +434,12 @@ test("WebGPU draws a Tilemap atlas the same way up as its PNG, decoded to RGBA o
 });
 
 /**
- * A 2D scene with one 2D Texture showing the whole 12×24 Texture, green over
- * red, scaled to span several viewport samples: drawn upright its green
- * samples all sit above its red ones.
+ * A 2D scene on `backend` with one 2D Texture showing the whole 12×24
+ * Texture, green over red, scaled to span several viewport samples: drawn
+ * upright its green samples all sit above its red ones.
  */
-async function textureQuadScene(page: Page, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles("webgpu");
+async function textureQuadScene(page: Page, backend: Backend, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles(backend);
   await addTwoToneTexture(page, files, 12, 24, source);
   const scene = createDefaultScene("2d");
   scene.actors.push(createActor("picture", "Picture", {
@@ -469,25 +469,35 @@ function quadReading(proof: ViewportProofResult): TileReading {
   return { green: green.length, red: red.length, reads };
 }
 
+/** Opens the 2D Texture scene and reads it once both tones show; on WebGPU also returns the recorded compressed textures. */
+async function drawTextureQuad(
+  page: Page,
+  testInfo: TestInfo,
+  backend: Backend,
+  source: "png" | "ktx2",
+): Promise<TileReading & { compressed: CompressedTexture[] | null }> {
+  await openMinimalTestProject(page, await textureQuadScene(page, backend, source));
+  await openMainScene(page);
+  let proof: ViewportProofResult | undefined;
+  let reading: TileReading | undefined;
+  await expect(async () => {
+    proof = await viewportProof(page, testInfo, `texture2d-${backend}-${source}`, { skyboxPoints: GRID_POINTS });
+    reading = quadReading(proof);
+    expect(Math.min(reading.green, reading.red), source).toBeGreaterThan(0);
+  }).toPass({ timeout: 60_000 });
+  expect(proof!.backend, source).toBe(backend);
+  return { ...reading!, compressed: await compressedGpuTextures(page) };
+}
+
 test("WebGPU draws a block-compressed KTX2 on a 2D Texture the same way up as its PNG", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const { gpuFailures } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
   const readings: Record<string, TileReading & { compressed: CompressedTexture[] }> = {};
   for (const source of ["png", "ktx2"] as const) {
-    await openMinimalTestProject(page, await textureQuadScene(page, source));
-    await openMainScene(page);
-    let proof: ViewportProofResult | undefined;
-    let reading: TileReading | undefined;
-    await expect(async () => {
-      proof = await viewportProof(page, testInfo, `texture2d-${source}`, { skyboxPoints: GRID_POINTS });
-      reading = quadReading(proof);
-      expect(Math.min(reading.green, reading.red), source).toBeGreaterThan(0);
-    }).toPass({ timeout: 60_000 });
-    expect(proof!.backend, source).toBe("webgpu");
-    const recorded = await compressedGpuTextures(page);
+    const { compressed: recorded, ...reading } = await drawTextureQuad(page, testInfo, "webgpu", source);
     expect(recorded, source).not.toBeNull();
-    readings[source] = { ...reading!, compressed: recorded! };
+    readings[source] = { ...reading, compressed: recorded! };
   }
   const { png, ktx2 } = readings as Record<"png" | "ktx2", TileReading & { compressed: CompressedTexture[] }>;
   const blockCompressed = ktx2.compressed.some((texture) => texture.width === 12 && texture.height === 24);
@@ -496,4 +506,14 @@ test("WebGPU draws a block-compressed KTX2 on a 2D Texture the same way up as it
   expect(blockCompressed, "12x24 KTX2 reached the GPU block-compressed").toBe(true);
   expect(ktx2.reads, "block-compressed 12x24 KTX2").toBe(png.reads);
   expect(gpuFailures).toEqual([]);
+});
+
+test("WebGL2 draws a KTX2 on a 2D Texture the same way up as its PNG", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  // Software GL decodes the KTX2 to RGBA: an unflipped upload whose V flip comes from the GLSL texture matrix.
+  const png = await drawTextureQuad(page, testInfo, "webgl2", "png");
+  const ktx2 = await drawTextureQuad(page, testInfo, "webgl2", "ktx2");
+  await testInfo.attach("texture2d-webgl2-orientation", { body: JSON.stringify({ png, ktx2 }), contentType: "application/json" });
+  expect(png.reads).toBe("upright");
+  expect(ktx2.reads, "12x24 KTX2").toBe(png.reads);
 });
