@@ -124,6 +124,33 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("resolves component references in the explicit target's scene instance", async () => {
+    const references: CompiledScript = { classId: "ChildActor", parentClassId: "Actor", assetGuid: "references", anchors: [],
+      source: `export function tick(ctx) {
+        const other = ctx.getAllActorsOfClass("ChildActor").find(actor => actor !== ctx.self);
+        ctx.setVariable("ownMesh", ctx.getComponentById(ctx.self, "mesh"));
+        ctx.setVariable("otherMesh", ctx.getComponentById(other, "mesh"));
+        ctx.setVariable("sceneMesh", ctx.getComponentById(ctx.getSceneReference(), "mesh"));
+      }`,
+      entryPoints: [{ name: "tick", event: "onTick", isAsync: false }] };
+    const { runtime, world, left, right } = await setup({ deferred: false, scripts: [references] });
+    try {
+      await runtime.loadSceneStream(left);
+      await runtime.loadSceneStream(right);
+      const first = world.getActors().find((actor) => actor.classId === "ChildActor" && actor.getVariable("parentId") === "left")!;
+      const second = world.getActors().find((actor) => actor.classId === "ChildActor" && actor.getVariable("parentId") === "right")!;
+      const firstMesh = first.components.find((component) => component.classId === "MeshComponent")!;
+      const secondMesh = second.components.find((component) => component.classId === "MeshComponent")!;
+      runtime.tick();
+      expect(first.getVariable("ownMesh")).toBe(firstMesh);
+      expect(first.getVariable("otherMesh")).toBe(secondMesh);
+      expect(first.getVariable("sceneMesh")).toBe(firstMesh);
+      expect(second.getVariable("ownMesh")).toBe(secondMesh);
+      expect(second.getVariable("otherMesh")).toBe(firstMesh);
+      expect(second.getVariable("sceneMesh")).toBe(secondMesh);
+    } finally { runtime.stop(); }
+  });
+
   it("cancels pending loads, ignores old acknowledgements, and releases blocking after failure", async () => {
     const { runtime, commands, world, left } = await setup();
     try {

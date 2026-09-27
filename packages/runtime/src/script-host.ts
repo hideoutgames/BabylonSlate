@@ -1183,9 +1183,9 @@ export class ScriptHost {
       getComponentById: (actor, componentId) =>
         findComponentByIdFromTarget(
           actor ?? self,
-          services.resolveInstanceId?.(self, componentId) ?? componentId,
+          services.resolveInstanceId?.(actor ?? self, componentId) ?? componentId,
           services.getActors?.(),
-          services.getSceneReference?.() ?? null,
+          services.getSceneReference?.(actor ?? self) ?? null,
         ),
       callComponentFunction: (target, name, args) =>
         this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
