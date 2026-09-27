@@ -517,6 +517,8 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["stream"];
     const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const target = () => screen.getByTestId("property-stream-stream-scene-streaming-sceneGuid");
+    expect(screen.getByTestId("component-transform-grid-stream-scene-streaming")).toBeTruthy();
+    expect(screen.getByTestId("property-stream-stream-scene-streaming-position-x")).toBeTruthy();
     expect(screen.getByTestId("text3d-text-stream-scene-name")).toHaveProperty("disabled", true);
     fireEvent.click(target());
     expect(await screen.findByTestId("search-item-scene-cave")).toBeTruthy();

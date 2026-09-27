@@ -28,6 +28,7 @@ import {
   classIdsFromVariableMembers,
   areaEmissionTextureGuids,
   createDefaultScene,
+  createSceneStreamingActor,
   createInputAssetPayload,
   isInputAssetType,
   createDefaultSceneLayer,
@@ -90,6 +91,7 @@ export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
   "SceneLayerActor",
+  "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -1500,6 +1502,9 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
+    if (parentClass === "SceneStreamingActor") {
+      payload.components = createSceneStreamingActor("prefab").components;
+    }
     return {
       type: "Class",
       name,

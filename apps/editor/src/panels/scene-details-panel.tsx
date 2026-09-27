@@ -1087,7 +1087,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         template,
       );
       const colliderRows =
-        component.classId === "ColliderComponent"
+        component.classId === "ColliderComponent" || component.classId === "SceneStreamingComponent"
           ? spatialTransformPropertyRows(
               `${actor.id}-${component.id}`,
               scene.viewportMode,
@@ -1366,7 +1366,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     <PropertyGrid
                       title="Transform"
                       rows={colliderRows}
-                      data-testid={`collider-transform-grid-${component.id}`}
+                      data-testid={`${component.classId === "ColliderComponent" ? "collider" : "component"}-transform-grid-${component.id}`}
                     />
                   ) : null}
                   {showExtras && component.classId === "NavMeshComponent" ? (

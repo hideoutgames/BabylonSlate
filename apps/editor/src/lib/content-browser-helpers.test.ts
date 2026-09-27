@@ -76,6 +76,15 @@ import {
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
 
+it("creates a Scene Streaming subclass with an authorable target and attached name marker", () => {
+  const result = buildNewAssetResult({ type: "Class", name: "Room", guid: "room-class", parentClass: "SceneStreamingActor" });
+  expect(result.parentClass).toBe("SceneStreamingActor");
+  expect(result.payload?.components).toEqual([
+    expect.objectContaining({ id: "prefab-scene-streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "", sceneName: "" } }),
+    expect.objectContaining({ classId: "Text3DComponent", parentId: "prefab-scene-streaming", properties: expect.objectContaining({ text: "No Scene", editorOnly: true }) }),
+  ]);
+});
+
 function asset(
   overrides: Partial<IndexedAsset["header"]> & {
     path?: string;
