@@ -231,7 +231,7 @@ async function expectBoxesDrawKtx2(page: Page, testInfo: TestInfo, backend: Back
   expect(readsLitGrey(plain), `${PLAIN_BOX} ${plain}`).toBe(true);
 }
 
-test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport, Emitter Preview and Play draw it", async ({ page }, testInfo) => {
+test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport and Emitter Preview draw it and Play runs", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
@@ -261,7 +261,8 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport,
   const started = await tick();
   await expect.poll(tick, { timeout: 30_000 }).toBeGreaterThan(started + 30);
   await expect(page.getByTestId("play-overlay")).toBeVisible();
-  await expect(page.getByTestId("play-log-tail")).not.toContainText(/Scene loading failed|was not drawn/);
+  // The log tail renders only once something is logged.
+  await expect(page.getByTestId("play-log-tail").filter({ hasText: /Scene loading failed|was not drawn/ })).toHaveCount(0);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
 
