@@ -1,5 +1,6 @@
 import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
@@ -75,6 +76,8 @@ export type PackedGameContent = {
   audioReverbByScene: Map<string, Uint8Array>;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;
+  renderTargets: Map<string, RenderTargetPayload>;
+  renderTargetTextures: Map<string, RenderTargetTexturePayload>;
   postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
   sortingLayers: readonly string[];
@@ -149,6 +152,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const blackboards: Array<{ guid: string; document: unknown }> = [];
   const materialDocuments = new Map<string, MaterialDocument>();
   const materialFunctions = new Map<string, MaterialFunctionDocument>();
+  const renderTargets = new Map<string, RenderTargetPayload>();
+  const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
   const mixers = new Map<string, AudioMixerPayload>();
   const channels = new Map<string, AudioChannelPayload>();
   const audio = new Map<string, AudioPayload>(game.audioPayloads);
@@ -161,6 +166,14 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     const bytes = game.payloads.get(entry.guid);
     if (!bytes) continue;
     const parsed = jsonFromBytes(bytes);
+    if (entry.type === "RenderTarget" && parsed) {
+      renderTargets.set(entry.guid, normalizeRenderTargetPayload(parsed));
+      continue;
+    }
+    if (entry.type === "RenderTargetTexture" && parsed) {
+      renderTargetTextures.set(entry.guid, normalizeRenderTargetTexturePayload(parsed));
+      continue;
+    }
     if (entry.type === "Sprite") {
       const sprite = asSpritePayload(parsed);
       if (sprite) spritePayloads.set(entry.guid, sprite);
@@ -303,6 +316,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     audioReverbByScene,
     materialDocuments,
     materialFunctions,
+    renderTargets,
+    renderTargetTextures,
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
     sortingLayers: game.manifest.sortingLayers?.length ? game.manifest.sortingLayers : DEFAULT_SORTING_LAYERS,

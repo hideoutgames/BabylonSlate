@@ -15,6 +15,7 @@ import {
   fogVolumeBindings,
   outlineBindings,
   createDefaultScene,
+  createDefaultRenderTargetCaptureProperties,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
@@ -34,6 +35,7 @@ import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
@@ -3802,6 +3804,43 @@ describe("Play createEngine view", () => {
       preparing.mockRestore();
       await Promise.allSettled([left, leftRejected, right]);
     }
+  });
+
+  it("admits streamed capture producers only when ready and restores the loaded sibling on unload", async () => {
+    const engine = sharedEngine();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+      const target = allocate(size, options);
+      target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    const { handle } = playHandle(engine);
+    handle.setMeshAssets({ renderTargets: new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]) });
+    const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" };
+    handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    for (const [slotId, actorGuid] of [[4, "pending"], [5, "loaded"]] as const) {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "RenderTargetCapture",
+        ...(slotId === 4 ? { sceneStreamActorGuid: "stream", streamLoadId: 1 } : {}) });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "renderTargetCapture" });
+      handle.applyCommand({ type: "configureRenderTargetCapture", slotId, actorGuid, settings });
+    }
+    const captures = sceneRenderTargetCaptures(handle.scene);
+    const owners: string[] = [];
+    const ready = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const draw = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+      owners.push(this.activeCamera!.name);
+    });
+    try {
+      captures.render();
+      expect(owners).toEqual(["renderTargetCapture:loaded"]);
+      await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:pending");
+      handle.applyCommand({ type: "sceneStreamRemoved", actorGuid: "stream", streamLoadId: 1 });
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "pending" });
+      captures.render();
+      expect(owners.at(-1)).toBe("renderTargetCapture:loaded");
+    } finally { ready.mockRestore(); draw.mockRestore(); }
   });
 
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {

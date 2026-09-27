@@ -3,6 +3,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
   "MaterialObject",
   "Actor",
+  "RenderTargetCapture",
   "Scene",
   "SceneLayer",
   "SceneLayerActor",
@@ -30,6 +31,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "SpriteComponent",
   "TilemapComponent",
   "CameraComponent",
+  "RenderTargetCaptureComponent",
   "SpringArmComponent",
   "LightComponent",
   "AreaRectLightComponent",
@@ -83,6 +85,7 @@ export type SceneLayerExclusiveComponentClassId =
 
 const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "SceneStreamingComponent",
+  "RenderTargetCaptureComponent",
   "RagdollComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent",
   "WaterLakeComponent",

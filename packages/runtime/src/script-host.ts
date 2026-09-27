@@ -1,4 +1,6 @@
 import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
+import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
 import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
 import {
   combineRotators,
@@ -195,6 +197,9 @@ export interface ScriptHostServices {
   getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
   resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
   possessCamera?(target: unknown): void;
+  getRenderTargetMode?(guid: string): RenderTargetMode;
+  getRenderTargetTextureTarget?(guid: string): string | null;
+  captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
@@ -521,6 +526,11 @@ export interface ScriptContext {
   resetMaterialColorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
   possessCamera(target: unknown): void;
+  getRenderTargetMode(guid: string | null): RenderTargetMode;
+  getRenderTargetTextureTarget(guid: string | null): string | null;
+  captureRenderTarget(target: unknown): void;
+  getRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty): unknown;
+  setRenderTargetCaptureProperty(target: unknown, key: RenderTargetCaptureProperty, value: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
   getCameraOrthographicSize(target: unknown): number;
@@ -947,10 +957,21 @@ export class ScriptHost {
       setVariable: (name, value) => {
         store?.setVariable(name, value);
       },
-      getVariableFrom: (target, name) =>
-        (target ?? self)?.getVariable(name),
+      getVariableFrom: (target, name) => {
+        const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
+          return this.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
+        }
+        return object?.getVariable(name);
+      },
       setVariableOn: (target, name, value) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
+          if (this.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
+            this.applyComponentVariable(object, name, value);
+          }
+          return;
+        }
         if (object instanceof Scene && String(name ?? "") === "gravity") {
           const gravity = asScriptVec3(value);
           if (!gravity) return;
@@ -1547,6 +1568,23 @@ export class ScriptHost {
       },
       possessCamera: (target) => {
         services.possessCamera?.(target);
+      },
+      getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
+      getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
+      captureRenderTarget: (target) => {
+        const component = captureComponent(target);
+        if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
+      },
+      getRenderTargetCaptureProperty: (target, key) => {
+        const component = captureComponent(target);
+        if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
+        return key === "actorIds" ? captureActorReferences(component, (id) => services.findActor?.(id)) : captureProperties(component)[key];
+      },
+      setRenderTargetCaptureProperty: (target, key, value) => {
+        const component = captureComponent(target);
+        if (component && this.canInvokeOwner(component) && setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) {
+          this.applyComponentVariable(component, key, value);
+        }
       },
       getCameraFieldOfView: (target) =>
         Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),

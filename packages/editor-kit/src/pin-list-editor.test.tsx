@@ -244,7 +244,7 @@ describe("PinListEditor", () => {
     ]);
   });
 
-  it("shows Asset Type for asset pins", async () => {
+  it.each(["Texture", "RenderTarget", "RenderTargetTexture"])("selects %s as an asset pin constraint", async (assetType) => {
     const onChange = vi.fn();
     render(
       <PinListEditor
@@ -264,11 +264,11 @@ describe("PinListEditor", () => {
     expect(screen.getByTestId("pin-a-asset-type").textContent).toContain("Audio");
     screen.getByTestId("pin-a-asset-type").click();
     await waitFor(() => {
-      expect(screen.getByTestId("search-item-Texture")).toBeTruthy();
+      expect(screen.getByTestId(`search-item-${assetType}`)).toBeTruthy();
     });
-    screen.getByTestId("search-item-Texture").click();
+    screen.getByTestId(`search-item-${assetType}`).click();
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "a", typeClassId: "Texture" }),
+      expect.objectContaining({ id: "a", typeClassId: assetType }),
     ]);
   });
 

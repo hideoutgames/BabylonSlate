@@ -29,6 +29,8 @@ export type DockviewDocumentKind =
   | "particle-graph"
   | "particle-system"
   | "water"
+  | "render-target"
+  | "render-target-texture"
   | "model"
   | "skeleton"
   | "animation"
@@ -63,6 +65,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "particle-graph",
   "particle-system",
   "water",
+  "render-target",
+  "render-target-texture",
   "model",
   "skeleton",
   "animation",
@@ -121,6 +125,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "particle-graph": "particle-graph-canvas",
   "particle-system": "particle-system-preview",
   water: "water-preview",
+  "render-target": "render-target-details",
+  "render-target-texture": "render-target-texture-details",
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
@@ -954,6 +960,8 @@ export function listDockWindows(
     return withOptionalLocks(kind, PARTICLE_GRAPH_WINDOWS, options);
   }
   if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
+  if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Details" }], options);
+  if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Details" }], options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }

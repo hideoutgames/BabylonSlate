@@ -9,6 +9,8 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMaterial",
   "attachToBone",
   "captureRagdollPose",
+  "configureRenderTargetCapture",
+  "captureRenderTarget",
   "setRagdollPose",
   "clearRagdollPose",
   "setMaterialParameter",

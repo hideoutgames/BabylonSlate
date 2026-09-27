@@ -496,6 +496,8 @@ export function startPlaySession(options: {
   /** Sprite Animation clips referenced by loaded Animation Graphs. */
   spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  renderTargets?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetPayload>;
+  renderTargetTextures?: ReadonlyMap<string, import("@babylonslate/core").RenderTargetTexturePayload>;
   waterPayloads?: ReadonlyMap<string, import("@babylonslate/core").WaterDefinition>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -611,6 +613,8 @@ export function startPlaySession(options: {
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
     waterPayloads: options.waterPayloads,
+    renderTargets: options.renderTargets,
+    renderTargetTextures: options.renderTargetTextures,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -940,8 +944,10 @@ export function startPlaySession(options: {
     inputMappings: options.inputMappings,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
-    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes),
+    materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,
+    renderTargets: Object.fromEntries(options.renderTargets ?? []),
+    renderTargetTextures: Object.fromEntries(options.renderTargetTextures ?? []),
   });
 
   try {

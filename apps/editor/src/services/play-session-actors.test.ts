@@ -171,6 +171,31 @@ describe.each(["worker", "in-process"] as const)(
       expect(session!.spawnedActorGuids()).toEqual([]);
     });
 
+    it("delivers capture lens edits and explicit capture requests to the renderer", async () => {
+      const applyCommand = vi.fn();
+      const runtime = await play({
+        actors: [createActor("capture", "Capture", { classId: "Monitor", components: [
+          { id: "lens", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: "screen", captureEveryFrame: false } },
+        ] })],
+        scripts: [{
+          assetGuid: "monitor", classId: "Monitor", parentClassId: "RenderTargetCapture",
+          anchors: [], entryPoints: [{ name: "Capture", event: "Capture", isAsync: false }],
+          source: `export function Capture(ctx) {
+            ctx.setRenderTargetCaptureProperty(ctx.self, "fieldOfView", 45);
+            ctx.captureRenderTarget(ctx.self);
+          }`,
+        }],
+        applyCommand,
+      });
+      const actor = runtime.getWorld().findActor("capture")!;
+      runtime.invokeScriptEvent("Monitor", "Capture", actor);
+      expect(applyCommand).toHaveBeenCalledWith(expect.objectContaining({
+        type: "configureRenderTargetCapture", actorGuid: "capture",
+        settings: expect.objectContaining({ renderTargetGuid: "screen", captureEveryFrame: false, fieldOfView: 45 }),
+      }));
+      expect(applyCommand).toHaveBeenCalledWith({ type: "captureRenderTarget", actorGuid: "capture" });
+    });
+
     it("keeps stream readiness isolated while the host pauses and resumes a blocking graph load", async () => {
       let finish!: () => void;
       const prepare = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));

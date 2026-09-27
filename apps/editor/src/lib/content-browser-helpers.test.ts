@@ -1400,6 +1400,8 @@ describe("content-browser-helpers", () => {
       "ParticleGraph",
       "ParticleSystem",
       "Water",
+      "RenderTarget",
+      "RenderTargetTexture",
       "SkyboxCreator",
     ]);
   });
@@ -1454,6 +1456,8 @@ describe("content-browser-helpers", () => {
     expect([...rendering!.types]).toEqual([
       "Material",
       "MaterialFunction",
+      "RenderTarget",
+      "RenderTargetTexture",
       "Water",
       "ParticleEmitter",
       "ParticleGraph",
@@ -2309,4 +2313,19 @@ describe("Water asset authoring", () => {
     expect(result.chunks.some((chunk) => chunk.id === "document")).toBe(true);
     expect(assetHeaderDependencies("Water", { ...result.payload, materialGuid: "foam-material" })).toContain("foam-material");
   });
+});
+
+it("creates editable render target documents and saves the texture's target dependency", () => {
+  const target = buildNewAssetResult({ type: "RenderTarget", name: "Depth", guid: "target", parentClass: null });
+  expect(target.type).toBe("RenderTarget");
+  expect(JSON.parse(new TextDecoder().decode(target.chunks.find((chunk) => chunk.id === "document")!.data))).toMatchObject({ mode: "SceneColor", width: 512, height: 512 });
+  const texture = buildNewAssetResult({ type: "RenderTargetTexture", name: "Depth Sample", guid: "texture", parentClass: null });
+  expect(texture.payload).toEqual({ renderTargetGuid: null });
+  expect(assetHeaderDependencies("RenderTargetTexture", { ...texture.payload, renderTargetGuid: "target" })).toEqual(["target"]);
+});
+
+it("creates a capture subclass with an editable capture component", () => {
+  const result = buildNewAssetResult({ type: "Class", name: "Security Camera", guid: "capture-class", parentClass: "RenderTargetCapture" });
+  expect(result.payload.components).toEqual([expect.objectContaining({ classId: "RenderTargetCaptureComponent", properties: expect.objectContaining({ captureOnlyActors: false, actorIds: [] }) })]);
+  expect(buildParentClassTreeRows([]).some((row) => row.id === "RenderTargetCapture" && row.parentClassId === "Actor")).toBe(true);
 });

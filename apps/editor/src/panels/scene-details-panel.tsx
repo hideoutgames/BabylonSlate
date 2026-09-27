@@ -3,6 +3,8 @@ import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
+import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -1175,9 +1177,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ? "Text"
             : component.classId === "2DPanelComponent"
               ? "Nine Slice"
-              : component.classId === "RagdollComponent"
-                ? "Bone Names"
-              : "";
+              : component.classId === "RenderTargetCaptureComponent"
+                ? "Capture Actors"
+                : component.classId === "RagdollComponent"
+                  ? "Bone Names"
+                  : "";
       return {
         component,
         index,
@@ -1331,6 +1335,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
+                  {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
+                    <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
+                      onChange={(actorIds) => updateActor((entry) => ({ ...entry, components: entry.components.map((candidate) => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, actorIds } } : candidate) }))} />
+                  ) : null}
                   {showExtras && component.classId === "RagdollComponent" ? (
                     <RagdollBoneNamesEditor
                       boneNames={component.properties.boneNames as string[] | undefined}

@@ -67,6 +67,19 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits capture settings through typed controls and keeps actor filtering opt-in", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "capture", classId: "RenderTargetCaptureComponent", properties: defaultPropertiesFor("RenderTargetCaptureComponent") });
+  const target = rows.find((row) => row.label === "Render Target");
+  if (target?.kind !== "asset") throw new Error("Missing Render Target picker");
+  target.onPick();
+  expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "renderTargetGuid", allowedTypes: ["RenderTarget"] }));
+  const filter = rows.find((row) => row.label === "Capture Only Actors");
+  if (filter?.kind !== "boolean") throw new Error("Missing capture filter");
+  expect(filter.value).toBe(false);
+  filter.onChange(true);
+  expect(update).toHaveBeenCalledWith("captureOnlyActors", true);
+});
+
 it("edits Global Water Volume settings without exposing finite bounds", () => {
   const { rows, update } = rowsFor({ id: "global", classId: "GlobalWaterVolumeComponent", properties: {} });
   expect(rows.some((row) => row.label === "Width" || row.label === "Length")).toBe(false);

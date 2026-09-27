@@ -54,6 +54,11 @@ export function remapSceneStreamingReferences(
   const typedReference = typeof source.classId === "string"
     || source.kind === "actorRef" || source.kind === "objectRef";
   return Object.fromEntries(Object.entries(source).map(([key, entry]) => {
+    if (key === "actorIds" && Array.isArray(entry)) {
+      return [key, entry.map((id) => typeof id === "string"
+        ? idMap.get(id) ?? id
+        : remapSceneStreamingReferences(id, idMap, componentIds))];
+    }
     const typedIdentity = typedReference && (key === "guid" || key === "id");
     const componentIdentity = /Component(?:Id|Guid)$/.test(key)
       || key === "componentId" || key === "componentGuid"

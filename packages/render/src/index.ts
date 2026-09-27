@@ -1,5 +1,6 @@
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";
 export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
 export * from "./canvas-drawing-buffer";

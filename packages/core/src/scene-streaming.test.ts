@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActor, normalizeScene } from "./scene";
 import { cloneSceneStreamingActors } from "./scene-streaming";
+import { createDefaultRenderTargetCaptureProperties } from "./render-target";
 
 describe("scene streaming instances", () => {
   it("isolates two copies, attaches roots to their own origin, and remaps local references without changing assets", () => {
@@ -44,6 +45,26 @@ describe("scene streaming instances", () => {
       { id: "stream-component", classId: "SceneStreamingComponent", properties: { sceneGuid: "  scene-a  ", sceneName: 42 } },
     ] }] });
     expect(scene.actors[0]?.components[0]?.properties).toEqual({ sceneGuid: "scene-a", sceneName: "" });
+  });
+
+  it("keeps capture filters local to each streamed instance without remapping the render target asset", () => {
+    const source = [
+      createActor("capture", "Capture", { classId: "RenderTargetCapture", components: [{
+        id: "subject", classId: "RenderTargetCaptureComponent", properties: {
+          ...createDefaultRenderTargetCaptureProperties(),
+          renderTargetGuid: "subject", captureOnlyActors: true, actorIds: ["subject", "capture", "external"],
+        },
+      }] }),
+      createActor("subject", "Subject"),
+    ];
+    const first = cloneSceneStreamingActors(source, { instanceId: "first", parentActorId: "left" });
+    const second = cloneSceneStreamingActors(source, { instanceId: "second", parentActorId: "right" });
+    for (const { actors } of [first, second]) {
+      expect(actors[0]!.components[0]!.properties.actorIds).toEqual([actors[1]!.id, actors[0]!.id, "external"]);
+      expect(actors[0]!.components[0]!.properties.renderTargetGuid).toBe("subject");
+    }
+    expect(first.actors[0]!.components[0]!.properties.actorIds).not.toEqual(second.actors[0]!.components[0]!.properties.actorIds);
+    expect(source[0]!.components[0]!.properties.actorIds).toEqual(["subject", "capture", "external"]);
   });
 
   it("rejects ambiguous actor identities before producing a partially remapped instance", () => {

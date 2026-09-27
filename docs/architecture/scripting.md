@@ -4,6 +4,12 @@ Shared surface for graph IR, pin types, validation, and JS codegen (engineplan Â
 
 P4 already owns stackâ†’node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them. ExecuteJavaScript hoist lines carry `bodyLine` so a runtime throw inside the user body maps to the CodeMirror line; tapping a session-report row opens the owning Class (or BehaviourTree) asset if needed. `Log` at Error severity is a session-report row (`runtime.log`), not only Output Log.
 
+## Render target capture
+
+The rendering nodes expose **Get Render Target Mode** from a RenderTarget asset reference and **Get Texture Render Target** from a RenderTargetTexture reference. The mode output is the engine **Render Target Mode** enum, usable with enum comparison and selection nodes.
+
+Nodes taking a **Render Target Capture** actor reference expose Get/Set Target, Enabled, Capture Every Frame, Capture Only Actors, Actors, Field Of View, Near Clip, and Far Clip, plus **Capture Render Target**. Actors is an `Actor[]` pin: getters resolve saved IDs to live actors, and setters persist their IDs. Missing/destroyed actors are omitted; mutating a returned array does not change the filter until Set is called. The capture component's reflected properties use the same behavior. Missing asset lookups return Scene Color for mode and None for a texture's target. See [capture rendering](render.md#render-targets).
+
 ## Project getters
 
 The Project node category exposes pure string getters **Get Project Name** (`project.getName`) and **Get Project Version** (`project.getVersion`). They read authored metadata through `ctx.getProjectName()` / `ctx.getProjectVersion()` in Play, worker sessions, and packaged builds. Editor utility hosts read the current project's metadata. Version is set in Project Settings > General and is informational; it does not change execution. See [exported identity](exporter.md#project-identity).

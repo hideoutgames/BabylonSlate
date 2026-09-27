@@ -1,4 +1,5 @@
 import { PostProcessRetirement } from "./post-process-retirement";
+import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -171,7 +172,7 @@ export class ForwardSceneFrameGraph {
     // Babylon clears and restores activeCamera inside its own graph render;
     // the coordinator also pins it per frame. Only authored changes count.
     watch(scene.onActiveCameraChanged, () => {
-      if (this.renderingCamera === undefined && this.suppressCameraMark === 0)
+      if (this.renderingCamera === undefined && this.suppressCameraMark === 0 && !renderTargetCaptureDrawing.has(scene))
         mark();
     });
     watch(scene.onNewSkeletonAddedObservable, mark);

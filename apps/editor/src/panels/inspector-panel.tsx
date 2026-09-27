@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
+import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@babylonslate/core";
+import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -891,6 +893,12 @@ function PrefabComponentDetails({
             onChange={(boneNames) => onUpdate("boneNames", boneNames)}
             data-testid={`ragdoll-bone-names-${component.id}`}
           />
+        ) : null}
+        {component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
+          <RenderTargetCaptureActorsField
+            actors={(openDocuments.find((doc) => doc.ref.kind === "scene")?.content as SerializedScene | undefined)?.actors ?? []}
+            actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
+            onChange={(actorIds) => onUpdate("actorIds", actorIds)} />
         ) : null}
       </div>
       {component.classId === "Text3DComponent" ? (

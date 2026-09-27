@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultWaterDefinition, createDefaultScene, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
+import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
@@ -105,6 +105,20 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it("delivers capture configuration and explicit requests from the worker to the renderer", async () => {
+    const { game, canvas, handle } = await fixture();
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const configure = {
+      type: "configureRenderTargetCapture" as const, actorGuid: "capture", slotId: 7,
+      settings: { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "screen", captureEveryFrame: false },
+    };
+    worker.command({ channel: "command", payload: configure });
+    worker.command({ channel: "command", payload: { type: "captureRenderTarget", actorGuid: "capture" } });
+    expect(handle.applyCommand).toHaveBeenCalledWith(configure);
+    expect(handle.applyCommand).toHaveBeenCalledWith({ type: "captureRenderTarget", actorGuid: "capture" });
+  });
+
   it("acknowledges independent stream readiness and blocks effects without changing manual pause", async () => {
     const { game, canvas, handle } = await fixture();
     let finish!: () => void;
