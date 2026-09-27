@@ -62,6 +62,10 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
     properties.shape = "sphere";
     update();
     const sphere = await draw();
+    properties.edgeFalloff = 0.5;
+    update();
+    const softSphere = await draw();
+    properties.edgeFalloff = 0;
     properties.enabled = false;
     update();
     const disabled = await draw();
@@ -81,7 +85,7 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
     properties.size = [4, 4, 4];
     update();
     const inside = await draw();
-    return { off, box, overlap, moved, sphere, disabled, removed, insideOff, inside };
+    return { off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside };
   } finally {
     removeFogVolumes(scene, "fog-actor");
     root.dispose();

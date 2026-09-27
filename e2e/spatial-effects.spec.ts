@@ -178,6 +178,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(fogDarkening(off, moved, 64, 36), `${path}: live movement reaches the new location`).toBeGreaterThan(30);
       expect(fogDarkening(off, sphere, 74, 36), `${path}: scaled sphere extends horizontally`).toBeGreaterThan(20);
       expect(Math.abs(fogDarkening(off, sphere, 64, 44)), `${path}: scaled sphere remains narrow vertically`).toBeLessThan(1);
+      // The ellipsoid is centered at x=2 with radii [2, 0.5, 1]. Boundary
+      // pixels span x=3.44..3.69 (local x=0.72..0.84), within its falloff band.
+      // The center rays remain in its dense core; both samples stay in bounds.
+      const hardBoundary = fogDarkening(off, sphere, 76, 36);
+      const softBoundary = fogDarkening(off, capture.softSphere, 76, 36);
+      const softCore = fogDarkening(off, capture.softSphere, 64, 36);
+      expect(hardBoundary - softBoundary, `${path}: edge falloff softens the same boundary rays`).toBeGreaterThan(20);
+      expect(softBoundary, `${path}: the soft boundary retains partial fog`).toBeGreaterThan(2);
+      expect(softBoundary, `${path}: the falloff band is thinner than the core`).toBeLessThan(softCore / 2);
+      expect(softCore, `${path}: soft edges retain a dense core`).toBeGreaterThan(30);
       expect(pixelDifference(off, capture.disabled), `${path}: disabled local sources restore scene color`).toBeLessThan(1);
       expect(pixelDifference(off, capture.removed), `${path}: removing the final source restores scene color`).toBeLessThan(1);
       expect(fogDarkening(capture.insideOff, capture.inside, 48, 36), `${path}: camera inside a volume sees fog`).toBeGreaterThan(30);
