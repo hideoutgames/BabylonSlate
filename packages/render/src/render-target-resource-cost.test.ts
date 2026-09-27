@@ -90,15 +90,6 @@ describe("managed render-target storage", () => {
       { ...rgba, format: Constants.TEXTUREFORMAT_DEPTH24_STENCIL8, samples: 4 },
       320,
     ],
-    [
-      {
-        ...rgba,
-        format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8,
-        samples: 4,
-        renderbuffer: true,
-      },
-      256,
-    ],
   ])(
     "accounts representation storage including mip/layer/sample capacity %#",
     (layout, bytes) => {
@@ -114,7 +105,6 @@ describe("managed render-target storage", () => {
       { ...rgba, format: Constants.TEXTUREFORMAT_COMPRESSED_RGBA_S3TC_DXT5 },
       { ...rgba, depth: 2, layers: 2 },
       { ...rgba, mipLevels: 9 },
-      { ...rgba, renderbuffer: true, mipLevels: 2 },
     ])
       expect(() => renderTargetAllocationBytes(layout)).toThrow();
   });

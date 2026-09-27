@@ -4,28 +4,21 @@ import { encodeGlbJsonBin } from "@babylonslate/assets";
 const FLOAT = 5126;
 const UNSIGNED_SHORT = 5123;
 
-/** Volume tetrahedron whose first mesh node (and optional parent) is translated. */
+/** Volume tetrahedron whose mesh node is translated. */
 export function encodeTranslatedTetrahedronGlb(
   translation: [number, number, number],
-  parentTranslation?: [number, number, number],
 ): Uint8Array {
   const positions = new Float32Array([0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5]);
   const indices = new Uint16Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3]);
   const bin = new Uint8Array(positions.byteLength + indices.byteLength);
   bin.set(new Uint8Array(positions.buffer), 0);
   bin.set(new Uint8Array(indices.buffer), positions.byteLength);
-  const nodes = parentTranslation
-    ? [
-        { children: [1], translation: parentTranslation },
-        { mesh: 0, translation },
-      ]
-    : [{ mesh: 0, translation }];
   return encodeGlbJsonBin(
     {
       asset: { version: "2.0" },
       scene: 0,
       scenes: [{ nodes: [0] }],
-      nodes,
+      nodes: [{ mesh: 0, translation }],
       meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
       accessors: [
         {

@@ -16,8 +16,6 @@ export type RenderTargetStorage = {
   /** Include allocated levels even when automatic mip generation is disabled. */
   mipLevels?: number | "full";
   samples?: number;
-  /** Renderbuffers have no resolved texture or mip chain. */
-  renderbuffer?: boolean;
 };
 
 function positive(value: number): number {
@@ -113,16 +111,10 @@ export function renderTargetAllocationBytes(
   const full = 1 + Math.floor(Math.log2(Math.max(width, height, depth)));
   const levels =
     layout.mipLevels === "full" ? full : positive(layout.mipLevels ?? 1);
-  if (
-    levels > full ||
-    (layout.renderbuffer && (levels !== 1 || layers !== 1 || depth !== 1))
-  )
-    throw new Error(
-      "Invalid managed render-target mip or renderbuffer layout.",
-    );
+  if (levels > full)
+    throw new Error("Invalid managed render-target mip layout.");
   const pixelSize = pixelBytes(layout.format, layout.type);
   const base = checked(width * height * depth * layers * pixelSize);
-  if (layout.renderbuffer) return checked(base * samples);
   let bytes = base;
   for (let level = 1; level < levels; level++) {
     width = Math.max(1, Math.floor(width / 2));
