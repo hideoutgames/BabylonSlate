@@ -345,11 +345,10 @@ export class RenderTargetCaptures {
       }
       this.rootsDirty = false;
     }
-    const admitted = admittedSceneMeshes(this.scene);
+    const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
     const internal = target.texture.getInternalTexture();
     let count = 0;
-    for (const mesh of this.scene.meshes) {
-      if (admitted && !admitted.includes(mesh)) continue;
+    for (const mesh of meshes) {
       if (this.isEligible(capture, target, internal, mesh)) target.meshes[count++] = mesh;
     }
     target.meshes.length = count;
@@ -360,7 +359,10 @@ export class RenderTargetCaptures {
     if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
     const metadata = mesh.metadata as Record<string, unknown> | null;
     if (metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual) return false;
-    if (capture.settings.captureOnlyActors && !this.ownedByIncluded(mesh, capture.includeIds)) return false;
+    if (capture.settings.captureOnlyActors) {
+      const actorId = this.ownerOf(mesh);
+      if (!actorId || !capture.includeIds.has(actorId)) return false;
+    }
     if (target.depth && mesh.infiniteDistance) return false;
     if ((target.normals || target.depth) && mesh.material) {
       let opaque = false;
@@ -376,13 +378,6 @@ export class RenderTargetCaptures {
       for (const texture of mesh.material.getActiveTextures()) if (texture.getInternalTexture() === internal) return false;
     }
     return true;
-  }
-  private ownedByIncluded(mesh: Node, include: ReadonlySet<string>): boolean {
-    for (let node: Node | null = mesh; node; node = node.parent) {
-      const id = this.rootOwners.get(node as AbstractMesh);
-      if (id && include.has(id)) return true;
-    }
-    return false;
   }
   private normalMeshMaterial(target: Target, mesh: AbstractMesh): Material {
     const source = mesh.material;

@@ -12,6 +12,7 @@ type Scope = {
   slots: Map<number, SceneStreamIdentity & { instanceActorGuid: string }>;
   restore: AbstractMesh[];
   textureScratch: Set<BaseTexture>;
+  liveScratch: Set<BaseTexture | IParticleSystem>;
   cached?: {
     meshes: AbstractMesh[];
     meshSet: Set<AbstractMesh>;
@@ -63,7 +64,10 @@ export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefi
   const newestParticle = scene.particleSystems.at(-1);
   if (cached.particles && cached.particleCount === scene.particleSystems.length &&
       cached.particleSlotCount === scope.slots.size && cached.newestParticle === newestParticle) return cached.particles;
-  for (const system of scope.particles) if (!scene.particleSystems.includes(system)) scope.particles.delete(system);
+  const live = scope.liveScratch;
+  live.clear();
+  for (const system of scene.particleSystems) live.add(system);
+  for (const system of scope.particles) if (!live.has(system)) scope.particles.delete(system);
   const particles = cached.particles ?? [];
   let count = 0;
   for (const system of scene.particleSystems) {
@@ -82,7 +86,10 @@ export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefi
 export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMesh[]): Set<BaseTexture> | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  for (const texture of scope.textures) if (!scene.textures.includes(texture)) scope.textures.delete(texture);
+  const live = scope.liveScratch;
+  live.clear();
+  for (const texture of scene.textures) live.add(texture);
+  for (const texture of scope.textures) if (!live.has(texture)) scope.textures.delete(texture);
   const textures = scope.textureScratch;
   textures.clear();
   for (const texture of scope.textures) textures.add(texture);
@@ -99,7 +106,7 @@ export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T):
   if (!admitted) return draw();
   const scope = scopes.get(scene)!;
   const included = scope.cached!.meshSet;
-  const restore = scope.restore;
+  const restore = scope.restore.length ? [] : scope.restore;
   try {
     for (const mesh of scene.meshes) {
       if (included.has(mesh) || !mesh.isEnabled(false)) continue;
@@ -124,7 +131,8 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     if (!scope) {
       scope = {
         binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
-        particles: new Set(scene.particleSystems), slots: new Map(), restore: [], textureScratch: new Set(),
+        particles: new Set(scene.particleSystems), slots: new Map(), restore: [],
+        textureScratch: new Set(), liveScratch: new Set(),
       };
       scopes.set(scene, scope);
     }
