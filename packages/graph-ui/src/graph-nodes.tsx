@@ -27,6 +27,7 @@ import {
 } from "./node-theme";
 import { pinDefaultPreview } from "./pin-default-preview";
 import { PinDefaultPreviewWidget } from "./pin-default-widget";
+import { isPinWired } from "./pin-connections";
 
 type LogNodeData = {
   message: string;
@@ -124,23 +125,6 @@ function PinVisual({
       size="var(--graph-pin-size, 22px)"
       className="graph-pin-visual"
     />
-  );
-}
-
-function isPinWired(
-  edges: ReadonlyArray<{
-    source: string;
-    target: string;
-    sourceHandle?: string | null;
-    targetHandle?: string | null;
-  }>,
-  nodeId: string,
-  pin: SerializedPin,
-): boolean {
-  return edges.some((edge) =>
-    pin.direction === "out"
-      ? edge.source === nodeId && (edge.sourceHandle ?? "") === pin.id
-      : edge.target === nodeId && (edge.targetHandle ?? "") === pin.id,
   );
 }
 

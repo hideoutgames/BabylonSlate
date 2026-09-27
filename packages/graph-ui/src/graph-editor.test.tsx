@@ -2073,6 +2073,64 @@ describe("GraphEditor", () => {
     expect(execOutB?.getAttribute("data-pin-connected")).toBe("false");
   });
 
+  it("refreshes pin connections and defaults across edge replacement and restoration", async () => {
+    const pin = (id: string, direction: "in" | "out") => ({
+      id, name: id, direction, kind: "data" as const, type: { kind: "float" },
+    });
+    const graph: GraphDocument = {
+      nodes: [
+        { id: "source", type: "test.source", position: { x: 0, y: 0 }, data: { __pins: [pin("value", "out")] } },
+        { id: "get", type: "variables.get", position: { x: 300, y: 0 }, data: { __pins: [pin("target", "in"), pin("value", "out")] } },
+        { id: "sink", type: "test.sink", position: { x: 600, y: 0 }, data: { __pins: [pin("value", "in"), pin("other", "in")], "default:value": 10 } },
+      ],
+      edges: [],
+    };
+    const connected = [
+      { id: "input", source: "source", sourceHandle: "value", target: "get", targetHandle: "target" },
+      { id: "output", source: "get", sourceHandle: "value", target: "sink", targetHandle: "value" },
+    ];
+    const { container, rerender } = render(<GraphEditor initialGraph={graph} />);
+    const wired = (node: string, handle: string) => container.querySelector(
+      `[data-id="${node}"] [data-handleid="${handle}"] [data-pin-connected]`,
+    )?.getAttribute("data-pin-connected");
+    const defaultValue = () => container.querySelector('[data-id="sink"] [data-handleid="value"]')
+      ?.parentElement?.querySelector("[data-pin-default]") ?? null;
+    expect(wired("get", "target")).toBe("false");
+    expect(wired("get", "value")).toBe("false");
+    expect(defaultValue()).not.toBeNull();
+
+    rerender(<GraphEditor initialGraph={{ ...graph, edges: connected }} />);
+    await waitFor(() => {
+      expect(wired("source", "value")).toBe("true");
+      expect(wired("get", "target")).toBe("true");
+      expect(wired("get", "value")).toBe("true");
+      expect(wired("sink", "value")).toBe("true");
+      expect(defaultValue()).toBeNull();
+    });
+
+    rerender(<GraphEditor initialGraph={{ ...graph, edges: [connected[0]!, { ...connected[1]!, targetHandle: "other" }] }} />);
+    await waitFor(() => {
+      expect(wired("sink", "value")).toBe("false");
+      expect(wired("sink", "other")).toBe("true");
+      expect(defaultValue()).not.toBeNull();
+    });
+
+    rerender(<GraphEditor initialGraph={graph} />);
+    await waitFor(() => {
+      expect(wired("source", "value")).toBe("false");
+      expect(wired("get", "target")).toBe("false");
+      expect(wired("get", "value")).toBe("false");
+      expect(wired("sink", "other")).toBe("false");
+    });
+    rerender(<GraphEditor initialGraph={{ ...graph, edges: connected }} />);
+    await waitFor(() => {
+      expect(wired("get", "target")).toBe("true");
+      expect(wired("get", "value")).toBe("true");
+      expect(wired("sink", "value")).toBe("true");
+      expect(defaultValue()).toBeNull();
+    });
+  });
+
   it("shows a read-only bool default between an empty pin and its name", () => {
     const graph: GraphDocument = {
       nodes: [

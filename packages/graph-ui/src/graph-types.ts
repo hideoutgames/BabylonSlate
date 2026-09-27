@@ -55,6 +55,12 @@ export type PaletteNode = {
   latent?: boolean;
   /** When true, added nodes stamp `data.__editorOnly` for the canvas banner. */
   editorOnly?: boolean;
+  /**
+   * Needs a Target on another object (other-class members, engine component
+   * APIs, scene-placed components). Context Sensitive hides these rows unless
+   * a dragged pin makes them compatible.
+   */
+  outOfContext?: boolean;
 };
 
 export type NavigateRequest = {
