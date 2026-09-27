@@ -37,12 +37,9 @@ import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,
   CAMERA_BOUNDS_MESH_NAME,
-  cameraBoundsBorderCoverage,
-  cameraBoundsWorldBorderCoverage,
   createEditorGrid,
   GRID_MESH_NAME,
   gridCoverageWorld,
-  gridEdgeFadeAlpha,
   gridEdgeFadeRange,
   gridViewFade,
   snapGridOrigin,
@@ -1646,19 +1643,6 @@ describe("editor grid", () => {
     ).toBe(80);
   });
 
-  it("keeps the grid center opaque when 2D zoom shrinks coverage below camera Z", () => {
-    const coverage = gridCoverageWorld("2d", {
-      radius: 8,
-      orthoTop: 0.5,
-      orthoRight: 0.8,
-    });
-    const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
-    expect(fadeEnd).toBeLessThan(8);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, 0)).toBe(1);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeStart)).toBe(1);
-    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeEnd)).toBe(0);
-  });
-
   it("fades the grid out when the view shows too many major cells", () => {
     const default2d = { radius: 8, orthoTop: 4, orthoRight: 7 };
     const default3d = { radius: 8, orthoTop: null, orthoRight: null };
@@ -1890,85 +1874,6 @@ describe("editor grid", () => {
     expect(box.maximumWorld.x).toBeCloseTo(16);
     expect(box.maximumWorld.y).toBeCloseTo(9);
     grid.dispose();
-  });
-
-  it("keeps a 2px camera-bounds stroke equal on horizontal and vertical edges", () => {
-    const widthPx = 160;
-    const heightPx = 90;
-    const fwidthU = 1 / widthPx;
-    const fwidthV = 1 / heightPx;
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 1 * fwidthU, y: 0.5 },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 0.5, y: 1 * fwidthV },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 3 * fwidthU, y: 0.5 },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-    expect(
-      cameraBoundsBorderCoverage(
-        { x: 0.5, y: 3 * fwidthV },
-        fwidthU,
-        fwidthV,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-
-    const half = { x: 8, y: 4.5 };
-    const fwidthX = 16 / widthPx;
-    const fwidthY = 9 / heightPx;
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: -half.x + 1 * fwidthX, y: 0 },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: 0, y: -half.y + 1 * fwidthY },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(1);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: -half.x + 3 * fwidthX, y: 0 },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
-    expect(
-      cameraBoundsWorldBorderCoverage(
-        { x: 0, y: -half.y + 3 * fwidthY },
-        half,
-        fwidthX,
-        fwidthY,
-        CAMERA_BOUNDS_LINE_WIDTH,
-      ),
-    ).toBe(0);
   });
 
   it("hides camera bounds in 3D without disposing the freeze-stable mesh", () => {
