@@ -131,6 +131,27 @@ describe("rendering quality sessions", () => {
       qualityGroupLabel(resolveRenderingQuality(reapplied), "shadows"),
     ).toBe("high");
   });
+  it("gives projects saved before Geometry existed their shared tier instead of Custom", () => {
+    const saved = (level: "low" | "ultra") => {
+      const { geometry: _unsaved, ...quality } = normalizeRenderingQuality(qualityPresetPatch(level));
+      void _unsaved;
+      return quality;
+    };
+    const low = normalizeRenderingQuality(saved("low"));
+    expect(low.geometry).toMatchObject({ lodDistanceScale: 0.5, preset: "low" });
+    const mixed = normalizeRenderingQuality({ ...saved("ultra"), textures: saved("low").textures });
+    expect(mixed.geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1, preset: "medium" });
+  });
+  it("switches automatic LOD and its distance scale from the console", () => {
+    const session = new RenderingQualitySession();
+    expect(session.execute("geometry", "lod", "off").success).toBe(true);
+    expect(session.execute("geometry", "distance", "2.5").success).toBe(true);
+    expect(session.effective().geometry).toMatchObject({ autoLod: false, lodDistanceScale: 2.5, preset: "custom" });
+    expect(session.execute("geometry", "distance", "10").success).toBe(false);
+    expect(session.effective().geometry.lodDistanceScale).toBe(2.5);
+    session.execute("geometry", "reset");
+    expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1 });
+  });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({
       render: {

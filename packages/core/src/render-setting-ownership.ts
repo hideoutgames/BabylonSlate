@@ -31,6 +31,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     anisotropy: "textures",
     byteBudget: "textures",
   },
+  geometry: { autoLod: "geometry", lodDistanceScale: "geometry" },
   postprocessing: { resolutionScale: "postprocessing" },
   lighting: { localLightMode: "lighting", maxLocalLights: "lighting" },
 } as const satisfies {

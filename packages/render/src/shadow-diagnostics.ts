@@ -99,7 +99,8 @@ export function captureShadowDiagnostics(
   const renderSize = camera?.outputRenderTarget?.getSize();
   const lights = scene.lights.slice(0, limit(options.maxLights, 32));
   const statuses = controller?.diagnostics(lights) ?? [];
-  const selectedMeshes = options.meshes ?? [];
+  // Automatic LOD levels draw in place of their master and share its state.
+  const selectedMeshes = (options.meshes ?? []).filter((mesh) => !mesh.isBlocked);
   const meshes = selectedMeshes.slice(0, limit(options.maxMeshes, 256));
   return {
     version: 1,

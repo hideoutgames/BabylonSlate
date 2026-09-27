@@ -121,7 +121,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
       description: "Query, set or reset rendering scalability",
       parameters: [
-        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : [])] },
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : [])] },
         { name: "value", type: "string", optional: true },
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),

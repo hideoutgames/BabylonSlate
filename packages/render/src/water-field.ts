@@ -54,7 +54,8 @@ const encode = (value: number, [min, max]: readonly [number, number]) =>
 
 /** Meshes that can meet the water: visible world geometry, not editor helpers, terrain or water. */
 export function isWaterContactMesh(mesh: AbstractMesh): boolean {
-  if (!(mesh instanceof Mesh || mesh instanceof InstancedMesh) || mesh instanceof LinesMesh) return false;
+  // LOD levels share their master's placement; the master already counts.
+  if (mesh.isBlocked || !(mesh instanceof Mesh || mesh instanceof InstancedMesh) || mesh instanceof LinesMesh) return false;
   // Foreground and UI groups are overlays, not world geometry.
   if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.renderingGroupId > RENDERING_GROUP.world) return false;
   const meta = mesh.metadata as Record<string, unknown> | null;

@@ -178,7 +178,7 @@ for (const variant of [
         expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
         expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
           width: 400, height: 240, customResolution: true, blackBars: true,
-          quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, postprocessing: { resolutionScale: 0.5 } },
+          quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } },
           shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
           effects: { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
           cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
