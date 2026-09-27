@@ -28,6 +28,28 @@ function asset(
 }
 
 describe("collectExportClosure", () => {
+  it("packs nested streamed scenes and their assets without requiring a Change Scene node", () => {
+    const stream = (id: string, target: string) => createActor(id, id, { classId: "SceneStreamingActor", components: [
+      { id: `${id}-component`, classId: "SceneStreamingComponent", properties: { sceneGuid: target, sceneName: target } },
+    ] });
+    const scenes: Record<string, SerializedScene> = {
+      parent: { ...createDefaultScene(), actors: [stream("left", "child"), stream("right", "child")] },
+      child: { ...createDefaultScene(), actors: [stream("nested", "leaf")] },
+      leaf: { ...createDefaultScene(), actors: [createActor("mesh", "Mesh", { components: [
+        { ...createMeshComponent("model", "model"), properties: { meshKind: "model", assetGuid: "model-asset" } },
+      ] })] },
+    };
+    const result = collectExportReachability({ startupSceneGuid: "parent", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [
+        ...Object.keys(scenes).map((guid) => asset({ guid, type: "Scene", name: guid })),
+        asset({ guid: "model-asset", type: "Model", name: "Model" }),
+        asset({ guid: "unused", type: "Scene", name: "Unused" }),
+      ], sceneByGuid: (guid) => scenes[guid] ?? null, graphByGuid: () => null });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toEqual(["child", "leaf", "model-asset", "parent"]);
+    expect([...result.value.bySceneGuid.get("leaf")!].sort()).toEqual(["leaf", "model-asset"]);
+  });
   it("packs Class variable constraints and defaults without scanning ordinary strings", () => {
     const graph: SerializedGraph = {
       nodes: [],

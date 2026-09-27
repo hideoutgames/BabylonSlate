@@ -42,7 +42,7 @@ import {
 } from "@babylonslate/object-model";
 import {
   createDefaultSceneSettings,
-  cloneSceneStreamingActors,
+  cloneSceneStreamingActorsSteps,
   DEFAULT_PLAY_FRAME_CAP,
   eulerDegreesToQuaternion,
   isSceneLayerDeniedComponent,
@@ -1252,8 +1252,10 @@ class InProcessRuntime implements RuntimeDriver {
   private withStreamBlock(operation: Promise<void>, blocking: boolean): Promise<void> {
     if (!blocking) return operation;
     this.streamBlockingCount++;
+    if (this.streamBlockingCount === 1) this.emit({ type: "sceneStreamBlocking", blocking: true });
     return operation.finally(() => {
       this.streamBlockingCount--;
+      if (this.streamBlockingCount === 0 && !this.stopped) this.emit({ type: "sceneStreamBlocking", blocking: false });
       this.accumulator = 0;
       this.flushOwnerActions();
     });
@@ -1313,7 +1315,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.stopped || stream.actor.destroyed || stream.actor.world !== this.world) throw sceneRealizationCancelled();
     };
     checkpoint();
-    const cloned = cloneSceneStreamingActors(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
+    const cloned = yield* cloneSceneStreamingActorsSteps(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
     stream.idMap = cloned.idMap;
     let origin = component.transform;
     let parentId = component.parentId;
@@ -4591,12 +4593,14 @@ class InProcessRuntime implements RuntimeDriver {
     if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
     this.slotByGuid.set(actor.guid, slotId);
     this.slotOwners.set(slotId, actor);
+    const stream = this.actorStream.get(actor);
     this.emit({
       type: "spawn",
       slotId,
       actorGuid: actor.guid,
       classId: actor.classId,
       ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}),
+      ...(stream ? { sceneStreamActorGuid: stream.actor.guid, streamLoadId: stream.loadId } : {}),
     });
     return slotId;
   }

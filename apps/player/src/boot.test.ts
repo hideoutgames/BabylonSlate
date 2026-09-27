@@ -75,6 +75,8 @@ async function fixture(withWater = false) {
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),
+    prepareSceneStream: vi.fn(async (_slots: readonly number[], _signal: AbortSignal, progress?: (value: number) => void) => { progress?.(1); }),
+    setSceneStreamingPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
     renderPathStatus: () => resolveRenderingPipeline(game.manifest.render),
     whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
@@ -103,6 +105,25 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it("acknowledges independent stream readiness and blocks effects without changing manual pause", async () => {
+    const { game, canvas, handle } = await fixture();
+    let finish!: () => void;
+    handle.prepareSceneStream.mockImplementationOnce(async () => new Promise<void>((resolve) => { finish = resolve; }));
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const before = worker.messages.length;
+    worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: true } });
+    worker.command({ channel: "command", payload: { type: "sceneStreamLoading", actorGuid: "left", streamLoadId: 5 } });
+    worker.command({ channel: "command", payload: { type: "sceneStreamRealized", actorGuid: "left", streamLoadId: 5, slotIds: [7, 9] } });
+    expect(handle.setSceneStreamingPaused).toHaveBeenCalledWith(true);
+    expect(worker.messages.slice(before).some((message) => message.channel === "control" && message.payload.type === "setPaused")).toBe(false);
+    expect(worker.messages.some((message) => message.channel === "control" && message.payload.type === "sceneStreamReady")).toBe(false);
+    finish();
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneStreamReady", actorGuid: "left", streamLoadId: 5 } }));
+    expect(handle.loadScene).not.toHaveBeenCalled();
+    worker.command({ channel: "command", payload: { type: "sceneStreamBlocking", blocking: false } });
+    expect(handle.setSceneStreamingPaused).toHaveBeenLastCalledWith(false);
+  });
   it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
     const { game, canvas } = await fixture(true);
     TestWorker.failPost = fallbackMode;

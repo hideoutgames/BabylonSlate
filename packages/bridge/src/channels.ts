@@ -313,6 +313,9 @@ export type CommandMessage =
       classId: string;
       /** Live overlay instance id when this actor belongs to a SceneLayer. */
       sceneLayerId?: string | null;
+      /** Loading stream ownership is available before asynchronous visual assignment. */
+      sceneStreamActorGuid?: string;
+      streamLoadId?: number;
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
@@ -468,6 +471,7 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
+  | { type: "sceneStreamBlocking"; blocking: boolean }
   | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
   | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
   | { type: "sceneLoadFailed"; sceneAssetGuid: string; sceneLoadId: number; message: string }

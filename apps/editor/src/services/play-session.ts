@@ -801,6 +801,7 @@ export function startPlaySession(options: {
 
   const onCommand = (command: CommandMessage) => {
     noteCommand();
+    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
     if (command.type === "spawn") {

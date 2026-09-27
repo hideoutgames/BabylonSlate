@@ -545,6 +545,7 @@ function initializePlayer(
   own(() => streamReadiness.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (halted) return;
+    if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
       const paused = pauseState.setConsolePaused(command.paused === true);
       handle.setPaused(paused);
