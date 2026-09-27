@@ -328,6 +328,21 @@ describe("app settings", () => {
     expect(await store.load()).toEqual(next);
   });
 
+  it("loads settings saved with retired keys and drops them", () => {
+    const parsed = engineSettingsSchema.parse({
+      templatesFolder: "/Templates",
+      defaultProjectLocation: "/Projects",
+      undoHistoryLength: 100,
+      debuggerDefaults: { showFps: true, logLevel: "debug", overlayConsole: false },
+    });
+    expect(parsed.undoHistoryLength).toBe(100);
+    expect(parsed.debuggerDefaults.overlayConsole).toBe(false);
+    expect(parsed).not.toHaveProperty("templatesFolder");
+    expect(parsed).not.toHaveProperty("defaultProjectLocation");
+    expect(parsed.debuggerDefaults).not.toHaveProperty("showFps");
+    expect(parsed.debuggerDefaults).not.toHaveProperty("logLevel");
+  });
+
   it("serializes debugger, viewport, appearance, and recent updates", async () => {
     localStorage.clear();
     const stores = Array.from({ length: 4 }, () => new WebAppSettingsStore());
