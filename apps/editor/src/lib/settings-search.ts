@@ -183,7 +183,6 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["graph", "Connection Distance (Pixels)", "setting-graph-distance"],
   ["graph", "Shake Nodes To Disconnect", "setting-graph-shake"],
   ["thumbnails", "Generate Thumbnails", "setting-thumbnails"],
-  ["templates", "Templates Folder", "setting-templates-folder"],
   ["extensions", "Engine Extensions"],
   ["focus", "Keep Panels In Focus Mode"],
   ...EDITOR_COMMANDS.map(

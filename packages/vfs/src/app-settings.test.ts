@@ -314,7 +314,6 @@ describe("app settings", () => {
     const store = new MemoryAppSettingsStore();
     const next = engineSettingsSchema.parse({
       ...defaultEngineSettings(),
-      templatesFolder: "/Templates",
       undoHistoryLength: 100,
       recents: [
         {

@@ -54,7 +54,6 @@ const focusKeepPanelList = (fallback: readonly string[]) =>
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
-  templatesFolder: z.string().nullable().default(null),
   defaultProjectLocation: z.string().nullable().default(null),
   recents: z
     .array(

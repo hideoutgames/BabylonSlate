@@ -23,15 +23,11 @@ describe("Electron userData app settings", () => {
     const store = new ElectronAppSettingsStore(bridge);
 
     const next = defaultEngineSettings();
-    next.templatesFolder = "Templates";
     next.automaticUpdatesEnabled = false;
     next.seenReleaseVersions = ["1.2.3"];
     await store.save(next);
 
     expect(bridge.writeSettings).toHaveBeenCalledOnce();
-    expect((await new ElectronAppSettingsStore(bridge).load()).templatesFolder).toBe(
-      "Templates",
-    );
     const restored = await new ElectronAppSettingsStore(bridge).load();
     expect(restored.automaticUpdatesEnabled).toBe(false);
     expect(restored.seenReleaseVersions).toEqual(["1.2.3"]);

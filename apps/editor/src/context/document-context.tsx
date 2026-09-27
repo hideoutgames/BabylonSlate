@@ -77,7 +77,6 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
-  createTemplateStorage,
   getHostPlatform,
   isTestModeEnabled,
   createSecretStore,
@@ -951,14 +950,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [projectService, settingsStore]);
 
   const refreshTemplates = useCallback(async () => {
-    setTemplates(
-      await loadTemplateCards({
-        platform: getHostPlatform(),
-        loadSettings: () => settingsStore.load(),
-        openTemplatesFolder: createTemplateStorage,
-      }),
-    );
-  }, [settingsStore]);
+    setTemplates(await loadTemplateCards());
+  }, []);
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
