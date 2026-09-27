@@ -1059,6 +1059,11 @@ export class AssetRegistry {
   async reconcileTextureAlignment(options: {
     guids?: Iterable<string>;
     canWrite?: (guid: string) => boolean;
+    /**
+     * Usage to check and re-encode with instead of the saved one: an open
+     * Texture tab's, which an unsaved Details edit may have changed.
+     */
+    usageFor?: (guid: string) => string | undefined;
     /** KTX2 base sizes by chunk sha256, kept across registry remounts. */
     ktx2SizeCache?: Map<string, ImageSize | null>;
   } = {}): Promise<string[]> {
@@ -1072,7 +1077,7 @@ export class AssetRegistry {
       const asset = this.byGuid.get(guid);
       if (!asset || asset.placeholder || asset.header.type !== "Texture") continue;
       const payload = asset.header.payload;
-      const usage = String(payload.usage ?? "albedo");
+      const usage = options.usageFor?.(guid) ?? String(payload.usage ?? "albedo");
       if (payload.compressionState !== "compressed") continue;
       if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) continue;
       // Without source pixels a forced retry would strand it `pending`.
@@ -1081,7 +1086,7 @@ export class AssetRegistry {
       if (options.canWrite && !options.canWrite(guid)) continue;
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
-        if (await this.retryTextureEncoding(guid, { force: true })) requeued.push(guid);
+        if (await this.retryTextureEncoding(guid, { force: true, usage })) requeued.push(guid);
       } catch {
         // One unreadable texture must not stop the pass.
       }

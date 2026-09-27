@@ -2553,10 +2553,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       : null;
   useEffect(() => {
     if (!textureGuardProject) return;
-    projectService.setTextureWriteGuard((guid) => textureUsageBlockedReason(guid) === null);
+    // An open Texture tab's Usage may be an unsaved Details edit that already
+    // re-encoded; the pass must not undo it with the saved Usage.
+    const usageFor = (guid: string): string | undefined => {
+      const asset = projectService.registry?.getByGuid(guid);
+      if (!asset) return undefined;
+      const open = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
+      const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
+      return typeof usage === "string" ? usage : undefined;
+    };
+    projectService.setTextureWriteGuard((guid) => textureUsageBlockedReason(guid) === null, { usageFor });
     void projectService.reconcileTextureAlignment();
     return () => projectService.setTextureWriteGuard(null);
-  }, [projectService, textureGuardProject, textureUsageBlockedReason]);
+  }, [documentService, projectService, textureGuardProject, textureUsageBlockedReason]);
 
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>

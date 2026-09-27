@@ -311,7 +311,11 @@ export class ProjectService {
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
   /** Lets the texture alignment pass write, for the project it was set for. */
-  private textureWriteGuard: { projectGuid: string | null; canWrite: (guid: string) => boolean } | null = null;
+  private textureWriteGuard: {
+    projectGuid: string | null;
+    canWrite: (guid: string) => boolean;
+    usageFor?: (guid: string) => string | undefined;
+  } | null = null;
   /** Committed KTX2 base sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   private textureAlignmentChain: Promise<unknown> = Promise.resolve();
@@ -416,7 +420,7 @@ export class ProjectService {
         this.emitRegistryChange();
         // A Tileset, Sprite or Sprite Animation may have picked the texture
         // while it encoded; recheck it, unless an unsaved Details Usage chose
-        // this encode (the pass reads the saved Usage).
+        // this encode (without a guard `usageFor`, the pass reads the saved one).
         const saved = this.assetRegistry?.getByGuid(result.assetGuid)?.header.payload.usage;
         if (result.usage === undefined || result.usage === String(saved ?? "albedo")) {
           void this.reconcileTextureAlignment([result.assetGuid]);
@@ -557,12 +561,19 @@ export class ProjectService {
 
   /**
    * Let the texture alignment pass write to this project: `canWrite(guid)`
-   * is false for Textures that are locked or read-only. The editor sets it
-   * once source-control locks are known, then runs the pass; null (or
-   * closing the project) stops it.
+   * is false for Textures that are locked or read-only. `usageFor(guid)` is
+   * the Usage an open Texture tab shows, saved or not, so the pass checks
+   * and re-encodes as a Details edit did. The editor sets it once
+   * source-control locks are known, then runs the pass; null (or closing the
+   * project) stops it.
    */
-  setTextureWriteGuard(canWrite: ((guid: string) => boolean) | null): void {
-    this.textureWriteGuard = canWrite ? { projectGuid: this.projectGuid, canWrite } : null;
+  setTextureWriteGuard(
+    canWrite: ((guid: string) => boolean) | null,
+    options: { usageFor?: (guid: string) => string | undefined } = {},
+  ): void {
+    this.textureWriteGuard = canWrite
+      ? { projectGuid: this.projectGuid, canWrite, usageFor: options.usageFor }
+      : null;
   }
 
   /**
@@ -579,6 +590,7 @@ export class ProjectService {
       const requeued = await registry.reconcileTextureAlignment({
         guids,
         canWrite: guard.canWrite,
+        usageFor: guard.usageFor,
         ktx2SizeCache: this.ktx2SizeCache,
       });
       this.textureAlignment.runs += 1;

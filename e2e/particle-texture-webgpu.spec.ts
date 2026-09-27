@@ -130,15 +130,22 @@ async function atlasTextureFiles(): Promise<Map<string, Uint8Array>> {
   ]);
 }
 
-/** Resolves once the editor's texture alignment pass ran and is idle, with the Textures it requeued. */
-async function settledAlignmentPass(page: Page): Promise<string[]> {
+async function textureAlignment(page: Page): Promise<{ runs: number; pending: number; requeued: string[] } | null> {
+  return page.evaluate(() => (globalThis as {
+    __babylonslateTest?: { textureAlignment?: () => { runs: number; pending: number; requeued: string[] } };
+  }).__babylonslateTest?.textureAlignment?.() ?? null);
+}
+
+/**
+ * Resolves once the editor's texture alignment pass ran (more than `afterRuns`
+ * times) and is idle, with every Texture a pass requeued.
+ */
+async function settledAlignmentPass(page: Page, afterRuns = 0): Promise<string[]> {
   let requeued: string[] = [];
   await expect.poll(async () => {
-    const state = await page.evaluate(() => (globalThis as {
-      __babylonslateTest?: { textureAlignment?: () => { runs: number; pending: number; requeued: string[] } };
-    }).__babylonslateTest?.textureAlignment?.() ?? null);
+    const state = await textureAlignment(page);
     requeued = state?.requeued ?? [];
-    return state !== null && state.runs > 0 && state.pending === 0;
+    return state !== null && state.runs > afterRuns && state.pending === 0;
   }, { timeout: 60_000 }).toBe(true);
   return requeued;
 }
@@ -280,6 +287,12 @@ test("A running emitter Preview draws a 1x1 atlas KTX2 on WebGPU and rebinds its
     await chooseOption(page, "property-usage", "Particle");
     const particleEncode = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
     await expect.poll(() => committedEncode(page), { timeout: 60_000 }).toEqual(particleEncode);
+    // A Content Browser change remounts the registry and reruns the alignment
+    // pass while Particle is unsaved: the pass must not undo its encode.
+    const runs = (await textureAlignment(page))?.runs ?? 0;
+    await createContentBrowserAsset(page, "ParticleEmitter", "Ashes");
+    expect(await settledAlignmentPass(page, runs)).not.toContain(ATLAS_TEXTURE_GUID);
+    expect(await committedEncode(page)).toEqual(particleEncode);
     await saveAllIfEnabled(page);
     await expect.poll(() => committedEncode(page)).toEqual(particleEncode);
     await openAssetFromBrowser(page, emitterPath);

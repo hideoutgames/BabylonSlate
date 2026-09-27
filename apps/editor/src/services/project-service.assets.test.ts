@@ -701,6 +701,51 @@ describe("project documents as .babasset", () => {
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
   });
 
+  it("keeps the Particle encode of an unsaved Texture Details Usage through a remount, then saves it", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Unsaved.babproject");
+    await installMinimalProject(storage);
+    const service = new ProjectService(storage, {
+      encode: async (source, settings) => {
+        const size = sniffImageSize(source)!;
+        const encoded = textureEncodeSize(size.width, size.height, settings);
+        return { ktx2: ktx2Header(encoded.width, encoded.height), wallMs: 0 };
+      },
+    });
+    await service.loadCurrentProject();
+    const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    const guid = texture!.header.guid;
+    // The editor's guard: the open Texture tab's Usage, once Details changes it.
+    let tabUsage: string | undefined;
+    service.setTextureWriteGuard(() => true, { usageFor: (id) => (id === guid ? tabUsage : undefined) });
+    const payload = () => service.registry!.getByGuid(guid)!.header.payload;
+    const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
+    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
+    const opened = (await service.loadDocument("texture", texture!.path)) as Record<string, unknown>;
+
+    // Details sets Usage to Particle without saving: Particle pads even an atlas.
+    tabUsage = "particle";
+    await service.retryTextureEncoding(guid, { force: true, usage: "particle" });
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
+    const particleChunkId = payload().ktx2ChunkId;
+
+    // A Content Browser change or foreground rescan remounts the registry, which runs the pass.
+    const runs = service.textureAlignmentState.runs;
+    await service.remountRegistry();
+    await vi.waitFor(() => {
+      const state = service.textureAlignmentState;
+      expect(state.runs).toBeGreaterThan(runs);
+      expect(state.pending).toBe(0);
+    });
+    expect(encoded()).toEqual(["compressed", 4, 4, 4]);
+    expect(payload().ktx2ChunkId).toBe(particleChunkId);
+
+    await service.saveDocument("texture", texture!.path, { ...opened, usage: "particle" });
+    const saved = await decodeBabasset(await storage.readBinary(texture!.path));
+    expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
+  });
+
   it("saves Model slots onto the header without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
