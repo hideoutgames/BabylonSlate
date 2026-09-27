@@ -106,6 +106,17 @@ it("edits a Water Removal Volume with only the sizes its shape uses", () => {
 });
 
 describe("componentPropertyRows", () => {
+  it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {
+    const { rows, onPickAsset, update } = rowsFor({ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "cave", sceneName: "Cave" } }, { assetLabel: () => "Cave", assetType: () => "Scene" });
+    expect(rows).toHaveLength(1);
+    const target = rows[0];
+    if (target?.kind !== "asset") throw new Error("Missing Target Scene picker");
+    expect(target.displayLabel).toBe("Cave");
+    target.onPick?.();
+    expect(onPickAsset).toHaveBeenCalledWith({ componentId: "stream", property: "sceneGuid", allowedTypes: ["Scene"], title: "Pick Target Scene" });
+    target.onChange?.(null);
+    expect(update).toHaveBeenCalledWith("sceneGuid", null);
+  });
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
     expect(properties).toEqual({ enabled: true, color: [0.03, 0.03, 0.03], width: 1, throughMeshes: false });

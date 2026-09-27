@@ -20,6 +20,30 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
+it("places each Scene asset as an independent streaming marker at the requested origin", () => {
+  const scene = createDefaultScene();
+  scene.actors = [];
+  const [entry] = projectPlaceActors([{ header: { guid: "cave", name: "Cave", type: "Scene" } }]);
+  const first = spawnPlacedActor(scene, entry!, "stream-a", [5, 0, 2]);
+  scene.actors.push(first);
+  const second = spawnPlacedActor(scene, entry!, "stream-b", [8, 0, 2]);
+  expect(first).toMatchObject({ classId: "SceneStreamingActor", name: "Cave", transform: { position: [5, 0, 2] } });
+  expect(second.name).toBe("Cave 2");
+  expect(first.components.map((component) => component.classId)).toEqual(["SceneStreamingComponent", "Text3DComponent"]);
+  expect(first.components[0]?.properties).toEqual({ sceneGuid: "cave", sceneName: "Cave" });
+  expect(first.components[1]).toMatchObject({ parentId: first.components[0]?.id, properties: { text: "Cave", editorOnly: true } });
+  expect(second.components.every((component) => !first.components.some((other) => other.id === component.id))).toBe(true);
+  expect(projectPlaceActors([{ header: { guid: "cave", name: "Cave", type: "Scene" } }], undefined, { overlay: true })).toEqual([]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.kind.type === "scene-streaming")).toBe(false);
+});
+
+it("places an unassigned streaming actor with an explicit empty-scene marker", () => {
+  const entry = ENGINE_PLACE_ACTORS.find((item) => item.kind.type === "scene-streaming")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "stream", ORIGIN);
+  expect(actor.components[0]?.properties).toEqual({ sceneGuid: "", sceneName: "" });
+  expect(actor.components[1]?.properties.text).toBe("No Scene");
+});
+
 it("places a Global Water Volume with usable water defaults", () => {
   const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-global")!;
   const actor = spawnPlacedActor(createDefaultScene(), entry, "global-water", [0, 5, 0]);

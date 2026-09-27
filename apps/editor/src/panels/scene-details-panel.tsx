@@ -38,6 +38,7 @@ import {
   parseText2DProperties,
   parseText3DProperties,
   patchComponentProperties,
+  setSceneStreamingTarget,
   type SerializedActor,
   type SerializedScene,
   isSceneWorkspaceKind,
@@ -1043,7 +1044,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         componentPropertyRows(
           actor.id,
           component,
-          (property, value) =>
+          (property, value) => {
+            if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
+              const guid = typeof value === "string" ? value : null;
+              updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
+              return;
+            }
             updateActor((entry) => ({
               ...entry,
               components: entry.components.map((candidate) =>
@@ -1058,7 +1064,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     }
                   : candidate,
               ),
-            })),
+            }));
+          },
           {
             sortingLayers,
             collisionLayers,
@@ -1290,6 +1297,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                         <MultilineTextField
                           id={`text3d-text-${component.id}`}
                           title="Text"
+                          disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
                           value={
                             parseText3DProperties(component.properties).text
                           }
@@ -1397,6 +1405,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onPick={(guid) => {
           if (!assetPick) return;
           const { componentId, property } = assetPick;
+          if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
+            updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));
+            setAssetPick(null);
+            return;
+          }
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((candidate) => {

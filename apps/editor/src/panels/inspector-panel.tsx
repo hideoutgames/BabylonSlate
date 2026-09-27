@@ -899,6 +899,7 @@ function PrefabComponentDetails({
           <MultilineTextField
             id={`text3d-text-${component.id}`}
             title="Text"
+            disabled={component.properties.editorOnly === true}
             value={parseText3DProperties(component.properties).text}
             onChange={(value) => onUpdate("text", value)}
             data-testid={`text3d-text-${component.id}`}

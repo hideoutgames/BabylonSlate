@@ -2,6 +2,7 @@ import {
   createActor,
   createMeshComponent,
   createSkyboxComponent,
+  createSceneStreamingActor,
   createText3DComponent,
   identitySerializedTransform,
   isSceneLayerDeniedComponent,
@@ -32,6 +33,7 @@ export type PlaceActorKind =
   | { type: "camera" }
   | { type: "skybox" }
   | { type: "text3d" }
+  | { type: "scene-streaming" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
   | { type: "blocking-volume" }
@@ -109,6 +111,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "3D Text",
     category: "Environment",
     kind: { type: "text3d" },
+  },
+  {
+    id: "scene-streaming",
+    title: "Scene Streaming",
+    category: "Environment",
+    kind: { type: "scene-streaming" },
   },
   {
     id: "empty",
@@ -207,7 +215,8 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "light" &&
         item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
-        item.kind.type !== "skybox" && item.kind.type !== "water",
+        item.kind.type !== "skybox" && item.kind.type !== "water" &&
+        item.kind.type !== "scene-streaming",
     ),
     ...OVERLAY_PLACE_ACTORS,
   ];
@@ -220,6 +229,7 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "ParticleSystem",
   "Water",
   "Tilemap",
+  "Scene",
 ]);
 
 export function prefabComponentsForGuid(
@@ -289,7 +299,7 @@ export function projectPlaceActors(
   );
   const overlay = options?.overlay === true;
   return assets
-    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && asset.header.type === "Water"))
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && (asset.header.type === "Water" || asset.header.type === "Scene")))
     .filter((asset) => {
       if (asset.header.type !== "Class") return true;
       const classId = classIdFromClassAsset({
@@ -344,6 +354,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   }
   if (kind.type === "text3d") {
     return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
+  }
+  if (kind.type === "scene-streaming") {
+    return resolveTypeVisual({ classId: "SceneStreamingActor", family: "class" });
   }
   if (kind.type === "navmesh") {
     return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
@@ -467,6 +480,9 @@ export function spawnPlacedActor(
       components: [createText3DComponent(`${id}-text3d`)],
     }));
   }
+  if (kind.type === "scene-streaming") {
+    return finish(createSceneStreamingActor(id, "", "", transform));
+  }
   if (kind.type === "navmesh") {
     return finish(createActor(id, "NavMesh", {
       transform,
@@ -555,6 +571,9 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "asset") {
+    if (kind.assetType === "Scene") {
+      return finish(createSceneStreamingActor(id, kind.guid, kind.name, transform));
+    }
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,
