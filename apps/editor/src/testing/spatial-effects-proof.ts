@@ -46,6 +46,14 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
     root.rotation.z = Math.PI / 4;
     update();
     const box = await draw();
+    upsertFogVolumes(scene, "fog-actor", root, fogVolumeBindings(["first", "second"].map((id) => ({
+      id,
+      classId: "FogVolumeComponent",
+      properties: { ...properties, density: 0.4 },
+      transform: identitySerializedTransform(),
+    }))));
+    const overlap = await draw();
+    update();
     // Root transform changes must reach the shader without replacing bindings.
     root.position.x = 2;
     const moved = await draw();
@@ -73,7 +81,7 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
     properties.size = [4, 4, 4];
     update();
     const inside = await draw();
-    return { off, box, moved, sphere, disabled, removed, insideOff, inside };
+    return { off, box, overlap, moved, sphere, disabled, removed, insideOff, inside };
   } finally {
     removeFogVolumes(scene, "fog-actor");
     root.dispose();

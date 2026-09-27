@@ -164,6 +164,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(off[(36 * 96 + 32) * 4], `${path}: visible neutral backdrop`).toBeGreaterThan(100);
       expect(fogDarkening(off, box, 32, 36), `${path}: local fog activates with global fog disabled and density zero`).toBeGreaterThan(30);
       expect(Math.abs(fogDarkening(off, box, 64, 36)), `${path}: neighboring rays remain clear`).toBeLessThan(1);
+      expect(pixelDifference(box, capture.overlap), `${path}: overlapping half-density media equal one full-density volume`).toBeLessThan(1);
 
       // One diagonal crosses the rotated long axis; the other misses its short
       // axis. Sorting avoids depending on the GPU readback's vertical origin.
