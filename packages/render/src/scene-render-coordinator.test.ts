@@ -67,9 +67,10 @@ it("keeps parent graph frames rendering while a streamed instance waits, then ad
   admission.receive({ type: "spawn", actorGuid: "child", classId: "Actor", slotId: 2,
     sceneStreamActorGuid: identity.actorGuid, streamLoadId: identity.streamLoadId });
   const child = MeshBuilder.CreateBox("child", {}, scene);
-  child.material = new StandardMaterial("stream-material", scene);
+  const childMaterial = new StandardMaterial("stream-material", scene);
+  child.material = childMaterial;
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
-  child.material.diffuseTexture = texture;
+  childMaterial.diffuseTexture = texture;
   const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
   binding.meshes.set(2, child);
   admission.sync();
@@ -93,7 +94,8 @@ it("retains parent readiness failures and separates sibling publication includin
   const { scene, renderer } = host();
   const binding = createSnapshotSceneBinding();
   const parent = MeshBuilder.CreateBox("parent", {}, scene);
-  parent.material = new StandardMaterial("parent-material", scene);
+  const parentMaterial = new StandardMaterial("parent-material", scene);
+  parent.material = parentMaterial;
   binding.meshes.set(1, parent);
   await renderer.prepare();
   const admission = createSceneStreamAdmission(scene, binding);
@@ -108,7 +110,7 @@ it("retains parent readiness failures and separates sibling publication includin
   expect(right.isEnabled()).toBe(false);
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
   const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
-  parent.material.diffuseTexture = texture;
+  parentMaterial.diffuseTexture = texture;
   markSceneReadinessDirty(scene);
   expect(renderer.render().rendered).toBe(false);
   textureReady.mockReturnValue(true);
@@ -124,7 +126,8 @@ it("keeps the parent drawing after cancel while native import and detached textu
   const { scene, renderer } = host();
   const binding = createSnapshotSceneBinding();
   const parent = MeshBuilder.CreateBox("parent", {}, scene);
-  parent.material = new StandardMaterial("parent", scene);
+  const parentMaterial = new StandardMaterial("parent", scene);
+  parent.material = parentMaterial;
   binding.meshes.set(1, parent);
   await renderer.prepare();
   const admission = createSceneStreamAdmission(scene, binding);
@@ -142,10 +145,10 @@ it("keeps the parent drawing after cancel while native import and detached textu
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
   // Sharing that same pending resource with a live parent must still block it.
-  parent.material.diffuseTexture = texture;
+  parentMaterial.diffuseTexture = texture;
   markSceneReadinessDirty(scene);
   expect(renderer.render().rendered).toBe(false);
-  parent.material.diffuseTexture = null;
+  parentMaterial.diffuseTexture = null;
   markSceneReadinessDirty(scene);
   expect(renderer.render().rendered).toBe(true);
   texture.dispose();
@@ -164,9 +167,10 @@ it("keeps canceled roots staged between Removed and Despawn and rejects obsolete
   admission.receive({ type: "spawn", actorGuid: "old-child", classId: "Actor", slotId: 2,
     sceneStreamActorGuid: "stream", streamLoadId: 1 });
   const child = MeshBuilder.CreateBox("canceled-child", {}, scene);
-  child.material = new StandardMaterial("child-material", scene);
+  const childMaterial = new StandardMaterial("child-material", scene);
+  child.material = childMaterial;
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
-  child.material.diffuseTexture = texture;
+  childMaterial.diffuseTexture = texture;
   const textureReady = vi.spyOn(texture, "isReady").mockReturnValue(false);
   binding.meshes.set(2, child);
   admission.sync();
@@ -183,8 +187,9 @@ it("keeps canceled roots staged between Removed and Despawn and rejects obsolete
   admission.receive({ type: "spawn", actorGuid: "new-child", classId: "Actor", slotId: 2,
     sceneStreamActorGuid: "stream", streamLoadId: 2 });
   const replacement = MeshBuilder.CreateBox("replacement", {}, scene);
-  replacement.material = new StandardMaterial("replacement-material", scene);
-  replacement.material.diffuseTexture = texture;
+  const replacementMaterial = new StandardMaterial("replacement-material", scene);
+  replacement.material = replacementMaterial;
+  replacementMaterial.diffuseTexture = texture;
   binding.meshes.set(2, replacement);
   admission.sync();
   admission.receive({ type: "despawn", actorGuid: "old-child", slotId: 2 });
