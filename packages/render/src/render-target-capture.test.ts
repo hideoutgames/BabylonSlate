@@ -168,14 +168,17 @@ it("retires deleted, disabled and scene-cleared capture outputs without invalida
   expect(managedRenderReservations(engine).reservedBytes).toBe(0);
 });
 
-it("filtered captures follow replacement actor roots and exclude attached unselected actors", () => {
+it("filtered captures follow replacement actor roots, include nested child actors and exclude unlisted siblings", () => {
   const { scene, captures, root, settings, draws } = host();
   let selected = MeshBuilder.CreateBox("Selected Actor", {}, scene);
-  const attached = MeshBuilder.CreateBox("Other Actor", {}, scene); attached.parent = selected;
-  captures.registerActor("selected", () => selected); captures.registerActor("other", () => attached);
+  const attached = MeshBuilder.CreateBox("Nested Actor", {}, scene); attached.parent = selected;
+  const sibling = MeshBuilder.CreateBox("Sibling Actor", {}, scene);
+  captures.registerActor("selected", () => selected);
+  captures.registerActor("attached", () => attached);
+  captures.registerActor("sibling", () => sibling);
   captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["selected", "missing"] }, () => root);
   captures.request("capture"); captures.render();
-  expect(draws[0]).toEqual([selected]);
+  expect(draws[0]).toEqual([selected, attached]);
   const previous = selected;
   attached.parent = null;
   selected = MeshBuilder.CreateBox("Replacement Actor", {}, scene);
