@@ -16,7 +16,7 @@ Place Actors and Class Add Component share the `CatalogResultRow` appearance: co
 
 ## Scene streaming
 
-Place **Scene Streaming** or a project Scene asset to add a `SceneStreamingActor`. Its **Target Scene** picker stores the target Scene asset on `SceneStreamingComponent`; the component's transform, relative to its actor and component parents, defines the target scene's local origin. Edit that origin in the component's **Transform** fields. The editor displays only the existing billboard and a camera-facing `Text3DComponent` with the selected scene name. It never realizes the target scene's actors. The label follows the Scene selection and is editor-only.
+Place **Scene Streaming** or a project Scene asset to add a `SceneStreamingActor`. Its **Target Scene** picker stores the target Scene asset on `SceneStreamingComponent`; the component's transform, relative to its actor and component parents, defines the target scene's local origin. Edit that origin in the component's **Transform** fields. The editor displays only the existing billboard and a camera-facing `Text3DComponent` with the selected scene name. It never realizes the target scene's actors. Scene and Prefab viewports resolve the label from the current Scene asset header, so renaming the asset refreshes the editor-only marker without changing the authored document.
 
 NodeGraphs control each actor's independent instance during Play, Preview Build, and exported games. See [streaming nodes](scripting.md#scene-streaming-nodes) and [runtime ownership](render.md#additive-scene-streaming).
 
