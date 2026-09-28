@@ -20,9 +20,11 @@ import {
 } from "@babylonslate/assets";
 import {
   createActor,
+  createDefaultRenderTargetCaptureProperties,
   createDefaultScene,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
+  type RenderTargetPayload,
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -74,6 +76,26 @@ function cameraActor(options?: {
       },
     ],
   });
+}
+
+function captureActor(properties?: Record<string, unknown>) {
+  return createActor("rt", "Render Target Capture", {
+    components: [
+      {
+        id: "capture",
+        classId: "RenderTargetCaptureComponent",
+        properties: { ...createDefaultRenderTargetCaptureProperties(), ...properties },
+      },
+    ],
+  });
+}
+
+function renderTargetMap(
+  entries: Record<string, Pick<RenderTargetPayload, "width" | "height">>,
+): Map<string, RenderTargetPayload> {
+  return new Map(
+    Object.entries(entries).map(([guid, size]) => [guid, { mode: "SceneColor", ...size }]),
+  );
 }
 
 function frustumWorldPoints(root: TransformNode): Vector3[] {
@@ -627,6 +649,113 @@ describe("EditorDebugOverlay", () => {
     expect(preview!.position.x).toBeCloseTo(expectedPosition.x, 5);
     expect(preview!.position.y).toBeCloseTo(expectedPosition.y, 5);
     expect(preview!.position.z).toBeCloseTo(expectedPosition.z, 5);
+    overlay.dispose();
+  });
+
+  it("draws a disabled, manual Render Target Capture's frustum and a live-following preview", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreateBox(editorMeshName("rt"), { size: 0.01 }, scene);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    const sceneData = sceneWith([
+      captureActor({ enabled: false, captureEveryFrame: false, renderTargetGuid: null }),
+    ]);
+    overlay.sync({ sceneData, selectedActorIds: ["rt"] });
+    expect(overlay.frustumMesh?.parent).toBe(origin);
+    expect(overlay.previewTexture).not.toBeNull();
+    expect(overlay.previewRenderCount).toBe(1);
+
+    origin.position.set(9, 3, -5);
+    origin.computeWorldMatrix(true);
+    overlay.followLivePose();
+    const followed = previewCamera(scene).position;
+    expect([followed.x, followed.y, followed.z].map((value) => Math.round(value * 1e5) / 1e5))
+      .toEqual([9, 3, -5]);
+
+    overlay.sync({ sceneData, selectedActorIds: [] });
+    expect(overlay.frustumMesh).toBeNull();
+    expect(overlay.previewTexture).toBeNull();
+    expect(scene.cameras.some((camera) => camera.name.startsWith("debugPreviewCam:"))).toBe(false);
+    overlay.dispose();
+  });
+
+  it.each([
+    { label: "a wide 16x8 target", guid: "wide", fieldOfView: 90, aspect: 2, size: { width: 320, height: 160 } },
+    { label: "a tall 8x16 target", guid: "tall", fieldOfView: 90, aspect: 0.5, size: { width: 90, height: 180 } },
+    { label: "no assigned target", guid: null, fieldOfView: 30, aspect: 1, size: { width: 180, height: 180 } },
+    { label: "a missing target asset", guid: "deleted", fieldOfView: 90, aspect: 1, size: { width: 180, height: 180 } },
+  ])("sizes a capture frustum and preview from its lens and $label", ({ guid, fieldOfView, aspect, size }) => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(200);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(800);
+    const targets = renderTargetMap({ wide: { width: 16, height: 8 }, tall: { width: 8, height: 16 } });
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
+    overlay.sync({
+      sceneData: sceneWith([
+        captureActor({ renderTargetGuid: guid, fieldOfView, nearClip: 1, farClip: 20 }),
+      ]),
+      selectedActorIds: ["rt"],
+    });
+    const points = frustumWorldPoints(overlay.frustumMesh as TransformNode);
+    const farHalfHeight = Math.tan((fieldOfView * Math.PI) / 360) * 20;
+    expect(maxAbs(points, "z")).toBeCloseTo(20, 5);
+    expect(maxAbs(points, "y")).toBeCloseTo(farHalfHeight, 5);
+    expect(maxAbs(points, "x")).toBeCloseTo(farHalfHeight * aspect, 5);
+    const preview = previewCamera(scene);
+    expect(overlay.previewTexture!.getSize()).toEqual(size);
+    expect(projectionAspect(preview)).toBeCloseTo(aspect, 5);
+    expect([preview.minZ, preview.maxZ]).toEqual([1, 20]);
+    overlay.dispose();
+  });
+
+  it("previews only capture-eligible meshes and honours Capture Only Actors by nearest actor", () => {
+    const { scene } = createHandle();
+    const subject = MeshBuilder.CreateBox(editorMeshName("subject"), {}, scene);
+    const part = MeshBuilder.CreateBox(editorComponentMeshName("subject", "mesh"), {}, scene);
+    part.parent = subject;
+    const attached = MeshBuilder.CreateBox(editorMeshName("attached"), {}, scene);
+    attached.parent = subject;
+    const other = MeshBuilder.CreateBox(editorMeshName("other"), {}, scene);
+    const world = MeshBuilder.CreateBox("world", {}, scene);
+    const proxy = MeshBuilder.CreateBox("pick proxy", {}, scene);
+    proxy.metadata = { editorPickProxy: true };
+    const billboard = MeshBuilder.CreatePlane("billboard", {}, scene);
+    billboard.metadata = { editorBillboard: "light" };
+    const guide = MeshBuilder.CreateLines("guide", { points: [Vector3.Zero(), Vector3.One()] }, scene);
+    const model = createEditorCameraModel(scene, editorComponentMeshName("rt", "capture"));
+    for (const helper of [proxy, billboard, guide, model]) helper.parent = subject;
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+
+    overlay.sync({
+      sceneData: sceneWith([captureActor({ captureOnlyActors: true, actorIds: ["subject"] })]),
+      selectedActorIds: ["rt"],
+    });
+    expect(overlay.previewTexture!.renderList).toEqual([subject, part]);
+
+    overlay.sync({ sceneData: sceneWith([captureActor()]), selectedActorIds: ["rt"] });
+    expect(overlay.previewTexture!.renderList).toEqual([subject, part, attached, other, world]);
+    overlay.dispose();
+  });
+
+  it("rebuilds a selected capture preview only when its target's aspect changes", () => {
+    const { scene } = createHandle();
+    let targets = renderTargetMap({ target: { width: 16, height: 8 } });
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
+    overlay.sync({
+      sceneData: sceneWith([captureActor({ renderTargetGuid: "target" })]),
+      selectedActorIds: ["rt"],
+    });
+    const wide = overlay.previewTexture;
+    targets = renderTargetMap({ target: { width: 32, height: 16 } });
+    overlay.refreshRenderTargets();
+    expect(overlay.previewTexture).toBe(wide);
+
+    targets = renderTargetMap({ target: { width: 8, height: 16 } });
+    overlay.refreshRenderTargets();
+    expect(overlay.previewTexture).not.toBe(wide);
+    expect(overlay.previewTexture!.getSize()).toEqual({ width: 90, height: 180 });
+    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(0.5, 5);
+    const points = frustumWorldPoints(overlay.frustumMesh as TransformNode);
+    expect(maxAbs(points, "x") / maxAbs(points, "y")).toBeCloseTo(0.5, 5);
     overlay.dispose();
   });
 

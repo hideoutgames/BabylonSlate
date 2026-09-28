@@ -20,6 +20,17 @@ import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 
+/**
+ * Whether a mesh may appear in a Render Target Capture: world geometry only,
+ * never lines, editor helpers or Play debug visuals. The editor's capture
+ * preview uses the same rule so it shows what the capture lens records.
+ */
+export function isRenderTargetCaptureCandidate(mesh: AbstractMesh): boolean {
+  if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
+  const metadata = mesh.metadata as Record<string, unknown> | null;
+  return !(metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual);
+}
+
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
 
@@ -356,9 +367,7 @@ export class RenderTargetCaptures {
   }
   private isEligible(capture: Capture, target: Target, internal: InternalTexture | null, mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
-    if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
-    const metadata = mesh.metadata as Record<string, unknown> | null;
-    if (metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual) return false;
+    if (!isRenderTargetCaptureCandidate(mesh)) return false;
     if (capture.settings.captureOnlyActors) {
       const actorId = this.ownerOf(mesh);
       if (!actorId || !capture.includeIds.has(actorId)) return false;
