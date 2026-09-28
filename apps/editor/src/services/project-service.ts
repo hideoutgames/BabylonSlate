@@ -628,21 +628,17 @@ export class ProjectService {
   /**
    * Requeue compressed Textures whose committed encode is stale for the
    * alignment policy (all Textures, or `guids`). Runs one at a time on the
-   * current registry. While source control is on it only rechecks `guids`
+   * current registry. While source control is on it only requeues Textures
    * whose encode this session committed, such as an import picked by a
-   * Tileset; every other Texture waits for the user's own edit. Resolves
-   * with the number requeued.
+   * Tileset (`alignmentMayWrite`); every other Texture waits for the user's
+   * own edit. Resolves with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
     const run = async () => {
       const registry = this.assetRegistry;
       if (!registry) return 0;
-      const targets = this.sourceControlEnabled
-        ? (guids ?? []).filter((guid) => this.sessionEncodedTextures.has(guid))
-        : guids;
-      if (targets?.length === 0) return 0;
       const requeued = await registry.reconcileTextureAlignment({
-        guids: targets,
+        guids,
         canWrite: (guid) => this.alignmentMayWrite(guid),
         usageFor: this.openTextureUsage ?? undefined,
         ktx2SizeCache: this.ktx2SizeCache,
