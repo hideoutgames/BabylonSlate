@@ -44,6 +44,7 @@ import {
   previewDraw,
   recordCompressedGpuTextures,
   settledAlignmentPass,
+  textureAlignment,
   watchGpuFailures,
   type CompressedTexture,
 } from "./webgpu-texture-proof";
@@ -61,6 +62,9 @@ const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
 /** The same 1×1 encode with no atlas: stale, so opening the project re-encodes it 4×4. */
 const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
 const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
+/** Another such Texture, for a project with source control on. */
+const WAITING_TEXTURE_GUID = "00000000-0000-4000-8000-000000000079";
+const WAITING_TEXTURE_PATH = "assets/waiting-odd.babasset";
 /** Samples the texture through its surface Material. */
 const TEXTURED_BOX = "actor-1";
 /** No Material: the engine default material under the same light. */
@@ -91,11 +95,15 @@ async function encodeKtx2(
   return ktx2;
 }
 
-/** The minimal project on `backend`. */
-async function projectFiles(backend: Backend): Promise<{ files: Map<string, Uint8Array>; startupSceneGuid: string }> {
+/** The minimal project on `backend`, with source control **Enable** on when asked. */
+async function projectFiles(
+  backend: Backend,
+  sourceControl = false,
+): Promise<{ files: Map<string, Uint8Array>; startupSceneGuid: string }> {
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.settings.render.gpuBackend = backend;
+  if (sourceControl) project.settings.sourceControl = { ...project.settings.sourceControl, enabled: true };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   return { files, startupSceneGuid: project.settings.startupSceneGuid };
 }
@@ -108,10 +116,11 @@ async function projectFiles(backend: Backend): Promise<{ files: Map<string, Uint
  * resolver compute for it: opening the project neither re-encodes it nor
  * prefers another chunk. A surface Material samples it on the box and a
  * particle Material in an Emitter; a second box has no Material. A second
- * Texture holds the same 1×1 encode with no atlas.
+ * Texture holds the same 1×1 encode with no atlas; with source control on, a
+ * third one does too.
  */
-async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles(backend);
+async function fixture(backend: Backend, sourceControl = false): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles(backend, sourceControl);
   const migrations = createDefaultMigrationRegistry();
   const png = new Uint8Array(await readFile(path.join(process.cwd(), "e2e/fixtures/albedo.png")));
   const [texture] = await importImage(png, { fileName: "albedo.png", existingGuids: new Set() });
@@ -120,7 +129,9 @@ async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
   const chunkId = await textureEncodeChunkId(settings, "albedo");
   const ktx2 = await encodeKtx2(settings, 1, 1, () => [0, 255, 0]);
   const payload = { ...texture!.payload, compressionState: "compressed", ktx2ChunkId: chunkId };
-  for (const [guid, assetPath] of [[TEXTURE_GUID, TEXTURE_PATH], [LEGACY_TEXTURE_GUID, LEGACY_TEXTURE_PATH]] as const) {
+  const textures: [string, string][] = [[TEXTURE_GUID, TEXTURE_PATH], [LEGACY_TEXTURE_GUID, LEGACY_TEXTURE_PATH]];
+  if (sourceControl) textures.push([WAITING_TEXTURE_GUID, WAITING_TEXTURE_PATH]);
+  for (const [guid, assetPath] of textures) {
     files.set(assetPath, await encodeAssetDocument(
       { guid, type: "Texture", name: path.basename(assetPath, ".babasset"), version: texture!.version, payload },
       { headerPayload: payload, extraChunks: [...texture!.chunks, { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 }] },
@@ -291,6 +302,53 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   // The 1×1 KTX2 never reached the GPU block-compressed.
   expect(offBlockGrid(compressed!)).toEqual([]);
   expect(gpuFailures).toEqual([]);
+});
+
+/** Turns source control **Enable** off in Project Settings. */
+async function disableSourceControl(page: Page): Promise<void> {
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  const modal = page.getByTestId("settings-modal");
+  await expect(modal).toBeVisible();
+  await page.getByTestId("settings-modal-category-sourceControl").click();
+  const enable = page.getByTestId("settings-source-control-enabled");
+  await expect(enable).toHaveAttribute("aria-checked", "true");
+  await enable.click();
+  await page.getByTestId("settings-source-control-disable-confirm-action").click();
+  await expect(enable).toHaveAttribute("aria-checked", "false");
+  await modal.locator('[data-slot="dialog-close"]').click();
+  await expect(modal).toHaveCount(0);
+}
+
+test("with source control on, an old Texture off the grid re-encodes only on Retry Encoding, or once Enable is turned off", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openMinimalTestProject(page, await fixture("webgl2", true));
+  // Opening the project re-encodes nothing: teammates share these files.
+  expect(await settledAlignmentPass(page)).toEqual([]);
+  const odd = { compressionState: "compressed", ktx2: { width: 1, height: 1 } };
+  const aligned = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
+  for (const assetPath of [TEXTURE_PATH, LEGACY_TEXTURE_PATH, WAITING_TEXTURE_PATH]) {
+    expect(await committedKtx2(page, assetPath), assetPath).toEqual(odd);
+  }
+
+  // Texture Details offers Retry Encoding for it, the user's own re-encode.
+  await openAssetFromBrowser(page, LEGACY_TEXTURE_PATH);
+  const details = page.getByTestId("texture-details");
+  await expect(details.getByTestId("texture-alignment-stale")).toBeVisible();
+  await details.getByTestId("texture-retry-encode").click();
+  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
+  await expect(details.getByTestId("texture-retry-encode")).toHaveCount(0);
+  // The commit's own recheck finds it aligned; the other one still waits for the user.
+  expect(await settledAlignmentPass(page)).toEqual([]);
+  expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
+
+  // Turning Enable off in Project Settings runs the pass at once.
+  const before = (await textureAlignment(page))!.runs;
+  await disableSourceControl(page);
+  expect(await settledAlignmentPass(page, before)).toEqual([WAITING_TEXTURE_GUID]);
+  await expect.poll(() => committedKtx2(page, WAITING_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
+  // The Tileset's atlas keeps its 1×1 encode.
+  expect(await committedKtx2(page, TEXTURE_PATH)).toEqual(odd);
 });
 
 test("WebGL2 draws the same 1×1 Albedo KTX2", async ({ page }, testInfo) => {
