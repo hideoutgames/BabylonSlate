@@ -441,7 +441,12 @@ export class ProjectService {
       },
       onComplete: async (result) => {
         const registry = this.assetRegistry;
-        if (!(await registry?.commitCompressedTexture(result))) return;
+        if (!(await registry?.commitCompressedTexture(result))) {
+          // Refused (a guarded job the file on disk no longer allows): Texture
+          // Details rechecks whether the Texture is left stale for the user.
+          this.emitRegistryChange();
+          return;
+        }
         const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
         if (committed) this.sessionEncodes.set(result.assetGuid, committed);
         this.emitRegistryChange();
@@ -465,6 +470,8 @@ export class ProjectService {
           })
           .then(() => this.emitRegistryChange());
       },
+      // A guarded job dropped unencoded may leave its Texture stale for the user.
+      onDrop: () => this.emitRegistryChange(),
     });
   }
 

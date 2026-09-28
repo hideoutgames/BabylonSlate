@@ -1056,6 +1056,49 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(1);
   });
 
+  it("tells Texture Details when turning source control on leaves the pass's re-encoding and waiting Textures stale", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("TurnedOnDetails.babproject");
+    await installMinimalProject(storage);
+    for (const guid of ["odd-0", "odd-1"]) await writeLegacyOddTexture(storage, `assets/${guid}.babasset`, guid);
+    let releaseFirst!: () => void;
+    const firstEncode = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const encode = vi.fn<EncodeFn>(async (source, settings) => {
+      if (encode.mock.calls.length === 1) await firstEncode;
+      return standInEncode(source, settings);
+    });
+    const service = new ProjectService(storage, { encode });
+    // What an open Texture Details shows: rechecked on every registry change, the latest check winning.
+    const offered: Record<string, boolean> = {};
+    let generation = 0;
+    service.onRegistryChange(() => {
+      const current = ++generation;
+      for (const guid of ["odd-0", "odd-1"]) {
+        void service.textureAlignmentStale(guid).then((stale) => {
+          if (current === generation) offered[guid] = stale;
+        });
+      }
+    });
+
+    // Source control is off: opening the project queues both re-encodes, so no Retry Encoding.
+    await service.loadCurrentProject();
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(offered).toEqual({ "odd-0": false, "odd-1": false }));
+    // Project Settings turns source control on while the first encodes; the page is then hidden.
+    service.setSourceControlEnabled(true);
+    service.pauseTextureEncodeQueue();
+    releaseFirst();
+    // The first one's commit is refused.
+    await vi.waitFor(() => expect(offered["odd-0"]).toBe(true));
+    expect(offered["odd-1"]).toBe(false);
+    // The waiting one is dropped once the page shows again.
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(offered["odd-1"]).toBe(true));
+    expect(encode).toHaveBeenCalledTimes(1);
+  });
+
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Backlog.babproject");

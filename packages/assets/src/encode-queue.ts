@@ -83,6 +83,8 @@ export interface EncodeQueueOptions {
   ) => void;
   onComplete?: (result: EncodeJobResult) => void | Promise<void>;
   onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
+  /** A guarded job its guard refused at the front of the queue, dropped unencoded. */
+  onDrop?: (job: EncodeJob) => void;
 }
 
 type DerivedJob = { run: () => Promise<void> };
@@ -99,6 +101,7 @@ export class EncodeQueue {
   private readonly onState?: EncodeQueueOptions["onState"];
   private readonly onComplete?: EncodeQueueOptions["onComplete"];
   private readonly onError?: EncodeQueueOptions["onError"];
+  private readonly onDrop?: EncodeQueueOptions["onDrop"];
   private paused = false;
   private running = false;
   /** The job being encoded, until its result or error is reported. */
@@ -114,6 +117,7 @@ export class EncodeQueue {
     this.onState = options.onState;
     this.onComplete = options.onComplete;
     this.onError = options.onError;
+    this.onDrop = options.onDrop;
   }
 
   get depth(): number {
@@ -220,6 +224,7 @@ export class EncodeQueue {
     let job = this.queue.shift();
     // A guarded job its guard now refuses is dropped before any work or write.
     while (job && "assetGuid" in job && job.guard && !job.guard.canWrite(job.assetGuid)) {
+      this.onDrop?.(job);
       job = this.queue.shift();
     }
     if (!job) return;
