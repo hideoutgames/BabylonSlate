@@ -1247,8 +1247,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (!guid) return;
     const derived = await ensureDerived();
-    await journalBuffer.flush(guid);
-    const lines = await readJournalLines(derived, guid);
+    const lines = await journalBuffer.afterFlush(guid, () =>
+      readJournalLines(derived, guid),
+    );
     if (lines.length === 0) {
       setRecoveryAvailable(false);
       return;
@@ -1599,9 +1600,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         progress.phase("journal");
         const derived = await ensureDerived();
-        await journalBuffer.flush(guid);
-        const cleared = await truncateJournal(derived, guid, () =>
-          documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+        const cleared = await journalBuffer.afterFlush(guid, () =>
+          truncateJournal(derived, guid, () =>
+            documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+          ),
         );
         if (cleared) setRecoveryAvailable(false);
       }
@@ -1736,8 +1738,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await journalBuffer.flush(guid);
-      await truncateJournal(derived, guid);
+      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
     }
     emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
     await projectService.closeProject();
@@ -1906,8 +1907,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await journalBuffer.flush(guid);
-      await truncateJournal(derived, guid);
+      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
     }
     setRecoveryAvailable(false);
   }, [ensureDerived, journalBuffer, projectService]);
@@ -3663,8 +3663,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
-        await journalBuffer.flush(guid);
-        return hasJournal(derived, guid);
+        return journalBuffer.afterFlush(guid, () => hasJournal(derived, guid));
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {

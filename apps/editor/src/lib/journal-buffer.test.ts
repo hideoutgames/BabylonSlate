@@ -72,7 +72,20 @@ describe("JournalBuffer", () => {
     expect(documents.get(docId)).toEqual({ waveHeight: 2, opacity: 0.8 });
   });
 
-  it("writes buffered records before a Save's clear, so no stale record lands afterwards", async () => {
+  it("lets recovery read an edit still in the batching window", async () => {
+    const storage = await derivedStorage();
+    const buffer = new JournalBuffer(
+      (project, lines) => appendJournalLines(storage, project, lines),
+      { delayMs: 60_000 },
+    );
+    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
+
+    const lines = await buffer.afterFlush(guid, () => readJournalLines(storage, guid));
+    const { documents } = replayJournalLines(lines, new Map([[docId, { opacity: 1 }]]));
+    expect(documents.get(docId)).toEqual({ opacity: 0.5 });
+  });
+
+  it("clears the journal (Save, discard, close) with no earlier edit landing after the clear", async () => {
     vi.useFakeTimers();
     const storage = await derivedStorage();
     const buffer = new JournalBuffer((project, lines) =>
@@ -80,9 +93,7 @@ describe("JournalBuffer", () => {
     );
     buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
 
-    await buffer.flush(guid);
-    expect(await readJournalLines(storage, guid)).toHaveLength(1);
-    expect(await truncateJournal(storage, guid)).toBe(true);
+    expect(await buffer.afterFlush(guid, () => truncateJournal(storage, guid))).toBe(true);
     await vi.advanceTimersByTimeAsync(JOURNAL_FLUSH_DELAY_MS * 2);
     await buffer.flush();
     expect(await readJournalLines(storage, guid)).toEqual([]);

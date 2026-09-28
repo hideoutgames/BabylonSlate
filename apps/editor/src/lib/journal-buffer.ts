@@ -81,6 +81,16 @@ export class JournalBuffer {
     }
     return Promise.all(waits).then(() => undefined);
   }
+
+  /**
+   * Run a journal read or clear for one project once every record buffered for
+   * it has been written, so a replay sees the latest edits and no record
+   * buffered before a Save, discard or close lands after its clear.
+   */
+  async afterFlush<T>(projectGuid: string, operation: () => Promise<T>): Promise<T> {
+    await this.flush(projectGuid);
+    return operation();
+  }
 }
 
 /**
