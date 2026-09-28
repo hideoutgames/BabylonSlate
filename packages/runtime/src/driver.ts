@@ -1480,12 +1480,14 @@ class InProcessRuntime implements RuntimeDriver {
       stream.resolve();
       for (const pending of [...this.sceneStreams.values()]) this.publishSceneStreamRealized(pending);
       this.flushOwnerActions();
-      // After the streamed actors' Begin Play, as Scene Loaded follows the main scene's.
-      if (this.sceneStreams.get(actorGuid) === stream && stream.state === "Loaded" &&
-        stream.actor instanceof SceneStreamingActor) {
+      // After the streamed actors' Begin Play, as Scene Loaded follows the main
+      // scene's: the stream's Scene is admitted with its actors (not while paused).
+      this.runOwnerAction(stream.scene, () => {
+        if (this.sceneStreams.get(actorGuid) !== stream || stream.state !== "Loaded" ||
+          !(stream.actor instanceof SceneStreamingActor)) return;
         this.announcedSceneStreams.add(stream);
         this.world.notifyStreamedSceneLoaded(stream.actor, stream.scene);
-      }
+      });
     } catch (error) {
       this.retireSceneStream(stream, error);
     }

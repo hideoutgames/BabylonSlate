@@ -430,10 +430,19 @@ describe("Scene Subsystems", () => {
       await runtime.unloadSceneStream(left);
       expect(take()).toEqual([]);
 
+      // Ready while paused: Loaded still waits for the streamed actors' Begin Play.
       const reloading = runtime.loadSceneStream(left);
-      runtime.notifySceneStreamReady("left", await readyStream(secondLoad));
+      const thirdLoad = await readyStream(secondLoad);
+      runtime.pause();
+      runtime.notifySceneStreamReady("left", thirdLoad);
       await reloading;
-      take();
+      expect(take()).toEqual([]);
+      runtime.resume();
+      const reloadedKid = world.getActors().find((actor) => actor.classId === "Kid")!;
+      expect(take()).toEqual([
+        `weather:spawned:${reloadedKid.guid}`, "kid-begin:scene-subsystem:WeatherSubsystem:1",
+        "weather:streamLoaded:left:Child",
+      ]);
       runtime.executeConsoleCommand("changescene parent");
       expect(take()).toEqual(["weather:end:scene-subsystem:WeatherSubsystem:1:weather@Parent"]);
       expect(scriptErrors(commands)).toEqual([]);

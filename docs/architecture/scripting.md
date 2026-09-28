@@ -407,7 +407,7 @@ Parent a Class to **GameSubsystem** (session lifetime) or **SceneSubsystem** (ma
 | Title | Id → export | Outputs | Fires |
 | --- | --- | --- | --- |
 | Event On Scene Loaded | `flow.event.sceneLoaded` → `onSceneLoaded` | Scene Name (`sceneName`, String) | After the Game Instance and GameSubsystems finish loading, so after every Begin Play of the scene |
-| Event On Streamed Scene Loaded | `flow.event.streamedSceneLoaded` → `onStreamedSceneLoaded` | Streaming Actor (`streamingActor`, `actorRef("SceneStreamingActor")`), Scene (`scene`, `objectRef("Scene")`) | A streamed sub-scene becomes ready, after its actors' Begin Play |
+| Event On Streamed Scene Loaded | `flow.event.streamedSceneLoaded` → `onStreamedSceneLoaded` | Streaming Actor (`streamingActor`, `actorRef("SceneStreamingActor")`), Scene (`scene`, `objectRef("Scene")`) | A streamed sub-scene becomes ready, after its actors' Begin Play (both wait while Play is paused) |
 | Event On Streamed Scene Unloaded | `flow.event.streamedSceneUnloaded` → `onStreamedSceneUnloaded` | Same | That stream retires, only if Loaded was announced |
 | Event On Scene Layer Added | `flow.event.sceneLayerAdded` → `onSceneLayerAdded` | Scene Layer (`sceneLayer`, `objectRef("SceneLayer")`) | A SceneLayer is created while the subsystem lives; existing layers are not replayed |
 | Event On Scene Layer Removed | `flow.event.sceneLayerRemoved` → `onSceneLayerRemoved` | Same | A layer it heard added is removed |
