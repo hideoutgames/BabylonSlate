@@ -1408,12 +1408,14 @@ changed winner set is realized without per-light allocation:
   rather than stale depth; readiness probes do not release the guard.
 - **Released immediately:** authored disable or `castShadows` off, zero intensity,
   forward-excluded lights, global shadows off, settings/profile/map-size changes,
-  context recovery and allocation failure. Dispose-before-allocate still applies,
+  context recovery and allocation failure; a failed construction first frees
+  standby maps and retries the same size. Dispose-before-allocate still applies,
   and the pool never exceeds the admitted budget. New maps are constructed only
   while the pool fills or when no same-kind map is available.
-- **Not receiver-neutral (receivers re-prepare, no allocation):** different light
-  kinds or define inputs, per-mesh include/exclude lists, node blocks pinned to one
-  light, and Clustered Forward, where lights move into or out of the cluster.
+- **Not receiver-neutral (receivers re-prepare, no allocation):** same-kind lights
+  with different define inputs, per-mesh include/exclude lists, node blocks pinned
+  to one light, and Clustered Forward, where lights move into or out of the cluster.
+  A different class or cube layout cannot take the map and constructs its own.
   Forward light-budget churn and the volumetric effects key (keyed by light id)
   remain separate camera-driven sources. An exchange can change exact-tie winners
   of CEL Strongest between the two lights and reorders `scene.lights` diagnostics

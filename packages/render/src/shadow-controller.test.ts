@@ -738,6 +738,35 @@ describe("shared shadow lifecycle", () => {
     expect(dispose).not.toHaveBeenCalled();
   });
 
+  it("frees standby maps before reducing an admitted map after an allocation failure", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 2, localMapSize: 512 }),
+    });
+    scene.activeCamera!.position.set(0, 0, 0);
+    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
+    point.range = 10;
+    controller.register(point, true);
+    controller.sync();
+    const standby = controller.generator(point)!.getShadowMap()!;
+    scene.activeCamera!.position.x = 1000;
+    controller.sync();
+    expect(point.getShadowGenerator()).not.toBeNull();
+    // A spot light cannot take the cube; its own construction fails once.
+    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.range = 10;
+    controller.register(spot, true);
+    vi.spyOn(scene.getEngine(), "createRenderTargetTexture").mockImplementationOnce(() => {
+      throw new Error("driver allocation failed");
+    });
+    controller.sync();
+    expect(controller.status(spot)).toBe("active");
+    expect(controller.generator(spot)?.getShadowMap()?.getRenderSize()).toBe(512);
+    expect(controller.diagnostics([spot])[0]!.reason).toBeNull();
+    expect(point.getShadowGenerator()).toBeNull();
+    expect(scene.textures).not.toContain(standby);
+  });
+
   it("releases a standby map when its light no longer requests shadows", () => {
     const { scene, controller } = fixture();
     scene.activeCamera!.position.set(0, 0, 0);

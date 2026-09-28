@@ -986,6 +986,7 @@ export class SceneShadowController {
           break;
         } catch (error) {
           const requestKey = allocationRequestKey(entry);
+          const reason = entry.reason;
           entry.failedKey = requestKey;
           entry.status = "allocation-failed";
           entry.reason =
@@ -998,6 +999,19 @@ export class SceneShadowController {
               [error, cleanupError],
               "Shadow allocation and resource cleanup failed",
             );
+          }
+          // Standby maps are optional reuse; free them before reducing an admitted map.
+          let reclaimed = false;
+          for (const other of this.entries.values()) {
+            if (!other.standby) continue;
+            release(other);
+            reclaimed = true;
+          }
+          if (reclaimed) {
+            entry.failedKey = "";
+            entry.status = "active";
+            entry.reason = reason;
+            continue;
           }
           mapSize /= 2;
           entry.recovery = {
