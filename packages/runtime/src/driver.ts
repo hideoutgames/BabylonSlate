@@ -146,7 +146,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorParentGuid, actorWorldTransform, actorWorldTransforms } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, actorWorldTransforms, composeActorWorldTransforms } from "./actor-world-transform";
 import { composeParentChildTransform } from "./actor-world-transform";
 import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -493,6 +493,19 @@ class InProcessRuntime implements RuntimeDriver {
   private _snapshotGeneration = 0;
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
+  /** Most recent publish: removal pass, composition and buffer write (stats `publishMs`). */
+  private _lastPublishMs = 0;
+  /** True while `advance()` runs catch-up ticks; their snapshot writes wait for the burst to end. */
+  private deferSnapshotWrites = false;
+  /** Header of the last tick that reached its publish point while writes were deferred. */
+  private readonly pendingSnapshotHeader = { frameId: 0, tickIndex: 0, scriptMs: 0, physicsMs: 0 };
+  private snapshotWritePending = false;
+  /** Removal-pass time already spent on the pending publish. */
+  private pendingPublishMs = 0;
+  private readonly liveAnimInitKeys = new Set<string>();
+  private readonly liveAnimEvalKeys = new Set<string>();
+  private readonly navPhysicalAgents = new Set<string>();
+  private readonly navAgentActors: Actor[] = [];
   private phaseScriptMs = 0;
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
@@ -2167,7 +2180,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private hasReadyLayers(): boolean {
-    return !this.stopped && this.streamBlockingCount === 0 && [...this.layerLoads.values()].some((load) => load.ready && !load.layer.destroyed);
+    if (this.stopped || this.streamBlockingCount !== 0) return false;
+    for (const load of this.layerLoads.values()) if (load.ready && !load.layer.destroyed) return true;
+    return false;
   }
 
   private canTickActor(actor: Actor): boolean {
@@ -2914,8 +2929,53 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private navActorWorldPosition(actor: Actor): NavPoint {
-    const actors = this.navFrameActors ?? new Map(this.world.getActors().map((entry) => [entry.guid, entry]));
+    const actors = this.navFrameActors ?? this.indexActorsByGuid();
     return actorWorldTransform(actor, actors)?.position ?? actor.transform.position;
+  }
+
+  /** Last-wins guid index over the live world, matching `actorWorldTransforms`. */
+  private indexActorsByGuid(): Map<string, Actor> {
+    const index = new Map<string, Actor>();
+    for (const actor of this.world.getActors()) index.set(actor.guid, actor);
+    return index;
+  }
+
+  /**
+   * Resolve a parent through the frame index. Actors committed or destroyed
+   * after the index was built fall back to the live world's last-wins answer.
+   */
+  private navFrameActor(index: ReadonlyMap<string, Actor>, guid: string): Actor | undefined {
+    const indexed = index.get(guid);
+    if (indexed && !indexed.destroyed && indexed.world === this.world) return indexed;
+    if (!this.world.findActor(guid)) return undefined;
+    const actors = this.world.getActors();
+    for (let index = actors.length - 1; index >= 0; index -= 1) {
+      if (actors[index]!.guid === guid) return actors[index];
+    }
+    return undefined;
+  }
+
+  /** Compose NavAgent actors and their ancestors, not the whole world. */
+  private navAgentWorldTransforms(index: ReadonlyMap<string, Actor>): Map<string, Transform> {
+    const actors = this.world.getActors();
+    // A guid-keyed map is resolution-order dependent when guids repeat; keep
+    // the whole-world pass for that case so crowd inputs stay identical.
+    if (index.size !== actors.length) return actorWorldTransforms(actors);
+    const agents = this.navAgentActors;
+    agents.length = 0;
+    for (const actor of actors) {
+      for (const component of actor.components) {
+        if (component.classId === "NavAgentComponent" && !component.destroyed) {
+          agents.push(actor);
+          break;
+        }
+      }
+    }
+    try {
+      return composeActorWorldTransforms((guid) => this.navFrameActor(index, guid), agents);
+    } finally {
+      agents.length = 0;
+    }
   }
 
   private registerNavAgents(
@@ -3060,9 +3120,10 @@ class InProcessRuntime implements RuntimeDriver {
   private tickCrowd(actors: ReadonlyMap<string, Actor>): void {
     if (!this.nav) return;
     this.syncNavCostVolumes();
-    const worldTransforms = actorWorldTransforms(this.world.getActors());
+    const worldTransforms = this.navAgentWorldTransforms(actors);
     this.registerNavAgents(worldTransforms);
-    const physicalAgents = new Set<string>();
+    const physicalAgents = this.navPhysicalAgents;
+    physicalAgents.clear();
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = actors.get(actorGuid);
@@ -3121,6 +3182,7 @@ class InProcessRuntime implements RuntimeDriver {
       Object.assign(actor.transform.position, local.position);
       Object.assign(actor.transform.rotation, local.rotation);
     }
+    physicalAgents.clear();
     if (removed) this.emitNavigationDebug(true);
   }
 
@@ -3177,8 +3239,10 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickAnimGraphs(): void {
     if (this.animGraphs.size === 0) return;
-    const liveKeys = new Set<string>();
-    const liveEvalKeys = new Set<string>();
+    const liveKeys = this.liveAnimInitKeys;
+    const liveEvalKeys = this.liveAnimEvalKeys;
+    liveKeys.clear();
+    liveEvalKeys.clear();
     for (const actor of this.world.getActors()) {
       if (this.stopped) return;
       if (!this.canTickActor(actor)) continue;
@@ -3297,12 +3361,15 @@ class InProcessRuntime implements RuntimeDriver {
         });
       }
     }
-    for (const key of [...this.animInitializedBySlot]) {
+    // Deleting the visited entry keeps Set/Map iteration valid, so prune in place.
+    for (const key of this.animInitializedBySlot) {
       if (!liveKeys.has(key)) this.animInitializedBySlot.delete(key);
     }
-    for (const evalKey of [...this.animEvalByComponent.keys()]) {
+    for (const evalKey of this.animEvalByComponent.keys()) {
       if (!liveEvalKeys.has(evalKey)) this.animEvalByComponent.delete(evalKey);
     }
+    liveKeys.clear();
+    liveEvalKeys.clear();
   }
 
   private stringGuid(value: unknown): string | null {
@@ -5045,10 +5112,11 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
-      this.navFrameActors = new Map(this.world.getActors().map((actor) => [actor.guid, actor]));
+      // Only behaviour trees and the crowd read the frame index.
+      this.navFrameActors = this.nav || this.behaviourTrees.size > 0 ? this.indexActorsByGuid() : null;
       try {
         this.tickBehaviourTrees();
-        if (this.canTickScene()) this.tickCrowd(this.navFrameActors);
+        if (this.nav && this.canTickScene()) this.tickCrowd(this.navFrameActors ?? this.indexActorsByGuid());
       } finally {
         this.navFrameActors = null;
       }
@@ -5060,7 +5128,8 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
-      this.publishSnapshot();
+      if (this.deferSnapshotWrites) this.deferSnapshotWrite();
+      else this.publishSnapshot();
       this.emitDebugColliders();
       this.emitNavigationDebug();
       this.emitBehaviourTreeSnapshot();
@@ -5074,6 +5143,7 @@ class InProcessRuntime implements RuntimeDriver {
         tickIndex: this.world.clock.tickIndex,
         scriptMs: this._lastScriptMs,
         physicsMs: this._lastPhysicsMs,
+        publishMs: this._lastPublishMs,
         liveActors: this.slotByGuid.size,
         snapshotCapacity: this.snapshots.maxActors,
       });
@@ -5130,11 +5200,21 @@ class InProcessRuntime implements RuntimeDriver {
     if (!this.running || this.paused || this.streamBlockingCount > 0) return;
     this.accumulator += elapsedSeconds;
     let steps = 0;
-    while (this.accumulator >= this.dt && steps < this.maxCatchUp) {
-      this.tick();
-      this.accumulator -= this.dt;
-      steps += 1;
+    // Hosts copy the snapshot once after advance(), so catch-up ticks keep
+    // their removal pass but compose and write only the burst's final frame.
+    // Any tick may pause or block the session; the flush below still runs.
+    const outermost = !this.deferSnapshotWrites;
+    this.deferSnapshotWrites = true;
+    try {
+      while (this.accumulator >= this.dt && steps < this.maxCatchUp) {
+        this.tick();
+        this.accumulator -= this.dt;
+        steps += 1;
+      }
+    } finally {
+      if (outermost) this.deferSnapshotWrites = false;
     }
+    if (outermost) this.flushDeferredSnapshotWrite();
     if (steps === this.maxCatchUp) {
       this.accumulator = 0;
     }
@@ -5237,20 +5317,74 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshotOrigin = { x: 0, y: 0, z: 0 };
   private snapshotOriginGeneration = 0;
 
+  /** Publish now; a newer complete frame supersedes any write deferred by `advance()`. */
   private publishSnapshot(): void {
-    for (const stream of [...this.sceneStreams.values()]) {
-      if (stream.actor.destroyed || stream.actor.world !== this.world) this.retireSceneStream(stream);
+    const start = nowMs();
+    this.snapshotWritePending = false;
+    this.pendingPublishMs = 0;
+    this.retireRemovedSnapshotActors();
+    this.writeSnapshot(this.frameId, this.world.clock.tickIndex, this._lastScriptMs, this._lastPhysicsMs);
+    this._lastPublishMs = nowMs() - start;
+  }
+
+  /** Per-tick part of a deferred publish: removals and their commands happen in this tick. */
+  private deferSnapshotWrite(): void {
+    const start = nowMs();
+    this.retireRemovedSnapshotActors();
+    const header = this.pendingSnapshotHeader;
+    header.frameId = this.frameId;
+    header.tickIndex = this.world.clock.tickIndex;
+    header.scriptMs = this._lastScriptMs;
+    header.physicsMs = this._lastPhysicsMs;
+    this.snapshotWritePending = true;
+    this.pendingPublishMs += nowMs() - start;
+  }
+
+  /**
+   * Write the frame deferred by the last publishing tick of a burst, with that
+   * tick's header. Later ticks that no-op (pause, blocking stream) leave it as is.
+   */
+  private flushDeferredSnapshotWrite(): void {
+    if (!this.snapshotWritePending) return;
+    this.snapshotWritePending = false;
+    const spent = this.pendingPublishMs;
+    this.pendingPublishMs = 0;
+    if (this.stopped) return;
+    const start = nowMs();
+    // Normally a no-op: it only finds removals made after the last publishing tick.
+    this.retireRemovedSnapshotActors();
+    const header = this.pendingSnapshotHeader;
+    this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
+    this._lastPublishMs = spent + (nowMs() - start);
+  }
+
+  /** Retire detached streams, then despawn and release slots of actors no longer in the World. */
+  private retireRemovedSnapshotActors(): void {
+    for (const stream of this.sceneStreams.values()) {
+      if (!this.sceneStreamDetached(stream)) continue;
+      // Retirement can reenter and change the table; retire from a stable copy.
+      for (const candidate of [...this.sceneStreams.values()]) {
+        if (this.sceneStreamDetached(candidate)) this.retireSceneStream(candidate);
+      }
+      break;
     }
-    const actors = this.world.getActors();
-    const liveGuids = new Set(actors.map((actor) => actor.guid));
     let removedActors = false;
     for (const [actorGuid, slotId] of this.slotByGuid) {
-      if (liveGuids.has(actorGuid)) continue;
+      // The World's guid index answers "any live actor has this guid".
+      if (this.world.findActor(actorGuid)) continue;
       this.emit({ type: "despawn", slotId, actorGuid });
       this.releaseSlot(actorGuid, slotId);
       removedActors = true;
     }
     if (removedActors) this.emitBehaviourTreeSnapshot(true);
+  }
+
+  private sceneStreamDetached(stream: SceneStream): boolean {
+    return stream.actor.destroyed || stream.actor.world !== this.world;
+  }
+
+  private writeSnapshot(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
+    const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
     const worldTransforms = actorWorldTransforms(actors);
     const cameraActor = this.playCameraActor();
@@ -5279,11 +5413,11 @@ class InProcessRuntime implements RuntimeDriver {
       count += 1;
     }
     writeSnapshotHeader(buf, {
-      frameId: this.frameId,
-      tickIndex: this.world.clock.tickIndex,
+      frameId,
+      tickIndex,
       actorCount: count,
-      scriptMs: this._lastScriptMs,
-      physicsMs: this._lastPhysicsMs,
+      scriptMs,
+      physicsMs,
       layoutGeneration: this._snapshotGeneration,
       origin: this.snapshotOrigin,
       originGeneration: this.snapshotOriginGeneration,
