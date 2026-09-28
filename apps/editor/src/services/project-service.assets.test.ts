@@ -714,7 +714,7 @@ describe("project documents as .babasset", () => {
       },
     });
     await service.loadCurrentProject();
-    service.setTextureWriteGuard(() => true);
+    service.setTextureWriteGuard({ canWrite: () => true });
     const registry = service.registry!;
     const encoded = () => {
       const payload = registry.getByGuid(texture!.header.guid)!.header.payload;
@@ -750,7 +750,7 @@ describe("project documents as .babasset", () => {
     const guid = texture!.header.guid;
     // The editor's guard: an open Texture tab's Usage, once Details changes it.
     const tabUsages = new Map<string, string>();
-    service.setTextureWriteGuard(() => true);
+    service.setTextureWriteGuard({ canWrite: () => true });
     service.setOpenTextureUsage((id) => tabUsages.get(id));
     const payload = () => service.registry!.getByGuid(guid)!.header.payload;
     const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
@@ -824,7 +824,7 @@ describe("project documents as .babasset", () => {
     await installMinimalProject(storage);
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
-    service.setTextureWriteGuard(() => true);
+    service.setTextureWriteGuard({ canWrite: () => true });
     const tabUsages = new Map<string, string>();
     service.setOpenTextureUsage((id) => tabUsages.get(id));
     const registry = service.registry!;
@@ -870,7 +870,7 @@ describe("project documents as .babasset", () => {
     await storage.writeBinary(paths[0]!, await storage.readBinary(paths[0]!));
     await nextMillisecond();
 
-    service.setTextureWriteGuard(() => true);
+    service.setTextureWriteGuard({ canWrite: () => true });
     expect(await service.reconcileTextureAlignment()).toBe(8);
     await vi.waitFor(() => {
       expect(service.textureEncodeQueue.depth).toBe(0);
@@ -889,6 +889,85 @@ describe("project documents as .babasset", () => {
     });
     expect(changes.changedPaths).toEqual([paths[0]]);
     expect(changes.kind).toBe("none");
+  });
+
+  it("drops the pass's queued re-encodes once locks are unknown, leaving nothing for the next open to re-encode", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Forgotten.babproject");
+    await installMinimalProject(storage);
+    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
+    for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
+    await service.loadCurrentProject();
+    const onDisk = async (path: string) => (await decodeBabasset(await storage.readBinary(path))).header.payload;
+
+    // The page is hidden, so the re-encodes wait in the queue.
+    service.pauseTextureEncodeQueue();
+    service.setTextureWriteGuard({ canWrite: () => true });
+    expect(await service.reconcileTextureAlignment()).toBe(2);
+    // Source control is reconfigured before they run: its locks are unknown again.
+    service.setTextureWriteGuard(null);
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    expect(encode).not.toHaveBeenCalled();
+    for (const path of paths) {
+      expect(await onDisk(path)).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
+      expect(await onDisk(path)).not.toHaveProperty("ktx2Width");
+    }
+
+    // The next session opens before its locks load: nothing waits on disk for it to re-encode.
+    const next = new ProjectService(storage, { encode });
+    await next.loadCurrentProject();
+    expect(next.textureEncodeQueue.depth).toBe(0);
+    expect(encode).not.toHaveBeenCalled();
+  });
+
+  it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Backlog.babproject");
+    await installMinimalProject(storage);
+    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
+    for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
+    let releaseFirst!: () => void;
+    const firstEncode = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const encode = vi.fn<EncodeFn>(async (source, settings) => {
+      if (encode.mock.calls.length === 1) await firstEncode;
+      return standInEncode(source, settings);
+    });
+    const service = new ProjectService(storage, { encode });
+    await service.loadCurrentProject();
+    const payload = (path: string) => service.registry!.getByPath(path)!.header.payload;
+    const settled = () => vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
+
+    // The page is hidden: an import and the pass's re-encodes wait in the queue.
+    service.pauseTextureEncodeQueue();
+    const [imported] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    service.setTextureWriteGuard({ canWrite: () => true });
+    expect(await service.reconcileTextureAlignment()).toBe(2);
+    // Content Browser changes and returning to the app remount the registry.
+    await service.remountRegistry();
+    await service.remountRegistry();
+    await settled();
+    expect(service.textureEncodeQueue.depth).toBe(3);
+
+    // The import encodes first, and a remount lands while it runs.
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(payload(imported!.path).compressionState).toBe("encoding"));
+    await service.remountRegistry();
+    await settled();
+    expect(service.textureEncodeQueue.depth).toBe(3);
+    releaseFirst();
+
+    await vi.waitFor(() => {
+      expect(service.textureEncodeQueue.depth).toBe(0);
+      for (const path of [...paths, imported!.path]) {
+        expect(payload(path)).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
+      }
+    });
+    expect(encode).toHaveBeenCalledTimes(3);
   });
 
   it("decodes an unchanged legacy Tileset once across remounts, and again once it changes", async () => {

@@ -93,6 +93,7 @@ async function mount(
   storage: MemoryStorageAdapter,
   extraRoots: ContentRoot[] = [],
   projectSettings: TextureEncodeSettings = DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  onEncode: (sourceSize: { width: number; height: number }) => void = () => {},
 ) {
   const registry = new AssetRegistry(storage);
   const jobs: EncodeJobResult[] = [];
@@ -100,6 +101,7 @@ async function mount(
     // Stand-in encoder: a KTX2 header at the size the real encoders produce.
     encode: async (source, settings) => {
       const sourceSize = sniffSourceImageSize(source)!;
+      onEncode(sourceSize);
       const size = textureEncodeSize(sourceSize.width, sourceSize.height, settings);
       return { ktx2: ktx2(size.width, size.height), wallMs: 0 };
     },
@@ -182,7 +184,7 @@ describe("texture encode alignment", () => {
 
     const canWrite = (guid: string) => guid !== "locked-odd";
     expect((await registry.reconcileTextureAlignment({ canWrite })).sort()).toEqual(["legacy-odd", "unsized-odd"]);
-    // Idempotent: the requeued textures are pending now.
+    // Idempotent: the requeued textures are queued.
     expect(await registry.reconcileTextureAlignment({ canWrite })).toEqual([]);
     await vi.waitFor(() => {
       expect(queue.depth).toBe(0);
@@ -321,6 +323,46 @@ describe("texture encode alignment", () => {
     expect(chunks).toContain(await particleKeyMax1());
     // Switching the Usage back binds this 1x1 encode straight away.
     expect(chunks).toContain(KEY_MAX_1);
+  });
+
+  it("writes nothing until a requeued encode commits, and asks the guard again when it starts and commits", async () => {
+    const storage = await storageWithProject("guarded-jobs");
+    await writeTexture(storage, "assets/free.babasset", "free", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/locked-queued.babasset", "locked-queued", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    // Its own source size, so the encoder can tell its job apart.
+    const key5 = await textureEncodeChunkId(textureEncodeSettingsFor({ usage: "albedo", width: 5, height: 5 }, DEFAULT_TEXTURE_ENCODE_SETTINGS), "albedo");
+    await writeTexture(storage, "assets/locked-encoding.babasset", "locked-encoding", { source: [5, 5], committed: { id: key5, size: [5, 5] } });
+    const locked = new Set<string>();
+    const encoded: number[] = [];
+    const { registry, queue } = await mount(storage, [], DEFAULT_TEXTURE_ENCODE_SETTINGS, (size) => {
+      encoded.push(size.width);
+      // A lock poll lands while this one encodes.
+      if (size.width === 5) locked.add("locked-encoding");
+    });
+    const onDisk = async (guid: string) =>
+      (await decodeBabasset(await storage.readBinary(`assets/${guid}.babasset`))).header.payload;
+
+    queue.pause();
+    const canWrite = (guid: string) => !locked.has(guid);
+    expect((await registry.reconcileTextureAlignment({ canWrite })).sort()).toEqual(["free", "locked-encoding", "locked-queued"]);
+    // Still `compressed` on disk: nothing is left for a later open to requeue without the guard.
+    for (const guid of ["free", "locked-queued", "locked-encoding"]) {
+      expect((await onDisk(guid)).compressionState).toBe("compressed");
+    }
+    const nextOpen = await mount(storage);
+    expect(await nextOpen.registry.requeueUncompressedTextures()).toBe(0);
+
+    // A lock poll lands while the jobs wait.
+    locked.add("locked-queued");
+    queue.resume();
+    await vi.waitFor(() => expect(queue.depth).toBe(0));
+    expect(encoded).toEqual(expect.arrayContaining([1, 5]));
+    expect(encoded).toHaveLength(2);
+    expect(await onDisk("free")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
+    for (const guid of ["locked-queued", "locked-encoding"]) {
+      expect(await onDisk(guid)).toMatchObject({ compressionState: "compressed" });
+      expect(await onDisk(guid)).not.toHaveProperty("ktx2Width");
+    }
   });
 
   it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {

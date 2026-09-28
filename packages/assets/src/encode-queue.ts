@@ -4,6 +4,18 @@ import {
   stubEncodeKtx2,
 } from "./texture-compression";
 
+/**
+ * A background job's permission to write its Texture (the alignment pass).
+ * A guarded job writes nothing before its commit: the Texture keeps its saved
+ * state and committed encode until then.
+ */
+export interface EncodeJobGuard {
+  /** Asked when the job reaches the front of the queue; false drops it unencoded. */
+  start(assetGuid: string): Promise<boolean>;
+  /** Asked right before each write the job causes; false skips that write. */
+  canWrite(assetGuid: string): boolean;
+}
+
 export interface EncodeJob {
   assetGuid: string;
   source: Uint8Array;
@@ -13,6 +25,7 @@ export interface EncodeJob {
   chunkId?: string;
   /** Usage the job encodes for, which an unsaved Details edit may override. */
   usage?: string;
+  guard?: EncodeJobGuard;
 }
 
 export interface EncodeJobResult {
@@ -22,6 +35,7 @@ export interface EncodeJobResult {
   settings: TextureEncodeSettings;
   chunkId?: string;
   usage?: string;
+  guard?: EncodeJobGuard;
 }
 
 export type EncodeFn = (
@@ -41,9 +55,10 @@ export interface EncodeQueueOptions {
   onState?: (
     assetGuid: string,
     state: "encoding" | "compressed" | "encode_failed",
+    job: EncodeJob,
   ) => void;
   onComplete?: (result: EncodeJobResult) => void | Promise<void>;
-  onError?: (assetGuid: string, error: unknown) => void;
+  onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
 }
 
 type DerivedJob = { run: () => Promise<void> };
@@ -62,6 +77,8 @@ export class EncodeQueue {
   private readonly onError?: EncodeQueueOptions["onError"];
   private paused = false;
   private running = false;
+  /** The job being encoded, until its result or error is reported. */
+  private encoding: EncodeJob | null = null;
   private completedSinceRecycle = 0;
   private recycled = 0;
 
@@ -81,6 +98,15 @@ export class EncodeQueue {
 
   get recycleCount(): number {
     return this.recycled;
+  }
+
+  /**
+   * A job for this asset waits or is encoding. Its completion callbacks run
+   * after this turns false, so they may queue the asset again.
+   */
+  has(assetGuid: string): boolean {
+    if (this.encoding?.assetGuid === assetGuid) return true;
+    return this.queue.some((job) => "assetGuid" in job && job.assetGuid === assetGuid);
   }
 
   enqueue(job: EncodeJob): void {
@@ -176,10 +202,27 @@ export class EncodeQueue {
       finally { this.running = false; void this.pump(); }
       return;
     }
-    this.onState?.(job.assetGuid, "encoding");
+    this.encoding = job;
+    let started = true;
+    if (job.guard) {
+      // Dropped before any work or write when its guard now refuses it.
+      try {
+        started = await job.guard.start(job.assetGuid);
+      } catch {
+        started = false;
+      }
+    }
+    if (!started) {
+      this.encoding = null;
+      this.running = false;
+      void this.pump();
+      return;
+    }
+    this.onState?.(job.assetGuid, "encoding", job);
     try {
       const { ktx2, wallMs } = await this.encodeWithTimeout(job);
-      this.onState?.(job.assetGuid, "compressed");
+      this.encoding = null;
+      this.onState?.(job.assetGuid, "compressed", job);
       await this.onComplete?.({
         assetGuid: job.assetGuid,
         ktx2,
@@ -187,6 +230,7 @@ export class EncodeQueue {
         settings: job.settings,
         ...(job.chunkId ? { chunkId: job.chunkId } : {}),
         ...(job.usage ? { usage: job.usage } : {}),
+        ...(job.guard ? { guard: job.guard } : {}),
       });
       this.completedSinceRecycle += 1;
       if (this.completedSinceRecycle >= this.recycleAfter) {
@@ -194,9 +238,11 @@ export class EncodeQueue {
         this.recycled += 1;
       }
     } catch (error) {
-      this.onState?.(job.assetGuid, "encode_failed");
-      this.onError?.(job.assetGuid, error);
+      this.encoding = null;
+      this.onState?.(job.assetGuid, "encode_failed", job);
+      this.onError?.(job.assetGuid, error, job);
     } finally {
+      this.encoding = null;
       this.running = false;
       void this.pump();
     }

@@ -246,6 +246,14 @@ function withSavedTextureEncodeState(
   return next;
 }
 
+/** What the editor lets the background texture alignment pass write. */
+export interface TextureWriteGuard {
+  /** False for a Texture that is locked by another user or read-only. */
+  canWrite(guid: string): boolean;
+  /** Takes what rewriting the Texture needs (its lock) before it re-encodes; false skips it. */
+  claim?(guid: string): Promise<boolean>;
+}
+
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
@@ -314,10 +322,7 @@ export class ProjectService {
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
   /** Lets the texture alignment pass write, for the project it was set for. */
-  private textureWriteGuard: {
-    projectGuid: string | null;
-    canWrite: (guid: string) => boolean;
-  } | null = null;
+  private textureWriteGuard: (TextureWriteGuard & { projectGuid: string | null }) | null = null;
   /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
   private openTextureUsage: ((guid: string) => string | undefined) | null = null;
   /** Textures whose encode this project session committed. */
@@ -416,15 +421,17 @@ export class ProjectService {
           settings,
           mime,
         ),
-      onState: (guid, state) => {
-        // `compressed` is written with the KTX2 chunk in onComplete.
-        if (state === "compressed") return;
+      onState: (guid, state, job) => {
+        // `compressed` is written with the KTX2 chunk in onComplete. A guarded
+        // (alignment) job leaves the saved state alone until it commits, so
+        // nothing on disk requeues it later without its guard.
+        if (state === "compressed" || job.guard) return;
         void this.assetRegistry
           ?.setCompressionState(guid, state)
           .then(() => this.emitRegistryChange());
       },
       onComplete: async (result) => {
-        await this.assetRegistry?.commitCompressedTexture(result);
+        if (!(await this.assetRegistry?.commitCompressedTexture(result))) return;
         this.sessionEncodedTextures.add(result.assetGuid);
         this.emitRegistryChange();
         // A Tileset, Sprite or Sprite Animation may have picked the texture
@@ -437,11 +444,14 @@ export class ProjectService {
           void this.reconcileTextureAlignment([result.assetGuid]);
         }
       },
-      onError: (guid, error) => {
+      onError: (guid, error, job) => {
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
         void this.assetRegistry
-          ?.setCompressionState(guid, "encode_failed", { error: message })
+          ?.setCompressionState(guid, "encode_failed", {
+            error: message,
+            ...(job.guard ? { canWrite: job.guard.canWrite } : {}),
+          })
           .then(() => this.emitRegistryChange());
       },
     });
@@ -584,14 +594,35 @@ export class ProjectService {
 
   /**
    * Let the texture alignment pass write to this project: `canWrite(guid)`
-   * is false for Textures that are locked or read-only. The editor sets it
-   * once source-control locks are known, then runs the pass; null (or
-   * closing the project) stops it.
+   * is false for Textures that are locked or read-only, and `claim(guid)`
+   * takes what a rewrite needs first (the Texture's source-control lock). The
+   * editor sets it once source-control locks are known, then runs the pass;
+   * null (or closing the project) stops it, including the jobs it queued.
    */
-  setTextureWriteGuard(canWrite: ((guid: string) => boolean) | null): void {
-    this.textureWriteGuard = canWrite
-      ? { projectGuid: this.projectGuid, canWrite }
+  setTextureWriteGuard(guard: TextureWriteGuard | null): void {
+    this.textureWriteGuard = guard
+      ? { projectGuid: this.projectGuid, canWrite: guard.canWrite, claim: guard.claim }
       : null;
+  }
+
+  private currentTextureWriteGuard(): TextureWriteGuard | null {
+    const guard = this.textureWriteGuard;
+    return guard && guard.projectGuid === this.projectGuid ? guard : null;
+  }
+
+  /**
+   * Whether the alignment pass may write a Texture now: the open project's
+   * guard allows it, or, without one (locks unknown), this project session
+   * committed its encode. Asked again when its job starts and commits.
+   */
+  private alignmentMayWrite(guid: string): boolean {
+    const guard = this.currentTextureWriteGuard();
+    return guard ? guard.canWrite(guid) : this.sessionEncodedTextures.has(guid);
+  }
+
+  private async claimAlignmentWrite(guid: string): Promise<boolean> {
+    const claim = this.currentTextureWriteGuard()?.claim;
+    return claim ? claim(guid) : true;
   }
 
   /**
@@ -615,12 +646,13 @@ export class ProjectService {
     const run = async () => {
       const registry = this.assetRegistry;
       if (!registry) return 0;
-      const guard = this.textureWriteGuard?.projectGuid === this.projectGuid ? this.textureWriteGuard : null;
+      const guard = this.currentTextureWriteGuard();
       const targets = guard ? guids : guids?.filter((guid) => this.sessionEncodedTextures.has(guid));
       if (!guard && !targets?.length) return 0;
       const requeued = await registry.reconcileTextureAlignment({
         guids: targets,
-        canWrite: guard?.canWrite,
+        canWrite: (guid) => this.alignmentMayWrite(guid),
+        claim: (guid) => this.claimAlignmentWrite(guid),
         usageFor: this.openTextureUsage ?? undefined,
         ktx2SizeCache: this.ktx2SizeCache,
       });

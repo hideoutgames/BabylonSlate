@@ -9,7 +9,7 @@ import {
 } from "./babasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
-import type { EncodeJobResult, EncodeQueue } from "./encode-queue";
+import type { EncodeJobGuard, EncodeJobResult, EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
 import { isEnvironmentTexturePayload } from "./environment-texture";
 import {
@@ -792,13 +792,15 @@ export class AssetRegistry {
     await this.thumbnailWriter(asset.header.guid, thumb);
   }
 
+  /** `canWrite`, when set, is asked right before the write; false skips it. */
   async setCompressionState(
     guid: string,
     state: TextureCompressionState,
-    options?: { error?: string },
+    options?: { error?: string; canWrite?: (guid: string) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
       await this.rewriteTexture(guid, async (header, chunks) => {
+        if (options?.canWrite && !options.canWrite(guid)) return null;
         const payload: Record<string, unknown> = {
           ...header.payload,
           compressionState: state,
@@ -825,16 +827,20 @@ export class AssetRegistry {
    * chunks off the grid: the resolver binds a retained chunk whose id it
    * prefers, or the first one when none matches, and WebGPU would decode it
    * to RGBA. An atlas keeps them (its own-size encode, should a Particle
-   * Usage be switched back).
+   * Usage be switched back). Resolves false when nothing was written (the
+   * Texture is gone, or a guarded job's guard refuses).
    */
-  async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
-    const chunkId =
-      result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
-    const size = sniffKtx2Size(result.ktx2);
-    const blockAlign = result.settings.blockAlign;
-    const sha256 = await sha256Hex(result.ktx2);
-    await this.enqueueTextureWrite(result.assetGuid, async () => {
-      await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+  commitCompressedTexture(result: EncodeJobResult): Promise<boolean> {
+    // Entered at once: a pass that awaits this Texture's writes reads the commit.
+    return this.withAssetWrite(result.assetGuid, async () => {
+      const chunkId =
+        result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
+      const size = sniffKtx2Size(result.ktx2);
+      const blockAlign = result.settings.blockAlign;
+      const sha256 = await sha256Hex(result.ktx2);
+      return this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+        // A background job commits only while its guard still allows it.
+        if (result.guard && !result.guard.canWrite(result.assetGuid)) return null;
         if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
           for (const [id, chunk] of chunks) {
             if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
@@ -923,10 +929,12 @@ export class AssetRegistry {
   /**
    * Re-encode a Texture. `usage` overrides the saved header's Usage so a
    * Details edit that has not been saved yet encodes with its new policy.
+   * A `guard`ed re-encode (the alignment pass) writes no state before its
+   * commit, and its guard is asked again before the encode and each write.
    */
   async retryTextureEncoding(
     guid: string,
-    options?: { maxDimension?: number; force?: boolean; usage?: string },
+    options?: { maxDimension?: number; force?: boolean; usage?: string; guard?: EncodeJobGuard },
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
@@ -943,7 +951,7 @@ export class AssetRegistry {
     }
     const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
-    if (state !== "pending") {
+    if (state !== "pending" && !options?.guard) {
       await this.setCompressionState(guid, "pending");
     }
     const latest = this.byGuid.get(guid) ?? asset;
@@ -966,25 +974,40 @@ export class AssetRegistry {
       settings,
       chunkId,
       usage,
+      ...(options?.guard ? { guard: options.guard } : {}),
     });
     return true;
   }
 
-  /** Re-queue textures that fell back when the transcoder was unavailable. */
+  /**
+   * Re-queue textures that fell back when the transcoder was unavailable, or
+   * whose `pending` / `encoding` job an earlier session left behind. A Texture
+   * the queue already holds a job for is left to it (a remount rescans).
+   */
   async requeueUncompressedTextures(): Promise<number> {
-    if (!this.encodeQueue) return 0;
+    const queue = this.encodeQueue;
+    if (!queue) return 0;
     let count = 0;
-    for (const asset of this.list({ type: "Texture" })) {
+    for (const { header } of this.list({ type: "Texture" })) {
+      const asset = await this.settledTexture(header.guid);
+      if (!asset || queue.has(header.guid)) continue;
       const state = asset.header.payload.compressionState;
       if (
         state === "fallback_uncompressed" ||
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.retryTextureEncoding(asset.header.guid)) count += 1;
+        if (await this.retryTextureEncoding(header.guid)) count += 1;
       }
     }
     return count;
+  }
+
+  /** A Texture's index entry once its queued writes (such as a commit) have landed. */
+  private async settledTexture(guid: string): Promise<IndexedAsset | undefined> {
+    const writes = this.textureWriteChain.get(guid);
+    if (writes) await writes;
+    return this.byGuid.get(guid);
   }
 
   /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
@@ -1100,7 +1123,10 @@ export class AssetRegistry {
    */
   async reconcileTextureAlignment(options: {
     guids?: Iterable<string>;
+    /** Asked before the requeue, when the job starts and before its commit. */
     canWrite?: (guid: string) => boolean;
+    /** Takes what the write needs (a source-control lock) when the job starts. */
+    claim?: (guid: string) => Promise<boolean>;
     /**
      * Usage to check and re-encode with instead of the saved one: an open
      * Texture tab's, which an unsaved Details edit may have changed.
@@ -1114,9 +1140,18 @@ export class AssetRegistry {
     const guids = options.guids
       ? [...new Set(options.guids)]
       : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
+    const canWrite = options.canWrite ?? (() => true);
+    const claim = options.claim;
+    const guard: EncodeJobGuard = {
+      canWrite,
+      start: async (guid) => canWrite(guid) && (!claim || (await claim(guid))) && canWrite(guid),
+    };
+    const queue = this.encodeQueue;
     const requeued: string[] = [];
     for (const guid of guids) {
-      const asset = this.byGuid.get(guid);
+      const asset = await this.settledTexture(guid);
+      // Already queued (an earlier pass, or a remount's): one job is enough.
+      if (queue.has(guid)) continue;
       if (!asset || asset.placeholder || asset.header.type !== "Texture") continue;
       const payload = asset.header.payload;
       const usage = options.usageFor?.(guid) ?? String(payload.usage ?? "albedo");
@@ -1125,13 +1160,13 @@ export class AssetRegistry {
       // Without source pixels a forced retry would strand it `pending`.
       if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) continue;
       if (this.roots.get(asset.rootId)?.readOnly) continue;
-      if (options.canWrite && !options.canWrite(guid)) continue;
+      if (!canWrite(guid)) continue;
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
         // Asked again after the (possibly reading) staleness check, just
         // before the requeue, so a lock learned meanwhile still stops it.
-        if (options.canWrite && !options.canWrite(guid)) continue;
-        if (await this.retryTextureEncoding(guid, { force: true, usage })) requeued.push(guid);
+        if (!canWrite(guid) || queue.has(guid)) continue;
+        if (await this.retryTextureEncoding(guid, { force: true, usage, guard })) requeued.push(guid);
       } catch {
         // One unreadable texture must not stop the pass.
       }
@@ -1237,11 +1272,11 @@ export class AssetRegistry {
     ) => Promise<{
       header: Omit<BabassetHeader, "chunks">;
       chunks: Map<string, ChunkInput>;
-    }>,
+    } | null>,
     assertCurrent: () => void = () => {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
-    if (!asset) return;
+    if (!asset) return false;
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const previousMtime = await this.statMtime(storage, asset.path);
@@ -1264,6 +1299,8 @@ export class AssetRegistry {
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
     const next = await mutate({ ...headerRest }, chunksById);
+    // Nothing to write (a refused guard).
+    if (!next) return false;
     const bytes = await encodeBabasset({
       header: next.header,
       chunks: [...next.chunks.values()],
@@ -1275,6 +1312,7 @@ export class AssetRegistry {
     const header = readBabassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header, false, mtime);
     this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
+    return true;
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
