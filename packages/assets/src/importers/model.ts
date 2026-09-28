@@ -1,6 +1,7 @@
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
+import { sniffSourceImageSize } from "../image-size";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import { cookGeneratedCollisionFromGltf } from "../simple-collision";
 import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
@@ -109,6 +110,9 @@ function importFromBrowse(
             },
           ]
         : [];
+    // Recorded like an image import's, so Downsample, encode padding and
+    // overlay sizes use the source size rather than the encoded one.
+    const size = chunks.length > 0 ? sniffSourceImageSize(image.bytes) : null;
     results.push({
       type: "Texture",
       name: uniqueImportName(`${name}_${image.name}`, usedNames),
@@ -118,6 +122,7 @@ function importFromBrowse(
       parentClass: null,
       payload: {
         usage: "albedo",
+        ...(size ? { width: size.width, height: size.height } : {}),
         ...(chunks.length > 0 ? { compressionState: "pending" } : {}),
       },
       chunks,

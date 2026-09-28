@@ -14,6 +14,7 @@ import {
 } from "./index";
 import { buildBoxGlbFixture } from "../glb-geometry";
 import { buildMinimalGlbFixture } from "./glb-parse";
+import { gifHeader, webpHeader } from "../test-support/image-headers";
 
 describe("importers", () => {
   it("imports images as Texture with pending compression state", async () => {
@@ -25,6 +26,13 @@ describe("importers", () => {
     expect(results[0]!.type).toBe("Texture");
     expect(results[0]!.payload.compressionState).toBe("pending");
     expect(results[0]!.chunks[0]!.kind).toBe("pixels");
+  });
+
+  it("records the source size of WebP and GIF imports, as for PNG and JPEG", async () => {
+    for (const [fileName, bytes] of [["leaf.webp", webpHeader("VP8L", 30, 20)], ["leaf.gif", gifHeader(30, 20)]] as const) {
+      const [texture] = await importImage(bytes, { fileName, existingGuids: new Set() });
+      expect(texture!.payload, fileName).toMatchObject({ width: 30, height: 20 });
+    }
   });
 
   it("leaves pixel-art images uncompressed by policy", async () => {
@@ -50,6 +58,8 @@ describe("importers", () => {
     expect(model.dependencies.length).toBeGreaterThan(0);
     expect(model.payload.clipNames).toEqual(["Walk"]);
     expect(model.payload.importScale).toBe(1);
+    // Extracted images record their source size like image imports (the fixture's PNG is 1x1).
+    expect(results.find((result) => result.type === "Texture")!.payload).toMatchObject({ width: 1, height: 1 });
   });
 
   it("stamps ImportOptions.modelImportScale onto the Model payload", async () => {

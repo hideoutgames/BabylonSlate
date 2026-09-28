@@ -9,10 +9,12 @@ import {
 } from "./texture-lod";
 import { isKtx2BlockAligned } from "./ktx2-info";
 import {
+  clampDimension,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,
   ktx2ChunkId,
   textureEncodeBlockAlign,
+  textureEncodePadding,
   type TextureEncodeSettings,
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
@@ -203,27 +205,55 @@ export function authoredEncodeMaxDimension(
   );
 }
 
+export interface TextureEncodeContext {
+  /** A Tileset, Sprite or Sprite Animation samples the texture. */
+  atlas?: boolean;
+  /** Source pixel size when the payload has none (sniffed from the source bytes). */
+  sourceSize?: { width: number; height: number } | null;
+  /** Clamp override that replaces the authored Downsample and project clamp. */
+  maxDimension?: number;
+}
+
 /**
  * KTX2 encode settings for a Texture payload under `usage`: Compression
- * Quality, the Downsample and project clamp, and Particle block alignment.
- * `project` holds the project encode settings (`maxDimension` is the project
- * max). The registry queues every encode with these settings.
+ * Quality, the Downsample and project clamp, and block alignment
+ * ({@link textureEncodePadding}: padded off the 4-texel grid unless an
+ * atlas; Particle always). `project` holds the project encode settings
+ * (`maxDimension` is the project max). The registry queues every encode with
+ * these settings and commits it under {@link textureEncodeChunkId}.
  */
 export function textureEncodeSettingsFor(
   payload: Record<string, unknown>,
   project: TextureEncodeSettings,
   usage: string = String(payload.usage ?? "albedo"),
+  context: TextureEncodeContext = {},
 ): TextureEncodeSettings {
   const quality =
     typeof payload.compressionQuality === "number" &&
     Number.isFinite(payload.compressionQuality)
       ? payload.compressionQuality
       : project.quality;
-  const blockAlign = textureEncodeBlockAlign(usage);
+  const maxDimension =
+    context.maxDimension ?? authoredEncodeMaxDimension(payload, project.maxDimension);
+  const source = payloadPixelSize(payload) ?? context.sourceSize ?? null;
+  const clamped = source ? clampDimension(source.width, source.height, maxDimension) : null;
+  const { blockAlign: _projectAlign, ...base } = project;
+  void _projectAlign;
+  const blockAlign = textureEncodePadding(usage, { atlas: context.atlas === true, clampedSize: clamped });
   return {
-    ...project,
+    ...base,
     quality,
-    maxDimension: authoredEncodeMaxDimension(payload, project.maxDimension),
+    maxDimension,
     ...(blockAlign ? { blockAlign } : {}),
   };
+}
+
+/** Authored source size from an image import (`payload.width` / `height`). */
+export function payloadPixelSize(
+  payload: Record<string, unknown>,
+): { width: number; height: number } | null {
+  const { width, height } = payload;
+  return typeof width === "number" && typeof height === "number" && width > 0 && height > 0
+    ? { width, height }
+    : null;
 }

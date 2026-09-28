@@ -9,7 +9,8 @@ import {
   ktx2ChunkId,
   shouldCompressTexture,
   stubEncodeKtx2,
-  textureEncodeBlockAlign,
+  textureEncodeChunkId,
+  textureEncodePadding,
   textureEncodeSize,
   type TextureEncodeSettings,
 } from "./texture-compression";
@@ -31,41 +32,56 @@ describe("texture compression policy", () => {
     expect(shouldCompressTexture("particle")).toBe(true);
   });
 
-  it("block-aligns Particle encode sizes after the max-dimension clamp", () => {
-    const particle = (width: number, height: number, maxDimension = 2048) =>
-      textureEncodeSize(width, height, {
-        maxDimension,
-        blockAlign: textureEncodeBlockAlign("particle"),
-      });
-    expect(particle(1, 1)).toEqual({ width: 4, height: 4, clamped: false });
-    expect(particle(1000, 750)).toEqual({ width: 1000, height: 752, clamped: false });
-    expect(particle(512, 384)).toEqual({ width: 512, height: 384, clamped: false });
+  it("rounds encode sizes up to the block after the max-dimension clamp", () => {
+    const aligned = (width: number, height: number, maxDimension = 2048) =>
+      textureEncodeSize(width, height, { maxDimension, blockAlign: 4 });
+    expect(aligned(1, 1)).toEqual({ width: 4, height: 4, clamped: false });
+    expect(aligned(1000, 750)).toEqual({ width: 1000, height: 752, clamped: false });
+    expect(aligned(512, 384)).toEqual({ width: 512, height: 384, clamped: false });
     // 3000x1001 clamps to 2048x683, then aligns; the aligned edge may exceed a
     // tiny clamp (1x1 clamped to 1 still encodes at 4x4).
-    expect(particle(3000, 1001)).toEqual({ width: 2048, height: 684, clamped: true });
-    expect(particle(1000, 750, 250)).toEqual({ width: 252, height: 188, clamped: true });
-    // Every other Usage keeps its unaligned clamp.
-    expect(
-      textureEncodeSize(1000, 750, {
-        maxDimension: 250,
-        blockAlign: textureEncodeBlockAlign("albedo"),
-      }),
-    ).toEqual({ width: 250, height: 188, clamped: true });
+    expect(aligned(3000, 1001)).toEqual({ width: 2048, height: 684, clamped: true });
+    expect(aligned(1000, 750, 250)).toEqual({ width: 252, height: 188, clamped: true });
+    expect(textureEncodeSize(1000, 750, { maxDimension: 250 })).toEqual({ width: 250, height: 188, clamped: true });
   });
 
-  it("keys block alignment into the KTX2 chunk id only when set", async () => {
-    // Existing chunk ids on disk must not change for unaligned encodes.
-    expect(await encodeSettingsHash(DEFAULT_TEXTURE_ENCODE_SETTINGS)).toBe(
-      "34dad383eac5f9b6",
-    );
-    const unaligned: TextureEncodeSettings = {
-      ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
-      blockAlign: undefined,
-    };
+  it("pads compressed encodes off the 4-texel grid, except atlases, and always pads Particle", () => {
+    const cases: Array<[string, boolean, { width: number; height: number } | null, number | undefined]> = [
+      ["albedo", false, { width: 1, height: 1 }, 4],
+      ["normal", false, { width: 30, height: 30 }, 4],
+      ["orm", false, { width: 64, height: 30 }, 4],
+      // Already on the grid: no resample.
+      ["albedo", false, { width: 64, height: 32 }, undefined],
+      ["emissive", false, { width: 252, height: 188 }, undefined],
+      // Unknown size (a source no sniffer reads): padding a grid size is a no-op.
+      ["albedo", false, null, 4],
+      // Atlases keep their size so tile and frame UVs stay put.
+      ["albedo", true, { width: 1, height: 1 }, undefined],
+      ["normal", true, null, undefined],
+      ["particle", true, { width: 1, height: 1 }, 4],
+      ["particle", false, { width: 64, height: 32 }, 4],
+      // Uncompressed Usages never encode.
+      ["pixelArt", false, { width: 1, height: 1 }, undefined],
+      ["sprite", false, { width: 1, height: 1 }, undefined],
+      ["ui", false, { width: 30, height: 30 }, undefined],
+    ];
+    for (const [usage, atlas, clampedSize, want] of cases) {
+      expect(textureEncodePadding(usage, { atlas, clampedSize }), `${usage} atlas=${atlas} ${JSON.stringify(clampedSize)}`).toBe(want);
+    }
+  });
+
+  it("keys block alignment for Particle only, so a padded encode keeps today's chunk id", async () => {
+    // Padding is encode-only: it never changes a Usage's chunk id, so ids on
+    // disk and the resolver's preferred id stay valid.
+    expect(await encodeSettingsHash(DEFAULT_TEXTURE_ENCODE_SETTINGS)).toBe("34dad383eac5f9b6");
+    const unaligned: TextureEncodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: undefined };
     expect(await encodeSettingsHash(unaligned)).toBe("34dad383eac5f9b6");
-    expect(
-      await encodeSettingsHash({ ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: 4 }),
-    ).not.toBe("34dad383eac5f9b6");
+    const padded: TextureEncodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: 4 };
+    expect(await textureEncodeChunkId(padded, "albedo")).toBe("ktx2:34dad383eac5f9b6");
+    expect(await textureEncodeChunkId(DEFAULT_TEXTURE_ENCODE_SETTINGS, "normal")).toBe("ktx2:34dad383eac5f9b6");
+    // Particle encodes have always keyed blockAlign; their ids stay too.
+    expect(await textureEncodeChunkId(padded, "particle")).toBe("ktx2:be8efeb598b80ecc");
+    expect(await textureEncodeChunkId(DEFAULT_TEXTURE_ENCODE_SETTINGS, "particle")).toBe("ktx2:be8efeb598b80ecc");
   });
 
   it("clamps dimensions to the project max", () => {

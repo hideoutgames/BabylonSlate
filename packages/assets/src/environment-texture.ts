@@ -1,4 +1,4 @@
-import { sniffImageSize } from "./image-size";
+import { sniffImageSize, sniffWebpSize } from "./image-size";
 
 const ENV_MAGIC = [0x86, 0x16, 0x87, 0x96, 0xf6, 0xd6, 0x96, 0x36];
 
@@ -33,47 +33,6 @@ function triple(value: unknown): boolean {
     value.length === 3 &&
     value.every((item) => typeof item === "number" && Number.isFinite(item))
   );
-}
-
-function webpSize(bytes: Uint8Array): { width: number; height: number } | null {
-  const text = (offset: number) =>
-    String.fromCharCode(...bytes.subarray(offset, offset + 4));
-  if (bytes.length < 20 || text(0) !== "RIFF" || text(8) !== "WEBP")
-    return null;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint32(4, true) + 8 !== bytes.length) return null;
-  const u24 = (offset: number) =>
-    bytes[offset]! + bytes[offset + 1]! * 256 + bytes[offset + 2]! * 65536;
-  for (let offset = 12; offset + 8 <= bytes.length;) {
-    const length = view.getUint32(offset + 4, true);
-    if (offset + 8 + length > bytes.length) return null;
-    const start = offset + 8;
-    if (text(offset) === "VP8X" && length >= 10) {
-      if (bytes[start]! & 2) return null; // Animated images are not cube faces.
-      return { width: u24(start + 4) + 1, height: u24(start + 7) + 1 };
-    }
-    if (text(offset) === "VP8L" && length >= 5 && bytes[start] === 0x2f) {
-      const bits = view.getUint32(start + 1, true);
-      return {
-        width: (bits & 0x3fff) + 1,
-        height: ((bits >>> 14) & 0x3fff) + 1,
-      };
-    }
-    if (
-      text(offset) === "VP8 " &&
-      length >= 10 &&
-      bytes[start + 3] === 0x9d &&
-      bytes[start + 4] === 1 &&
-      bytes[start + 5] === 0x2a
-    ) {
-      return {
-        width: view.getUint16(start + 6, true) & 0x3fff,
-        height: view.getUint16(start + 8, true) & 0x3fff,
-      };
-    }
-    offset += 8 + length + (length % 2);
-  }
-  return null;
 }
 
 export function environmentTextureContainer(
@@ -179,8 +138,9 @@ function readEnv(bytes: Uint8Array): EnvironmentTextureInfo {
           "ENV PNG face dimensions do not match their mip level.",
         );
     } else {
-      const size = webpSize(image);
-      if (!size || size.width !== expectedSize || size.height !== expectedSize)
+      const size = sniffWebpSize(image);
+      // Animated images are not cube faces.
+      if (!size || size.animated || size.width !== expectedSize || size.height !== expectedSize)
         throw new Error(
           "ENV WebP face dimensions do not match their mip level.",
         );

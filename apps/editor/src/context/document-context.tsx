@@ -102,6 +102,7 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   afterMutatingApply,
+  requeueWithEditLock,
   isMutatingApplyBlocked,
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
@@ -206,6 +207,7 @@ import {
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
 import {
+  applyOwnAssetWrite,
   classifyExternalChanges,
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
@@ -320,6 +322,11 @@ interface DocumentContextValue {
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
+  /**
+   * A `compressed` Texture whose committed encode the alignment policy would
+   * change and nothing re-encodes yet: Texture Details offers Retry Encoding.
+   */
+  textureAlignmentStale: ProjectService["textureAlignmentStale"];
   /**
    * Why an edit or re-encode from outside the Texture tab cannot write this
    * Texture, as a sentence (a read-only root or plugin, or another user's
@@ -822,11 +829,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
   const captureMtimeSnapshot = useCallback(async () => {
-    mtimeSnapshotRef.current = {
+    // Installed before the project.json read, so the editor's own writes that
+    // land meanwhile fold into this snapshot, not the one it replaces.
+    const snapshot = {
       assets: snapshotIndexedMtimes(projectService.registry?.list() ?? []),
-      projectJson: await readProjectJsonMtime(projectService.storagePort),
+      projectJson: mtimeSnapshotRef.current?.projectJson ?? null,
     };
+    mtimeSnapshotRef.current = snapshot;
+    snapshot.projectJson = await readProjectJsonMtime(projectService.storagePort);
   }, [projectService]);
+
+  // The editor's own Texture encode writes are not external changes.
+  useEffect(
+    () =>
+      projectService.onOwnAssetWrite((write) => {
+        const snapshot = mtimeSnapshotRef.current;
+        if (snapshot) applyOwnAssetWrite(snapshot.assets, write);
+      }),
+    [projectService],
+  );
 
   useEffect(() => {
     return sourceControlRef.current.subscribe(() => {
@@ -859,6 +880,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const sourceControlEnabled = projectDocument
     ? projectDocument.settings.sourceControl?.enabled === true
     : null;
+  // Not via the debounced project save: turning source control on must stop
+  // the texture alignment pass's queued re-encodes at once.
+  useEffect(() => {
+    if (sourceControlEnabled !== null) projectService.setSourceControlEnabled(sourceControlEnabled);
+  }, [projectService, sourceControlEnabled]);
   useEffect(() => {
     if (sourceControlEnabled === null) return;
     const folder = projectService.storagePort.getCurrentFolder();
@@ -1077,6 +1103,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const nextAssets = snapshotIndexedMtimes(
       projectService.registry?.list() ?? [],
     );
+    // Installed before the project.json read, so the editor's own writes that
+    // land meanwhile fold into it; the scan itself is what gets classified.
+    const next = { assets: { ...nextAssets }, projectJson: previous?.projectJson ?? null };
+    mtimeSnapshotRef.current = next;
     const nextProject = await readProjectJsonMtime(projectService.storagePort);
     if (previous) {
       const openDocs = documentService
@@ -1094,10 +1124,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setExternalChangePrompt(result);
       }
     }
-    mtimeSnapshotRef.current = {
-      assets: nextAssets,
-      projectJson: nextProject,
-    };
+    next.projectJson = nextProject;
   }, [bump, documentService, projectService]);
   runForegroundRescanRef.current = runForegroundRescan;
 
@@ -1180,11 +1207,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       guid: string,
       options?: { maxDimension?: number; force?: boolean; usage?: string },
     ) => {
-      const ok = await projectService.retryTextureEncoding(guid, options);
+      const ok = await requeueWithEditLock(
+        sourceControlRef.current,
+        projectService.registry?.getByGuid(guid)?.path,
+        () => projectService.retryTextureEncoding(guid, options),
+      );
       bump();
       return ok;
     },
     [bump, projectService],
+  );
+
+  const textureAlignmentStale = useCallback<ProjectService["textureAlignmentStale"]>(
+    (guid, usage) => projectService.textureAlignmentStale(guid, usage),
+    [projectService],
   );
 
   const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
@@ -2496,6 +2532,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
+  // An open Texture tab's Usage may be an unsaved Details edit that already
+  // re-encoded; the texture alignment pass must not undo it with the saved Usage.
+  useEffect(() => {
+    projectService.setOpenTextureUsage((guid) => {
+      const asset = projectService.registry?.getByGuid(guid);
+      if (!asset) return undefined;
+      const open = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
+      const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
+      return typeof usage === "string" ? usage : undefined;
+    });
+    return () => projectService.setOpenTextureUsage(null);
+  }, [documentService, projectService]);
+
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
@@ -3562,6 +3613,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        /** Texture alignment passes run and queued, and the Textures they requeued. */
+        textureAlignment: () => { runs: number; pending: number; requeued: string[] };
         textureEncodeState: (path: string) => {
           compressionState: string | null;
           encodeError: string | null;
@@ -3757,6 +3810,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       readAssetChunk: (path: string, chunkId: string) =>
         projectService.readAssetChunk(path, chunkId),
       lastNavBake: () => lastNavBakeSaveResult(),
+      textureAlignment: () => projectService.textureAlignmentState,
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()
@@ -4298,6 +4352,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
@@ -4366,6 +4421,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       loadAssetThumbnail,

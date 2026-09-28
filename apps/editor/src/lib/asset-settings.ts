@@ -150,8 +150,10 @@ export function patchTextureUsage(
 }
 
 /**
- * Usage edit. Entering or leaving Particle changes the encode size (block
- * alignment), so a compressible result re-encodes with the new Usage.
+ * Usage edit. Entering or leaving Particle changes the chunk id (only
+ * Particle keys its block alignment), so a compressible result re-encodes
+ * with the new Usage. The size changes only for an atlas, which Particle
+ * still aligns.
  */
 export function applyTextureUsageChange(
   payload: Record<string, unknown>,

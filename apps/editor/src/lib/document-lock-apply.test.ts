@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import { FakeLockProvider } from "@babylonslate/source-control";
 import { MemorySecretStore } from "@babylonslate/vfs";
@@ -6,6 +6,7 @@ import { SourceControlService } from "../services/source-control-service";
 import {
   afterMutatingApply,
   isMutatingApplyBlocked,
+  requeueWithEditLock,
 } from "./document-lock-apply";
 
 const enabled = {
@@ -56,5 +57,13 @@ describe("document lock apply gate", () => {
     const service = await readyService(fake);
     await afterMutatingApply(service, "assets/main.scene.babasset");
     expect(service.lockStateForPath("assets/main.scene.babasset")).toBe("mine");
+  });
+
+  it("locks a Texture when its re-encode is queued, not when the requeue is refused", async () => {
+    const service = await readyService(new FakeLockProvider());
+    expect(await requeueWithEditLock(service, "assets/refused.babasset", async () => false)).toBe(false);
+    expect(await requeueWithEditLock(service, "assets/odd.babasset", async () => true)).toBe(true);
+    await vi.waitFor(() => expect(service.lockStateForPath("assets/odd.babasset")).toBe("mine"));
+    expect(service.lockStateForPath("assets/refused.babasset")).toBeNull();
   });
 });

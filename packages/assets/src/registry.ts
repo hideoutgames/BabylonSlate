@@ -9,7 +9,7 @@ import {
 } from "./babasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
-import type { EncodeJobResult, EncodeQueue } from "./encode-queue";
+import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
 import { isEnvironmentTexturePayload } from "./environment-texture";
 import {
@@ -25,16 +25,22 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import { stampDocumentChunkName } from "./asset-document";
-import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
+import { DOCUMENT_CHUNK_ID, decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
+import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
+import { sniffSourceImageSize, type ImageSize } from "./image-size";
+import { sniffKtx2Size } from "./ktx2-info";
+import { clampDimension,
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
+  TEXTURE_BLOCK_EDGE,
+  textureEncodeChunkId,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
+import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
@@ -57,6 +63,16 @@ export type ThumbnailWriter = (
   bytes: Uint8Array,
 ) => Promise<void>;
 
+/**
+ * The registry rewrote an asset file itself (Texture encode state, committed
+ * encode, derived chunk): its mtime just before and after that write.
+ */
+export interface OwnAssetWrite {
+  path: string;
+  previousMtime: number | null;
+  mtime: number | null;
+}
+
 /** Marker file so empty folders survive Git and remount scans. */
 export const FOLDER_MARKER_NAME = ".babylonslate-folder";
 
@@ -70,6 +86,18 @@ export interface FolderNode {
 export interface AssetRegistryOptions {
   payloadLoader?: AccountedPayloadLoader;
   blobs?: BlobStore;
+  /**
+   * Textures each decoded legacy atlas referrer samples, by type and document
+   * chunk sha256. Pass the same map to every remount so unchanged referrers
+   * are not read and decoded again.
+   */
+  legacyAtlasCache?: Map<string, readonly string[]>;
+  /**
+   * Textures an alignment check is requeuing right now. Pass the same set to
+   * every remount that shares one encode queue, so a check on the previous
+   * registry and one on the next skip each other's Texture.
+   */
+  alignmentRequeues?: Set<string>;
 }
 
 const BLOBS_DIR_NAME = ".blobs";
@@ -96,12 +124,34 @@ export class AssetRegistry {
   };
   private thumbnailWriter: ThumbnailWriter | null = null;
   private readonly textureWriteChain = new Map<string, Promise<void>>();
+  /** Atlas referrer (Tileset, Sprite, Sprite Animation) guid -> textures it samples. */
+  private readonly atlasByReferrer = new Map<string, readonly string[]>();
+  /** Texture guid -> atlas referrers sampling it. */
+  private readonly atlasReferrers = new Map<string, Set<string>>();
+  /** Atlas referrers whose header predates the `atlasTextures` meta. */
+  private readonly legacyAtlasReferrers = new Set<string>();
+  private legacyAtlasResolution: Promise<void> = Promise.resolve();
+  private atlasStatusListener: ((textureGuids: string[]) => void) | null = null;
+  /** Texture guid -> atlas status before the changes not yet reported. */
+  private readonly atlasStatusBefore = new Map<string, boolean>();
+  private atlasFlushScheduled = false;
+  private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
+  private createdTextureListener: ((asset: IndexedAsset) => void) | null = null;
+  private readonly legacyAtlasCache: Map<string, readonly string[]>;
+  /**
+   * Textures an alignment check is requeuing right now. Imports and
+   * Duplicates run the pass outside the editor's serialized passes, so a
+   * concurrent one skips them rather than queue a second copy.
+   */
+  private readonly alignmentRequeues: Set<string>;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
+    this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
+    this.alignmentRequeues = options.alignmentRequeues ?? new Set();
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
@@ -111,6 +161,29 @@ export class AssetRegistry {
   ): void {
     this.encodeQueue = queue;
     this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
+  }
+
+  /** Report the registry's own file rewrites, so they are not mistaken for external changes. */
+  setOwnWriteListener(listener: ((write: OwnAssetWrite) => void) | null): void {
+    this.ownWriteListener = listener;
+  }
+
+  /**
+   * Report each Texture the registry creates with a KTX2 encode already
+   * committed (a `.babasset` import, a Duplicate or Copy): a new file, so its
+   * committed encode is this session's own. Called as it is indexed, before
+   * any alignment check sees it.
+   */
+  setCreatedTextureListener(listener: ((asset: IndexedAsset) => void) | null): void {
+    this.createdTextureListener = listener;
+  }
+
+  private reportCreatedTexture(asset: IndexedAsset): IndexedAsset {
+    const { header } = asset;
+    if (header.type === "Texture" && header.chunks.some((chunk) => chunk.id === header.payload.ktx2ChunkId)) {
+      this.createdTextureListener?.(asset);
+    }
+    return asset;
   }
 
   /** Write CB thumbnails into derived data (ProjectService supplies storage). */
@@ -287,7 +360,7 @@ export class AssetRegistry {
     await storage.writeBinary(path, bytes);
     const header = readBabassetHeader(bytes);
     const mtime = await this.statMtime(storage, path);
-    return this.indexHeader(rootId, path, header, false, mtime);
+    return this.reportCreatedTexture(this.indexHeader(rootId, path, header, false, mtime));
   }
 
   /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
@@ -545,7 +618,9 @@ export class AssetRegistry {
       : "";
     if (dir) await destStorage.mkdir(dir, true);
     await destStorage.writeBinary(candidate, encoded);
-    return this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
+    const duplicate = this.reportCreatedTexture(this.indexHeader(rootId, candidate, readBabassetHeader(encoded)));
+    await this.alignCreatedTextures([duplicate]);
+    return duplicate;
   }
 
   /** Copy into a folder (same as duplicate with an explicit destination folder). */
@@ -729,7 +804,22 @@ export class AssetRegistry {
       await this.maybeWriteThumbnail(asset, result);
       await this.maybeEnqueueTextureEncode(asset);
     }
+    // After every result is indexed, so a bundled Tileset counts.
+    await this.alignCreatedTextures(created);
     return created;
+  }
+
+  /**
+   * A Texture created with an encode already committed (a `.babasset` import
+   * or a Duplicate) is a new file, not an older one teammates may share:
+   * align it now, as an image import pads its first encode, whatever the
+   * editor's rule for re-encoding older Textures in the background.
+   */
+  private async alignCreatedTextures(assets: readonly IndexedAsset[]): Promise<void> {
+    const guids = assets
+      .filter((asset) => asset.header.type === "Texture" && asset.header.payload.compressionState === "compressed")
+      .map((asset) => asset.header.guid);
+    if (guids.length > 0) await this.reconcileTextureAlignment({ guids });
   }
 
   private async maybeWriteThumbnail(
@@ -751,13 +841,18 @@ export class AssetRegistry {
     await this.thumbnailWriter(asset.header.guid, thumb);
   }
 
+  /**
+   * `canWrite`, when set, is asked right before the write with the header of
+   * the file on disk it would replace; false skips it.
+   */
   async setCompressionState(
     guid: string,
     state: TextureCompressionState,
-    options?: { error?: string },
+    options?: { error?: string; canWrite?: (guid: string, current: BabassetHeader) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
-      await this.rewriteTexture(guid, async (header, chunks) => {
+      await this.rewriteTexture(guid, async (header, chunks, current) => {
+        if (options?.canWrite && !options.canWrite(guid, current)) return null;
         const payload: Record<string, unknown> = {
           ...header.payload,
           compressionState: state,
@@ -773,11 +868,40 @@ export class AssetRegistry {
     });
   }
 
-  async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
-    const hash = await encodeSettingsHash(result.settings);
-    const chunkId = ktx2ChunkId(hash);
-    await this.enqueueTextureWrite(result.assetGuid, async () => {
-      await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+  /**
+   * Store an encode under its chunk id and record what was committed:
+   * `ktx2Width` / `ktx2Height` from the KTX2 header, and `ktx2BlockAlign`
+   * whenever padding was requested (a no-op for a size already on the grid),
+   * plus `ktx2Sha256`, the committed bytes these describe. The alignment pass
+   * reads these instead of the chunk while that sha256 still matches.
+   *
+   * An encode on the grid for a Texture no atlas uses also drops older KTX2
+   * chunks off the grid: the resolver binds a retained chunk whose id it
+   * prefers, or the first one when none matches, and WebGPU would decode it
+   * to RGBA. An atlas keeps them (its own-size encode, should a Particle
+   * Usage be switched back). Resolves false when nothing was written (the
+   * Texture is gone, or a guarded job may not write the file on disk now:
+   * `encodeJobMayWrite`).
+   */
+  commitCompressedTexture(result: EncodeJobResult): Promise<boolean> {
+    // Entered at once: a pass that awaits this Texture's writes reads the commit.
+    return this.withAssetWrite(result.assetGuid, async () => {
+      const chunkId =
+        result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
+      const size = sniffKtx2Size(result.ktx2);
+      const blockAlign = result.settings.blockAlign;
+      const sha256 = await sha256Hex(result.ktx2);
+      return this.rewriteTexture(result.assetGuid, async (header, chunks, current) => {
+        // A background job commits only while its guard still allows it for
+        // the file it replaces, and only onto the source it encoded.
+        if (!encodeJobMayWrite(result, current)) return null;
+        if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
+          for (const [id, chunk] of chunks) {
+            if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
+            const retained = sniffKtx2Size(chunk.data);
+            if (retained && !isOnBlockGrid(retained)) chunks.delete(id);
+          }
+        }
         chunks.set(chunkId, {
           id: chunkId,
           kind: "ktx2",
@@ -791,6 +915,15 @@ export class AssetRegistry {
           ktx2ChunkId: chunkId,
         };
         delete payload.encodeError;
+        delete payload.ktx2Width;
+        delete payload.ktx2Height;
+        delete payload.ktx2BlockAlign;
+        if (size) {
+          payload.ktx2Width = size.width;
+          payload.ktx2Height = size.height;
+        }
+        if (blockAlign && blockAlign > 1) payload.ktx2BlockAlign = blockAlign;
+        payload.ktx2Sha256 = sha256;
         header.payload = payload;
         return { header, chunks };
       });
@@ -850,10 +983,14 @@ export class AssetRegistry {
   /**
    * Re-encode a Texture. `usage` overrides the saved header's Usage so a
    * Details edit that has not been saved yet encodes with its new policy.
+   * A `guard`ed re-encode (the alignment pass) writes no state before its
+   * commit, and its guard is asked again when the job starts and before each
+   * write; it carries its source's sha256, so it writes nothing once the
+   * file's source pixels changed.
    */
   async retryTextureEncoding(
     guid: string,
-    options?: { maxDimension?: number; force?: boolean; usage?: string },
+    options?: { maxDimension?: number; force?: boolean; usage?: string; guard?: EncodeJobGuard },
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
@@ -870,43 +1007,64 @@ export class AssetRegistry {
     }
     const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
-    if (state !== "pending") {
+    if (state !== "pending" && !options?.guard) {
       await this.setCompressionState(guid, "pending");
     }
     const latest = this.byGuid.get(guid) ?? asset;
     const source = await this.loadSourcePixels(latest);
     if (!source) return false;
-    const settings = this.encodeSettingsFor(latest, usage);
-    if (options && "maxDimension" in options && options.maxDimension) {
-      settings.maxDimension = effectiveTextureMaxDimension(
-        options.maxDimension,
-        this.encodeSettings.maxDimension,
-      );
-    }
-    this.encodeQueue.enqueue({
+    await this.resolveLegacyAtlasReferrers();
+    const settings = this.encodeSettingsFor(latest, usage, {
+      sourceSize: sniffSourceImageSize(source.bytes),
+      ...(options?.maxDimension
+        ? { maxDimension: effectiveTextureMaxDimension(options.maxDimension, this.encodeSettings.maxDimension) }
+        : {}),
+    });
+    const chunkId = await textureEncodeChunkId(settings, usage);
+    const queue = this.encodeQueue;
+    if (!queue) return false;
+    const sourceSha256 = options?.guard ? await sha256Hex(source.bytes) : undefined;
+    queue.enqueue({
       assetGuid: guid,
       source: source.bytes,
       mime: source.mime,
       settings,
+      chunkId,
+      usage,
+      ...(options?.guard ? { guard: options.guard, sourceSha256 } : {}),
     });
     return true;
   }
 
-  /** Re-queue textures that fell back when the transcoder was unavailable. */
+  /**
+   * Re-queue textures that fell back when the transcoder was unavailable, or
+   * whose `pending` / `encoding` job an earlier session left behind. A Texture
+   * the queue already holds a job for is left to it (a remount rescans).
+   */
   async requeueUncompressedTextures(): Promise<number> {
-    if (!this.encodeQueue) return 0;
+    const queue = this.encodeQueue;
+    if (!queue) return 0;
     let count = 0;
-    for (const asset of this.list({ type: "Texture" })) {
+    for (const { header } of this.list({ type: "Texture" })) {
+      const asset = await this.settledTexture(header.guid);
+      if (!asset || queue.has(header.guid)) continue;
       const state = asset.header.payload.compressionState;
       if (
         state === "fallback_uncompressed" ||
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.retryTextureEncoding(asset.header.guid)) count += 1;
+        if (await this.retryTextureEncoding(header.guid)) count += 1;
       }
     }
     return count;
+  }
+
+  /** A Texture's index entry once its queued writes (such as a commit) have landed. */
+  private async settledTexture(guid: string): Promise<IndexedAsset | undefined> {
+    const writes = this.textureWriteChain.get(guid);
+    if (writes) await writes;
+    return this.byGuid.get(guid);
   }
 
   /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
@@ -941,19 +1099,248 @@ export class AssetRegistry {
     if (asset.header.payload.compressionState !== "pending") return;
     const source = await this.loadSourcePixels(asset);
     if (!source) return;
-    this.encodeQueue.enqueue({
+    await this.resolveLegacyAtlasReferrers();
+    const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
+    const chunkId = await textureEncodeChunkId(settings, usage);
+    this.encodeQueue?.enqueue({
       assetGuid: asset.header.guid,
       source: source.bytes,
       mime: source.mime,
-      settings: this.encodeSettingsFor(asset),
+      settings,
+      chunkId,
+      usage,
     });
   }
 
+  /** Encode settings with the texture's current atlas status. */
   private encodeSettingsFor(
     asset: IndexedAsset,
     usage = String(asset.header.payload.usage ?? "albedo"),
+    context: { sourceSize?: ImageSize | null; maxDimension?: number } = {},
   ): TextureEncodeSettings {
-    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage);
+    return textureEncodeSettingsFor(asset.header.payload, this.encodeSettings, usage, {
+      ...context,
+      atlas: this.isAtlasTexture(asset.header.guid),
+    });
+  }
+
+  /** A Tileset, Sprite or Sprite Animation samples this texture as an atlas. */
+  isAtlasTexture(guid: string): boolean {
+    return (this.atlasReferrers.get(guid)?.size ?? 0) > 0;
+  }
+
+  /**
+   * Report textures whose atlas status changed (a referrer saved, deleted,
+   * duplicated, imported, or a plugin root mounted). Set after the initial
+   * scan; changes are reported once legacy referrers are decoded.
+   */
+  setAtlasStatusListener(listener: ((textureGuids: string[]) => void) | null): void {
+    this.atlasStatusListener = listener;
+    this.atlasStatusBefore.clear();
+  }
+
+  /**
+   * Decode referrers whose header has no `atlasTextures` meta (saved before
+   * it existed, or created and never saved) so their atlases are known.
+   * Serialized; the alignment pass and every enqueue await it.
+   */
+  resolveLegacyAtlasReferrers(): Promise<void> {
+    const run = async () => {
+      while (this.legacyAtlasReferrers.size > 0) {
+        const guid = this.legacyAtlasReferrers.values().next().value as string;
+        this.legacyAtlasReferrers.delete(guid);
+        const asset = this.byGuid.get(guid);
+        if (!asset || !ATLAS_REFERRER_TYPES.has(asset.header.type)) continue;
+        let textures: string[] = [];
+        try {
+          const bytes = await this.storageForAsset(asset).readBinary(asset.path);
+          const document = await decodeAssetDocument(bytes, { blobs: this.blobsForAsset(asset) });
+          textures = atlasTextureGuids(asset.header.type, document.payload);
+          const key = legacyAtlasCacheKey(readBabassetHeader(bytes));
+          if (key) this.legacyAtlasCache.set(key, textures);
+        } catch {
+          // Unreadable: it samples nothing we can see.
+        }
+        // Re-indexed or removed meanwhile: that entry owns its atlas state.
+        if (this.byGuid.get(guid) !== asset) continue;
+        this.setAtlasReferrer(guid, textures);
+      }
+    };
+    const next = this.legacyAtlasResolution.then(run, run);
+    this.legacyAtlasResolution = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Requeue `compressed` textures whose committed encode no longer matches
+   * the alignment policy: a non-atlas encode off the 4-texel grid, or an atlas
+   * encode that was padded. Particle is always aligned. Skips read-only roots
+   * and textures `canWrite` refuses (the editor's rule for background
+   * re-encodes). An aligned texture is never requeued. Returns the requeued
+   * guids.
+   */
+  async reconcileTextureAlignment(options: {
+    guids?: Iterable<string>;
+    /**
+     * Asked before the requeue, when the job starts, and before its commit
+     * with the header of the file on disk it would replace (`EncodeJobGuard`).
+     */
+    canWrite?: (guid: string, current?: BabassetHeader) => boolean;
+    /**
+     * Usage to check and re-encode with instead of the saved one: an open
+     * Texture tab's, which an unsaved Details edit may have changed.
+     */
+    usageFor?: (guid: string) => string | undefined;
+    /**
+     * Sizes the pass read, kept across registry remounts: KTX2 base sizes by
+     * chunk sha256, and sniffed source sizes by `source:` + chunk sha256.
+     */
+    ktx2SizeCache?: Map<string, ImageSize | null>;
+  } = {}): Promise<string[]> {
+    if (!this.encodeQueue) return [];
+    await this.resolveLegacyAtlasReferrers();
+    const guids = options.guids
+      ? [...new Set(options.guids)]
+      : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
+    const canWrite = options.canWrite ?? (() => true);
+    const guard: EncodeJobGuard = { canWrite };
+    const queue = this.encodeQueue;
+    const requeued: string[] = [];
+    for (const guid of guids) {
+      const asset = await this.settledTexture(guid);
+      // Already queued (an earlier pass, or a remount's): one job is enough.
+      if (queue.has(guid) || this.alignmentRequeues.has(guid) || !asset) continue;
+      const usage = options.usageFor?.(guid) ?? String(asset.header.payload.usage ?? "albedo");
+      if (!this.isAlignmentCandidate(asset, usage) || !canWrite(guid)) continue;
+      this.alignmentRequeues.add(guid);
+      try {
+        if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
+        // Asked again after the (possibly reading) staleness check, just
+        // before the requeue, so a refusal meanwhile still stops it.
+        if (!canWrite(guid) || queue.has(guid)) continue;
+        if (await this.retryTextureEncoding(guid, { force: true, usage, guard })) requeued.push(guid);
+      } catch {
+        // One unreadable texture must not stop the pass.
+      } finally {
+        this.alignmentRequeues.delete(guid);
+      }
+    }
+    return requeued;
+  }
+
+  /**
+   * Whether `reconcileTextureAlignment` would requeue this Texture, whatever
+   * the editor's `canWrite`: its committed encode is stale for the alignment
+   * policy, and no encode for it waits or runs. Texture Details offers
+   * **Retry Encoding** for it, the user's own re-encode.
+   */
+  async isTextureAlignmentStale(
+    guid: string,
+    options: { usage?: string; ktx2SizeCache?: Map<string, ImageSize | null> } = {},
+  ): Promise<boolean> {
+    const queue = this.encodeQueue;
+    if (!queue) return false;
+    await this.resolveLegacyAtlasReferrers();
+    const asset = await this.settledTexture(guid);
+    if (!asset || queue.has(guid) || this.alignmentRequeues.has(guid)) return false;
+    const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
+    if (!this.isAlignmentCandidate(asset, usage)) return false;
+    try {
+      return await this.isAlignmentStale(asset, usage, options.ktx2SizeCache);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A writable `compressed` Texture of a compressed Usage with source pixels
+   * to re-encode from: one the alignment pass checks.
+   */
+  private isAlignmentCandidate(asset: IndexedAsset, usage: string): boolean {
+    const payload = asset.header.payload;
+    if (asset.placeholder || asset.header.type !== "Texture") return false;
+    if (payload.compressionState !== "compressed") return false;
+    if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) return false;
+    // Without source pixels a forced retry would strand it `pending`.
+    if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) return false;
+    return !this.roots.get(asset.rootId)?.readOnly;
+  }
+
+  private async isAlignmentStale(
+    asset: IndexedAsset,
+    usage: string,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<boolean> {
+    // Particle keys its alignment into the chunk id: always on the grid.
+    if (usage === "particle") return false;
+    const padded = (committedEncodeRecord(asset.header)?.blockAlign ?? 0) > 1;
+    if (this.isAtlasTexture(asset.header.guid)) return padded;
+    if (padded) return false;
+    const size = await this.committedKtx2Size(asset, usage, cache);
+    if (size === null || isOnBlockGrid(size)) return false;
+    // Requeue only if the re-encode can differ: padded, or under other
+    // settings. Otherwise (a payload or sniffed size that disagrees with the
+    // decoded source) it would land off the grid again and repeat after every
+    // commit. Built as the requeue builds them: without a payload size, the
+    // sniffed source decides the padding.
+    const sourceSize = payloadPixelSize(asset.header.payload)
+      ? undefined
+      : await this.sniffedSourceSize(asset, cache);
+    const settings = this.encodeSettingsFor(asset, usage, { sourceSize });
+    if (settings.blockAlign !== undefined) return true;
+    return asset.header.payload.ktx2ChunkId !== (await textureEncodeChunkId(settings, usage));
+  }
+
+  /** `sniffSourceImageSize` of the source pixels, cached by chunk sha256 under `source:`. */
+  private async sniffedSourceSize(
+    asset: IndexedAsset,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<ImageSize | null> {
+    const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
+    if (!pixels) return null;
+    const key = `source:${pixels.sha256}`;
+    const cached = cache?.get(key);
+    if (cached !== undefined) return cached;
+    const source = await this.loadSourcePixels(asset);
+    const size = source ? sniffSourceImageSize(source.bytes) : null;
+    cache?.set(key, size);
+    return size;
+  }
+
+  /**
+   * Base size of the committed KTX2: the recorded size; else, for an encode
+   * committed under today's id without a record, the clamped source size when
+   * it is on the grid (padding then changes nothing); else the chunk's KTX2
+   * header, which also tells a padded encode whose record was dropped (by an
+   * editor that predates it) from an unpadded one.
+   */
+  private async committedKtx2Size(
+    asset: IndexedAsset,
+    usage: string,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<ImageSize | null> {
+    const payload = asset.header.payload;
+    const recorded = committedEncodeRecord(asset.header)?.size;
+    if (recorded) return recorded;
+    const committed = payload.ktx2ChunkId;
+    if (typeof committed !== "string") return null;
+    const source = payloadPixelSize(payload);
+    if (source) {
+      const settings = this.encodeSettingsFor(asset, usage);
+      if (committed === (await textureEncodeChunkId(settings, usage))) {
+        const clamped = clampDimension(source.width, source.height, settings.maxDimension);
+        if (isOnBlockGrid(clamped)) return { width: clamped.width, height: clamped.height };
+      }
+    }
+    const entry = asset.header.chunks.find((chunk) => chunk.id === committed);
+    if (!entry) return null;
+    const cached = cache?.get(entry.sha256);
+    if (cached !== undefined) return cached;
+    const file = await this.storageForAsset(asset).readBinary(asset.path);
+    const bytes = await this.loader.loadChunk(file, entry, this.blobsForAsset(asset));
+    const size = bytes ? sniffKtx2Size(bytes) : null;
+    cache?.set(entry.sha256, size);
+    return size;
   }
 
   private async loadSourcePixels(
@@ -997,16 +1384,19 @@ export class AssetRegistry {
     mutate: (
       header: Omit<BabassetHeader, "chunks">,
       chunks: Map<string, ChunkInput>,
+      /** The header as read from disk, chunk sha256s included. */
+      current: BabassetHeader,
     ) => Promise<{
       header: Omit<BabassetHeader, "chunks">;
       chunks: Map<string, ChunkInput>;
-    }>,
+    } | null>,
     assertCurrent: () => void = () => {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
-    if (!asset) return;
+    if (!asset) return false;
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
+    const previousMtime = await this.statMtime(storage, asset.path);
     const fileBytes = await storage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
       blobs.readBlob(sha256),
@@ -1025,7 +1415,9 @@ export class AssetRegistry {
     }
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
-    const next = await mutate({ ...headerRest }, chunksById);
+    const next = await mutate({ ...headerRest }, chunksById, decoded.header);
+    // Nothing to write (a refused guard).
+    if (!next) return false;
     const bytes = await encodeBabasset({
       header: next.header,
       chunks: [...next.chunks.values()],
@@ -1033,8 +1425,11 @@ export class AssetRegistry {
     });
     assertCurrent();
     await storage.writeBinary(asset.path, bytes);
+    const mtime = await this.statMtime(storage, asset.path);
     const header = readBabassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header);
+    this.indexHeader(asset.rootId, asset.path, header, false, mtime);
+    this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
+    return true;
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
@@ -1178,7 +1573,68 @@ export class AssetRegistry {
       }
       set.add(header.guid);
     }
+    if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
+      const key = legacyAtlasCacheKey(header);
+      const listed = headerAtlasTextureGuids(header.payload) ?? (key ? this.legacyAtlasCache.get(key) : undefined);
+      if (listed) {
+        this.setAtlasReferrer(header.guid, listed);
+      } else {
+        this.legacyAtlasReferrers.add(header.guid);
+        this.scheduleAtlasStatusFlush();
+      }
+    }
     return indexed;
+  }
+
+  private setAtlasReferrer(referrer: string, textures: readonly string[]): void {
+    const previous = this.atlasByReferrer.get(referrer) ?? [];
+    const next = [...new Set(textures)];
+    if (previous.length === 0 && next.length === 0) return;
+    this.noteAtlasStatus([...previous, ...next]);
+    for (const guid of previous) {
+      const set = this.atlasReferrers.get(guid);
+      set?.delete(referrer);
+      if (set && set.size === 0) this.atlasReferrers.delete(guid);
+    }
+    if (next.length > 0) this.atlasByReferrer.set(referrer, next);
+    else this.atlasByReferrer.delete(referrer);
+    for (const guid of next) {
+      let set = this.atlasReferrers.get(guid);
+      if (!set) {
+        set = new Set();
+        this.atlasReferrers.set(guid, set);
+      }
+      set.add(referrer);
+    }
+  }
+
+  /** Remember each texture's atlas status before a change, for the listener. */
+  private noteAtlasStatus(textureGuids: readonly string[]): void {
+    if (!this.atlasStatusListener) return;
+    for (const guid of textureGuids) {
+      if (!this.atlasStatusBefore.has(guid)) {
+        this.atlasStatusBefore.set(guid, this.isAtlasTexture(guid));
+      }
+    }
+    this.scheduleAtlasStatusFlush();
+  }
+
+  private scheduleAtlasStatusFlush(): void {
+    if (!this.atlasStatusListener || this.atlasFlushScheduled) return;
+    this.atlasFlushScheduled = true;
+    queueMicrotask(() => void this.flushAtlasStatus());
+  }
+
+  private async flushAtlasStatus(): Promise<void> {
+    await this.resolveLegacyAtlasReferrers();
+    this.atlasFlushScheduled = false;
+    const changed = [...this.atlasStatusBefore]
+      .filter(([guid, before]) => this.isAtlasTexture(guid) !== before)
+      .map(([guid]) => guid);
+    this.atlasStatusBefore.clear();
+    if (changed.length > 0) this.atlasStatusListener?.(changed);
+    // A legacy referrer indexed after the resolution finished.
+    if (this.legacyAtlasReferrers.size > 0) this.scheduleAtlasStatusFlush();
   }
 
   private removeFromIndex(asset: IndexedAsset): void {
@@ -1186,6 +1642,8 @@ export class AssetRegistry {
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
     }
+    this.legacyAtlasReferrers.delete(asset.header.guid);
+    this.setAtlasReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {
       const set = this.inbound.get(dep);
       set?.delete(asset.header.guid);
@@ -1196,6 +1654,37 @@ export class AssetRegistry {
     // Creator replace deletes then recreates the same guid.
     this.inbound.delete(asset.header.guid);
   }
+}
+
+function isOnBlockGrid(size: ImageSize | null): boolean {
+  return size !== null && size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0;
+}
+
+/**
+ * What a commit recorded about the committed encode, while `ktx2Sha256` still
+ * matches the committed chunk. A writer that replaced the encode but kept the
+ * fields (an editor from before they existed) leaves them describing other
+ * bytes, so they are ignored.
+ */
+function committedEncodeRecord(
+  header: BabassetHeader,
+): { size: ImageSize | null; blockAlign: number | null } | null {
+  const payload = header.payload;
+  const committed = header.chunks.find((chunk) => chunk.id === payload.ktx2ChunkId);
+  if (!committed || typeof payload.ktx2Sha256 !== "string" || committed.sha256 !== payload.ktx2Sha256) {
+    return null;
+  }
+  const { ktx2Width: width, ktx2Height: height, ktx2BlockAlign: blockAlign } = payload;
+  return {
+    size: typeof width === "number" && typeof height === "number" ? { width, height } : null,
+    blockAlign: typeof blockAlign === "number" ? blockAlign : null,
+  };
+}
+
+/** A legacy atlas referrer's document content, when it has a document chunk. */
+function legacyAtlasCacheKey(header: BabassetHeader): string | null {
+  const document = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+  return document ? `${header.type}:${document.sha256}` : null;
 }
 
 function sortFolderTree(node: FolderNode): void {
