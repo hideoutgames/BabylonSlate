@@ -60,17 +60,13 @@ importers:
         version: 2.9.0
 
   apps/desktop:
-    dependencies:
+    devDependencies:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
-      electron-updater:
-        specifier: 6.8.9
-        version: 6.8.9
-    devDependencies:
       '@electron/asar':
         specifier: 4.3.0
         version: 4.3.0
@@ -83,6 +79,9 @@ importers:
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+      electron-updater:
+        specifier: 6.8.9
+        version: 6.8.9
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -188,6 +187,9 @@ importers:
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
+      '@capacitor/android':
+        specifier: ^8.0.0
+        version: 8.5.0(@capacitor/core@8.5.0)
       '@capacitor/app':
         specifier: ^8.0.0
         version: 8.1.1(@capacitor/core@8.5.0)
@@ -1094,6 +1096,11 @@ packages:
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
+
+  '@capacitor/android@8.5.0':
+    resolution: {integrity: sha512-Rb3prJeQiTp0pQhSSOReJuG9VgibOGMG4ECs+UhMwr6TCCHZ3NCZO811bDA0HxD0xrT/gCrJAsY5yfEATu84JQ==}
+    peerDependencies:
+      '@capacitor/core': ^8.5.0
 
   '@capacitor/app@8.1.1':
     resolution: {integrity: sha512-xM2ZTX5jK60tFtmjsmJv+Cdj1Qsb6NcavkqmdEnCPQBeya9oKhamZJxYOnQNj1ZvcJM7sWfG6BEtSLx42pisbA==}
@@ -6202,6 +6209,10 @@ snapshots:
     optional: true
 
   '@braintree/sanitize-url@7.1.2': {}
+
+  '@capacitor/android@8.5.0(@capacitor/core@8.5.0)':
+    dependencies:
+      '@capacitor/core': 8.5.0
 
   '@capacitor/app@8.1.1(@capacitor/core@8.5.0)':
     dependencies:
